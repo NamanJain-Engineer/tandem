@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ClipboardCheck,
   AppWindow,
   Bell,
   Check,
@@ -34,6 +35,7 @@ const GROUP_ICON: Record<VoiceToolGroup, typeof Check> = {
   tasks: ListChecks,
   find: FolderSearch,
   app: Settings2,
+  review: ClipboardCheck,
 };
 
 function ChipMark({ chip }: { chip: ChipView }) {
@@ -78,7 +80,7 @@ function ErrorAction({ view }: { view: CallView }) {
             ? { label: t("conductor.error.signIn"), run: () => ui.openSettings("account") }
             : code === "time_cap"
               ? { label: t("conductor.error.newCall"), run: () => void startCall() }
-              : code === "turned_off"
+              : code === "turned_off" || code === "not_in_region"
                 ? null
                 : { label: t("conductor.error.tryAgain"), run: () => void startCall() };
   if (!action) return null;

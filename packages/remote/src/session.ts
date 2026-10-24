@@ -3,13 +3,20 @@
 // snapshot, grants) and turns snapshot changes into notices (a new approval,
 // an agent that finished or needs input). Vibezeo Remote renders it with
 // React Native; tests drive it directly.
-import { PairingError, PhoneClient, type CommandResult, type ConnectionState, type SocketFactory } from "./client";
+import {
+  PairingError,
+  PhoneClient,
+  type CommandResult,
+  type ConnectionState,
+  type SocketFactory,
+} from "./client";
 import type {
   JsonValue,
   PhoneAgent,
   PhoneApproval,
   PhoneDecision,
   PhoneGrants,
+  PhoneReview,
   PhoneSnapshot,
   PhoneTranscript,
 } from "./messages";
@@ -95,10 +102,17 @@ export function relayAllowed(relay: string): boolean {
 
 function agentNotice(prev: PhoneAgent | undefined, next: PhoneAgent): Notice | null {
   if (!prev || prev.status === next.status) return null;
-  if (next.status === "waiting") return { kind: "agent", id: next.key, title: `${next.title} needs you`, body: next.preview ?? "" };
+  if (next.status === "waiting")
+    return { kind: "agent", id: next.key, title: `${next.title} needs you`, body: next.preview ?? "" };
   if (next.status === "done" && prev.status === "working")
     return { kind: "agent", id: next.key, title: `${next.title} finished`, body: next.preview ?? "" };
-  if (next.status === "failed") return { kind: "agent", id: next.key, title: `${next.title} stopped with an error`, body: next.preview ?? "" };
+  if (next.status === "failed")
+    return {
+      kind: "agent",
+      id: next.key,
+      title: `${next.title} stopped with an error`,
+      body: next.preview ?? "",
+    };
   return null;
 }
 
@@ -108,7 +122,8 @@ export function noticesBetween(prev: PhoneSnapshot | null, next: PhoneSnapshot):
   const out: Notice[] = [];
   const seen = new Set(prev.approvals.map((a) => a.id));
   for (const a of next.approvals) {
-    if (!seen.has(a.id) && !a.queued) out.push({ kind: "approval", id: a.id, title: "Approval needed", body: a.summary });
+    if (!seen.has(a.id) && !a.queued)
+      out.push({ kind: "approval", id: a.id, title: "Approval needed", body: a.summary });
   }
   const before = new Map(prev.agents.map((a) => [a.key, a]));
   for (const a of next.agents) {
@@ -172,7 +187,8 @@ export class RemoteSession {
   async start(): Promise<void> {
     const resumed = await this.client.resume().catch(() => false);
     const paired = this.client.paired;
-    if (resumed && paired) this.set({ phase: { kind: "paired" }, desktop: paired.desktop, grants: paired.grants });
+    if (resumed && paired)
+      this.set({ phase: { kind: "paired" }, desktop: paired.desktop, grants: paired.grants });
     else this.set({ phase: { kind: "unpaired" } });
   }
 
@@ -180,7 +196,12 @@ export class RemoteSession {
   async pairUrl(url: string): Promise<boolean> {
     const link = linkFromUrl(url);
     if (!link) {
-      this.set({ phase: { kind: "pair_failed", message: "That isn't a pairing code. Make one in Settings › Remote on your computer." } });
+      this.set({
+        phase: {
+          kind: "pair_failed",
+          message: "That isn't a pairing code. Make one in Settings › Remote on your computer.",
+        },
+      });
       return false;
     }
     return this.pair(link);
@@ -188,7 +209,9 @@ export class RemoteSession {
 
   async pair(link: PairingLink): Promise<boolean> {
     if (this.options.demo ? link.relay !== DEMO_RELAY : !relayAllowed(link.relay)) {
-      this.set({ phase: { kind: "pair_failed", message: "This code points somewhere the app won't connect to." } });
+      this.set({
+        phase: { kind: "pair_failed", message: "This code points somewhere the app won't connect to." },
+      });
       return false;
     }
     this.set({ phase: { kind: "pairing" }, snapshot: null, snapshotError: null, rejected: null });
@@ -200,7 +223,8 @@ export class RemoteSession {
       this.set({
         phase: {
           kind: "pair_failed",
-          message: err instanceof PairingError ? err.message : "Pairing didn't work. Make a new code and try again.",
+          message:
+            err instanceof PairingError ? err.message : "Pairing didn't work. Make a new code and try again.",
         },
       });
       return false;
@@ -216,13 +240,21 @@ export class RemoteSession {
       return;
     }
     const prev = this.view.snapshot;
-    this.set({ snapshot: r.data, grants: r.data.grants, armedUntil: r.data.armedUntil ?? null, snapshotError: null });
+    this.set({
+      snapshot: r.data,
+      grants: r.data.grants,
+      armedUntil: r.data.armedUntil ?? null,
+      snapshotError: null,
+    });
     for (const n of noticesBetween(prev, r.data)) this.options.onNotice?.(n);
   }
 
   /** Allow or deny; an allow the desktop hasn't armed comes back `queued`. */
   async decide(approval: PhoneApproval, decision: PhoneDecision): Promise<CommandResult<{ state?: string }>> {
-    const r = await this.client.command<{ state?: string }>("approval.decide", { approvalId: approval.id, decision });
+    const r = await this.client.command<{ state?: string }>("approval.decide", {
+      approvalId: approval.id,
+      decision,
+    });
     void this.refresh();
     return r;
   }
@@ -235,6 +267,12 @@ export class RemoteSession {
 
   sendToThread(threadId: string, text: string): Promise<CommandResult> {
     return this.client.command("thread.send", { threadId, text });
+  }
+
+  /** F-CN-09: the review item Conductor is on (else the first to review)
+   * and its diff. Read only: the phone can't approve or merge. */
+  reviewCurrent(): Promise<CommandResult<PhoneReview>> {
+    return this.client.command<PhoneReview>("review.current");
   }
 
   /** Types into an agent pane (never a plain shell; the desktop checks). */

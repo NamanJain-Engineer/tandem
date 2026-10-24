@@ -36,5 +36,8 @@ describe("free limits fixture", () => {
     expect(LIMITS.free.dictionarySync).toBe(false);
     expect(LIMITS.pro.dictionarySync).toBe(true);
     expect(LIMITS.team.dictionarySync).toBe(true);
+    expect(LIMITS.free.sessionSearch).toBe(false);
+    expect(LIMITS.pro.sessionSearch).toBe(true);
+    expect(LIMITS.team.sessionSearch).toBe(true);
   });
 });

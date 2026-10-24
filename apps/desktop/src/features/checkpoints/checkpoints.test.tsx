@@ -118,6 +118,8 @@ describe("Checkpoints tab (UI-140)", () => {
     const { calls } = setup({ items: [] });
     expect(await screen.findByText("No checkpoints yet")).toBeTruthy();
     const before = count(calls, "checkpoints_list");
+    // The panel subscribes in an effect, which can run after the text shows.
+    await act(async () => {});
     await act(async () => emitLocal("checkpoint:created", { folder: "/work/shop" }));
     await waitFor(() => expect(count(calls, "checkpoints_list")).toBe(before + 1));
     await act(async () => emitLocal("checkpoint:created", { folder: "/elsewhere" }));

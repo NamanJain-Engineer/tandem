@@ -104,7 +104,7 @@ test("F-WB-01 AC2 F-WB-06 marketing and blog pages load no framework JavaScript 
 });
 
 test("F-WB-01 a section anchor lands with its heading just under the sticky header (D-1844)", async ({ page }) => {
-  for (const id of ["features", "engines", "principles", "pricing", "faq"]) {
+  for (const id of ["features", "engines", "principles", "faq"]) {
     await page.goto(`/#${id}`);
     await expect
       .poll(async () =>

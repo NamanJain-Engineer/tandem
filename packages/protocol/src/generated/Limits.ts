@@ -8,4 +8,8 @@ export type Limits = { panes: number | null, workspaces: number | null, threadGr
  * The dictionary syncs across devices (F-DI-09). Defaults to false so
  * an older API's entitlement still parses.
  */
-dictionarySync: boolean, };
+dictionarySync: boolean, 
+/**
+ * Full-text search across engine sessions (F-TH-17).
+ */
+sessionSearch: boolean, };

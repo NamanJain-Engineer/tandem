@@ -36,6 +36,8 @@ pub struct EngineService {
     bus: EventBus,
     /// The Team org's policy, read at each launch (F-BL-06).
     policy: std::sync::OnceLock<PolicySource>,
+    /// Versions seen and the last good ones (F-EN-08), beside the homes.
+    pub versions: crate::services::engine_versions::EngineVersions,
 }
 
 /// Reads the org policy in force (the entitlement service's).
@@ -68,6 +70,9 @@ impl EngineService {
             report: RwLock::new(None),
             detecting: tokio::sync::Mutex::new(()),
             last_detect: Mutex::new(None),
+            versions: crate::services::engine_versions::EngineVersions::new(
+                providers.parent().unwrap_or(&providers),
+            ),
             homes: ProviderHomes::new(providers),
             hook_bin: hook_bin(),
             store,
@@ -307,6 +312,7 @@ impl EngineService {
         let config = LaunchConfig {
             extra_args: extra_args.clone(),
             home: home.as_ref().map(|h| h.to_string_lossy().into_owned()),
+            own_home: false,
         };
         let req = TerminalLaunchRequest {
             engine,
@@ -317,6 +323,7 @@ impl EngineService {
             home: home.clone(),
             providers_root: self.homes.root().to_path_buf(),
             status,
+            pinned: self.pinned(&engine.id).await,
         };
         let spec = launch::terminal_launch(&req).map_err(launch_error)?;
         Ok(AgentLaunch {
@@ -325,6 +332,15 @@ impl EngineService {
             home,
             config,
         })
+    }
+
+    /// Whether the user pinned this engine (F-EN-08, `engine_pins`).
+    pub async fn pinned(&self, engine_id: &str) -> bool {
+        settings::get(&self.store, SettingKey::EnginePins)
+            .await
+            .ok()
+            .and_then(|v| v.get(engine_id).and_then(serde_json::Value::as_bool))
+            .unwrap_or(false)
     }
 
     async fn relaunch(
@@ -349,6 +365,8 @@ impl EngineService {
                 }
                 Some(home)
             }
+            // A library session from the engine's own home (F-TH-17).
+            None if r.config.own_home => None,
             // An engine that keeps its sign-in in a home always ran in one.
             None if engine.provider_home_env.is_some()
                 || engine.home_strategy == tandem_engines::registry::HomeStrategy::Xdg =>
@@ -370,6 +388,7 @@ impl EngineService {
             home: home.clone(),
             providers_root: self.homes.root().to_path_buf(),
             status,
+            pinned: self.pinned(&engine.id).await,
         };
         let spec = launch::terminal_launch(&req).map_err(launch_error)?;
         Ok(AgentLaunch {
@@ -566,5 +585,58 @@ mod tests {
         let err = svc.check_allowed(&codex).expect_err("refused");
         assert_eq!(err.code, ErrorCode::PermissionDenied);
         assert_eq!(err.message, "Your organization doesn't allow Codex.");
+    }
+
+    /// A library session from Claude Code's own home resumes with no
+    /// provider home and no hooks written into the user's own home (F-TH-17,
+    /// D-2412).
+    #[tokio::test]
+    async fn f_th_17_2_an_own_home_session_resumes_with_no_provider_home() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = EngineService::new(store, EventBus::new(), dir.path().join("providers"));
+        let reg = EngineRegistry::bundled();
+        let claude = reg.get("claude").expect("claude").clone();
+        let config = LaunchConfig {
+            extra_args: Vec::new(),
+            home: None,
+            own_home: true,
+        };
+        let launch = svc
+            .agent_launch_with(
+                &claude,
+                PathBuf::from("/usr/local/bin/claude"),
+                dir.path(),
+                None,
+                None,
+                Some(Relaunch {
+                    resume: Some("aaaa-1111"),
+                    config: &config,
+                }),
+            )
+            .await
+            .expect("launch");
+        assert_eq!(launch.home, None);
+        assert!(launch.account.is_none());
+        assert!(!launch.spec.env.contains_key("CLAUDE_CONFIG_DIR"));
+        let argv = launch.spec.argv().join(" ");
+        assert!(argv.contains("--resume aaaa-1111"), "{argv}");
+        // Without own_home, a Claude Code relaunch with no home is refused.
+        let plain = LaunchConfig::default();
+        assert!(svc
+            .agent_launch_with(
+                &claude,
+                PathBuf::from("/usr/local/bin/claude"),
+                dir.path(),
+                None,
+                None,
+                Some(Relaunch {
+                    resume: Some("aaaa-1111"),
+                    config: &plain,
+                }),
+            )
+            .await
+            .is_err());
     }
 }

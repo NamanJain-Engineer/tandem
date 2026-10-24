@@ -24,15 +24,41 @@ struct Wire {
 struct FakeProvider {
     delay: Duration,
     wires: mpsc::UnboundedSender<Wire>,
+    /// Says Ready as it opens, as OpenAI's `session.created` does; off, the
+    /// test answers the call's configuration itself.
+    ready: Mutex<bool>,
+    /// Refuses the handshake, as a service over its limits may.
+    refuse: Mutex<bool>,
+    /// Handshakes tried.
+    opened: Mutex<usize>,
+}
+
+impl FakeProvider {
+    fn new(delay: Duration, wires: mpsc::UnboundedSender<Wire>) -> Arc<Self> {
+        Arc::new(Self {
+            delay,
+            wires,
+            ready: Mutex::new(true),
+            refuse: Mutex::new(false),
+            opened: Mutex::new(0),
+        })
+    }
 }
 
 #[async_trait]
 impl RealtimeProvider for FakeProvider {
     async fn connect(&self, _url: &str, token: &str) -> Result<Connection, RealtimeError> {
         assert_eq!(token, "rt_mock_token");
+        *self.opened.lock() += 1;
         tokio::time::sleep(self.delay).await;
+        if *self.refuse.lock() {
+            return Err(RealtimeError::Refused);
+        }
         let (tx, from_app) = mpsc::channel(4096);
         let (to_app, rx) = mpsc::channel(256);
+        if *self.ready.lock() {
+            let _ = to_app.try_send(ServerEvent::Ready);
+        }
         let _ = self.wires.send(Wire { from_app, to_app });
         Ok(Connection { tx, rx })
     }
@@ -80,7 +106,14 @@ struct Host {
     now: AtomicI64,
     mint: Mutex<Option<HostedError>>,
     mint_delay: Duration,
+    /// What each mint answers, in order: a provider's name or an error; once
+    /// empty, `fake` (or `openai` with `vendor_url`).
+    grants: Mutex<VecDeque<Result<&'static str, HostedError>>>,
+    /// The providers each mint was told.
+    mints: Mutex<Vec<Vec<String>>>,
     provider: Arc<FakeProvider>,
+    /// A second fake, on the same wires: the backup.
+    backup: Arc<FakeProvider>,
     /// A vendor-protocol socket to mint instead of the fake one.
     vendor_url: Mutex<Option<String>>,
     /// Conductor's memory (F-CN-06): on or off, the facts, how often the
@@ -97,6 +130,8 @@ struct Host {
     views: Mutex<Vec<CallView>>,
     records: Mutex<Vec<CallRecord>>,
     speaker: Arc<FakeSpeaker>,
+    /// F-CN-09's hooks, in order.
+    hooks: Mutex<Vec<&'static str>>,
 }
 
 impl Host {
@@ -108,10 +143,10 @@ impl Host {
                 now: AtomicI64::new(1_000_000),
                 mint: Mutex::new(None),
                 mint_delay: Duration::ZERO,
-                provider: Arc::new(FakeProvider {
-                    delay: connect_delay,
-                    wires,
-                }),
+                grants: Mutex::new(VecDeque::new()),
+                mints: Mutex::new(Vec::new()),
+                provider: FakeProvider::new(connect_delay, wires.clone()),
+                backup: FakeProvider::new(connect_delay, wires),
                 vendor_url: Mutex::new(None),
                 memory_on: Mutex::new(false),
                 facts: Mutex::new(Vec::new()),
@@ -125,6 +160,7 @@ impl Host {
                 views: Mutex::new(Vec::new()),
                 records: Mutex::new(Vec::new()),
                 speaker: Arc::new(FakeSpeaker::default()),
+                hooks: Mutex::new(Vec::new()),
             }),
             rx,
         )
@@ -181,15 +217,26 @@ impl ToolHost for Host {
 
 #[async_trait]
 impl CallHost for Host {
-    async fn mint(&self, _voice: Option<&str>) -> Result<SessionGrant, HostedError> {
+    async fn mint(&self, req: &SessionRequest) -> Result<SessionGrant, HostedError> {
         tokio::time::sleep(self.mint_delay).await;
+        let n = {
+            let mut mints = self.mints.lock();
+            mints.push(req.providers.clone());
+            mints.len()
+        };
         if let Some(e) = self.mint.lock().clone() {
             return Err(e);
         }
         let vendor = self.vendor_url.lock().clone();
+        let scripted = self.grants.lock().pop_front();
+        let provider = match scripted {
+            Some(answer) => answer?,
+            None if vendor.is_some() => "openai",
+            None => "fake",
+        };
         Ok(SessionGrant {
-            session_id: "vs_1".into(),
-            provider: if vendor.is_some() { "openai" } else { "fake" }.into(),
+            session_id: format!("vs_{n}"),
+            provider: provider.into(),
             ephemeral_token: "rt_mock_token".into(),
             ws_url: vendor.unwrap_or_else(|| "ws://mock/realtime".into()),
             expires_at: "2026-10-10T00:30:00Z".into(),
@@ -219,9 +266,13 @@ impl CallHost for Host {
     fn provider(&self, name: &str) -> Option<Arc<dyn RealtimeProvider>> {
         match name {
             "fake" => Some(self.provider.clone() as Arc<dyn RealtimeProvider>),
+            "backup" => Some(self.backup.clone() as Arc<dyn RealtimeProvider>),
             "openai" => Some(Arc::new(crate::realtime::openai::OpenAiRealtime)),
             _ => None,
         }
+    }
+    fn providers(&self) -> &'static [&'static str] {
+        &["fake", "backup", "openai"]
     }
     fn mic_start(&self, tx: mpsc::UnboundedSender<MicEvent>) -> Result<(), String> {
         *self.mic.lock() = Some(tx);
@@ -244,6 +295,15 @@ impl CallHost for Host {
     fn emit_level(&self, _level: f32) {}
     async fn record(&self, record: CallRecord) {
         self.records.lock().push(record);
+    }
+    fn call_started(&self) {
+        self.hooks.lock().push("started");
+    }
+    fn call_ended(&self) {
+        self.hooks.lock().push("ended");
+    }
+    fn act_answered(&self) {
+        self.hooks.lock().push("answered");
     }
     async fn remember(&self, fact: &str) -> Result<(), RememberRefusal> {
         *self.remember_calls.lock() += 1;
@@ -279,6 +339,7 @@ fn timing() -> CallTiming {
         receipt: Duration::from_millis(50),
         warn_before: Duration::from_secs(120),
         quiet: Duration::from_secs(120),
+        ready: Duration::from_secs(5),
         exec: quick(),
     }
 }
@@ -392,6 +453,31 @@ async fn f_cn_01_1_a_65_second_call_settles_140_credits() {
     ));
     // The receipt clears after its 3 s (shortened here).
     until("idle", || host.last().phase == CallPhase::Idle).await;
+}
+
+#[tokio::test]
+async fn f_cn_09_an_act_answers_only_after_all_its_rounds_and_a_call_resets_at_both_ends() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    // Two rounds of tools in one act, then the say.
+    host.script(vec![
+        calls(&[("get_setting", json!({"key": "theme"}))]),
+        calls(&[("get_setting", json!({"key": "theme"}))]),
+    ]);
+    let (c, wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    assert_eq!(host.hooks.lock().clone(), vec!["started"]);
+    wire.to_app
+        .send(act("fc1", "what's the theme"))
+        .await
+        .expect("send");
+    until("the act answered", || host.hooks.lock().len() == 2).await;
+    assert_eq!(host.act_requests.lock().len(), 3, "three rounds");
+    assert_eq!(host.hooks.lock().clone(), vec!["started", "answered"]);
+    c.end();
+    until("ended", || host.last().phase == CallPhase::Ended).await;
+    assert_eq!(
+        host.hooks.lock().clone(),
+        vec!["started", "answered", "ended"]
+    );
 }
 
 #[tokio::test]
@@ -545,6 +631,235 @@ async fn f_cn_01_startup_errors_are_shown() {
     assert_eq!(host.last().phase, CallPhase::Error);
     c.end();
     assert_eq!(host.last().phase, CallPhase::Idle);
+}
+
+#[tokio::test]
+async fn f_cn_01_a_country_the_voice_service_cant_serve_is_said_plainly_and_not_retried() {
+    // The API's free Gemini can't take calls from the EEA, Switzerland or
+    // the UK, and with no backup it says so (D-1018).
+    let (host, _wires) = Host::new(Duration::ZERO);
+    host.grants.lock().push_back(Err(HostedError::NotInRegion));
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Palette);
+    until("the error", || host.last().phase == CallPhase::Error).await;
+    let error = host.last().error.expect("an error");
+    assert_eq!(error.code, CallErrorCode::NotInRegion);
+    assert_eq!(
+        error.message,
+        "Conductor's voice isn't available in your country yet."
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(host.mints.lock().len(), 1, "no other session asked for");
+    assert!(host.settles.lock().is_empty(), "nothing was minted");
+    assert!(!*host.mic_owned.lock());
+}
+
+#[test]
+fn f_cn_01_the_session_request_names_the_providers_the_call_can_open() {
+    let req = SessionRequest {
+        voice: None,
+        providers: vec!["mock".into(), "openai".into(), "gemini".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(&req).expect("json"),
+        json!({"providers": ["mock", "openai", "gemini"]})
+    );
+    let req = SessionRequest {
+        voice: Some("marin".into()),
+        ..req
+    };
+    assert_eq!(serde_json::to_value(&req).expect("json")["voice"], "marin");
+}
+
+/// D-1017: a talker that closes at its setup, as a free tier over its limits
+/// may, is settled at 0 s, and the API is asked again without it.
+#[tokio::test]
+async fn f_cn_01_a_talker_that_closes_at_setup_falls_back_to_the_next_provider() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.provider.ready.lock() = false;
+    host.grants.lock().extend([Ok("fake"), Ok("backup")]);
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Button);
+    until("the mic is on", || host.mic.lock().is_some()).await;
+    host.speak(1_000); // early speech, for whichever talker answers
+    let mut first = tokio::time::timeout(Duration::from_secs(5), wires.recv())
+        .await
+        .expect("the first talker opens")
+        .expect("wire");
+    assert!(matches!(
+        first.from_app.recv().await,
+        Some(ClientEvent::Configure { .. })
+    ));
+    first
+        .to_app
+        .send(ServerEvent::Error(
+            "the service closed the socket (1011): quota".into(),
+        ))
+        .await
+        .expect("send");
+    first.to_app.send(ServerEvent::Closed).await.expect("send");
+    let mut second = tokio::time::timeout(Duration::from_secs(5), wires.recv())
+        .await
+        .expect("the backup opens")
+        .expect("wire");
+    until("listening", || host.last().phase == CallPhase::Listening).await;
+    assert_eq!(host.settles.lock().clone(), vec![("vs_1".to_string(), 0)]);
+    assert_eq!(
+        host.mints.lock().clone(),
+        vec![vec!["fake", "backup", "openai"], vec!["backup", "openai"]]
+    );
+    assert_eq!(host.last().call_id.as_deref(), Some("vs_2"));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let (events, audio) = drain(&mut second);
+    assert!(matches!(
+        events.first(),
+        Some(ClientEvent::Configure { .. })
+    ));
+    let expected = SAMPLE_RATE as i64;
+    assert!(
+        (audio as i64 - expected).abs() <= 4,
+        "the early speech went to the backup: {audio} of {expected}"
+    );
+    assert!(
+        drain(&mut first).0.is_empty(),
+        "nothing more went to the talker that closed"
+    );
+    assert!(
+        host.views.lock().iter().all(|v| v.error.is_none()),
+        "no error shown"
+    );
+    c.end();
+    until("ended", || host.last().phase == CallPhase::Ended).await;
+    assert_eq!(
+        host.settles
+            .lock()
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["vs_1", "vs_2"]
+    );
+}
+
+#[tokio::test]
+async fn f_cn_01_a_talker_that_refuses_the_handshake_falls_back() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.provider.refuse.lock() = true;
+    host.grants.lock().extend([Ok("fake"), Ok("backup")]);
+    let (_c, _wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+    assert_eq!(*host.provider.opened.lock(), 1);
+    assert_eq!(host.settles.lock().clone(), vec![("vs_1".to_string(), 0)]);
+    assert_eq!(
+        host.mints.lock().clone(),
+        vec![vec!["fake", "backup", "openai"], vec!["backup", "openai"]]
+    );
+    assert_eq!(host.last().call_id.as_deref(), Some("vs_2"));
+}
+
+#[tokio::test]
+async fn f_cn_01_a_talker_that_never_says_ready_falls_back_in_time() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.provider.ready.lock() = false;
+    host.grants.lock().extend([Ok("fake"), Ok("backup")]);
+    let c = CallController::new(
+        host.clone(),
+        CallTiming {
+            ready: Duration::from_millis(200),
+            ..timing()
+        },
+    );
+    c.start(CallOrigin::Button);
+    // Open, but silent: it never answers the configuration.
+    let _silent = wires.recv().await.expect("the first talker opens");
+    let _backup = tokio::time::timeout(Duration::from_secs(5), wires.recv())
+        .await
+        .expect("the backup opens")
+        .expect("wire");
+    until("listening", || host.last().phase == CallPhase::Listening).await;
+    assert_eq!(host.settles.lock().clone(), vec![("vs_1".to_string(), 0)]);
+    assert_eq!(host.last().call_id.as_deref(), Some("vs_2"));
+}
+
+#[tokio::test]
+async fn f_cn_01_when_every_provider_fails_the_error_shows_and_each_session_is_settled() {
+    let (host, _wires) = Host::new(Duration::ZERO);
+    *host.provider.refuse.lock() = true;
+    *host.backup.refuse.lock() = true;
+    // Told only `openai`, which it doesn't have, the API mints nothing (503).
+    host.grants.lock().extend([
+        Ok("fake"),
+        Ok("backup"),
+        Err(HostedError::Other("server error 503".into())),
+    ]);
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Button);
+    until("the error", || host.last().phase == CallPhase::Error).await;
+    assert_eq!(
+        host.last().error.map(|e| e.code),
+        Some(CallErrorCode::ConnectFailed)
+    );
+    assert_eq!(
+        host.settles.lock().clone(),
+        vec![("vs_1".to_string(), 0), ("vs_2".to_string(), 0)]
+    );
+    assert_eq!(
+        host.mints.lock().clone(),
+        vec![
+            vec!["fake", "backup", "openai"],
+            vec!["backup", "openai"],
+            vec!["openai"]
+        ]
+    );
+    assert!(!*host.mic_owned.lock());
+    assert!(!c.is_live());
+}
+
+#[tokio::test]
+async fn f_cn_01_an_api_that_ignores_the_list_gets_no_second_try_at_the_same_talker() {
+    let (host, _wires) = Host::new(Duration::ZERO);
+    *host.provider.refuse.lock() = true;
+    // An API from before D-1013 answers with its one provider again.
+    host.grants.lock().extend([Ok("fake"), Ok("fake")]);
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Button);
+    until("the error", || host.last().phase == CallPhase::Error).await;
+    assert_eq!(
+        host.last().error.map(|e| e.code),
+        Some(CallErrorCode::ConnectFailed)
+    );
+    assert_eq!(*host.provider.opened.lock(), 1, "one handshake");
+    assert_eq!(
+        host.settles.lock().clone(),
+        vec![("vs_1".to_string(), 0), ("vs_2".to_string(), 0)]
+    );
+    assert_eq!(host.mints.lock().len(), 2);
+}
+
+#[tokio::test]
+async fn f_cn_01_hanging_up_while_a_talker_fails_asks_for_no_other_session() {
+    let (host, mut wires) = Host::new(Duration::ZERO);
+    *host.provider.ready.lock() = false;
+    host.grants.lock().extend([Ok("fake"), Ok("backup")]);
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Button);
+    let first = tokio::time::timeout(Duration::from_secs(5), wires.recv())
+        .await
+        .expect("the first talker opens")
+        .expect("wire");
+    c.end();
+    until("idle", || {
+        host.last().phase == CallPhase::Idle && !c.is_live()
+    })
+    .await;
+    first.to_app.send(ServerEvent::Closed).await.expect("send");
+    until("settled", || !host.settles.lock().is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(host.settles.lock().clone(), vec![("vs_1".to_string(), 0)]);
+    assert_eq!(host.mints.lock().len(), 1);
+    assert_eq!(*host.backup.opened.lock(), 0);
+    assert!(
+        host.views.lock().iter().all(|v| v.error.is_none()),
+        "no late error"
+    );
 }
 
 #[tokio::test]

@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { create } from "zustand";
-import type { DashboardItem, FileDiff, IpcError, SecondOpinion, WorkspaceSummary } from "@tandem/protocol";
+import type {
+  DashboardItem,
+  FileDiff,
+  ImportedComment,
+  ImportedComments,
+  IpcError,
+  SecondOpinion,
+  WorkspaceSummary,
+} from "@tandem/protocol";
 import {
   Button,
   DiffView,
@@ -15,13 +23,21 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
+import { useWorktrees } from "../../stores/worktrees";
 import { useEngines } from "../../stores/engines";
 import { switchMode } from "../shell/actions";
 import { useThreads } from "../../stores/threads";
 
 /** One review comment on a worktree's diff (F-WT-02). A General one (a
- * second opinion's lines that aren't on a shown line, F-WT-05) has no line. */
-export type ReviewComment = DiffLineTarget & { id: number; comment: string; general?: boolean };
+ * second opinion's lines that aren't on a shown line, F-WT-05) has no line.
+ * `imported` when it came from the pull request (F-WT-08): someone else's
+ * text, so the prompt carries the core's fenced copy, not the words. */
+export type ReviewComment = DiffLineTarget & {
+  id: number;
+  comment: string;
+  general?: boolean;
+  imported?: { id: string; author: string; fenced: string };
+};
 
 const QUOTE_MAX = 200;
 
@@ -46,19 +62,22 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
   const sorted = [...comments].sort(byPlace);
   const n = sorted.length;
   const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
+  const indent = (text: string) =>
+    text
+      .split("\n")
+      .map((l) => `   ${l}`)
+      .join("\n");
   const items = sorted.map((c, i) => {
+    // An imported comment's place and words are GitHub's: the core's
+    // fenced copy carries both, and nothing of it goes outside the fence.
+    if (c.imported) return `${i + 1}. Imported review comment:\n${indent(c.imported.fenced)}`;
     const where = c.general
       ? "General"
       : c.side === "new"
         ? `${c.path}:${c.line}`
         : `${c.path} (removed line ${c.line})`;
-    const body = c.comment
-      .trim()
-      .split("\n")
-      .map((l) => `   ${l}`)
-      .join("\n");
     const q = quote(c.text);
-    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${body}`;
+    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(c.comment.trim())}`;
   });
   return `${head}\n\n${items.join("\n\n")}\n\nAddress each comment, then say what you changed.`;
 }
@@ -71,6 +90,11 @@ type ReviewsState = {
   edit: (laneId: string, id: number, comment: string) => void;
   remove: (laneId: string, id: number) => void;
   clear: (laneId: string) => void;
+  /** F-WT-08: pull request comment ids each worktree has imported, sent
+   * or removed since: importing again never brings them back. */
+  importedIds: Record<string, string[]>;
+  /** F-WT-08: the pull request's comments not imported yet; how many. */
+  addImported: (laneId: string, list: ImportedComment[]) => number;
   /** F-WT-05: a second opinion's comments, after the user's own. */
   addOpinion: (op: SecondOpinion) => void;
   /** F-WT-05: the reviewer running per worktree. */
@@ -81,6 +105,7 @@ type ReviewsState = {
 export const useReviews = create<ReviewsState>((set, get) => ({
   byLane: {},
   next: 1,
+  importedIds: {},
   add: (laneId, target, comment) => {
     const id = get().next;
     const list = get().byLane[laneId] ?? [];
@@ -99,6 +124,27 @@ export const useReviews = create<ReviewsState>((set, get) => ({
     const byLane = { ...get().byLane };
     delete byLane[laneId];
     set({ byLane });
+  },
+  addImported: (laneId, list) => {
+    const seen = get().importedIds[laneId] ?? [];
+    const have = new Set(seen);
+    const fresh = list.filter((c) => !have.has(c.id));
+    let next = get().next;
+    const added: ReviewComment[] = fresh.map((c) => ({
+      id: next++,
+      path: c.path,
+      line: c.line,
+      side: c.side === "old" ? "old" : "new",
+      text: "",
+      comment: c.body,
+      imported: { id: c.id, author: c.author, fenced: c.fenced },
+    }));
+    set({
+      next,
+      byLane: { ...get().byLane, [laneId]: [...(get().byLane[laneId] ?? []), ...added] },
+      importedIds: { ...get().importedIds, [laneId]: [...seen, ...fresh.map((c) => c.id)] },
+    });
+    return added.length;
   },
   addOpinion: (op) => {
     let id = get().next;
@@ -124,6 +170,25 @@ export const useReviews = create<ReviewsState>((set, get) => ({
   },
 }));
 
+/** "Import review comments" (F-WT-08): the pull request's line comments
+ * into the review bar, through the user's gh. */
+export async function importReviewComments(
+  laneId: string,
+): Promise<{ added: number; outdated: number; cut: number } | { error: IpcError }> {
+  try {
+    // The ids imported before go along, so the cap counts only new ones.
+    const seen = useReviews.getState().importedIds[laneId] ?? [];
+    const got = await invoke<ImportedComments>("lane_review_comments", { laneId, seen });
+    return {
+      added: useReviews.getState().addImported(laneId, got.comments),
+      outdated: got.outdated,
+      cut: got.cut,
+    };
+  } catch (e) {
+    return { error: e as IpcError };
+  }
+}
+
 /** Opens a thread in Thread mode (the reviewer's, F-WT-05). */
 export function openThread(threadId: string): void {
   switchMode("thread");
@@ -137,7 +202,7 @@ export function worktreeAgents(items: Record<string, DashboardItem>, laneId: str
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function agentName(i: DashboardItem): string {
+export function agentName(i: DashboardItem): string {
   return i.humanName ?? i.engineLabel ?? i.title ?? i.key;
 }
 
@@ -219,6 +284,25 @@ export function ReviewDiff({
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
   const chosen = agents.find((a) => a.key === target) ?? agents[0] ?? null;
+  // F-WT-08: once its repository is allowed and it has a pull request.
+  const pr = useWorktrees((s) => (s.checks[wt.id]?.state === "ready" ? s.checks[wt.id]?.pr : null));
+  const [importing, setImporting] = useState(false);
+  const doImport = async () => {
+    setImporting(true);
+    const out = await importReviewComments(wt.id);
+    setImporting(false);
+    if ("error" in out)
+      show({ tone: "error", title: t("worktree.review.importFailed", { reason: out.error.message }) });
+    else {
+      const left = [
+        out.outdated > 0 ? t("worktree.review.importOutdated", { n: out.outdated }) : null,
+        out.cut > 0 ? t("worktree.review.importCut", { n: out.cut }) : null,
+      ].filter((x): x is string => x !== null);
+      const body = left.length > 0 ? left.join(" ") : undefined;
+      if (out.added === 0) show({ title: t("worktree.review.importedNone"), body });
+      else show({ tone: "success", title: t("worktree.review.imported", { n: out.added }), body });
+    }
+  };
 
   const save = () => {
     if (!editing || editing.text.trim().length === 0) return;
@@ -227,26 +311,45 @@ export function ReviewDiff({
     setEditing(null);
   };
 
-  const annotations: Record<string, React.ReactNode> = {};
+  // Several comments can share a line (an imported thread).
+  const byLine: Record<string, React.ReactNode[]> = {};
   const general = comments.filter((c) => c.general);
   for (const c of comments) {
     if (editing?.id === c.id || c.general) continue;
-    annotations[diffLineKey(c)] = (
-      <div data-testid="review-comment" data-line={diffLineKey(c)} className="flex items-start gap-2 text-sm">
-        <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">{c.comment}</p>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}
-        >
-          {t("worktree.review.edit")}
-        </Button>
+    (byLine[diffLineKey(c)] ??= []).push(
+      <div
+        key={c.id}
+        data-testid="review-comment"
+        data-line={diffLineKey(c)}
+        data-imported={c.imported ? "true" : undefined}
+        className="flex items-start gap-2 text-sm"
+      >
+        <p className="min-w-0 flex-1 whitespace-pre-wrap text-fg">
+          {c.imported ? (
+            <span className="mr-1 font-medium text-fg-muted">
+              {t("worktree.review.importedBy", { author: c.imported.author })}
+            </span>
+          ) : null}
+          {c.comment}
+        </p>
+        {!c.imported && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditing({ target: c, id: c.id, text: c.comment })}
+          >
+            {t("worktree.review.edit")}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={() => remove(wt.id, c.id)}>
           {t("worktree.review.remove")}
         </Button>
-      </div>
+      </div>,
     );
   }
+  const annotations: Record<string, React.ReactNode> = {};
+  for (const [key, nodes] of Object.entries(byLine))
+    annotations[key] = nodes.length === 1 ? nodes[0] : <div className="flex flex-col gap-1">{nodes}</div>;
   const editor = editing && (
     <CommentEditor
       value={editing.text}
@@ -286,6 +389,19 @@ export function ReviewDiff({
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
+      {pr ? (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={importing}
+            onClick={() => void doImport()}
+            data-testid="review-import"
+          >
+            {t("worktree.review.import", { n: pr.number })}
+          </Button>
+        </div>
+      ) : null}
       {onSecondOpinion && (
         <div className="flex justify-end">
           <Button
@@ -336,7 +452,11 @@ export function ReviewDiff({
               line: tg.line,
             }),
           onComment: (tg) => {
-            const existing = comments.find((c) => diffLineKey(c) === diffLineKey(tg));
+            // Imported comments aren't edited (the prompt sends GitHub's
+            // fenced copy); a click on their line starts the user's own.
+            const existing = comments.find(
+              (c) => !c.imported && !c.general && diffLineKey(c) === diffLineKey(tg),
+            );
             setEditing(
               existing
                 ? { target: existing, id: existing.id, text: existing.comment }

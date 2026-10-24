@@ -31,6 +31,8 @@ export type Limits = {
   creditPacks: boolean;
   /** The dictionary syncs across devices (F-DI-09). */
   dictionarySync: boolean;
+  /** Full-text search across engine sessions (F-TH-17). */
+  sessionSearch: boolean;
 };
 
 export const LIMITS: Record<Plan, Limits> = {
@@ -53,6 +55,7 @@ export const LIMITS: Record<Plan, Limits> = {
     chatEngines: ["claude", "codex"],
     creditPacks: false,
     dictionarySync: false,
+    sessionSearch: false,
   },
   pro: {
     panes: 64,
@@ -73,6 +76,7 @@ export const LIMITS: Record<Plan, Limits> = {
     chatEngines: null,
     creditPacks: true,
     dictionarySync: true,
+    sessionSearch: true,
   },
   team: {
     panes: null,
@@ -93,6 +97,7 @@ export const LIMITS: Record<Plan, Limits> = {
     chatEngines: null,
     creditPacks: true,
     dictionarySync: true,
+    sessionSearch: true,
   },
 };
 

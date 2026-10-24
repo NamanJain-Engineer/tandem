@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, SegmentedControl, StatusDot, type Status } from "@tandem/ui";
 import { Card, Notice } from "../../components/Panel";
+import { ReviewBody } from "./ReviewBody";
 import { PairingError, PhoneClient, type CommandResult, type ConnectionState } from "@tandem/remote/client";
 import type {
   PhoneAgent,
   PhoneApproval,
   PhoneGrants,
+  PhoneReview,
   PhoneRoutine,
   PhoneSnapshot,
   PhoneThread,
@@ -24,7 +26,7 @@ type Phase =
   | { kind: "revoked" }
   | { kind: "paired" };
 
-type Tab = "agents" | "approvals" | "threads" | "routines";
+type Tab = "agents" | "approvals" | "threads" | "routines" | "review";
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
   idle: "Not connected",
@@ -40,7 +42,13 @@ const POLL_MS = 10_000;
 function deviceLabel(): string {
   const ua = navigator.userAgent;
   const os = /iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : "Phone";
-  const browser = /CriOS|Chrome/.test(ua) ? "Chrome" : /Safari/.test(ua) ? "Safari" : /Firefox/.test(ua) ? "Firefox" : "";
+  const browser = /CriOS|Chrome/.test(ua)
+    ? "Chrome"
+    : /Safari/.test(ua)
+      ? "Safari"
+      : /Firefox/.test(ua)
+        ? "Firefox"
+        : "";
   return browser ? `${os} · ${browser}` : os;
 }
 
@@ -107,7 +115,10 @@ export function RemoteApp({ product }: { product: string }) {
         } catch (err) {
           setPhase({
             kind: "pair_failed",
-            message: err instanceof PairingError ? err.message : "Pairing didn't work. Make a new code and try again.",
+            message:
+              err instanceof PairingError
+                ? err.message
+                : "Pairing didn't work. Make a new code and try again.",
           });
         }
         return;
@@ -147,7 +158,10 @@ export function RemoteApp({ product }: { product: string }) {
           </svg>
           <span className="font-semibold">{product}</span>
           {phase.kind === "paired" && (
-            <span className="ml-auto flex items-center gap-2 text-sm text-fg-muted" data-testid="remote-connection">
+            <span
+              className="ml-auto flex items-center gap-2 text-sm text-fg-muted"
+              data-testid="remote-connection"
+            >
               <StatusDot status={connection === "online" ? "done" : "offline"} size={8} />
               {connection === "online" && desktop ? desktop : CONNECTION_LABEL[connection]}
             </span>
@@ -176,7 +190,9 @@ export function RemoteApp({ product }: { product: string }) {
               <Notice tone="error">{`Your computer refused a message from this phone (${rejected}).`}</Notice>
             )}
             {connection === "replaced" && (
-              <Notice>This pairing is open in another tab or window. Close it there, then reload this page.</Notice>
+              <Notice>
+                This pairing is open in another tab or window. Close it there, then reload this page.
+              </Notice>
             )}
             <SegmentedControl
               label="Remote view"
@@ -184,9 +200,13 @@ export function RemoteApp({ product }: { product: string }) {
               onValueChange={(v) => setTab(v as Tab)}
               items={[
                 { id: "agents", label: "Agents" },
-                { id: "approvals", label: `Approvals${snapshot?.approvals.length ? ` (${snapshot.approvals.length})` : ""}` },
+                {
+                  id: "approvals",
+                  label: `Approvals${snapshot?.approvals.length ? ` (${snapshot.approvals.length})` : ""}`,
+                },
                 { id: "threads", label: "Threads" },
                 { id: "routines", label: "Routines" },
+                { id: "review", label: "Review" },
               ]}
             />
             {snapshotError && <Notice tone="error">{snapshotError}</Notice>}
@@ -195,7 +215,9 @@ export function RemoteApp({ product }: { product: string }) {
             )}
             {snapshot && grants && client.current && (
               <>
-                {tab === "agents" && <Agents agents={snapshot.agents} grants={grants} client={client.current} />}
+                {tab === "agents" && (
+                  <Agents agents={snapshot.agents} grants={grants} client={client.current} />
+                )}
                 {tab === "approvals" && (
                   <Approvals
                     approvals={snapshot.approvals}
@@ -205,9 +227,17 @@ export function RemoteApp({ product }: { product: string }) {
                     onDone={() => void refresh()}
                   />
                 )}
-                {tab === "threads" && <Threads threads={snapshot.threads} grants={grants} client={client.current} />}
+                {tab === "threads" && (
+                  <Threads threads={snapshot.threads} grants={grants} client={client.current} />
+                )}
+                {tab === "review" && <Review client={client.current} rev={snapshot.reviewRev} />}
                 {tab === "routines" && (
-                  <Routines routines={snapshot.routines} grants={grants} client={client.current} onDone={() => void refresh()} />
+                  <Routines
+                    routines={snapshot.routines}
+                    grants={grants}
+                    client={client.current}
+                    onDone={() => void refresh()}
+                  />
                 )}
               </>
             )}
@@ -231,14 +261,22 @@ function PairHelp({ product }: { product: string }) {
         {`On your computer, open ${product} › Settings › Remote and choose Pair a phone. Scan the code with this phone's camera, and this page opens paired.`}
       </p>
       <p className="mt-2 text-sm text-fg-muted">
-        Everything between this phone and your computer is end-to-end encrypted. The relay in between only passes
-        sealed messages along.
+        Everything between this phone and your computer is end-to-end encrypted. The relay in between only
+        passes sealed messages along.
       </p>
     </Card>
   );
 }
 
-function Agents({ agents, grants, client }: { agents: PhoneAgent[]; grants: PhoneGrants; client: PhoneClient }) {
+function Agents({
+  agents,
+  grants,
+  client,
+}: {
+  agents: PhoneAgent[];
+  grants: PhoneGrants;
+  client: PhoneClient;
+}) {
   if (agents.length === 0) return <Notice>No agents are running on your computer.</Notice>;
   return (
     <ul className="flex flex-col gap-3" data-testid="remote-agents">
@@ -303,7 +341,10 @@ function Approvals({
 }) {
   const [message, setMessage] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   async function decide(approvalId: string, decision: "allow" | "deny") {
-    const r = await client.command<{ state: "applied" | "queued" }>("approval.decide", { approvalId, decision });
+    const r = await client.command<{ state: "applied" | "queued" }>("approval.decide", {
+      approvalId,
+      decision,
+    });
     if (!r.ok) setMessage({ tone: "error", text: r.message });
     else if (r.data.state === "queued")
       setMessage({ tone: "info", text: "Sent. It applies once you confirm it on your computer." });
@@ -314,12 +355,14 @@ function Approvals({
     <div className="flex flex-col gap-3">
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
       {!grants.approvals && (
-        <Notice>Answering approvals from this phone is off. Turn it on in Settings › Remote on your computer.</Notice>
+        <Notice>
+          Answering approvals from this phone is off. Turn it on in Settings › Remote on your computer.
+        </Notice>
       )}
       {grants.approvals && !armedUntil && (
         <Notice>
-          Allow waits for you to confirm on your computer, unless it&apos;s armed to accept approvals from this phone.
-          Deny applies at once.
+          Allow waits for you to confirm on your computer, unless it&apos;s armed to accept approvals from
+          this phone. Deny applies at once.
         </Notice>
       )}
       {approvals.length === 0 && <Notice>Nothing is waiting for you.</Notice>}
@@ -328,7 +371,9 @@ function Approvals({
           <li key={a.id} className="rounded-md border border-border bg-surface-2 p-4">
             <p className="font-medium">{a.summary}</p>
             <p className="mt-1 text-sm text-fg-muted">{a.source}</p>
-            {a.detail && <pre className="mt-2 whitespace-pre-wrap font-mono text-sm text-fg-muted">{a.detail}</pre>}
+            {a.detail && (
+              <pre className="mt-2 whitespace-pre-wrap font-mono text-sm text-fg-muted">{a.detail}</pre>
+            )}
             {a.queued ? (
               <div className="mt-3">
                 <Badge variant="waiting">Waiting for you on your computer</Badge>
@@ -366,17 +411,24 @@ function Routines({
   const [message, setMessage] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   async function run(r: PhoneRoutine) {
     const res = await client.command("routine.run_now", { routineId: r.id });
-    setMessage(res.ok ? { tone: "info", text: `${r.name} is running.` } : { tone: "error", text: res.message });
+    setMessage(
+      res.ok ? { tone: "info", text: `${r.name} is running.` } : { tone: "error", text: res.message },
+    );
     onDone();
   }
   return (
     <div className="flex flex-col gap-3">
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
       {!grants.routines && (
-        <Notice>Running routines from this phone is off. Turn it on in Settings › Remote on your computer.</Notice>
+        <Notice>
+          Running routines from this phone is off. Turn it on in Settings › Remote on your computer.
+        </Notice>
       )}
       {routines.length === 0 && <Notice>No routines on your computer.</Notice>}
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface-2" data-testid="remote-routines">
+      <ul
+        className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface-2"
+        data-testid="remote-routines"
+      >
         {routines.map((r) => (
           <li key={r.id} className="flex items-center gap-2 px-4 py-3">
             <span className="min-w-0 flex-1 truncate">{r.name}</span>
@@ -394,7 +446,15 @@ function Routines({
   );
 }
 
-function Threads({ threads, grants, client }: { threads: PhoneThread[]; grants: PhoneGrants; client: PhoneClient }) {
+function Threads({
+  threads,
+  grants,
+  client,
+}: {
+  threads: PhoneThread[];
+  grants: PhoneGrants;
+  client: PhoneClient;
+}) {
   const [open, setOpen] = useState<PhoneThread | null>(null);
   if (open) return <Transcript thread={open} grants={grants} client={client} onBack={() => setOpen(null)} />;
   if (threads.length === 0) return <Notice>No threads yet.</Notice>;
@@ -402,7 +462,11 @@ function Threads({ threads, grants, client }: { threads: PhoneThread[]; grants: 
     <ul className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface-2">
       {threads.map((t) => (
         <li key={t.id}>
-          <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-left" onClick={() => setOpen(t)}>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-4 py-3 text-left"
+            onClick={() => setOpen(t)}
+          >
             <span className="min-w-0 flex-1 truncate">{t.title}</span>
             {t.teammate && <Badge>Teammate</Badge>}
             <span className="text-sm text-fg-muted">{t.state}</span>
@@ -411,6 +475,32 @@ function Threads({ threads, grants, client }: { threads: PhoneThread[]; grants: 
       ))}
     </ul>
   );
+}
+
+/** F-CN-09: the review item Conductor is on (else the first to review) and
+ * its diff, read only. Approving and merging stay on the computer. */
+function Review({ client, rev }: { client: PhoneClient; rev: number }) {
+  const [review, setReview] = useState<PhoneReview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void client.command<PhoneReview>("review.current").then((r) => {
+      if (!live) return;
+      if (r.ok) {
+        setReview(r.data);
+        setError(null);
+      } else setError(r.message);
+    });
+    return () => {
+      live = false;
+    };
+    // Asked again only when the queue changed on the computer.
+  }, [client, rev]);
+
+  if (error) return <Notice tone="error">{error}</Notice>;
+  if (!review) return <Notice>Loading…</Notice>;
+  return <ReviewBody review={review} />;
 }
 
 function Transcript({
@@ -430,7 +520,10 @@ function Transcript({
 
   const load = useCallback(
     async (before?: number) => {
-      const r = await client.command<PhoneTranscript>("thread.read", before ? { threadId: thread.id, before } : { threadId: thread.id });
+      const r = await client.command<PhoneTranscript>(
+        "thread.read",
+        before ? { threadId: thread.id, before } : { threadId: thread.id },
+      );
       if (!r.ok) {
         setError(r.message);
         return;
@@ -501,7 +594,9 @@ function Transcript({
           </Button>
         </form>
       ) : (
-        <Notice>Sending from this phone is off. Turn on Chat control in Settings › Remote on your computer.</Notice>
+        <Notice>
+          Sending from this phone is off. Turn on Chat control in Settings › Remote on your computer.
+        </Notice>
       )}
     </div>
   );

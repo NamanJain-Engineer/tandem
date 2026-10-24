@@ -35,8 +35,39 @@ Checked against each vendor's documentation on 15 October 2026. Any other engine
 
 A personal file that git ignores, such as `CLAUDE.local.md`, doesn't reach new worktrees on its own. The panel marks it **Not in new worktrees**, and **Copy into worktrees** adds it to the folder's worktree setup (`.vibezeo/worktree.json`). That changes only the list of copied files; any setup commands keep the trust they had.
 
+## Versions and updates
+
+**Settings › Engines** shows each installed engine's version and how it was installed: npm, Homebrew, its own installer, or another way. Vibezeo works this out from where the engine's command leads on disk. Claude Code updates itself when it was installed with npm or its own installer, and its row says **Updates itself**.
+
+- **Check for updates** in an engine's details asks npm for the newest version, only when you click it, and only for an engine installed with npm. Vibezeo never checks in the background. For other install methods it shows the command that updates the engine.
+- **Pin this version** starts new panes of the engine with the engine's own documented switch: `DISABLE_AUTOUPDATER=1` for Claude Code, and `-c check_for_update_on_startup=false` for Codex. Panes that are already open don't change. Engines without a documented switch don't offer Pin.
+- Vibezeo remembers the versions it has seen and the last one that finished a Thread turn without an error. If an engine updates and Thread turns on this computer then fail because the engine itself broke (it won't start, or it crashes mid-turn; not an error it reports, such as being offline or signed out), the Engines page and the thread say so, for example "Codex updated from 1.2.0 to 1.3.0, and threads have failed since."
+- **Roll back to 1.2.0…** shows the command that installs that version the same way, such as `npm install -g @openai/codex@1.2.0`, before anything runs. You can run it in a terminal pane on this computer you can watch, or copy it. Homebrew installs and other methods don't offer a rollback.
+
+**Running in the background** lists your own processes of an installed engine that have no terminal and weren't started by Vibezeo, such as a daemon left behind. It shows the engine's name, and its subcommand when it's a known one, never the rest of its command line. A process in a terminal, Vibezeo's or yours, and other users' processes are never listed. **Stop** asks first, then asks the process to end, if it's still the same process. This list is available on macOS and Linux.
+
 ## Platforms
 
 Generated from the release on the [download page](/download/).
 
 <PlatformMatrix />
+
+## Sandbox agent panes (Linux)
+
+**Settings › Engines › Sandbox agent panes › Workspace** runs each new agent pane's engine in a sandbox, whichever engine it is:
+
+- It writes only to the pane's folder, its repository's git data (so commits work), the engine's own home in Vibezeo and `/tmp`. Everything else on the computer is read-only.
+- It can't read the files in `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`, `~/.netrc` or `~/.local/share/keyrings`, Vibezeo's own data (its database of every project's threads, your other engine accounts, your teammates) or the repository's other worktrees: those folders read as empty.
+- Git's hooks folder and `.git/config` stay read-only, so an agent can't plant a hook that runs later outside the sandbox. That's the repository's `.git/hooks` (for a worktree too, whose hooks live in the main checkout's `.git`), even when it doesn't exist yet, and the folder `core.hooksPath` names.
+- It keeps the network, which engines need to reach their models.
+
+What it doesn't cover:
+
+- Programs already running for you that answer over a socket: a running `ssh-agent` or `gpg-agent`, and your desktop keyring while it's unlocked. An agent can't read your key files, but it can ask these to use them, as any program you run can.
+- Scripts a hook calls from elsewhere in the folder, as some hook managers do: they're ordinary files in the folder, so an agent can change them, and the change shows in your diff.
+
+The engine signs in by itself as always; the sandbox only narrows what it can reach, and Vibezeo never reads the engine's credentials. A pane that runs sandboxed shows **Sandboxed** in its header. A write the sandbox refuses reaches the engine as a "Read-only file system" error.
+
+It uses bubblewrap (the `bwrap` command), which Vibezeo never installs: install it with your package manager (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`). Without it, or where it can't run, the setting says why and Workspace can't be chosen. If it stops working after you turned it on, agent panes start without it: their header says **Not sandboxed** with the reason, and you get one notification.
+
+Claude Code, Codex and OpenCode run sandboxed. Engines that keep their sign-in in your own home folder (Cursor Agent, Gemini CLI, Copilot CLI and the rest) start outside the sandbox for now, with **Not sandboxed** saying why: inside it, your home is read-only, so their sign-in would fail. The pane's shell stays outside the sandbox. Panes on SSH hosts and in WSL aren't sandboxed, and macOS and Windows don't have it yet.

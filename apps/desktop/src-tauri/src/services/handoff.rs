@@ -262,6 +262,65 @@ pub fn slug_source(brief: &str) -> String {
         .unwrap_or_else(|| "handoff".into())
 }
 
+/// The fallback brief for a session's text: its last lines, redacted
+/// (§6.11 strategy 3; the session library's Continue, F-TH-17).
+pub fn fallback_brief(session: &str) -> String {
+    let session = tandem_core::redact::redact(session);
+    handoff::fallback(&handoff::last_lines(&session, FALLBACK_LINES), None)
+}
+
+/// The target engine is known and installed, and the plan has room for
+/// one more live pane.
+pub fn check_target(state: &AppState, engine_id: &str) -> Result<(), IpcError> {
+    let engines = &state.terminals.engines;
+    let engine = engines
+        .get(engine_id)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No engine with that id"))?;
+    if engines.installed(engine_id).is_none() {
+        return Err(IpcError::new(
+            ErrorCode::EngineMissing,
+            format!("{} isn't installed", engine.label),
+        ));
+    }
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)
+}
+
+/// Opens the target engine in `tab`, in `cwd`, and types the brief as its
+/// first prompt once it's live (F-CD-16; the session library's Continue,
+/// F-TH-17).
+pub async fn open_target(
+    state: &AppState,
+    tab: &TabId,
+    cwd: String,
+    engine_id: &str,
+    account: Option<AccountId>,
+    brief: &str,
+) -> Result<PaneRecord, IpcError> {
+    let target = create_pane(
+        state,
+        tab,
+        "agent",
+        Some(cwd),
+        Some(engine_id.to_string()),
+        account,
+    )
+    .await?;
+    let prompt = deliver(brief, state.data.root(), &target.id)?;
+    let terminals = state.terminals.clone();
+    let id = target.id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = terminals
+            .type_prompt_when_live(&id, &prompt, FIRST_PROMPT_WAIT)
+            .await
+        {
+            tracing::warn!(code = "handoff.prompt", error = %e.message, "handoff brief not sent");
+        }
+    });
+    Ok(target)
+}
+
 /// `handoff_start`: opens the target with the (possibly edited) brief.
 #[allow(clippy::too_many_arguments)]
 pub async fn start(
@@ -278,19 +337,7 @@ pub async fn start(
         return Err(IpcError::new(ErrorCode::Invalid, "Write a summary first"));
     }
     let source = panes::get_open(&state.store, pane).await?;
-    let engines = &state.terminals.engines;
-    let engine = engines
-        .get(engine_id)
-        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "No engine with that id"))?;
-    if engines.installed(engine_id).is_none() {
-        return Err(IpcError::new(
-            ErrorCode::EngineMissing,
-            format!("{} isn't installed", engine.label),
-        ));
-    }
-    state
-        .terminals
-        .check_live_limit(state.entitlements.limits().panes)?;
+    check_target(state, engine_id)?;
     let (home, tab) = match place {
         HandoffPlace::Same => (
             workspaces::get(&state.store, &source.workspace_id).await?,
@@ -314,26 +361,7 @@ pub async fn start(
             (lane, tab.id)
         }
     };
-    let target = create_pane(
-        state,
-        &tab,
-        "agent",
-        Some(home.root.clone()),
-        Some(engine_id.to_string()),
-        account,
-    )
-    .await?;
-    let prompt = deliver(brief, state.data.root(), &target.id)?;
-    let terminals = state.terminals.clone();
-    let id = target.id.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = terminals
-            .type_prompt_when_live(&id, &prompt, FIRST_PROMPT_WAIT)
-            .await
-        {
-            tracing::warn!(code = "handoff.prompt", error = %e.message, "handoff brief not sent");
-        }
-    });
+    let target = open_target(state, &tab, home.root.clone(), engine_id, account, brief).await?;
     let source_closed = close_source && close_pane(state, pane).await.is_ok();
     tracing::info!(code = "handoff.start", place = ?place, "handed off");
     Ok(HandoffResult {

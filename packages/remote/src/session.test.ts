@@ -53,10 +53,24 @@ describe("F-RM-05 pairing links", () => {
 
   it("F-RM-04.6 connects to wss:// anywhere but ws:// only on a private network or VPN", () => {
     expect(relayAllowed("wss://api.vibezeo.com/v1/relay/pr_x")).toBe(true);
-    for (const ok of ["ws://192.168.1.20:47800/v1/relay/pr_x", "ws://10.0.0.2:1/x", "ws://172.20.1.1:1/x", "ws://100.100.1.1:1/x", "ws://127.0.0.1:1/x"]) {
+    for (const ok of [
+      "ws://192.168.1.20:47800/v1/relay/pr_x",
+      "ws://10.0.0.2:1/x",
+      "ws://172.20.1.1:1/x",
+      "ws://100.100.1.1:1/x",
+      "ws://127.0.0.1:1/x",
+    ]) {
       expect(relayAllowed(ok), ok).toBe(true);
     }
-    for (const bad of ["ws://8.8.8.8:1/x", "ws://example.com:1/x", "ws://172.32.0.1:1/x", "ws://100.128.0.1:1/x", "http://192.168.1.2/x", "demo://x", "nonsense"]) {
+    for (const bad of [
+      "ws://8.8.8.8:1/x",
+      "ws://example.com:1/x",
+      "ws://172.32.0.1:1/x",
+      "ws://100.128.0.1:1/x",
+      "http://192.168.1.2/x",
+      "demo://x",
+      "nonsense",
+    ]) {
       expect(relayAllowed(bad), bad).toBe(false);
     }
   });
@@ -113,6 +127,21 @@ describe("F-RM-05 demo mode", () => {
     session.stop();
   });
 
+  it("F-CN-09.5 the Review tab reads the current item and its diff, and nothing more", async () => {
+    const { session } = await demoSession();
+    const r = await session.reviewCurrent();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.item?.title).toBe("Ada");
+    expect(r.data.item?.risks.map((x) => x.rule)).toEqual(["auth"]);
+    expect(r.data.files.map((f) => f.path)).toEqual(["src/auth/session.ts", "src/auth/session.test.ts"]);
+    // The phone has no review command that writes.
+    expect(
+      Object.getOwnPropertyNames(Object.getPrototypeOf(session)).filter((n) => /approve|merge/i.test(n)),
+    ).toEqual([]);
+    session.stop();
+  });
+
   it("F-RM-05.3 a finished agent and a new approval become notices", async () => {
     const notices: Notice[] = [];
     const { desktop, session } = await demoSession(notices);
@@ -134,7 +163,10 @@ describe("F-RM-05 demo mode", () => {
 
   it("F-RM-05.2 demo mode reaches only the demo computer", async () => {
     const desktop = new DemoDesktop();
-    const session = new RemoteSession(new MemoryPairingStore(), { socketFactory: desktop.socketFactory(), demo: true });
+    const session = new RemoteSession(new MemoryPairingStore(), {
+      socketFactory: desktop.socketFactory(),
+      demo: true,
+    });
     await session.start();
     expect(await session.pair(LINK)).toBe(false);
   });
@@ -145,7 +177,10 @@ describe("F-RM-05.3 notices", () => {
     const desktop = new DemoDesktop();
     const snap = desktop.snapshot();
     expect(noticesBetween(null, snap)).toEqual([]);
-    const next = { ...snap, approvals: [...snap.approvals, { ...snap.approvals[0]!, id: "ap_x", queued: true }] };
+    const next = {
+      ...snap,
+      approvals: [...snap.approvals, { ...snap.approvals[0]!, id: "ap_x", queued: true }],
+    };
     expect(noticesBetween(snap, next)).toEqual([]);
   });
 });

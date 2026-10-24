@@ -30,6 +30,9 @@
 //! `/context <tokens>` (as `claude`) ends a turn whose transcript, under
 //! `$CLAUDE_CONFIG_DIR/projects/`, reports that many context tokens (F-AC-06).
 //!
+//! `/sh <cmd>` runs a shell command and prints its output and exit code
+//! ("sh exit: N"), F-TL-11.
+//!
 //! `/subagents <n>` reports n subagent starts and keeps working for a
 //! minute without reading its input (F-AC-09).
 //!
@@ -805,6 +808,30 @@ fn answer(name: &str, text: &str) -> bool {
         let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
         let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
         out(&format!("{}\r\n", tasks_call(tool.trim(), args)));
+        return true;
+    }
+    // `/sh <cmd>` (F-TL-11): runs a shell command as the engine would, and
+    // prints its output and exit code, so a test sees what the sandbox lets
+    // the engine's process do.
+    if let Some(cmd) = t.strip_prefix("/sh ") {
+        match std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(cmd)
+            .output()
+        {
+            Ok(o) => {
+                let text = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                );
+                for line in text.lines() {
+                    out(&format!("{line}\r\n"));
+                }
+                out(&format!("sh exit: {}\r\n", o.status.code().unwrap_or(-1)));
+            }
+            Err(e) => out(&format!("sh failed: {e}\r\n")),
+        }
         return true;
     }
     // `/subagents <n>` (F-AC-09): reports n subagent starts (PreToolUse of

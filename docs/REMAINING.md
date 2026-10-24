@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.7.2 (15 October). Next is M18 (below): the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.8.0 (18 October), the first M18 release. M18 (below) is the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions: sixteen are done, eight shipped in 0.8.0 and eight more merged in `chain24`. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -35,6 +35,7 @@ download.
    run the full E2E regression and the gate, then merge `product-m0-m5` into
    `main` and check the live site (`docs/OPERATING.md` §6–7).
 2. **Keep the live demo in step with every release.** vibezeo.com/demo (the page) opens /demo/app/: the real desktop interface running in the browser against a simulated core, built with the site (D-126; the Files tab, D-204). Its code is `apps/desktop/src/demo/`: `backend.ts` answers the app's commands, `agent.ts` scripts the agent's turns, `shell.ts` the terminal, `files.ts` the Files tab, `DemoBar.tsx` the strip that says it's a demo. When a release ships something visible in the interface, make it work in the demo too wherever it can be simulated honestly (sample data, no network, no microphone), add a test to `demo.test.ts`, and walk it with `scripts/agent/demo-walkthrough.mjs` before deploying. The demo shows only what the released download does, never more, and always says its agents are simulated.
+   - [ ] 0.9.0's features aren't in the demo yet (D-868): Land worktrees, CI results and review comments back to the agent, the intent radar, engine versions, the session library and the sandbox setting. Each goes in where it can be simulated honestly, such as a scripted landing with its check passing, or a radar overlap between two sample worktrees. They come with `site-motion`'s product scenes, each with a `demo.test.ts` case.
 3. **Close known gaps:**
    - [x] The Free plan's `chatEngines` limit (Claude Code and Codex in Thread
      mode, PRODUCT_SPEC §3.2) is enforced from the entitlement (D-127), and the
@@ -42,9 +43,10 @@ download.
    - Perf items marked [manual] (threads scroll fps, the 2 MB fence, the
      16-pane and startup suites) need the reference machines (`HUMAN_TODO.md`).
    - Six agents' first frames: the bisect blamed D-139's frame holding, fixed
-     in 0.7.1 (~745 ms, as before 0.6.0). The ≤ 300 ms target is still
-     missed: the spawn takes ~38 ms, and the rest is the webview opening six
-     terminals at once (the performance session's open-path work, F-SH-07.7).
+     in 0.7.1. Views on screen now open before a hidden tab's queued views,
+     and the suite counts from the click that shows the tab (D-141): ~2.2 s
+     to the last agent's first output. The ≤ 300 ms target is still missed;
+     next is starting agents' PTYs before their views open (F-SH-07.7).
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a
@@ -235,10 +237,10 @@ The owner's request of 15 October, built on `site-blog` with the elite pass's de
 
 ### M18 · Next features (in progress) · from `docs/NEXT_FEATURES.md`
 The 15 October research ranked 21 features and six bold bets beyond the 165 (evidence in `docs/COMPETITIVE_ANALYSIS.md`). Its top picks are being built, each with its PRODUCT_SPEC entry first, tests from the criteria, an E2E spec (`m18-*.e2e.ts`) and its docs page:
-- Engines (`m16d-teammate-extras`, D-2400 on): [x] F-EN-07 One instructions file for every engine (chain21, D-2400–D-2403) · [x] F-EN-09 Engine catalog refresh (chain23, D-2404–D-2405, D-856) · [ ] F-EN-08 Engine versions and updates under your control · [ ] F-TH-17 Session library across engines · next: F-EN-10, F-EN-11 (D-2500 on)
-- Review loop (`m16a-conductor`, D-2420 on): [x] F-WT-05 Second opinion from another engine (chain23, D-2420) · [x] F-DB-04 Review queue (chain23, D-2421–D-2422) · [ ] F-CN-09 Walk-and-review (bold bet B4) · next: F-TK-05 Claims, then B3 The Foreman's first slice
-- Worktrees (`competitive-gaps`, D-2440 on): [x] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`; chain21, D-2440–D-2445, D-2448) · [x] F-WT-09 Previews per worktree (bold bet B2; slice 1 in chain21, slices 2 and 3 in chain23, D-2446–D-2450) · [ ] F-WT-07 Local merge queue · [ ] F-WT-08 CI results and PR comments back to the agent · next: B6 Intent radar's first slice, then F-CD-22 Multi-repo workspaces (D-2520 on)
-- Usage (`product-research`, D-2460 on): [x] F-AC-08 Usage forecast (chain21, D-2460–D-2462) · [x] F-AC-09 Runaway guard (chain23, D-2463–D-2468, D-855, D-857) · [ ] F-RT-06 The Night Shift (bold bet B1) · [ ] F-TL-11 Agent sandbox (Linux first) · next: F-EX-06 Resource governor, then B5 Agent-proof secrets (D-2540 on)
+- Engines (`m16d-teammate-extras`, D-2400 on): [x] F-EN-07 One instructions file for every engine (chain21, D-2400–D-2403) · [x] F-EN-09 Engine catalog refresh (chain23, D-2404–D-2405, D-856) · [x] F-EN-08 Engine versions and updates under your control (chain24, D-2406–D-2410, D-2500–D-2503) · [x] F-TH-17 Session library across engines (chain24, D-2411–D-2416, D-2504, D-2505) · next: F-EN-10, F-EN-11 (D-2506 on)
+- Review loop (`m16a-conductor`, D-2420 on): [x] F-WT-05 Second opinion from another engine (chain23, D-2420) · [x] F-DB-04 Review queue (chain23, D-2421–D-2422) · [x] F-CN-09 Walk-and-review (bold bet B4; first slice in chain24, D-2423–D-2425) · next: F-TK-05 Claims (D-2426 on), then B3 The Foreman's first slice
+- Worktrees (`competitive-gaps`, D-2440 on): [x] F-WT-06 Worktree runtime (ports, env, Compose, `<slug>.localhost`; chain21, D-2440–D-2445, D-2448) · [x] F-WT-09 Previews per worktree (bold bet B2; slice 1 in chain21, slices 2 and 3 in chain23, D-2446–D-2450) · [x] F-WT-07 Local merge queue · [x] F-WT-08 CI results and PR comments back to the agent (both chain24, D-2451–D-2458, D-2520–D-2527) · [x] F-WT-10 Intent radar (bold bet B6; first slice in chain24, D-2528–D-2530) · next: F-CD-22 Multi-repo workspaces (D-2531 on)
+- Usage (`product-research`, D-2460 on): [x] F-AC-08 Usage forecast (chain21, D-2460–D-2462) · [x] F-AC-09 Runaway guard (chain23, D-2463–D-2468, D-855, D-857) · [x] F-RT-06 The Night Shift (bold bet B1; chain24, D-2469–D-2473, D-2540–D-2542) · [x] F-TL-11 Agent sandbox (Linux first; chain24, D-2474–D-2481, D-2543–D-2544) · next: F-EX-06 Resource governor, then B5 Agent-proof secrets (D-2545 on)
 - Reliability (`perf-open`, D-2560 on, after §0.3's memory and first-frame work): [ ] F-SH-14 Keep agents running when the window closes
 
 Later, in the research's order: F-CD-23 code intelligence, F-EX-07 activity ledger and F-CD-24 jj workspaces. Its owner-only items (§4: terms, pricing, Linux-first exceptions, ARM64, launch) are the owner's.

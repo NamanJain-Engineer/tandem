@@ -38,12 +38,15 @@ import { Palette } from "../palette/Palette";
 import { RecallPicker } from "../recall/RecallPicker";
 import { BestOf } from "../bestof/BestOf";
 import { PromptPicker } from "../prompts/PromptPicker";
+import { SessionLibrary } from "../library/SessionLibrary";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
 import { followRunaway } from "../../stores/runaway";
+import { followNightShift } from "../../stores/nightShift";
+import { followSandbox } from "../../stores/sandbox";
 import { followSecondOpinions } from "../code/SecondOpinion";
 import { followContexts } from "../../stores/contexts";
 import { followUsage } from "../../stores/usage";
@@ -87,6 +90,8 @@ export function AppShell() {
   useEffect(followEngines, []);
   useEffect(followLimits, []);
   useEffect(followRunaway, []);
+  useEffect(followNightShift, []);
+  useEffect(followSandbox, []);
   useEffect(followSecondOpinions, []);
   useEffect(followAuto, []);
   useEffect(followConductor, []);
@@ -236,6 +241,7 @@ export function AppShell() {
       <Palette />
       <RecallPicker />
       <PromptPicker />
+      <SessionLibrary />
       <BestOf />
       <Cheatsheet />
       <DiagnosticsPanel />

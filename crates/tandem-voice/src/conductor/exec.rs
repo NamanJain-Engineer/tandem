@@ -185,6 +185,9 @@ impl Executor {
             ),
             "get_setting" => format!("Read {}", s("key").replace('_', " ")),
             "find_work" => format!("Find “{}”", s("query")),
+            "review_next" => "Next to review".to_string(),
+            "review_send_back" => format!("Send back: {}", s("text")),
+            "review_approve" => "Approve the review item".to_string(),
             "launch_agents" => format!(
                 "Launch {} × {}",
                 a["count"].as_u64().unwrap_or(1),

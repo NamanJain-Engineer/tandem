@@ -3,8 +3,16 @@ title: Routines
 description: Scheduled agent runs, in the app or in the background.
 ---
 
-> **Part of Pro.** Routines are in the app, and they run on Pro, which comes with Vibezeo accounts. The current download runs the Free plan, so it shows where routines live but can't run them. [The changelog](/changelog/) says what each release contains.
+> **In the next release.** Routines are in the app, and the next release switches them on for everyone, free. This release shows where routines live but can't run them. [The changelog](/changelog/) says what each release contains.
 
 A routine runs a teammate on a schedule: every day at a set time, on chosen weekdays, at a fixed interval (15 minutes or more), or on a cron expression, with the next runs shown as you type. Each run is a fresh chat named after the routine, and a finished run says **Ready for review**. A run missed while the computer was asleep or Vibezeo was closed catches up once, late, if it's less than a day late. A run that would overlap the previous one is skipped, with the reason.
 
 Routines run while the app is open, or, if you turn it on, in the background through your system's scheduler (a systemd user timer on Linux, or a crontab line where systemd user services aren't available). Full access needs an explicit choice ("This routine will act without asking"). A teammate can also schedule its own routines when its **May create routines** setting is on; Vibezeo tells you whenever one is made or changed.
+
+## Night Shift: run a task at reset
+
+Your plan's usage windows refill while you're away. On a task, **Run at reset…** queues it to start on an account you choose when that account's window resets: the reset time of its fullest usage window, or of the last usage limit an agent hit on it. The dialog says the plan in words before anything is saved ("Starts Write tests on Work (Codex) at 3:10 AM, when its 5-hour window resets…"), and **Schedule run** is your approval.
+
+At the reset, Vibezeo reads the account's usage again. If it's still nearly full with a later reset, the run waits for that reset. Otherwise it starts the task as **Execute…** would, on that account and engine. It never uses another account. The task shows "Runs at 3:10 AM on Work" with **Cancel** until then.
+
+Vibezeo must be open at that time, or turn on **Run even when Vibezeo is closed**: then the background runner starts it and stays with it for up to 8 hours. A run still going at 8 hours is stopped and reported. If the run's process dies (your computer turns off, say), the run is reported as needing you the next time Vibezeo starts. At **Settings › Notifications › Night Shift summary at** (8:00 AM by default), one notification says how the night's runs went ("Night Shift: 2 done, 1 needs you"), and a paired phone with push turned on gets it too. Running tasks is part of Pro.

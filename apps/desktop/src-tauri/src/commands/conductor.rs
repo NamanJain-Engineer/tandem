@@ -23,7 +23,7 @@ use tandem_store::repo::{panes, settings, teammates, threads, workspaces};
 use tandem_voice::capture::{CaptureEvent, StreamTap};
 use tandem_voice::conductor::call::{
     ActRequest, ActResponse, CallController, CallHost, CallOrigin, CallRecord, CallTiming,
-    HostedError, MicEvent, SessionGrant, Settlement, Speaker,
+    HostedError, MicEvent, SessionGrant, SessionRequest, Settlement, Speaker,
 };
 use tandem_voice::conductor::exec::{PaneFacts, PaneKind, ToolHost};
 use tandem_voice::conductor::memory::RememberRefusal;
@@ -330,11 +330,10 @@ impl crate::commands::conductor_tools::ToolWindow for AppHost {
 
 #[async_trait]
 impl CallHost for AppHost {
-    async fn mint(&self, voice: Option<&str>) -> Result<SessionGrant, HostedError> {
-        let voice = voice.map(str::to_string);
+    async fn mint(&self, req: &SessionRequest) -> Result<SessionGrant, HostedError> {
         self.hosted(|api, token| {
-            let voice = voice.clone();
-            async move { api.voice_session(&token, voice.as_deref()).await }
+            let req = req.clone();
+            async move { api.voice_session(&token, &req).await }
         })
         .await
     }
@@ -471,6 +470,25 @@ impl CallHost for AppHost {
             .persona
             .after_call(&proposals, ended_at, seconds, &tools)
             .await;
+    }
+    // F-CN-09: the review walk belongs to one call, and an item may be acted
+    // on only after the act that described it answered (D-2423).
+    fn call_started(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_reset();
+        }
+    }
+
+    fn call_ended(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_reset();
+        }
+    }
+
+    fn act_answered(&self) {
+        if let Some(q) = self.app.state::<AppState>().review.get() {
+            q.walk_heard();
+        }
     }
 }
 

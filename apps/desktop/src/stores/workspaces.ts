@@ -15,7 +15,12 @@ type WorkspacesState = {
   refresh: () => Promise<void>;
   add: (root: string) => Promise<AddResult>;
   /** An SSH or WSL folder (F-RM-01, F-RM-02); the error, or null once it's active. */
-  addRemote: (w: { kind: "ssh" | "wsl"; root: string; hostId?: string; wslDistro?: string }) => Promise<IpcError | null>;
+  addRemote: (w: {
+    kind: "ssh" | "wsl";
+    root: string;
+    hostId?: string;
+    wslDistro?: string;
+  }) => Promise<IpcError | null>;
   remove: (id: string) => Promise<void>;
   select: (id: string) => void;
   selectTab: (workspaceId: string, tabId: string) => void;
@@ -190,3 +195,15 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+/** A tab on this computer for commands that change this computer's engines
+ * (Install and Roll back from Settings, F-EN-08): the active tab when its
+ * workspace is local, else a local workspace's, else none (the sheet then
+ * offers Copy only). */
+export function localTabId(s: Pick<WorkspacesState, "list" | "activeId" | "activeTab">): string | null {
+  const tabOf = (w: WorkspaceSummary) => s.activeTab[w.id] ?? w.tabs[0]?.id ?? null;
+  const active = s.list.find((w) => w.id === s.activeId);
+  if (active?.kind === "local") return tabOf(active);
+  const local = s.list.find((w) => w.kind === "local" && !w.missing);
+  return local ? tabOf(local) : null;
+}

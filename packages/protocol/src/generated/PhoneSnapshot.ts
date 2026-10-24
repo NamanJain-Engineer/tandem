@@ -5,4 +5,9 @@ import type { PhoneGrants } from "./PhoneGrants";
 import type { PhoneRoutine } from "./PhoneRoutine";
 import type { PhoneThread } from "./PhoneThread";
 
-export type PhoneSnapshot = { desktop: string, grants: PhoneGrants, armedUntil: number | null, agents: Array<PhoneAgent>, approvals: Array<PhoneApproval>, threads: Array<PhoneThread>, routines: Array<PhoneRoutine>, };
+export type PhoneSnapshot = { desktop: string, grants: PhoneGrants, armedUntil: number | null, agents: Array<PhoneAgent>, approvals: Array<PhoneApproval>, threads: Array<PhoneThread>, routines: Array<PhoneRoutine>, 
+/**
+ * F-CN-09: changes whenever the review queue does, so the Review tab
+ * asks again only then.
+ */
+reviewRev: number, };

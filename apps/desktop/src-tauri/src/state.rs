@@ -153,6 +153,8 @@ pub struct AppState {
     pub usage: Arc<crate::services::usage::UsageBoard>,
     /// The runaway guard (F-AC-09).
     pub runaway: Arc<crate::services::runaway::RunawayService>,
+    /// The Night Shift (F-RT-06).
+    pub night_shift: Arc<crate::services::night_shift::NightShiftService>,
     /// Thread mode: turns, their events and the chat adapters (F-TH-03).
     pub threads: Arc<crate::services::threads::ThreadService>,
     /// Models engines reported at runtime (F-TH-08).
@@ -279,12 +281,36 @@ impl AppState {
         opener: Arc<dyn UrlOpener>,
     ) -> Self {
         let mock_clock = MockClock::from_env().filter(|_| cfg!(debug_assertions));
+        Self::with_parts(
+            data, store, log, first_run, net, endpoints, api, opener, mock_clock, None,
+        )
+    }
+
+    /// [`Self::with`], with the clock and the task runs' host chosen by the
+    /// caller (tests: a mock clock and a fake engine host).
+    #[allow(clippy::too_many_arguments)]
+    fn with_parts(
+        data: DataDir,
+        store: Store,
+        log: Option<RedactingFile>,
+        first_run: bool,
+        net: Net,
+        endpoints: Endpoints,
+        api: Arc<dyn ApiClient>,
+        opener: Arc<dyn UrlOpener>,
+        mock_clock: Option<MockClock>,
+        exec_host: Option<Arc<dyn crate::services::tasks_exec::ExecHost>>,
+    ) -> Self {
         let clock: Arc<dyn Clock> = match &mock_clock {
             Some(mock) => Arc::new(mock.clone()),
             None => Arc::new(SystemClock),
         };
         let keychain = keychain::open_keychain();
         let bus = EventBus::new();
+        let night_shift = Arc::new(crate::services::night_shift::NightShiftService::new(
+            data.root().join("night-shift.json"),
+            bus.clone(),
+        ));
         let runaway = crate::services::runaway::RunawayService::new(
             bus.clone(),
             Arc::new(tandem_pty::suspend::SignalControl),
@@ -479,7 +505,18 @@ impl AppState {
         );
         let notifications =
             crate::services::notifications::NotificationService::new(store.clone(), bus.clone());
-        // Before the UI lists anything: agents pause, crashed threads settle.
+        // The sandbox is on but a pane started without it: say so (F-TL-11).
+        {
+            let notifications = notifications.clone();
+            terminals.set_sandbox_alert(Arc::new(move |pane, reason| {
+                let notifications = notifications.clone();
+                tauri::async_runtime::spawn(async move {
+                    notifications.raise_sandbox(pane, reason).await;
+                });
+            }));
+        }
+        // Before the UI lists anything: agents pause. Crashed threads settle
+        // once this app holds the app lock (D-2540).
         let restore = crate::services::restore::RestoreService::new(store.clone(), bus.clone());
         restore.settle_at_launch();
         // A deb, or a Microsoft Store package: someone else updates the app.
@@ -624,16 +661,18 @@ impl AppState {
             clock.clone(),
             tasks.tracker.clone(),
         );
-        task_exec.set_host(Arc::new(crate::services::task_host::AppExecHost {
-            store: store.clone(),
-            data: data.clone(),
-            auth: auth.clone(),
-            entitlements: entitlements.clone(),
-            terminals: terminals.clone(),
-            teammates: teammates.clone(),
-            threads: threads.clone(),
-            notifications: notifications.clone(),
-            gateway: gateway.clone(),
+        task_exec.set_host(exec_host.unwrap_or_else(|| {
+            Arc::new(crate::services::task_host::AppExecHost {
+                store: store.clone(),
+                data: data.clone(),
+                auth: auth.clone(),
+                entitlements: entitlements.clone(),
+                terminals: terminals.clone(),
+                teammates: teammates.clone(),
+                threads: threads.clone(),
+                notifications: notifications.clone(),
+                gateway: gateway.clone(),
+            })
         }));
         // Teammate mail (F-AG-12) lands in teammate chats.
         let mail = crate::services::mail::MailService::new(
@@ -664,6 +703,16 @@ impl AppState {
                 terminals: terminals.clone(),
             }),
         );
+        // Each thread turn's result marks its engine's version good or not
+        // (F-EN-08).
+        {
+            let engines = terminals.engines.clone();
+            threads.set_health_sink(Arc::new(move |engine, reason| {
+                engines
+                    .versions
+                    .record(engines.report().as_ref(), engine, reason);
+            }));
+        }
         {
             let learn = learn.clone();
             threads.set_turn_sink(Arc::new(move |chat, turn, reason| {
@@ -816,6 +865,7 @@ impl AppState {
             logins: Arc::default(),
             usage: Arc::default(),
             runaway,
+            night_shift,
             threads,
             models,
             gateway,
@@ -868,6 +918,33 @@ impl AppState {
             endpoints,
             api,
             opener,
+        )
+    }
+
+    /// [`Self::for_tests`] with a mock clock and a fake host for task runs
+    /// (the Night Shift's headless pass, F-RT-06).
+    #[cfg(test)]
+    pub fn for_tests_with(
+        data: DataDir,
+        store: Store,
+        clock: MockClock,
+        exec_host: Arc<dyn crate::services::tasks_exec::ExecHost>,
+    ) -> Self {
+        Self::with_parts(
+            data,
+            store,
+            None,
+            true,
+            Net::with_log(None),
+            Endpoints {
+                api: "http://api.test".into(),
+                web: "http://web.test".into(),
+                hosted: true,
+            },
+            Arc::new(crate::services::auth::tests::FakeApi::default()),
+            Arc::new(crate::services::opener::testing::RecordingOpener::default()),
+            Some(clock),
+            Some(exec_host),
         )
     }
 

@@ -80,6 +80,8 @@ pub enum CallErrorCode {
     NeedsPro,
     TurnedOff,
     RateLimited,
+    /// The voice service can't take calls from the user's country (D-1018).
+    NotInRegion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

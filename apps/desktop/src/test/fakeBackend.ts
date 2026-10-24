@@ -45,6 +45,7 @@ export const FREE: Limits = {
   chatEngines: ["claude", "codex"],
   creditPacks: false,
   dictionarySync: false,
+  sessionSearch: false,
 };
 
 export const BOOT: AppBoot = {

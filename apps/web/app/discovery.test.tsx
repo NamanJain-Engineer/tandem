@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CREDIT_PRICES, PRICES } from "@tandem/protocol/plans";
 import DownloadPage from "./download/page.site";
 import { GET as llmsGet } from "./llms.txt/route.site";
 import { GET as siteInfoGet } from "./api/v1/site-info.json/route.site";
@@ -12,42 +11,27 @@ import { SITE_INFO_PATH, SiteInfoSchema, llmsFullTxt, llmsTxt, openApi, siteInfo
 import { DOCS_PAGES } from "../lib/docs/pages";
 import { shortcutsTable, tableMarkdown } from "../lib/docs/tables";
 import { releaseAssets, releaseChecksums } from "../lib/manifest";
-import { CREDIT_ROWS, PLANS } from "../lib/pricing";
 import { DOWNLOADS, RELEASE } from "../lib/release";
 
-const dollars = (cents: number) => `$${cents / 100}`;
-
 describe("downloads and discovery (F-WB-04)", () => {
-  it("F-WB-04.1 /llms.txt exists, and its prices equal the config prices", async () => {
+  it("F-WB-04.1 /llms.txt exists, says Vibezeo is free and quotes no price (D-869)", async () => {
     const res = llmsGet();
     expect(res.headers.get("content-type")).toContain("text/plain");
     const txt = await res.text();
     expect(txt).toBe(llmsTxt());
     expect(txt).toMatch(/^# Vibezeo\n\n> /);
-    expect(txt).toContain(
-      `Pro: ${dollars(PRICES.pro.month)} per month, or ${dollars(PRICES.pro.year)} a year`,
-    );
-    expect(txt).toContain(
-      `Team: ${dollars(PRICES.team.month)} per seat per month, or ${dollars(PRICES.team.year)} a year`,
-    );
-    expect(txt).toContain(`${PRICES.team.minSeats} seats minimum`);
-    expect(txt).toContain("Free: $0 forever (available now)");
-    for (const p of PLANS) expect(txt, p.id).toContain(`${p.name}: ${p.price} ${p.cadence}`);
-    for (const r of CREDIT_ROWS) {
-      expect(r.credits).toBe(CREDIT_PRICES[r.key]);
-      expect(txt).toContain(`${r.label}: ${r.credits === 0 ? "free" : `${r.credits} credits ${r.unit}`}`);
-    }
+    expect(txt).toContain("- Vibezeo is free, with no paid plans.");
+    expect(txt).not.toMatch(/\$\d|\bcredits?\b|per seat|\/pricing\//);
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    // In the app but run only on Pro (Conductor on Team too), which this download can't have.
+    // In the app but not running in this release's download: routines switch on
+    // in the next release, and Conductor needs Vibezeo's servers.
     for (const slug of ["routines", "conductor"])
-      expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Part of Pro, which starts when accounts open\\.\\)`));
+      expect(txt).toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*\\(Not in this release's download yet\\.\\)`));
     for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
     for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "remote"])
-      expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Part of Pro`));
-    // F-DI-10 shipped, so Enhance and Polish is priced here as on /pricing.
-    expect(txt.split("## Docs")[0]).toContain("Dictate Enhance and Polish: 3 credits per use");
+      expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in this release`));
   });
 
   it("F-WB-04 /llms-full.txt carries every docs page, with the generated tables as Markdown", () => {
@@ -60,7 +44,7 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(txt).not.toContain("](/");
   });
 
-  it("F-WB-04 /api/v1/site-info is the JSON the schema describes: name, version, platforms and pricing", async () => {
+  it("F-WB-04 /api/v1/site-info is the JSON the schema describes: name, version, platforms, and that it's free", async () => {
     const res = siteInfoGet();
     expect(res.headers.get("content-type")).toBe("application/json");
     const info = SiteInfoSchema.parse(await res.json());
@@ -68,16 +52,8 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(info.name).toBe("Vibezeo");
     expect(info.version).toBe(RELEASE.version);
     expect(info.platforms.map((p) => [p.os, p.available])).toEqual(DOWNLOADS.map((d) => [d.os, d.available]));
-    const plan = (id: string) => info.pricing.plans.find((p) => p.id === id);
-    expect(plan("free")).toMatchObject({ available: true, monthlyCents: 0 });
-    expect(plan("pro")).toMatchObject({ monthlyCents: PRICES.pro.month, yearlyCents: PRICES.pro.year });
-    expect(plan("team")).toMatchObject({
-      monthlyCents: PRICES.team.month,
-      minSeats: PRICES.team.minSeats,
-      perSeat: true,
-    });
-    // Only built hosted features are priced, as on /pricing.
-    expect(info.pricing.creditPrices).toEqual({ title: CREDIT_PRICES.title, rewrite: CREDIT_PRICES.rewrite });
+    expect(info.free).toBe(true);
+    expect(info).not.toHaveProperty("pricing");
   });
 
   it("F-WB-04 the OpenAPI 3.1 document describes the public endpoint with the same schema", async () => {
@@ -90,7 +66,7 @@ describe("downloads and discovery (F-WB-04)", () => {
       required: string[];
       properties: Record<string, unknown>;
     };
-    expect(schema.required).toEqual(expect.arrayContaining(["name", "version", "platforms", "pricing"]));
+    expect(schema.required).toEqual(expect.arrayContaining(["name", "version", "platforms", "free"]));
     expect(Object.keys(schema.properties)).toEqual(Object.keys(siteInfo()));
   });
 
