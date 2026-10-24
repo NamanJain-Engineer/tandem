@@ -23,8 +23,8 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
     body: "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
   },
   {
-    title: "Start",
-    body: "Open the app and choose Start on the welcome screen. It runs on your computer, no account needed.",
+    title: "Start using Vibezeo",
+    body: "Open the app and choose Start using Vibezeo on the welcome screen. It runs on your computer, no account needed.",
   },
   {
     title: "Add a project folder",
