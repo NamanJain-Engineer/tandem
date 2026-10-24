@@ -1,8 +1,34 @@
 # Handoff: `m16a-conductor` (M18 review loop)
 
-**Written:** 22 October 2026, by the session that has worked this branch since F-WT-05. It stopped at the account's usage limit. This file holds everything the next agent needs to carry on. Read it with `BUILD_LOG.md` ("Current state", the "M18 · Next features: review loop" section and "M18 · Review loop decisions"), `CLAUDE.md`, `docs/OPERATING.md` and `docs/DESIGN.md`.
+**Written:** 22 October 2026, by the session that has worked this branch since F-WT-05. **Updated 24 October** when the branch paused (below). Read it with `BUILD_LOG.md` ("Current state", the "M18 · Next features: review loop" section and "M18 · Review loop decisions"), `CLAUDE.md`, `docs/OPERATING.md` and `docs/DESIGN.md`.
 
-**Next action, in one line:** merge `origin/product-m0-m5` (f0c9bb46), then make the coordinator's 11 F-TK-05 review fixes (§4), each with a failing `F-TK-05.n` test first. Add the hidden-tab E2E step, run the gate and E2E, push, and send READY for both F-TK-05 and F-TK-06 (§2).
+**Status, 24 October: paused.** The owner made Vibezeo free (D-869), and the free release (0.10.0) ships before anything else. The coordinator asked every session to push its work in progress and wait for its message to resume. §1 to §5 below are history from 22 October: the F-TK-05 review round and F-TK-06 were sent as READY at `75adeb2e`. §6 (the gate script, E2E, disk) still holds.
+
+On resume, in this order:
+1. Merge `origin/product-m0-m5`. On 24 October it was 58d7be96 (0.9.0 plus D-869), and 0.10.0 lands on it before the resume. 0.10.0 drops `can_execute`'s sign-in requirement and the Pro gates.
+2. The coordinator's review of F-TK-06 at `75adeb2e` (24 October, ~19:00 UTC). Fix these, each with a failing test first:
+   - **Must-fix 1, no Pro gating in Plan with Lead (D-869).** Drop `useExecuteBlock`, the Upgrade button, and the Pro copy in `demo/plan.ts`, PRODUCT_SPEC, `tasks.mdx`, ARCHITECTURE and D-2433. Use `can_execute`'s answer instead. Don't change `can_execute` itself; the free-for-everyone session owns it.
+   - **Must-fix 2, a confirm step before Execute all.** It lists each task's engine and account, "edits in its own worktree", and the review engine.
+   - **Must-fix 3, no task runs twice.** Move the plan to a Starting state under the lock. Skip tasks that aren't To do or already have an active run, and record what was queued.
+   - **Items 4 to 11:**
+     - (4) Strip control, bidi and tag characters from parsed tasks, and write them as Lead.
+     - (5) Cap Lead's reply, and pick the plan block between the markers robustly.
+     - (6) `roomiest` prefers accounts with room and treats no reading as usable. Re-read usage at execute.
+     - (7) The review runs on the roomiest account and matches the reviewer's own run. Make the spec and code agree on second-engine reviews.
+     - (8) `wait` times out and says what it's waiting on.
+     - (9) No tasks tools in plan chats.
+     - (10) Load `plan_list`, add Discard for created plans, and make `create_tasks` idempotent.
+     - (11) Delete this file, and fix `plan_reply`'s doc comment in `fake-engine.rs`.
+
+   Then run the gate and E2E, and send READY.
+3. Finish F-TK-07 "Follow a plan through". It's the WIP commit on top of `75adeb2e`. The spec, code and unit/UI tests are done, and review item 10 overlaps it (plans kept, `load()`, Remove plan). Still to do:
+   - the E2E spec `m18-tk07-follow-plan`, with the restart check offline because `relaunch()` comes back signed out (adjust MILESTONES' E2E-M18-TK-07 line);
+   - ARCHITECTURE: ThreadEvent `paths`, §9.4's briefing, §9.6, `plans.json`, and the land ask's `laneIds`;
+   - `tasks.mdx`;
+   - BUILD_LOG with D-2438 and D-2439, and REMAINING;
+   - `pnpm gen:protocol` and the gate.
+
+Decision numbers: D-2438 and D-2439 are free, then **D-2820 to D-2839**.
 
 ---
 

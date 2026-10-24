@@ -66,7 +66,7 @@ export type WorktreeAsk =
   /** UI-157: a worktree's pull request checks (F-WT-08). */
   | { kind: "checks"; worktreeId: string }
   /** UI-155: land the repository's worktrees (F-WT-07). */
-  | { kind: "land"; workspaceId: string }
+  | { kind: "land"; workspaceId: string; laneIds?: string[] }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
   | { kind: "comparePreviews"; candidates: string[]; chosen: string[]; onDone?: () => void }
   | null;

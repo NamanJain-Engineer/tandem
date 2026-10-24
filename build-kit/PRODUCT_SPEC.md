@@ -1981,13 +1981,44 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
   At most 4 run at once and the rest queue. Like F-TK-04, it needs sign-in and Pro. On Free, the plan explains that where the button is, and the tasks stay usable.
 - **Not in this slice:** Lead answering agents' questions, reviews by a second engine, and merging. Review and merge stay yours.
-- A plan lives until it's created or discarded, or the app quits. Lead's thread keeps the reply.
+- A plan lives until you discard it. Plans are kept across restarts (F-TK-07). Lead's thread keeps the reply.
 
 **Acceptance:**
 1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
 2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
 3. Create tasks writes one To do task per row in a new project, each with its suggested engine. Nothing is written before it.
 4. Execute all starts one attempt per task on its suggested engine, in a worktree. On Free it starts none and says why.
+
+#### F-TK-07 Follow a plan through (P2)
+**Story:** Lead's plan is running, each task in its own worktree. I see how each task is doing from the plan without opening every thread, the agents claim what they change so they don't collide, and I land the work that passed review in the plan's order, in one step at my desk.
+
+**Behavior (bold bet B3's second slice):**
+- **Task runs claim their files.**
+  - A run's first message (F-TK-04) asks its agent to claim the files it's about to change and to check `list_claims`, as a worktree's briefing does (F-TK-05).
+  - A chat thread's edits claim too. When a thread's engine reports an edit, its working tree claims the files the report names, as a terminal agent's edits do (F-TK-05 AC2):
+    - Claude Code's Edit, Write, MultiEdit and NotebookEdit;
+    - Codex's file changes;
+    - an ACP agent's edits that name their files.
+
+    Only the files' paths are kept, never the edit. This holds for every chat thread in a git folder on this computer, not only task runs.
+- **The plan follows its runs.** Once its tasks are created, the plan lists each task with its latest run (F-TK-04), as a status shape and a word: not started, queued (with its place), setting up, running, reviewing, in review with the review's verdict (Approve or Changes requested), stopped, failed or done.
+  - A line above the list counts them ("2 running · 1 approved · 1 changes requested").
+  - Each row opens its task, where its runs are.
+  - The plan stays in the Tasks page's header until you remove it.
+- **Plans are kept.** Vibezeo keeps plans in its data folder, so they survive a restart.
+  - A plan whose Lead was still planning when Vibezeo closed is read again if Lead's turn had finished. Otherwise it fails with "Vibezeo closed while Lead was planning", and Plan again offers the same goal.
+  - **Remove plan** forgets a plan. Its tasks, their runs and Lead's thread stay.
+- **Land approved.** When at least one task's latest run is in review with Approve, the plan offers **Land N approved…**.
+  - It opens Land worktrees (F-WT-07) for the plan's repository with exactly those worktrees chosen, in the plan's order.
+  - That dialog's forecast, check command and confirm work as F-WT-07 describes, including for a worktree that can't land yet (uncommitted changes, or nothing to land).
+  - Landing is a local action (F-TL-06 rule 5), so a plan can't land work by itself.
+- **Not in this slice:** Lead answering agents' questions (the supervisor loop), marking landed tasks Done, and running a task again from the plan after Changes requested.
+
+**Acceptance:**
+1. A chat thread in a worktree that edits `a.ts` claims it from the engine's edit report, and a task run's first message asks its agent to claim.
+2. A plan with created tasks shows each task's latest run with its state and verdict, and updates as runs move on.
+3. Plans are listed again after a restart with their tasks. A plan whose Lead was interrupted fails with its reason and offers Plan again.
+4. Land approved opens Land worktrees with only the approved tasks' worktrees chosen, in plan order.
 
 ### 4.9 RT: Routines
 

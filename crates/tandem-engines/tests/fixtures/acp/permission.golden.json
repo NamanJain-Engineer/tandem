@@ -44,6 +44,9 @@
     "output": null,
     "outputFile": null,
     "outputTruncated": false,
+    "paths": [
+      "/work/shop/notes.md"
+    ],
     "status": "pending",
     "type": "tool",
     "verb": "edit"
@@ -77,6 +80,9 @@
     "output": null,
     "outputFile": null,
     "outputTruncated": false,
+    "paths": [
+      "/work/shop/old.log"
+    ],
     "status": "pending",
     "type": "tool",
     "verb": "edit"

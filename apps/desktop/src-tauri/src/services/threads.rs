@@ -9,7 +9,7 @@
 //! - Streaming text is shown live and kept as one row per block: a partial
 //!   row every 2 s (a crash keeps it), then the final text in its place.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -177,6 +177,9 @@ struct Running {
     /// Whether an error this turn reported was the engine's own failure
     /// (F-EN-08: only those count against its version).
     engine_fault: bool,
+    /// Edit tools whose files went to the edit sink (F-TK-07): each once,
+    /// however many times its row changes.
+    claimed: HashSet<String>,
 }
 
 impl Running {
@@ -239,6 +242,8 @@ pub struct ThreadService {
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// Hears how every turn ended, by engine (last good version, F-EN-08).
     health_sink: std::sync::OnceLock<HealthSink>,
+    /// Hears the files each edit names (claims, F-TK-07).
+    edit_sink: std::sync::OnceLock<EditSink>,
 }
 
 /// A thread turn of an engine ended, and why (F-EN-08).
@@ -255,6 +260,10 @@ pub fn version_health(reason: TurnEndReason, engine_fault: bool) -> Option<TurnE
 }
 
 pub type HealthSink = Arc<dyn Fn(&str, TurnEndReason) + Send + Sync>;
+
+/// `(thread, files)`: a thread's engine reported an edit of these files,
+/// absolute (F-TK-07).
+pub type EditSink = Arc<dyn Fn(&ThreadId, &[String]) + Send + Sync>;
 
 /// A teammate chat's turn ended: the chat, the turn and why.
 pub type TurnSink = Arc<dyn Fn(ThreadRecord, TurnId, TurnEndReason) + Send + Sync>;
@@ -378,6 +387,7 @@ impl ThreadService {
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
             health_sink: std::sync::OnceLock::new(),
+            edit_sink: std::sync::OnceLock::new(),
             plan_limits: std::sync::OnceLock::new(),
             remote: std::sync::OnceLock::new(),
         })
@@ -613,6 +623,11 @@ impl ThreadService {
 
     pub fn set_turn_sink(&self, sink: TurnSink) {
         let _ = self.turn_sink.set(sink);
+    }
+
+    /// Hears the files every edit names (claims, F-TK-07). Set once.
+    pub fn set_edit_sink(&self, sink: EditSink) {
+        let _ = self.edit_sink.set(sink);
     }
 
     /// Teammate chats changed state: the Agent views hear about it.
@@ -1489,6 +1504,7 @@ impl ThreadService {
             last_output: self.clock.now_ms(),
             silence_noted: false,
             engine_fault: false,
+            claimed: HashSet::new(),
         };
         self.emit(id, &mut run, row).await;
         self.emit(
@@ -1600,6 +1616,7 @@ impl ThreadService {
             last_output: self.clock.now_ms(),
             silence_noted: false,
             engine_fault: false,
+            claimed: HashSet::new(),
         };
         let row = self
             .emit(
@@ -2005,6 +2022,23 @@ impl ThreadService {
                         } = other
                         {
                             run.blocked += 1;
+                        }
+                        // An edit's files claim once, from its first row
+                        // that wasn't refused (F-TK-07).
+                        if let ThreadEvent::Tool {
+                            id: tool,
+                            paths: Some(paths),
+                            status,
+                            ..
+                        } = &other
+                        {
+                            if !matches!(status, ToolStatus::Denied | ToolStatus::Error)
+                                && run.claimed.insert(tool.clone())
+                            {
+                                if let Some(sink) = self.edit_sink.get() {
+                                    sink(thread, paths);
+                                }
+                            }
                         }
                         // After a sign-in, the next turn starts a new session
                         // with the new credentials (F-TH-06).
@@ -3670,6 +3704,55 @@ mod tests {
             .into_iter()
             .map(|e| e.event)
             .collect()
+    }
+
+    /// An edit of `/w/src/a.ts` (F-TK-07).
+    fn edit_of_a(status: ToolStatus) -> ThreadEvent {
+        let mut e = ThreadEvent::tool("e1", ToolVerb::Edit, "src/a.ts", status);
+        if let ThreadEvent::Tool { paths, .. } = &mut e {
+            *paths = Some(vec!["/w/src/a.ts".into()]);
+        }
+        e
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_an_edit_reaches_the_edit_sink_once_per_tool() {
+        let script: Script = Arc::new(|turn, tx| {
+            play(
+                tx,
+                vec![
+                    ev(&turn, edit_of_a(ToolStatus::Running)),
+                    ev(&turn, edit_of_a(ToolStatus::Ok)),
+                    ev(
+                        &turn,
+                        ThreadEvent::tool("b1", ToolVerb::Bash, "npm test", ToolStatus::Running),
+                    ),
+                    ev(&turn, end(TurnEndReason::Completed)),
+                ],
+            )
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        let seen: Arc<StdMutex<Vec<(String, Vec<String>)>>> = Arc::default();
+        let sink = seen.clone();
+        f.svc.set_edit_sink(Arc::new(move |thread, paths| {
+            if let Ok(mut s) = sink.lock() {
+                s.push((thread.as_str().to_string(), paths.to_vec()));
+            }
+        }));
+        f.svc
+            .send(&f.thread.id, "edit a".into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        assert_eq!(
+            *seen.lock().expect("seen"),
+            vec![(
+                f.thread.id.as_str().to_string(),
+                vec!["/w/src/a.ts".to_string()]
+            )]
+        );
+        // The rows keep their files.
+        assert!(stored(&f).await.contains(&edit_of_a(ToolStatus::Ok)));
     }
 
     #[tokio::test]

@@ -146,7 +146,8 @@ fn task_err(e: tandem_tasks::TaskError) -> IpcError {
 }
 
 /// The run's briefing (ARCHITECTURE §9.4): the issue's text and recent
-/// comments are fenced as untrusted data (rule 8), then the instructions.
+/// comments are fenced as untrusted data (rule 8), then the instructions,
+/// claims included (F-TK-07).
 pub fn briefing(issue: &Issue, comments: &[Comment], note: Option<&str>) -> String {
     let mut body = format!("# {}: {}\n\n", issue.id, issue.title);
     if !issue.description.trim().is_empty() {
@@ -169,8 +170,10 @@ pub fn briefing(issue: &Issue, comments: &[Comment], note: Option<&str>) -> Stri
         out.push_str(&format!("The user adds: {n}\n\n"));
     }
     out.push_str(&format!(
-        "Report progress with save_comment on {id}. When done, set status to in_review and put a summary in result.",
-        id = issue.id
+        "Report progress with save_comment on {id}. When done, set status to in_review and put a summary in result. {claims}",
+        id = issue.id,
+        // Runs work beside other worktrees' agents (F-TK-07).
+        claims = tandem_git::lanes::CLAIMS_BRIEFING,
     ));
     out
 }
@@ -1228,6 +1231,16 @@ pub(crate) mod tests {
         assert!(sessions[0]
             .text
             .contains("Report progress with save_comment on TAN-1."));
+        // F-TK-07 AC1: the run's agent is asked to claim before it edits.
+        assert!(
+            sessions[0]
+                .text
+                .ends_with(tandem_git::lanes::CLAIMS_BRIEFING),
+            "{}",
+            sessions[0].text
+        );
+        // The reviewer doesn't edit, so it isn't asked.
+        assert!(!sessions[1].text.contains("claim the files"));
     }
 
     #[tokio::test]

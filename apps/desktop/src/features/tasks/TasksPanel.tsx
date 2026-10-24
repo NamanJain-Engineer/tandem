@@ -249,10 +249,15 @@ export function TasksPanel({ header }: { header?: ReactNode }) {
 /** Plans this run holds that aren't finished, newest first (F-TK-06). */
 function OpenPlans() {
   const plans = usePlans((s) => s.plans);
-  const live = Object.values(plans)
-    .filter((p) => p.state !== "started")
-    .sort((a, b) => b.createdAt - a.createdAt);
-  const STATUS = { planning: "working", failed: "error", ready: "waiting", created: "done" } as const;
+  // Every plan until it's removed (F-TK-07), newest first.
+  const live = Object.values(plans).sort((a, b) => b.createdAt - a.createdAt);
+  const STATUS = {
+    planning: "working",
+    failed: "error",
+    ready: "waiting",
+    created: "done",
+    started: "working",
+  } as const;
   return (
     <>
       {live.map((p) => (

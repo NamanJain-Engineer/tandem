@@ -650,6 +650,15 @@ impl AppState {
             let (pane, paths) = (pane.to_string(), paths.to_vec());
             tauri::async_runtime::spawn_blocking(move || tasks.claim_edits(&pane, &paths));
         }));
+        // A chat thread's edits claim too (F-TK-07 AC1).
+        let thread_tasks = Arc::downgrade(&tasks);
+        threads.set_edit_sink(Arc::new(move |thread, paths| {
+            let Some(tasks) = thread_tasks.upgrade() else {
+                return;
+            };
+            let (thread, paths) = (thread.as_str().to_string(), paths.to_vec());
+            tauri::async_runtime::spawn_blocking(move || tasks.claim_thread_edits(&thread, &paths));
+        }));
         let routines = crate::services::routines::RoutinesService::new(
             store.clone(),
             bus.clone(),

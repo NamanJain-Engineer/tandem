@@ -1,10 +1,12 @@
 // F-TK-06 Plan with Lead: a goal goes to Lead, which plans in its own chat
 // in the workspace; its plan comes back as editable rows (title,
 // description, engine). Create tasks writes them; Execute all runs them
-// through F-TK-04's queue, which needs sign-in and Pro (D-2430).
+// through F-TK-04's queue, which needs sign-in and Pro (D-2430). F-TK-07:
+// the plan then follows each task's latest run and lands the approved
+// ones through Land worktrees (F-WT-07).
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type { PlanEngine, PlanTask, PlanView } from "@tandem/protocol";
+import type { AttemptView, PlanEngine, PlanTask, PlanView } from "@tandem/protocol";
 import {
   Button,
   Callout,
@@ -16,13 +18,14 @@ import {
   Textarea,
   useToast,
 } from "@tandem/ui";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { switchMode } from "../shell/actions";
 import { usePlans } from "../../stores/plan";
-import { isIpcError } from "../../stores/tasks";
+import { isIpcError, useTasks } from "../../stores/tasks";
 import { useTeammates } from "../../stores/teammates";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useWorktrees } from "../../stores/worktrees";
 import { useExecuteBlock } from "./Execute";
 
 export const GOAL_MAX = 4_000;
@@ -36,6 +39,142 @@ export function engineOption(e: PlanEngine): { value: string; label: string } {
   const label =
     used.length > 0 ? t("plan.engineUsed", { name: e.label, pct: Math.round(Math.min(...used)) }) : e.label;
   return { value: e.engineId, label };
+}
+
+/** A task's latest run: the attempt queued last (F-TK-07). */
+export function latestRun(attempts: AttemptView[], issueId: string): AttemptView | null {
+  let best: AttemptView | null = null;
+  for (const a of attempts) {
+    if (a.attempt.issueId === issueId && (!best || a.attempt.queuedAt > best.attempt.queuedAt)) best = a;
+  }
+  return best;
+}
+
+/** How a run counts in the plan's line, in the line's order. */
+const KINDS = [
+  "queued",
+  "running",
+  "approved",
+  "changes",
+  "review",
+  "stopped",
+  "failed",
+  "done",
+  "none",
+] as const;
+type Kind = (typeof KINDS)[number];
+
+function kindOf(run: AttemptView | null): Kind {
+  switch (run?.attempt.state) {
+    case undefined:
+      return "none";
+    case "queued":
+      return "queued";
+    case "setup":
+    case "running":
+    case "reviewing":
+      return "running";
+    case "in_review":
+      return run.attempt.reviewVerdict === "approve"
+        ? "approved"
+        : run.attempt.reviewVerdict === "changes_requested"
+          ? "changes"
+          : "review";
+    case "stopped":
+      return "stopped";
+    case "failed":
+      return "failed";
+    case "done":
+      return "done";
+  }
+}
+
+const SHAPE = {
+  queued: "idle",
+  running: "working",
+  approved: "waiting",
+  changes: "waiting",
+  review: "waiting",
+  stopped: "idle",
+  failed: "error",
+  done: "done",
+  none: "idle",
+} as const;
+
+/** "Ready to review · Approved", "Queued (position 2)", "Not started". */
+export function runLabel(run: AttemptView | null): string {
+  if (!run) return t("plan.run.none");
+  const a = run.attempt;
+  if (a.state === "queued" && run.queuePosition) return t("tasks.runs.queued", { n: run.queuePosition });
+  const state = t(`tasks.runs.state.${a.state}` as MessageKey);
+  if (a.reviewVerdict === "approve") return `${state} · ${t("plan.verdict.approve")}`;
+  if (a.reviewVerdict === "changes_requested") return `${state} · ${t("plan.verdict.changes")}`;
+  return state;
+}
+
+/** "1 running · 1 approved · 1 not started": the kinds there are. */
+export function runSummary(runs: Array<AttemptView | null>): string {
+  const counts = new Map<Kind, number>();
+  for (const r of runs) counts.set(kindOf(r), (counts.get(kindOf(r)) ?? 0) + 1);
+  return KINDS.filter((k) => counts.has(k))
+    .map((k) => t(`plan.count.${k}` as MessageKey, { n: counts.get(k) ?? 0 }))
+    .join(" · ");
+}
+
+/** The worktrees of the plan's tasks whose latest run was approved, in
+ * plan order (F-TK-07 AC4). */
+export function approvedLanes(plan: PlanView, attempts: AttemptView[]): string[] {
+  return plan.issueIds
+    .map((id) => latestRun(attempts, id))
+    .filter((r): r is AttemptView => kindOf(r) === "approved" && !!r?.attempt.laneWorkspaceId)
+    .map((r) => r.attempt.laneWorkspaceId ?? "");
+}
+
+function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] }) {
+  const runs = plan.issueIds.map((id) => latestRun(attempts, id));
+  const engine = (id: string) => plan.engines.find((e) => e.engineId === id)?.label ?? id;
+  const openTask = (id: string) => {
+    usePlans.getState().open(null);
+    void useTasks.getState().select(id);
+  };
+  return (
+    <>
+      {runs.some(Boolean) && (
+        <p className="text-sm text-fg-muted tabular-nums" data-testid="plan-summary">
+          {runSummary(runs)}
+        </p>
+      )}
+      <ol className="flex flex-col gap-1" data-testid="plan-runs">
+        {plan.issueIds.map((id, i) => {
+          const run = runs[i] ?? null;
+          const task = plan.tasks[i];
+          const kind = kindOf(run);
+          return (
+            <li
+              key={id}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2"
+              data-testid="plan-run"
+              data-state={run?.attempt.state ?? "none"}
+              data-verdict={run?.attempt.reviewVerdict ?? undefined}
+            >
+              <StatusDot status={SHAPE[kind]} label={runLabel(run)} />
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:underline"
+                onClick={() => openTask(id)}
+                data-testid="plan-run-open"
+              >
+                <span className="font-mono text-fg-muted">{id}</span> {task?.title ?? ""}
+              </button>
+              <span className="shrink-0 text-sm text-fg-muted">
+                {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {runLabel(run)}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </>
+  );
 }
 
 export function openLeadThread(plan: PlanView): void {
@@ -181,6 +320,22 @@ function PlanDialog({ plan }: { plan: PlanView }) {
   }, [plan.state, plan.tasks]);
   const close = () => usePlans.getState().open(null);
   const discard = () => void usePlans.getState().discard(plan.id);
+  const attempts = useTasks((s) => s.attempts);
+  const following = plan.state === "created" || plan.state === "started";
+  // The plan follows its tasks' runs; `tasks:attempt` keeps them fresh.
+  useEffect(() => {
+    if (following) void useTasks.getState().loadAttempts();
+  }, [following]);
+  const approved = following ? approvedLanes(plan, attempts) : [];
+  const land = () => {
+    close();
+    useWorktrees.getState().open({ kind: "land", workspaceId: plan.workspaceId, laneIds: approved });
+  };
+  const removeButton = (
+    <Button variant="ghost" onClick={discard} data-testid="plan-remove">
+      {t("plan.removePlan")}
+    </Button>
+  );
   const create = async () => {
     setBusy(true);
     setError(null);
@@ -252,9 +407,15 @@ function PlanDialog({ plan }: { plan: PlanView }) {
       case "created":
         return (
           <>
+            {removeButton}
             <Button variant="ghost" onClick={close} data-testid="plan-close">
               {t("common.close")}
             </Button>
+            {approved.length > 0 && (
+              <Button variant={block ? "primary" : "secondary"} onClick={land} data-testid="plan-land">
+                {t("plan.land", { n: approved.length })}
+              </Button>
+            )}
             {!block && (
               <Button
                 variant="primary"
@@ -269,9 +430,21 @@ function PlanDialog({ plan }: { plan: PlanView }) {
         );
       case "started":
         return (
-          <Button variant="primary" onClick={close} data-testid="plan-close">
-            {t("common.close")}
-          </Button>
+          <>
+            {removeButton}
+            <Button
+              variant={approved.length > 0 ? "ghost" : "primary"}
+              onClick={close}
+              data-testid="plan-close"
+            >
+              {t("common.close")}
+            </Button>
+            {approved.length > 0 && (
+              <Button variant="primary" onClick={land} data-testid="plan-land">
+                {t("plan.land", { n: approved.length })}
+              </Button>
+            )}
+          </>
         );
     }
   })();
@@ -339,6 +512,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
                 </span>
               </Callout>
             )}
+            <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
         {error && (

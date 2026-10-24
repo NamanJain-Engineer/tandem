@@ -102,6 +102,8 @@ struct ToolState {
     status: ToolStatus,
     output: Option<String>,
     diff: Option<String>,
+    /// The files an edit names, absolute (F-TK-07).
+    paths: Option<Vec<String>>,
 }
 
 /// An ACP tool kind as a row's verb. ACP's delete and move are file changes.
@@ -247,6 +249,48 @@ impl AcpParser {
         };
         let mut output = known.as_ref().and_then(|k| k.output.clone());
         let mut diff = known.as_ref().and_then(|k| k.diff.clone());
+        // An edit's files: what it said before, then its locations and the
+        // files its diffs name (F-TK-07).
+        let mut edited: Vec<String> = known
+            .as_ref()
+            .and_then(|k| k.paths.clone())
+            .unwrap_or_default();
+        let mut name = |p: &str| {
+            let p = crate::events::absolute(&self.cwd, p);
+            if !p.is_empty() && !edited.contains(&p) {
+                edited.push(p);
+            }
+        };
+        for l in u
+            .get("locations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(p) = l
+                .get("path")
+                .and_then(Value::as_str)
+                .filter(|p| !p.is_empty())
+            {
+                name(p);
+            }
+        }
+        if let Some(content) = u.get("content").and_then(Value::as_array) {
+            for c in content {
+                if c.get("type").and_then(Value::as_str) == Some("diff") {
+                    if let Some(p) = c
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .filter(|p| !p.is_empty())
+                    {
+                        name(p);
+                    }
+                }
+            }
+        }
+        let paths = matches!(kind.as_str(), "edit" | "delete" | "move")
+            .then_some(edited)
+            .filter(|e| !e.is_empty());
         if let Some(content) = u.get("content").and_then(Value::as_array) {
             let mut texts = Vec::new();
             let mut diffs = Vec::new();
@@ -294,6 +338,7 @@ impl AcpParser {
             status,
             output,
             diff,
+            paths,
         };
         self.tools.insert(id.clone(), state.clone());
         let (output, output_truncated) = match state.output.as_deref() {
@@ -313,6 +358,7 @@ impl AcpParser {
             output_file: None,
             diff: state.diff,
             detail: state.detail,
+            paths: state.paths,
         })
     }
 

@@ -384,6 +384,16 @@ impl TasksService {
     /// A pane's agent is about to edit `paths`: its working tree claims
     /// them (F-TK-05 AC2). Blocking file IO.
     pub fn claim_edits(&self, pane: &str, paths: &[String]) {
+        self.claim_session_edits(&format!("pn:{pane}"), paths);
+    }
+
+    /// A chat thread's engine reported an edit of `paths`: its working tree
+    /// claims them, as a pane's edits do (F-TK-07 AC1). Blocking file IO.
+    pub fn claim_thread_edits(&self, thread: &str, paths: &[String]) {
+        self.claim_session_edits(&format!("th:{thread}"), paths);
+    }
+
+    fn claim_session_edits(&self, key: &str, paths: &[String]) {
         let Some(tracker) = &self.tracker else {
             return;
         };
@@ -391,7 +401,7 @@ impl TasksService {
             .sessions
             .lock()
             .ok()
-            .and_then(|m| m.get(&format!("pn:{pane}")).and_then(|l| l.scope.clone()));
+            .and_then(|m| m.get(key).and_then(|l| l.scope.clone()));
         let Some(scope) = scope else {
             return;
         };
@@ -629,7 +639,12 @@ impl TasksService {
         actor: &str,
         folder: Option<&Path>,
     ) -> Option<StdioServer> {
-        self.bin.as_ref()?;
+        if self.bin.is_none() {
+            // No tasks server to give the session, but its edits still
+            // claim (F-TK-07).
+            self.track_scope(key, folder);
+            return None;
+        }
         let conn = self.begin_session(key, label, actor, folder)?;
         self.server(["--connection".into(), conn])
     }
@@ -884,6 +899,45 @@ mod tests {
             .expect("claims")
             .iter()
             .all(|c| c.folder != root.to_string_lossy()));
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_a_threads_edits_claim_in_its_working_tree_with_or_without_the_server() {
+        for bin in [Some(PathBuf::from("/x")), None] {
+            let (_d, tasks) = service(bin.clone()).await;
+            let dir = tempfile::tempdir().expect("dir");
+            let root = git_repo(dir.path());
+            let server = tasks.chat_server("th:t1", "Thread", "me", Some(&root));
+            assert_eq!(server.is_some(), bin.is_some());
+            tasks.claim_thread_edits(
+                "t1",
+                &[root.join("src/a.ts").to_string_lossy().into_owned()],
+            );
+            let claims = tasks
+                .tracker
+                .as_ref()
+                .expect("tracker")
+                .claims()
+                .expect("claims");
+            assert_eq!(claims.len(), 1, "server: {bin:?}");
+            assert_eq!(claims[0].path, "src/a.ts");
+            assert!(claims[0].inferred);
+            // A thread without a session here claims nothing.
+            tasks.claim_thread_edits(
+                "t2",
+                &[root.join("src/b.ts").to_string_lossy().into_owned()],
+            );
+            assert_eq!(
+                tasks
+                    .tracker
+                    .as_ref()
+                    .expect("tracker")
+                    .claims()
+                    .expect("claims")
+                    .len(),
+                1
+            );
+        }
     }
 
     #[test]
