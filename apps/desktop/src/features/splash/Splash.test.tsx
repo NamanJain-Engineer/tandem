@@ -25,7 +25,7 @@ describe("UI-02 splash", () => {
     const { rerender } = render(<Splash phase="restoring" onAnyInput={onAnyInput} />);
     expect(screen.getByRole("status").textContent).toBe("Restoring your workspace…");
     rerender(<Splash phase="plan" onAnyInput={onAnyInput} />);
-    expect(screen.getByRole("status").textContent).toBe("Checking your plan…");
+    expect(screen.getByRole("status").textContent).toBe("Checking your account…");
     fireEvent.keyDown(screen.getByTestId("splash"), { key: "a" });
     fireEvent.pointerDown(screen.getByTestId("splash"));
     expect(onAnyInput).toHaveBeenCalledTimes(2);

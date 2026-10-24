@@ -1,5 +1,6 @@
 /* @tandem/ui/site.css: the public site's layer over tokens.css, which stays
-   UI_SPEC §1.2 verbatim. Import it after tokens.css and base.css. The desktop
+   UI_SPEC §1.2 verbatim, and brand.css. Import it after tokens.css, brand.css
+   and base.css. The desktop
    app never imports it. */
 
 /* ---------- 1. Light theme by OS preference ----------
@@ -60,9 +61,33 @@
   }
 }
 
+/* ---------- 1b. The brand layer's light theme by OS preference ----------
+   A copy of [data-theme="light"] in brand.css (D-1891), for the same reason
+   as 1; site.test.ts fails if the two ever differ. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --tn-edge-top:    rgb(15 23 42 / 0.08);
+    --tn-edge-bottom: rgb(15 23 42 / 0.14);
+    --tn-edge-hi:     rgb(255 255 255 / 0.90);
+    --tn-fill-top:    rgb(255 255 255 / 0.70);
+    --tn-fill-bottom: rgb(241 245 249 / 0.50);
+    --tn-glow-a:      rgb(20 184 166 / 0.16);
+    --tn-glow-b:      rgb(14 165 233 / 0.10);
+    --tn-ring:        rgb(15 23 42 / 0.08);
+    --tn-ring-lit:    rgb(13 148 136 / 0.45);
+    --tn-spot:        rgb(15 118 110 / 0.05);
+    --tn-ink-a:       var(--teal-700);
+    --tn-ink-b:       var(--sky-700);
+    --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+    --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
+    --tn-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+  }
+}
+
 /* ---------- 2. Site semantics (built only on the palette and --tn-*) ----------
    Light, depth and edges are tokens too (D-1830): every one the dark theme
-   sets has a light value below, and site.test.ts checks both lists match. */
+   sets has a light value below, or aliases a brand.css token (D-1891) whose
+   light value is mirrored in 1b; site.test.ts checks both. */
 :root {
   --site-page:        var(--tn-bg);                 /* #060A12 */
   --site-raised:      var(--tn-surface-1);          /* alternate bands */
@@ -74,8 +99,8 @@
   --site-stage-accent: var(--teal-400);
   --site-grid:        rgb(148 163 184 / 0.06);      /* the faint grid of og.png and the video poster */
   --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
-  --site-ink-a:       var(--teal-400);              /* highlight gradient start */
-  --site-ink-b:       var(--sky-400);               /* highlight gradient end */
+  --site-ink-a:       var(--tn-ink-a);
+  --site-ink-b:       var(--tn-ink-b);
   --site-header:      color-mix(in oklab, var(--site-page) 78%, transparent);
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
   --site-section-y:   clamp(5rem, 3rem + 6vw, 9rem);        /* 80 → 144 px */
@@ -85,25 +110,25 @@
   --site-line:        rgb(148 163 184 / 0.12);
   --site-line-strong: rgb(148 163 184 / 0.22);
   /* Edges: a lit top and a quiet bottom, drawn as a gradient border */
-  --site-edge-top:    rgb(255 255 255 / 0.13);
-  --site-edge-bottom: rgb(255 255 255 / 0.04);
-  --site-edge-hi:     rgb(255 255 255 / 0.06);      /* 1 px inner highlight under the top edge */
+  --site-edge-top:    var(--tn-edge-top);
+  --site-edge-bottom: var(--tn-edge-bottom);
+  --site-edge-hi:     var(--tn-edge-hi);
   /* Fills laid over a surface: a touch of light at the top */
-  --site-fill-top:    rgb(255 255 255 / 0.035);
-  --site-fill-bottom: rgb(255 255 255 / 0.008);
+  --site-fill-top:    var(--tn-fill-top);
+  --site-fill-bottom: var(--tn-fill-bottom);
   /* Light: the two rings' teal and sky */
-  --site-glow-a:      rgb(45 212 191 / 0.16);
-  --site-glow-b:      rgb(56 189 248 / 0.11);
-  --site-ring:        rgb(148 163 184 / 0.11);      /* the rings' line art */
-  --site-ring-lit:    rgb(94 234 212 / 0.42);       /* where the light catches them */
-  --site-spot:        rgb(45 212 191 / 0.07);       /* a card's top light on hover */
+  --site-glow-a:      var(--tn-glow-a);
+  --site-glow-b:      var(--tn-glow-b);
+  --site-ring:        var(--tn-ring);
+  --site-ring-lit:    var(--tn-ring-lit);
+  --site-spot:        var(--tn-spot);
   /* The bezel product captures sit in */
   --site-bezel:       var(--slate-900);
   --site-bezel-edge:  rgb(255 255 255 / 0.10);
   /* Elevation: e1 cards, e2 raised cards, e3 product frames */
-  --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30);
-  --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30), 0 12px 32px -12px rgb(0 0 0 / 0.60);
-  --site-elev-3: 0 0 0 1px rgb(0 0 0 / 0.50), 0 2px 4px rgb(0 0 0 / 0.20), 0 16px 32px -8px rgb(0 0 0 / 0.40), 0 48px 96px -24px rgb(0 0 0 / 0.65);
+  --site-elev-1:      var(--tn-elev-1);
+  --site-elev-2:      var(--tn-elev-2);
+  --site-elev-3:      var(--tn-elev-3);
   /* The primary button's gradient, top to bottom, and its hover */
   --site-btn-top:     var(--teal-300);
   --site-btn-bottom:  var(--teal-400);
@@ -121,25 +146,10 @@
     --site-card:   var(--slate-0);
     --site-grid:   rgb(15 23 42 / 0.05);
     --site-glow:   rgb(15 118 110 / 0.09);
-    --site-ink-a:  var(--teal-700);
-    --site-ink-b:  var(--sky-700);
     --site-line:        rgb(15 23 42 / 0.08);
     --site-line-strong: rgb(15 23 42 / 0.16);
-    --site-edge-top:    rgb(15 23 42 / 0.08);
-    --site-edge-bottom: rgb(15 23 42 / 0.14);
-    --site-edge-hi:     rgb(255 255 255 / 0.90);
-    --site-fill-top:    rgb(255 255 255 / 0.70);
-    --site-fill-bottom: rgb(241 245 249 / 0.50);
-    --site-glow-a:      rgb(20 184 166 / 0.16);
-    --site-glow-b:      rgb(14 165 233 / 0.10);
-    --site-ring:        rgb(15 23 42 / 0.08);
-    --site-ring-lit:    rgb(13 148 136 / 0.45);
-    --site-spot:        rgb(15 118 110 / 0.05);
     --site-bezel:       rgb(255 255 255 / 0.75);
     --site-bezel-edge:  rgb(15 23 42 / 0.10);
-    --site-elev-1: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
-    --site-elev-2: inset 0 1px 0 var(--site-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
-    --site-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
     --site-btn-top:     var(--teal-700);
     --site-btn-bottom:  var(--teal-800);
     --site-btn-hover:   var(--teal-800);
@@ -161,9 +171,6 @@
   --color-stage-accent: var(--site-stage-accent);
   --color-line: var(--site-line);
   --color-line-strong: var(--site-line-strong);
-  --shadow-e1: var(--site-elev-1);
-  --shadow-e2: var(--site-elev-2);
-  --shadow-e3: var(--site-elev-3);
 }
 
 @theme {
@@ -211,16 +218,14 @@
   --container-prose: 44rem;    /* 704 px: legal and changelog text */
   --container-measure: 38rem;  /* 608 px: leads */
 
-  /* Radii (D-1833): the app's 6 px controls; cards and frames grow with size. */
-  --radius-card: 12px;
-  --radius-frame: 16px;
+  /* Radii (D-1833): --radius-card and --radius-frame come from brand.css. */
 
   /* Depth */
   --shadow-stage: var(--site-elev-3);
   --shadow-card-hover: var(--site-elev-2);
 
   /* Motion (D-1831) */
-  --ease-out-site: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-site: var(--tn-ease-out);   /* brand.css */
 }
 
 /* ---------- 3. Utilities ---------- */

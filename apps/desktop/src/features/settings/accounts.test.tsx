@@ -14,7 +14,6 @@ import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { accountForNext, useAccounts } from "../../stores/accounts";
 import { useEngines } from "../../stores/engines";
-import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { AccountChip } from "../code/AccountChip";
@@ -162,10 +161,10 @@ describe("accounts (F-AC-02, F-AC-03, UI-35)", () => {
     await waitFor(() => expect(screen.queryByTestId("login-sheet")).toBeNull());
   });
 
-  it("F-AC-02 on Free a second account for an engine offers Upgrade instead", async () => {
+  it("F-AC-02 an accounts-per-engine limit shows the core's reason and sells nothing (D-869)", async () => {
     const limit: IpcError = {
       code: "limit_reached",
-      message: "Pro lets you add more accounts per engine.",
+      message: "Adding more accounts per engine is turned off for this account.",
       stage: null,
       hint: null,
       retryable: false,
@@ -183,9 +182,10 @@ describe("accounts (F-AC-02, F-AC-03, UI-35)", () => {
     fireEvent.click(await screen.findByTestId("account-add"));
     fireEvent.change(await screen.findByTestId("login-nickname"), { target: { value: "Second" } });
     fireEvent.click(screen.getByTestId("login-start"));
-    expect(await screen.findByText("Pro lets you add more accounts per engine.")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("login-upgrade"));
-    expect(useUi.getState().upgrade.open).toBe(true);
+    expect(
+      await screen.findByText("Adding more accounts per engine is turned off for this account."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("login-upgrade")).toBeNull();
   });
 
   it("F-AC-03 the AccountChip shows the pane's account and sets new panes' account for the repository", async () => {

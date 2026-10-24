@@ -29,6 +29,7 @@ import {
   WakeControl,
 } from "../conductor/ConductorSettings";
 import { ConductorCallSettings } from "../conductor/CallSettingsSlot";
+import { ComesWithAccounts } from "../billing/ComesWithAccounts";
 import { EngineControl } from "../dictate/EngineControl";
 import { AutoEnhanceControl, FormattingControl, QuickActionsControl } from "../dictate/EnhanceControls";
 import {
@@ -76,7 +77,15 @@ const segs = (keys: string[], prefix: string) =>
  * `routines`: the plan has routines; without them "Pause routines" is absent.
  * `accounts`: the build talks to Vibezeo (not TANDEM_HOSTED=0); without it,
  * rows for hosted services are absent (D-833). */
-export function settingsPages(platform: string, routines = false, accounts = false): PageDef[] {
+/** `accounts`: the build has Vibezeo accounts (hosted). `conductor`: the
+ * limits carry Conductor; without it its page only says it comes with
+ * accounts (D-2913). */
+export function settingsPages(
+  platform: string,
+  routines = false,
+  accounts = false,
+  conductor = false,
+): PageDef[] {
   const mac = platform === "macos";
   return [
     {
@@ -734,121 +743,129 @@ export function settingsPages(platform: string, routines = false, accounts = fal
       label: t("settings.conductor"),
       subtitle: t("settings.conductor.subtitle"),
       keywords: ["conductor", "voice", "persona", "memory", "wake", "hey conductor"],
-      callout: t("conductor.privacy"),
-      rows: [
-        {
-          id: "conductor_name",
-          label: t("conductor.persona.name"),
-          description: t("conductor.persona.name.desc"),
-          keywords: ["name", "persona"],
-          control: (ids) => <NameControl ids={ids} />,
-        },
-        {
-          id: "conductor_voice",
-          label: t("conductor.voice"),
-          description: t("conductor.voice.desc"),
-          keywords: ["voice"],
-          control: (ids) => (
-            <SelectControl
-              k="conductor_voice"
-              ids={ids}
-              fallback="default"
-              options={[{ value: "default", label: t("conductor.voice.default") }]}
-            />
-          ),
-        },
-        {
-          id: "conductor_tone",
-          label: t("conductor.tone"),
-          keywords: ["tone", "warm", "brief", "neutral"],
-          control: () => (
-            <SegmentControl
-              k="conductor_tone"
-              label={t("conductor.tone")}
-              fallback="neutral"
-              options={segs(["neutral", "warm", "brief"], "conductor.tone")}
-            />
-          ),
-        },
-        {
-          id: "conductor_verbosity",
-          label: t("conductor.verbosity"),
-          keywords: ["verbosity", "short", "detailed"],
-          control: () => (
-            <SegmentControl
-              k="conductor_verbosity"
-              label={t("conductor.verbosity")}
-              fallback="normal"
-              options={segs(["short", "normal", "detailed"], "conductor.verbosity")}
-            />
-          ),
-        },
-        {
-          id: "conductor_speed",
-          label: t("conductor.speed"),
-          description: t("conductor.speed.desc"),
-          keywords: ["speed", "faster", "slower"],
-          control: () => <SpeedControl />,
-        },
-        {
-          id: "conductor_memory",
-          label: t("conductor.memoryToggle"),
-          description: t("conductor.memoryToggle.desc"),
-          keywords: ["memory", "remember", "forget"],
-          control: (ids) => (
-            <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />
-          ),
-        },
-        {
-          id: "conductor_reflection",
-          label: t("conductor.reflection"),
-          keywords: ["reflection", "after each call", "memories"],
-          control: () => (
-            <SegmentControl
-              k="conductor_reflection"
-              label={t("conductor.reflection")}
-              fallback="ask"
-              options={segs(["ask", "auto", "off"], "conductor.reflection")}
-            />
-          ),
-        },
-        {
-          id: "conductor_wake",
-          label: t("conductor.wake"),
-          description: t("conductor.wake.desc"),
-          keywords: ["wake", "hey conductor", "listening"],
-          control: (ids) => <WakeControl ids={ids} />,
-        },
-        {
-          id: "conductor_wake_sensitivity",
-          label: t("conductor.wake.sensitivity"),
-          keywords: ["wake", "sensitivity"],
-          control: () => (
-            <SegmentControl
-              k="conductor_wake_sensitivity"
-              label={t("conductor.wake.sensitivity")}
-              fallback="medium"
-              options={segs(["low", "medium", "high"], "conductor.wake.sensitivity")}
-            />
-          ),
-        },
-        {
-          id: "conductor_wake_pause_videos",
-          label: t("conductor.wake.pauseVideos"),
-          description: t("conductor.wake.pauseVideos.desc"),
-          keywords: ["videos", "media", "pause"],
-          control: (ids) => (
-            <BoolControl k="conductor_wake_pause_videos" ids={ids} label={t("conductor.wake.pauseVideos")} />
-          ),
-        },
-      ],
-      extra: (
+      callout: conductor ? t("conductor.privacy") : undefined,
+      rows: !conductor
+        ? []
+        : [
+            {
+              id: "conductor_name",
+              label: t("conductor.persona.name"),
+              description: t("conductor.persona.name.desc"),
+              keywords: ["name", "persona"],
+              control: (ids) => <NameControl ids={ids} />,
+            },
+            {
+              id: "conductor_voice",
+              label: t("conductor.voice"),
+              description: t("conductor.voice.desc"),
+              keywords: ["voice"],
+              control: (ids) => (
+                <SelectControl
+                  k="conductor_voice"
+                  ids={ids}
+                  fallback="default"
+                  options={[{ value: "default", label: t("conductor.voice.default") }]}
+                />
+              ),
+            },
+            {
+              id: "conductor_tone",
+              label: t("conductor.tone"),
+              keywords: ["tone", "warm", "brief", "neutral"],
+              control: () => (
+                <SegmentControl
+                  k="conductor_tone"
+                  label={t("conductor.tone")}
+                  fallback="neutral"
+                  options={segs(["neutral", "warm", "brief"], "conductor.tone")}
+                />
+              ),
+            },
+            {
+              id: "conductor_verbosity",
+              label: t("conductor.verbosity"),
+              keywords: ["verbosity", "short", "detailed"],
+              control: () => (
+                <SegmentControl
+                  k="conductor_verbosity"
+                  label={t("conductor.verbosity")}
+                  fallback="normal"
+                  options={segs(["short", "normal", "detailed"], "conductor.verbosity")}
+                />
+              ),
+            },
+            {
+              id: "conductor_speed",
+              label: t("conductor.speed"),
+              description: t("conductor.speed.desc"),
+              keywords: ["speed", "faster", "slower"],
+              control: () => <SpeedControl />,
+            },
+            {
+              id: "conductor_memory",
+              label: t("conductor.memoryToggle"),
+              description: t("conductor.memoryToggle.desc"),
+              keywords: ["memory", "remember", "forget"],
+              control: (ids) => (
+                <BoolControl k="conductor_memory" ids={ids} label={t("conductor.memoryToggle")} />
+              ),
+            },
+            {
+              id: "conductor_reflection",
+              label: t("conductor.reflection"),
+              keywords: ["reflection", "after each call", "memories"],
+              control: () => (
+                <SegmentControl
+                  k="conductor_reflection"
+                  label={t("conductor.reflection")}
+                  fallback="ask"
+                  options={segs(["ask", "auto", "off"], "conductor.reflection")}
+                />
+              ),
+            },
+            {
+              id: "conductor_wake",
+              label: t("conductor.wake"),
+              description: t("conductor.wake.desc"),
+              keywords: ["wake", "hey conductor", "listening"],
+              control: (ids) => <WakeControl ids={ids} />,
+            },
+            {
+              id: "conductor_wake_sensitivity",
+              label: t("conductor.wake.sensitivity"),
+              keywords: ["wake", "sensitivity"],
+              control: () => (
+                <SegmentControl
+                  k="conductor_wake_sensitivity"
+                  label={t("conductor.wake.sensitivity")}
+                  fallback="medium"
+                  options={segs(["low", "medium", "high"], "conductor.wake.sensitivity")}
+                />
+              ),
+            },
+            {
+              id: "conductor_wake_pause_videos",
+              label: t("conductor.wake.pauseVideos"),
+              description: t("conductor.wake.pauseVideos.desc"),
+              keywords: ["videos", "media", "pause"],
+              control: (ids) => (
+                <BoolControl
+                  k="conductor_wake_pause_videos"
+                  ids={ids}
+                  label={t("conductor.wake.pauseVideos")}
+                />
+              ),
+            },
+          ],
+      extra: conductor ? (
         <>
           <ConductorCallSettings />
           <AboutYou />
           <MemoryPanel />
           <p className="text-sm text-fg-muted">{t("conductor.safety")}</p>
         </>
+      ) : (
+        <ComesWithAccounts testId="conductor-settings-hosted" />
       ),
     },
     {
@@ -968,29 +985,37 @@ export function settingsPages(platform: string, routines = false, accounts = fal
             />
           ),
         },
-        {
-          id: "ai_thread_titles",
-          label: t("settings.aiThreadTitles"),
-          description: t("settings.aiThreadTitles.desc"),
-          keywords: ["titles", "ai", "thread names"],
-          control: (ids) => (
-            <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />
-          ),
-        },
-        {
-          id: "auto_consent",
-          label: t("settings.autoConsent"),
-          description: t("settings.autoConsent.desc"),
-          keywords: ["auto", "terminal output"],
-          control: (ids) => (
-            <PolicyBoolControl
-              k="auto_consent"
-              ids={ids}
-              label={t("settings.autoConsent")}
-              lockedBy={(p) => p.disableAuto}
-            />
-          ),
-        },
+        ...(accounts
+          ? [
+              {
+                id: "ai_thread_titles",
+                label: t("settings.aiThreadTitles"),
+                description: t("settings.aiThreadTitles.desc"),
+                keywords: ["titles", "ai", "thread names"],
+                control: (ids: Ids) => (
+                  <BoolControl k="ai_thread_titles" ids={ids} label={t("settings.aiThreadTitles")} />
+                ),
+              },
+            ]
+          : []),
+        ...(accounts
+          ? [
+              {
+                id: "auto_consent",
+                label: t("settings.autoConsent"),
+                description: t("settings.autoConsent.desc"),
+                keywords: ["auto", "terminal output"],
+                control: (ids: Ids) => (
+                  <PolicyBoolControl
+                    k="auto_consent"
+                    ids={ids}
+                    label={t("settings.autoConsent")}
+                    lockedBy={(p) => p.disableAuto}
+                  />
+                ),
+              },
+            ]
+          : []),
         ...(accounts
           ? [
               {
@@ -1024,14 +1049,18 @@ export function settingsPages(platform: string, routines = false, accounts = fal
           keywords: ["session", "library", "search", "index", "history"],
           control: (ids) => <SessionSearchControl ids={ids} label={t("settings.sessionSearch")} />,
         },
-        {
-          id: "dictate_share_hints",
-          label: t("settings.dictionaryHints"),
-          keywords: ["dictionary", "dictate"],
-          control: (ids) => (
-            <BoolControl k="dictate_share_hints" ids={ids} label={t("settings.dictionaryHints")} />
-          ),
-        },
+        ...(accounts
+          ? [
+              {
+                id: "dictate_share_hints",
+                label: t("settings.dictionaryHints"),
+                keywords: ["dictionary", "dictate"],
+                control: (ids: Ids) => (
+                  <BoolControl k="dictate_share_hints" ids={ids} label={t("settings.dictionaryHints")} />
+                ),
+              },
+            ]
+          : []),
       ],
       extra: <PrivacyFlows />,
     },
@@ -1108,7 +1137,7 @@ export function settingsPages(platform: string, routines = false, accounts = fal
       id: "account",
       label: t("settings.account"),
       subtitle: t("settings.account.subtitle"),
-      keywords: ["plan", "billing", "credits", "subscription", "sign out"],
+      keywords: ["account", "sign in", "sign out"],
       rows: [],
       extra: <AccountPage />,
     },

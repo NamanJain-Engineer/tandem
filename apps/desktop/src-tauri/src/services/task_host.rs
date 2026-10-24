@@ -26,7 +26,6 @@ fn task_origin(issue_id: &str, attempt: &AttemptId) -> String {
 pub struct AppExecHost {
     pub store: Store,
     pub data: tandem_core::DataDir,
-    pub auth: Arc<crate::services::auth::AuthService>,
     pub entitlements: Arc<crate::services::entitlement::EntitlementService>,
     pub terminals: Arc<crate::services::terminal::TerminalService>,
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
@@ -47,10 +46,6 @@ impl AppExecHost {
 impl ExecHost for AppExecHost {
     fn limits(&self) -> Limits {
         self.entitlements.limits()
-    }
-
-    fn signed_in(&self) -> bool {
-        self.auth.is_signed_in()
     }
 
     async fn workspace_root(&self, ws: &WorkspaceId) -> Result<PathBuf, IpcError> {

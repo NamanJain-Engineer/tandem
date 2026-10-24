@@ -1252,12 +1252,17 @@ mod tests {
     #[tokio::test]
     async fn f_ex_04_5_over_the_live_pane_limit_nothing_is_launched() {
         let (_t, state, repo, run) = fixture().await;
-        let max = state
+        // No account has a pane limit (D-2900); limits that carry one still
+        // apply.
+        assert_eq!(state.entitlements.limits().panes, None);
+        let max = 4;
+        state
             .entitlements
-            .limits()
-            .panes
-            .expect("Free has a pane limit");
-        // Fill the plan so three more don't fit.
+            .set_test_limits(tandem_core::entitlement::Limits {
+                panes: Some(max),
+                ..tandem_core::entitlement::Limits::free()
+            });
+        // Fill the limit so three more don't fit.
         let busy = max.saturating_sub(2);
         for n in 0..busy {
             state
@@ -1295,7 +1300,10 @@ mod tests {
             let _ = state.terminals.pty.kill(&format!("pn_busy{n}"));
         }
         assert_eq!(err.code, ErrorCode::LimitReached);
-        assert_eq!(err.message, format!("Free includes {max} live panes"));
+        assert_eq!(
+            err.message,
+            format!("This account runs up to {max} live panes")
+        );
         assert_eq!(
             git(&repo, &["branch", "--list", "tandem/*"]),
             before,

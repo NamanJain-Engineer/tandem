@@ -944,7 +944,7 @@ pub static SCHEMA: &[SettingSpec] = &[
     spec!(AutoDontAsk, json!(false), V::Bool, Hidden, []),
     // F-EN-08: engine id → true; Settings › Engines sets it per engine.
     spec!(EnginePins, json!({}), V::Map, Hidden, []),
-    // F-TH-17: a local full-text index of session text, Pro, opt-in.
+    // F-TH-17: a local full-text index of session text, opt-in.
     spec!(
         SessionSearch,
         json!(false),

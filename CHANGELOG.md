@@ -7,6 +7,120 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.10.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free, with no paid plans, and from this release everything that
+runs on your computer is free and unlimited, with no account. Features that need Vibezeo's servers (cloud dictation, Enhance and
+Polish, dictionary sync, Conductor, Auto, Create with AI and the phone relay)
+come with Vibezeo accounts.
+
+### Changed
+
+- [all] **No limits on your computer.** As many live panes, workspaces,
+  teammates, plugin connections and accounts per engine as you need, six
+  threads side by side, and every chat engine in Thread mode: Cursor Agent,
+  Grok and OpenCode threads run with no account.
+- [all] **Routines, task runs and the Night Shift are free.** They run with
+  no account and no sign-in, in the app or in the background.
+- [all] **Session search is free.** Turn on Search session text in Settings ›
+  Privacy to search what your Claude Code and Codex sessions say.
+- [all] **No plans to choose.** The plans dialog, See plans, Upgrade buttons,
+  Pro badges, limit cards and the rail's plan footer are gone. The welcome
+  screen says "Free · no account · nothing sent to Vibezeo". Features that
+  need Vibezeo's servers say "Comes with Vibezeo accounts", with "Tell me when
+  accounts open" where it helps.
+
+## 0.9.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free, with no paid plans. Like 0.8.0, this build runs on your
+computer, with no account and nothing sent to our servers. This release is about bringing parallel agents'
+work home: land finished worktrees one after another behind your checks,
+bring a pull request's CI failures and review comments back to the agent,
+see when two agents change the same functions, keep each engine's version
+under your control, find every past session in one library, and run agent
+panes in a sandbox.
+
+Limits in this build, left from the earlier Free plan: 4 live panes, 3
+workspaces, one thread at a time, one account per engine, threads with Claude
+Code and Codex, one teammate besides Lead, and one plugin connection. The next
+release removes them.
+
+### Added
+
+- [lin] **Land worktrees.** "Land worktrees…" in a repository's menu, or any
+  of its worktrees' menus, merges finished worktrees into the repository's
+  current branch one after another, without a pull request for each. It
+  lists the worktrees with commits the branch doesn't have, safest first,
+  and takes a check command, such as your tests, which it remembers for the
+  repository. For each worktree in turn it merges the branch into the
+  worktree, runs the check there with the worktree's ports and environment,
+  then merges the worktree into the branch with a merge commit, so what
+  lands is exactly what was checked. The queue stops and says why when a
+  merge conflicts (it's aborted, so nothing is left half-merged), a check
+  fails, the branch or the worktree changed during the landing, or a merge
+  would replace a file that isn't committed, such as an ignored `.env`. A
+  failed check offers "Send failure to agent", which types the end of its
+  output into the worktree's agent when you click. Landing never pushes or
+  fetches, and until you push, "Undo landing" moves the branch back after
+  you confirm.
+- [lin] **CI results and review comments back to the agent.** Allow a
+  repository with "Check pull request" in a worktree's ⋯ menu, and Vibezeo
+  reads its pull requests through your own GitHub CLI (`gh`), which signs
+  itself in: Vibezeo never sees or stores a token. A worktree with an open
+  pull request shows its checks on its rail row, such as "1 check failed:
+  test". On a failed check, "Send failure to agent" types the check's name,
+  its link and the end of the failing job's log into the worktree's agent;
+  with no agent there, "Copy failure" copies it. In Open diff, "Import
+  review comments" brings the pull request's line comments into the review
+  bar, up to 40 at a time, to send to the agent with your own. Logs and
+  comments reach the agent marked as data, not instructions, and only when
+  you click. GitLab merge requests aren't read yet.
+- [lin] **Intent radar.** Git only notices two agents clashing when they
+  touch the same lines. The intent radar reads the TypeScript, Rust and
+  Python each worktree changed and notes which functions, classes and other
+  definitions it added, changed or removed, and which names its new lines
+  use. When two worktrees of a repository share a symbol (both changed it,
+  or one renamed or removed what the other's new code uses), the rail row
+  says so, such as "Shares Session", Check overlap… lists the symbols with
+  what each side did, and a notice offers "Warn both agents", which types a
+  short note into each agent when you click. It updates after every agent
+  turn and only reads files.
+- [lin] **Engine versions and updates under your control.** Settings ›
+  Engines shows each installed engine's version and how it was installed.
+  "Check for updates" asks npm for the newest version, only when you click
+  it and only for engines installed with npm. "Pin this version" starts new
+  panes of Claude Code or Codex with the engine's own documented switch
+  against updating. Vibezeo remembers the last version that finished a
+  thread turn: if an engine updates and then breaks on this computer (it
+  won't start, or it stops mid-turn), the Engines page and the thread say
+  so, and "Roll back to…" shows the command that installs the earlier
+  version the same way, before anything runs. "Running in the background"
+  lists your own engine processes that have no terminal and that Vibezeo
+  didn't start, such as a leftover daemon, and Stop ends one after you
+  confirm.
+- [lin] **Session library.** "Session library…" in the command palette
+  lists the Claude Code and Codex sessions on this computer, from every
+  account and from each engine's own home, including sessions you started
+  in a terminal outside Vibezeo. They're grouped by repository, with their
+  first prompt. Open shows the prompts and replies, read-only. Resume opens
+  an agent pane in the session's folder with the engine's own resume, and
+  "Continue with another engine…" opens the handoff sheet with a summary of
+  the session's last messages. Vibezeo only reads the engines' session
+  files and never opens their sign-in files. Searching what sessions say
+  comes in the next release.
+- [lin] **Sandbox agent panes.** Settings › Engines › Sandbox agent panes,
+  off by default, runs each new agent pane's engine in a sandbox made with
+  bubblewrap. It writes only to the pane's folder, its repository's git
+  data, the engine's own home in Vibezeo and `/tmp`, and it can't read
+  `~/.ssh`, `~/.aws`, `~/.gnupg`, your other credential folders or
+  Vibezeo's own data. Git's hooks and `.git/config` stay read-only, and the
+  network stays on. Claude Code, Codex and OpenCode run sandboxed; engines
+  that keep their sign-in in your home folder start outside it, and the
+  pane's header says why. Install bubblewrap with your package manager
+  (`sudo apt install bubblewrap`); Vibezeo never installs it.
+
 ## 0.8.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like

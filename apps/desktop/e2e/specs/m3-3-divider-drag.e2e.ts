@@ -5,8 +5,7 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
-  setPlan,
+  waitSignedIn,
   waitForApp,
   waitForShell,
 } from "../support/app";
@@ -26,17 +25,13 @@ function balanced(nodes: Node[], dir: "row" | "col"): Node {
   };
 }
 
-// E2E-M3-3 Divider drag (F-CD-02 AC1): 8 panes (Pro), drag the top row's
+// E2E-M3-3 Divider drag (F-CD-02 AC1): 8 panes (no pane limit, D-2900), drag the top row's
 // middle divider. Nothing resizes while dragging; after pointer-up each pane
 // of that row resizes once and the bottom row not at all.
 describe("E2E-M3-3 divider drag", () => {
   it("F-CD-02.1 dragging a divider with 8 panes resizes each affected PTY exactly once, after pointer-up", async () => {
-    const { email } = await freshUser("m3-3");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), {
-      timeout: 20_000,
-      timeoutMsg: `footer: ${await planFooter()}`,
-    });
+    await freshUser("m3-3");
+    await waitSignedIn();
     await addFolder(`/tmp/tandem-e2e-m3-3-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

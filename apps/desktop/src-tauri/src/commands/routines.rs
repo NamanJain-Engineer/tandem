@@ -105,7 +105,7 @@ fn set_background(state: &AppState, enabled: bool) -> Result<LauncherStatus, Ipc
         if !state.entitlements.limits().background_routines {
             return Err(IpcError::new(
                 ErrorCode::ForbiddenPlan,
-                "Background routines are part of Pro.",
+                "Background routines are turned off for this account.",
             ));
         }
         let spec = LauncherSpec {

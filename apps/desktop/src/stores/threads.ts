@@ -10,7 +10,7 @@ import type {
 } from "@tandem/protocol";
 import { invoke, inTauri, usingFakeBackend } from "../ipc/invoke";
 import { listen } from "../ipc/events";
-import { addCell, neighbor, removeCell, type GridAdd } from "../features/thread/grid";
+import { GRID_MAX, addCell, neighbor, removeCell, type GridAdd } from "../features/thread/grid";
 import { emptyThread, fromHistory, reduce, type ThreadView } from "../features/thread/reducer";
 import { useSession } from "./session";
 import { useSettings } from "./settings";
@@ -302,7 +302,7 @@ export const useThreads = create<ThreadsState>((set, get) => {
     grid: [],
     gridColumns: 1,
     addToGrid: (id) => {
-      const limit = useSession.getState().entitlement?.limits.threadGrid ?? 1;
+      const limit = useSession.getState().entitlement?.limits.threadGrid ?? GRID_MAX;
       const { grid, result } = addCell(get().grid, get().selectedId, id, limit);
       if (result === "added" || result === "present") {
         if (grid !== get().grid) {

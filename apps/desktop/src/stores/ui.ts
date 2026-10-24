@@ -1,10 +1,6 @@
 import { create } from "zustand";
 
 export type Mode = "agent" | "code" | "thread";
-export type UpgradeGate = {
-  kind: "workspaces" | "panes" | "thread_grid" | "chat_engines" | "teammates" | "conductor";
-  limit: number;
-};
 
 type UiState = {
   mode: Mode;
@@ -19,7 +15,6 @@ type UiState = {
   cheatsheetOpen: boolean;
   /** Help › Diagnostics, the live panel (§5.7). */
   diagnosticsOpen: boolean;
-  upgrade: { open: boolean; gate?: UpgradeGate; retry?: () => void };
   setMode: (m: Mode) => void;
   openSettings: (page?: string) => void;
   closeSettings: () => void;
@@ -30,8 +25,6 @@ type UiState = {
   openFindWork: () => void;
   setCheatsheet: (open: boolean) => void;
   setDiagnostics: (open: boolean) => void;
-  openUpgrade: (gate?: UpgradeGate, retry?: () => void) => void;
-  closeUpgrade: () => void;
 };
 
 export const useUi = create<UiState>((set, get) => ({
@@ -43,7 +36,6 @@ export const useUi = create<UiState>((set, get) => ({
   paletteMode: "commands",
   cheatsheetOpen: false,
   diagnosticsOpen: false,
-  upgrade: { open: false },
   settingsPage: null,
   setMode: (mode) => set({ mode }),
   openSettings: (page) => {
@@ -66,6 +58,4 @@ export const useUi = create<UiState>((set, get) => ({
   openFindWork: () => set({ paletteOpen: true, paletteMode: "find" }),
   setCheatsheet: (cheatsheetOpen) => set({ cheatsheetOpen }),
   setDiagnostics: (diagnosticsOpen) => set({ diagnosticsOpen }),
-  openUpgrade: (gate, retry) => set({ upgrade: { open: true, gate, retry } }),
-  closeUpgrade: () => set({ upgrade: { open: false } }),
 }));

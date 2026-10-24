@@ -18,7 +18,6 @@ import { invoke } from "../../ipc/invoke";
 import { useSetting, useSettings } from "../../stores/settings";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useUi } from "../../stores/ui";
-import { useSession } from "../../stores/session";
 
 type Load =
   | { state: "loading" }
@@ -147,14 +146,7 @@ function WslFolderDialog({ distro, onClose }: { distro: string | null; onClose: 
       .addRemote({ kind: "wsl", root: path.trim(), wslDistro: distro });
     setAdding(false);
     if (err) {
-      if (err.code === "limit_reached")
-        useUi
-          .getState()
-          .openUpgrade({
-            kind: "workspaces",
-            limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
-          });
-      else setError(err.message);
+      setError(err.message);
       return;
     }
     onClose();

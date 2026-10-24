@@ -33,7 +33,6 @@ import {
 } from "../../stores/accounts";
 import { defaultEngine } from "../../stores/launch";
 import { useEngines } from "../../stores/engines";
-import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { MiniTerminal } from "../code/MiniTerminal";
 
@@ -296,19 +295,7 @@ export function LoginSheet({ request, onClose }: { request: LoginRequest; onClos
               />
             </div>
             {limit ? (
-              <Callout tone="info">
-                <span className="flex items-center justify-between gap-3">
-                  <span>{t("accounts.moreOnPro")}</span>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => useUi.getState().openUpgrade()}
-                    data-testid="login-upgrade"
-                  >
-                    {t("accounts.upgrade")}
-                  </Button>
-                </span>
-              </Callout>
+              <Callout tone="info">{phase.error?.message}</Callout>
             ) : (
               phase.error && <Callout tone="error">{phase.error.message}</Callout>
             )}

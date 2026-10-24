@@ -96,16 +96,14 @@ pub trait Rewriter: Send + Sync {
 pub enum ToastAction {
     /// Transcribe the failed cloud take on this device.
     UseLocal,
-    /// Open the plans (cloud needs Pro).
-    SeePlans,
 }
 
 impl CloudFailureKind {
+    /// Every failure offers the local engine. There are no plans to open
+    /// (D-869): a take refused because no account carries cloud STT says
+    /// it comes with Vibezeo accounts and offers local too (D-2903).
     pub fn actions(self) -> Vec<ToastAction> {
-        match self {
-            Self::NeedsPro => vec![ToastAction::UseLocal, ToastAction::SeePlans],
-            _ => vec![ToastAction::UseLocal],
-        }
+        vec![ToastAction::UseLocal]
     }
 }
 
@@ -157,8 +155,9 @@ mod tests {
     }
 
     #[test]
-    fn f_di_05_every_cloud_failure_offers_local_and_pro_offers_plans() {
+    fn f_di_05_every_cloud_failure_offers_local_and_none_offers_plans() {
         for k in [
+            CloudFailureKind::NeedsPro,
             CloudFailureKind::OutOfCredits,
             CloudFailureKind::DailyLimit,
             CloudFailureKind::Offline,
@@ -166,9 +165,5 @@ mod tests {
         ] {
             assert_eq!(k.actions(), vec![ToastAction::UseLocal]);
         }
-        assert_eq!(
-            CloudFailureKind::NeedsPro.actions(),
-            vec![ToastAction::UseLocal, ToastAction::SeePlans]
-        );
     }
 }

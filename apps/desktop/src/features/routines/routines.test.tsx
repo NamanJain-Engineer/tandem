@@ -91,10 +91,10 @@ const PREVIEW: SchedulePreview = {
   next: [Date.UTC(2026, 9, 12, 9), Date.UTC(2026, 9, 13, 9), Date.UTC(2026, 9, 14, 9)],
 };
 
-function pro() {
-  useSession.setState({
-    entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE, routines: true, backgroundRoutines: true } },
-  });
+/** No account: routines and background runs are on (D-869, D-2900). */
+function noAccount() {
+  useSession.setState({ entitlement: FREE_VIEW });
+  expect(FREE).toMatchObject({ routines: true, backgroundRoutines: true });
 }
 
 function backend(
@@ -148,15 +148,25 @@ describe("routines in words (F-RT-01 AC3)", () => {
 });
 
 describe("Routines page (F-RT-04, UI-50..53)", () => {
-  it("F-RT-04 Free accounts see the upsell and no New routine", async () => {
+  it("F-RT-04 with no account Routines offers New routine (D-2900)", async () => {
     backend([]);
     renderPage();
-    expect(await screen.findByText("Routines are part of Pro")).toBeTruthy();
-    expect(screen.queryByTestId("routine-new")).toBeNull();
+    expect(await screen.findByTestId("routine-new")).toBeTruthy();
   });
 
-  it("F-RT-04 Pro with no routines: the empty state's suggestion pre-fills the editor", async () => {
-    pro();
+  it("F-RT-04 limits that turn routines off say so, with no New routine and nothing to buy", async () => {
+    useSession.setState({
+      entitlement: { ...FREE_VIEW, limits: { ...FREE, routines: false, backgroundRoutines: false } },
+    });
+    backend([]);
+    renderPage();
+    expect(await screen.findByText("Routines are turned off")).toBeTruthy();
+    expect(screen.queryByTestId("routine-new")).toBeNull();
+    expect(screen.queryByText(/\bPro\b|Upgrade/)).toBeNull();
+  });
+
+  it("F-RT-04 with no routines the empty state's suggestion pre-fills the editor", async () => {
+    noAccount();
     backend([]);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Weekly update draft" }));
@@ -167,7 +177,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-04 a row shows the schedule in words, the next run, the result, and a failure's fix", async () => {
-    pro();
+    noAccount();
     backend([
       view(routine({ lastStatus: "ok" })),
       view(
@@ -194,7 +204,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-04 Run now and Pause call the core", async () => {
-    pro();
+    noAccount();
     const calls = backend([view(routine())], { routine_run_now: () => "run_1", routine_pause: () => null });
     renderPage();
     fireEvent.click(await screen.findByTestId("routine-run-now"));
@@ -212,7 +222,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-01.4 the editor's Full access needs the explicit choice before Save", async () => {
-    pro();
+    noAccount();
     let saved: RoutineInput | null = null;
     backend([], {
       routine_save: (a) => {
@@ -243,7 +253,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-01 a too-short instruction can't be saved, and Esc on a changed form asks first", async () => {
-    pro();
+    noAccount();
     const calls = backend([]);
     renderPage();
     fireEvent.click((await screen.findAllByRole("button", { name: "New routine" }))[0]!);
@@ -257,7 +267,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-01.3 the schedule preview shows the words, the zone and the next 3 runs", async () => {
-    pro();
+    noAccount();
     backend([]);
     renderPage();
     fireEvent.click((await screen.findAllByRole("button", { name: "New routine" }))[0]!);
@@ -267,7 +277,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
   });
 
   it("F-RT-01 a schedule the core refuses shows its reason instead of a preview", async () => {
-    pro();
+    noAccount();
     backend([], {
       routine_preview_schedule: () => {
         throw {
@@ -288,7 +298,7 @@ describe("Routines page (F-RT-04, UI-50..53)", () => {
 
 describe("routines a teammate made (F-RT-05)", () => {
   it("F-RT-05 a routine made with the schedule tool says created by {name}", async () => {
-    pro();
+    noAccount();
     backend([view(routine({ createdByTeammateId: "tm_lead" })), view(routine({ id: "rt_2", name: "Mine" }))]);
     renderPage();
     const rows = await screen.findAllByTestId("routine-row");

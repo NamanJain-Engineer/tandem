@@ -3,7 +3,6 @@
 // shipped build; numbers and release notes come from code, never from here.
 import type { Release } from "@tandem/protocol/changelog";
 import { RELEASES } from "./changelog";
-import { PLANS } from "./pricing";
 import { DOWNLOADS, RELEASE } from "./release";
 import { docsPath } from "./docs/pages";
 
@@ -27,11 +26,11 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
   },
   {
     title: "Switch engines mid-thread",
-    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation. Pro shows up to six threads side by side, each with its own composer; Free shows one at a time.",
+    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation.",
   },
   {
     title: "Worktree lanes and handoff",
@@ -55,7 +54,7 @@ export const FEATURES = [
   },
   {
     title: "Teammates",
-    body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Free includes one teammate besides Lead.",
+    body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Make as many as you need.",
   },
   {
     title: "Find work by what it's about",
@@ -67,7 +66,7 @@ export const FEATURES = [
   },
   {
     title: "Plugins with approvals",
-    body: "Connect services such as Linear, Notion, Sentry or GitHub once, then choose which teammates and threads may use them. Reads run; writes, posts, spending and deletions ask you first, and runs nobody is watching hold them for your review. Credentials stay in your keychain and engines never see them. Free includes one connection.",
+    body: "Connect services such as Linear, Notion, Sentry or GitHub once, then choose which teammates and threads may use them. Reads run; writes, posts, spending and deletions ask you first, and runs nobody is watching hold them for your review. Credentials stay in your keychain and engines never see them.",
   },
   {
     title: "Tasks",
@@ -75,7 +74,7 @@ export const FEATURES = [
   },
   {
     title: "Several accounts per engine",
-    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Free has one account per engine; Pro has as many as you need.",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Add as many as you need.",
   },
   {
     title: "Notifications that matter",
@@ -110,15 +109,15 @@ export const CLAUDE = [
   {
     tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude and stores no prompts or responses. They go live when accounts open.",
   },
 ] as const;
 
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Night Shift, a sandbox and a merge queue",
-    body: "Built and in review now: the Night Shift starts a task on an account the moment its usage window resets; a Linux sandbox keeps agents to their own folder; a local merge queue lands worktrees one at a time, with undo; CI results and review comments go back to the agent; and every engine's past sessions in one searchable library.",
+    title: "Multi-repo workspaces, claims and any ACP agent",
+    body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
   },
   {
     title: "Your phone, from anywhere",
@@ -129,14 +128,14 @@ export const ROADMAP = [
     body: "The same app on macOS and Windows, with WSL folders in the Windows download. The code is ready; the downloads wait for signed builds tested on real machines.",
   },
   {
-    title: "Conductor and Pro, when accounts open",
-    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with routines that run teammates on a schedule, tasks run in their own lanes and the hosted features, and they switch on with Vibezeo accounts.",
+    title: "Conductor, when accounts open",
+    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with the other features that need our servers, such as cloud dictation and the phone relay, and they switch on with Vibezeo accounts.",
   },
 ] as const;
 
 /** The hero (D-1841): ownership first. Every phrase is true of the shipped
  * build: the engines run unmodified on their own sign-ins, the app runs on
- * the computer, the Free plan needs no account, and this build sends nothing
+ * the computer, the app needs no account, and this build sends nothing
  * to Vibezeo's servers (privacy page, FAQ). No other product is named. */
 export const HERO = {
   title: ["Your agents.", "Your machine.", "Your plan."],
@@ -174,7 +173,7 @@ export const PRINCIPLES = [
 export const FAQ = [
   {
     q: "Can I use Vibezeo today?",
-    a: `Yes. Download Vibezeo ${RELEASE.version} for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.`,
+    a: `Yes. Download Vibezeo ${RELEASE.version} for Linux from the download page. It's free, runs on your computer with no account, and doesn't contact our servers.`,
   },
   {
     q: "How does Vibezeo use Claude?",
@@ -193,15 +192,10 @@ export const FAQ = [
     a: "No. Vibezeo runs the coding agents you already have, on your existing plans.",
   },
   {
-    q: "What will it cost?",
-    a: `Free is ${planPrice("free")}. Pro is ${planPrice("pro")} a month and Team is ${planPrice("team")} per seat a month; they start with Vibezeo accounts. The plans are on the Pricing page.`,
+    q: "Is Vibezeo free?",
+    a: "Yes. Vibezeo is free, with no paid plans and no limits on what runs on your computer. Your agents run on the AI subscriptions you already have.",
   },
 ] as const;
-function planPrice(id: "free" | "pro" | "team"): string {
-  const plan = PLANS.find((p) => p.id === id);
-  if (!plan) throw new Error(`no plan ${id}`);
-  return plan.price;
-}
 
 export type FeatureTitle = (typeof FEATURES)[number]["title"];
 
@@ -309,6 +303,12 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Runaway guard": { icon: "shield", docs: docsPath("workflow-tools") },
   "Usage forecast": { icon: "activity", docs: docsPath("accounts-and-limits") },
   "One instructions file for every engine": { icon: "book", docs: docsPath("engines") },
+  "Land worktrees": { icon: "merge", docs: docsPath("code-mode") },
+  "CI results and review comments back to the agent": { icon: "message", docs: docsPath("code-mode") },
+  "Intent radar": { icon: "layers", docs: docsPath("code-mode") },
+  "Engine versions and updates under your control": { icon: "package", docs: docsPath("engines") },
+  "Session library": { icon: "history", docs: docsPath("workflow-tools") },
+  "Sandbox agent panes": { icon: "lock", docs: docsPath("engines") },
   "Antigravity CLI and Kiro CLI": { icon: "terminal", docs: docsPath("engines") },
 };
 

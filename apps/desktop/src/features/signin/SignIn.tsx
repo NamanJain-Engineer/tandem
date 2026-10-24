@@ -119,8 +119,8 @@ export function SignIn() {
   );
 }
 
-/** UI-03 in an early-access build: no accounts yet, the Free plan runs
- * locally (D-105). */
+/** UI-03 in an early-access build: no accounts yet, and everything local runs
+ * free (D-105, D-869). */
 function EarlyAccessWelcome() {
   return (
     <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
@@ -137,9 +137,6 @@ function EarlyAccessWelcome() {
             <p className="text-base text-fg-muted">{t("signin.subtitle")}</p>
           </div>
         </div>
-        <Callout tone="info" title={t("signin.earlyAccess.title")}>
-          {t("signin.earlyAccess.body")}
-        </Callout>
         <div className="flex flex-col gap-2">
           <Button
             size="lg"
@@ -149,7 +146,9 @@ function EarlyAccessWelcome() {
           >
             {t("signin.earlyAccess.start")}
           </Button>
-          <span className="text-sm text-fg-subtle">{t("signin.earlyAccess.note")}</span>
+          <span className="text-sm text-fg-subtle" data-testid="signin-free">
+            {t("signin.earlyAccess.note")}
+          </span>
         </div>
         <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>
       </section>

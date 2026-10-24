@@ -5,7 +5,6 @@ import { SITE } from "../../lib/site";
 export const NAV = [
   { href: "/#features", label: "Features" },
   { href: "/demo/", label: "Demo" },
-  { href: "/pricing/", label: "Pricing" },
   { href: "/docs/", label: "Docs" },
   { href: "/changelog/", label: "Changelog" },
   { href: "/blog/", label: "Blog" },
@@ -21,7 +20,6 @@ export const FOOTER: ReadonlyArray<{ title: string; links: readonly FooterLink[]
     links: [
       { href: "/download/", label: "Download" },
       { href: "/demo/", label: "Live demo" },
-      { href: "/pricing/", label: "Pricing" },
       { href: "/changelog/", label: "Changelog" },
       { href: "/blog/", label: "Blog" },
       { href: "/#claude", label: "Built with Claude" },

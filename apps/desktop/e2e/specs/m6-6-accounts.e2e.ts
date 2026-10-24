@@ -1,7 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshUser, home, invoke, mod, paneIds, planFooter, setPlan, split } from "../support/app";
+import { addFolder, freshUser, home, invoke, mod, paneIds, split } from "../support/app";
 
 type Account = { id: string; engineId: string; label: string; homePath: string; isDefault: boolean };
 type Pane = { id: string; accountId: string | null };
@@ -50,17 +50,15 @@ async function closeSettings(): Promise<void> {
   await $('[data-testid="accounts-page"]').waitForExist({ reverse: true, timeout: 5_000 });
 }
 
-// E2E-M6-6 Accounts (F-AC-02, F-AC-03, UI-35).
+// E2E-M6-6 Accounts (F-AC-02, F-AC-03, UI-35), on a free account: several
+// accounts per engine need no plan (D-2900).
 describe("E2E-M6-6 accounts", () => {
-  let email = "";
   let tabId = "";
   let first: Pane = { id: "", accountId: null };
 
   it("F-AC-02.1 cancelling mid-login kills the login process and creates no account", async function () {
     this.timeout(120_000);
-    ({ email } = await freshUser("m6-6"));
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m6-6");
     await addFolder(`/tmp/tandem-e2e-m6-6-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ id: string; tabs: Array<{ id: string }> }>>("workspace_list");
@@ -155,17 +153,15 @@ describe("E2E-M6-6 accounts", () => {
     await invoke("pane_close", { paneId: after.id });
   });
 
-  it("F-AC-02 on Free a second account per engine is blocked with Upgrade", async function () {
+  it("F-AC-02 a free account adds a third account per engine: no limit and nothing to buy (D-2900)", async function () {
     this.timeout(60_000);
-    await setPlan(email, "free");
-    await invoke("entitlement_refresh");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("FREE"), { timeout: 20_000 });
     await openAccounts();
     await startAdding("Third");
-    await $('[data-testid="login-upgrade"]').waitForExist({ timeout: 10_000 });
-    expect(await $('[data-testid="login-sheet"]').getProperty("textContent")).toContain(
-      "Pro lets you add more accounts per engine.",
-    );
+    const sheet = $('[data-testid="login-sheet"]');
+    await browser.waitUntil(async () => Boolean(await sheet.getAttribute("data-account-id")), {
+      timeout: 15_000,
+    });
+    expect(await $('[data-testid="login-upgrade"]').isExisting()).toBe(false);
     await $('[data-testid="login-cancel"]').click();
   });
 });
