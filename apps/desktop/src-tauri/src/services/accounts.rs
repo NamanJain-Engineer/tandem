@@ -32,7 +32,8 @@ const LOGIN_WAIT: Duration = Duration::from_secs(15 * 60);
 const READY_WAIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(800);
 
-pub const MORE_ACCOUNTS_ON_PRO: &str = "Pro lets you add more accounts per engine.";
+pub const MORE_ACCOUNTS_OFF: &str =
+    "Adding more accounts per engine is turned off for this account.";
 pub const KEYCHAIN_SINGLE: &str =
     "This engine stores its sign-in in your Keychain; only one account is supported.";
 
@@ -139,7 +140,7 @@ pub async fn begin_add(
     let count = accounts::count_for(&state.store, engine_id).await?;
     if let Some(max) = state.entitlements.limits().accounts_per_engine {
         if count >= max {
-            return Err(IpcError::new(ErrorCode::LimitReached, MORE_ACCOUNTS_ON_PRO));
+            return Err(IpcError::new(ErrorCode::LimitReached, MORE_ACCOUNTS_OFF));
         }
     }
     if cfg!(target_os = "macos")

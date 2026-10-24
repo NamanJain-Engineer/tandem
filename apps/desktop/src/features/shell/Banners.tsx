@@ -3,7 +3,7 @@ import { Banner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
-import { copyDiagnostics, openBilling } from "./actions";
+import { copyDiagnostics } from "./actions";
 import { useHealth } from "../../stores/health";
 import { useUpdates } from "../../stores/updates";
 import { hoursLeft, updateNow } from "../updates/UnsupportedOverlay";
@@ -69,14 +69,6 @@ export function Banners() {
       tone: "warning",
       text: t("banner.offlineMode", { n: Number(auth.offlineDaysLeft) }),
       action: { label: t("banner.signIn"), onClick: () => invoke("auth_sign_in").catch(() => undefined) },
-      dismissable: true,
-    };
-  } else if (auth.signedIn && e?.status === "past_due") {
-    banner = {
-      id: "past-due",
-      tone: "error",
-      text: t("banner.pastDueShort"),
-      action: { label: t("banner.updatePayment"), onClick: () => void openBilling({ type: "portal" }, show) },
       dismissable: true,
     };
   }

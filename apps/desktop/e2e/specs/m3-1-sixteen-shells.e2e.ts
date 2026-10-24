@@ -4,9 +4,8 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
+  waitSignedIn,
   sendToPane,
-  setPlan,
   waitForApp,
   waitForPaneText,
   waitForShell,
@@ -28,17 +27,13 @@ function balanced(nodes: Node[], dir: "row" | "col"): Node {
   };
 }
 
-// E2E-M3-1 Sixteen shells (F-CD-04 AC2). Pro allows 64 live panes; the 4×4
+// E2E-M3-1 Sixteen shells (F-CD-04 AC2). There is no live-pane limit (D-2900); the 4×4
 // grid is saved over IPC (splitting by hand stops at the 240×120 minimum
 // before 16 panes fit this window).
 describe("E2E-M3-1 sixteen shells", () => {
   it("F-CD-04.2 16 shells: distinct $TANDEM_PANE_ID, at most 8 WebGL contexts, no blank pane", async () => {
-    const { email } = await freshUser("m3-1");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), {
-      timeout: 20_000,
-      timeoutMsg: `footer: ${await planFooter()}`,
-    });
+    await freshUser("m3-1");
+    await waitSignedIn();
     await addFolder(`/tmp/tandem-e2e-m3-1-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

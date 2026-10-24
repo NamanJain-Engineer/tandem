@@ -63,13 +63,14 @@ pub async fn settings_reset(
     Ok(())
 }
 
-/// What a plan allows a setting to be: session search is Pro, whoever turns
+/// What the limits allow a setting to be: session search needs
+/// `session_search` (on with no account, D-2900), whoever turns
 /// it on (F-TH-17, D-2414).
 fn allowed(limits: &Limits, key: SettingKey, value: &Value) -> Result<(), IpcError> {
     if key == SettingKey::SessionSearch && value.as_bool() == Some(true) && !limits.session_search {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Searching session text needs Vibezeo Pro.",
+            "Searching session text is turned off for this account.",
         ));
     }
     Ok(())
@@ -207,28 +208,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_th_17_4_free_cant_turn_search_on() {
+    async fn f_th_17_4_search_turns_on_with_no_account_and_limits_can_refuse_it() {
         let (_dir, state) = state();
-        let err = store(&state, SettingKey::SessionSearch, &Value::Bool(true))
+        // No account: the limits carry session search (D-869, D-2900).
+        store(&state, SettingKey::SessionSearch, &Value::Bool(true))
             .await
-            .expect_err("free");
-        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+            .expect("on with no account");
         assert_eq!(
             settings::get(&state.store, SettingKey::SessionSearch)
                 .await
                 .expect("get"),
-            Value::Bool(false)
+            Value::Bool(true)
         );
-        let pro = Limits {
-            session_search: true,
+        // Limits that turn it off refuse turning it on, never turning it off.
+        let off = Limits {
+            session_search: false,
             ..Limits::free()
         };
-        assert!(allowed(&pro, SettingKey::SessionSearch, &Value::Bool(true)).is_ok());
-        assert!(allowed(
-            &Limits::free(),
-            SettingKey::SessionSearch,
-            &Value::Bool(false)
-        )
-        .is_ok());
+        let err = allowed(&off, SettingKey::SessionSearch, &Value::Bool(true)).expect_err("off");
+        assert_eq!(err.code, ErrorCode::ForbiddenPlan);
+        assert!(allowed(&off, SettingKey::SessionSearch, &Value::Bool(false)).is_ok());
     }
 }

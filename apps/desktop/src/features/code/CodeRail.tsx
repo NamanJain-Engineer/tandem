@@ -41,7 +41,6 @@ import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
-import { PlanFooter } from "../shell/PlanFooter";
 import { useBoot } from "../shell/useBoot";
 
 export const RAIL_MIN = 180;
@@ -504,7 +503,6 @@ export function CodeRail() {
           </Button>
         </div>
       )}
-      <PlanFooter collapsed={collapsed} />
       {!collapsed && <RailResizer width={shown} onWidth={onWidth} />}
       <ConfirmDialog
         open={confirmRemove !== null}

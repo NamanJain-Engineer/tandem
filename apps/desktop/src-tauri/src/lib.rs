@@ -1046,12 +1046,12 @@ pub fn run() {
             }
             // Tasks refresh when anyone writes them (F-TK-03).
             state.tasks.watch(state.bus.clone());
-            // Task runs: those the last run left are stopped; signing out
-            // or losing Pro stops the active ones (F-TK-04, UI-84).
+            // Task runs: those the last run left are stopped; limits that
+            // turn execution off stop the active ones (F-TK-04, UI-84). They
+            // need no account (D-2902).
             {
                 let exec = state.task_exec.clone();
-                let (auth, ent) = (state.auth.clone(), state.entitlements.clone());
-                let mut app_events = state.bus.subscribe(tandem_core::bus::Topic::App);
+                let ent = state.entitlements.clone();
                 let mut plan_events = state.bus.subscribe(tandem_core::bus::Topic::Entitlement);
                 let routines = state.routines.clone();
                 let (restore, threads) = (state.restore.clone(), state.threads.clone());
@@ -1066,19 +1066,10 @@ pub fn run() {
                     exec.settle().await;
                     loop {
                         use tokio::sync::broadcast::error::RecvError;
-                        let (app, plan) = tokio::select! {
-                            e = app_events.recv() => (Some(e), None),
-                            e = plan_events.recv() => (None, Some(e)),
-                        };
-                        if matches!(app, Some(Err(RecvError::Closed))) || matches!(plan, Some(Err(RecvError::Closed))) {
+                        if matches!(plan_events.recv().await, Err(RecvError::Closed)) {
                             break;
                         }
-                        if let Some(Ok(e)) = &app {
-                            if e.name == "auth:changed" && !auth.is_signed_in() {
-                                exec.stop_all("you signed out").await;
-                            }
-                        }
-                        if plan.is_some() && !ent.limits().task_execution {
+                        if !ent.limits().task_execution {
                             exec.stop_all("plan changed").await;
                         }
                     }
@@ -1676,9 +1667,10 @@ mod harness_tests {
             ])
         );
         // The widget gets exactly this; anything more is a reviewed change.
-        // Reviewed (D-825): emit-to carries See plans to the main window,
-        // use-local is "Use local for this take" after a cloud failure
-        // (F-DI-05), and quick-action is Enhance and Polish (F-DI-10).
+        // Reviewed (D-825): use-local is "Use local for this take" after a
+        // cloud failure (F-DI-05), and quick-action is Enhance and Polish
+        // (F-DI-10). No emit-to since See plans went (D-871): the widget
+        // sends the main window nothing.
         let widget: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/widget.json")).expect("widget.json");
         assert_eq!(
@@ -1686,7 +1678,6 @@ mod harness_tests {
             serde_json::json!([
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
-                "core:event:allow-emit-to",
                 "core:window:allow-start-dragging",
                 "allow-dictate-status",
                 "allow-dictate-cancel-take",

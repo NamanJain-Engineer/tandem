@@ -159,4 +159,22 @@ describe("F-BE-08 choosing the providers (D-1013)", () => {
     expect(alone).toHaveLength(1);
     expect(alone[0]).toBeInstanceOf(MockRealtime);
   });
+
+  it("F-BE-08 production with the free Gemini needs CLIENT_COUNTRY_HEADER to start; paid, or a header, starts (D-1018)", () => {
+    const base = {
+      NODE_ENV: "production",
+      REALTIME_PROVIDERS: "gemini,openai",
+      GEMINI_API_KEY: "g",
+      OPENAI_API_KEY: "o",
+    };
+    expect(() => selectRealtime(loadEnv(base))).toThrow("CLIENT_COUNTRY_HEADER");
+    const names = (env: Record<string, string>) => selectRealtime(loadEnv(env)).map((p) => p.name);
+    expect(names({ ...base, CLIENT_COUNTRY_HEADER: "cf-ipcountry" })).toEqual(["gemini", "openai"]);
+    expect(names({ ...base, GEMINI_TIER: "paid" })).toEqual(["gemini", "openai"]);
+    // Production without Gemini needs no country, and dev and tests start without one.
+    expect(names({ ...base, REALTIME_PROVIDERS: "openai" })).toEqual(["openai"]);
+    expect(names({ ...base, NODE_ENV: "development" })).toEqual(["gemini", "openai"]);
+    expect(loadEnv({}).GEMINI_TIER).toBe("free");
+    expect(() => loadEnv({ GEMINI_TIER: "trial" })).toThrow();
+  });
 });

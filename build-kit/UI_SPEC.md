@@ -749,7 +749,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
   6a. **Update pill:** shown only when an update is staged ("Restart to update") or failed ("Update failed — Retry"); opens UI-130 (F-SH-01 item 9, F-SH-06).
   7. **Sidebar toggle:** IconButton "▣" (Mod+Shift+B), pressed when the sidebar is open.
   8. **Conductor button:** hidden unless Conductor is enabled. A 28px WaveformRing (idle state). Click toggles a call; press-and-hold is push-to-talk (UI-61).
-  9. **Account avatar:** the user's initials. Menu: name/email, plan badge ("Free" / "Pro" / "Team"), "Account & billing", "Settings", "What's new", "Sign out".
+  9. **Account avatar:** the user's initials. Menu: name/email, "Account", "Settings", "What's new", "Sign out". No plan badge (D-869).
 - **Offline:** a thin 2px warning line appears along the bottom of the title bar, and the status bar says "Offline · local features still work".
 
 ### 3.3 Left rail · SH
@@ -1050,13 +1050,13 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   - A version that threads have failed on since an update shows a warning `Banner` at the top of the page and in the thread: "{engine} updated from {from} to {to}, and threads have failed since." with **Roll back to {from}…**, which opens the Install sheet titled "Roll back {engine} to {version}" with the command shown before anything runs.
   - **Running in the background:** one row per process (engine, its command in mono, **Stop**), "No engine is running outside a terminal." when empty, a `Spinner` while loading, and the reason when the platform can't list them. Stop opens a danger `ConfirmDialog` "Stop this {engine} process?" / "Process {pid} has no terminal and runs outside Vibezeo. Stopping asks it to end."
 - **UI-162 Session library** (dialog, `lg`; "Session library…" in the command palette; F-TH-17). Title "Session library"; description "Claude Code and Codex sessions on this computer, including ones started outside Vibezeo. Vibezeo only reads them."
-  - An `Input` "Filter by title or folder" narrows the list as you type. With Pro and search on, **Search session text** (secondary) runs the full-text search, and Enter does the same. With Pro and search off, the line reads "Turn on Search session text in Settings › Privacy to search what sessions say." On Free, a `Badge` "Pro" and "Searching what sessions say is in Vibezeo Pro."
+  - An `Input` "Filter by title or folder" narrows the list as you type. With search on, **Search session text** (secondary) runs the full-text search, and Enter does the same. With search off, the line reads "Turn on Search session text in Settings › Privacy to search what sessions say." It needs no account (D-2900); limits that turn it off show "Searching what sessions say is turned off for this account."
   - Groups per repository (its folder name, the path as its tooltip; "No folder" last). Each row has the engine's glyph, the title (or "Untitled session"), and "{engine} · {account | Outside Vibezeo} · {age} · {size}". Its buttons are **Open** (ghost), **Resume** (secondary) and **Continue with another engine…** (ghost). A gone folder disables Resume and Continue, with "This session's folder isn't on this computer any more" as their tooltip; an engine that isn't installed disables Resume.
   - "# files couldn't be read" under the filter when any were skipped.
   - **Open** replaces the list with the transcript (`role="log"`): prompts on a `surface-3` block, replies plain, tools as "Used {name}" in `fg-subtle`. **Back** returns to the list.
   - **Continue** closes the library and opens UI-13 with the session as its source. Its body is "Vibezeo will write a summary from this {engine} session's last messages, then start {target} in its folder with it." Where offers "The session's folder" only, and there's no "Close the original pane".
   - States: loading (`Skeleton`s), error (`Banner` with Try again), empty (`EmptyState` "No sessions found" / "Sessions you run with Claude Code or Codex show up here, in Vibezeo or in any terminal."), no match ("No sessions match."), populated, and the transcript.
-  - Settings › Privacy: "Search session text", a `Switch`, disabled on Free while off. Its description: "Pro. Keeps a full-text index of your Claude Code and Codex sessions' prompts and replies on this computer, for the Session library. Nothing is sent anywhere. Turning it off deletes the index."
+  - Settings › Privacy: "Search session text", a `Switch` (disabled while off only when limits turn search off). Its description: "Keeps a full-text index of your Claude Code and Codex sessions' prompts and replies on this computer, for the Session library. Nothing is sent anywhere. Turning it off deletes the index."
 
 - **UI-155 Land worktrees** (dialog; "Land worktrees…" in a repository's rail menu and every local worktree's ⋯ menu; F-WT-07). Description: "Merges each ticked worktree into {base}, one at a time, after merging {base} into it and running the check. Nothing is pushed." Body: a `Checkbox` per candidate (its branch, "{n} commits", and the forecast: "No conflicts expected", "Conflicts in {n} files" or "No forecast"), in landing order; one with uncommitted changes is disabled with "Commit or stash its changes first". Then **Check command** (`Input`, monospace, the last one used here), with "Without a check, worktrees land untested." when empty. Loading: `Skeleton` rows. Empty: "No worktrees have commits that {base} doesn't." Errors: an error `Banner` (a dirty or detached base says so and disables Land). Footer: Cancel / **Land** (primary, "Land {n}").
 
@@ -1104,7 +1104,7 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 - **Row ContextMenu:** Rename (F2) · Pin / Unpin · Open in split · Open in Code mode · Duplicate thread · Copy thread link · Archive · ─ · Delete… (danger).
 - **Thread header (40px, surface-2):** folder chip "⌂ {folder}" (or "No folder · Add folder…"), title (click ▾ to rename or pick a recent thread), branch chip (when the folder is a git repo), EngineBadge with AccountChip, model name, then the status line ("● Working 12s", "◆ Waiting for you · 2m", "✓ Done · 3m ago", "○ Idle", "▲ Failed"), a context UsageMeter xs ("Context"), and buttons "Changes" (toggle, count badge), "Split" (Mod+D), ⋯.
 - **Header ⋯ menu:** Hand off… (Mod+Shift+H) · Switch account ▸ · Plan versions (n) · Open in Code mode (opens the same session in a terminal pane, when the engine supports resume) · Copy session ID · Export as Markdown… · Archive · ─ · Delete thread… (danger).
-- **Multi-thread grid:** drag rail rows into the main area or use Split to show up to 6 threads side by side (Free: 1). It uses PaneGrid (§2.21) with PaneChrome carrying the thread title. Closing a grid pane only hides the thread. Each pane keeps its own draft and Changes panel. Over the limit: toast "Your plan shows 1 thread at a time. Upgrade to Pro for up to 6." with "Upgrade".
+- **Multi-thread grid:** drag rail rows into the main area or use Split to show up to 6 threads side by side, with no account (D-2900). It uses PaneGrid (§2.21) with PaneChrome carrying the thread title. Closing a grid pane only hides the thread. Each pane keeps its own draft and Changes panel. Over a smaller limit a token carries: toast "This account shows {n} threads at a time", with nothing to buy.
 - **Keyboard:** Mod+N new thread · Mod+L focus composer · Mod+D split · Mod+[ / Mod+] cycle grid panes · Mod+Alt+C toggle Changes · Mod+F find in thread · Alt+↑ / Alt+↓ previous/next message · Mod+Shift+H hand off · F2 rename · Mod+Backspace archive (asks first).
 
 #### UI-21 · Thread view: transcript items · TH
@@ -1149,7 +1149,7 @@ Uses Composer (§2.23) with these thread-specific rules:
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 - **Placeholders:** "Ask {engine} about {folder} — @ a file or folder, paste a screenshot…"; no folder: "Ask {engine} anything…"; running: "Working… you can type your next message, or Stop."
-- **Engine select:** chat engines only (Claude Code, Codex, Cursor Agent, Grok, OpenCode). Terminal-only engines appear in a disabled group "Terminal only · open in Code mode". Changing engine mid-thread takes effect on the next turn and adds a Note "Switched to {engine} · {account}. Tandem will send a summary of this thread with your next message." Free plan: only Claude Code and Codex are enabled; others show "Pro".
+- **Engine select:** chat engines only (Claude Code, Codex, Cursor Agent, Grok, OpenCode). Terminal-only engines appear in a disabled group "Terminal only · open in Code mode". Changing engine mid-thread takes effect on the next turn and adds a Note "Switched to {engine} · {account}. Tandem will send a summary of this thread with your next message." Every chat engine is enabled with no account (D-2900); limits that list engines disable the others with "Not available to threads here".
 - **Model select:** popover titled "{Engine} models" with "Search models…". First row "Default ({resolved model})". Rows carry a one-line description from the engine's catalog. Engines that don't report models show only "Default". A saved model that's gone shows a warning row "{model} is no longer offered. Using Default."
 - **Effort select:** "Low", "Medium", "High", "Max" (engine-supported values only; hidden when unsupported).
 - **Access select:** "Read only" (the agent can read and search, no edits, no commands), "Edits" (it can change files; commands ask first), "Full access" (warning badge; one-time confirm per folder, §2.23).
@@ -1228,7 +1228,7 @@ OVERRIDES
 ```
 - Reached from Settings › Accounts, UI-33 "Manage", AccountChip "Manage accounts…" and the title-bar usage popover.
 - **Row:** nickname (inline rename), "Default" Badge (accent), UsageMeters "5h" and "Wk" (whatever windows the engine reports; "Usage not reported" otherwise), sign-in state ("Signed in" / "Signed out" warning / "Checking…"). ⋯: Rename · Make default · Sign in again · Open provider folder · Sign out · ─ · Remove account… (danger; "Remove {name}? Its sign-in folder is deleted. Threads and chats that used it stay, but can't continue on it.").
-- **Add account Sheet (md):** "Engine" select, "Nickname" (placeholder "Work, Personal, Client A"), then "Sign in" launches the engine's login in a terminal inside the sheet under a new provider home. Copy: "You're signing in with {Engine}'s own login. Tandem never sees your token." Completion flips to "Signed in as {nickname}" + "Done". Cancel stops the login process. Free plan: second account per engine shows "Pro lets you add more accounts per engine." + "Upgrade".
+- **Add account Sheet (md):** "Engine" select, "Nickname" (placeholder "Work, Personal, Client A"), then "Sign in" launches the engine's login in a terminal inside the sheet under a new provider home. Copy: "You're signing in with {Engine}'s own login. Tandem never sees your token." Completion flips to "Signed in as {nickname}" + "Done". Cancel stops the login process. Accounts per engine have no limit with no account (D-2900); a token's limit shows the core's reason, with nothing to buy.
 - **Default vs override:** the default applies to new sessions everywhere. Overrides (workspace or teammate) win over the default; existing sessions keep the account they started on. "Edit" opens a Dialog with "Scope" and "Account" selects.
 - **States:** empty group "No {engine} accounts yet. [Add account]" · sign-in failed "Sign-in didn't finish. {engine output line}" + "Try again".
 
@@ -1319,10 +1319,10 @@ Brief       ┌─────────────────────�
 Home        ~/.tandem/teammates/release-notes-writer   [Change…]
                                         [Cancel]  [Create teammate ⌘↩]
 ```
-- Sheet md. **Draft with AI** (Pro, 10 credits): type or Dictate a description, then "Draft". States: "Drafting a name and brief…" (skeletons over Name and Brief) → fields fill and get a subtle accent-soft highlight → footnote "Review and edit anything before you create it." Error: "Couldn't draft right now. Fill in the fields yourself." Free: the card shows "Pro" and "Upgrade".
+- Sheet md. **Draft with AI** (hosted; comes with Vibezeo accounts): type or Dictate a description, then "Draft". States: "Drafting a name and brief…" (skeletons over Name and Brief) → fields fill and get a subtle accent-soft highlight → footnote "Review and edit anything before you create it." Error: "Couldn't draft right now. Fill in the fields yourself." With no account the card isn't shown.
 - **Engine select:** chat engines first with description "Chats, memory and skills"; terminal-only engines in a second group with "Terminal only". Not installed: disabled "Not installed · Set up". Helper: "The engine does the work. The brief decides what the work is."
 - **Validation:** name required, unique (error "You already have a teammate called {name}."), max 40. Create is disabled while the engine isn't installed ("Install {engine} first" + "Recheck").
-- **Limits:** Free with 1 teammate besides Lead: Banner "Free includes one teammate besides Lead." + "Upgrade".
+- **Limits:** none with no account (D-2900); a token's teammate limit comes back from the core as an error, with nothing to buy.
 - **Result:** creates the Home folder with `NOTES.md` and `ABOUT_YOU.md`, opens the teammate page on its Chats tab.
 
 #### UI-73 · Memory tab · AG
@@ -1433,7 +1433,7 @@ Creates .tandem/worktrees/shop-12-fix-checkout-loop. Your main checkout isn't to
 - **Access:** "Read only" / "Edits". "Full access" is shown disabled with the reason "Task runs are unattended, so they can't use Full access."
 - **Review:** default is a second pass by a different engine when one is installed; the reviewer reads the diff against the task and writes a verdict. "Skip review" moves the task straight to "In review" for you.
 - **Queueing:** when all 4 slots are busy, the primary label becomes "Queue run" and the summary adds "4 of 4 runs are active. This one starts when a slot frees up."
-- **Blocked states:** not a git repo: "Task runs need a git repository so each run gets its own worktree." (Start disabled) · Free plan: "Running tasks is part of Pro. You can still track tasks for free." + "Upgrade" · signed out/offline: "Sign in to run tasks. Your tasks stay available offline." · branch exists: inline error "Branch {name} already exists." + "Use a new name".
+- **Blocked states:** not a git repo: "Task runs need a git repository so each run gets its own worktree." (Start disabled) · limits that turn runs off: "Running tasks is turned off for this account. You can still track tasks." (runs need no account or sign-in, D-2902) · branch exists: inline error "Branch {name} already exists." + "Use a new name".
 - **On start:** the task moves to "In progress", the run appears in RUNS and the Dashboard, and a Note is posted to Comments ("Run {n} started by you").
 
 #### UI-83 · Review state · TK, CD
@@ -1471,8 +1471,8 @@ TODAY  00 ─────06────── ▲09 ──── 12 ────
 - **Row:** StatusDot (working while a run is in progress; "‖" paused, idle), name, teammate Avatar + name, schedule in words, "Next …" (relative, exact time in the tooltip), last result Badge: "✓ New result · {time}" (unread output), "✓ Done", "✕ Failed · {time}", "— Never run". Failed rows show a second line with the error and one fix action.
 - **Error lines (with actions):** "{Engine} isn't signed in on account {account}." [Sign in] · "{Teammate} was deleted." [Choose teammate] · "{Engine} isn't installed." [Set up] · "This routine needs Edits, but {teammate} only allows Read only for unattended work." [Change access] · "Tandem was closed at {time}; the run was skipped." [Run now].
 - **Row actions:** "▶ Run now" · ⋯: Edit · Pause / Resume · Open last run · Run history · Duplicate · ─ · Delete… (danger; "Delete {name}? Past run chats are kept.").
-- **Header chip:** "✓ Background runner on" or "Runs only while Tandem is open" + "Turn on background runs" (Pro).
-- **States:** empty EmptyState "No routines yet" / "Have a teammate check something every morning, or draft a weekly update." + "New routine" + suggestion chips ("Morning project summary", "Weekly update draft", "Dependency health check") that open the editor pre-filled · Free plan: EmptyState variant "Routines are part of Pro" + "Upgrade" · plan lapsed: Banner "Your routines are paused because your plan changed. They'll resume when you upgrade." · loading Skeleton rows.
+- **Header chip:** "✓ Background runner on" or "Runs only while Tandem is open" + "Turn on background runs".
+- **States:** empty EmptyState "No routines yet" / "Have a teammate check something every morning, or draft a weekly update." + "New routine" + suggestion chips ("Morning project summary", "Weekly update draft", "Dependency health check") that open the editor pre-filled · limits that turn routines off (none with no account, D-2900): EmptyState "Routines are turned off" / "This account doesn't run routines. Your teammates still chat as usual." · paused by such limits: Banner "Your routines are paused because this account turned routines off. They resume when routines are back on." · loading Skeleton rows.
 - **Keyboard:** N new · Enter edit · Space run now (asks first if a run is already going) · P pause/resume · H history · Delete delete.
 
 #### UI-51 · Routine editor · RT, AG, PL
@@ -1489,7 +1489,7 @@ Instruction  ┌─────────────────────�
 Schedule     (CronInput, UI-52)
 Access       [Edits ▾]          Plugins  [Same as Lead (2) ▾]
 If missed    (•) Skip it  ( ) Run once when Tandem opens
-☐ Run in the background when Tandem is closed   Pro
+☐ Run in the background when Tandem is closed
                                [Cancel]  [Save and run now]  [Save ⌘↩]
 ```
 - Sheet md. "Teammate" lists chat-capable teammates; if none: "Routines need a teammate on a chat engine." + "New teammate".
@@ -1544,7 +1544,7 @@ Credentials stay in your system keychain. Teammates reach plugins only through T
 - Opened from the Agent rail footer "Plugins", Settings › Plugins, and UI-76 "Connect more plugins…".
 - **Card (radius md, surface-2, 2–3 columns by width):** a letter glyph tile (like EngineGlyph; no vendor logos), name, one-line description, category, and a status: "● Connected" (done tone, with account label and "{n} teammates"), "Connect" (secondary Button), "Preview" (outline Badge; card dimmed; tooltip "Not ready yet. We'll let you know when it is."), "▲ Needs attention" (error tone; sign-in expired or revoked).
 - Clicking a Connected card opens UI-92; a Connect card opens UI-91.
-- **States:** search empty "No plugins match "{q}"." · Free plan with 1 connection: Connect buttons show "Pro" with "Free includes one plugin connection." · gateway down: Banner "The plugin gateway isn't running, so teammates can't use plugins." + "Restart gateway" / "View log" · loading Skeleton cards.
+- **States:** search empty "No plugins match "{q}"." · a connection limit a token carries: Connect buttons show "At limit" with "This account's plugin connections are used up." · gateway down: Banner "The plugin gateway isn't running, so teammates can't use plugins." + "Restart gateway" / "View log" · loading Skeleton cards.
 - **Keyboard:** / search · arrows move between cards · Enter open · 1–7 choose a category.
 
 #### UI-91 · Connect flow · PL
@@ -1806,7 +1806,7 @@ Notifications
 - Content: max-width 720, PageHeader (title + one-line subtitle), groups with 2xs caps labels, one SettingsRow per control.
 - **Filter:** narrows nav items to pages with matching labels/descriptions/keywords and highlights matched rows (accent-soft background for 2s). "No settings match "{q}"".
 - **Saving:** every control applies immediately. When the effect isn't visible, a 1s "Saved" hint appears beside the control. Multi-field forms (SSH host, formatting instructions, persona) have explicit "Save" / "Cancel". Failed writes revert the control and toast "Couldn't save that setting. Try again." with "Retry".
-- **Plan-gated rows** stay visible with a "PRO" Badge and are disabled with `disabledReason` "Included with Pro" plus an "Upgrade" link (UI-120). Nav items for fully gated pages show the badge too.
+- **Hosted rows** (features that need Vibezeo's servers) stay visible and say "Comes with Vibezeo accounts"; they never show a plan badge or an upgrade link (D-869, D-2903).
 - **Page ↔ PRODUCT_SPEC F-SH-04 mapping:** Voice is split into Dictate and Conductor; Agents is Teammates; Account is Account & Plan; About content lives in Updates (version, notes) and Advanced (licences, logs). Updates is also reachable from General.
 - **Acceptance:** typing "scroll" shows Terminal and highlights "Scrollback lines"; every key round-trips a relaunch; Esc restores focus to the element that opened Settings.
 
@@ -1848,7 +1848,7 @@ See UI-41.
 Embeds the engine list from UI-05 (row states, Install, Sign in, Rescan as "Check again"). Per engine, an expandable row: "Path" (read-only with "Reveal"), "Version", "Extra launch arguments" (monospace Input, validated as a shell-word list), "Newline key in the TUI" (read-only from the registry). This page is specified in §4.4 as UI-33 (with the install flow UI-34); it is listed here only for nav order.
 
 #### UI-106 · Accounts · AC
-Specified in §4.4 as UI-35 (usage page UI-37). Summary: accounts per engine with nickname, provider-home path, usage meters and "Default" radio; "Add account…", "Rename", "Sign out", "Remove…" (danger confirm). Free shows "1 account per engine on Free" with an Upgrade link on the second "Add account…".
+Specified in §4.4 as UI-35 (usage page UI-37). Summary: accounts per engine with nickname, provider-home path, usage meters and "Default" radio; "Add account…", "Rename", "Sign out", "Remove…" (danger confirm). There's no limit on accounts per engine (D-2900).
 
 #### UI-107 · Teammates · AG
 - "Default access for new chats and threads" · Select "Read only" / "Edits" / "Full access" · Edits (Full access asks the §2.23 confirm once).
@@ -1873,7 +1873,7 @@ Specified in §4.8 (catalog UI-90, connect UI-91, detail UI-92, approval policy 
 #### UI-111 · Remote · RM
 - **SSH hosts:** the UI-14 list (compact), "+ Add host".
 - **WSL** (Windows only): "Detect distributions" list with "Use for plain terminals" radio, and "Run agents inside WSL" Switch per distro.
-- **Phone** (Pro): "Pair a phone" Button → QRCode dialog ("Scan with the Tandem app on your phone. The code expires in 2 minutes."); paired devices list with last seen and "Revoke"; grants per device: "Manage sessions", "Send terminal input", "Write files", "Git actions" (all off by default).
+- **Phone** (pairing over the local network needs no account; the hosted relay comes with Vibezeo accounts): "Pair a phone" Button → QRCode dialog ("Scan with the Tandem app on your phone. The code expires in 2 minutes."); paired devices list with last seen and "Revoke"; grants per device: "Manage sessions", "Send terminal input", "Write files", "Git actions" (all off by default).
 - "Reset remote access…" · danger · revokes every pairing.
 
 #### UI-112 · Privacy & Telemetry · TL
@@ -1917,7 +1917,7 @@ Credits     ◈ 8,420 of 10,000 this month · resets 12 Oct
             Monthly 6,420 · Purchased 2,000
 Usage       Cloud dictation 1,210 · Enhance 96 · Conductor 3,410 · Auto 864
 ```
-- Status reads one of "Active · renews {date}", "Trial · ends {date}", "Payment failed", or "Pro until {date}" (cancelled at period end). Uses CreditMeter and KeyValue. Free shows "FREE" and a "See plans" primary Button (UI-120). Trial shows "Pro trial · ends {date}" and "Keep Pro after the trial" (opens billing). Team shows seats and "Managed by {org}"; billing buttons are admin-only (others see "Ask your admin to change billing").
+- Shows who's signed in, "Managed by {org}" for an organization, and the credits hosted features use (CreditMeter, KeyValue), with "Refresh". No plan, status, trial or billing (D-869, D-2904). A build without accounts says "Everything on this computer is free and runs without an account. Hosted features, like Conductor and cloud Dictate, come with Vibezeo accounts."
 - "Manage billing" and "Buy credits" open the web portal in the system browser (UI-124). "Refresh plan" link: "Already changed your plan? Refresh".
 - Offline-mode users see "Using Tandem offline · {n} days left before sign-in is needed" with "Sign in".
 
@@ -1941,7 +1941,7 @@ Usage       Cloud dictation 1,210 · Enhance 96 · Conductor 3,410 · Auto 864
 
 ### 4.12 Dictate
 
-Hold a key, speak, release: the text lands where the cursor was, in Tandem or any other app. Local transcription is the default and free on every plan. Cloud is opt-in, Pro, and metered. There is never a silent fallback between the two (F-DI-05).
+Hold a key, speak, release: the text lands where the cursor was, in Tandem or any other app. Local transcription is the default and free. Cloud is opt-in and hosted: it comes with Vibezeo accounts. There is never a silent fallback between the two (F-DI-05).
 
 #### UI-60 · Dictate widget (HUD) · DI
 ```
@@ -1982,7 +1982,7 @@ Error          ▲  Your microphone isn't delivering audio     [Settings]
   - Terminal targets get control characters stripped and never an Enter.
   - Target lost, changed, or paste failed → the text stays on the clipboard and the Copied state shows.
   - A late transcript from an older take, or a cancelled take, never pastes anywhere. Tandem's own windows are never external targets.
-- **Quick actions after a take** (Pro, 3 credits each): "Enhance" (rewrite as a clear prompt for a coding agent) and "Polish" (clean grammar and filler). If the target still has focus, the result replaces the inserted text (undo + paste); otherwise it is copied. The first use shows a one-time disclosure (UI-62).
+- **Quick actions after a take** (hosted; come with Vibezeo accounts): "Enhance" (rewrite as a clear prompt for a coding agent) and "Polish" (clean grammar and filler). If the target still has focus, the result replaces the inserted text (undo + paste); otherwise it is copied. The first use shows a one-time disclosure (UI-62).
 - **Errors:**
 
   | Condition | Text | Action |
@@ -1994,7 +1994,7 @@ Error          ▲  Your microphone isn't delivering audio     [Settings]
   | Nothing heard | "No speech detected" | — |
   | Secure input (mac) | "Secure input is on (e.g., a password field) — dictation paused" | — |
   | No local model | "Download a model to dictate locally" | "Download" (→ UI-63) |
-  | Cloud without Pro | "Cloud transcription needs Tandem Pro" | "Use local for this take" · "See plans" |
+  | Cloud with no account that carries it | "Cloud transcription comes with Vibezeo accounts" | "Use local for this take" |
   | Out of credits (402) | "Out of credits for cloud transcription" | "Use local for this take" |
   | Cloud daily cap | "You've reached today's cloud limit — switch to Local" | "Use local for this take" |
   | Offline, cloud engine | "You're offline" | "Use local for this take" |
@@ -2042,7 +2042,7 @@ DICTIONARY · HISTORY
   Dictionary (14 rules)   [Open…]      Keep history [ Forever ▾ ]  [Open…]
 ```
 - **Home card** (top): "Ready to dictate" with the key and an engine chip ("Local · Parakeet v3" / "Cloud · Auto-detect"), the four stats, and "Try it". Until the shortcut is verified it reads "Finish Dictate setup" with "Set up" (runs the F-DI-11 steps).
-- **Transcribe with:** Local helper "Free and private. Works offline."; Cloud helper "More languages. Audio is sent to Tandem's transcription service and uses about 8 credits a minute (daily cap 120 minutes)." The first switch to Cloud opens a consent Dialog: title "Send audio to the cloud?", body "While Cloud is on, each take's audio goes to Tandem's transcription service and isn't kept after transcription. Your history stays on this device.", actions "Cancel" / "Use cloud". Free: the segment is disabled with "Cloud transcription needs Tandem Pro".
+- **Transcribe with:** Local helper "Free and private. Works offline."; Cloud helper "More languages. Audio is sent to Tandem's transcription service and uses about 8 credits a minute (daily cap 120 minutes)." The first switch to Cloud opens a consent Dialog: title "Send audio to the cloud?", body "While Cloud is on, each take's audio goes to Tandem's transcription service and isn't kept after transcription. Your history stays on this device.", actions "Cancel" / "Use cloud". With no account that carries it, the segment stays on Local with "Cloud transcription comes with Vibezeo accounts".
 - **Language:** "Auto-detect" first, then the current engine's languages; unsupported ones are disabled with "Not supported by {model}". Cloud adds "Share dictionary hints with cloud" (off).
 - **Microphone:** DeviceSelect with a live meter. Loopback and virtual devices are never auto-selected, and a Bluetooth headset mic is never auto-selected when another mic exists (helper: "Keeps headphones out of low-quality call mode."). Changing mics mid-take: "Switches after this take."
 - **Shortcut:** HotkeyRecorder; defaults macOS "Fn" (hint "Fn not working? Use Control+Option"), Windows "Ctrl+Win", Linux "Ctrl+Alt". Mouse 4 and 5 are allowed. Status chip: "Active" / "Needs Input Monitoring [Grant]" / "Unavailable on this system" / "Paused" / "Starting…" / "Not running". Wayland without the portal shows a Callout: "Bind this command to a shortcut in your system settings: `xdg-open tandem://dictate/toggle`" with Copy.
@@ -2075,7 +2075,7 @@ Sheet lg "Dictionary". Tabs (underline): "Words" · "Corrections" · "Review ({n
 - **Corrections:** rules applied after transcription. Fields: "When I say" (one or more phrases), "Write", "Match case" (off), "Protect links and code" (on; skips URLs and backticks), "Spacing" ("Exact" / "Flexible"), "Language" (All or one), "Apply in" ("Everywhere" or app identifiers, one per line), "Enabled".
 - **Review:** suggestions mined locally from history (inconsistent spellings, frequent unknown terms, acronyms, proper nouns); evidence expires after 90 days. Actions "Remember" / "Ignore"; only Remember creates a rule.
 - **Tools:** search, sort ("A–Z" / "Recently changed"), multi-select delete, "Import…" / "Export…" (JSON or CSV with a preview), a test box "Try your dictionary on sample text" (live before/after, with language and app selectors), and "Deleted" (restorable for 30 days).
-- **Sync** (Pro, optional): "Sync across devices" Switch, "Last synced {time}", "Sync now", and a conflict review list. Transcript evidence never syncs.
+- **Sync** (hosted, optional; comes with Vibezeo accounts): "Sync across devices" Switch, "Last synced {time}", "Sync now", and a conflict review list. Transcript evidence never syncs.
 - Protected spellings survive Enhance and Polish; if a rewrite changes one, the corrected un-enhanced text is used.
 - Empty: "No words yet", body "Add names, tools and jargon so Dictate spells them your way.", action "Add word".
 
@@ -2141,7 +2141,7 @@ Conductor operates Tandem by voice through a closed tool catalog that mirrors th
 - **Tap** the ring (title bar or floating) or press `Mod+Shift+Space`: start or end a call.
 - **Hold** the ring ≥300ms (or hold `Mod+Shift+Space`): push-to-talk. The mic is live only while held; the call stays connected and ends after 2 minutes without speech ("Call ended after 2 quiet minutes").
 - **"Hey Conductor"** (opt-in, off): detected on device; no audio leaves the machine until it fires. On detection a soft tone plays, the HUD opens in Connecting, and Conductor answers aloud when ready. While wake listening is on, the title-bar ring shows a 6px accent dot and the tray menu reads "Listening for "Hey Conductor"". It pauses while Dictate or a call owns the mic, while media plays on a Bluetooth output, and while "Pause while watching videos" is on. If the detector misses its accuracy bar, the build hides the option.
-- **Free plan:** the ring is hidden; the palette lists "Conductor (Pro)", which opens UI-120 with Conductor highlighted.
+- **No account:** the ring is hidden; the palette's call command shows the HUD's error "Conductor comes with Vibezeo accounts." (D-2903).
 - **Credits indicator:** the HUD's top-right shows "◈ {elapsed}" and "~{n} min" left at the current rate (tooltip: "About 120 credits a minute. {balance} left."). Under 5 minutes it turns amber: "About 5 min of credits left". Two minutes before the cap: "2 minutes left in this call".
 
 #### UI-66 · Call log · CN
@@ -2151,7 +2151,7 @@ Sheet md "Call log", subtitle "{date} · {duration} · {credits} credits".
 - Empty: "No calls yet", body "Tap the ring or press {shortcut} to start one."
 
 #### UI-67 · Conductor settings (Settings › Conductor) · CN
-- "Use Conductor" · Switch · on for Pro · Free: disabled with "PRO".
+- "Use Conductor" · Switch · on with an account that carries Conductor · otherwise disabled with "Comes with Vibezeo accounts".
 - **Persona:** "Name" (Input, "Conductor"; the wake phrase stays "Hey Conductor") · "Voice" (the voice provider's voices, each with ▶ preview) · "Tone" "Neutral" / "Warm" / "Brief" · "How much it says" "Short" / "Normal" / "Detailed" · "Speech speed" 5-step slider (also "talk faster/slower" during a call) · "Show captions" (on).
 - **"Tell it about you":** Textarea (1,000 chars), placeholder "What you work on and how you like to work."
 - **Memory:** "Remember things between calls" (off) · "After each call" "Ask me about new memories" / "Save automatically" / "Don't reflect" · "Open memory file" (opens `memory.md` in the Files editor) · "Forget everything…" (UI-135). Credential-shaped text is refused: "That looks like a secret, so Conductor won't remember it."
@@ -2162,72 +2162,30 @@ Sheet md "Call log", subtitle "{date} · {duration} · {credits} credits".
 
 ---
 
-### 4.14 Paywall and plans
+### 4.14 Free, and hosted features
 
-The client gates for UX only; the server decides (entitlement token). Copy is factual and never shames; every gate names what still works.
+Vibezeo is free, with no paid plans (D-869). The app has no plans sheet, prices, trials, checkout or billing, and nothing in it names Free, Pro or Team as a tier. With no account every feature that runs on the computer is unlimited (D-2900); the hosted ones (cloud Dictate, Enhance, Conductor, Auto, dictionary sync, the phone relay, Create with AI, Find work's hosted ranking) need Vibezeo's servers and come with Vibezeo accounts. Copy is factual and never shames; every gate names what still works. The client gates for UX only; the server decides (entitlement token).
 
-#### UI-120 · Upgrade sheet · BL
-```
-┌──────────────────────────── Choose a plan ───────────────────────────── × ┐
-│                     [ Monthly | Yearly · 2 months free ]                  │
-│ ┌ Free ───────────┐ ┌ Pro ───────── RECOMMENDED ┐ ┌ Team ────────────────┐ │
-│ │ $0              │ │ $29 / month               │ │ $49 / seat / month   │ │
-│ │ 4 panes         │ │ Unlimited panes & threads │ │ Everything in Pro    │ │
-│ │ 3 workspaces    │ │ 10,000 credits a month    │ │ Pooled credits       │ │
-│ │ 1 teammate+Lead │ │ Conductor, cloud Dictate, │ │ Admin policy, audit  │ │
-│ │ Local Dictate   │ │ Enhance, Auto             │ │ Seat management      │ │
-│ │                 │ │ Routines, phone remote    │ │ Min 2 seats          │ │
-│ │ [Current plan]  │ │ [Start 7-day free trial]  │ │ [Start 14-day trial] │ │
-│ └─────────────────┘ └───────────────────────────┘ └──────────────────────┘ │
-│ Your coding agents always run on your own AI accounts. Credits only pay    │
-│ for Tandem's hosted features.                         Compare all features ↗ │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-- Dialog lg (720). Opened from any gate, the account menu ("See plans"), Settings › Account & Plan, or the palette ("Upgrade"). When opened from a gate, a line above the cards names it: "You hit the Free limit of 4 panes." and the relevant Pro row is highlighted (accent-soft).
-- Yearly shows "$290 / year" and "$490 / seat / year". Prices come from remote config.
-- Trial fine print under the Pro button: "Card required. Cancel before {date} and you won't be charged." Users who already used a trial see "Upgrade to Pro".
-- Signed out (offline mode): buttons read "Sign in to upgrade" and start UI-03.
+#### UI-120 · Upgrade sheet · removed
+Removed with the paid plans (D-869, D-2904). Nothing opens it: the account menu, Settings › Account, the palette and the gates no longer offer "See plans" or "Upgrade".
 
-#### UI-121 · Checkout handoff · BL, BE
-```
-Finish checkout in your browser…      ◌
-We'll update Tandem as soon as it's done.
-[Open checkout again]   [I've finished]   Cancel
-```
-- The primary action opens the web checkout in the system browser (never an in-app webview for payment). The dialog swaps to this waiting state and polls the entitlement every 5s for up to 15 minutes; the plan change also arrives over the `/me/events` invalidation (F-BE-04), usually within 5s. The web success page reads "You're on Pro" with "Open Tandem" (`tandem://`), which just focuses the app.
-- **Success:** "You're on Pro" with a checklist of what just unlocked, and "Done". Blocked actions that triggered the sheet (e.g. the 5th pane) are offered: "Open the pane you tried to open". Title-bar credits update within 5s.
-- **Errors:** "Checkout didn't finish. Nothing was charged." ("Try again"); "Couldn't confirm your plan yet. [Refresh]" after 15 minutes.
+#### UI-121 · Checkout handoff · removed
+Removed with the paid plans (D-869, D-2904): the app opens no checkout (`billing_open` has no `upgrade` target).
 
-#### UI-122 · Limit hits and credits · BL
-Inline gate cards (Callout style, accent border) appear where the action was attempted; they never block viewing existing work.
-
-| Trigger | Where | Title | Body | Actions |
-|---|---|---|---|---|
-| 5th live pane | Pane picker / launch sheet | "Free includes 4 live panes" | "Close a pane to start another, or upgrade for unlimited panes. Running panes aren't affected." | "See plans" · "Manage panes" |
-| 4th workspace | Add folder | "Free includes 3 workspaces" | "Remove one from the rail (nothing on disk is deleted) or upgrade." | "See plans" |
-| 2nd grid thread | Thread grid | "Free shows 1 thread at a time" | "Other threads stay in the list, ready to open." | "See plans" |
-| 2nd teammate | New teammate | "Free includes 1 teammate besides Lead" | "Your teammate and Lead keep working." | "See plans" |
-| Routines | Routines page | "Routines are included with Pro" | "Schedule teammates to run jobs on their own." | "Start free trial" |
-| 2nd plugin | Connect plugin | "Free includes 1 plugin connection" | — | "See plans" |
-| 2nd account per engine | Add account | "Free includes 1 account per engine" | — | "See plans" |
-| Cloud Dictate, Enhance, Conductor, Auto | Their controls | "{Feature} is included with Pro" | "It runs on Tandem's servers and uses credits." | "Start free trial" · "Not now" |
-| Disabled by Team policy | The control | "Turned off by your organization" | "An admin controls this setting." | — (no upgrade offered) |
-
+#### UI-122 · Limits and hosted features · BL
+- **Local limits:** none with no account. A signed token can still carry a limit (none does today); the core then refuses the action with its reason ("This account runs up to {n} live panes", "… is turned off for this account"), shown as the action's error. There are no gate cards (DESIGN §9.5 retires `limit.*`, `launch.limitBody`, `thread.engineGate.*`, `plugins.freeLimit`).
+- **Hosted features** with no account: the control is disabled or absent, labelled "Comes with Vibezeo accounts", word for word, followed by "It uses Vibezeo's servers and switches on when Vibezeo accounts open." (DESIGN §9.5); where there's no room (a segment, a switch, a menu row) the two are the tooltip. The one action, where needed: "Tell me when accounts open" (a prefilled email to contact@vibezeo.com). Conductor's call command shows the same words as the HUD's error; Auto's pane-menu entry is absent. Never Pro, premium, paid, upgrade, plan, trial, credits, a price or a date (a vitest renders every Settings page of the download build to check, D-2911).
+- **No plan UI** (DESIGN §5.5): no plan footer in the rail, no plan badge, no limit cards or limit lines. Settings › Advanced shows one quiet line under the version: "Vibezeo is free. If it helps you, tell a friend."
+- **Disabled by an organization's policy:** "Turned off by your organization" / "An admin controls this setting." (no upgrade offered).
 - **Credits low** (below 10% of the monthly grant): the title-bar pill turns amber; one in-app notification "Credits are running low · {n} left · resets {date}"; no dialog.
-- **Credits exhausted** (a `402 CREDITS_EXHAUSTED` or reserve failure): Dialog sm, title "You're out of credits", body "Cloud dictation, Enhance, Conductor and Auto pause until {reset date} or until you add credits. Coding with your own AI accounts keeps working.", actions "Not now" / "Use local dictation" (when Dictate caused it) / "Buy credits ↗" (primary; web only). Shown at most once per day; later hits use the inline error of the feature (UI-60, UI-61).
+- **Credits exhausted** (a `402 CREDITS_EXHAUSTED` or reserve failure): Dialog sm, title "You're out of credits", body "Cloud dictation, Enhance, Conductor and Auto pause until {reset date}. Coding with your own AI accounts keeps working.", actions "Not now" / "Use local dictation" (when Dictate caused it). Shown at most once per day; later hits use the inline error of the feature (UI-60, UI-61).
 - **Auto** stops at the end of its current turn with a pane Banner "Auto paused: out of credits".
 
-#### UI-123 · Trial, payment and lapse notices · BL
-- **Trial:** the account menu shows "Pro trial · {n} days left". Two days before the end: notification "Your trial ends in 2 days" with "Manage billing".
-- **Payment failed** (past_due): Banner on the Account & Plan page and a one-time notification: "Payment failed — update your card. Pro stays on for {n} more days." ("Update payment ↗"). An email goes out too (F-BL-04)..
-- **Lapsed to Free:** Dialog md once, title "You're on the Free plan now", body as a list: "Panes over the limit keep running until you close them." · "Routines are paused, not deleted." · "Nothing you made has been deleted." Actions "OK" / "See plans".
+#### UI-123 · Trial, payment and lapse notices · removed
+Removed with the paid plans (D-869): there are no trials, payments or lapses. Limits that turn routines off still pause them, not delete them (F-RT-04).
 
-#### UI-124 · Manage billing · BL
-- Lives in Settings › Account & Plan (UI-114). "Manage billing ↗", "Buy credits ↗" and "Update payment ↗" open the web portal in the system browser, signed in via a short-lived link. Credit packs (5,000 for $5, 12,000 for $10, 30,000 for $20) are bought on the web only; the app lists them read-only with "Buy on the web ↗".
-- On return the page refreshes the entitlement; "Refresh plan" is always available.
-- Team members who aren't admins see "Your plan is managed by {org}. Ask an admin to make changes."
-
----
+#### UI-124 · Manage billing · removed
+Removed with the paid plans (D-869, D-2904). Settings › Account (UI-114) shows who's signed in, an organization's name and the credits hosted features use, with "Refresh".
 
 ### 4.15 System dialogs
 
@@ -2438,7 +2396,7 @@ A palette-style picker with the command palette's shell (`Mod+Alt+P`, "Insert pr
 | Edit last message | ↑ in an empty composer | ↑ | n/a |
 | Mention / slash command | @ / / | @ / / | n/a |
 | Dictate into composer (hold; click mic to lock) | the global Dictate key, or ⌥Space | the global Dictate key (Ctrl+Win · Ctrl+Alt); `Alt+Space` is not bound (OS window menu) | n/a |
-| Enhance the draft (Pro) | ⌥⌘E | Ctrl+Alt+E | n/a |
+| Enhance the draft (with a Vibezeo account) | ⌥⌘E | Ctrl+Alt+E | n/a |
 | **Approval card (focused)** | | | |
 | Focus the oldest pending approval card (thread) | ⇧⌘A | Ctrl+Shift+A | n/a |
 | Allow once (primary) / Allow for this thread / Deny / Deny and explain / focus Deny | A or ⌘↩ / ⇧⌘↩ / D / E / Esc | A or Ctrl+Enter / Ctrl+Shift+Enter / D / E / Esc | same |
@@ -2480,7 +2438,7 @@ All strings live in `apps/desktop/src/i18n/en.json`. Quoted strings in this spec
 ### 6.1 Voice and tone
 - **Plain, calm, specific.** Say what happened and what to do next. No hype, no jokes in errors, no exclamation marks, no "Oops".
 - **Second person, active voice.** "You're out of credits", not "Credits have been exhausted". Tandem refers to itself as "Tandem" only when the distinction matters ("Tandem never sees your token").
-- **Name things exactly.** Engine names as their vendors write them ("Claude Code", "Codex"); Tandem's features capitalised as proper names: Dictate, Conductor, Auto, Pro, Free, Team. Generic nouns stay lowercase in sentences: teammate, routine, task, plugin, workspace, pane, thread.
+- **Name things exactly.** Engine names as their vendors write them ("Claude Code", "Codex"); Tandem's features capitalised as proper names: Dictate, Conductor, Auto. There are no plan names to write (D-869). Generic nouns stay lowercase in sentences: teammate, routine, task, plugin, workspace, pane, thread.
 - **Sentence case** for every title, label, button and menu item. Section labels are the only uppercase (2xs caps via CSS; the string itself is sentence case).
 - **Reassure with facts, not adjectives.** "Your conversation is saved" instead of "Don't worry".
 - **Never blame the user or the vendor.** "Claude Code needs you to sign in", not "Your login is invalid".
@@ -2525,7 +2483,7 @@ All strings live in `apps/desktop/src/i18n/en.json`. Quoted strings in this spec
 | "Are you sure?" | "Close 4 idle agents?" |
 | "OK" | "Close 4 agents" |
 | "Something went wrong" | "Couldn't load Parakeet v3. Still using Whisper Base." |
-| "Upgrade now to unlock the full power!" | "Routines are included with Pro" |
+| "Upgrade now to unlock the full power!" | "Conductor comes with Vibezeo accounts" |
 | "Invalid hotkey" | "Toggle needs a key that isn't only modifiers." |
 
 ---
@@ -2689,11 +2647,11 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-114 | Settings › Account & Plan | §4.11 | BE, BL |
 | UI-115 | Settings › Updates | §4.11 | TL |
 | UI-116 | Settings › Advanced & Diagnostics | §4.11 | TL |
-| UI-120 | Upgrade sheet | §4.14 | BL |
-| UI-121 | Checkout handoff | §4.14 | BL, BE |
-| UI-122 | Limit hits and credits | §4.14 | BL |
-| UI-123 | Trial, payment and lapse notices | §4.14 | BL |
-| UI-124 | Manage billing | §4.14 | BL |
+| UI-120 | Upgrade sheet (removed, D-869) | §4.14 | BL |
+| UI-121 | Checkout handoff (removed, D-869) | §4.14 | BL, BE |
+| UI-122 | Limits and hosted features | §4.14 | BL |
+| UI-123 | Trial, payment and lapse notices (removed, D-869) | §4.14 | BL |
+| UI-124 | Manage billing (removed, D-869) | §4.14 | BL |
 | UI-130 | Update flow | §4.15 | TL |
 | UI-131 | Unsupported version overlay | §4.15 | TL |
 | UI-132 | Crash restore and orphaned processes | §4.15 | SH, TL |

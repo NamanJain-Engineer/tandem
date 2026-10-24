@@ -1,7 +1,8 @@
 import { $, browser } from "@wdio/globals";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { freshUser, home, invoke, mod, planFooter, setPlan } from "../support/app";
+import { freshUser, home, invoke, mod, setPlan } from "../support/app";
+import { waitForEntitlement } from "../support/hosted";
 
 type Summary = { teammate: { name: string; brief: string; engineId: string } };
 
@@ -23,10 +24,7 @@ describe("E2E-M10-7 create with AI", () => {
     );
     const { email } = await freshUser("m10-7");
     await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), {
-      timeout: 20_000,
-      timeoutMsg: "the plan never showed Pro",
-    });
+    await waitForEntitlement((e) => e.plan === "pro", "an account that carries Create with AI", 20_000);
   });
 
   after(() => {

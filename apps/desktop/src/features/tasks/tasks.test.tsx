@@ -4,7 +4,7 @@ import type { IpcError, Issue, IssueSummary, SaveIssue, TaskComment, TasksMeta }
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { useTasks } from "../../stores/tasks";
-import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -287,13 +287,12 @@ describe("F-TK-03 Tasks panel", () => {
 });
 
 describe("F-TK-04 Execute and runs", () => {
-  async function openTask(t: ReturnType<typeof tracker>, plan: "free" | "pro") {
+  /** "on": the offline build with no account, where runs are free (D-2902);
+   * "off": limits that turn runs off. */
+  async function openTask(t: ReturnType<typeof tracker>, runs: "on" | "off") {
     useSession.setState({
-      entitlement: {
-        ...FREE_VIEW,
-        plan,
-        limits: { ...FREE_VIEW.limits, taskExecution: plan === "pro" },
-      },
+      auth: { ...SIGNED_IN, signedIn: false, email: null, offline: true, hosted: false },
+      entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, taskExecution: runs === "on" } },
     });
     useWorkspaces.setState({ list: [{ id: "ws_1", name: "shop", parentId: null, missing: false } as never] });
     useEngines.setState({
@@ -307,7 +306,7 @@ describe("F-TK-04 Execute and runs", () => {
   }
 
   it("F-TK-04 Execute offers only folders on this computer, and says why SSH and WSL ones aren't listed (D-843)", async () => {
-    await openTask(tracker([issue(1)]), "pro");
+    await openTask(tracker([issue(1)]), "on");
     act(() =>
       useWorkspaces.setState({
         list: [
@@ -324,15 +323,17 @@ describe("F-TK-04 Execute and runs", () => {
     expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["shop"]);
   });
 
-  it("F-TK-04 Free: Execute shows the plan copy and can't start", async () => {
-    const t = await openTask(tracker([issue(1)]), "free");
+  it("F-TK-04 limits that turn runs off: Execute says so, sells nothing, and can't start", async () => {
+    const t = await openTask(tracker([issue(1)]), "off");
     const blocked = await screen.findByTestId("task-execute-blocked");
-    expect(blocked.textContent).toBe("Running tasks is part of Pro. You can still track tasks for free.");
+    expect(blocked.textContent).toBe(
+      "Running tasks is turned off for this account. You can still track tasks.",
+    );
     expect((screen.getByTestId("task-execute-start") as HTMLButtonElement).disabled).toBe(true);
     expect(t.calls.some((c) => c.cmd === "task_execute")).toBe(false);
   });
 
-  it("F-TK-04 Pro: a new worktree at Edits with review by default; the run shows its queue place and stops", async () => {
+  it("F-TK-04 offline with no account: a new worktree at Edits with review by default; the run shows its queue place and stops", async () => {
     const t = tracker([issue(1)]);
     let started: Record<string, unknown> | undefined;
     const runs: unknown[] = [];
@@ -368,7 +369,7 @@ describe("F-TK-04 Execute and runs", () => {
         queuePosition: null,
       }),
     });
-    await openTask(t, "pro");
+    await openTask(t, "on");
     expect(screen.queryByTestId("task-execute-blocked")).toBeNull();
     fireEvent.click(screen.getByTestId("task-execute-start"));
     await waitFor(() => expect(started).toBeTruthy());

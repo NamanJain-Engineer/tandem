@@ -5,8 +5,15 @@
     {
       "id": "anthropic",
       "name": "Anthropic (Claude API)",
-      "purpose": "Thread titles, Enhance and Polish, teammate drafts and Auto",
+      "purpose": "Thread titles, Enhance and Polish, teammate drafts, Auto, and Conductor's planner and Find work",
       "data": "The text each feature sends",
+      "chosen": true
+    },
+    {
+      "id": "google_gemini",
+      "name": "Google (Gemini API)",
+      "purpose": "Conductor's voice calls, outside the EEA, Switzerland and the UK",
+      "data": "Each call's audio and transcripts, and what Conductor reads to answer you. On the free tier, Google may keep them, use them to improve its products and have people review them",
       "chosen": true
     },
     {

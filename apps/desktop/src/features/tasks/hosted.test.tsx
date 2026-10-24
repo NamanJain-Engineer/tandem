@@ -10,10 +10,10 @@ import { settingsPages } from "../settings/pages";
 import { useExecuteBlock } from "./Execute";
 import { TasksPanel } from "./TasksPanel";
 
-// A build without Vibezeo accounts (TANDEM_HOSTED=0) is always Free and
-// can't sign in: nothing it shows may promise either (D-909).
+// A build without Vibezeo accounts (TANDEM_HOSTED=0) can't sign in, and
+// everything local runs free and unlimited there (D-909, D-869, D-2900):
+// nothing it shows may promise a plan or ask for sign-in.
 const NO_ACCOUNTS = { ...SIGNED_IN, signedIn: false, email: null, hosted: false };
-const EARLY = "Pro and Team start with Vibezeo accounts. This build runs the Free plan.";
 
 const META: TasksMeta = {
   version: 1,
@@ -25,9 +25,13 @@ const META: TasksMeta = {
   teams: [{ id: "local", name: "Local" }],
 };
 
-function pro() {
+/** Limits that turn routines and task runs off (a signed token still can). */
+function off() {
   useSession.setState({
-    entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE, routines: true, taskExecution: true } },
+    entitlement: {
+      ...FREE_VIEW,
+      limits: { ...FREE, routines: false, backgroundRoutines: false, taskExecution: false },
+    },
   });
 }
 
@@ -43,27 +47,34 @@ beforeEach(() => {
 });
 
 describe("builds without accounts (D-909)", () => {
-  it("F-TK-04 Execute says the build runs the Free plan, not sign in, and offers no Upgrade", () => {
+  it("F-TK-04 with no account Execute runs: no block and no sign-in (D-2902)", () => {
     useSession.setState({ auth: NO_ACCOUNTS });
-    const { result } = renderHook(() => useExecuteBlock());
-    expect(result.current?.reason).toContain(EARLY);
-    expect(result.current?.reason).not.toMatch(/sign in/i);
-    expect(result.current?.upgrade).toBe(false);
-    // A hosted build still asks for sign-in.
-    useSession.setState({ auth: { ...SIGNED_IN, signedIn: false } });
-    const hosted = renderHook(() => useExecuteBlock());
-    expect(hosted.result.current?.reason).toMatch(/^Sign in to run tasks/);
+    expect(renderHook(() => useExecuteBlock()).result.current).toBeNull();
+    // Limits that turn runs off say so, and sell nothing.
+    off();
+    const blocked = renderHook(() => useExecuteBlock()).result.current;
+    expect(blocked?.reason).toBe("Running tasks is turned off for this account. You can still track tasks.");
+    expect(blocked?.reason).not.toMatch(/sign in|Pro|plan/i);
   });
 
-  it("F-RT-04 the Routines upsell says the build runs the Free plan and offers no Upgrade", async () => {
+  it("F-RT-04 with no account Routines offers New routine; limits that turn them off say so, with no Upgrade", async () => {
     useSession.setState({ auth: NO_ACCOUNTS });
+    const { unmount } = render(
+      <UiProvider>
+        <RoutinesPage />
+      </UiProvider>,
+    );
+    expect(await screen.findByTestId("routine-new")).toBeTruthy();
+    expect(screen.queryByText(/Sign in|Pro\b|plan/)).toBeNull();
+    unmount();
+    off();
     render(
       <UiProvider>
         <RoutinesPage />
       </UiProvider>,
     );
-    expect(await screen.findByText(/This build runs the Free plan\./)).toBeTruthy();
-    expect(screen.queryByText(/Sign in/)).toBeNull();
+    expect(await screen.findByText("Routines are turned off")).toBeTruthy();
+    expect(screen.queryByTestId("routine-new")).toBeNull();
     expect(screen.queryByTestId("routines-upgrade")).toBeNull();
   });
 
@@ -73,43 +84,43 @@ describe("builds without accounts (D-909)", () => {
         <TasksPanel />
       </UiProvider>,
     );
-    expect(
-      await screen.findByText(/Agents in your threads and teammate chats can read and update/),
-    ).toBeTruthy();
-    expect(screen.queryByText(/choose Execute/)).toBeNull();
+    expect(await screen.findByText(/Nothing runs until you choose Execute/)).toBeTruthy();
     unmount();
-    pro();
+    off();
     render(
       <UiProvider>
         <TasksPanel />
       </UiProvider>,
     );
-    expect(await screen.findByText(/Nothing runs until you choose Execute/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Agents in your threads and teammate chats can read and update/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/choose Execute/)).toBeNull();
   });
 });
 
 describe("Pause routines without routines (F-RT-04)", () => {
-  it("F-RT-04 the palette command and the Settings row are absent on a plan without routines", () => {
+  it("F-RT-04 the palette command and the Settings row are there with no account, and absent when limits turn routines off", () => {
     const pause = COMMANDS.find((c) => c.id === "routines.pause")!;
-    expect(isEnabled(pause)).toBe(false);
     const rows = (routines: boolean) =>
       settingsPages("linux", routines)
         .flatMap((p) => p.rows)
         .map((r) => r.id);
-    expect(rows(false)).not.toContain("pause_all_routines");
-    pro();
     expect(isEnabled(pause)).toBe(true);
     expect(rows(true)).toContain("pause_all_routines");
+    off();
+    expect(isEnabled(pause)).toBe(false);
+    expect(rows(false)).not.toContain("pause_all_routines");
   });
 });
 
 describe("Conductor's mute and call log without Conductor (F-CN-01)", () => {
-  it("F-CN-01 mute and the call log are absent on a plan without Conductor; the call command stays to offer the plans (D-833)", () => {
+  it("F-CN-01 mute and the call log are absent without Conductor; the call command stays to say it comes with accounts (D-833, D-2903)", () => {
     const cmd = (id: string) => COMMANDS.find((c) => c.id === id)!;
     expect(isEnabled(cmd("conductor.mute"))).toBe(false);
     expect(isEnabled(cmd("conductor.log"))).toBe(false);
     expect(isEnabled(cmd("conductor.call"))).toBe(true);
-    useSession.setState({ entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE, conductor: true } } });
+    useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE, conductor: true } } });
     expect(isEnabled(cmd("conductor.mute"))).toBe(true);
     expect(isEnabled(cmd("conductor.log"))).toBe(true);
   });
