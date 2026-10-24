@@ -16,7 +16,8 @@ unshare -n -- dbus-run-session -- "$APP" > "$OUT/app.log" 2>&1 &
 PID=$!
 sleep 15
 ffmpeg -y -loglevel error -f x11grab -video_size 1440x900 -i "$DISPLAY" -frames:v 1 "$OUT/welcome.png"
-xdotool mousemove 720 508 click 1
+# "Start using Vibezeo" (the welcome card is centred: its button at y≈451 on 1440x900).
+xdotool mousemove 720 451 click 1
 sleep 6
 ffmpeg -y -loglevel error -f x11grab -video_size 1440x900 -i "$DISPLAY" -frames:v 1 "$OUT/started.png"
 echo "app alive: $(kill -0 $PID 2>/dev/null && echo yes || echo no) · screenshots in $OUT"

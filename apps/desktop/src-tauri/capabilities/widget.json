@@ -1,14 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "widget",
-  "description": "The Dictate widget window: its status, cancelling a take, Use local for this take, See plans (an event to the main window), its position and logs (ARCHITECTURE \u00a73.1).",
+  "description": "The Dictate widget window: its status, cancelling a take, Use local for this take, its position and logs (ARCHITECTURE \u00a73.1).",
   "windows": [
     "dictate-widget"
   ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "core:event:allow-emit-to",
     "core:window:allow-start-dragging",
     "allow-dictate-status",
     "allow-dictate-cancel-take",

@@ -299,8 +299,8 @@ pub struct AuthState {
     pub offline: bool,
     /// `None` when there's no sign-in deadline (early-access builds).
     pub offline_days_left: Option<i64>,
-    /// False in early-access builds: no accounts yet, the Free plan runs
-    /// locally with no deadline (D-105).
+    /// False in early-access builds: no accounts yet, everything local runs
+    /// with no deadline (D-105, D-2900).
     pub hosted: bool,
     pub pending: Option<PendingSignIn>,
     pub error: Option<AuthFailure>,

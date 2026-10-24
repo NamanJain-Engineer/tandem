@@ -1,8 +1,8 @@
 //! "Create with AI" (F-AG-04, D-8): a description of the job becomes a
 //! name, a brief, a suggested engine and suggested plugins, from
 //! `/v1/ai/teammate-draft` (hosted: a Vibezeo account, signed in, online). Nothing is
-//! saved: the sheet is prefilled for review. Offline or on Free the sheet
-//! offers the local templates instead (`TEMPLATES`).
+//! saved: the sheet is prefilled for review. Offline or with no account the
+//! sheet offers the local templates instead (`TEMPLATES`).
 //!
 //! The route lands with M13; until then the E2E harness answers from a
 //! fixture file (`TANDEM_FIXTURE_TEAMMATE_DRAFT`, debug builds only).

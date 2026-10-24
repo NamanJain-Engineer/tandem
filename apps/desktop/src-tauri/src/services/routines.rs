@@ -441,7 +441,8 @@ impl RoutinesService {
         Ok(())
     }
 
-    /// Plan lapse pauses every routine; an upgrade resumes them (F-BL-04).
+    /// Limits without routines pause every routine; limits with them resume
+    /// them (F-BL-04). With no account routines are on (D-2900).
     pub async fn apply_plan(&self, limits: &Limits) {
         match repo::set_paused_by_plan(&self.store, !limits.routines).await {
             Ok(n) if n > 0 => {

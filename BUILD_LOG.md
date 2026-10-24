@@ -1644,6 +1644,13 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - The README opens with what Vibezeo is and that it's free, then the download, the docs, the working name Tandem and the licence.
     - SECURITY.md says how to report a vulnerability privately (contact@vibezeo.com) and what Vibezeo promises.
   - **CI:** public repositories get GitHub Actions minutes free on standard runners, so `ci.yml` runs again once the repository is public.
+- D-871: The Dictate widget can no longer send events to the main window. This was found by the release review of `free-for-everyone`.
+  - **Why it had the permission:** its capability kept `core:event:allow-emit-to` only so that the widget's See plans could open the plans dialog (D-825).
+  - **The risk:** with See plans gone, any script in the widget could still send the main window events such as `app:deep-link`, which adds a workspace.
+  - **The fix:** `widget.json` drops the permission, and lib.rs's capability test now pins the shorter list. The floating ring keeps emit-to for its call log (D-1117).
+  - **Docs and comments:** ARCHITECTURE §10.2 no longer lists a sign-in check or `signed_out` for routines (D-2902), and four comments stop describing plans.
+  - **Smoke test:** `scripts/agent/smoke-appimage.sh` clicks Start where the welcome's button now is (y 451). The card lost its plan line, so the old y 508 missed the button. The app was fine: a click on the button opens setup.
+  - **Follow-ups after the release:** the same review's other notes (dead billing code, two dead telemetry events, the hosted build's sign-in countdown, stale spec lines, test gaps).
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
