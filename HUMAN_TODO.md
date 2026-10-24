@@ -3,6 +3,29 @@
 Things only a human can do. The build never blocks on them: each sits behind a mock or dev provider.
 
 ## Accounts & keys
+- [ ] **Make the repository public** (your ask of 24 October; D-870). Agents can't change a repository's visibility, so this step is yours:
+  1. On GitHub, open the repository's **Settings** › **General**.
+  2. Under **Danger Zone**, at the bottom, choose **Change repository visibility** › **Change to public**.
+  3. Confirm with the repository's name.
+
+  Checked before you switch:
+  - No secrets in the history of any branch or pull request.
+  - No personal email in commits: GitHub's noreply address is used.
+  - No third-party reference material: `build-kit/reference/` was never committed.
+
+  Everything becomes public:
+  - all 87 branches with their history, and the pull requests;
+  - BUILD_LOG, this file, the specs (DECISIONS names the competitor in its clean-room rule) and the competitive research.
+
+  GitHub Actions minutes are free on GitHub's standard runners for public repositories, so `ci.yml` runs again, and the Release workflow can build the macOS and Windows installers once their secrets are set. If you add a self-hosted runner, keep it to `workflow_dispatch` (as `macos.yml` does) and never to pull requests.
+
+  Verify: in a private browser window, signed out, https://github.com/NamanJain-Engineer/tandem shows the README.
+- [ ] **Choose a licence if you want the code to be open source** (D-870). The repository has no licence, so it is all rights reserved: anyone can read the code, but nobody may reuse it. The usual choices for a free app are MIT (short and permissive) and Apache-2.0 (which adds a patent grant). Say which one you want, and an agent will:
+  - add `LICENSE`;
+  - set `license` in Cargo.toml and in the Flatpak and Snap metadata;
+  - list Vibezeo's crates in the notices again.
+
+  A licence can't be taken back from code already published under it.
 - Enable GitHub Actions on `NamanJain-Engineer/tandem` so `.github/workflows/ci.yml` runs.
 - Google OAuth client: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for the API; redirect URI `https://app.vibezeo.com/v1/auth/callback/google`. Until then the Google button is hidden. Verify: the sign-in page offers Google and the callback lands on /account.
 - Stripe: create products and prices for Pro $29/mo and $290/yr (7-day trial, card required) and Team $49/seat/mo and $490/seat/yr (14-day trial); credit packs 5k/$5, 12k/$10, 30k/$20. Put the price ids in `STRIPE_PRICE_*`, the key in `STRIPE_SECRET_KEY`, set `BILLING_PROVIDER=stripe`. Configure the customer portal; set dunning to cancel after 14 days; add the webhook endpoint `https://api.vibezeo.com/v1/webhooks/stripe` and put its secret in `STRIPE_WEBHOOK_SECRET`. Verify: `bash scripts/stripe-fixture.sh invoice.paid <email>` with the real secret returns 200.

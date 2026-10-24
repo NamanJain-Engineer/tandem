@@ -1,12 +1,28 @@
-# Tandem
+# Vibezeo
 
-A cross-platform desktop workspace for building software with the coding-agent CLIs you already pay for: terminal panes (Code mode), coding sessions read as conversations (Thread mode), and persistent teammates (Agent mode). Tandem hosts those engines. It never reads their tokens, and nothing leaves your machine unless you turn it on.
+A desktop workspace for the coding agents you already use. Claude Code, Codex and the other coding-agent CLIs run in real terminal panes side by side (Code mode), their sessions read as conversations (Thread mode), and teammates keep their notes between chats (Agent mode). Each engine signs in by itself, in its own folder on your disk: Vibezeo never reads, copies or proxies an AI vendor's tokens, and nothing leaves your computer unless you turn it on.
 
-Tandem is a clean-room product. It does not use another product's names, copy, artwork or code.
+- **Free.** Vibezeo is free, with no paid plans. Download it from [vibezeo.com/download](https://vibezeo.com/download/). Linux builds are out; macOS and Windows builds aren't published yet.
+- **Docs:** [vibezeo.com/docs](https://vibezeo.com/docs/). **Changes:** [CHANGELOG.md](CHANGELOG.md).
+- **Security issues:** report them privately, as [SECURITY.md](SECURITY.md) explains.
+- **Anything else:** contact@vibezeo.com.
+
+Vibezeo is a clean-room product. It doesn't use another product's names, copy, artwork or code.
+
+The code still uses the product's working name, Tandem: the crates are `tandem-*`, the app keeps its data in `~/.tandem/`, and the specs say Tandem.
+
+## Licence
+
+The source is public so that anyone can read it and see what the app does. No open-source licence has been granted, so the code is all rights reserved (© 2026 Naman Jain). The app itself is free to download and use.
+
+## How it's built
+
+Coding agents build Vibezeo from the specs, and the repository keeps their working record:
 
 - What and why: [`docs/PLAN.md`](docs/PLAN.md) (analysis, architecture, milestone plan)
 - Binding specs: [`build-kit/`](build-kit/) (DECISIONS, PRODUCT_SPEC, ARCHITECTURE, UI_SPEC, MILESTONES)
-- Progress: [`BUILD_LOG.md`](BUILD_LOG.md). Human-only steps: [`HUMAN_TODO.md`](HUMAN_TODO.md)
+- Rules for the agents: [`CLAUDE.md`](CLAUDE.md). Machine setup, commands and releasing: [`docs/OPERATING.md`](docs/OPERATING.md)
+- Progress and decisions: [`BUILD_LOG.md`](BUILD_LOG.md). Steps only a person can do: [`HUMAN_TODO.md`](HUMAN_TODO.md)
 
 ## Repository layout
 
