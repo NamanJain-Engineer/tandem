@@ -988,15 +988,9 @@ mod tests {
         let g = lanes::git_for(&state.data, &login).expect("git");
         let mut rows = Vec::new();
         for seat in 0..2u32 {
-            let lane = lanes::create(
-                &state.store,
-                &g,
-                &state.entitlements.limits(),
-                &ws.id,
-                "fix login",
-            )
-            .await
-            .expect("lane");
+            let lane = lanes::create(&state.store, &g, &ws.id, "fix login")
+                .await
+                .expect("lane");
             rows.push(BestOfLane {
                 seat,
                 lane_id: Some(lane.id.as_str().to_string()),

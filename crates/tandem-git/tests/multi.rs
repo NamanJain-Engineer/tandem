@@ -108,3 +108,29 @@ async fn f_cd_22_1_a_failing_repository_leaves_nothing_behind() {
         "api's worktree was removed"
     );
 }
+
+#[tokio::test]
+async fn f_cd_22_review_concurrent_creates_with_one_slug_get_their_own_folders() {
+    let (_d, root, cli) = folder(&["api", "web"], &[]);
+    let rs = repos(&root, &["api", "web"]);
+    let none = HashSet::new();
+    let (a, b) = tokio::join!(
+        LaneManager::create_multi(&cli, &root, &rs, "tidy", &none),
+        LaneManager::create_multi(&cli, &root, &rs, "tidy", &none),
+    );
+    // Both may not succeed (git refuses the second branch of one name), but
+    // neither removes the other's checkouts.
+    let made: Vec<_> = [a, b].into_iter().filter_map(Result::ok).collect();
+    assert!(!made.is_empty());
+    let slugs: HashSet<String> = made.iter().map(|l| l.slug.clone()).collect();
+    assert_eq!(slugs.len(), made.len(), "each has its own slug");
+    for lane in &made {
+        for (_, wt) in &lane.repos {
+            assert!(
+                wt.path.join("README.md").exists(),
+                "{} intact",
+                wt.path.display()
+            );
+        }
+    }
+}

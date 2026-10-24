@@ -46,7 +46,6 @@ export const FREE: Limits = {
   creditPacks: false,
   dictionarySync: false,
   sessionSearch: false,
-  multiRepo: false,
 };
 
 export const BOOT: AppBoot = {

@@ -14,7 +14,11 @@ missing: boolean, branch: string | null, liveCount: number, tabs: Array<Tab>,
  * F-CD-22: a multi-repo folder's repositories, or a multi-repo
  * worktree's; absent otherwise.
  */
-repos?: Array<string>, id: WorkspaceId, 
+repos?: Array<string>, 
+/**
+ * F-CD-22: why a folder of repositories isn't multi-repo (too many).
+ */
+reposNote?: string, id: WorkspaceId, 
 /**
  * `local` | `ssh` | `wsl`
  */

@@ -10,8 +10,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("../migrations/0001_init.sql")),
     ("0002_extras", include_str!("../migrations/0002_extras.sql")),
     (
-        "0003_lane_repos",
-        include_str!("../migrations/0003_lane_repos.sql"),
+        "0004_lane_repos",
+        include_str!("../migrations/0004_lane_repos.sql"),
     ),
 ];
 

@@ -31,7 +31,6 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { useSession } from "../../stores/session";
 import { isMultiRepo } from "../../stores/launch";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
@@ -301,8 +300,6 @@ export function CodeRail() {
   const collapsed = useUi((s) => s.railCollapsed);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const saved = useSetting("rail_width", 248);
-  // F-CD-22: worktrees across a multi-repo folder are part of Pro.
-  const multiAllowed = useSession((st) => st.entitlement?.limits.multiRepo ?? false);
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
   const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
@@ -339,16 +336,10 @@ export function CodeRail() {
       label:
         ws.kind === "wsl"
           ? t("worktree.remote")
-          : isMultiRepo(ws) && !multiAllowed
-            ? t("worktree.multi.pro")
-            : ws.branch || isMultiRepo(ws)
-              ? t("worktree.new")
-              : t("worktree.needsRepo"),
-      disabled:
-        ws.kind === "wsl" ||
-        (!ws.branch && !isMultiRepo(ws)) ||
-        (isMultiRepo(ws) && !multiAllowed) ||
-        ws.missing,
+          : ws.branch || isMultiRepo(ws)
+            ? t("worktree.new")
+            : t("worktree.needsRepo"),
+      disabled: ws.kind === "wsl" || (!ws.branch && !isMultiRepo(ws)) || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     {
@@ -432,7 +423,9 @@ export function CodeRail() {
             ? t("rail.missing")
             : ws.kind !== "local"
               ? `${placeBadge(ws)} · ${ws.root}`
-              : ws.root,
+              : ws.reposNote
+                ? `${ws.root} · ${ws.reposNote}`
+                : ws.root,
           warning: ws.missing,
           icon: ws.missing ? (
             <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />

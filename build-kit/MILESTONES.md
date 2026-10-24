@@ -2059,7 +2059,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **Prerequisites.** F-CD-14/15 (worktrees), F-WT-02 (the review bar), F-WT-08's `gh` runner, the entitlement `Limits` (§3.2).
 
 **Ordered tasks**
-1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0003 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
+1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0004 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
 2. **Diff.** `lane_diff` across the repositories with prefixed paths; sections in the diff dialog.
 3. **Pull requests.** `lane_create_prs` / `lane_prs_get` behind the native confirm; UI-158.
 
@@ -2071,7 +2071,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 ```
 
 **E2E**
-- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories, signed in on Pro. Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
+- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories (free for everyone, D-869). Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 

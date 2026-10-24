@@ -58,6 +58,29 @@ pub fn briefing(path: &Path, branch: &str, siblings: &[String]) -> String {
     )
 }
 
+/// [`briefing`] for a multi-repo worktree (F-CD-22): `path` holds one git
+/// worktree per repository, all on `branch`.
+pub fn multi_briefing(path: &Path, branch: &str, repos: &[String], siblings: &[String]) -> String {
+    let others = if siblings.is_empty() {
+        "none".to_string()
+    } else {
+        siblings
+            .iter()
+            .map(|b| format!("`{b}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let names = repos
+        .iter()
+        .map(|r| format!("`{r}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "You are working in `{}`, a folder holding a git worktree of each of these repositories: {names}. Each is on branch `{branch}`; commit in each repository's own folder. Sibling branches: {others}. Don't modify other worktrees.",
+        path_string(path)
+    )
+}
+
 /// The `origin` remote's URL of the checkout at `root`, if it has one.
 pub fn origin_url(root: &Path) -> Option<String> {
     let repo = git2::Repository::discover(root).ok()?;
@@ -188,10 +211,21 @@ impl LaneManager {
                 taken.insert(entry.file_name().to_string_lossy().into_owned());
             }
         }
-        let slug = dedupe(&slugify(slug_source), &taken);
+        std::fs::create_dir_all(&dir)?;
+        // The parent folder is made exclusively: a concurrent create that
+        // picked the same slug gets the next one, never this folder.
+        let (slug, parent) = loop {
+            let slug = dedupe(&slugify(slug_source), &taken);
+            let parent = dir.join(&slug);
+            match std::fs::create_dir(&parent) {
+                Ok(()) => break (slug, parent),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    taken.insert(slug);
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
         let branch = format!("{BRANCH_PREFIX}{slug}");
-        let parent = dir.join(&slug);
-        std::fs::create_dir_all(&parent)?;
         let mut made: Vec<(String, Lane, &Repo)> = Vec::new();
         for (name, repo) in repos {
             let path = parent.join(name);
@@ -217,9 +251,11 @@ impl LaneManager {
                 )),
                 Err(e) => {
                     for (_, lane, repo) in &made {
-                        let _ = Self::remove(git, repo, &lane.path, None).await;
-                        let _ = Self::delete_branch(git, repo, &lane.branch).await;
+                        Self::discard_new(git, repo, &lane.path, &lane.branch).await;
                     }
+                    // The failing repository may have its branch or a
+                    // half-made worktree already.
+                    Self::discard_new(git, repo, &path, &branch).await;
                     let _ = std::fs::remove_dir_all(&parent);
                     return Err(in_repo(name, e));
                 }
@@ -231,6 +267,44 @@ impl LaneManager {
             branch,
             repos: made.into_iter().map(|(n, l, _)| (n, l)).collect(),
         })
+    }
+
+    /// Undoes a worktree this process just made: force-removes it (a fresh
+    /// checkout can read dirty, from line endings, case collisions or the
+    /// user's post-checkout hooks), prunes its registration and deletes its
+    /// new branch. Failures are logged, not returned: it's a rollback.
+    pub async fn discard_new(git: &Git, repo: &Repo, path: &Path, branch: &str) {
+        if let Err(e) = Self::remove_inner(git, repo, path, true).await {
+            tracing::warn!(code = "lanes.rollback_remove_failed", error = %e, "rollback couldn't remove a new worktree");
+        }
+        let _ = git
+            .ok(
+                Mode::Write,
+                &repo.main_root(),
+                &[OsStr::new("worktree"), OsStr::new("prune")],
+            )
+            .await;
+        if Self::branch_exists(git, repo, branch).await {
+            if let Err(e) = Self::delete_branch(git, repo, branch).await {
+                tracing::warn!(code = "lanes.rollback_branch_failed", error = %e, "rollback couldn't delete a new branch");
+            }
+        }
+    }
+
+    async fn branch_exists(git: &Git, repo: &Repo, branch: &str) -> bool {
+        let r = format!("refs/heads/{branch}");
+        git.ok(
+            Mode::Read,
+            repo.root(),
+            &[
+                OsStr::new("show-ref"),
+                OsStr::new("--verify"),
+                OsStr::new("--quiet"),
+                OsStr::new(&r),
+            ],
+        )
+        .await
+        .is_ok()
     }
 
     /// Deletes a branch a failed multi-repo worktree just made (it has no

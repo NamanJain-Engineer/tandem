@@ -154,6 +154,13 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
     let Some(lane) = all.iter().find(|w| covered(w) && same(w)) else {
         return;
     };
+    // F-CD-22: no radar for multi-repo worktrees yet.
+    if crate::services::lanes::is_multi(store, lane)
+        .await
+        .unwrap_or(false)
+    {
+        return;
+    }
     let Ok(mine) = refresh(git, lane).await else {
         tracing::warn!(code = "radar.parse_failed", "radar index skipped");
         return;

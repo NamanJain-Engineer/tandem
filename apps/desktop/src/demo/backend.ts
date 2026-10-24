@@ -111,7 +111,6 @@ const ENTITLEMENT: EntitlementView = {
     creditPacks: false,
     dictionarySync: false,
     sessionSearch: false,
-    multiRepo: false,
   },
   source: "free",
   credits: null,

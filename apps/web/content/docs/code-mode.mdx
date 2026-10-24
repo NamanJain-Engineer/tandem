@@ -138,9 +138,9 @@ Files in other languages, files over 512 KB, and anything past a worktree's firs
 
 ### Multi-repo workspaces
 
-Add a folder that holds several repositories side by side, such as `shop/` with `api/` and `web/`, and Vibezeo treats them as one workspace. Its rail row says how many repositories it holds ("2 repositories"). Only repositories directly inside the folder count, up to 12, and the folder itself mustn't be inside a repository.
+Add a folder that holds several repositories side by side, such as `shop/` with `api/` and `web/`, and Vibezeo treats them as one workspace. Its rail row says how many repositories it holds ("2 repositories"). Only repositories directly inside the folder count, and a repository's extra checkouts (its own worktrees beside it) count once. A folder with more than 12 isn't treated as multi-repo: add the repositories you work in on their own. The folder itself mustn't be inside a repository.
 
-On Pro, **New worktree…** and the launch sheet's worktrees work across all of them. Each worktree is a folder `shop/.tandem/worktrees/<name>/` holding a worktree of every repository, all on the same branch `tandem/<name>`, so one agent started there can change both the API and the web app together. If one repository can't get a worktree (it has no commits yet, for example), none is made and Vibezeo says which.
+**New worktree…** and the launch sheet's worktrees work across all of them. Each worktree is a folder `shop/.tandem/worktrees/<name>/` holding a worktree of every repository, all on the same branch `tandem/<name>`, so one agent started there can change both the API and the web app together. If one repository can't get a worktree (it has no commits yet, for example), none is made and Vibezeo says which.
 
 - **Open diff** shows each repository's share of the changes, then the files under each repository's name. Comments for the agent work as for any worktree.
 - **Create pull requests** asks first, then in each repository with new commits pushes the branch and opens a pull request with your own `git` and GitHub CLI (`gh`). Each pull request's description then links the others. Repositories without new commits, and GitLab ones for now, are skipped and listed.

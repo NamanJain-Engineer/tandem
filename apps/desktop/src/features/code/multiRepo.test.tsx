@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FileDiff, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
@@ -9,6 +9,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { CodeRail } from "./CodeRail";
+import { PullRequestsDialog } from "./MultiPullRequests";
 import { WorktreeDialogs, worktreeMenu } from "./Worktrees";
 
 function ws(id: string, over: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
@@ -137,6 +138,7 @@ describe("multi-repo workspaces (F-CD-22)", () => {
           { repo: "web", state: "skipped", url: null, reason: "no new commits" },
         ],
       }),
+      app_open_external: () => null,
     });
     render(
       <UiProvider>
@@ -155,7 +157,34 @@ describe("multi-repo workspaces (F-CD-22)", () => {
     ]);
     expect(steps[0]?.textContent).toContain("Opened");
     expect(steps[1]?.textContent).toContain("Skipped: no new commits");
-    expect(screen.getByTestId("prs-link").getAttribute("href")).toBe("https://github.com/o/api/pull/1");
+    // The link opens in the system browser through the core.
+    fireEvent.click(screen.getByTestId("prs-link"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "app_open_external")?.args).toEqual({
+        url: "https://github.com/o/api/pull/1",
+      }),
+    );
+  });
+
+  it("F-CD-22.4 without a run, or when reading it fails, the dialog says so and nothing spins", async () => {
+    let fail = false;
+    calls = fakeBackend({
+      workspace_list: () => [SHOP, LANE],
+      lane_prs_get: () => {
+        if (fail) throw { code: "io", message: "disk gone", stage: null, hint: null, retryable: false };
+        return null;
+      },
+    });
+    render(
+      <UiProvider>
+        <PullRequestsDialog wt={LANE} onClose={() => undefined} />
+      </UiProvider>,
+    );
+    await screen.findByTestId("prs-gone");
+    expect(document.querySelector('[data-testid="prs-step"] svg.animate-spin')).toBeNull();
+    fail = true;
+    await screen.findByTestId("prs-error", undefined, { timeout: 3000 });
+    expect(screen.getByTestId("prs-error").textContent).toContain("disk gone");
   });
 
   it("F-CD-22.4 a Cancel on the confirm opens nothing and says nothing", async () => {

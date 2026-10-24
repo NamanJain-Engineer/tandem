@@ -27,14 +27,7 @@ pub async fn lane_create(
 ) -> Result<Workspace, IpcError> {
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    lanes::create(
-        &state.store,
-        &git,
-        &state.entitlements.limits(),
-        &workspace_id,
-        &slug_source,
-    )
-    .await
+    lanes::create(&state.store, &git, &workspace_id, &slug_source).await
 }
 
 #[tauri::command]
@@ -577,7 +570,7 @@ pub async fn lane_create_prs(
     {
         return Err(IpcError::new(ErrorCode::Cancelled, "Nothing was pushed"));
     }
-    multi_prs::start(&state.store, git, Box::new(gh), &lane_id).await
+    multi_prs::start(&state.store, state.data.run(), git, Box::new(gh), &lane_id).await
 }
 
 #[tauri::command]

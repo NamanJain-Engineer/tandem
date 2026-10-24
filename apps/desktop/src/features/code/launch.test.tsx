@@ -23,9 +23,8 @@ import {
   useLaunch,
 } from "../../stores/launch";
 import { useLayout } from "../../stores/layout";
-import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
-import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { LaunchSheet, launchLabel } from "./LaunchSheet";
 
 const engine = (id: string, label: string, installed = true): EngineView =>
@@ -223,23 +222,11 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     expect(screen.getByText("Worktrees aren't available in WSL folders yet")).toBeTruthy();
   });
 
-  it("F-CD-22.2 a multi-repo folder's worktree box needs Pro, and is on with it", async () => {
-    open({ ...ws("shop", null), repos: ["api", "web"] });
-    await preset("Fleet");
-    const box = () => screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
-    expect(box().getAttribute("data-disabled")).not.toBeNull();
-    expect(screen.getByText("Multi-repo worktrees are part of Pro.")).toBeTruthy();
-  });
-
-  it("F-CD-22.1 on Pro a multi-repo folder can give each agent its own worktree", async () => {
-    useSession.setState({
-      entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE_VIEW.limits, multiRepo: true } },
-    });
+  it("F-CD-22.1 a multi-repo folder can give each agent its own worktree, on any plan (D-869)", async () => {
     open({ ...ws("shop", null), repos: ["api", "web"] });
     await preset("Fleet");
     const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
     expect(box.getAttribute("data-disabled")).toBeNull();
-    expect(screen.queryByText("Multi-repo worktrees are part of Pro.")).toBeNull();
   });
 
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {

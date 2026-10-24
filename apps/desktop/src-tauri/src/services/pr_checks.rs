@@ -232,6 +232,8 @@ pub async fn repo_of(store: &Store, id: &WorkspaceId) -> Result<Workspace, IpcEr
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws,
     };
+    // F-CD-22: one repository only, refused before anything runs.
+    crate::services::lanes::single_repo(store, &repo).await?;
     if repo.kind != "local" {
         return Err(IpcError::new(
             ErrorCode::Invalid,

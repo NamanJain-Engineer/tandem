@@ -349,7 +349,6 @@ pub async fn start(
             let lane = lanes::create(
                 &state.store,
                 &git,
-                &state.entitlements.limits(),
                 &source.workspace_id,
                 &slug_source(brief),
             )

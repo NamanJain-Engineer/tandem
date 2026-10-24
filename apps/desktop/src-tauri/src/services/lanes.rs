@@ -3,7 +3,7 @@
 //! `<repo>/.tandem/worktrees/<slug>`. Copy the user sees says "worktree";
 //! "lane" is the internal word (UI_SPEC §6.2).
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -119,7 +119,6 @@ async fn lane_row(store: &Store, id: &WorkspaceId) -> Result<(Workspace, Workspa
 pub async fn create(
     store: &Store,
     git: &Git,
-    limits: &tandem_core::entitlement::Limits,
     workspace: &WorkspaceId,
     slug_source: &str,
 ) -> Result<Workspace, IpcError> {
@@ -134,7 +133,7 @@ pub async fn create(
     // F-CD-22: a folder holding several repositories.
     let names = crate::services::workspaces::multi_repos(Path::new(&top.root));
     if !names.is_empty() {
-        return create_multi(store, git, limits, &top, &names, slug_source).await;
+        return create_multi(store, git, &ws, &top, &names, slug_source).await;
     }
     let repo = discover(&ws.root, "Folder not found")?;
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
@@ -176,15 +175,24 @@ pub async fn create(
     Ok(row)
 }
 
-pub const MULTI_PRO: &str = "Multi-repo worktrees are part of Pro.";
+/// F-CD-22: a multi-repo worktree (it has `lane_repos` rows), or a
+/// multi-repo folder.
+pub async fn is_multi(store: &Store, ws: &Workspace) -> Result<bool, IpcError> {
+    if !lane_repos::list(store, &ws.id).await?.is_empty() {
+        return Ok(true);
+    }
+    Ok(ws.kind == "local"
+        && ws.parent_id.is_none()
+        && !crate::services::workspaces::multi_repos(Path::new(&ws.root)).is_empty())
+}
 
-/// Refuses the features that need one repository for a multi-repo
-/// worktree (F-CD-22).
-async fn single_repo(store: &Store, lane: &Workspace) -> Result<(), IpcError> {
-    if lane_repos::list(store, &lane.id).await?.is_empty() {
-        Ok(())
-    } else {
+/// Refuses, up front, what needs one repository for a multi-repo worktree
+/// or folder (F-CD-22, D-2534).
+pub async fn single_repo(store: &Store, ws: &Workspace) -> Result<(), IpcError> {
+    if is_multi(store, ws).await? {
         Err(IpcError::new(ErrorCode::Invalid, MULTI_NOT_YET).with_stage("git"))
+    } else {
+        Ok(())
     }
 }
 pub const MULTI_NOT_YET: &str = "Not available for multi-repo worktrees yet";
@@ -195,18 +203,27 @@ pub const MULTI_NOT_YET: &str = "Not available for multi-repo worktrees yet";
 async fn create_multi(
     store: &Store,
     git: &Git,
-    limits: &tandem_core::entitlement::Limits,
+    from: &Workspace,
     top: &Workspace,
     names: &[String],
     slug_source: &str,
 ) -> Result<Workspace, IpcError> {
-    if !limits.multi_repo {
-        return Err(IpcError::new(ErrorCode::ForbiddenPlan, MULTI_PRO).with_stage("git"));
-    }
     let folder = Path::new(&top.root);
+    // Called on a multi-repo worktree (a handoff to a new one), each
+    // repository starts from that worktree's HEAD, not the main checkout's.
+    let starts: HashMap<String, String> = lane_repos::list(store, &from.id)
+        .await?
+        .into_iter()
+        .map(|r| (r.name, r.root))
+        .collect();
     let mut repos = Vec::new();
     for name in names {
-        let repo = Repo::discover(&folder.join(name))?.ok_or_else(|| {
+        let start = starts
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|p| p.is_dir())
+            .unwrap_or_else(|| folder.join(name));
+        let repo = Repo::discover(&start)?.ok_or_else(|| {
             IpcError::new(ErrorCode::Invalid, format!("{name} isn't a git repository"))
         })?;
         repos.push((name.clone(), repo));
@@ -225,14 +242,27 @@ async fn create_multi(
         let repos: Vec<(String, Repo)> =
             repos.iter().map(|(n, r)| (n.clone(), r.clone())).collect();
         async move {
+            // Force-remove what was just made, and delete its new branches.
             for ((_, wt), (_, repo)) in lane.repos.iter().zip(&repos) {
-                let _ = LaneManager::remove(git, repo, &wt.path, None).await;
+                LaneManager::discard_new(git, repo, &wt.path, &wt.branch).await;
             }
             let _ = std::fs::remove_dir_all(&lane.path);
         }
     };
     let made = async {
-        let row = workspaces::add_lane(
+        let mut rows = Vec::new();
+        for ((name, wt), (_, repo)) in lane.repos.iter().zip(&repos) {
+            rows.push(lane_repos::LaneRepo {
+                name: name.clone(),
+                // The repository's own checkout, even when the worktree
+                // started from another worktree's HEAD.
+                repo_root: utf8(&repo.main_root())?,
+                root: utf8(&wt.path)?,
+                base: wt.base.clone(),
+            });
+        }
+        // The row and its repositories together, or neither.
+        let row = lane_repos::add_lane(
             store,
             NewLane {
                 parent_id: top.id.clone(),
@@ -241,18 +271,14 @@ async fn create_multi(
                 branch: lane.branch.clone(),
                 base: String::new(),
             },
+            rows,
         )
         .await?;
-        let mut rows = Vec::new();
-        for ((name, wt), (_, repo)) in lane.repos.iter().zip(&repos) {
-            rows.push(lane_repos::LaneRepo {
-                name: name.clone(),
-                repo_root: utf8(repo.root())?,
-                root: utf8(&wt.path)?,
-                base: wt.base.clone(),
-            });
+        if let Err(e) = tabs::create(store, &row.id, None).await {
+            let _ = workspaces::remove(store, &row.id).await;
+            let _ = lane_repos::clear(store, &row.id).await;
+            return Err(e.into());
         }
-        lane_repos::set(store, &row.id, rows).await?;
         Ok::<Workspace, IpcError>(row)
     };
     let row = match made.await {
@@ -262,7 +288,6 @@ async fn create_multi(
             return Err(err);
         }
     };
-    tabs::create(store, &row.id, None).await?;
     tracing::info!(
         code = "lane.created_multi",
         repos = lane.repos.len(),
@@ -319,6 +344,54 @@ async fn create_on_host(
     Ok(row)
 }
 
+/// A unified patch's file headers with `name/` leading each path, so a
+/// multi-repo diff's patches say which repository they're in (F-CD-22).
+pub fn prefix_patch(patch: &str, name: &str) -> String {
+    let mut out = String::with_capacity(patch.len() + 64);
+    let mut in_hunk = false;
+    for line in patch.split_inclusive('\n') {
+        if line.starts_with("diff --git ") {
+            in_hunk = false;
+            let rest = &line["diff --git ".len()..];
+            out.push_str("diff --git ");
+            out.push_str(&rest.replacen("a/", &format!("a/{name}/"), 1).replacen(
+                " b/",
+                &format!(" b/{name}/"),
+                1,
+            ));
+            continue;
+        }
+        if line.starts_with("@@") {
+            in_hunk = true;
+        }
+        if !in_hunk {
+            for (head, side) in [("--- ", "a/"), ("+++ ", "b/")] {
+                if let Some(rest) = line.strip_prefix(head).and_then(|r| r.strip_prefix(side)) {
+                    out.push_str(&format!("{head}{side}{name}/{rest}"));
+                    break;
+                }
+            }
+            if line.starts_with("--- a/") || line.starts_with("+++ b/") {
+                continue;
+            }
+            for head in ["rename from ", "rename to ", "copy from ", "copy to "] {
+                if let Some(rest) = line.strip_prefix(head) {
+                    out.push_str(&format!("{head}{name}/{rest}"));
+                    break;
+                }
+            }
+            if ["rename from ", "rename to ", "copy from ", "copy to "]
+                .iter()
+                .any(|h| line.starts_with(h))
+            {
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// `lane_diff`: the worktree's changes against the commit it started from,
 /// including uncommitted work.
 pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::FileDiff>, IpcError> {
@@ -341,6 +414,7 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
             for mut f in repo.diff_since(&r.base).await? {
                 f.path = format!("{}/{}", r.name, f.path);
                 f.old_path = f.old_path.map(|p| format!("{}/{p}", r.name));
+                f.patch = prefix_patch(&f.patch, &r.name);
                 out.push(f);
             }
         }
@@ -653,6 +727,11 @@ async fn remove_multi(
     let parent = Path::new(&lane.root);
     if force.is_none() {
         for r in repos {
+            // A repository's worktree folder that's already gone has
+            // nothing to lose; its registration is pruned below.
+            if !Path::new(&r.root).exists() {
+                continue;
+            }
             if let Some(repo) = Repo::discover(Path::new(&r.root))? {
                 if !repo.status().await?.is_clean() {
                     return Err(dirty());
@@ -676,10 +755,14 @@ async fn remove_multi(
     let forced = force.is_some();
     let mut each = Vec::new();
     for r in repos {
-        each.push((
-            discover(&r.repo_root, "Folder not found")?,
-            PathBuf::from(&r.root),
-        ));
+        // A repository that's gone from the folder has no worktree to remove.
+        match Repo::discover(Path::new(&r.repo_root)) {
+            Ok(Some(repo)) => each.push((repo, PathBuf::from(&r.root))),
+            _ => tracing::warn!(
+                code = "lane.multi_repo_missing",
+                "a multi-repo worktree's repository is gone; skipped"
+            ),
+        }
     }
     LaneManager::remove_many(git, &each, force).await?;
     let gone = if forced {
@@ -688,11 +771,16 @@ async fn remove_multi(
         std::fs::remove_dir(parent)
     };
     if let Err(e) = gone {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            return Err(IpcError::new(ErrorCode::Io, e.to_string()).with_stage("git"));
+        match e.kind() {
+            std::io::ErrorKind::NotFound => {}
+            // Something besides the worktrees is in it: Discard with force.
+            std::io::ErrorKind::DirectoryNotEmpty => return Err(dirty()),
+            _ => return Err(IpcError::new(ErrorCode::Io, e.to_string()).with_stage("git")),
         }
     }
     workspaces::remove(store, &lane.id).await?;
+    // The soft removal keeps the row; its repositories go now.
+    lane_repos::clear(store, &lane.id).await?;
     tracing::info!(code = "lane.removed_multi", "multi-repo worktree removed");
     Ok(RemoveReport::default())
 }
@@ -907,24 +995,12 @@ mod tests {
     #[tokio::test]
     async fn f_cd_15_1_two_worktrees_for_the_same_task_nest_under_the_repo() {
         let fx = fixture().await;
-        let a = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &fx.repo.id,
-            "fix auth",
-        )
-        .await
-        .expect("a");
-        let b = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &fx.repo.id,
-            "fix auth",
-        )
-        .await
-        .expect("b");
+        let a = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("a");
+        let b = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("b");
         assert_eq!(a.lane_branch.as_deref(), Some("tandem/fix-auth"));
         assert_eq!(b.lane_branch.as_deref(), Some("tandem/fix-auth-2"));
         assert_eq!(a.parent_id.as_ref(), Some(&fx.repo.id));
@@ -944,15 +1020,9 @@ mod tests {
             .collect();
         assert_eq!(children, vec!["tandem/fix-auth", "tandem/fix-auth-2"]);
         // One made from a worktree sits beside it, under the repository.
-        let c = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &a.id,
-            "",
-        )
-        .await
-        .expect("from a worktree");
+        let c = create(&fx.store, &fx.git, &a.id, "")
+            .await
+            .expect("from a worktree");
         assert_eq!(c.parent_id.as_ref(), Some(&fx.repo.id));
         assert_eq!(c.lane_branch.as_deref(), Some("tandem/session"));
     }
@@ -977,15 +1047,9 @@ mod tests {
             degraded: false,
         };
         let git = git_for(&data, &login).expect("git");
-        let err = create(
-            &store,
-            &git,
-            &tandem_core::entitlement::Limits::free(),
-            &ws.workspace.id,
-            "x",
-        )
-        .await
-        .expect_err("not a repo");
+        let err = create(&store, &git, &ws.workspace.id, "x")
+            .await
+            .expect_err("not a repo");
         assert_eq!(err.message, NOT_A_REPO);
         assert!(
             workspaces::lanes(&store, &ws.workspace.id)
@@ -999,15 +1063,9 @@ mod tests {
     #[tokio::test]
     async fn f_cd_15_2_dirty_removal_needs_force_and_only_a_local_person_can_force() {
         let fx = fixture().await;
-        let lane = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &fx.repo.id,
-            "fix auth",
-        )
-        .await
-        .expect("lane");
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
         std::fs::write(Path::new(&lane.root).join("wip.txt"), "draft\n").expect("dirty");
         let err = remove(&fx.store, &PtyManager::new(), &fx.git, &lane.id, None)
             .await
@@ -1042,15 +1100,9 @@ mod tests {
     async fn f_cd_15_3_merge_conflict_is_reported_without_a_commit() {
         let fx = fixture().await;
         let root = Path::new(&fx.repo.root).to_path_buf();
-        let lane = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &fx.repo.id,
-            "edit app",
-        )
-        .await
-        .expect("lane");
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "edit app")
+            .await
+            .expect("lane");
         std::fs::write(Path::new(&lane.root).join("app.txt"), "lane\n").expect("write");
         git_cmd(Path::new(&lane.root), &["commit", "-qam", "lane edit"]);
         std::fs::write(root.join("app.txt"), "main\n").expect("write");
@@ -1076,15 +1128,9 @@ mod tests {
     #[tokio::test]
     async fn f_cd_15_merge_refuses_a_parent_with_uncommitted_changes() {
         let fx = fixture().await;
-        let lane = create(
-            &fx.store,
-            &fx.git,
-            &tandem_core::entitlement::Limits::free(),
-            &fx.repo.id,
-            "x",
-        )
-        .await
-        .expect("lane");
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "x")
+            .await
+            .expect("lane");
         std::fs::write(Path::new(&fx.repo.root).join("app.txt"), "edited\n").expect("dirty");
         let err = merge(&fx.store, &fx.git, &lane.id)
             .await
@@ -1155,34 +1201,29 @@ mod tests {
         (dir, store, git, added.workspace, root)
     }
 
-    fn pro() -> tandem_core::entitlement::Limits {
-        tandem_core::entitlement::Limits {
-            multi_repo: true,
-            ..tandem_core::entitlement::Limits::free()
-        }
+    #[test]
+    fn f_cd_22_3_patches_name_their_repository() {
+        let patch = "diff --git a/src/app.ts b/src/app.ts\nindex 1..2 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n--- a/not a header\n+x\n";
+        assert_eq!(
+            prefix_patch(patch, "web"),
+            "diff --git a/web/src/app.ts b/web/src/app.ts\nindex 1..2 100644\n--- a/web/src/app.ts\n+++ b/web/src/app.ts\n@@ -1 +1 @@\n--- a/not a header\n+x\n"
+        );
+        let renamed = "diff --git a/a.ts b/b.ts\nrename from a.ts\nrename to b.ts\n";
+        assert_eq!(
+            prefix_patch(renamed, "api"),
+            "diff --git a/api/a.ts b/api/b.ts\nrename from api/a.ts\nrename to api/b.ts\n"
+        );
     }
 
     #[tokio::test]
-    async fn f_cd_22_1_2_a_worktree_across_both_repositories_on_pro_only() {
+    async fn f_cd_22_1_2_a_worktree_across_both_repositories() {
         let (_d, store, git, ws, root) = multi_fixture().await;
         assert_eq!(
             crate::services::workspaces::multi_repos(&root),
             vec!["api".to_string(), "web".to_string()]
         );
-        let e = create(
-            &store,
-            &git,
-            &tandem_core::entitlement::Limits::free(),
-            &ws.id,
-            "tidy",
-        )
-        .await
-        .expect_err("Free");
-        assert_eq!(e.code, ErrorCode::ForbiddenPlan);
-        assert!(!root.join(".tandem").exists(), "nothing made on Free");
-        let lane = create(&store, &git, &pro(), &ws.id, "tidy")
-            .await
-            .expect("Pro");
+        // D-869: free for everyone, no plan check.
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
         assert_eq!(lane.lane_branch.as_deref(), Some("tandem/tidy"));
         assert_eq!(Path::new(&lane.root), root.join(".tandem/worktrees/tidy"));
         for name in ["api", "web"] {
@@ -1211,9 +1252,7 @@ mod tests {
     #[tokio::test]
     async fn f_cd_22_3_5_the_diff_names_each_repository_and_discard_keeps_the_branches() {
         let (_d, store, git, ws, root) = multi_fixture().await;
-        let lane = create(&store, &git, &pro(), &ws.id, "tidy")
-            .await
-            .expect("Pro");
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
         let parent = PathBuf::from(&lane.root);
         std::fs::write(parent.join("web/src/app.ts"), "// web\nchanged\n").expect("write");
         std::fs::write(parent.join("api/new.ts"), "x\n").expect("write");
@@ -1246,6 +1285,88 @@ mod tests {
                 .any(|w| w.id == lane.id),
             "the row is removed"
         );
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_review_setup_refuses_up_front_and_a_handoff_starts_from_the_worktree() {
+        let (d, store, git, ws, root) = multi_fixture().await;
+        let data = DataDir::at(d.path().join("data")).expect("data");
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        // Setup doesn't apply: lane_setup says nothing, and the folder's
+        // setup is refused before anything reads git.
+        assert!(
+            crate::services::worktree_setup::lane_setup(&store, &data, &lane.id)
+                .await
+                .expect("lane_setup")
+                .is_none()
+        );
+        let e = crate::services::worktree_setup::get(&store, &data, &ws.id)
+            .await
+            .expect_err("setup");
+        assert_eq!(e.message, MULTI_NOT_YET);
+        let e = crate::services::merge_queue::repo_of(&store, &lane.id)
+            .await
+            .expect_err("landing");
+        assert_eq!(e.message, MULTI_NOT_YET);
+        // A commit in the worktree's api, then a new worktree made from it.
+        let api = PathBuf::from(&lane.root).join("api");
+        std::fs::write(api.join("more.ts"), "x\n").expect("write");
+        git_cmd(&api, &["add", "."]);
+        git_cmd(
+            &api,
+            &[
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "more",
+            ],
+        );
+        let head = git_cmd(&api, &["rev-parse", "HEAD"]);
+        let next = create(&store, &git, &lane.id, "next")
+            .await
+            .expect("from the worktree");
+        let next_api = PathBuf::from(&next.root).join("api");
+        assert_eq!(git_cmd(&next_api, &["rev-parse", "HEAD"]), head);
+        let rows = lane_repos::list(&store, &next.id).await.expect("rows");
+        assert_eq!(
+            Path::new(&rows[0].repo_root),
+            std::fs::canonicalize(root.join("api")).expect("api")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_review_discard_survives_a_missing_repository_folder_and_forgets_its_rows() {
+        let (_d, store, git, ws, _root) = multi_fixture().await;
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        let parent = PathBuf::from(&lane.root);
+        // Someone deleted web's worktree by hand.
+        std::fs::remove_dir_all(parent.join("web")).expect("rm");
+        remove(&store, &PtyManager::new(), &git, &lane.id, None)
+            .await
+            .expect("discard without force");
+        assert!(!parent.exists());
+        assert!(lane_repos::list(&store, &lane.id)
+            .await
+            .expect("rows")
+            .is_empty());
+        // A new worktree has exactly its own repositories.
+        let again = create(&store, &git, &ws.id, "tidy").await.expect("again");
+        assert_eq!(
+            lane_repos::list(&store, &again.id)
+                .await
+                .expect("rows")
+                .len(),
+            2
+        );
+        // A stray file in the parent folder: Conflict, so Discard can force.
+        std::fs::write(PathBuf::from(&again.root).join("notes.txt"), "x").expect("write");
+        let e = remove(&store, &PtyManager::new(), &git, &again.id, None)
+            .await
+            .expect_err("stray file");
+        assert_eq!(e.code, ErrorCode::Conflict);
     }
 }
 

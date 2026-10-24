@@ -57,10 +57,6 @@ pub struct Limits {
     /// Full-text search across engine sessions (F-TH-17).
     #[serde(default)]
     pub session_search: bool,
-    /// Worktrees across a multi-repo folder (F-CD-22). Defaults to false so
-    /// an older API's entitlement still parses.
-    #[serde(default)]
-    pub multi_repo: bool,
 }
 
 impl Limits {
@@ -87,7 +83,6 @@ impl Limits {
             credit_packs: false,
             dictionary_sync: false,
             session_search: false,
-            multi_repo: false,
         }
     }
 
