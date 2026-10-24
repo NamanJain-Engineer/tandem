@@ -3,7 +3,7 @@
 Things only a human can do. The build never blocks on them: each sits behind a mock or dev provider.
 
 ## Accounts & keys
-- [ ] **Make the repository public** (your ask of 24 October; D-870). Agents can't change a repository's visibility, so this step is yours:
+- [x] **Make the repository public** (your ask of 24 October; D-870). Done: you switched it on 24 October. Agents can't change a repository's visibility, so this step was yours:
   1. On GitHub, open the repository's **Settings** › **General**.
   2. Under **Danger Zone**, at the bottom, choose **Change repository visibility** › **Change to public**.
   3. Confirm with the repository's name.
