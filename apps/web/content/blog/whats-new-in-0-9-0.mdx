@@ -6,7 +6,7 @@ author: Naman Jain
 tags: [release, worktrees, engines, linux]
 ---
 
-Vibezeo 0.9.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Like 0.8.0, it runs the Free plan on your computer, with no account and nothing sent to our servers.
+Vibezeo 0.9.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Vibezeo is free, with no paid plans, and like 0.8.0 it runs on your computer, with no account and nothing sent to our servers.
 
 0.8.0 was about checking what parallel agents did. This release is about bringing their work home: landing finished worktrees one after another behind your own checks, sending a pull request's failures and review comments back to the agent that can fix them, and noticing when two agents are about to collide in the same code.
 
@@ -34,7 +34,7 @@ Git only notices a clash when two agents touch the same lines. The **intent rada
 
 ## Every past session in one library
 
-**Session library…** in the command palette lists the Claude Code and Codex sessions on this computer, including ones you started in a terminal outside Vibezeo, grouped by repository with their first prompt. **Resume** opens the session in an agent pane in its folder; **Continue with another engine…** hands it over with a summary of its last messages. Vibezeo only reads the engines' session files and never opens their sign-in files. Searching what sessions say is part of Pro.
+**Session library…** in the command palette lists the Claude Code and Codex sessions on this computer, including ones you started in a terminal outside Vibezeo, grouped by repository with their first prompt. **Resume** opens the session in an agent pane in its folder; **Continue with another engine…** hands it over with a summary of its last messages. Vibezeo only reads the engines' session files and never opens their sign-in files. Searching what sessions say comes in the next release.
 
 ## Agents in a sandbox, on Linux
 
@@ -56,7 +56,7 @@ sha256sum Vibezeo-0.9.0-1.x86_64.rpm
 sudo dnf install ./Vibezeo-0.9.0-1.x86_64.rpm
 ```
 
-Compare each checksum with the one on the [download page](/download/). The free download keeps its limits: 4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine, one teammate besides Lead and one plugin connection.
+Compare each checksum with the one on the [download page](/download/). This release still keeps a few limits from the earlier Free plan: 4 live panes, 3 workspaces, one thread at a time, threads with Claude Code and Codex, one account per engine, one teammate besides Lead and one plugin connection. The next release removes them.
 
 Next up, and already in review: worktrees across several repositories in one folder, agents that claim the files they're about to change, any agent that speaks ACP as a thread engine, and a governor that caps an agent pane's memory.
 

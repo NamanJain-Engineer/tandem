@@ -1,11 +1,11 @@
 ---
 title: Accounts and limits
-description: Engine accounts, Vibezeo plans and what each plan allows.
+description: Engine accounts, usage forecasts and the limits in this release.
 ---
 
 ## Engine accounts
 
-Each engine signs in by itself, with its own login, inside a provider home Vibezeo keeps for that account (`~/.tandem/providers/<engine>/<account>/`). Vibezeo never reads, copies or forwards an engine's credentials. Settings › Accounts shows each account's usage, limits and context meters where the engine reports them. The Free plan has one account per engine; Pro has as many as you like.
+Each engine signs in by itself, with its own login, inside a provider home Vibezeo keeps for that account (`~/.tandem/providers/<engine>/<account>/`). Vibezeo never reads, copies or forwards an engine's credentials. Settings › Accounts shows each account's usage, limits and context meters where the engine reports them. This release has one account per engine; the next release has as many as you like.
 
 ## Usage and forecasts
 
@@ -19,12 +19,10 @@ Under each account, **Who's using it** lists the sessions that spent its tokens 
 
 Turn on **Settings › Notifications › Warn me before usage runs out** to get one notification per window when it's forecast to run out before it resets (it's off by default). When you launch agents, a seat whose account is near its limit says so, and names another account of the same engine that has more room. Vibezeo never switches accounts for you.
 
-## Vibezeo plans
+## Free, with no paid plans
 
-The download runs the Free plan on your computer, with no Vibezeo account. Pro and Team start when Vibezeo accounts open; prices are on the [pricing page](/pricing/).
-
-These are the limits for the features in the current release, taken from the plan definitions the app enforces:
+Vibezeo is free: there are no paid plans, and the download needs no Vibezeo account. This release still keeps a few limits from its earlier Free plan, taken from the definitions the app enforces:
 
 <PlanLimitsTable />
 
-When you reach a limit, the app says which one and what the next plan allows. Nothing you already made is removed when a plan ends: a thread made on Pro stays readable and can switch to an engine your plan includes.
+The next release removes them. Features that use Vibezeo's servers (cloud dictation, Enhance and Polish, dictionary sync, Conductor's calls and the phone relay) switch on when Vibezeo accounts open.

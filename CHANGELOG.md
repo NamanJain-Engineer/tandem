@@ -9,18 +9,19 @@ release fails when its version has no section.
 
 ## 0.9.0
 
-Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora. Like
-0.8.0, this build runs the Free plan on your computer, with no account and
-nothing sent to our servers. This release is about bringing parallel agents'
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free, with no paid plans. Like 0.8.0, this build runs on your
+computer, with no account and nothing sent to our servers. This release is about bringing parallel agents'
 work home: land finished worktrees one after another behind your checks,
 bring a pull request's CI failures and review comments back to the agent,
 see when two agents change the same functions, keep each engine's version
 under your control, find every past session in one library, and run agent
 panes in a sandbox.
 
-Plan limits in this build (Free): 4 live panes, 3 workspaces, one thread at a
-time, one account per engine, threads with Claude Code and Codex, one teammate
-besides Lead, and one plugin connection.
+Limits in this build, left from the earlier Free plan: 4 live panes, 3
+workspaces, one thread at a time, one account per engine, threads with Claude
+Code and Codex, one teammate besides Lead, and one plugin connection. The next
+release removes them.
 
 ### Added
 
@@ -83,8 +84,8 @@ besides Lead, and one plugin connection.
   an agent pane in the session's folder with the engine's own resume, and
   "Continue with another engine…" opens the handoff sheet with a summary of
   the session's last messages. Vibezeo only reads the engines' session
-  files and never opens their sign-in files. Searching what sessions say is
-  part of Pro.
+  files and never opens their sign-in files. Searching what sessions say
+  comes in the next release.
 - [lin] **Sandbox agent panes.** Settings › Engines › Sandbox agent panes,
   off by default, runs each new agent pane's engine in a sandbox made with
   bubblewrap. It writes only to the pane's folder, its repository's git

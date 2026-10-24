@@ -25,8 +25,8 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
     body: "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
   },
   {
-    title: "Start on the Free plan",
-    body: "Open the app and choose Start on the welcome screen. The Free plan runs on your computer, no account needed.",
+    title: "Start",
+    body: "Open the app and choose Start on the welcome screen. It runs on your computer, no account needed.",
   },
   {
     title: "Add a project folder",
@@ -48,7 +48,8 @@ const engineList = (ids: readonly string[] | null) =>
   (ids ?? []).map((id) => registry.find((e) => e.id === id)?.label ?? id).join(" and ");
 
 const INCLUDES = [
-  `The Free plan: up to ${LIMITS.free.panes} panes and ${LIMITS.free.workspaces} workspaces, and threads with ${engineList(LIMITS.free.chatEngines)}.`,
+  "Free, with no paid plans.",
+  `In this release: up to ${LIMITS.free.panes} panes and ${LIMITS.free.workspaces} workspaces, and threads with ${engineList(LIMITS.free.chatEngines)}. The next release removes these limits.`,
   "New versions appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];
@@ -82,8 +83,8 @@ export default function DownloadPage() {
             </a>
           </p>
           <p className="max-w-measure text-lead text-pretty text-fg-muted">
-            {SITE.product} {RELEASE.version} for Linux. The Free plan runs on your own computer, with the coding
-            agents you already use.
+            {SITE.product} {RELEASE.version} for Linux. Free, and it runs on your own computer, with the coding agents
+            you already use.
           </p>
         </div>
       </section>

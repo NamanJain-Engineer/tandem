@@ -3,7 +3,6 @@
 // shipped build; numbers and release notes come from code, never from here.
 import type { Release } from "@tandem/protocol/changelog";
 import { RELEASES } from "./changelog";
-import { PLANS } from "./pricing";
 import { DOWNLOADS, RELEASE } from "./release";
 import { docsPath } from "./docs/pages";
 
@@ -27,11 +26,11 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code and Codex in this release; Cursor Agent, Grok and OpenCode join them in the next.",
   },
   {
     title: "Switch engines mid-thread",
-    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation. Pro shows up to six threads side by side, each with its own composer; Free shows one at a time.",
+    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation. This release shows one thread at a time; the next shows up to six side by side, each with its own composer.",
   },
   {
     title: "Worktree lanes and handoff",
@@ -75,7 +74,7 @@ export const FEATURES = [
   },
   {
     title: "Several accounts per engine",
-    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Free has one account per engine; Pro has as many as you need.",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. This release has one account per engine; the next has as many as you need.",
   },
   {
     title: "Notifications that matter",
@@ -117,6 +116,10 @@ export const CLAUDE = [
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
+    title: "Everything free, with no limits",
+    body: "Vibezeo is free, with no paid plans. The next release removes the limits left from the old Free plan: as many panes, workspaces and engine accounts as you need, six threads side by side, every chat engine in Thread mode, routines, tasks run in their own lanes, the Night Shift and the session library's search.",
+  },
+  {
     title: "Multi-repo workspaces, claims and any ACP agent",
     body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
   },
@@ -129,14 +132,14 @@ export const ROADMAP = [
     body: "The same app on macOS and Windows, with WSL folders in the Windows download. The code is ready; the downloads wait for signed builds tested on real machines.",
   },
   {
-    title: "Conductor and Pro, when accounts open",
-    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with routines that run teammates on a schedule, tasks run in their own lanes, the Night Shift that starts a task the moment an account's usage window resets, and the hosted features, and they switch on with Vibezeo accounts.",
+    title: "Conductor, when accounts open",
+    body: "Talk to Vibezeo and it works the app for you: Conductor starts agents, prompts them and finds work. It's built, along with the other features that need our servers, such as cloud dictation and the phone relay, and they switch on with Vibezeo accounts.",
   },
 ] as const;
 
 /** The hero (D-1841): ownership first. Every phrase is true of the shipped
  * build: the engines run unmodified on their own sign-ins, the app runs on
- * the computer, the Free plan needs no account, and this build sends nothing
+ * the computer, the app needs no account, and this build sends nothing
  * to Vibezeo's servers (privacy page, FAQ). No other product is named. */
 export const HERO = {
   title: ["Your agents.", "Your machine.", "Your plan."],
@@ -174,7 +177,7 @@ export const PRINCIPLES = [
 export const FAQ = [
   {
     q: "Can I use Vibezeo today?",
-    a: `Yes. Download Vibezeo ${RELEASE.version} for Linux from the download page. It runs the Free plan on your computer with no account, and doesn't contact our servers.`,
+    a: `Yes. Download Vibezeo ${RELEASE.version} for Linux from the download page. It's free, runs on your computer with no account, and doesn't contact our servers.`,
   },
   {
     q: "How does Vibezeo use Claude?",
@@ -193,15 +196,10 @@ export const FAQ = [
     a: "No. Vibezeo runs the coding agents you already have, on your existing plans.",
   },
   {
-    q: "What will it cost?",
-    a: `Free is ${planPrice("free")}. Pro is ${planPrice("pro")} a month and Team is ${planPrice("team")} per seat a month; they start with Vibezeo accounts. The plans are on the Pricing page.`,
+    q: "Is Vibezeo free?",
+    a: "Yes. Vibezeo is free, with no paid plans. Your agents run on the AI subscriptions you already have.",
   },
 ] as const;
-function planPrice(id: "free" | "pro" | "team"): string {
-  const plan = PLANS.find((p) => p.id === id);
-  if (!plan) throw new Error(`no plan ${id}`);
-  return plan.price;
-}
 
 export type FeatureTitle = (typeof FEATURES)[number]["title"];
 
