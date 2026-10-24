@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
-import { CAPABILITIES, FEATURES, HERO, MODE_ROWS, RELEASE_TILE_MAP, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
+import { CAPABILITIES, FEATURES, HERO, HERO_FEATURES, MORE, RELEASE_TILE_MAP, SCENE_ROWS, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
+import { SCENE_BUILD, atLeast } from "../lib/scenes";
+import AboutPage from "./about/page.site";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { SCREENS, VIDEO } from "../lib/media";
 import { DOWNLOADS, RELEASE } from "../lib/release";
@@ -25,7 +27,11 @@ describe("home page", () => {
     const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(home)?.[1] ?? "";
     expect(text(h1)).toBe(HERO.title.join(" "));
     expect(HERO.title).toContain(HERO.highlight);
-    expect(home).toContain(`and ${ENGINES.length - 3} more coding agents`);
+    // One sentence, the count from code, no vendor named (DESIGN §5.1, D-1881).
+    const lead = /<\/h1><p[^>]*>([\s\S]*?)<\/p>/.exec(home)?.[1] ?? "";
+    expect(text(lead)).toContain(`Run any of ${ENGINES.length} coding agents side by side`);
+    expect(text(lead).split(". ").length).toBe(1);
+    for (const e of ENGINES) expect(text(lead), e).not.toContain(e);
   });
 
   it('F-WB-01 "New in" tiles on /changelog/ come from CHANGELOG: this release\'s Added entries, or the last release that added any', () => {
@@ -52,9 +58,18 @@ describe("home page", () => {
     expect(log).toContain(`id="new"`);
   });
 
-  it("F-WB-01 every feature appears once: a mode row or the capability index", () => {
-    const placed = [...MODE_ROWS.flatMap((r) => [...r.features]), ...CAPABILITIES.map((c) => c.title)];
+  it("F-WB-01 every feature appears once: the hero's scene, a scene row, the capability index or Everything else (D-1881)", () => {
+    const shown = SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release));
+    const placed = [
+      ...HERO_FEATURES,
+      ...shown.flatMap((r) => [...r.features]),
+      ...CAPABILITIES.map((c) => c.title),
+      ...MORE.map((m) => m.title),
+    ];
     expect([...placed].sort()).toEqual(FEATURES.map((f) => f.title).sort());
+    for (const r of shown) expect(home, r.id).toContain(`data-scene="${r.id}"`);
+    for (const m of MORE) expect(home, m.title).toContain(`href="${m.docs}"`);
+    expect(CAPABILITIES.length).toBe(8);
   });
 
   it("F-WB-01 engine monograms come from the registry", () => {
@@ -99,7 +114,8 @@ describe("home page", () => {
     // the page shares it with the stylesheet the h1 waits on, and a video's
     // `poster` is always fetched with the page.
     const imgs = home.match(/<img[^>]*>/g) ?? [];
-    expect(imgs.length).toBeGreaterThan(2);
+    // The demo still and the launch grid (Code mode's capture is on /demo/ now, D-1881).
+    expect(imgs.length).toBeGreaterThanOrEqual(2);
     for (const img of imgs) {
       expect(img).toContain('loading="lazy"');
       expect(img).not.toContain("fetchpriority");
@@ -108,7 +124,7 @@ describe("home page", () => {
     expect(home).not.toContain("<video");
   });
 
-  it("F-WB-01 \"Linux first\" says only what this build ships", () => {
+  it("F-WB-01 \"Linux first\" says only what this build ships, on /about/ with the figures (D-1881)", () => {
     const facts = linuxFacts();
     const linux = DOWNLOADS.find((d) => d.os === "linux" && d.available);
     for (const a of linux?.assets ?? []) expect(facts[0]).toContain(a.file.slice(a.file.lastIndexOf(".")));
@@ -117,21 +133,25 @@ describe("home page", () => {
     const shipped = RELEASES.slice(RELEASES.findIndex((r) => r.version === RELEASE.version));
     const notes = shipped.flatMap((r) => r.entries.map((e) => e.text)).join(" ");
     for (const word of ["X11", "Wayland", "arm64", "x86-64"]) expect(notes, word).toContain(word);
-    for (const f of facts) expect(text(home)).toContain(f);
+    const about = renderToStaticMarkup(<AboutPage />);
+    for (const f of facts) expect(text(about)).toContain(f);
   });
 
   it("F-WB-01 every capture of the app names a released build, and its 1x and 2x files ship (D-1838)", () => {
     const versions = RELEASES.map((r) => r.version);
-    const figures = home.match(/<figure[^>]*data-capture=""[^>]*>/g) ?? [];
+    // The launch grid stays on the home page; Code mode's capture moved to
+    // /demo/, where the scenes don't already show it (D-1881).
+    const pages = home + renderToStaticMarkup(<DemoPage />);
+    const figures = pages.match(/<figure[^>]*data-capture=""[^>]*>/g) ?? [];
     expect(figures.length).toBe(Object.keys(SCREENS).length);
     for (const shot of Object.values(SCREENS)) {
       expect(versions, shot.src).toContain(shot.build);
-      expect(home).toContain(`data-build="${shot.build}"`);
-      expect(home).toContain(`Vibezeo ${shot.build} · Linux`);
+      expect(pages).toContain(`data-build="${shot.build}"`);
+      expect(pages).toContain(`Vibezeo ${shot.build} · Linux`);
       const base = join(process.cwd(), "public", shot.src.replace(/\.png$/, ""));
       for (const f of [".png", ...shot.formats.flatMap((e) => [`.${e}`, `@2x.${e}`])])
         expect(existsSync(base + f), base + f).toBe(true);
-      expect(home).toContain(`${shot.src.replace(/\.png$/, "")}@2x.avif ${shot.width * 2}w`);
+      expect(pages).toContain(`${shot.src.replace(/\.png$/, "")}@2x.avif ${shot.width * 2}w`);
     }
   });
 

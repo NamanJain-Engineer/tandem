@@ -64,8 +64,12 @@ describe("public site", () => {
     expect(h).toContain(`Released · ${RELEASE.version} for Linux`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
-    for (const id of ["try", "principles", "engines", "features", "capabilities", "claude", "team", "pricing", "faq"])
+    for (const id of ["try", "principles", "engines", "features", "capabilities", "pricing", "faq"])
       expect(h).toContain(`id="${id}"`);
+    // Built with Claude and the figures are about us: they moved to /about/
+    // with the founder's note (DESIGN §5.1, D-1881).
+    for (const id of ["claude", "team"]) expect(h).not.toContain(`id="${id}"`);
+    expect(html(<AboutPage />)).toContain('id="claude"');
     // The roadmap and the release tiles live on /changelog/, the video on /demo/.
     for (const id of ["roadmap", "new", "demo"]) expect(h).not.toContain(`id="${id}"`);
     const log = html(<ChangelogPage />);
@@ -74,15 +78,16 @@ describe("public site", () => {
   });
 
   it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
-    for (const Page of [HomePage, AboutPage])
-      expect(html(<Page />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
+    expect(html(<AboutPage />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
+    // The home page's closing band names who builds it and links About (D-1881).
+    expect(html(<HomePage />)).toMatch(new RegExp(`built by ${SITE.founder.name}:[\\s\\S]*?<a href="/about/"`));
     for (const Page of [TermsPage, PrivacyPage]) expect(html(<Page />)).toContain(OPERATOR);
     expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
   });
 
-  it("F-WB-01 the founder's name links to their X profile on About and the home page", () => {
+  it("F-WB-01 the founder's name links to their X profile on About", () => {
     expect(SITE.founder.link).toBe("https://x.com/jus_eng_njainam");
-    for (const Page of [AboutPage, HomePage])
+    for (const Page of [AboutPage])
       expect(html(<Page />)).toMatch(/<a href="https:\/\/x\.com\/jus_eng_njainam"[^>]*>Naman Jain<\/a>/);
   });
 
@@ -97,18 +102,19 @@ describe("public site", () => {
   });
 
   it("F-WB-01 the screenshots are of the real app and ship with the site", () => {
-    const h = html(<HomePage />);
+    // Code mode's capture is on /demo/; the home page shows it as a scene (D-1881).
+    const h = html(<HomePage />) + html(<DemoPage />);
     for (const name of ["code-mode", "launch-grid"]) {
       expect(h).toContain(`src="/screens/${name}.png"`);
       expect(existsSync(join(import.meta.dirname, `../public/screens/${name}.png`)), name).toBe(true);
     }
     // Only the labelled interactive demo (D-128) runs on sample data.
-    const outsideDemo = h.replace(/<section id="try"[\s\S]*?<\/section>/, "");
+    const outsideDemo = html(<HomePage />).replace(/<section id="try"[\s\S]*?<\/section>/, "");
     expect(outsideDemo).not.toContain("sample data");
   });
 
-  it("F-WB-01 Built with Claude separates what's shipped from what's built but not live", () => {
-    const h = html(<HomePage />);
+  it("F-WB-01 Built with Claude separates what's shipped from what's built but not live (on /about/, D-1881)", () => {
+    const h = html(<AboutPage />);
     expect(h).toContain("Built with Claude");
     expect(h).toContain("--resume");
     expect(h).toContain("Built, live when accounts open");
@@ -118,12 +124,12 @@ describe("public site", () => {
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
   });
 
-  it("F-WB-01 the home page leads to the download, takes feedback by email and shows the real progress figures", () => {
+  it("F-WB-01 the home page leads to the download and takes feedback by email; /about/ shows the real progress figures", () => {
     const h = html(<HomePage />);
     expect(h).toContain(`href="/download/"`);
     expect(h).toContain("Download for Linux");
     expect(EARLY_ACCESS_HREF.startsWith(`mailto:${SITE.contactEmail}?subject=`)).toBe(true);
-    expect(h).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
+    expect(html(<AboutPage />)).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
     expect(h).toContain(`href="/changelog/"`);
   });
 
@@ -210,7 +216,8 @@ describe("public site", () => {
     for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo[_-]\d/);
     const h = html(<HomePage />);
     expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
-    expect(h).toContain(`milestones in the ${RELEASE.version} release`);
+    // The figures moved to /about/ (D-1881).
+    expect(html(<AboutPage />)).toContain(`milestones in the ${RELEASE.version} release`);
   });
 
   it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {

@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 // Accent discipline (F-WB-01 AC10, DESIGN §4.2, D-1875): at most three teal
 // things in any first viewport, in both themes: the primary action, the one
 // highlighted phrase and the mark. Eyebrows, inline links, ticks and list
-// icons are neutral.
+// icons are neutral. Product media (captures, scenes, the demo) are the app,
+// drawn as it is, so they don't count.
 
 const PAGES = ["/", "/pricing/", "/download/", "/changelog/", "/docs/", "/blog/", "/about/", "/demo/"];
 
@@ -32,6 +33,7 @@ async function tealInView(page: Page): Promise<string[]> {
       const s = getComputedStyle(el);
       if (s.visibility === "hidden" || Number(s.opacity) === 0) continue;
       if (el.closest("[data-orbit]")) continue; // the rings' light behind the page (DESIGN §4.5)
+      if (el.closest("[data-stage]")) continue; // product media show the app as it is (DESIGN §4.6)
       const paints =
         (ownText(el) && isTeal(s.color)) ||
         isTeal(s.backgroundColor) ||

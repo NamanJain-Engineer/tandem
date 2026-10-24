@@ -1,9 +1,10 @@
 import { Plus } from "lucide-react";
-import { FAQ } from "../../../lib/home";
+import { FAQ, HOME_FAQ } from "../../../lib/home";
 import { SITE } from "../../../lib/site";
 import { Icon } from "../Icon";
 
-/** #faq (§6.20): native <details> in one exclusive group; no script. */
+/** #faq (§6.20): native <details> in one exclusive group; no script. The
+ * home page asks four (HOME_FAQ, DESIGN §5.1). */
 export function Faq() {
   return (
     <section id="faq" aria-labelledby="faq-title" className="relative scroll-mt-section bg-page py-(--site-section-y)">
@@ -18,7 +19,7 @@ export function Faq() {
           </p>
         </header>
         <div className="flex flex-col border-t border-line lg:col-span-8">
-          {FAQ.map((f, i) => (
+          {FAQ.filter((f) => (HOME_FAQ as readonly string[]).includes(f.q)).map((f, i) => (
             <details key={f.q} name="faq" open={i === 0} className="group border-b border-line">
               <summary className="flex min-h-18 cursor-pointer list-none items-center justify-between gap-6 py-5 text-title text-fg transition-colors duration-(--dur-base) hover:text-fg-muted [&::-webkit-details-marker]:hidden">
                 {f.q}

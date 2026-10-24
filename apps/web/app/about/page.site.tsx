@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { ClaudeBand } from "../../components/site/home/ClaudeBand";
+import { StatsBand } from "../../components/site/home/StatsBand";
 import { PageHero } from "../../components/site/PageHero";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
@@ -102,6 +104,9 @@ export default function AboutPage() {
           )}
         </div>
       </Block>
+
+      <StatsBand />
+      <ClaudeBand />
 
       <Block id="how-we-work" title="How we work">
         <ul className="grid gap-4 sm:grid-cols-3">

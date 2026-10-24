@@ -305,6 +305,13 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    plan must match the download's (`ENTITLEMENT` in `src/demo/backend.ts`), and
    anything new and visible in the release should be added to it with a test in
    `demo.test.ts`. List the surfaces in the release pull request.
+   The home page's product scenes (D-1880, `components/site/scenes`) follow
+   the same rule: they draw only what the download does, with the app's own
+   words from `en.json`, and label the build from `lib/release.ts`. A scene
+   or part of one that needs a newer release is gated on it (`LANDS` in
+   `lib/scenes.ts` switches on 0.9.0's landing queue and intent radar): after
+   bumping `release.ts`, look at each scene's final frame in both themes and
+   check it against the release.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)

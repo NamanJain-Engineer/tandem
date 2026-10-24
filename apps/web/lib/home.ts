@@ -217,61 +217,79 @@ export function firstSentence(text: string): string {
   return cut < 0 ? text : text.slice(0, cut + 1);
 }
 
-/** The four mode rows (#features), each built from FEATURES. Every feature
- * is shown in exactly one place on the home page: a mode row, the "New in"
- * tiles or the capability index (a test checks). */
-export const MODE_ROWS = [
-  {
-    id: "code",
-    eyebrow: "Code mode",
-    title: "Real terminals, side by side",
-    features: ["Real terminals, side by side"],
-    facts: ["Full-screen TUIs, colours and mouse input", "Layouts you split, maximize and rearrange", "Your own folders, your own shell"],
-    docs: docsPath("code-mode"),
-  },
-  {
-    id: "thread",
-    eyebrow: "Thread mode",
-    title: "Agents as conversations, with approvals inline",
-    features: ["Thread mode", "Switch engines mid-thread"],
-    facts: ["Plan mode writes numbered plans", "The Changes panel shows every file a thread touched", "Move a thread to another engine with a summary"],
-    docs: docsPath("thread-mode"),
-  },
-  {
-    id: "agent",
-    eyebrow: "Agent mode",
-    title: "Teammates that remember",
-    features: ["Teammates"],
-    facts: ["A brief, notes and skills for each teammate", "Search past chats; send each other mail", "Runs on the engines you already use"],
-    docs: docsPath("agent-mode"),
-  },
+/** The feature the hero's scene shows: Code mode's real terminals (D-1881). */
+export const HERO_FEATURES = ["Real terminals, side by side"] as const satisfies readonly FeatureTitle[];
+
+/** #features: what it's like, as scenes of the app (DESIGN §5.1, D-1881).
+ * Each row's features are shown by its scene; every feature appears in
+ * exactly one place on the home page: the hero, a scene row, the capability
+ * index or its "Everything else" list (a test checks). `release` gates a
+ * row on the release that ships what it shows (D-128). */
+export const SCENE_ROWS = [
   {
     id: "dashboard",
     eyebrow: "Dashboard",
-    title: "Every agent, and which ones need you",
-    features: ["One Dashboard", "Live status for every agent", "A review queue across engines"],
-    facts: ["Across all your workspaces", "One click to the pane that needs you", "A review queue for finished work, with a second opinion"],
+    title: "See which agent needs you",
+    body: "Every agent in every workspace, by project or by status. The one waiting on you says what it wants, and you answer it there.",
+    features: ["One Dashboard", "Live status for every agent"],
     docs: docsPath("code-mode"),
+    release: "0.5.0",
+  },
+  {
+    id: "review",
+    eyebrow: "Review",
+    title: "Check the work before it lands",
+    body: "Finished work waits in one queue, labelled by what it touches. Another engine can read it and leave line comments for the agent.",
+    features: ["A review queue across engines"],
+    docs: docsPath("code-mode"),
+    release: "0.8.0",
+  },
+  {
+    id: "land",
+    eyebrow: "Merge queue",
+    title: "Land them one at a time",
+    body: "Worktrees merge into main one by one, each with main merged in and your check run first. A failure stops the queue, and Undo puts main back.",
+    features: [],
+    docs: docsPath("code-mode"),
+    release: "0.9.0",
   },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
 
-/** The capability index (#capabilities): one line each, the full copy is in the docs. */
+/** The capability index (#capabilities): the eight people use most, one
+ * line each; the full copy is in the docs (DESIGN §2, progressive
+ * disclosure). */
 export const CAPABILITIES = [
+  { title: "Thread mode", icon: "message", docs: docsPath("thread-mode") },
+  { title: "Teammates", icon: "users", docs: docsPath("agent-mode") },
+  { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
+  { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
+  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
   { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
   { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
-  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
-  { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
-  { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
-  { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
-  { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
-  { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
-  { title: "Your accounts, untouched", icon: "key", docs: docsPath("privacy") },
-  { title: "Notifications that matter", icon: "bell", docs: docsPath("settings") },
-  { title: "Crash-safe restore", icon: "restore", docs: docsPath("troubleshooting") },
-  { title: "Signed updates", icon: "shield", docs: docsPath("troubleshooting") },
-  { title: "Private by default", icon: "lock", docs: docsPath("privacy") },
 ] as const satisfies ReadonlyArray<{ title: FeatureTitle; [key: string]: unknown }>;
+
+/** "Everything else": the rest, as one line of links to their docs. */
+export const MORE = [
+  { title: "Switch engines mid-thread", docs: docsPath("thread-mode") },
+  { title: "Worktree lanes and handoff", docs: docsPath("code-mode") },
+  { title: "Find work by what it's about", docs: docsPath("code-mode") },
+  { title: "Several accounts per engine", docs: docsPath("accounts-and-limits") },
+  { title: "Your accounts, untouched", docs: docsPath("privacy") },
+  { title: "Notifications that matter", docs: docsPath("settings") },
+  { title: "Crash-safe restore", docs: docsPath("troubleshooting") },
+  { title: "Signed updates", docs: docsPath("troubleshooting") },
+  { title: "Private by default", docs: docsPath("privacy") },
+] as const satisfies ReadonlyArray<{ title: FeatureTitle; docs: string }>;
+
+/** The four questions on the home page (DESIGN §5.1); the rest of FAQ is
+ * answered on /about/ and /download/. */
+export const HOME_FAQ = [
+  "Can I use Vibezeo today?",
+  "Does Vibezeo see my API keys or subscription tokens?",
+  "Do I need a new AI subscription?",
+  "What will it cost?",
+] as const;
 
 /** Release-note tiles: icon and docs page for each lead phrase in a
  * release's Added section. A release whose Added title isn't listed here

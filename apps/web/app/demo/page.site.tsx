@@ -6,6 +6,8 @@ import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
 import { VideoSection } from "../../components/site/home/VideoSection";
 import { PageHero } from "../../components/site/PageHero";
+import { ProductShot } from "../../components/site/ProductShot";
+import { SCREENS } from "../../lib/media";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
 import { stagger } from "../../lib/motion";
@@ -110,6 +112,21 @@ export default function DemoPage() {
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+      <section id="capture" aria-labelledby="capture-title" className="relative bg-page py-(--site-section-y)">
+        <div className="container-site flex flex-col gap-10">
+          <div className="flex flex-col gap-4">
+            <p className="eyebrow">The real app</p>
+            <h2 id="capture-title" className="text-sheen text-display-lg text-fg">
+              And the download, as it runs
+            </h2>
+          </div>
+          <ProductShot
+            zoom
+            shot={SCREENS.codeMode}
+            caption="Four real terminals over Vibezeo's own repository: git history, htop, the Claude Code hook handler in vim, and a passing test run."
+          />
         </div>
       </section>
       <VideoSection />

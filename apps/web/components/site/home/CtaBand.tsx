@@ -16,8 +16,12 @@ export function CtaBand() {
           Download {SITE.product} for Linux, then{" "}
           <a href={EARLY_ACCESS_HREF} className="text-fg">
             tell us what works and what doesn&apos;t
-          </a>{" "}
-          at {SITE.contactEmail}.
+          </a>
+          . It&apos;s built by {SITE.founder.name}:{" "}
+          <a href="/about/" className="text-fg">
+            more about us
+          </a>
+          .
         </>
       }
     >

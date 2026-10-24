@@ -1,11 +1,12 @@
-// The home page's interactive demo (D-128): the only script on the marketing
-// pages. It frames /demo/app/ (same origin) once the section nears the
-// viewport, scales the laptop-sized app to the column, and opens it full
-// screen. Phones keep the still image until "Tap to explore". It changes only
+// The home page's interactive demo (D-128), and its product scenes (D-1880).
+// It frames /demo/app/ (same origin) once the section nears the viewport,
+// scales the laptop-sized app to the column, and opens it full screen.
+// Phones keep the still image until "Tap to explore". It changes only
 // what's inside [data-demo-stage], which React's hydration doesn't touch
 // (inner HTML). It also gives the product video its poster as the video
-// nears (D-1816). No other origin, no storage, no network beyond the demo's
-// own files and the poster.
+// nears (D-1816), and plays the product scenes while they're on screen. No
+// other origin, no storage, no network beyond the demo's own files and the
+// poster.
 (() => {
   "use strict";
   // A `poster` attribute downloads with the page, and on a slow connection
@@ -28,6 +29,32 @@
       { rootMargin: "600px" },
     );
     near.observe(video);
+  }
+
+  // The product scenes (D-1880): each plays while a third of it is on
+  // screen and the tab is visible, and waits where it is otherwise. A
+  // browser without IntersectionObserver just plays them.
+  const scenes = document.querySelectorAll("[data-scene]");
+  if (scenes.length) {
+    const seen = new Set();
+    const sync = () => {
+      for (const scene of scenes) scene.toggleAttribute("data-live", seen.has(scene) && !document.hidden);
+    };
+    if ("IntersectionObserver" in window) {
+      const watch = new IntersectionObserver(
+        (entries) => {
+          for (const x of entries) {
+            if (x.isIntersecting) seen.add(x.target);
+            else seen.delete(x.target);
+          }
+          sync();
+        },
+        { threshold: 0.3 },
+      );
+      for (const scene of scenes) watch.observe(scene);
+    } else for (const scene of scenes) seen.add(scene);
+    document.addEventListener("visibilitychange", sync);
+    sync();
   }
 
   const slot = document.querySelector("[data-demo-embed]");

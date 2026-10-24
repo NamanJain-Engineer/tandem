@@ -81,7 +81,7 @@
   --site-ink-b:       var(--sky-400);               /* highlight gradient end */
   --site-header:      color-mix(in oklab, var(--site-page) 78%, transparent);
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
-  --site-section-y:   clamp(5rem, 3rem + 6vw, 9rem);        /* 80 → 144 px */
+  --site-section-y:   clamp(5rem, 3.4rem + 4vw, 7rem);      /* 80 → 112 px: tighter, so the home page says less (D-1881) */
   --site-header-h:    4rem;
 
   /* Hairlines */

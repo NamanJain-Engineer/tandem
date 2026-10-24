@@ -4,19 +4,22 @@ import { versionPath } from "../../../lib/changelog";
 import { formatSize, releaseAssets } from "../../../lib/manifest";
 import { RELEASE } from "../../../lib/release";
 import { HERO, OWNERSHIP } from "../../../lib/home";
-import { ENGINES, SITE } from "../../../lib/site";
+import { ENGINES } from "../../../lib/site";
 import { iconFor } from "../icons";
 import { Icon } from "../Icon";
 import { EngineOrbit } from "../EngineOrbit";
 import { Orbit } from "../Orbit";
+import { Scene } from "../scenes/Scene";
+import { WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../scenes/WorkspaceScene";
 
-/** The hero (§6.2, D-1841): ownership first, centred under the rings'
- * light. The release pill, the h1 (HERO), a lead that counts the engines from
- * code, two calls to action, the four ownership facts and a meta line. The h1
- * paints first and in solid ink: it's the page's largest paint (D-1840). */
+/** The hero (§6.2, D-1841, D-1881): ownership first, centred under the rings'
+ * light. The release pill, the h1 (HERO), a one-sentence lead that counts
+ * the engines from code, two calls to action and a meta line; then the
+ * product itself, a scene of Code mode rising into the first viewport
+ * (DESIGN §5.1), and the four ownership facts under it. The h1 paints first
+ * and in solid ink: it's the page's largest paint (D-1840). */
 export function Hero() {
   const deb = releaseAssets().get("linux")?.[0];
-  const named = ENGINES.slice(0, 3);
   return (
     <section aria-label="Introduction" className="relative isolate overflow-hidden bg-page">
       <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />
@@ -27,7 +30,7 @@ export function Hero() {
       />
       {/* The rings' centre: 380 of 760 viewBox units at 1.28 scale, less the 14 rem lift. */}
       <EngineOrbit top={262} radius={560} />
-      <div className="container-site flex flex-col items-center gap-7 pb-16 pt-20 text-center lg:pb-20 lg:pt-28">
+      <div className="container-site flex flex-col items-center gap-6 pb-16 pt-12 text-center lg:pb-20 lg:pt-16">
         <a
           href={versionPath(RELEASE.version)}
           className="group inline-flex h-8 items-center gap-2.5 rounded-full bg-(--site-glass) pl-3 pr-2.5 text-caption text-fg shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] transition-colors duration-(--dur-base) hover:bg-(--site-glass-hover)"
@@ -49,8 +52,8 @@ export function Hero() {
           ))}
         </h1>
         <p className="max-w-[38rem] text-lead text-pretty text-fg-muted">
-          {SITE.product} runs {named.join(", ")} and {ENGINES.length - named.length} more coding agents side by side
-          in real terminals. One Dashboard shows what each one is doing, and which one needs you.
+          Run any of {ENGINES.length} coding agents side by side in real terminals, and see at a glance which one
+          needs you.
         </p>
         <div className="enter enter-2 flex flex-wrap justify-center gap-3 pt-1">
           <a href="/download/" className={siteButton("primary", "lg")}>
@@ -61,17 +64,6 @@ export function Hero() {
             Try it in your browser
           </a>
         </div>
-        <ul aria-label="What you keep" className="enter enter-3 grid w-full max-w-[66rem] grid-cols-1 gap-2 pt-3 sm:grid-cols-2 lg:grid-cols-4 lg:whitespace-nowrap">
-          {OWNERSHIP.map((o) => (
-            <li
-              key={o.text}
-              className="flex items-center justify-center gap-2 rounded-full bg-(--site-glass) px-3.5 py-2 text-caption text-fg shadow-[inset_0_0_0_1px_var(--site-line)]"
-            >
-              <Icon icon={iconFor(o.icon)} size={14} className="shrink-0 text-fg-muted" />
-              {o.text}
-            </li>
-          ))}
-        </ul>
         <p className="enter enter-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-caption text-fg-muted">
           <span>Free for Linux.</span>
           {deb && (
@@ -86,6 +78,20 @@ export function Hero() {
             Watch it run (1 min)
           </a>
         </p>
+        <Scene id="workspace" text={workspaceSceneText()} caption={WORKSPACE_CAPTION} className="enter enter-4 mt-6 w-full max-w-stage">
+          <WorkspaceScene />
+        </Scene>
+        <ul aria-label="What you keep" className="grid w-full max-w-[66rem] grid-cols-1 gap-2 pt-3 sm:grid-cols-2 lg:grid-cols-4 lg:whitespace-nowrap">
+          {OWNERSHIP.map((o) => (
+            <li
+              key={o.text}
+              className="flex items-center justify-center gap-2 rounded-full bg-(--site-glass) px-3.5 py-2 text-caption text-fg shadow-[inset_0_0_0_1px_var(--site-line)]"
+            >
+              <Icon icon={iconFor(o.icon)} size={14} className="shrink-0 text-fg-muted" />
+              {o.text}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
