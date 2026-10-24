@@ -101,7 +101,7 @@ function HandoffBody({ source }: { source: HandoffSource }) {
             ? t("handoff.thread")
             : onPlan
               ? t("handoff.threadUnsupported", { target })
-              : t("handoff.threadPro", { target }),
+              : t("handoff.threadNotListed", { target }),
           disabled: !chatCapable,
         },
       ];

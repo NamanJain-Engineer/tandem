@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, release, totalmem } from "node:os";
 import { join } from "node:path";
-import { addFolder, freshUser, invoke, paneIds, paneText, planFooter, relaunch, setPlan } from "../support/app";
+import { addFolder, freshUser, invoke, paneIds, paneText, relaunch } from "../support/app";
 
 const ROOT = new URL("../../../..", import.meta.url).pathname;
 const OUT = join(ROOT, "perf/results/m5.json");
@@ -70,9 +70,7 @@ describe("perf: startup (M5)", () => {
 
   before(async function () {
     this.timeout(300_000);
-    const { email } = await freshUser("perf-startup");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("perf-startup");
     await addFolder(`/tmp/tandem-perf-startup-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

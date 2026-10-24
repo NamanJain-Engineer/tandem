@@ -256,7 +256,6 @@ describe("command registry (F-SH-09)", () => {
           paletteOpen: true,
           mode: inThread ? "thread" : "code",
           settingsOpen: false,
-          upgrade: { open: false },
         });
       });
       const spy = vi.spyOn(handlers, spec.id).mockImplementation(() => undefined);

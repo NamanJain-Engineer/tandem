@@ -4,7 +4,7 @@
       "staticDistDir": "./out",
       "url": [
         "http://localhost/",
-        "http://localhost/pricing/",
+        "http://localhost/about/",
         "http://localhost/download/",
         "http://localhost/changelog/",
         "http://localhost/docs/",

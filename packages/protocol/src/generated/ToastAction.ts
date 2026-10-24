@@ -3,4 +3,4 @@
 /**
  * What a Dictate toast offers besides its text.
  */
-export type ToastAction = "use_local" | "see_plans";
+export type ToastAction = "use_local";

@@ -13,7 +13,7 @@ Open a folder on another machine and work there as if it were local: terminals, 
 - **Files and git.** The Files tab and the Changes panel follow the host's folder as it changes, whatever changed it: an agent, a terminal or another program on the host. Push, pull, switching branches and new branches run the host's own git with the host's own credentials (its SSH keys or credential helper); nothing from this computer is used.
 - **Worktrees.** On an SSH host, *New worktree* and a Fleet run's worktree isolation make the worktree on the host, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, the same as locally; merge, diff and cleanup run there too. A worktree's pull request needs the GitHub CLI (`gh`) installed on the host.
 - **Engines.** The `+` menu lists the coding engines installed on the host, signed in on the host. Your sign-ins, accounts, plugin credentials and the local gateway never leave this computer.
-- **Plugins and tasks.** A thread on an SSH host can use the plugins you grant it and your tasks, as a local thread does. Its tool calls come back to this computer over the same connection: plugin approvals show here, plugin sign-ins and your task list stay here, and no port is opened on either machine. An agent terminal on the host (Claude Code or Codex) gets the task tools too, as a local one does. They're added to that run's command line, so nothing is written into the host's own engine config, and they keep working when the connection drops and comes back. Agent terminals get no plugins, here or on this computer. On the Free plan you can connect one plugin; the task tools are included.
+- **Plugins and tasks.** A thread on an SSH host can use the plugins you grant it and your tasks, as a local thread does. Its tool calls come back to this computer over the same connection: plugin approvals show here, plugin sign-ins and your task list stay here, and no port is opened on either machine. An agent terminal on the host (Claude Code or Codex) gets the task tools too, as a local one does. They're added to that run's command line, so nothing is written into the host's own engine config, and they keep working when the connection drops and comes back. Agent terminals get no plugins, here or on this computer. The task tools are included.
 - **Best of N.** In a git repository on an SSH host, "Best of N…" works as it does locally: each agent gets its own worktree on the host, Compare shows their changes, your check command runs on the host in each worktree (in your login shell there), and "Keep this one…" commits the winner with the host's git and identity, merges it and removes the other worktrees.
 - **Approvals.** Threads on a host ask for approval just as local ones do, with the same approval card, whichever engine runs them.
 
@@ -31,7 +31,7 @@ See your agents and answer them from your phone's browser while Vibezeo runs on 
 
 ### Pair over your local network
 
-This needs no account and works on the Free plan. Your phone and computer must be on the same network (the same Wi-Fi, for example), or on the same VPN.
+This needs no account. Your phone and computer must be on the same network (the same Wi-Fi, for example), or on the same VPN.
 
 1. On the computer, open **Settings › Remote** and turn on **Pair over your local network** under *Local network*. It's off until you turn it on. Vibezeo then listens on port 47800 on your computer's home or office network addresses (10.x, 172.16–31.x, 192.168.x) and VPN addresses (100.64–127.x, which Tailscale uses). It never listens on all interfaces or on a public address, and it closes connections from outside those networks without answering.
 2. Choose **Pair a phone on this network**. A QR code and its link appear; they expire in 10 minutes. If the computer has more than one address, **Address in the code** picks which one the code uses.
@@ -61,4 +61,4 @@ Viewing comes with pairing. **Chat control**, **Terminal control**, **Approvals*
 
 Either way the computer forgets the phone's keys, and the phone's next connection is refused. Turning *Pair over your local network* off disconnects phones without unpairing them; turning it back on lets them reconnect.
 
-Pairing through Vibezeo's hosted relay, for use away from your network without a VPN, needs Pro and a Vibezeo account. The Vibezeo Remote apps for Android and iOS aren't published yet.
+Pairing through Vibezeo's hosted relay, for use away from your network without a VPN: **Comes with Vibezeo accounts.** It uses Vibezeo's servers and switches on when Vibezeo accounts open. The Vibezeo Remote apps for Android and iOS aren't published yet.

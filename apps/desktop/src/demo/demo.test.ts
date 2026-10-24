@@ -28,6 +28,7 @@ import type {
 import pkg from "../../package.json";
 import { listen } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
+import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
 import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
 import { DemoShell, PROMPT, run } from "./shell";
@@ -275,13 +276,46 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(c.limitReached()).toBe(true);
   });
 
-  it("demo the sample world runs the Free plan the download runs, at the download's version", () => {
+  it("demo the sample world runs the limits the download runs, at the download's version", () => {
     core = new DemoCore(0);
     const view = core.handle("entitlement_get", {}) as EntitlementView;
     expect(view.plan).toBe("free");
     expect(view.limits).toEqual(FREE);
     expect((core.handle("auth_state", {}) as AuthState).hosted).toBe(false);
     expect((core.handle("app_ready", {}) as AppBoot).version).toBe(pkg.version);
+  });
+
+  it("F-CD-03 demo runs the download's free limits: every local feature unlimited, hosted ones off (D-869, D-2900)", () => {
+    core = new DemoCore(0);
+    const { limits } = core.handle("entitlement_get", {}) as EntitlementView;
+    expect(limits).toEqual(LIMITS.free);
+    expect(limits).toMatchObject({
+      panes: null,
+      workspaces: null,
+      threadGrid: 6,
+      chatEngines: null,
+      routines: true,
+      taskExecution: true,
+      sessionSearch: true,
+      conductor: false,
+      cloudStt: false,
+    });
+  });
+
+  it("D-2905 demo says routines and task runs work in the app, instead of pretending to", () => {
+    core = new DemoCore(0);
+    const c = core;
+    for (const cmd of ["routine_save", "routine_run_now", "task_execute", "night_schedule"]) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        c.handle(cmd, {});
+      } catch (e) {
+        error = e as typeof error;
+      }
+      expect(error.code, cmd).toBe("unavailable");
+      expect(error.message, cmd).toContain("in the app, not in this demo");
+    }
+    expect(c.handle("night_accounts", {})).toEqual([]);
   });
 
   it("F-WB-01 demo runs early access as the download does: no account, no credits", () => {
@@ -399,7 +433,7 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       ["checkpoint_create", "folders on your computer"],
       ["prompts_create", "files in your folders"],
       ["bestof_start", "git worktrees"],
-      ["phone_pair_begin", "Pro account"],
+      ["phone_pair_begin", "over your own network"],
     ] as const) {
       let error: { code?: string; message?: string } = {};
       try {
@@ -451,8 +485,9 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
         .map((p) => p.engineId)
         .sort(),
     ).toEqual(["claude", "codex", "gemini"]);
-    // The Free plan's 4 live panes.
-    expect(panes.length).toBeLessThanOrEqual(FREE.panes ?? 0);
+    // No live-pane limit with no account (D-2900); the sample world starts four.
+    expect(FREE.panes).toBeNull();
+    expect(panes.length).toBe(4);
     for (const w of workspaces) {
       const layouts = core.handle("layout_get", { workspaceId: w.id }) as TabLayout[];
       expect(layouts.length, w.name).toBe(1);

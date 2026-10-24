@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { freshUser, home, invoke, mod, planFooter, setPlan } from "../support/app";
+import { freshUser, home, invoke, mod } from "../support/app";
 import { lead } from "../support/agents";
 
 type Status = { installed: boolean; kind: string; path: string | null };
@@ -20,9 +20,7 @@ const systemctlLog = () => {
 describe("E2E-M11-5 background runner", () => {
   before(async function () {
     this.timeout(180_000);
-    const { email } = await freshUser("m11-5");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m11-5");
     await browser.keys([mod(), "1"]);
     await $('[data-testid="agent-footer-routines"]').click();
     await $('[data-testid="routines-page"]').waitForDisplayed({ timeout: 10_000 });

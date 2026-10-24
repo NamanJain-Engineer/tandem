@@ -6,7 +6,7 @@ import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
 import { useSetting, useSettings } from "../../stores/settings";
-import { useUi } from "../../stores/ui";
+import { ComesWithAccounts } from "../billing/ComesWithAccounts";
 
 function ruleText(r: Rule): string {
   if (r.deletedAt !== null) return t("dictionary.sync.deleted");
@@ -40,7 +40,8 @@ function Conflict({ c, onDone }: { c: SyncConflict; onDone: () => void }) {
   );
 }
 
-/** "Sync dictionary" (F-DI-09, D-523): Pro, off until the user turns it on;
+/** "Sync dictionary" (F-DI-09, D-523): hosted, so it comes with Vibezeo
+ * accounts (D-2903); off until the user turns it on;
  * only the rules travel. Hidden in builds without accounts. */
 export function DictionarySync({ onChanged }: { onChanged: () => void }) {
   const { show } = useToast();
@@ -111,9 +112,7 @@ export function DictionarySync({ onChanged }: { onChanged: () => void }) {
             onCheckedChange={(v) => (v ? void set(true) : setAskOff(true))}
           />
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => useUi.getState().openUpgrade()} data-testid="dictionary-sync-pro">
-            {t("dictionary.sync.needsPro")}
-          </Button>
+          <ComesWithAccounts testId="dictionary-sync-pro" />
         )}
       </div>
       {allowed && on && (

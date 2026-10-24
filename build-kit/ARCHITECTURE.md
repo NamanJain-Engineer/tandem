@@ -974,7 +974,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
 | `auth_continue_offline` | — | — | — |
 | `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
-| `billing_open` | `{target: {type:"upgrade", plan, interval} \| {type:"portal"} \| {type:"credits"} \| {type:"account"}}` (`account` opens `{web}/account`, where "Delete account…" lives, F-TL-05) | — (system browser) | Unauthenticated |
+| `billing_open` | `{target: {type:"portal"} \| {type:"credits"} \| {type:"account"}}` (no `upgrade`: nothing is sold, D-869, D-2904; `account` opens `{web}/account`, where "Delete account…" lives, F-TL-05) | — (system browser) | Unauthenticated |
 | `updates_state` / `updates_check_now` / `updates_install` / `updates_set_channel` | — / — / — / `{channel:"stable"\|"beta"}` | `UpdateState {stage: idle\|checking\|downloading\|ready\|error\|managed\|unavailable, current, channel, version?, notes?, percent?, errorStage?: check\|download\|verify\|install, error?, lastCheck?, upToDate, minVersion?: {minVersion, graceUntil, modal}}` (`check_now` waits for a check already running; a newer release downloads and verifies before `ready`; `install` installs the staged release, stops every terminal and restarts; under the harness it records the install and keeps running) | Unavailable (stage), Invalid (channel) |
 | `whats_new_get` / `whats_new_seen` | — / `{version}` | `ReleaseNotes?` / — | — |
 | `privacy_data_flows` | — | `[DataFlowRow {feature, enabled, sends, destination}]` | — |
@@ -1062,7 +1062,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `auto:changed` / `auto:dismissed` | `AutoRunView` / `{runId}` | Auto supervisor | F-AU-01 |
 | `lanes:stale` | `{workspaceId, lanes:[StaleLane]}` | lane sweeper | F-CD-15 |
 | `dictate:state` | `DictateStateEvent {state:"idle"\|"listening"\|"transcribing"\|"enhancing"\|"polishing"\|"inserted"\|"copied"\|"error"\|"reconnecting", takeId?, handsFree, composer?, words?}` (`enhancing`/`polishing`: a rewrite is running, F-DI-10; to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-12, F-DI-10 |
-| `dictate:toast` | `DictateToast {code, error, app?, model?, previous?, detail, message?, actions}` (the UI renders `code` from its catalog; `cloud_failed` shows `message`, the server's words for a limit; `actions`: `use_local` → `dictate_use_local`, `see_plans` → the upgrade sheet; `detail` is the diagnostic for the tooltip, never transcript text; to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-05 |
+| `dictate:toast` | `DictateToast {code, error, app?, model?, previous?, detail, message?, actions}` (the UI renders `code` from its catalog; `cloud_failed` shows `message`, the server's words for a limit; `actions`: `use_local` → `dictate_use_local` (the only action since D-2903: there are no plans to open); `detail` is the diagnostic for the tooltip, never transcript text; to `main` and `dictate-widget`) | Dictate controller | F-DI-07, F-DI-05 |
 | `dictate:level` | `f32` 0–1, at most 30 a second, only while recording (to `dictate-widget` and `main`; D-506) | capture | F-DI-07 |
 | `dictate:key` | `{phase:"down"\|"up", native: bool}` | hotkey verify | F-DI-02, F-DI-11 |
 | `dictate:verified` | — (press and release both seen) | hotkey verify | F-DI-11 |
@@ -1621,7 +1621,7 @@ Linux without a Secret Service default collection: `keyring` returns an error; T
 ```
 pane_create ─► PaneRecord ─► UI mounts <TerminalPane> (xterm model created, "Starting…")
       │
-pty_spawn(paneId, cols, rows, channel) ── entitlement check (live_count < limit) ──► LimitReached → upgrade card, no process
+pty_spawn(paneId, cols, rows, channel) ── entitlement check (live_count < limit) ──► LimitReached → limit card, no process (no limit with no account, D-2900)
       │ builds SpawnSpec (env §5.2, shell-integration §5.8, engine launch §6.3)
       ▼
 PtyManager::spawn  → portable-pty openpty(cols,rows) → spawn_command → register PID in run/children-<app pid>.json
@@ -2131,9 +2131,9 @@ Notation → JSON Schema draft 2020-12, `additionalProperties:false`; `?` option
 - Tick every 30 s (Clock-driven). Due = `!paused && !paused_by_plan && next_run_at <= now`. For each due routine: `INSERT INTO routine_runs(routine_id, due_at, …)` — the `UNIQUE(routine_id, due_at)` constraint makes the fire exactly-once across GUI and headless processes. Then compute and store the next `next_run_at`.
 - **Run:** create a fresh teammate chat (title = routine name, `title_source='routine'`, `routine_id`, `attended=0`, access = routine access with Full only if explicitly set), send the instruction, await `turn_end`, set `last_status`, `last_run_chat_id`, notify "Ready for review — {routine}" (F-RT-02).
 - **Missed runs:** at startup, for each routine whose `next_run_at` is in the past: if within 24 h → one run with `late=1`; older → log only; then recompute next (F-RT-02 AC2).
-- **Failures:** preflight checks (teammate exists; engine detected; account signed in; entitlement allows routines; not at limit) produce `last_error_kind` ∈ `teammate_missing|engine_missing|signed_out|plan|limit|engine_error` and no spawn (AC3). Notifications deduped via `error_notice_log(kind, routine, day)`.
+- **Failures:** preflight checks (teammate exists; engine detected; entitlement allows routines; not at limit) produce `last_error_kind` ∈ `teammate_missing|engine_missing|plan|limit|engine_error` and no spawn (AC3). No sign-in is checked (D-2902). Notifications deduped via `error_notice_log(kind, routine, day)`.
 - **Overlap:** a running run for the routine → insert `status='skipped', error='previous run still in progress'`.
-- **Plan lapse:** entitlement without routines sets `paused_by_plan=1` on all (not deleted); restored on upgrade.
+- **Routines turned off by the limits:** an entitlement without routines (none with no account, D-2900) sets `paused_by_plan=1` on all (not deleted); restored when routines are back on.
 - **Agent schedule tools (F-RT-05):** `tandem__schedule_list/create/update/delete` exist in the lease only when the teammate's `may_schedule` is on; scoped to `created_by_teammate_id = <teammate>`; `access:"full"` rejected; each create/update notifies the user.
 
 ### 10.2a Night Shift [F-RT-06]

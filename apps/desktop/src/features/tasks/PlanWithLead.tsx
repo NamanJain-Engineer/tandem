@@ -21,7 +21,6 @@ import { switchMode } from "../shell/actions";
 import { usePlans } from "../../stores/plan";
 import { isIpcError } from "../../stores/tasks";
 import { useTeammates } from "../../stores/teammates";
-import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useExecuteBlock } from "./Execute";
 
@@ -324,16 +323,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
                 : t("plan.started", { n: plan.issueIds.length })}
             </p>
             {plan.state === "created" && block && (
-              <Callout
-                tone="info"
-                actions={
-                  block.upgrade ? (
-                    <Button size="sm" variant="secondary" onClick={() => useUi.getState().openUpgrade()}>
-                      {t("tasks.exec.upgrade")}
-                    </Button>
-                  ) : undefined
-                }
-              >
+              <Callout tone="info">
                 <span data-testid="plan-execute-blocked">
                   {block.reason} {t("plan.tasksStay")}
                 </span>

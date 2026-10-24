@@ -100,7 +100,7 @@ pub async fn run_locked(
     if !background_allowed {
         tracing::info!(
             code = "routines.headless_plan",
-            "background routines aren't on this plan"
+            "background routines are turned off for this account"
         );
         return Pass::NotOnPlan;
     }

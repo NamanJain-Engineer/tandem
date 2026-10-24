@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshUser, home, invoke, mod, planFooter, setPlan } from "../support/app";
+import { addFolder, freshUser, home, invoke, mod } from "../support/app";
 import { expectNoSeriousA11yViolations } from "../support/axe";
 
 const GIT_ENV = {
@@ -75,7 +75,7 @@ async function chatSpawns(): Promise<number> {
   return log.filter((r) => r.argv.includes("--input-format")).length;
 }
 
-// E2E-M11-2 Execute (F-TK-04, Pro): a run makes a lane and a session, the
+// E2E-M11-2 Execute (F-TK-04; free, D-2902): a run makes a lane and a session, the
 // agent's progress comments show, the task goes to In review with a result
 // and the review posts a verdict; a 5th run queues; Stop during lane
 // creation leaves nothing behind; assigning spawns nothing.
@@ -85,9 +85,7 @@ describe("E2E-M11-2 execute", () => {
 
   before(async function () {
     this.timeout(180_000);
-    const { email } = await freshUser("m11-2");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m11-2");
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");
     writeFileSync(join(repo, "README.md"), "hello\n");

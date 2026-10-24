@@ -57,6 +57,17 @@ describe("CHANGELOG.md format (F-WB-03)", () => {
     ]);
   });
 
+  it("F-WB-03 a first ## Unreleased section is checked but is no release (D-2906)", () => {
+    const text = `## Unreleased\n\nNext.\n\n### Changed\n- [all] Everything free.\n\n${SAMPLE.slice(SAMPLE.indexOf("## 1.2.0"))}`;
+    expect(validateChangelog(text)).toEqual([]);
+    expect(parseChangelog(text).map((r) => r.version)).not.toContain("Unreleased");
+    expect(parseChangelog(text)[0]?.version).toBe("1.2.0");
+    expect(validateChangelog(`## Unreleased\n\n### Added\n- no tag\n`)).toEqual([
+      'Unreleased: a bullet without a platform tag ([mac], [win], [lin] or [all]): "no tag"',
+    ]);
+    expect(validateChangelog(`## 1.0.0\n\n## Unreleased\n`)).toEqual(["Unreleased: it must be the first section"]);
+  });
+
   it("F-WB-03 the repository's CHANGELOG.md is valid", () => {
     const text = readFileSync(join(import.meta.dirname, "../../../CHANGELOG.md"), "utf8");
     expect(validateChangelog(text)).toEqual([]);

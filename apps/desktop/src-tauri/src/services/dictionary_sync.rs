@@ -114,7 +114,10 @@ pub struct SyncDeps {
 /// What a failed sync says.
 pub fn api_error(e: &ApiError) -> IpcError {
     match e.status() {
-        Some(403) => IpcError::new(ErrorCode::ForbiddenPlan, "Dictionary sync is part of Pro."),
+        Some(403) => IpcError::new(
+            ErrorCode::ForbiddenPlan,
+            "Dictionary sync comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
+        ),
         Some(401) => IpcError::new(
             ErrorCode::Unauthenticated,
             "Sign in to sync your dictionary.",
@@ -143,7 +146,7 @@ pub fn check(access: &SyncAccess) -> Result<String, IpcError> {
     if !access.allowed {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Dictionary sync is part of Pro.",
+            "Dictionary sync comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ));
     }
     Ok(account)
