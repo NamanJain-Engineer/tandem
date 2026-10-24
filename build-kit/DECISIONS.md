@@ -86,7 +86,7 @@ tandem/
 
 ## Visual identity (Tandem's own)
 - Dark and light themes from day one.
-- Accent **#2DD4BF** (teal-400) in the dark theme; **#0F766E** (teal-700) in the light theme, because #2DD4BF and teal-600 fail WCAG AA on white. Status colours and exact values are the UI_SPEC §1.2 tokens (working sky, waiting amber, done green, idle grey, error rose). Neutrals: the near-black `ink` scale with gentle elevation (D-2600, at the owner's request on 20 October 2026; it replaced the slate scale). Radius 10px on panels and 8px on controls. Soft 1px borders. Inter plus JetBrains Mono.
+- Accent **#2DD4BF** (teal-400) in the dark theme; **#0F766E** (teal-700) in the light theme, because #2DD4BF and teal-600 fail WCAG AA on white. Status colours and exact values are the UI_SPEC §1.2 tokens (working sky, waiting amber, done green, idle grey, error rose). Neutrals: the near-black ink scale (D-1894; D-2600 built it), replacing slate. Radius 10px on panels and 6px on controls. Soft 1px borders. Inter plus JetBrains Mono.
 - Teammate avatars: deterministic initials in a rounded square with a generated gradient (not geometric "faces").
 - Conductor visual: a waveform ring (not an orb).
 

@@ -85,8 +85,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
   --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
   --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c; --rose-800: #9f1239;
-  /* Ink: the neutral near-black scale behind the app's surfaces (D-2600).
-     Slate stays for the site and anything that wants its blue cast. */
+  /* Ink: the neutral near-black scale behind every surface (D-1894, D-2600). */
   --ink-0:   #ffffff;
   --ink-25:  #fafafa;
   --ink-50:  #f4f4f5;
@@ -125,7 +124,6 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-border:        rgb(255 255 255 / 0.08);
   --tn-border-strong: rgb(255 255 255 / 0.15);
   --tn-divider:       rgb(255 255 255 / 0.055);
-  --tn-edge:          rgb(255 255 255 / 0.045); /* top-edge highlight on raised surfaces */
 
   /* text */
   --tn-text:          #ededef;
@@ -193,7 +191,6 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-border:        rgb(9 9 11 / 0.09);
   --tn-border-strong: rgb(9 9 11 / 0.17);
   --tn-divider:       rgb(9 9 11 / 0.06);
-  --tn-edge:          rgb(255 255 255 / 0.7);
 
   --tn-text:          #18181b;
   --tn-text-muted:    #4f4f58;
@@ -252,7 +249,6 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --color-border: var(--tn-border);
   --color-border-strong: var(--tn-border-strong);
   --color-divider: var(--tn-divider);
-  --color-edge: var(--tn-edge);
   --color-fg: var(--tn-text);
   --color-fg-muted: var(--tn-text-muted);
   --color-fg-subtle: var(--tn-text-subtle);
@@ -312,18 +308,17 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   /* spacing: Tailwind default 4px scale is used as-is (spacing-1 = 4px) */
   --spacing: 4px;
 
-  /* radii (D-2600: softer, 10–12px on panes, cards and popovers) */
-  --radius-xs: 5px;    /* chips, kbd, badges */
-  --radius-sm: 8px;    /* controls: buttons, inputs, menu items */
-  --radius-md: 10px;   /* panels, panes, cards, popovers */
+  /* radii: controls 6, panels 10, dialogs 12 (D-1894) */
+  --radius-xs: 4px;    /* chips, kbd, badges */
+  --radius-sm: 6px;    /* controls: buttons, inputs, menu items */
+  --radius-md: 10px;   /* panels, panes, cards, popovers (D-1894) */
   --radius-lg: 12px;   /* dialogs, sheets */
   --radius-full: 9999px;
 
-  /* elevation: a soft drop plus a faint top-edge highlight, so raised
-     surfaces read as lifted rather than outlined (D-2600) */
-  --shadow-1: inset 0 1px 0 var(--tn-edge), 0 1px 2px rgb(var(--tn-shadow-color) / 0.20);
-  --shadow-2: inset 0 1px 0 var(--tn-edge), 0 6px 16px -2px rgb(var(--tn-shadow-color) / 0.28), 0 1px 3px rgb(var(--tn-shadow-color) / 0.18);
-  --shadow-3: inset 0 1px 0 var(--tn-edge), 0 16px 40px -4px rgb(var(--tn-shadow-color) / 0.40), 0 2px 8px rgb(var(--tn-shadow-color) / 0.20);
+  /* elevation: one set, brand.css's e1–e3 (D-1891, D-1894) */
+  --shadow-1: var(--tn-elev-1);
+  --shadow-2: var(--tn-elev-2);
+  --shadow-3: var(--tn-elev-3);
   --shadow-focus: 0 0 0 2px var(--tn-bg), 0 0 0 4px var(--tn-accent-ring);
 
   /* motion */
@@ -372,7 +367,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
 /* base */
 html, body, #root { height: 100%; background: var(--tn-bg); color: var(--tn-text); }
-body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
+body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv01", "cv09", "cv11", "ss03"; }
 ::selection { background: var(--tn-selection); }
 :focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: inherit; }
 * { scrollbar-width: thin; scrollbar-color: var(--tn-scrollbar) transparent; }
@@ -381,13 +376,13 @@ body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webki
 **Z-index note:** the command palette is `--z-command` (600), above the HUD (500). When the palette opens, the Dictate/Conductor HUD remains visible behind it with 40% opacity.
 
 ### 1.2a Developer-first refresh (M18 · `app-ui`, D-2600 to D-2601)
-These decisions replace the slate-on-navy look the app shipped with up to 0.8.0, at the owner's request (20 October 2026: "the best UI experience to the developer"). The CSS above is already the result.
-- **Neutral near-black (D-2600).** A new raw `--ink-*` scale (zinc-like, no blue cast: no channel more than 4 apart) backs every app surface. Dark: bg `#09090b`, rails `#0e0e10`, panes `#121214`, raised `#1c1c20`, inputs and hover `#232327`. Light: bg `#f4f4f5`, rails `#fafafa`, panes and raised `#ffffff`, inputs `#f4f4f5`. Slate stays in the raw palette for the site's own tokens and the QR code. The accent stays teal (DECISIONS).
-- **Gentle elevation, soft borders (D-2600).** Borders are white (dark) or ink (light) at 8% / 15%, dividers 5.5–6%. Each surface step is lighter than the one below (a test checks the order), and the shadows carry a 1px top-edge highlight (`--tn-edge`, `color-edge` in Tailwind), so raised things read as lifted instead of outlined.
-- **Radii (D-2600):** xs 5px (badges, kbd, chips), sm 8px (controls), md 10px (panes, cards, popovers), lg 12px (dialogs, sheets).
+These replace the slate-on-navy look the app shipped with up to 0.8.0. The direction is the design lead's (D-1894, docs/DESIGN.md §4.2, §4.5, §4.7); D-2600 and D-2601 built it. The CSS above is already the result.
+- **Neutral near-black (D-2600).** A new raw `--ink-*` scale (zinc-like, no blue cast: no channel more than 4 apart) backs every app surface. Dark: bg `#09090b`, rails `#0e0e10`, panes `#121214`, raised `#1c1c20`, inputs and hover `#232327`. Light: bg `#f4f4f5`, rails `#fafafa`, panes and raised `#ffffff`, inputs `#f4f4f5`. Slate stays only in the raw palette until the site's T8 moves its last semantic uses to ink. The accent stays teal (DECISIONS).
+- **Gentle elevation, soft borders (D-2600).** Borders are white (dark) or ink (light) at 8% / 15%, dividers 5.5–6%. Each surface step is lighter than the one below (a test checks the order). Depth and the lit top edge are one set, `brand.css`'s e1–e3 (D-1891): `--shadow-1…3` point at `--tn-elev-1…3`.
+- **Radii (D-1894):** xs 4px (chips, kbd, badges), sm 6px (controls), md 10px (panes, panels, cards, popovers), lg 12px (dialogs, sheets). A 6px control nests in a 10px panel with 4px of padding.
 - **Spacing rhythm:** the 4px grid stays. Panels 12px dense or 16px default, dialogs 24px; rows 30px; pane gutters 6px.
 - **Focus rings:** unchanged in shape: 2px of the window background, then 2px of `accent-ring`, at 3:1 or better on every surface in both themes.
-- **Type:** Inter with its alternates cv02, cv03, cv04 and cv11 (open digits, a single-storey a), so numbers and paths scan cleanly; the scale in §1.4 is unchanged. Counts, times and meters are tabular.
+- **Type:** Inter with the site's alternates cv01, cv09, cv11 and ss03 (DESIGN §4.3), so the app and the site draw the same figures; the scale in §1.4 is unchanged. Counts, times and meters are tabular.
 - **Terminal palette:** Night's background is the pane surface `#121214` with neutral blacks and whites, so a terminal sits flush in its pane; Day's greys are the ink scale (§1.9). The window's first paint and the PTY's OSC 11 answer use the same values.
 - **Quiet status primitives (D-2601):**
   - `StatusDot`: working is a filled dot whose halo breathes (still under reduced motion); waiting a diamond, done a check, idle a hollow ring, error a triangle, offline a dashed ring. Every status still has its own shape (§1.3).

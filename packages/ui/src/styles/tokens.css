@@ -33,8 +33,7 @@
   --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
   --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
   --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c; --rose-800: #9f1239;
-  /* Ink: the neutral near-black scale behind the app's surfaces (D-2600).
-     Slate stays for the site and anything that wants its blue cast. */
+  /* Ink: the neutral near-black scale behind every surface (D-1894, D-2600). */
   --ink-0:   #ffffff;
   --ink-25:  #fafafa;
   --ink-50:  #f4f4f5;
@@ -73,7 +72,6 @@
   --tn-border:        rgb(255 255 255 / 0.08);
   --tn-border-strong: rgb(255 255 255 / 0.15);
   --tn-divider:       rgb(255 255 255 / 0.055);
-  --tn-edge:          rgb(255 255 255 / 0.045); /* top-edge highlight on raised surfaces */
 
   /* text */
   --tn-text:          #ededef;
@@ -141,7 +139,6 @@
   --tn-border:        rgb(9 9 11 / 0.09);
   --tn-border-strong: rgb(9 9 11 / 0.17);
   --tn-divider:       rgb(9 9 11 / 0.06);
-  --tn-edge:          rgb(255 255 255 / 0.7);
 
   --tn-text:          #18181b;
   --tn-text-muted:    #4f4f58;
@@ -200,7 +197,6 @@
   --color-border: var(--tn-border);
   --color-border-strong: var(--tn-border-strong);
   --color-divider: var(--tn-divider);
-  --color-edge: var(--tn-edge);
   --color-fg: var(--tn-text);
   --color-fg-muted: var(--tn-text-muted);
   --color-fg-subtle: var(--tn-text-subtle);
@@ -260,18 +256,17 @@
   /* spacing: Tailwind default 4px scale is used as-is (spacing-1 = 4px) */
   --spacing: 4px;
 
-  /* radii (D-2600: softer, 10–12px on panes, cards and popovers) */
-  --radius-xs: 5px;    /* chips, kbd, badges */
-  --radius-sm: 8px;    /* controls: buttons, inputs, menu items */
-  --radius-md: 10px;   /* panels, panes, cards, popovers */
+  /* radii: controls 6, panels 10, dialogs 12 (D-1894) */
+  --radius-xs: 4px;    /* chips, kbd, badges */
+  --radius-sm: 6px;    /* controls: buttons, inputs, menu items */
+  --radius-md: 10px;   /* panels, panes, cards, popovers (D-1894) */
   --radius-lg: 12px;   /* dialogs, sheets */
   --radius-full: 9999px;
 
-  /* elevation: a soft drop plus a faint top-edge highlight, so raised
-     surfaces read as lifted rather than outlined (D-2600) */
-  --shadow-1: inset 0 1px 0 var(--tn-edge), 0 1px 2px rgb(var(--tn-shadow-color) / 0.20);
-  --shadow-2: inset 0 1px 0 var(--tn-edge), 0 6px 16px -2px rgb(var(--tn-shadow-color) / 0.28), 0 1px 3px rgb(var(--tn-shadow-color) / 0.18);
-  --shadow-3: inset 0 1px 0 var(--tn-edge), 0 16px 40px -4px rgb(var(--tn-shadow-color) / 0.40), 0 2px 8px rgb(var(--tn-shadow-color) / 0.20);
+  /* elevation: one set, brand.css's e1–e3 (D-1891, D-1894) */
+  --shadow-1: var(--tn-elev-1);
+  --shadow-2: var(--tn-elev-2);
+  --shadow-3: var(--tn-elev-3);
   --shadow-focus: 0 0 0 2px var(--tn-bg), 0 0 0 4px var(--tn-accent-ring);
 
   /* motion */
@@ -320,7 +315,7 @@
 
 /* base */
 html, body, #root { height: 100%; background: var(--tn-bg); color: var(--tn-text); }
-body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
+body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv01", "cv09", "cv11", "ss03"; }
 ::selection { background: var(--tn-selection); }
 :focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: inherit; }
 * { scrollbar-width: thin; scrollbar-color: var(--tn-scrollbar) transparent; }
