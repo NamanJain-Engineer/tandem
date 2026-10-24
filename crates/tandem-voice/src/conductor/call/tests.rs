@@ -633,6 +633,27 @@ async fn f_cn_01_startup_errors_are_shown() {
     assert_eq!(host.last().phase, CallPhase::Idle);
 }
 
+#[tokio::test]
+async fn f_cn_01_a_country_the_voice_service_cant_serve_is_said_plainly_and_not_retried() {
+    // The API's free Gemini can't take calls from the EEA, Switzerland or
+    // the UK, and with no backup it says so (D-1018).
+    let (host, _wires) = Host::new(Duration::ZERO);
+    host.grants.lock().push_back(Err(HostedError::NotInRegion));
+    let c = CallController::new(host.clone(), timing());
+    c.start(CallOrigin::Palette);
+    until("the error", || host.last().phase == CallPhase::Error).await;
+    let error = host.last().error.expect("an error");
+    assert_eq!(error.code, CallErrorCode::NotInRegion);
+    assert_eq!(
+        error.message,
+        "Conductor's voice isn't available in your country yet."
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(host.mints.lock().len(), 1, "no other session asked for");
+    assert!(host.settles.lock().is_empty(), "nothing was minted");
+    assert!(!*host.mic_owned.lock());
+}
+
 #[test]
 fn f_cn_01_the_session_request_names_the_providers_the_call_can_open() {
     let req = SessionRequest {

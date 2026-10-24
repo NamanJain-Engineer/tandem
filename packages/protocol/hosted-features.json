@@ -90,7 +90,7 @@
       "id": "conductor",
       "label": "Conductor calls",
       "sends": "Your voice during a call, and what Conductor reads to answer you: the names, titles and status of your panes, threads and teammates, and tool results such as an agent's closing message or a review item's summary, redacted",
-      "destination": "Vibezeo API → realtime voice provider and Anthropic (Claude API)",
+      "destination": "Vibezeo API → Google (Gemini API) or the backup voice provider, and Anthropic (Claude API)",
       "state": { "kind": "on_use" }
     },
     {

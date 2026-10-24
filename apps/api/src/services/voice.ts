@@ -10,6 +10,7 @@ import { newId } from "../lib/ids";
 import { logger } from "../lib/logger";
 import { ApiError } from "../lib/problem";
 import { redactText } from "../lib/redact";
+import { FREE_GEMINI_EXCLUDED } from "../lib/region";
 import type { AiResult } from "../providers/ai/types";
 import { type Minted, type RealtimeProvider, RealtimeUnavailableError } from "../providers/realtime/types";
 import { fence, included } from "./ai";
@@ -95,6 +96,16 @@ const ended = () => new ApiError(409, "SESSION_ENDED", "Conflict", "This call ha
 export const LEGACY_PROTOCOLS: readonly string[] = ["mock", "openai"];
 
 /**
+ * Whether Gemini may take a call from `country` (D-1018): on the free tier,
+ * not from the EEA, Switzerland or the UK, nor from a country the edge
+ * couldn't name (null). Undefined means the API reads no country (dev).
+ */
+function geminiServes(deps: Deps, country: string | null | undefined): boolean {
+  if (deps.env.GEMINI_TIER === "paid" || country === undefined) return true;
+  return country !== null && !FREE_GEMINI_EXCLUDED.has(country);
+}
+
+/**
  * `POST /v1/voice/session`: hold 10 minutes of credits, then mint the realtime
  * session with the first provider the app speaks that mints (D-1013), so a
  * free primary that fails or runs out falls back to the next under one hold.
@@ -104,11 +115,21 @@ export async function mintSession(
   userId: string,
   voice?: string,
   speaks: readonly string[] = LEGACY_PROTOCOLS,
+  country?: string | null,
 ): Promise<MintedSession> {
   // The mock's socket is a dev service: production without a provider has no voice to offer.
-  const candidates = deps.realtime.filter(
+  const spoken = deps.realtime.filter(
     (p) => speaks.includes(p.name) && !(p.name === "mock" && deps.env.NODE_ENV === "production"),
   );
+  const candidates = spoken.filter((p) => p.name !== "gemini" || geminiServes(deps, country));
+  if (candidates.length === 0 && spoken.length > 0) {
+    throw new ApiError(
+      503,
+      "VOICE_NOT_IN_REGION",
+      "Service Unavailable",
+      "Conductor's voice isn't available in your country yet.",
+    );
+  }
   if (candidates.length === 0) {
     throw new ApiError(503, "VOICE_UNAVAILABLE", "Service Unavailable", "Conductor isn't available yet.");
   }

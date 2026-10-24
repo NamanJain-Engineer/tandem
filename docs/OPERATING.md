@@ -209,6 +209,14 @@ E2E lessons (each cost a debugging round):
   `/__say`, `/__state`, `/__control` and `/__close` steer it; `test_conductor_inject`
   runs doer tool calls the mock doer doesn't plan, and `test_conductor_clock` moves
   only the call's clock (the 30-minute cap).
+- Conductor's free primary against Google's real Gemini Live (D-1018):
+  `GEMINI_API_KEY=… bash scripts/agent/gemini-live-check.sh` (about a minute;
+  `--long` adds a 12-minute call past Google's 10-minute reconnect). The API's
+  `GeminiLive` mints each token and the app's own client opens it; tokens stay in
+  a private temp file and are never printed. In a cloud session, add
+  `GEMINI_API_KEY` in the environment's settings and start a new session (a
+  running one doesn't see it). The WebSocket goes out directly, which works
+  from Claude's cloud containers.
 - Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
