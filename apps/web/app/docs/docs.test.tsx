@@ -94,6 +94,8 @@ describe("docs (F-WB-02)", () => {
       expect(mdx, p.slug).not.toMatch(/\bPro\b|Free plan|on Free\b|the next release/);
       // Vibezeo's credits are never named (DESIGN §9.5); Plugins' "Uses credits" is a service's own risk class.
       if (p.slug !== "plugins") expect(mdx, p.slug).not.toMatch(/credit|premium|upgrade|\btrial\b/i);
+      // No section about pricing (D-2913).
+      expect(mdx, p.slug).not.toMatch(/^## (Plans\b|.*\bpaid plans\b|.* and plans\b)/m);
     }
   });
 

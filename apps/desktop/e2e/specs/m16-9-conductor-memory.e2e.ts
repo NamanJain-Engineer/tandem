@@ -1,6 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import { Key } from "webdriverio";
-import { freshOffline, invoke, mod } from "../support/app";
+import { freshUser, invoke, mod, setPlan } from "../support/app";
+import { waitForEntitlement } from "../support/hosted";
 
 // F-CN-06 (UI-67): Settings › Conductor. Memory is off by default and
 // nothing can be written then; turned on, memory.md is viewable, editable
@@ -22,8 +23,12 @@ async function openConductor(): Promise<void> {
 
 describe("F-CN-06 Conductor persona and memory", () => {
   before(async function () {
-    this.timeout(60_000);
-    await freshOffline();
+    this.timeout(120_000);
+    // Settings › Conductor shows its rows only with an account that carries
+    // Conductor (hosted, D-2913).
+    const { email } = await freshUser("m16-9");
+    await setPlan(email, "pro");
+    await waitForEntitlement((e) => e.limits.conductor === true, "an account with Conductor", 20_000);
     await invoke("settings_set", { key: "conductor_memory", value: false });
     await invoke("conductor_memory_clear");
   });

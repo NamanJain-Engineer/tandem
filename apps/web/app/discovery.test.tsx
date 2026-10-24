@@ -24,9 +24,10 @@ describe("downloads and discovery (F-WB-04)", () => {
     expect(txt).not.toMatch(/\$\d|\bcredits?\b|per seat|\/pricing\//);
     for (const p of DOCS_PAGES)
       expect(txt).toContain(`[${p.title}](https://vibezeo.com/docs/${p.slug ? `${p.slug}/` : ""})`);
-    // In the app but not running in this release's download: Conductor needs
-    // Vibezeo's servers. Routines run, free (D-2900).
-    expect(txt).toMatch(new RegExp(`/docs/conductor/\\): [^\\n]*\\(Not in this release's download yet\\.\\)`));
+    // Conductor needs Vibezeo's servers: DESIGN §9.5's label, never "not in this
+    // release" (D-2913). Routines run, free (D-2900).
+    expect(txt).toMatch(new RegExp(`/docs/conductor/\\): [^\\n]*\\(Comes with Vibezeo accounts\\.\\)`));
+    expect(txt).not.toMatch(/Not in this release|In the next release/);
     for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(txt).not.toMatch(new RegExp(`/docs/${slug}/\\): [^\\n]*Not in the app yet`));
     for (const slug of ["thread-mode", "agent-mode", "dictate", "tasks", "plugins", "remote", "routines"])

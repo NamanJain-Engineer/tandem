@@ -10,6 +10,7 @@ import { useSettings } from "../../stores/settings";
 import { FREE_VIEW, fakeBackend, resetStores } from "../../test/fakeBackend";
 import { SettingsView } from "../settings/SettingsView";
 import { SignIn } from "../signin/SignIn";
+import { TitleBar } from "../shell/TitleBar";
 import { hostedTooltip } from "./ComesWithAccounts";
 
 // The download (TANDEM_HOSTED=0): no account, nothing hosted. DESIGN §5.5 and
@@ -63,6 +64,39 @@ describe("the download build says nothing about plans or credits (D-2903, DESIGN
     expect(screen.queryByTestId("settings-free-line")?.textContent ?? en["settings.freeLine"]).toBe(
       "Vibezeo is free. If it helps you, tell a friend.",
     );
+  });
+
+  it("D-2913 hosted settings with no account: Conductor's page only says it comes with accounts; Privacy hides hosted switches", async () => {
+    useSettings.setState({ values: { settings_last_page: "conductor" }, loaded: true });
+    render(
+      <UiProvider>
+        <SettingsView />
+      </UiProvider>,
+    );
+    const hosted = await screen.findByTestId("conductor-settings-hosted");
+    expect(hosted.textContent).toContain("Comes with Vibezeo accounts");
+    expect(document.querySelector('[data-setting="conductor_name"]')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Privacy & Telemetry" })));
+    for (const id of [
+      "ai_thread_titles",
+      "auto_consent",
+      "dictate_share_hints",
+      "find_work_hosted",
+      "dictate_dictionary_sync",
+    ])
+      expect(document.querySelector(`[data-setting="${id}"]`), id).toBeNull();
+    expect(document.querySelector('[data-setting="session_search"]')).toBeTruthy();
+  });
+
+  it("D-2913 the Vibezeo menu offers no Sign in in a build without accounts", async () => {
+    render(
+      <UiProvider>
+        <TitleBar />
+      </UiProvider>,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "Vibezeo menu" }), { key: "Enter" });
+    expect(await screen.findByRole("menuitem", { name: /Quit/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Sign in|Sign out/ })).toBeNull();
   });
 
   it("F-CN-01 Conductor's call command says it comes with accounts, with no plan or credits", async () => {

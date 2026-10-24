@@ -80,17 +80,22 @@ export function TitleBar() {
       onSelect: () => invoke("app_open_logs_folder").catch(() => undefined),
     },
     { id: "sep2", type: "separator" },
-    auth?.signedIn
-      ? {
-          id: "signout",
-          label: t("menu.signOut"),
-          onSelect: () => invoke("auth_sign_out").catch(() => undefined),
-        }
-      : {
-          id: "signin",
-          label: t("menu.signIn"),
-          onSelect: () => invoke("auth_sign_in").catch(() => undefined),
-        },
+    // A build without Vibezeo accounts has nothing to sign in to (D-2913).
+    ...(auth && !auth.hosted
+      ? []
+      : [
+          auth?.signedIn
+            ? {
+                id: "signout",
+                label: t("menu.signOut"),
+                onSelect: () => invoke("auth_sign_out").catch(() => undefined),
+              }
+            : {
+                id: "signin",
+                label: t("menu.signIn"),
+                onSelect: () => invoke("auth_sign_in").catch(() => undefined),
+              },
+        ]),
     {
       id: "quit",
       label: t("menu.quit"),
