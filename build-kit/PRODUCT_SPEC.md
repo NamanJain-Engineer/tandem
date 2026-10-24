@@ -247,7 +247,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - A folder that has been moved or deleted shows in the warning color with the tooltip "Folder not found". Selecting it offers **Locate…** or **Remove**.
 - **Collapsed state:** a collapsed workspace stays collapsed until a session starts in it.
 - **Footer:**
-  - Avatar initials, plan tag ("FREE", "PRO" or "TEAM") and credit balance ("PRO · 9,684 credits").
+  - Avatar initials. No plan tag or plan footer (D-869, DESIGN §5.5); a signed-in hosted build shows its credit balance in the title bar only.
   - Appearance toggle (cycles Dark, Light, System).
   - Settings button.
   - An **Update ready** row appears only when an update is staged.

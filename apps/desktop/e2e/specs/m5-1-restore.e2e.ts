@@ -10,7 +10,7 @@ import {
   invoke,
   paneIds,
   pausedCards,
-  planFooter,
+  waitSignedIn,
   relaunch,
   sendToPane,
   signInDesktop,
@@ -121,7 +121,7 @@ describe("E2E-M5-1 crash restore", () => {
 
   it("F-SH-07.2 Resume on one card spawns exactly one process, in the saved provider home, with --resume <id>", async function () {
     this.timeout(60_000);
-    await browser.waitUntil(async () => (await planFooter()) === "Free", { timeout: 20_000 });
+    await waitSignedIn();
     const before = await engineSpawns();
     const savedHome = before.at(-1)?.providerHome ?? null;
     expect(savedHome).not.toBeNull();

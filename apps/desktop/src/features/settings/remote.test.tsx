@@ -72,7 +72,7 @@ describe("F-RM-03 Settings › Remote", () => {
     act(() => useSession.setState({ entitlement: FREE_VIEW }));
     expect(
       await screen.findByText(
-        "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network below.",
+        "The Vibezeo relay comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open. Pair over your local network below.",
       ),
     ).toBeTruthy();
     expect((screen.getByTestId("remote-pair") as HTMLButtonElement).disabled).toBe(true);
@@ -91,7 +91,7 @@ describe("F-RM-03 Settings › Remote", () => {
     );
     expect(
       await screen.findByText(
-        "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network below: it needs no account.",
+        "The Vibezeo relay comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open. Pair over your local network below: it needs no account.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Sign in to pair a phone.")).toBeNull();

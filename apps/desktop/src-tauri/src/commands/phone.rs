@@ -328,7 +328,7 @@ fn pairing_error(err: ApiError) -> IpcError {
             status: 403, code, ..
         } if code == "FORBIDDEN_PLAN" => IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network instead.",
+            "Pairing through the Vibezeo relay comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open. Pair over your local network instead.",
         ),
         ApiError::Http { status: 403, .. } => IpcError::new(
             ErrorCode::PermissionDenied,
@@ -544,7 +544,7 @@ pub async fn phone_pair_begin(
     if !state.entitlements.limits().phone {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Pairing through the Vibezeo relay comes with Vibezeo accounts. Pair over your local network instead.",
+            "Pairing through the Vibezeo relay comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open. Pair over your local network instead.",
         ));
     }
     state.phone.pair_begin().await

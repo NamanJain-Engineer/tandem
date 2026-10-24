@@ -203,11 +203,11 @@ describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
     // It says why, never silently, and never names a plan or a price (D-833, D-869).
     const view = useConductor.getState().view;
     expect(view.phase).toBe("error");
-    expect(view.error).toEqual({ code: "needs_pro", message: "Conductor comes with Vibezeo accounts." });
+    expect(view.error).toEqual({ code: "needs_pro", message: "Conductor comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open." });
     expect(named("conductor_start_call")).toHaveLength(0);
   });
 
-  it("F-CN-01 on Pro a click starts a call", async () => {
+  it("F-CN-01 with Conductor in the limits a click starts a call", async () => {
     pro();
     render(
       <UiProvider>
@@ -342,7 +342,7 @@ describe("Call log (F-CN-04, UI-66)", () => {
 });
 
 describe("Conductor settings (F-CN-04, UI-67)", () => {
-  it("F-CN-04 keep call logs: absent on Free; on Pro it stores days or off", async () => {
+  it("F-CN-04 keep call logs: absent without Conductor; with it, it stores days or off", async () => {
     const { unmount } = render(
       <UiProvider>
         <ConductorCallSettings />
@@ -393,7 +393,7 @@ describe("Floating ring (F-CN-04, UI-61)", () => {
     await waitFor(() => expect(named("conductor_end_call")).toHaveLength(1));
   });
 
-  it("F-CN-04 the floating ring switch is a Pro setting", async () => {
+  it("F-CN-04 the floating ring switch shows only with Conductor", async () => {
     pro();
     render(
       <UiProvider>

@@ -109,7 +109,7 @@ export const CLAUDE = [
   {
     tag: "Built, live when accounts open",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude, meters credits, and stores no prompts or responses. They go live when accounts open.",
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude and stores no prompts or responses. They go live when accounts open.",
   },
 ] as const;
 

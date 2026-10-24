@@ -10,7 +10,6 @@ import type {
   ThreadDetail,
 } from "@tandem/protocol";
 import {
-  Callout,
   Composer,
   ConfirmDialog,
   EngineGlyph,
@@ -229,9 +228,6 @@ export function ThreadComposer({
     () => engineOptionsFor(engines, chatEngines),
     [engines, chatEngines],
   );
-  // A thread stays readable when limits leave its engine out (none do with
-  // no account, D-2900); its engine can't run.
-  const offPlan = chatEngines !== null && !chatEngines.includes(thread.engineId);
   const savedModel = thread.model ?? "default";
   const modelOptions: SelectOption[] = useMemo(() => {
     const list = catalog.length
@@ -333,13 +329,6 @@ export function ThreadComposer({
 
   return (
     <>
-      {offPlan && (
-        <div className="px-3 pb-2" data-testid="thread-engine-gate">
-          <Callout tone="accent" title={t("thread.engineGate.title")}>
-            {t("thread.engineGate.body", { engine: engineLabel })}
-          </Callout>
-        </div>
-      )}
       <Composer
         ref={setHandle}
         dictation={dictation}

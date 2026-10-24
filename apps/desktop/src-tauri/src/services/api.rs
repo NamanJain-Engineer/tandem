@@ -351,7 +351,7 @@ impl HostedFailure {
                     message: detail("You're out of credits for now."),
                 },
                 (403, "FORBIDDEN_PLAN") => HostedFailure::NeedsPro {
-                    message: format!("{feature} comes with Vibezeo accounts."),
+                    message: format!("{feature} comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."),
                 },
                 (429, "DAILY_LIMIT") => HostedFailure::DailyLimit {
                     message: detail("You've reached today's limit."),
@@ -1168,7 +1168,7 @@ mod tests {
         assert_eq!(
             HostedFailure::from_api(&http(403, "FORBIDDEN_PLAN", None), "Cloud transcription")
                 .message(),
-            "Cloud transcription comes with Vibezeo accounts."
+            "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."
         );
         assert!(matches!(
             HostedFailure::from_api(

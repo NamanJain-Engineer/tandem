@@ -30,7 +30,7 @@ describe("EA-1 early-access build", () => {
     expect(await $("button=Continue with Google").isExisting()).toBe(false);
 
     await $("button=Start using Vibezeo").click();
-    await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
+    await $('[data-testid="app-shell"]').waitForExist({ timeout: 20_000 });
     const { limits } = await invoke<{ limits: Record<string, unknown> }>("entitlement_get");
     expect(limits).toMatchObject({
       panes: null,

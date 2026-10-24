@@ -2,6 +2,7 @@ import { Button, KeyValue, SettingsGroup } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
+import { NOTIFY_HREF } from "../billing/ComesWithAccounts";
 
 const date = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" }) : "";
@@ -17,9 +18,18 @@ export function AccountPage() {
   if (auth && !auth.hosted) {
     return (
       <SettingsGroup>
-        <p className="p-3 text-base text-fg" data-testid="account-early-access">
-          {t("settings.account.earlyAccess")}
-        </p>
+        <div className="flex flex-col items-start gap-1 p-3">
+          <p className="text-base text-fg" data-testid="account-early-access">
+            {t("settings.account.earlyAccess")}
+          </p>
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => invoke("app_open_external", { url: NOTIFY_HREF }).catch(() => undefined)}
+          >
+            {t("hosted.notify")}
+          </Button>
+        </div>
       </SettingsGroup>
     );
   }

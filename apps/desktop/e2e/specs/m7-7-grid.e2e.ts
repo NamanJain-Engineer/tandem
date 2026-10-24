@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, planFooter, relaunch, signInDesktop } from "../support/app";
+import { freshUser, invoke, waitSignedIn, relaunch, signInDesktop } from "../support/app";
 import { threadMode } from "../support/thread";
 
 async function cells(): Promise<string[]> {
@@ -74,7 +74,7 @@ describe("E2E-M7-7 grid", () => {
     await relaunch();
     // The E2E keychain lives in memory: sign in again (the grid is a setting).
     await signInDesktop(email);
-    await browser.waitUntil(async () => (await planFooter()) === "Free", { timeout: 20_000 });
+    await waitSignedIn();
     await threadMode();
     await browser.waitUntil(async () => (await cells()).length === 6, {
       timeout: 20_000,

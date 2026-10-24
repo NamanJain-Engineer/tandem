@@ -54,7 +54,7 @@ describe("early-access builds (D-105)", () => {
     expect(screen.getByText("Use Vibezeo offline")).toBeTruthy();
   });
 
-  it("Account explains that everything local is free, without a sign-in button", () => {
+  it("Account explains everything runs with no account, and offers Tell me when accounts open, not sign-in", () => {
     fakeBackend();
     useSession.setState({ auth: EARLY_ACCESS_IN_USE });
     render(
@@ -63,8 +63,9 @@ describe("early-access builds (D-105)", () => {
       </UiProvider>,
     );
     const text = screen.getByTestId("account-early-access").textContent ?? "";
-    expect(text).toContain("Everything on this computer is free");
+    expect(text).toContain("Everything runs on this computer, with no account.");
     expect(text).toContain("come with Vibezeo accounts");
+    expect(screen.getByRole("button", { name: "Tell me when accounts open" })).toBeTruthy();
     expect(text).not.toMatch(/\bPro\b|\bTeam\b|plan/);
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
   });

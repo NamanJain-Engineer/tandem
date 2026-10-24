@@ -180,7 +180,7 @@ pub async fn auto_start(
     if !state.entitlements.limits().auto {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Auto comes with Vibezeo accounts.",
+            "Auto comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ));
     }
     let consent = settings::get(&state.store, SettingKey::AutoConsent)

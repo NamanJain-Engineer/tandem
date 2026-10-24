@@ -948,7 +948,7 @@ fn hosted_error(e: &HostedError) -> CallError {
         HostedError::SignedOut => (CallErrorCode::SignedOut, "Sign in to use Conductor."),
         HostedError::NeedsPro => (
             CallErrorCode::NeedsPro,
-            "Conductor comes with Vibezeo accounts.",
+            "Conductor comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ),
         HostedError::TurnedOff => (
             CallErrorCode::TurnedOff,
