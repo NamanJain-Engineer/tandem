@@ -1263,6 +1263,7 @@
   "run.uses": "Uses .env in {folder}",
   "run.noEnv": "No .env in this folder. The command runs as typed.",
   "run.missing": "No secret named {name}",
+  "run.malformed": "Not a valid vibezeo-secret:// reference",
   "run.unavailable": "Run with secrets isn't available here.",
   "run.var": "{name} → {secret}",
   "run.footnote": "The command can still send or print these values in other forms.",

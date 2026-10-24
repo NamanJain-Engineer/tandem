@@ -11,4 +11,8 @@ secret: string | null,
 /**
  * That secret doesn't exist.
  */
-missing: boolean, };
+missing: boolean, 
+/**
+ * The value looks like a reference but isn't a valid one.
+ */
+malformed: boolean, };

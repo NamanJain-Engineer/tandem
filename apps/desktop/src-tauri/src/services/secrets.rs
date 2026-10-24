@@ -45,6 +45,8 @@ pub struct RunVar {
     pub secret: Option<String>,
     /// That secret doesn't exist.
     pub missing: bool,
+    /// The value looks like a reference but isn't a valid one.
+    pub malformed: bool,
 }
 
 /// What Run with secrets would use (`secrets_run_plan`): no values.
@@ -56,6 +58,9 @@ pub struct RunPlan {
     /// The `.env` path, when the folder has one.
     pub env_file: Option<String>,
     pub vars: Vec<RunVar>,
+    /// Why Run can't start here (the pane's terminals open in WSL, or its
+    /// shell can't keep the values to one command).
+    pub unavailable: Option<String>,
 }
 
 /// A run waiting for its pane's first spawn.
@@ -109,14 +114,21 @@ pub async fn set(
             "A value can be up to 16 KB",
         ));
     }
-    keychain
-        .set(&service(), name, value.as_bytes())
-        .map_err(unavailable)?;
+    // The row goes first: a keychain entry without a row would be invisible
+    // on the Secrets page and never deleted.
+    let existed = repo::exists(store, name).await?;
+    let row = repo::upsert(store, name, now).await?;
+    if let Err(e) = keychain.set(&service(), name, value.as_bytes()) {
+        if !existed {
+            let _ = repo::delete(store, name).await;
+        }
+        return Err(unavailable(e));
+    }
     if value.len() >= REDACTOR_MIN {
         tandem_core::redact::Redactor::global().register_secret(value);
     }
     tracing::info!(code = "secrets.set", "a secret was saved");
-    Ok(info(repo::upsert(store, name, now).await?))
+    Ok(info(row))
 }
 
 pub async fn delete(store: &Store, keychain: &dyn Keychain, name: &str) -> Result<(), IpcError> {
@@ -158,27 +170,59 @@ async fn folder_of(store: &Store, pane: &tandem_core::ids::PaneId) -> Result<Pat
     Ok(PathBuf::from(ws.root))
 }
 
-/// The folder's `.env`, parsed; `None` without one.
+/// The folder's `.env`, parsed; `None` without one. A symlink is followed
+/// only to a file inside the folder, and the file is read through the one
+/// handle that was checked, no further than the size limit.
 pub(crate) fn read_env(folder: &Path) -> Result<Option<(PathBuf, Vec<EnvVar>)>, IpcError> {
+    use std::io::Read;
     let path = folder.join(ENV_FILE);
-    let Ok(meta) = std::fs::metadata(&path) else {
+    let Ok(link) = std::fs::symlink_metadata(&path) else {
         return Ok(None);
     };
-    if !meta.is_file() {
+    if link.file_type().is_symlink() {
+        let inside = match (std::fs::canonicalize(&path), std::fs::canonicalize(folder)) {
+            (Ok(target), Ok(root)) => target.starts_with(&root),
+            _ => false,
+        };
+        if !inside {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "This folder's .env links to a file outside the folder",
+            ));
+        }
+    }
+    let file = match std::fs::File::open(&path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(read_failed(e)),
+    };
+    if !file.metadata().map_err(read_failed)?.is_file() {
         return Ok(None);
     }
-    if meta.len() > MAX_ENV_BYTES {
+    let mut bytes = Vec::new();
+    file.take(MAX_ENV_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(read_failed)?;
+    if bytes.len() as u64 > MAX_ENV_BYTES {
         return Err(IpcError::new(
             ErrorCode::Invalid,
             "This folder's .env is larger than 256 KB",
         ));
     }
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't read .env: {e}")))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| IpcError::new(ErrorCode::Invalid, "This folder's .env isn't UTF-8 text"))?;
     Ok(Some((path, refs::parse_env(&text))))
 }
 
-pub async fn plan(store: &Store, pane: &tandem_core::ids::PaneId) -> Result<RunPlan, IpcError> {
+fn read_failed(e: std::io::Error) -> IpcError {
+    IpcError::new(ErrorCode::Io, format!("Couldn't read .env: {e}"))
+}
+
+pub async fn plan(
+    store: &Store,
+    pane: &tandem_core::ids::PaneId,
+    unavailable: Option<&str>,
+) -> Result<RunPlan, IpcError> {
     let folder = folder_of(store, pane).await?;
     let (env_file, vars) = match read_env(&folder)? {
         Some((path, vars)) => (Some(path.to_string_lossy().into_owned()), vars),
@@ -194,13 +238,32 @@ pub async fn plan(store: &Store, pane: &tandem_core::ids::PaneId) -> Result<RunP
             name: p.name,
             secret: p.secret,
             missing,
+            malformed: p.malformed,
         });
     }
     Ok(RunPlan {
         folder: folder.to_string_lossy().into_owned(),
         env_file,
         vars: out,
+        unavailable: unavailable.map(str::to_string),
     })
+}
+
+/// `tab` is in the same workspace as `pane`: a run lands beside its source.
+pub async fn check_tab(
+    store: &Store,
+    pane: &tandem_core::ids::PaneId,
+    tab: &tandem_core::ids::TabId,
+) -> Result<(), IpcError> {
+    let source = panes::get(store, pane).await?;
+    let tab = tandem_store::repo::tabs::get(store, tab).await?;
+    if tab.workspace_id != source.workspace_id {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "The run opens in its source pane's workspace",
+        ));
+    }
+    Ok(())
 }
 
 /// Resolves the folder's `.env` for `command`: the folder and the pending run.
@@ -257,7 +320,10 @@ pub(crate) fn resolve(
     if let Some(e) = failed {
         return Err(unavailable(e));
     }
-    let resolved = resolved.map_err(|m| IpcError::new(ErrorCode::NotFound, m.to_string()))?;
+    let resolved = resolved.map_err(|e| match e {
+        refs::ResolveError::Missing(_) => IpcError::new(ErrorCode::NotFound, e.to_string()),
+        refs::ResolveError::Malformed(_) => IpcError::new(ErrorCode::Invalid, e.to_string()),
+    })?;
     for v in &resolved.secrets {
         if v.len() >= REDACTOR_MIN {
             tandem_core::redact::Redactor::global().register_secret(v);
@@ -313,6 +379,74 @@ mod tests {
         assert!(set(&store, &kc, "empty", "", 5).await.is_err());
     }
 
+    struct LockedKeychain;
+
+    impl Keychain for LockedKeychain {
+        fn get(&self, _: &str, _: &str) -> Result<Option<Zeroizing<Vec<u8>>>, KeychainError> {
+            Err(KeychainError::Unavailable("locked".into()))
+        }
+        fn set(&self, _: &str, _: &str, _: &[u8]) -> Result<(), KeychainError> {
+            Err(KeychainError::Unavailable("locked".into()))
+        }
+        fn delete(&self, _: &str, _: &str) -> Result<(), KeychainError> {
+            Err(KeychainError::Unavailable("locked".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_1_a_keychain_failure_leaves_no_row() {
+        let (_d, store) = store().await;
+        assert!(set(&store, &LockedKeychain, "a", "value-1", 1)
+            .await
+            .is_err());
+        assert!(list(&store).await.expect("list").is_empty());
+        // Replacing an existing secret keeps its row when the keychain fails.
+        let kc = MemoryKeychain::new();
+        set(&store, &kc, "b", "value-2", 1).await.expect("set");
+        assert!(set(&store, &LockedKeychain, "b", "value-3", 2)
+            .await
+            .is_err());
+        assert_eq!(list(&store).await.expect("list").len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tl_12_2_a_dotenv_link_outside_the_folder_is_refused() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path().join("repo");
+        std::fs::create_dir_all(root.join("conf")).expect("mkdir");
+        std::fs::write(dir.path().join("outside.env"), "A=1\n").expect("write");
+        std::os::unix::fs::symlink(dir.path().join("outside.env"), root.join(ENV_FILE))
+            .expect("link");
+        assert_eq!(
+            read_env(&root).err().map(|e| e.code),
+            Some(ErrorCode::Invalid)
+        );
+        std::fs::remove_file(root.join(ENV_FILE)).expect("rm");
+        std::fs::write(root.join("conf/dev.env"), "B=2\n").expect("write");
+        std::os::unix::fs::symlink(root.join("conf/dev.env"), root.join(ENV_FILE)).expect("link");
+        let (_, vars) = read_env(&root).expect("read").expect("some");
+        assert_eq!(vars[0].name, "B");
+    }
+
+    #[test]
+    fn f_tl_12_2_a_dotenv_over_the_limit_is_refused() {
+        let dir = tempfile::tempdir().expect("dir");
+        std::fs::write(
+            dir.path().join(ENV_FILE),
+            vec![b'#'; MAX_ENV_BYTES as usize + 1],
+        )
+        .expect("write");
+        assert_eq!(
+            read_env(dir.path()).err().map(|e| e.code),
+            Some(ErrorCode::Invalid)
+        );
+        std::fs::write(dir.path().join(ENV_FILE), "A=1\n").expect("write");
+        assert!(read_env(dir.path()).expect("read").is_some());
+        std::fs::remove_file(dir.path().join(ENV_FILE)).expect("rm");
+        assert!(read_env(dir.path()).expect("read").is_none());
+    }
+
     #[tokio::test]
     async fn f_tl_12_6_delete_removes_the_entry_and_the_row() {
         let (_d, store) = store().await;
@@ -360,6 +494,62 @@ mod tests {
         (root, pane)
     }
 
+    #[tokio::test]
+    async fn f_tl_12_2_a_run_opens_only_in_its_source_panes_workspace() {
+        let (dir, store) = store().await;
+        let (_, pane) = folder(&store, dir.path(), "A=1\n").await;
+        check_tab(&store, &pane.id, &pane.tab_id)
+            .await
+            .expect("own tab");
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(&other).expect("mkdir");
+        let added =
+            crate::services::workspaces::add(&store, other.to_str().expect("utf8"), Some(4))
+                .await
+                .expect("ws");
+        let foreign = tandem_store::repo::tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        assert_eq!(
+            check_tab(&store, &pane.id, &foreign.id)
+                .await
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::Invalid)
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_tl_12_5_run_is_refused_where_the_shell_cant_keep_the_values_to_the_command() {
+        use tandem_core::settings::SettingKey;
+        let (_d, store) = store().await;
+        let svc = crate::services::terminal::TerminalService::new(
+            tandem_pty::PtyManager::new(),
+            store.clone(),
+        );
+        tandem_store::repo::settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/sh"),
+        )
+        .await
+        .expect("shell");
+        assert_eq!(svc.run_blocked().await, None);
+        tandem_store::repo::settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/opt/cmd.exe"),
+        )
+        .await
+        .expect("shell");
+        assert_eq!(
+            svc.run_blocked().await,
+            Some(crate::services::terminal::RUN_NEEDS_SHELL)
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn f_tl_12_2_f_tl_12_3_f_tl_12_5_a_run_gets_the_value_masks_it_and_the_shell_after_it_doesnt(
@@ -374,19 +564,21 @@ mod tests {
             .expect("set");
         let env = "API_KEY=vibezeo-secret://stripe-test\nPORT=3000\n";
         let (root, pane) = folder(&store, dir.path(), env).await;
-        let plan = plan(&store, &pane.id).await.expect("plan");
+        let plan = plan(&store, &pane.id, None).await.expect("plan");
         assert_eq!(
             plan.vars,
             vec![
                 RunVar {
                     name: "API_KEY".into(),
                     secret: Some("stripe-test".into()),
-                    missing: false
+                    missing: false,
+                    malformed: false,
                 },
                 RunVar {
                     name: "PORT".into(),
                     secret: None,
-                    missing: false
+                    missing: false,
+                    malformed: false,
                 },
             ]
         );
@@ -446,7 +638,7 @@ mod tests {
         let (dir, store) = store().await;
         let kc = MemoryKeychain::new();
         let (_root, pane) = folder(&store, dir.path(), "A=vibezeo-secret://gone\n").await;
-        let plan = plan(&store, &pane.id).await.expect("plan");
+        let plan = plan(&store, &pane.id, None).await.expect("plan");
         assert!(plan.vars[0].missing);
         let err = prepare(&store, &kc, &pane.id, "true")
             .await

@@ -41,8 +41,8 @@ export function RunDialog({
       live = false;
     };
   }, [open, paneId]);
-  const missing = plan?.vars.find((v) => v.missing)?.secret ?? null;
-  const ready = plan !== null && missing === null && command.trim() !== "";
+  const blocked = plan?.vars.some((v) => v.missing || v.malformed) ?? false;
+  const ready = plan !== null && plan.unavailable === null && !blocked && command.trim() !== "";
   const run = async () => {
     setRunning(true);
     setError(null);
@@ -96,8 +96,8 @@ export function RunDialog({
           spellCheck={false}
           autoFocus
         />
-        {planError ? (
-          <Callout tone="error">{planError}</Callout>
+        {planError || plan?.unavailable ? (
+          <Callout tone="error">{planError ?? plan?.unavailable}</Callout>
         ) : plan === null ? (
           <Skeleton className="h-12" />
         ) : plan.envFile === null ? (
@@ -114,8 +114,14 @@ export function RunDialog({
                   data-testid="run-var"
                   data-name={v.name}
                   data-missing={v.missing ? "true" : "false"}
+                  data-malformed={v.malformed ? "true" : "false"}
                 >
-                  {v.secret ? (
+                  {v.malformed ? (
+                    <span className="text-danger">
+                      {v.name}
+                      <span className="ml-2 font-sans">{t("run.malformed")}</span>
+                    </span>
+                  ) : v.secret ? (
                     <span className={v.missing ? "text-danger" : "text-fg"}>
                       {t("run.var", { name: v.name, secret: v.secret })}
                       {v.missing && (

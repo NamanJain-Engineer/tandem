@@ -33,6 +33,7 @@ import { useBoot } from "../shell/useBoot";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useFlash } from "../../stores/focus";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useSetting } from "../../stores/settings";
 import { useLaunch } from "../../stores/launch";
 import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
@@ -287,8 +288,10 @@ const PaneView = memo(function PaneView({
   const freezing = useResources((st) => st.status?.freezing ?? false);
   const frozen = useResources((st) => st.byPane[pane.id]?.frozen ?? false);
   const freezable = freezing && home?.kind === "local";
-  // F-TL-12: Run with secrets, from a terminal pane in a folder here.
-  const runnable = pane.kind === "terminal" && home?.kind === "local";
+  // F-TL-12: Run with secrets, from a terminal pane in a folder here; not
+  // where plain terminals open in WSL, since the values would cross unmasked.
+  const plainWsl = useSetting<string | null>("wsl_default_distro", null);
+  const runnable = pane.kind === "terminal" && home?.kind === "local" && !plainWsl;
   const [running, setRunning] = useState(false);
   const toggleFrozen = () =>
     void setFrozen(pane.id, !frozen).catch((e: IpcError) =>

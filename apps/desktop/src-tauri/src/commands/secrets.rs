@@ -35,7 +35,8 @@ pub async fn secrets_run_plan(
     state: State<'_, AppState>,
     pane_id: PaneId,
 ) -> Result<RunPlan, IpcError> {
-    secrets::plan(&state.store, &pane_id).await
+    let blocked = state.terminals.run_blocked().await;
+    secrets::plan(&state.store, &pane_id, blocked).await
 }
 
 /// A new terminal pane in `pane_id`'s folder that runs `command` with the
@@ -51,6 +52,13 @@ pub async fn secrets_run(
     state
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
+    if let Some(why) = state.terminals.run_blocked().await {
+        return Err(IpcError::new(
+            tandem_core::error::ErrorCode::Unavailable,
+            why,
+        ));
+    }
+    secrets::check_tab(&state.store, &pane_id, &tab_id).await?;
     let (folder, run) =
         secrets::prepare(&state.store, state.keychain.as_ref(), &pane_id, &command).await?;
     let pane = panes::create_with(

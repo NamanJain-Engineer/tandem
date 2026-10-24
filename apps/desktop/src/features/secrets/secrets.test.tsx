@@ -89,10 +89,15 @@ describe("agent-proof secrets (F-TL-12)", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
-  const plan = (vars: RunPlan["vars"], envFile: string | null = "/w/checkout/.env"): RunPlan => ({
+  const plan = (
+    vars: RunPlan["vars"],
+    envFile: string | null = "/w/checkout/.env",
+    unavailable: string | null = null,
+  ): RunPlan => ({
     folder: "/w/checkout",
     envFile,
     vars,
+    unavailable,
   });
 
   const dialog = () =>
@@ -106,8 +111,8 @@ describe("agent-proof secrets (F-TL-12)", () => {
     const calls = fakeBackend({
       secrets_run_plan: () =>
         plan([
-          { name: "API_KEY", secret: "stripe-test", missing: false },
-          { name: "PORT", secret: null, missing: false },
+          { name: "API_KEY", secret: "stripe-test", missing: false, malformed: false },
+          { name: "PORT", secret: null, missing: false, malformed: false },
         ]),
       secrets_run: () => ({ id: "pn_2", tabId: "tb_1", kind: "terminal" }),
     });
@@ -130,11 +135,33 @@ describe("agent-proof secrets (F-TL-12)", () => {
   });
 
   it("F-TL-12.4 a missing secret is named and Run stays disabled", async () => {
-    fakeBackend({ secrets_run_plan: () => plan([{ name: "API_KEY", secret: "gone", missing: true }]) });
+    fakeBackend({ secrets_run_plan: () => plan([{ name: "API_KEY", secret: "gone", missing: true, malformed: false }]) });
     dialog();
     const v = await screen.findByTestId("run-var");
     expect(v.dataset.missing).toBe("true");
     expect(v.textContent).toContain("No secret named gone");
+    fireEvent.change(screen.getByTestId("run-command"), { target: { value: "pnpm dev" } });
+    expect((screen.getByTestId("run-start") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("F-TL-12.4 a malformed reference is flagged and Run stays disabled", async () => {
+    fakeBackend({
+      secrets_run_plan: () => plan([{ name: "API_KEY", secret: null, missing: false, malformed: true }]),
+    });
+    dialog();
+    const v = await screen.findByTestId("run-var");
+    expect(v.dataset.malformed).toBe("true");
+    expect(v.textContent).toContain("Not a valid vibezeo-secret:// reference");
+    fireEvent.change(screen.getByTestId("run-command"), { target: { value: "pnpm dev" } });
+    expect((screen.getByTestId("run-start") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("F-TL-12.5 where the shell can't keep the values to the command, Run says why and stays disabled", async () => {
+    fakeBackend({
+      secrets_run_plan: () => plan([], null, "Run with secrets needs a POSIX shell, fish or PowerShell"),
+    });
+    dialog();
+    expect(await screen.findByText("Run with secrets needs a POSIX shell, fish or PowerShell")).toBeTruthy();
     fireEvent.change(screen.getByTestId("run-command"), { target: { value: "pnpm dev" } });
     expect((screen.getByTestId("run-start") as HTMLButtonElement).disabled).toBe(true);
   });

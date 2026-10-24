@@ -8,4 +8,9 @@ export type RunPlan = { folder: string,
 /**
  * The `.env` path, when the folder has one.
  */
-envFile: string | null, vars: Array<RunVar>, };
+envFile: string | null, vars: Array<RunVar>, 
+/**
+ * Why Run can't start here (the pane's terminals open in WSL, or its
+ * shell can't keep the values to one command).
+ */
+unavailable: string | null, };

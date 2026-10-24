@@ -41,12 +41,19 @@ pub struct EnvVar {
 
 /// Parses a `.env` file: `KEY=value` lines, an optional `export `, single or
 /// double quotes (double quotes take `\n`, `\"` and `\\`), and `#` comments
-/// (whole lines, or after an unquoted value's whitespace). Lines that aren't
-/// assignments are skipped; a later line for the same name wins.
+/// (whole lines, or after an unquoted value's whitespace). A leading BOM is
+/// dropped. A quoted value may run over several lines up to its closing
+/// quote; one that never closes is skipped and the lines after it are read
+/// as usual. Lines that aren't assignments are skipped; a later line for the
+/// same name wins.
 pub fn parse_env(text: &str) -> Vec<EnvVar> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let lines: Vec<&str> = text.lines().collect();
     let mut out: Vec<EnvVar> = Vec::new();
-    for line in text.lines() {
-        let line = line.trim_start();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i].trim_start();
+        i += 1;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -58,7 +65,29 @@ pub fn parse_env(text: &str) -> Vec<EnvVar> {
         if !valid_var(name) {
             continue;
         }
-        let value = unquote(rest.trim_start());
+        let rest = rest.trim_start();
+        let value = match rest.chars().next() {
+            Some(q @ ('"' | '\'')) => {
+                let mut body = rest[1..].to_string();
+                let mut next = i;
+                loop {
+                    if let Some(v) = closed(&body, q) {
+                        i = next;
+                        break Some(v);
+                    }
+                    let Some(more) = lines.get(next) else {
+                        break None;
+                    };
+                    body.push('\n');
+                    body.push_str(more);
+                    next += 1;
+                }
+            }
+            _ => Some(unquoted(rest)),
+        };
+        let Some(value) = value else {
+            continue;
+        };
         out.retain(|v| v.name != name);
         out.push(EnvVar {
             name: name.to_string(),
@@ -74,33 +103,42 @@ fn valid_var(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-fn unquote(rest: &str) -> String {
-    if let Some(body) = rest.strip_prefix('"') {
-        let mut out = String::new();
-        let mut chars = body.chars();
-        while let Some(c) = chars.next() {
-            match c {
-                '"' => break,
-                '\\' => match chars.next() {
-                    Some('n') => out.push('\n'),
-                    Some(other) => out.push(other),
-                    None => break,
-                },
-                c => out.push(c),
-            }
+/// A quoted value's text up to its closing `quote`; `None` while it's open.
+fn closed(body: &str, quote: char) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = body.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            c if c == quote => return Some(out),
+            '\\' if quote == '"' => match chars.next() {
+                Some('n') => out.push('\n'),
+                Some(other) => out.push(other),
+                None => return None,
+            },
+            c => out.push(c),
         }
-        out
-    } else if let Some(body) = rest.strip_prefix('\'') {
-        body.split('\'').next().unwrap_or_default().to_string()
-    } else {
-        // An unquoted value ends at a ` #` comment.
-        let end = rest
-            .char_indices()
-            .find(|&(i, c)| c == '#' && i > 0 && rest[..i].ends_with([' ', '\t']))
-            .map(|(i, _)| i)
-            .unwrap_or(rest.len());
-        rest[..end].trim_end().to_string()
     }
+    None
+}
+
+/// An unquoted value ends at a ` #` comment.
+fn unquoted(rest: &str) -> String {
+    let end = rest
+        .char_indices()
+        .find(|&(i, c)| c == '#' && i > 0 && rest[..i].ends_with([' ', '\t']))
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    rest[..end].trim_end().to_string()
+}
+
+/// A value that looks like a reference but isn't one (a bad name, spaces, a
+/// different case): a run refuses it rather than pass the text through.
+pub fn malformed(value: &str) -> bool {
+    reference(value).is_none()
+        && value
+            .trim()
+            .get(..SCHEME.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(SCHEME))
 }
 
 /// What a run would use: each variable, and the secret it refers to.
@@ -109,6 +147,8 @@ pub struct Planned {
     pub name: String,
     /// The secret's name, for a reference.
     pub secret: Option<String>,
+    /// The value looks like a reference but isn't a valid one.
+    pub malformed: bool,
 }
 
 pub fn plan(vars: &[EnvVar]) -> Vec<Planned> {
@@ -116,14 +156,21 @@ pub fn plan(vars: &[EnvVar]) -> Vec<Planned> {
         .map(|v| Planned {
             name: v.name.clone(),
             secret: reference(&v.value).map(str::to_string),
+            malformed: malformed(&v.value),
         })
         .collect()
 }
 
-/// A reference to a secret that doesn't exist.
+/// Why a `.env` can't be resolved.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("No secret named {0}")]
-pub struct Missing(pub String);
+pub enum ResolveError {
+    /// A reference to a secret that doesn't exist.
+    #[error("No secret named {0}")]
+    Missing(String),
+    /// A variable whose value looks like a reference but isn't one.
+    #[error("{0} isn't a valid vibezeo-secret:// reference")]
+    Malformed(String),
+}
 
 /// The environment a run gets, references replaced by `lookup`'s values, and
 /// the values to mask in its pane.
@@ -135,16 +182,18 @@ pub struct Resolved {
 pub fn resolve(
     vars: &[EnvVar],
     mut lookup: impl FnMut(&str) -> Option<String>,
-) -> Result<Resolved, Missing> {
+) -> Result<Resolved, ResolveError> {
     let mut env = BTreeMap::new();
     let mut secrets = Vec::new();
     for v in vars {
         let value = match reference(&v.value) {
             Some(secret) => {
-                let value = lookup(secret).ok_or_else(|| Missing(secret.to_string()))?;
+                let value =
+                    lookup(secret).ok_or_else(|| ResolveError::Missing(secret.to_string()))?;
                 secrets.push(value.clone());
                 value
             }
+            None if malformed(&v.value) => return Err(ResolveError::Malformed(v.name.clone())),
             None => v.value.clone(),
         };
         env.insert(v.name.clone(), value);
@@ -207,11 +256,13 @@ mod tests {
             vec![
                 Planned {
                     name: "API_KEY".into(),
-                    secret: Some("stripe-test".into())
+                    secret: Some("stripe-test".into()),
+                    malformed: false,
                 },
                 Planned {
                     name: "PORT".into(),
-                    secret: None
+                    secret: None,
+                    malformed: false,
                 },
             ]
         );
@@ -229,5 +280,54 @@ mod tests {
         let vars = parse_env("A=vibezeo-secret://gone\n");
         let err = resolve(&vars, |_| None).err().expect("missing");
         assert_eq!(err.to_string(), "No secret named gone");
+    }
+
+    #[test]
+    fn f_tl_12_a_bom_is_dropped_and_quoted_values_may_span_lines() {
+        let text = "\u{feff}FIRST=1\nKEY=\"-----BEGIN\nabc\n-----END\"\nSINGLE='a\nb'\nAFTER=2\n";
+        let got: Vec<(String, String)> = parse_env(text)
+            .into_iter()
+            .map(|v| (v.name, v.value))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("FIRST".into(), "1".into()),
+                ("KEY".into(), "-----BEGIN\nabc\n-----END".into()),
+                ("SINGLE".into(), "a\nb".into()),
+                ("AFTER".into(), "2".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn f_tl_12_an_unclosed_quote_skips_only_its_variable() {
+        let got: Vec<String> = parse_env("A=\"open\nB=2\nC='3'\n")
+            .into_iter()
+            .map(|v| format!("{}={}", v.name, v.value))
+            .collect();
+        assert_eq!(got, vec!["B=2".to_string(), "C=3".to_string()]);
+    }
+
+    #[test]
+    fn f_tl_12_4_a_malformed_reference_is_flagged_and_refused() {
+        for bad in [
+            "vibezeo-secret://Stripe",
+            "vibezeo-secret://",
+            "VIBEZEO-SECRET://stripe",
+            " vibezeo-secret://stripe",
+            "vibezeo-secret://a b",
+        ] {
+            assert!(malformed(bad), "{bad}");
+        }
+        for fine in ["vibezeo-secret://stripe", "sk_live", "http://x"] {
+            assert!(!malformed(fine), "{fine}");
+        }
+        let vars = parse_env("KEY=\"vibezeo-secret://Stripe\"\n");
+        assert!(plan(&vars)[0].malformed);
+        assert_eq!(
+            resolve(&vars, |_| Some("x".into())).err(),
+            Some(ResolveError::Malformed("KEY".into()))
+        );
     }
 }

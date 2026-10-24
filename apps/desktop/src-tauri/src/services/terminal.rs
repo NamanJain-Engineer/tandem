@@ -810,6 +810,36 @@ impl TerminalService {
         self.runs.lock().ok()?.remove(pane.as_str())
     }
 
+    /// A closed pane's parked run goes, values and all.
+    pub fn drop_run(&self, pane: &str) {
+        if let Ok(mut runs) = self.runs.lock() {
+            runs.remove(pane);
+        }
+    }
+
+    /// Why Run with secrets can't start in this app's local panes, if it
+    /// can't: plain terminals open in WSL, or the shell can't hand the
+    /// variables to one command only.
+    pub async fn run_blocked(&self) -> Option<&'static str> {
+        if self.plain_wsl_distro().await.is_some() {
+            return Some(RUN_IN_WSL);
+        }
+        let login = self.login_env().await;
+        let shell = self.plain_shell(&login).await.ok()?;
+        (env::shell_kind(&shell) == env::ShellKind::Cmd).then_some(RUN_NEEDS_SHELL)
+    }
+
+    /// The shell a local plain terminal starts: Settings › Terminal's, or
+    /// the login shell.
+    async fn plain_shell(&self, login: &LoginEnv) -> Result<PathBuf, IpcError> {
+        let configured = settings::get(&self.store, SettingKey::DefaultShell).await?;
+        Ok(configured
+            .as_str()
+            .filter(|s| !s.is_empty() && Path::new(s).is_absolute())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| login.shell.clone()))
+    }
+
     /// The pane's first start resumes its saved session instead of starting
     /// a new one (F-TH-17).
     pub fn resume_on_first_start(&self, pane: &PaneId) {
@@ -957,6 +987,10 @@ impl TerminalService {
         if record.kind != "agent" {
             if let Some(distro) = self.plain_wsl_distro().await {
                 if let Some(linux) = tandem_core::wslpath::to_wsl_path(&cwd.to_string_lossy()) {
+                    if self.take_run(pane).is_some() {
+                        // The values would cross into the distro unmasked.
+                        return Err(IpcError::new(ErrorCode::Unavailable, RUN_IN_WSL));
+                    }
                     return self
                         .launch_wsl(pane, &distro, &linux, None, cols, rows, sink, mode)
                         .await;
@@ -964,12 +998,7 @@ impl TerminalService {
             }
         }
         let login = self.login_env().await;
-        let configured = settings::get(&self.store, SettingKey::DefaultShell).await?;
-        let shell = configured
-            .as_str()
-            .filter(|s| !s.is_empty() && Path::new(s).is_absolute())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| login.shell.clone());
+        let shell = self.plain_shell(&login).await?;
         let scrollback = settings::get(&self.store, SettingKey::TermScrollback)
             .await?
             .as_u64()
@@ -1063,12 +1092,8 @@ impl TerminalService {
             // Run with secrets: the variables reach the command only, and
             // the shell after it starts without them (F-TL-12).
             let names: Vec<String> = run.env.iter().map(|(k, _)| k.clone()).collect();
-            let args = env::run_wrapper(&shell, &run.command, &names).ok_or_else(|| {
-                IpcError::new(
-                    ErrorCode::Invalid,
-                    "Run with secrets needs a POSIX shell, fish or PowerShell",
-                )
-            })?;
+            let args = env::run_wrapper(&shell, &run.command, &names)
+                .ok_or_else(|| IpcError::new(ErrorCode::Invalid, RUN_NEEDS_SHELL))?;
             run_mask = Some(run.mask);
             (args, run.env, None, None)
         } else if let Some((kind, dir)) = &integration {
@@ -1718,6 +1743,12 @@ impl TerminalService {
     }
 }
 
+/// Run with secrets doesn't start in a pane that opens in WSL.
+pub const RUN_IN_WSL: &str = "Run with secrets doesn't work in terminals that open in WSL yet";
+
+/// Run with secrets needs a shell that can unset the variables after the command.
+pub const RUN_NEEDS_SHELL: &str = "Run with secrets needs a POSIX shell, fish or PowerShell";
+
 /// The `wsl_default_distro` setting as a distro name `wsl.exe -d` can take.
 fn plain_distro(value: &serde_json::Value) -> Option<String> {
     value
@@ -2031,6 +2062,25 @@ mod tests {
         assert_eq!(plain_distro(&serde_json::json!(null)), None);
         assert_eq!(plain_distro(&serde_json::json!("")), None);
         assert_eq!(plain_distro(&serde_json::json!("--exec")), None);
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_a_closed_panes_parked_run_goes_with_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = TerminalService::new(PtyManager::new(), store);
+        let pane = PaneId::from_db("pn_run".to_string());
+        svc.set_pending_run(
+            &pane,
+            crate::services::secrets::PendingRun {
+                command: "true".into(),
+                env: vec![("A".into(), "value-1".into())],
+                mask: Vec::new(),
+            },
+        );
+        svc.drop_run(pane.as_str());
+        assert!(svc.take_run(&pane).is_none());
     }
 
     #[tokio::test]
