@@ -7,10 +7,11 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
-## Unreleased
+## 0.10.0
 
-Everything that runs on your computer is free and unlimited, with no
-account. Features that need Vibezeo's servers (cloud dictation, Enhance and
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free, with no paid plans, and from this release everything that
+runs on your computer is free and unlimited, with no account. Features that need Vibezeo's servers (cloud dictation, Enhance and
 Polish, dictionary sync, Conductor, Auto, Create with AI and the phone relay)
 come with Vibezeo accounts.
 

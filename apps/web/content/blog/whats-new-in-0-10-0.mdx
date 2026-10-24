@@ -1,0 +1,49 @@
+---
+title: What's new in 0.10.0
+description: Everything that runs on your computer is free, with no limits. As many panes, workspaces, engine accounts, teammates and plugin connections as you need, six threads side by side with every chat engine, and routines, task runs, the Night Shift and session search switched on.
+date: 2026-10-24
+author: Naman Jain
+tags: [release, free, linux]
+---
+
+Vibezeo 0.10.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Vibezeo is free, with no paid plans, and from this release nothing that runs on your computer is limited. As before, it needs no account and sends nothing to our servers.
+
+## No limits on your computer
+
+0.9.0 still had the earlier Free plan's limits. They're gone:
+
+- **Panes and workspaces:** as many live terminal panes and workspaces as your computer can run. 0.9.0 allowed 4 panes and 3 workspaces.
+- **Engine accounts:** as many accounts per engine as you like, each signed in by itself in its own folder. 0.9.0 allowed one.
+- **Threads:** up to six side by side, with Claude Code, Codex, Cursor Agent, Grok and OpenCode. 0.9.0 showed one at a time, with Claude Code and Codex only.
+- **Teammates and plugins:** as many teammates and plugin connections as you need. 0.9.0 allowed one of each.
+
+## Routines, task runs, the Night Shift and session search, switched on
+
+These features were built but switched off. They now work for everyone, with no account and no sign-in:
+
+- **Routines** run a teammate on a schedule: every day at a set time, on chosen weekdays, at an interval or on a cron expression. They run while Vibezeo is open or, if you turn it on, in the background through your system's scheduler.
+- **Execute…** on a task runs it for you in its own lane, posts its progress as comments, and can ask a different engine to review the result.
+- **The Night Shift** starts a task when an account's usage window resets: **Run at reset…** on a task queues it for that account, so work you hand over at night carries on.
+- **Search session text** in the session library searches what your Claude Code and Codex sessions say, from an index kept on your computer. It's off until you turn it on in Settings › Privacy.
+
+## What comes with Vibezeo accounts
+
+A few features run on Vibezeo's servers: cloud dictation, Enhance and Polish, dictionary sync, Conductor's calls, the Auto supervisor, drafting a teammate with Create with AI, and the phone relay for use away from your network. They say "Comes with Vibezeo accounts", and they switch on when accounts open. Everything else runs on your computer, including Dictate's speech recognition.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.10.0_amd64.deb
+sudo apt install ./Vibezeo_0.10.0_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.10.0-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.10.0-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The full notes are in the [changelog](/changelog/0.10.0/).
