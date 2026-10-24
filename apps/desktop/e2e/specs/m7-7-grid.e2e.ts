@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, planFooter, relaunch, setPlan, signInDesktop } from "../support/app";
+import { freshUser, invoke, planFooter, relaunch, signInDesktop } from "../support/app";
 import { threadMode } from "../support/thread";
 
 async function cells(): Promise<string[]> {
@@ -31,7 +31,8 @@ async function toasts(): Promise<string> {
 }
 
 // E2E-M7-7 Grid (F-TH-14): dragging seven threads in shows six and says the
-// grid is full; the grid comes back after a relaunch; Free shows one thread.
+// grid is full; the grid comes back after a relaunch. No plan is needed for
+// six (D-2900).
 describe("E2E-M7-7 grid", () => {
   let email = "";
   const ids: string[] = [];
@@ -39,8 +40,7 @@ describe("E2E-M7-7 grid", () => {
   before(async function () {
     this.timeout(120_000);
     ({ email } = await freshUser("m7-7"));
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+
     await threadMode();
     for (let i = 0; i < 7; i++) {
       ids.push(
@@ -74,26 +74,12 @@ describe("E2E-M7-7 grid", () => {
     await relaunch();
     // The E2E keychain lives in memory: sign in again (the grid is a setting).
     await signInDesktop(email);
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await browser.waitUntil(async () => (await planFooter()) === "Free", { timeout: 20_000 });
     await threadMode();
     await browser.waitUntil(async () => (await cells()).length === 6, {
       timeout: 20_000,
       timeoutMsg: `cells: ${JSON.stringify(await cells())}`,
     });
     expect(await cells()).toEqual(ids.slice(0, 6));
-  });
-
-  it("F-TH-14.1 a Free account shows one thread at a time", async function () {
-    this.timeout(60_000);
-    await setPlan(email, "free");
-    await invoke("entitlement_refresh");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("FREE"), { timeout: 20_000 });
-    await browser.waitUntil(async () => (await cells()).length === 0, { timeout: 10_000 });
-    expect(await $('[data-testid="thread-main"]').isExisting()).toBe(true);
-    await dragIn(ids[6] ?? "");
-    await browser.waitUntil(async () => (await toasts()).includes("Free shows 1 thread at a time"), {
-      timeout: 5_000,
-    });
-    expect(await cells()).toEqual([]);
   });
 });

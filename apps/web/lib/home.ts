@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code and Codex in this release; Cursor Agent, Grok and OpenCode join them in the next.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
   },
   {
     title: "Switch engines mid-thread",
@@ -54,7 +54,7 @@ export const FEATURES = [
   },
   {
     title: "Teammates",
-    body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Free includes one teammate besides Lead.",
+    body: "Agent mode keeps named teammates that run on the engines you already use. Each has a brief, notes it remembers between chats and skills it can read; after a turn it can suggest what to remember, for you to keep or discard. Teammates search their past chats and send each other mail. Make as many as you need.",
   },
   {
     title: "Find work by what it's about",
@@ -66,7 +66,7 @@ export const FEATURES = [
   },
   {
     title: "Plugins with approvals",
-    body: "Connect services such as Linear, Notion, Sentry or GitHub once, then choose which teammates and threads may use them. Reads run; writes, posts, spending and deletions ask you first, and runs nobody is watching hold them for your review. Credentials stay in your keychain and engines never see them. Free includes one connection.",
+    body: "Connect services such as Linear, Notion, Sentry or GitHub once, then choose which teammates and threads may use them. Reads run; writes, posts, spending and deletions ask you first, and runs nobody is watching hold them for your review. Credentials stay in your keychain and engines never see them.",
   },
   {
     title: "Tasks",
@@ -74,7 +74,7 @@ export const FEATURES = [
   },
   {
     title: "Several accounts per engine",
-    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. This release has one account per engine; the next has as many as you need.",
+    body: "Keep work and personal accounts apart, each signed in by itself, with usage, limits and context in view. Add as many as you need.",
   },
   {
     title: "Notifications that matter",
@@ -115,10 +115,6 @@ export const CLAUDE = [
 
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
-  {
-    title: "Everything free, with no limits",
-    body: "Vibezeo is free, with no paid plans. The next release removes the limits left from the old Free plan: as many panes, workspaces and engine accounts as you need, six threads side by side, every chat engine in Thread mode, routines, tasks run in their own lanes, the Night Shift and the session library's search.",
-  },
   {
     title: "Multi-repo workspaces, claims and any ACP agent",
     body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
@@ -197,7 +193,7 @@ export const FAQ = [
   },
   {
     q: "Is Vibezeo free?",
-    a: "Yes. Vibezeo is free, with no paid plans. Your agents run on the AI subscriptions you already have.",
+    a: "Yes. Vibezeo is free, with no paid plans and no limits on what runs on your computer. Your agents run on the AI subscriptions you already have.",
   },
 ] as const;
 

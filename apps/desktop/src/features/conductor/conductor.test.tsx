@@ -192,17 +192,18 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
 });
 
 describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
-  it("F-CN-04 the ring is hidden on Free, where the call command opens the plans", () => {
+  it("F-CN-04 with no account the ring is hidden, and the call command says Conductor comes with accounts (D-2903)", () => {
     render(
       <UiProvider>
         <ConductorButton />
       </UiProvider>,
     );
     expect(screen.queryByTestId("conductor-button")).toBeNull();
-    runCommand("conductor.call");
-    expect(useUi.getState().upgrade.open).toBe(true);
-    // The plans say why they opened (D-833).
-    expect(useUi.getState().upgrade.gate?.kind).toBe("conductor");
+    act(() => runCommand("conductor.call"));
+    // It says why, never silently, and never names a plan or a price (D-833, D-869).
+    const view = useConductor.getState().view;
+    expect(view.phase).toBe("error");
+    expect(view.error).toEqual({ code: "needs_pro", message: "Conductor comes with Vibezeo accounts." });
     expect(named("conductor_start_call")).toHaveLength(0);
   });
 

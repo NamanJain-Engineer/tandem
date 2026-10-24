@@ -1,9 +1,7 @@
 import { siteButton } from "@tandem/ui/components/SiteButton";
-import { LIMITS } from "@tandem/protocol/plans";
 import { Download, Info, ShieldCheck, Terminal } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import registry from "../../../../crates/tandem-engines/registry.json";
 import { CommandLine } from "../../components/site/CommandLine";
 import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
@@ -44,12 +42,9 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
   },
 ];
 
-const engineList = (ids: readonly string[] | null) =>
-  (ids ?? []).map((id) => registry.find((e) => e.id === id)?.label ?? id).join(" and ");
-
 const INCLUDES = [
   "Free, with no paid plans.",
-  `In this release: up to ${LIMITS.free.panes} panes and ${LIMITS.free.workspaces} workspaces, and threads with ${engineList(LIMITS.free.chatEngines)}. The next release removes these limits.`,
+  "No limits on what runs on your computer: as many panes, workspaces and engine accounts as you need.",
   "New versions appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];

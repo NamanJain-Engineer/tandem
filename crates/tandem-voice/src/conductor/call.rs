@@ -946,7 +946,10 @@ impl Failure {
 fn hosted_error(e: &HostedError) -> CallError {
     let (code, message) = match e {
         HostedError::SignedOut => (CallErrorCode::SignedOut, "Sign in to use Conductor."),
-        HostedError::NeedsPro => (CallErrorCode::NeedsPro, "Conductor needs Vibezeo Pro."),
+        HostedError::NeedsPro => (
+            CallErrorCode::NeedsPro,
+            "Conductor comes with Vibezeo accounts.",
+        ),
         HostedError::TurnedOff => (
             CallErrorCode::TurnedOff,
             "Your organization turned Conductor off.",

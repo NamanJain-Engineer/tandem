@@ -75,7 +75,7 @@ describe("the interactive demo's page furniture", () => {
     mount(<TitleBar />);
     expect(screen.queryByRole("button", { name: /credits/i })).toBeNull();
     fireEvent.keyDown(screen.getByRole("button", { name: "Account" }), { key: "Enter" });
-    expect(await screen.findByText("Free plan · no account")).toBeTruthy();
+    expect(await screen.findByText("Free · no account")).toBeTruthy();
     expect(screen.queryByText(/@/)).toBeNull();
   });
 });

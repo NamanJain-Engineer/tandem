@@ -120,7 +120,7 @@ describe("F-PL-03 UI-90 catalog", () => {
     expect(screen.queryByTestId("plugin-card-github")).toBeNull();
   });
 
-  it("F-PL-03 Free's one connection shows Pro on the Connect buttons", async () => {
+  it("F-PL-03 a connection limit the core reports disables Connect and sells nothing (D-869)", async () => {
     calls = fakeBackend({
       plugins_catalog: () => [GITHUB, { ...LINEAR, limitReached: true }],
       held_drafts_list: () => [],
@@ -128,9 +128,9 @@ describe("F-PL-03 UI-90 catalog", () => {
     });
     ui(<PluginsPage />);
     const btn = await screen.findByTestId("plugin-connect-linear");
-    expect(btn.textContent).toBe("Pro");
+    expect(btn.textContent).toBe("At limit");
     expect(btn.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByTestId("plugin-why-linear").textContent).toBe("Free includes one plugin connection.");
+    expect(screen.getByTestId("plugin-why-linear").textContent).toBe("This account's plugin connections are used up.");
     expect(calls.some((c) => c.cmd === "plugin_connect_oauth")).toBe(false);
   });
 

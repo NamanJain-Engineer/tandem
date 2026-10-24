@@ -105,7 +105,6 @@ pub struct SessionStart {
 #[async_trait]
 pub trait ExecHost: Send + Sync {
     fn limits(&self) -> Limits;
-    fn signed_in(&self) -> bool;
     /// The workspace's folder.
     async fn workspace_root(&self, ws: &WorkspaceId) -> Result<PathBuf, IpcError>;
     /// Where the workspace's folder is: `local`, `ssh` or `wsl`.
@@ -338,19 +337,14 @@ impl TaskExecService {
         Ok(a)
     }
 
-    /// Execute… (F-TK-04): needs sign-in and Pro; Full only when chosen.
+    /// Execute… (F-TK-04): runs with no account (D-2902) unless the limits
+    /// turn execution off; Full only when chosen.
     pub async fn execute(self: &Arc<Self>, input: ExecuteInput) -> Result<AttemptView, IpcError> {
         let host = self.host()?;
-        if !host.signed_in() {
-            return Err(IpcError::new(
-                ErrorCode::Unauthenticated,
-                "Sign in to run tasks. Your tasks stay available offline.",
-            ));
-        }
         if !host.limits().task_execution {
             return Err(IpcError::new(
                 ErrorCode::ForbiddenPlan,
-                "Running tasks is part of Pro. You can still track tasks for free.",
+                "Running tasks is turned off for this account. You can still track tasks.",
             ));
         }
         if input.access == Access::Full && !input.full_confirmed {
@@ -903,8 +897,8 @@ pub(crate) mod tests {
     /// Sessions finish when `release` is set (or at once with `instant`).
     #[derive(Default)]
     pub(crate) struct FakeHost {
+        /// `task_execution` in the limits (on with no account since D-2902).
         pub(crate) pro: bool,
-        pub(crate) signed_out: bool,
         pub(crate) instant: bool,
         pub(crate) release: AtomicBool,
         /// Lane creation takes this long (Stop during setup).
@@ -926,9 +920,6 @@ pub(crate) mod tests {
                 task_execution: self.pro,
                 ..Limits::free()
             }
-        }
-        fn signed_in(&self) -> bool {
-            !self.signed_out
         }
         async fn workspace_root(&self, _ws: &WorkspaceId) -> Result<PathBuf, IpcError> {
             Ok("/repo".into())
@@ -1099,28 +1090,17 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn f_tk_04_execution_needs_sign_in_pro_and_an_explicit_full() {
-        let free = fixture(FakeHost::default(), 1).await;
-        let e = free.svc.execute(input("TAN-1")).await.expect_err("free");
+    async fn f_tk_04_execution_needs_it_on_and_an_explicit_full_but_no_account() {
+        let off = fixture(FakeHost::default(), 1).await;
+        let e = off.svc.execute(input("TAN-1")).await.expect_err("off");
         assert_eq!(e.code, ErrorCode::ForbiddenPlan);
         assert_eq!(
             e.message,
-            "Running tasks is part of Pro. You can still track tasks for free."
+            "Running tasks is turned off for this account. You can still track tasks."
         );
-        let out = fixture(
-            FakeHost {
-                pro: true,
-                signed_out: true,
-                ..Default::default()
-            },
-            1,
-        )
-        .await;
-        assert_eq!(
-            out.svc.execute(input("TAN-1")).await.expect_err("out").code,
-            ErrorCode::Unauthenticated
-        );
-        let pro = fixture(
+        // No account and no sign-in: the limits that run with no account
+        // turn execution on (D-869, D-2902).
+        let on = fixture(
             FakeHost {
                 pro: true,
                 ..Default::default()
@@ -1131,10 +1111,14 @@ pub(crate) mod tests {
         let mut full = input("TAN-1");
         full.access = Access::Full;
         assert_eq!(
-            pro.svc.execute(full).await.expect_err("full").code,
+            on.svc.execute(full).await.expect_err("full").code,
             ErrorCode::Invalid
         );
-        assert_eq!(pro.host.spawns.load(Ordering::SeqCst), 0);
+        assert_eq!(on.host.spawns.load(Ordering::SeqCst), 0);
+        on.svc
+            .execute(input("TAN-1"))
+            .await
+            .expect("runs with no account");
     }
 
     #[tokio::test]

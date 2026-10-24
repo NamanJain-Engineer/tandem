@@ -53,9 +53,9 @@ With `pnpm dev` running (API on :8787, web on :3000):
 2. In the desktop app, click **Continue with email**. Your browser opens `http://localhost:3000/desktop-login`; sign in there.
 3. The browser tab says "You can return to Tandem." and the app shows your plan in the rail footer ("FREE", or "PRO · 10,000 credits").
 
-The app listens for the callback on an ephemeral `127.0.0.1` port and also accepts `tandem-dev://auth/callback` (dev builds use the `tandem-dev` scheme). Point the app elsewhere with `TANDEM_API_URL` and `TANDEM_WEB_URL`. **Use Tandem offline** skips the account: Free limits, sign-in needed within 14 days. Tokens are stored AES-GCM encrypted in `$TANDEM_HOME/auth/credentials.enc`, with the key in the OS keychain (`app.tandem.dev.auth` in dev builds).
+The app listens for the callback on an ephemeral `127.0.0.1` port and also accepts `tandem-dev://auth/callback` (dev builds use the `tandem-dev` scheme). Point the app elsewhere with `TANDEM_API_URL` and `TANDEM_WEB_URL`. **Use Tandem offline** skips the account: everything local, unlimited (D-2900); sign-in needed within 14 days. Tokens are stored AES-GCM encrypted in `$TANDEM_HOME/auth/credentials.enc`, with the key in the OS keychain (`app.tandem.dev.auth` in dev builds).
 
-To try the paid path, click **See plans** (account menu) and start the Pro trial: the mock checkout opens in your browser, and the app switches to Pro within a few seconds of completing it.
+Vibezeo is free (D-869): the app sells nothing, so there's no checkout to try. Hosted features follow the seeded account's entitlement (`pro@tandem.test` carries them).
 
 ## Tests
 

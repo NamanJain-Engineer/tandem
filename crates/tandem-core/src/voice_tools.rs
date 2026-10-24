@@ -219,7 +219,7 @@ static TOOLS: &[VoiceToolSpec] = &[
     tool("get_setting", G::App, cmd(&["settings.open"]), Plain),
     tool("set_setting", G::App, cmd(&["settings.open"]), Plain),
     tool("get_usage", G::App, VOICE, Plain),
-    tool("get_credits", G::App, cmd(&["billing.plans"]), Plain),
+    tool("get_credits", G::App, VOICE, Plain),
     tool("check_updates", G::App, VOICE, Plain),
     // Review (F-CN-09): the queue by voice; merging needs the desk.
     tool("review_next", G::Review, VOICE, Plain),

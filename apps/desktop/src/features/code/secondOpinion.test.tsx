@@ -73,7 +73,7 @@ beforeEach(() => {
 afterEach(() => setInvokeBackend(null));
 
 describe("Second opinion (F-WT-05)", () => {
-  it("F-WT-05.4 terminal-only engines can't review, Free shows Pro, and the default isn't the worktree's agent", () => {
+  it("F-WT-05.4 terminal-only engines can't review, limits that list engines say so, and the default isn't the worktree's agent", () => {
     const opts = reviewerOptions(useEngines.getState().list, ["claude", "codex"]);
     expect(opts.find((o) => o.value === "aider")).toMatchObject({
       disabled: true,
@@ -83,8 +83,12 @@ describe("Second opinion (F-WT-05)", () => {
       reviewerOptions(useEngines.getState().list, ["claude"]).find((o) => o.value === "codex"),
     ).toMatchObject({
       disabled: true,
-      disabledReason: "Pro",
+      disabledReason: "Not available to threads here",
     });
+    // With no account every chat engine can review (D-2900).
+    expect(reviewerOptions(useEngines.getState().list, null).find((o) => o.value === "codex")?.disabled).toBe(
+      false,
+    );
     expect(defaultReviewer(opts, ["claude"])).toBe("codex");
     expect(defaultReviewer(opts, ["claude", "codex"])).toBe("claude");
   });

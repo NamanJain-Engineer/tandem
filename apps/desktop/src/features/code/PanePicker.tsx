@@ -6,7 +6,6 @@ import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { useLayout, type Launch } from "../../stores/layout";
 import { useSession } from "../../stores/session";
-import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 import { LaunchGrid } from "./LaunchGrid";
 
@@ -20,23 +19,18 @@ export function atPaneLimit(): boolean {
   return limit !== null && liveTotal() >= limit;
 }
 
-/** "Free includes 4 live panes" (UI_SPEC copy table). No process starts. */
+/** Shown only when limits cap live panes, which none do with no account
+ * (D-869, D-2900). No process starts. */
 export function PaneLimitCard({ onManage }: { onManage: () => void }) {
-  const limit = useSession((s) => s.entitlement?.limits.panes ?? 4);
-  const openUpgrade = useUi((s) => s.openUpgrade);
+  const limit = useSession((s) => s.entitlement?.limits.panes ?? 0);
   return (
     <Callout
       tone="accent"
       title={t("limit.panes.title", { n: limit })}
       actions={
-        <>
-          <Button size="sm" variant="primary" onClick={() => openUpgrade({ kind: "panes", limit })}>
-            {t("limit.panes.plans")}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onManage}>
-            {t("limit.panes.manage")}
-          </Button>
-        </>
+        <Button size="sm" variant="primary" onClick={onManage}>
+          {t("limit.panes.manage")}
+        </Button>
       }
     >
       <p data-testid="pane-limit">{t("limit.panes.body")}</p>
@@ -51,8 +45,8 @@ export function launchFor(tileId: string): Launch {
   return { kind: "agent", engineId: tileId };
 }
 
-/** The picker a split opens (F-CD-02). At the live-pane limit it shows the
- * upgrade card instead, and nothing is spawned (F-CD-03). */
+/** The picker a split opens (F-CD-02). At a live-pane limit it shows the
+ * limit card instead, and nothing is spawned (F-CD-03). */
 export function PanePicker({ workspaceName }: { workspaceName: string }) {
   const picker = useLayout((s) => s.picker);
   const closePicker = useLayout((s) => s.closePicker);

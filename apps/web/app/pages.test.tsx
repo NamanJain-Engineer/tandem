@@ -1,11 +1,8 @@
-import { LIMITS } from "@tandem/protocol/plans";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RELEASES, versionPath } from "../lib/changelog";
 import { formatSize, releaseAssets } from "../lib/manifest";
-import { planLimitsTable } from "../lib/docs/tables";
-import { LIMIT_ROWS } from "../lib/limits";
 import { RELEASE } from "../lib/release";
 import AboutPage from "./about/page.site";
 import ChangelogPage from "./changelog/page.site";
@@ -24,16 +21,11 @@ import TermsPage from "./terms/page.site";
 const html = (el: ReactElement) => renderToStaticMarkup(el);
 
 describe("inner pages", () => {
-  it("F-WB-01 the docs' limits table is this release's LIMITS.free, with no plans beside it (D-869)", () => {
-    const table = planLimitsTable();
-    expect(table.head).toEqual(["Limit", "This release"]);
-    const value = (key: string) => LIMIT_ROWS.find((r) => r.key === key)?.value;
-    expect(value("panes")).toBe(String(LIMITS.free.panes));
-    expect(value("workspaces")).toBe(String(LIMITS.free.workspaces));
-    expect(value("threadGrid")).toBe(String(LIMITS.free.threadGrid));
-    expect(value("accountsPerEngine")).toBe(String(LIMITS.free.accountsPerEngine));
-    expect(value("chatEngines")).toBe("Claude Code, Codex");
-    expect(table.rows.map((r) => r.key)).toEqual(LIMIT_ROWS.map((r) => r.key));
+  it("F-WB-01 /download says it's free with no limits, and never that a release keeps or removes them (D-869, D-2900)", () => {
+    const h = html(<DownloadPage />);
+    expect(h).toContain("Free, with no paid plans.");
+    expect(h).toContain("No limits on what runs on your computer");
+    expect(h).not.toMatch(/next release|In this release: up to|\bPro\b/);
   });
 
   it("F-WB-01 /download shows the build's size, file and install command", () => {

@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { AuthState } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { useSession } from "../../stores/session";
-import { useUi } from "../../stores/ui";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
-import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { AccountPage } from "../settings/AccountPage";
 import { SignIn } from "./SignIn";
 
@@ -24,7 +22,7 @@ const EARLY_ACCESS_IN_USE: AuthState = { ...EARLY_ACCESS_NEW, offline: true };
 describe("early-access builds (D-105)", () => {
   beforeEach(() => resetStores());
 
-  it("welcome offers the local Free plan and no sign-in", async () => {
+  it("F-WB-01 welcome says it's free, with no account and nothing sent, and offers no sign-in (D-869)", async () => {
     const calls = fakeBackend();
     useSession.setState({ auth: EARLY_ACCESS_NEW });
     render(
@@ -32,7 +30,9 @@ describe("early-access builds (D-105)", () => {
         <SignIn />
       </UiProvider>,
     );
-    expect(screen.getByText("Free plan")).toBeTruthy();
+    expect(screen.getByTestId("signin-free").textContent).toBe("Free · no account · nothing sent to Vibezeo");
+    // No plan, limit or price on the welcome (D-2900).
+    expect(screen.queryByText(/Free plan|panes|workspaces|\bPro\b|\bTeam\b|\$/)).toBeNull();
     // A released build doesn't read as unfinished.
     expect(screen.queryByText(/early access|at launch/i)).toBeNull();
     expect(screen.queryByText("Continue with Google")).toBeNull();
@@ -54,7 +54,7 @@ describe("early-access builds (D-105)", () => {
     expect(screen.getByText("Use Vibezeo offline")).toBeTruthy();
   });
 
-  it("Account & Plan explains early access without a sign-in button", () => {
+  it("Account explains that everything local is free, without a sign-in button", () => {
     fakeBackend();
     useSession.setState({ auth: EARLY_ACCESS_IN_USE });
     render(
@@ -62,25 +62,10 @@ describe("early-access builds (D-105)", () => {
         <AccountPage />
       </UiProvider>,
     );
-    expect(screen.getByTestId("account-early-access").textContent).toContain(
-      "Pro and Team start with Vibezeo accounts",
-    );
+    const text = screen.getByTestId("account-early-access").textContent ?? "";
+    expect(text).toContain("Everything on this computer is free");
+    expect(text).toContain("come with Vibezeo accounts");
+    expect(text).not.toMatch(/\bPro\b|\bTeam\b|plan/);
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
-  });
-
-  it("the plans sheet can't start a checkout", () => {
-    fakeBackend();
-    useSession.setState({ auth: EARLY_ACCESS_IN_USE });
-    useUi.setState({ upgrade: { open: true } });
-    render(
-      <UiProvider>
-        <UpgradeDialog />
-      </UiProvider>,
-    );
-    expect(screen.getByTestId("upgrade-early-access")).toBeTruthy();
-    expect((screen.getByTestId("upgrade-pro") as HTMLButtonElement).disabled).toBe(true);
-    // No sign-in exists here, so neither plan says to sign in (D-833).
-    expect(screen.getAllByText("Comes with Vibezeo accounts")).toHaveLength(2);
-    expect(screen.queryByText("Sign in to upgrade")).toBeNull();
   });
 });

@@ -106,49 +106,47 @@ Positioning principles, which drive defaults:
 
 ## 3. Plans, entitlements and credits
 
+**Vibezeo is free (D-869).** There are no paid plans, prices, trials or refunds, and nothing in the app or on the site sells a tier. Every feature that runs on the person's computer is free and unlimited, with no account (D-2900). Features that need Vibezeo's servers (marked *hosted* below) come with Vibezeo accounts and stay off until accounts open. The plan ids `free`, `pro` and `team` remain inside the code for the hosted API's signed entitlement (ARCHITECTURE §14.4), but nothing user-facing names them; `free` is what runs with no account, and the account plans are never less than it.
+
 ### 3.1 Plans
 
-| | **Free** | **Pro** | **Team** |
-|---|---|---|---|
-| Price | $0 | $29/mo or $290/yr | $49 per seat per month (min 2 seats), annual $490/seat/yr |
-| Credits included | 0 (can't buy packs) | 10,000/mo | 10,000 per seat per month, pooled at org level |
-| Credit packs | ✗ | ✓ | ✓ (org admin buys) |
-| Trial | — | 7-day free trial, card required, cancel any time | 14-day trial |
-| Refund | — | 14-day money-back on first charge | 14-day money-back |
+None to choose from. The earlier Free, Pro and Team tiers, with their prices and trials, were removed by D-869; F-BL-01 (checkout), F-BL-02 (portal), F-BL-04 (dunning and lapse) and F-BL-05 (refunds) are not offered in the app, and the hosted API keeps its billing routes undeployed.
 
 ### 3.2 Entitlement matrix
-The server enforces every row. The client enforces them as a UX courtesy only.
+The server enforces every row of a signed entitlement. The client enforces them as a UX courtesy only, and with no account applies the first column (`LIMITS.free`, `Limits::free()`).
 
-| Capability | Free | Pro | Team | Feature IDs |
-|---|---|---|---|---|
-| Live terminal/agent panes (all workspaces combined) | 4 | Unlimited (soft cap 64) | Unlimited | F-CD-03 |
-| Workspaces | 3 | Unlimited | Unlimited | F-CD-01 |
-| Thread mode (threads open at once in grid) | 1 | 6 | 6 | F-TH-14 |
-| Chat engines in Thread | Claude Code, Codex | All | All | F-TH-04..06 |
-| Teammates | 1 (besides Lead) | Unlimited | Unlimited | F-AG-01 |
-| Routines | ✗ | ✓ | ✓ | F-RT-* |
-| Background routines (app closed) | ✗ | ✓ | ✓ | F-RT-03 |
-| Tasks tracker + MCP | ✓ (execution ✗) | ✓ | ✓ | F-TK-* |
-| Plugin connections | 1 | Unlimited | Unlimited + org-shared allowlist | F-PL-* |
-| Worktree lanes, presets | ✓ | ✓ | ✓ | F-CD-14/15 |
-| Handoff | ✓ | ✓ | ✓ | F-CD-16 |
-| Multi-account per engine | 1 per engine | Unlimited | Unlimited | F-AC-* |
-| Dictate (local models) | ✓ Unlimited | ✓ | ✓ | F-DI-* |
-| Dictate cloud STT / Enhance | ✗ | ✓ (credits) | ✓ (credits) | F-DI-05/10 |
-| Conductor voice assistant | ✗ | ✓ (credits) | ✓ (credits) | F-CN-* |
-| Auto supervisor | ✗ | ✓ (credits) | ✓ (credits) | F-AU-01 |
-| SSH / WSL workspaces | ✓ | ✓ | ✓ | F-RM-01/02 |
-| Phone companion | ✗ | ✓ | ✓ | F-RM-03 |
-| Admin policy, audit log, seat mgmt | ✗ | ✗ | ✓ | F-BL-06, F-TL-10 |
-| SSO (SAML/OIDC) | ✗ | ✗ | P2 | F-BL-06 |
-| Updates | ✓ always, including lapsed plans | ✓ | ✓ | F-SH-06 |
+| Capability | No account (`free`) | With a Vibezeo account | Feature IDs |
+|---|---|---|---|
+| Live terminal/agent panes (all workspaces combined) | Unlimited | Unlimited | F-CD-03 |
+| Workspaces | Unlimited | Unlimited | F-CD-01 |
+| Thread mode (threads open at once in grid) | 6 | 6 | F-TH-14 |
+| Chat engines in Thread | All | All | F-TH-04..06 |
+| Teammates | Unlimited | Unlimited | F-AG-01 |
+| Routines | ✓ | ✓ | F-RT-* |
+| Background routines (app closed) | ✓ | ✓ | F-RT-03 |
+| Tasks tracker + MCP, and running tasks | ✓ | ✓ | F-TK-* |
+| Session search | ✓ | ✓ | F-TH-17 |
+| Plugin connections | Unlimited | Unlimited (+ org-shared allowlist) | F-PL-* |
+| Worktree lanes, presets | ✓ | ✓ | F-CD-14/15 |
+| Handoff | ✓ | ✓ | F-CD-16 |
+| Multi-account per engine | Unlimited | Unlimited | F-AC-* |
+| Dictate (local models) | ✓ | ✓ | F-DI-* |
+| Dictate cloud STT / Enhance (*hosted*) | ✗ | ✓ (credits) | F-DI-05/10 |
+| Dictionary sync (*hosted*) | ✗ | ✓ | F-DI-09 |
+| Conductor voice assistant (*hosted*) | ✗ | ✓ (credits) | F-CN-* |
+| Auto supervisor (*hosted*) | ✗ | ✓ (credits) | F-AU-01 |
+| SSH / WSL workspaces | ✓ | ✓ | F-RM-01/02 |
+| Phone companion over the local network | ✓ | ✓ | F-RM-04 |
+| Phone relay (*hosted*) | ✗ | ✓ | F-RM-03 |
+| Admin policy, audit log, seat mgmt (*hosted*) | ✗ | Organizations | F-BL-06, F-TL-10 |
+| SSO (SAML/OIDC) | ✗ | P2 | F-BL-06 |
+| Updates | ✓ always | ✓ | F-SH-06 |
 
-**Lapse behavior.** When Pro lapses (cancelled at period end, or past_due for more than 7 days), the account drops to Free limits:
-- Existing panes beyond the limit keep running until closed. New ones are blocked with an upgrade prompt.
-- Routines pause (they are not deleted).
-- Data is never deleted because of a plan change.
+A signed entitlement could still carry a limit (none does); the client then enforces it with neutral copy ("This account runs up to {n} live panes") and never offers a plan (UI_SPEC UI-122). **Limits that turn routines off** pause them; they are never deleted. Data is never deleted because of an entitlement change.
 
 ### 3.3 Credits
+
+Kept for the hosted API, which isn't deployed. Nothing in the app or on the site shows these prices or sells credit packs (D-869); how hosted features are paid for is decided when accounts open.
 
 **1 credit = US$0.001 of list value.** Default prices (served by the API from remote config so they can change without an app release):
 
@@ -169,7 +167,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - Spend order is monthly first, then purchased.
 - Every metered call follows **reserve → settle → refund**: reserve the estimate, settle to actual, refund if the call failed.
 - A balance can never go negative. A request whose reserve fails returns `402 CREDITS_EXHAUSTED`.
-- Credit packs (Pro/Team): 5,000 for $5, 12,000 for $10, 30,000 for $20. They are bought on the web only.
+- Credit packs (hosted API only, not sold, D-869): 5,000 for $5, 12,000 for $10, 30,000 for $20.
 
 ---
 
@@ -416,7 +414,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 | Auto-arrange panes | `Mod+Shift+T` |
 | Notifications / jump to next waiting agent | `Mod+Shift+N` / `Mod+Shift+J` |
 | Tasks sidebar tab / Dashboard full view | `Mod+Alt+K` / `Mod+Alt+Shift+D` |
-| Enhance the composer draft (Pro) | `Mod+Alt+E` |
+| Enhance the composer draft (hosted) | `Mod+Alt+E` |
 | Conductor call / mute during a call / call log | `Mod+Shift+Space` / `Mod+Shift+M` / `Mod+Shift+.` |
 | Dictate (global, hold) | macOS `Fn` (fallback `Ctrl+Option`), Windows `Ctrl+Win`, Linux `Ctrl+Alt` (F-DI-01) |
 | Dictate into the focused composer (hold) | the global Dictate key, or `Option+Space` on macOS only (F-DI-12). `Alt+Space` is never bound on Windows/Linux, where the OS window menu owns it. |
@@ -1208,10 +1206,10 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 - **Resume** opens an agent pane in the session's folder, in a tab of that folder's workspace (added when it isn't open yet). It runs the engine's own resume (`claude --resume <id>`, `codex resume <id>`) in the account's provider home. A session from outside Vibezeo resumes as it runs in a terminal: no account, no provider home, and no status hooks written into the user's own home (D-2412).
   - It's offered only when the folder still exists and the engine is installed.
 - **Continue with another engine…** opens F-CD-16's handoff sheet with the session's transcript as the source. The brief is written from the transcript's last messages, redacted, and the target opens beside the folder's other panes.
-- **Search (Pro).** "Search session text" in Settings › Privacy, off by default. When on, Vibezeo keeps a local full-text index of the prompts and replies at `$DATA/session-index.db`.
+- **Search.** "Search session text" (free, no account, D-2900) in Settings › Privacy, off by default. When on, Vibezeo keeps a local full-text index of the prompts and replies at `$DATA/session-index.db`.
   - The index is never logged or sent anywhere. Secrets in session text (the redactor's patterns, F-TL-03) are replaced before anything is shown or indexed, so neither the library nor the index keeps a second copy of a pasted token.
   - Turning the setting off deletes the file, however it's turned off (the switch, a settings reset, Conductor), and Delete all deletes it with the rest. Deleted rows are overwritten, and an index of an older format is deleted and built again.
-  - On Free the setting shows Pro.
+  - Limits that turn it off (none with no account) keep the switch off and say so.
 
 **Acceptance:**
 1. Fixture stores for Claude Code in two provider homes and Codex in its own home list four sessions under their repositories, with engine, account and date. A file that fails to parse is counted as skipped.
@@ -1413,7 +1411,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   1. Create a new home and run the engine's own login command (`login_cmd`) in a visible mini terminal inside the dialog (device code or browser flow as the engine implements it).
   2. On success (the engine's status command reports logged in), save the account. Cancelling kills the login process.
 - Existing conversations stay tied to their original account.
-- Free plan: 1 account per engine; Pro: unlimited.
+- Unlimited accounts per engine, with no account (D-2900).
 
 **Acceptance:**
 1. Cancelling the add-account dialog mid-login kills the login process and creates no account.
@@ -1713,7 +1711,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 **Behavior:**
 - A **New teammate** sheet titled "New teammate — someone you hand real work to."
 - **Fields:**
-  - **Create with AI** card (P1, Pro): speak (via Dictate) or type "what's the job?". The API (F-BE-06 `/v1/ai/teammate-draft`, 10 credits) returns {name, brief, suggested engine, suggested plugins}, which prefill the form for review. The footer reads "Nothing is saved until you press Create."
+  - **Create with AI** card (P1, hosted; comes with Vibezeo accounts): speak (via Dictate) or type "what's the job?". The API (F-BE-06 `/v1/ai/teammate-draft`, 10 credits) returns {name, brief, suggested engine, suggested plugins}, which prefill the form for review. The footer reads "Nothing is saved until you press Create."
   - **Name**.
   - **Avatar**: generated, with Customize.
   - **Engine** grid: installed engines enabled; not-installed ones dimmed with an Install link.
@@ -1915,7 +1913,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. An agent updating the status while the user edits the title leaves the title edit intact, and the new status is shown.
 2. A same-field conflict shows the banner.
 
-#### F-TK-04 Task execution (P1, Pro)
+#### F-TK-04 Task execution (P1)
 **Behavior:**
 - **Execute…** on an issue (or via Conductor "execute TAN-12") asks for a workspace, a teammate or engine, isolation (default **new lane**), and access (default Edits; Full only by explicit choice for this task).
 - **Execution:**
@@ -1928,7 +1926,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
   - **Retry** (a new attempt).
 - **Limits:** at most **4 active attempts** at once. Further requests queue, shown as "Queued (position n)".
 - Creating or assigning an issue **never** starts work.
-- Execution requires sign-in and Pro. Task records remain usable offline.
+- Execution needs no account or sign-in (D-2902); limits that turn it off block it. Task records remain usable offline.
 
 **Acceptance:**
 1. Assigning an issue to a teammate spawns nothing.
@@ -1938,7 +1936,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 
 ### 4.9 RT: Routines
 
-#### F-RT-01 Routine model (P1, Pro)
+#### F-RT-01 Routine model (P1)
 **Behavior:**
 - **Fields:** `id`, `teammate_id`, `name`, `instruction` (≤8,000 characters), `schedule` {kind: daily|weekly|interval|cron, times, days, every_minutes (≥15), cron expr, timezone (default local)}, `access` (Read/Edits/Full, default Edits), `run_mode` (in-app / background), `paused`, `last_run_chat_id`, `last_status`, `last_error`, `next_run_at`.
 - **Schedule parsing:**
@@ -1970,7 +1968,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 2. The app closed across the due time, then reopened within 24 h, produces exactly one late run.
 3. A routine with a deleted teammate shows the error on its row and makes no spawn.
 
-#### F-RT-03 Background runner (P1, Pro; differentiator)
+#### F-RT-03 Background runner (P1; differentiator)
 **Behavior:**
 - A per-routine or global option: "Run even when Tandem is closed".
 - Tandem installs an **OS-level launcher**:
@@ -2008,11 +2006,11 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 1. A teammate without the permission gets no schedule tools.
 2. `tandem__schedule_create` with access Full is rejected.
 
-#### F-RT-06 Night Shift: run at reset (P2, Pro)
+#### F-RT-06 Night Shift: run at reset (P2)
 **Story:** My plan's usage windows refill while I'm away, and that capacity goes to waste. I want to queue a task to start on an account I choose when that account's window resets, overnight if need be, and find a summary in the morning, on my phone too.
 
 **Behavior:**
-- **Entry:** "Run at reset…" beside Execute… on a task (F-TK-04), with the same block as Execute (sign-in, Pro's task execution). It opens UI-171 with:
+- **Entry:** "Run at reset…" beside Execute… on a task (F-TK-04), with the same block as Execute (limits that turn task runs off; no account needed, D-2902). It opens UI-171 with:
   - **Account:** every account whose engine can run tasks (a chat engine, as Execute). Each shows its next reset:
     - the reset time of its fullest usage window (F-AC-04);
     - or, when the engine reports no windows, the reset time of the last usage limit a pane hit on that account (F-AC-05);
@@ -2043,7 +2041,7 @@ The server enforces every row. The client enforces them as a UX courtesy only.
 2. At 3:10 (a mocked clock), the run starts task execution with that account and engine, even when another account has more room.
 3. When the account is still at 95% or more with a later reset, the run waits for that reset and starts then. It never uses another account.
 4. Cancel before the reset removes the run, and nothing starts.
-5. An account with no known reset can't be picked, and Free shows Execute's Pro block.
+5. An account with no known reset can't be picked, and limits that turn task runs off show Execute's block.
 6. At the summary time after two runs ended (one done, one failed), one notification reads "Night Shift: 1 done, 1 needs you". The next day, with nothing new, there's none. A paired phone with push on is queued the same alert.
 7. With the app closed and background routines on, `--run-routines` starts a due run and keeps waiting while it runs, past routines' 50 minutes, up to 8 hours; at 8 hours the run is stopped and needs the user.
 8. A run whose attempt was left running by a process that died ends as "needs you" with the attempt's reason the next time the app or the background runner starts, and the next summary counts it.
@@ -2204,7 +2202,7 @@ Each ready module needs:
 
 ### 4.11 AU: Auto supervisor
 
-#### F-AU-01 Auto (P2, Pro, credits)
+#### F-AU-01 Auto (P2, hosted, credits)
 **Story:** I give an agent terminal a goal and let a supervisor keep it moving until it's done or stuck.
 
 **Behavior:**
@@ -2351,9 +2349,9 @@ Each ready module needs:
 3. 2 s of silence produces no insertion and shows "No speech detected".
 4. Switching models mid-take applies the switch after the take ends.
 
-#### F-DI-05 Cloud speech-to-text (P1, Pro, credits)
+#### F-DI-05 Cloud speech-to-text (P1, hosted, credits)
 **Behavior:**
-- **Engine choice:** Local or Cloud. Cloud needs sign-in and Pro; otherwise it shows "Cloud transcription needs Tandem Pro".
+- **Engine choice:** Local or Cloud. Cloud is hosted: it needs a signed-in Vibezeo account that carries it; otherwise it shows "Cloud transcription comes with Vibezeo accounts".
 - **Pipeline:** audio (16 kHz mono Opus) → `POST /v1/stt/transcribe` (F-BE-07) → provider (default: a hosted multilingual STT via OpenRouter or a direct vendor, configured server-side) → text.
 - **Options:**
   - Language: Auto-detect (default) or an explicit choice from a list of 30+.
@@ -2412,7 +2410,7 @@ Each ready module needs:
   - Reconnecting.
 - **Position:** bottom-center of the display under the pointer. Options: "Follow cursor across displays" (not on Wayland) and **Lock position**. It can be dragged.
 - **Toasts:** a single line, action-first, bottom-anchored, with the full diagnostic on hover. Examples: "No speech detected", "Microphone stopped responding — switched to backup", "Keyboard hook failed — Dictate unavailable".
-- **Quick actions after a take (Pro):** **Enhance** and **Polish**, which replace the just-inserted text via undo + paste when the target still has focus. Otherwise the result is copied to the clipboard.
+- **Quick actions after a take (hosted):** **Enhance** and **Polish**, which replace the just-inserted text via undo + paste when the target still has focus. Otherwise the result is copied to the clipboard.
 - **Style:** Logo+Text / Logo / Mono. Follows the theme.
 
 **Acceptance:**
@@ -2448,14 +2446,14 @@ Each ready module needs:
   - Scope: language (all or a specific one) and **app profile** (everywhere, or a list of app identifiers).
 - **Engine:** Aho-Corasick matching. **Protected spellings** survive the LLM Enhance/Polish rewrite: terms are wrapped in markers before the rewrite and verified after it. If the rewrite altered a protected term, Tandem uses the un-enhanced corrected text.
 - **Tools:** a test box ("Try your dictionary on sample text"), import/export JSON and CSV with a preview, and a Deleted view for recovery (30 days).
-- **Sync:** optional, Pro. Syncs via `/v1/dictionary/sync` with last-writer-wins per rule and a conflict review. Transcript evidence never syncs.
+- **Sync:** optional, hosted (comes with Vibezeo accounts). Syncs via `/v1/dictionary/sync` with last-writer-wins per rule and a conflict review. Transcript evidence never syncs.
 
 **Acceptance:**
 1. The rule "tandem"→"Tandem" (match case off, protect links on) changes "use tandem" to "use Tandem", and leaves "https://tandem.dev" unchanged.
 2. An Enhance result that changes a protected term falls back to the corrected un-enhanced text.
 3. App-profile scoping applies the rule only when the target app id matches.
 
-#### F-DI-10 Enhance and Polish (P1, Pro, credits)
+#### F-DI-10 Enhance and Polish (P1, hosted, credits)
 **Behavior:**
 - **Polish** cleans grammar, filler and punctuation while keeping the meaning. **Enhance prompt** rewrites the dictation into a clear, structured prompt for a coding agent: goal, context, constraints, acceptance.
 - **Auto-Enhance** (optional) applies Enhance to every take.
@@ -2476,7 +2474,7 @@ Each ready module needs:
      - **Accessibility**: "types the words in".
   3. **Shortcut choice:** Recommended / One key / Choose my own. Includes a "Fn not working? Use Control+Option" hint.
   4. **Try it:** shows "Key detected ✓" once a press and release are observed.
-  5. **Engine:** Local (download the recommended model) or Cloud (Pro).
+  5. **Engine:** Local (download the recommended model) or Cloud (hosted).
   6. **Where text goes:** "Into the focused app" or "Copy to clipboard".
 - **macOS:** optionally set the system "Press 🌐 to" preference to "Do Nothing", after explicit consent.
 
@@ -2495,7 +2493,7 @@ Each ready module needs:
 
 ### 4.13 CN: Conductor (voice assistant)
 
-#### F-CN-01 Call lifecycle (P2, Pro, credits)
+#### F-CN-01 Call lifecycle (P2, hosted, credits)
 **Story:** I talk to Tandem and it operates the app for me: launches agents, prompts them, finds work, and changes settings.
 
 **Behavior:**
@@ -2714,7 +2712,7 @@ Each ready module needs:
 1. [manual win] On Windows with Ubuntu, opening a WSL workspace and launching a WSL-only `claude` runs it inside the distro.
 2. A path-translation unit test covers `C:\x y\z` → `/mnt/c/x y/z`, and a `\\wsl$\Ubuntu\home\a` path is typed as `/home/a`.
 
-#### F-RM-03 Phone companion (P2, Pro)
+#### F-RM-03 Phone companion (P2; the relay is hosted)
 **Behavior:**
 - **Client:** a responsive **web app** served at `app.tandem.dev/remote` (installable as a PWA), rather than a native app store app.
 - **Pairing:**
@@ -2859,7 +2857,7 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 
 **Acceptance:**
 1. A tampered entitlement token fails verification, and the client uses Free limits.
-2. With the network off and a token 23 h past `exp`, Pro limits still apply. At 25 h past `exp`, Free limits apply.
+2. With the network off and a token 23 h past `exp`, its limits still apply. At 25 h past `exp`, the no-account limits apply (local features stay unlimited, hosted ones go off).
 3. A network error during refresh doesn't downgrade the client.
 4. A hosted endpoint called with a Free account returns 403 `FORBIDDEN_PLAN`, even if the client sends a forged "pro" header.
 
@@ -2912,7 +2910,7 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 
 #### F-BE-08 Voice session minting (P2)
 **Behavior:**
-- `POST /voice/session` returns `{session_id, provider, ephemeral_token, ws_url, expires_at, max_seconds}`. It reserves 10 min of credits and requires Pro.
+- `POST /voice/session` returns `{session_id, provider, ephemeral_token, ws_url, expires_at, max_seconds}`. It reserves 10 min of credits and requires an account that carries Conductor.
 - `POST /voice/session/{id}/settle {seconds}` settles the reservation and refunds the rest. Sessions that are never settled are auto-settled at `max_seconds` by a sweeper, using the provider's usage report if available.
 - The provider is swappable, per remote config.
 
@@ -2964,6 +2962,8 @@ All endpoints are under `https://api.tandem.dev/v1` (dev: `http://api.tandem.loc
 1. A credit grant creates a ledger entry with the admin id and reason, and a non-admin gets 403.
 
 ### 4.16 BL: Billing and plans
+
+Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning or refunds; the hosted API keeps these routes, undeployed, and the sections below describe them for history. F-BL-03 and F-BL-06 stay with the hosted API too.
 
 #### F-BL-01 Checkout (P0)
 **Behavior:**
@@ -3440,7 +3440,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
 - **Ask for a second opinion…** is in the worktree menu and in its diff's toolbar (UI-152). With no changes it's disabled ("No changes to review").
 - The sheet picks the reviewer: one engine and account. It lists every installed engine:
   - Thread engines (a chat adapter: Claude Code, Codex, ACP engines) can be picked. The default is one that no agent in the worktree runs.
-  - Engines the plan doesn't run in Thread mode show the Pro badge.
+  - Engines a token's limits leave out of Thread mode say "Not available to threads here" (none with no account).
   - Terminal-only engines are shown disabled with "Can't run read-only".
   - With no pickable engine it says "Install Claude Code, Codex or an ACP engine to get a second opinion" (empty state).
 - The sheet names the account whose plan the review uses. It has an optional "What was the task?" box, and **Ask**.

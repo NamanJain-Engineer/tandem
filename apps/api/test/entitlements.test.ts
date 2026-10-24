@@ -18,11 +18,11 @@ describe("F-BE-04 entitlements", () => {
       await json(t, "GET", "/v1/me", { bearer: await bearerFor(t.deps, userId) })
     ).json()) as {
       plan: string;
-      limits: { panes: number };
+      limits: { panes: number | null; conductor: boolean };
       entitlement_token: string;
       credits: object;
     };
-    expect(me).toMatchObject({ plan: "pro", limits: { panes: 64 } });
+    expect(me).toMatchObject({ plan: "pro", limits: { panes: null, conductor: true } });
     expect(me.credits).toMatchObject({ monthly: 0, purchased: 0 });
     const header = decodeProtectedHeader(me.entitlement_token);
     expect(header).toMatchObject({ alg: "EdDSA", kid: "ek-1" });

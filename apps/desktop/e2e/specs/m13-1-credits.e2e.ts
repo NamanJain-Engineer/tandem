@@ -74,7 +74,7 @@ describe("E2E-M13-3 credits on the desktop", () => {
     expect((await titlebarCredits()).level).toBe("normal");
   });
 
-  it("E2E-M13-7 an admin refund: Free limits and a monthly bucket of 0", async function () {
+  it("E2E-M13-7 an admin refund: the no-account limits (nothing local capped) and a monthly bucket of 0", async function () {
     this.timeout(60_000);
     const adminEmail = uniqueEmail("admin");
     const admin = await signUpVerified(adminEmail);
@@ -83,8 +83,9 @@ describe("E2E-M13-3 credits on the desktop", () => {
     const res = await call(admin, "POST", `/v1/admin/users/${id}/refund`, { reason: "E2E: asked within 14 days" });
     expect(res.status).toBe(200);
     await waitForEntitlement((e) => e.plan === "free" && (e.credits?.monthly ?? -1) === 0, "Free after the refund", 5_000);
-    expect(await planFooter()).toBe("FREE");
-    const limits = (await invoke<{ limits: { panes: number | null } }>("entitlement_get")).limits;
-    expect(limits.panes).toBe(4);
+    expect(await planFooter()).toBe("Free");
+    const limits = (await invoke<{ limits: { panes: number | null; conductor: boolean } }>("entitlement_get")).limits;
+    expect(limits.panes).toBeNull();
+    expect(limits.conductor).toBe(false);
   });
 });

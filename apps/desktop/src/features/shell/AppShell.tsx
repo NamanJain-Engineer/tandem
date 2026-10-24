@@ -15,7 +15,6 @@ import { pseudoCatalog } from "../../i18n/pseudo";
 import { useLayout } from "../../stores/layout";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
-import { UpgradeDialog } from "../billing/UpgradeDialog";
 import { WhatsNew } from "../whatsnew/WhatsNew";
 import { CodeMain } from "../code/CodeMain";
 import { CodeRail } from "../code/CodeRail";
@@ -229,7 +228,6 @@ export function AppShell() {
         {!settingsOpen && <Sidebar />}
       </div>
       <StatusBar />
-      <UpgradeDialog />
       <WhatsNew />
       <WorktreeDialogs />
       <LaunchSheet />

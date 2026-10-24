@@ -3,21 +3,21 @@ import { t } from "../../i18n";
 import { totalCredits, useSession } from "../../stores/session";
 import { useUi } from "../../stores/ui";
 
-/** Rail footer: "FREE", "OFFLINE" (a hosted build not signed in), or
- * "PRO · 10,000 credits" (F-SH-03 slice). */
+/** Rail footer: "Free" (no account, or no credits to show), "Offline" (a
+ * hosted build not signed in), or "10,000 credits" for hosted features
+ * (F-SH-03 slice). It never names a plan (D-869, D-2904). */
 export function PlanFooter({ collapsed }: { collapsed?: boolean }) {
   const auth = useSession((s) => s.auth);
   const e = useSession((s) => s.entitlement);
   const openSettings = useUi((s) => s.openSettings);
-  const credits = totalCredits(e) ?? 0;
-  // An early-access build has no hosted services: it simply runs Free.
+  const credits = totalCredits(e);
   const text = !auth?.signedIn
     ? auth?.hosted === false
       ? t("plan.footer.free")
       : t("plan.footer.offline")
-    : !e || e.plan === "free"
+    : credits === null
       ? t("plan.footer.free")
-      : t("plan.footer.paid", { plan: e.plan.toUpperCase(), n: credits });
+      : t("plan.footer.credits", { n: credits });
   return (
     <div className="border-t border-divider p-1.5">
       <button
