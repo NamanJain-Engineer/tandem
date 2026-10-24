@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.8.0 (18 October), the first M18 release. M18 (below) is the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions: sixteen are done, eight shipped in 0.8.0 and eight more merged in `chain24`. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
+memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.9.0 (24 October), the second M18 release, and Vibezeo is free: there are no paid plans and no pricing page (D-869), and the next release unlocks every local feature (`free-for-everyone`). M18 (below) is the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions: sixteen are done, eight shipped in 0.8.0, six in 0.9.0, and F-CN-09 and F-RT-06 wait for accounts or the unlock. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
@@ -35,6 +35,7 @@ download.
    run the full E2E regression and the gate, then merge `product-m0-m5` into
    `main` and check the live site (`docs/OPERATING.md` §6–7).
 2. **Keep the live demo in step with every release.** vibezeo.com/demo (the page) opens /demo/app/: the real desktop interface running in the browser against a simulated core, built with the site (D-126; the Files tab, D-204). Its code is `apps/desktop/src/demo/`: `backend.ts` answers the app's commands, `agent.ts` scripts the agent's turns, `shell.ts` the terminal, `files.ts` the Files tab, `DemoBar.tsx` the strip that says it's a demo. When a release ships something visible in the interface, make it work in the demo too wherever it can be simulated honestly (sample data, no network, no microphone), add a test to `demo.test.ts`, and walk it with `scripts/agent/demo-walkthrough.mjs` before deploying. The demo shows only what the released download does, never more, and always says its agents are simulated.
+   - [ ] 0.9.0's features aren't in the demo yet (D-868): Land worktrees, CI results and review comments back to the agent, the intent radar, engine versions, the session library and the sandbox setting. Each goes in where it can be simulated honestly, such as a scripted landing with its check passing, or a radar overlap between two sample worktrees. They come with `site-motion`'s product scenes, each with a `demo.test.ts` case.
 3. **Close known gaps:**
    - [x] The Free plan's `chatEngines` limit (Claude Code and Codex in Thread
      mode, PRODUCT_SPEC §3.2) is enforced from the entitlement (D-127), and the

@@ -5,47 +5,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import hosted from "@tandem/protocol/hosted-features.json";
 import subprocessors from "@tandem/protocol/subprocessors.json";
-import { CREDIT_PRICES, PRICES } from "@tandem/protocol/plans";
-import { CREDIT_ROWS, PLANS } from "../lib/pricing";
 import { CHECKSUMS_URL, DOWNLOADS, assetUrl } from "../lib/release";
 import { SITE } from "../lib/site";
 import DownloadPage from "./download/page.site";
-import PricingPage from "./pricing/page.site";
 import PrivacyPage from "./privacy/page.site";
 
 const html = (el: ReactElement) => renderToStaticMarkup(el);
 const pub = (p: string) => join(import.meta.dirname, "../public", p);
 
 describe("F-WB-01 marketing site (M15)", () => {
-  it("F-WB-01 AC3 the pricing page's prices match plans.ts and the API's signed remote config", () => {
-    const dollars = (cents: number) => `$${cents / 100}`;
-    const plan = (id: string) => PLANS.find((p) => p.id === id);
-    expect(plan("pro")?.price).toBe(dollars(PRICES.pro.month));
-    expect(plan("pro")?.cadence).toContain(`${dollars(PRICES.pro.year)} a year`);
-    expect(plan("team")?.price).toBe(dollars(PRICES.team.month));
-    expect(plan("team")?.cadence).toContain(`${dollars(PRICES.team.year)} a year`);
-    expect(plan("team")?.cadence).toContain(`${PRICES.team.minSeats} seats minimum`);
-    const remote = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../../api/config/remote-config.json"), "utf8"),
-    ) as { prices: Record<string, number> };
-    const page = html(<PricingPage />);
-    expect(CREDIT_ROWS.length).toBeGreaterThan(0);
-    for (const row of CREDIT_ROWS) {
-      expect(remote.prices[row.key], row.key).toBe(CREDIT_PRICES[row.key]);
-      expect(row.credits, row.key).toBe(remote.prices[row.key]);
-      expect(page).toContain(`data-credit-price="${row.key}"`);
-    }
-  });
-
-  it("F-WB-01 /pricing prices only hosted features that are built (ticked in REMAINING)", () => {
-    const remaining = readFileSync(join(import.meta.dirname, "../../../docs/REMAINING.md"), "utf8");
-    const page = html(<PricingPage />);
-    for (const row of CREDIT_ROWS) expect(remaining, row.feature).toContain(`- [x] ${row.feature} `);
-    // F-DI-10 shipped: Enhance and Polish is priced, at 3 credits a use.
-    expect(remaining).toContain("- [x] F-DI-10 ");
-    expect(page).toContain('data-credit-price="rewrite"');
-    // Priced as a Pro feature that comes with accounts, never as the download's.
-    expect(page).toContain("switch on with a Pro account (the download, on the Free plan, never uses them)");
+  it("F-WB-01 AC3 Vibezeo is free (D-869): there is no pricing page, and the download page quotes no price or credit", () => {
+    expect(existsSync(join(import.meta.dirname, "pricing/page.site.tsx"))).toBe(false);
+    expect(existsSync(join(import.meta.dirname, "../lib/pricing.ts"))).toBe(false);
+    const download = html(<DownloadPage />);
+    expect(download).not.toMatch(/\$\d|\bcredits?\b|\bPro\b/);
+    expect(download).toContain("Free, with no paid plans.");
   });
 
   it("F-WB-01 /privacy lists what the app can send, when, and who processes it", () => {

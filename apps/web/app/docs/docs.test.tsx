@@ -8,7 +8,7 @@ import settings from "@tandem/protocol/settings.json";
 import en from "../../../desktop/src/i18n/en.json";
 import { DocsFooter } from "../../components/docs/DocsFooter";
 import { DOCS_COMPONENTS, DOCS_SETTINGS_PAGES, NO_SHORTCUT } from "../../components/docs/Generated";
-import { CREDIT_PRICES, LIMITS } from "@tandem/protocol/plans";
+import { LIMITS } from "@tandem/protocol/plans";
 import voiceTools from "../../../api/voice-tools.json";
 import { DOCS_PAGES } from "../../lib/docs/pages";
 import { sitemapXml } from "../../lib/site";
@@ -83,7 +83,7 @@ describe("docs (F-WB-02)", () => {
     const row = (key: string) => h.match(new RegExp(`<tr data-limit="${key}">(.*?)</tr>`))?.[1] ?? "";
     expect(row("panes")).toContain(`<td>${LIMITS.free.panes}</td>`);
     expect(row("workspaces")).toContain(`<td>${LIMITS.free.workspaces}</td>`);
-    expect(row("threadGrid")).toContain(`<td>${LIMITS.pro.threadGrid}</td>`);
+    expect(row("threadGrid")).toContain(`<td>${LIMITS.free.threadGrid}</td>`);
     expect(row("chatEngines")).toContain("<td>Claude Code, Codex</td>");
     expect(readFileSync(content("accounts-and-limits"), "utf8")).toContain("<PlanLimitsTable />");
   });
@@ -113,8 +113,8 @@ describe("docs (F-WB-02)", () => {
     const api = readFileSync(join(import.meta.dirname, "../../../api/src/services/voice.ts"), "utf8");
     const capSeconds = Number(api.match(/MAX_CALL_SECONDS = (\d+)/)?.[1]);
     expect(mdx).toContain(`${capSeconds / 60}-minute limit`);
-    expect(mdx).toContain(`${CREDIT_PRICES.voice_10s} credits for every started 10 seconds`);
-    expect(mdx).toContain(`about ${CREDIT_PRICES.voice_10s * 6} credits a minute`);
+    // Vibezeo is free (D-869): the docs put no price on a call.
+    expect(mdx).not.toMatch(/\bcredits?\b/);
     // The shortcuts it names are the registry's.
     for (const id of ["conductor.call", "conductor.mute", "conductor.log"]) {
       const key = shortcuts.find((s) => s.id === id)?.pc;
@@ -154,10 +154,11 @@ describe("docs (F-WB-02)", () => {
     // Shipped: Agent mode since 0.4.0; Dictate, Tasks, Plugins and SSH workspaces since 0.5.0.
     for (const slug of ["agent-mode", "dictate", "tasks", "plugins", "routines", "remote", "conductor"])
       expect(readFileSync(content(slug), "utf8"), slug).not.toContain("Not in the app yet");
-    // Routines and Conductor are in the app but run only on Pro (Conductor on
-    // Team too), which this download can't have.
-    for (const slug of ["routines", "conductor"])
-      expect(readFileSync(content(slug), "utf8"), slug).toContain("**Part of Pro.**");
+    // Routines and Conductor are in the app but don't run in this download:
+    // routines switch on in the next release, and Conductor needs Vibezeo's
+    // servers (D-869).
+    expect(readFileSync(content("routines"), "utf8")).toContain("**In the next release.**");
+    expect(readFileSync(content("conductor"), "utf8")).toContain("**Comes with Vibezeo accounts.**");
   });
 
   it("F-WB-02 every docs page has the legal links and contact (D-1812)", () => {

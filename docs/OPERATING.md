@@ -417,8 +417,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
-  against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
-  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/pricing/`,
+  against `apps/web/out`), Lighthouse CI on `/` and `/download/`
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/about/`,
   `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
   runs), then walk the demo:

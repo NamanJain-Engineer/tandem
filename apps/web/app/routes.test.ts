@@ -49,6 +49,11 @@ describe("routes (D-1815)", () => {
     expect(rules.every((r) => r.permanent)).toBe(true);
   });
 
+  it("F-WB-01 the old pricing page and anything under it go to the download page (D-869)", () => {
+    for (const url of ["/pricing", "/pricing/", "/pricing/compare/"]) expect(target(url), url).toBe("/download/");
+    expect(pages).not.toContain("/pricing/");
+  });
+
   it("F-WB-06 AC7 every blog page serves at its trailing-slash URL, and the feed as a file", () => {
     expect(blogPages().length).toBeGreaterThan(2);
     for (const url of blogPages()) {
