@@ -195,10 +195,12 @@ struct Session {
     mask: Option<Arc<MaskSlot>>,
 }
 
-/// A pane's masker; `done` stops its flusher.
+/// A pane's masker; `done` stops its flusher, and `wake` tells it a tail
+/// is held (or the reader ended).
 struct MaskSlot {
     masker: Mutex<mask::LiteralMasker>,
     done: AtomicBool,
+    wake: std::sync::Condvar,
 }
 
 /// All live PTYs. Cheap to clone.
@@ -475,6 +477,7 @@ impl PtyManager {
         Some(Arc::new(MaskSlot {
             masker: Mutex::new(masker),
             done: AtomicBool::new(false),
+            wake: std::sync::Condvar::new(),
         }))
     }
 
@@ -490,11 +493,27 @@ impl PtyManager {
         let spawned = std::thread::Builder::new()
             .name(format!("pty-mask-{pane}"))
             .spawn(move || {
-                while !slot.done.load(Ordering::Acquire) {
-                    std::thread::sleep(mask::HOLD / 2);
-                    let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
-                    if !masker.due() {
-                        continue;
+                let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
+                loop {
+                    if slot.done.load(Ordering::Acquire) {
+                        return;
+                    }
+                    // Sleeps until a read holds a tail, then until it's due;
+                    // a read in between restarts the wait.
+                    match masker.due_in() {
+                        None => {
+                            masker = slot.wake.wait(masker).unwrap_or_else(|e| e.into_inner());
+                            continue;
+                        }
+                        Some(left) if !left.is_zero() => {
+                            masker = slot
+                                .wake
+                                .wait_timeout(masker, left)
+                                .unwrap_or_else(|e| e.into_inner())
+                                .0;
+                            continue;
+                        }
+                        Some(_) => {}
                     }
                     let held = masker.flush();
                     let output = match session.side.lock() {
@@ -564,6 +583,7 @@ impl PtyManager {
                             let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
                             let held = masker.flush();
                             slot.done.store(true, Ordering::Release);
+                            slot.wake.notify_one();
                             if !held.is_empty() {
                                 let _ = tx.send(Msg::Data(held));
                             }
@@ -581,6 +601,9 @@ impl PtyManager {
                             .as_ref()
                             .map(|m| m.masker.lock().unwrap_or_else(|e| e.into_inner()));
                         let masked = masker.as_mut().map(|m| m.push(&buf[..n]));
+                        if let Some(slot) = &session.mask {
+                            slot.wake.notify_one();
+                        }
                         let input: &[u8] = masked.as_deref().unwrap_or(&buf[..n]);
                         if input.is_empty() {
                             continue;

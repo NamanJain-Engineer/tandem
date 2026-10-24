@@ -331,7 +331,13 @@ const PaneView = memo(function PaneView({
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
     ...(runnable ? [{ id: "run", label: t("run.menu"), onSelect: () => setRunning(true) }] : []),
     ...(freezable
-      ? [{ id: "freeze", label: frozen ? t("resources.thaw") : t("resources.freeze"), onSelect: toggleFrozen }]
+      ? [
+          {
+            id: "freeze",
+            label: frozen ? t("resources.thaw") : t("resources.freeze"),
+            onSelect: toggleFrozen,
+          },
+        ]
       : []),
     {
       id: "handoff",

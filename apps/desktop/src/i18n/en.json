@@ -1244,6 +1244,7 @@
   "secrets.name.rules": "Use lowercase letters, digits, - and _, up to 64, starting with a letter or digit",
   "secrets.value": "Value",
   "secrets.value.hint": "Up to 16 KB.",
+  "secrets.value.short": "Values under 4 bytes aren't hidden in the pane: they'd match ordinary output.",
   "secrets.saveFailed": "Couldn't save the secret",
   "secrets.updated": "Updated {date}",
   "secrets.copy": "Copy reference",

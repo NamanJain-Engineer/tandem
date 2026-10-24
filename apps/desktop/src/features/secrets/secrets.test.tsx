@@ -66,6 +66,18 @@ describe("agent-proof secrets (F-TL-12)", () => {
     expect((screen.getByTestId("secret-save") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("F-TL-12.3 a value too short to mask is called out", async () => {
+    secretsBackend();
+    page();
+    fireEvent.click(await screen.findByTestId("secret-add"));
+    fireEvent.change(await screen.findByTestId("secret-value"), { target: { value: "abc" } });
+    expect(
+      screen.getByText("Values under 4 bytes aren't hidden in the pane: they'd match ordinary output."),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByTestId("secret-value"), { target: { value: "abcd" } });
+    expect(screen.queryByText(/Values under 4 bytes/)).toBeNull();
+  });
+
   it("F-TL-12.6 Delete asks first, then removes it", async () => {
     const { values } = secretsBackend();
     values.set("db", "postgres://x");
@@ -135,7 +147,9 @@ describe("agent-proof secrets (F-TL-12)", () => {
   });
 
   it("F-TL-12.4 a missing secret is named and Run stays disabled", async () => {
-    fakeBackend({ secrets_run_plan: () => plan([{ name: "API_KEY", secret: "gone", missing: true, malformed: false }]) });
+    fakeBackend({
+      secrets_run_plan: () => plan([{ name: "API_KEY", secret: "gone", missing: true, malformed: false }]),
+    });
     dialog();
     const v = await screen.findByTestId("run-var");
     expect(v.dataset.missing).toBe("true");

@@ -33,6 +33,8 @@ function SecretDialog({
   const list = useSecrets((s) => s.list);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
+  // Values this short aren't masked in a run's pane (mask::MIN_LEN).
+  const short = value !== "" && new TextEncoder().encode(value).length < 4;
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
@@ -111,7 +113,7 @@ function SecretDialog({
             autoComplete="off"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            hint={t("secrets.value.hint")}
+            hint={short ? t("secrets.value.short") : t("secrets.value.hint")}
             spellCheck={false}
             autoFocus={replacing !== null}
           />

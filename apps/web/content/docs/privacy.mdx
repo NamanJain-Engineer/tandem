@@ -29,6 +29,12 @@ In that pane, a secret value the command prints shows as `[REDACTED]`, on screen
 What it doesn't cover:
 
 - A command that's given a secret can use it, write it to a file or print it encoded; only the exact value is masked, and only in that pane.
+- These forms of a value show unmasked:
+  - values under 4 bytes (Settings › Secrets warns when you enter one);
+  - a value printed in parts more than 50 ms apart;
+  - a value printed with colours or other escape codes inside it, or JSON-escaped, URL-encoded or otherwise encoded;
+  - a value a full-screen program draws in pieces as it redraws the screen.
+- Programs the command starts in the background keep the values after it exits; only the shell after it starts without them.
 - Agent panes never get the values in this version, and there's no `vibezeo run` command line yet.
 - The Flatpak build can't run with secrets yet.
 
