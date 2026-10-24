@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, totalmem, release } from "node:os";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
-import { addFolder, freshUser, invoke, mod, paneIds, planFooter, sendToPane, setPlan, waitForApp, waitForPaneText } from "../support/app";
+import { addFolder, freshUser, invoke, mod, paneIds, sendToPane, waitForApp, waitForPaneText } from "../support/app";
 
 const ROOT = new URL("../../../..", import.meta.url).pathname;
 const OUT = join(ROOT, "perf/results/m3.json");
@@ -169,9 +169,7 @@ describe("perf: terminals", () => {
     this.timeout(300_000);
     // The page is busy while 15 panes stream; give its scripts room.
     await browser.setTimeout({ script: 300_000 });
-    const { email } = await freshUser("perf-terminals");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("perf-terminals");
     await addFolder(`/tmp/tandem-perf-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ id: string; tabs: Array<{ id: string }> }>>("workspace_list");

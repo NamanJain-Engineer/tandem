@@ -4,7 +4,7 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
+  waitSignedIn,
   sendToPane,
   waitForApp,
   waitForPaneText,
@@ -33,10 +33,7 @@ function balanced(nodes: Node[], dir: "row" | "col"): Node {
 describe("E2E-M3-1 sixteen shells", () => {
   it("F-CD-04.2 16 shells: distinct $TANDEM_PANE_ID, at most 8 WebGL contexts, no blank pane", async () => {
     await freshUser("m3-1");
-    await browser.waitUntil(async () => (await planFooter()) === "Free", {
-      timeout: 20_000,
-      timeoutMsg: `footer: ${await planFooter()}`,
-    });
+    await waitSignedIn();
     await addFolder(`/tmp/tandem-e2e-m3-1-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

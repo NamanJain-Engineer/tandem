@@ -237,7 +237,7 @@ pub async fn teammate_draft_with_ai(
     if view.plan == tandem_core::entitlement::Plan::Free {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Create with AI comes with Vibezeo accounts.",
+            "Create with AI comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ));
     }
     if !state.endpoints.hosted || !view.online || !state.auth.is_signed_in() {

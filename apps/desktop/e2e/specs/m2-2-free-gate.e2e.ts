@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
-import { addFolder, freshUser, planFooter, workspaceRoots } from "../support/app";
+import { addFolder, freshUser, workspaceRoots } from "../support/app";
 
 // E2E-M2-2 No workspace limit (MILESTONES M2, F-CD-01): Vibezeo is free
 // (D-869), so a free account adds a fourth workspace and more, and nothing
@@ -16,7 +16,6 @@ describe("E2E-M2-2 no workspace limit", () => {
         timeout: 10_000,
       });
     }
-    expect(await planFooter()).toBe("Free");
     expect(await $('[data-testid="upgrade-gate"]').isExisting()).toBe(false);
     await expectNoSeriousA11yViolationsInBothThemes();
   });

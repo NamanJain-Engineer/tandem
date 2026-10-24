@@ -79,7 +79,12 @@ describe("docs (F-WB-02)", () => {
   });
 
   it("F-WB-02 the docs say nothing local is limited, matching LIMITS.free, and name no paid plan (D-869, D-2900)", () => {
-    expect(LIMITS.free).toMatchObject({ panes: null, workspaces: null, accountsPerEngine: null, chatEngines: null });
+    expect(LIMITS.free).toMatchObject({
+      panes: null,
+      workspaces: null,
+      accountsPerEngine: null,
+      chatEngines: null,
+    });
     expect("PlanLimitsTable" in DOCS_COMPONENTS).toBe(false);
     const limits = readFileSync(content("accounts-and-limits"), "utf8");
     expect(limits).toContain("Nothing that runs on your computer is limited");
@@ -87,6 +92,17 @@ describe("docs (F-WB-02)", () => {
     for (const p of DOCS_PAGES) {
       const mdx = readFileSync(content(p.slug), "utf8");
       expect(mdx, p.slug).not.toMatch(/\bPro\b|Free plan|on Free\b|the next release/);
+      // Vibezeo's credits are never named (DESIGN §9.5); Plugins' "Uses credits" is a service's own risk class.
+      if (p.slug !== "plugins") expect(mdx, p.slug).not.toMatch(/credit|premium|upgrade|\btrial\b/i);
+    }
+  });
+
+  it("F-WB-02 hosted features carry DESIGN §9.5's phrase and sentence, word for word (D-1896, D-2903)", () => {
+    for (const slug of ["accounts-and-limits", "conductor", "dictate", "remote", "agent-mode", "code-mode"]) {
+      const mdx = readFileSync(content(slug), "utf8");
+      expect(mdx, slug).toContain(
+        "**Comes with Vibezeo accounts.** It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
+      );
     }
   });
 
@@ -104,7 +120,9 @@ describe("docs (F-WB-02)", () => {
     expect(tools).toMatch(/<tr data-tool="review_next"><td>Review<\/td>/);
     expect(tools).toMatch(/<tr data-tool="run_command_in_shell"><td>Panes and agents<\/td>/);
     const settable = html(<DOCS_COMPONENTS.ConductorSettingsTable />);
-    expect([...settable.matchAll(/data-setting="([^"]+)"/g)].map((m) => m[1])).toEqual(voiceTools.settable_settings);
+    expect([...settable.matchAll(/data-setting="([^"]+)"/g)].map((m) => m[1])).toEqual(
+      voiceTools.settable_settings,
+    );
     const mdx = readFileSync(content("conductor"), "utf8");
     expect(mdx).toContain("<ConductorToolsTable />");
     expect(mdx).toContain("<ConductorSettingsTable />");
@@ -164,7 +182,8 @@ describe("docs (F-WB-02)", () => {
 
   it("F-WB-02 every docs page has the legal links and contact (D-1812)", () => {
     const h = html(<DocsFooter />);
-    for (const href of ["/privacy/", "/terms/", "/security/", "/about/"]) expect(h, href).toContain(`href="${href}"`);
+    for (const href of ["/privacy/", "/terms/", "/security/", "/about/"])
+      expect(h, href).toContain(`href="${href}"`);
     expect(h).toContain("contact@vibezeo.com");
     expect(h).not.toMatch(/\b(19|20)\d{2}\b/);
     const page = readFileSync(join(import.meta.dirname, "[[...slug]]/page.site.tsx"), "utf8");

@@ -449,7 +449,10 @@ describe("Dictionary (F-DI-09, UI-64)", () => {
   it("F-DI-09 sync is hosted: with no account it says it comes with Vibezeo accounts and nothing is sent", async () => {
     const calls = fakeBackend({ dictionary_list: () => [], dictionary_suggestions: () => [] });
     wrap(<DictionarySheet open onClose={() => undefined} />);
-    expect((await screen.findByTestId("dictionary-sync-pro")).textContent).toBe("Comes with Vibezeo accounts");
+    const label = (await screen.findByTestId("dictionary-sync-pro")).textContent;
+    expect(label).toContain("Comes with Vibezeo accounts");
+    expect(label).toContain("It uses Vibezeo's servers and switches on when Vibezeo accounts open.");
+    expect(label).toContain("Tell me when accounts open");
     expect(calls.some((c) => c.cmd.startsWith("dictionary_sync"))).toBe(false);
   });
 
@@ -695,7 +698,7 @@ describe("Enhance and Polish (F-DI-10)", () => {
     expect(screen.getByText("◈ 3")).toBeTruthy();
   });
 
-  it("F-DI-10 no quick actions without the setting or Pro", async () => {
+  it("F-DI-10 no quick actions without the setting or an account that carries Enhance", async () => {
     fakeBackend({ dictate_status: () => STATUS });
     wrap(<DictateWidget />);
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));

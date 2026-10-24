@@ -585,7 +585,7 @@ fn gate(state: &AppState) -> Result<(), IpcError> {
     if !state.entitlements.limits().conductor {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Conductor comes with Vibezeo accounts.",
+            "Conductor comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ));
     }
     Ok(())

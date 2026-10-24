@@ -302,9 +302,7 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
       ? t("plugins.blockedByOrg", { plugin: card.label })
       : unavailable
         ? (card.unavailableReason ?? t("plugins.state.unavailable"))
-        : card.limitReached
-          ? t("plugins.freeLimit")
-          : null;
+        : null;
   return (
     <li
       data-testid={`plugin-card-${card.pluginId}`}
@@ -357,12 +355,12 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
           <Button
             size="sm"
             variant="secondary"
-            disabled={off || card.limitReached}
+            disabled={off}
             onClick={onConnect}
             data-testid={`plugin-connect-${card.pluginId}`}
             aria-label={t("plugins.connectTo", { plugin: card.label })}
           >
-            {card.limitReached && !off ? t("plugins.atLimit") : t("plugins.connect")}
+            {t("plugins.connect")}
           </Button>
         </div>
       )}

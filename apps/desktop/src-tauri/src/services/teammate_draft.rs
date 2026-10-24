@@ -124,7 +124,7 @@ pub fn api_error(e: &ApiError) -> IpcError {
         ),
         Some(403) => IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Create with AI comes with Vibezeo accounts.",
+            "Create with AI comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ),
         Some(401) => IpcError::new(ErrorCode::Unauthenticated, "Sign in to draft with AI."),
         _ => IpcError::new(ErrorCode::Unavailable, COULDNT_DRAFT),

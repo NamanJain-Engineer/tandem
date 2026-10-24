@@ -1082,7 +1082,7 @@ export function settingsPages(platform: string, routines = false, accounts = fal
       id: "account",
       label: t("settings.account"),
       subtitle: t("settings.account.subtitle"),
-      keywords: ["plan", "billing", "credits", "subscription", "sign out"],
+      keywords: ["account", "sign in", "sign out"],
       rows: [],
       extra: <AccountPage />,
     },

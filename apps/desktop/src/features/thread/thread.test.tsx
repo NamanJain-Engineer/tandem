@@ -519,7 +519,7 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     });
     expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
     act(() => drop(threads[6]?.id ?? ""));
-    expect(await screen.findByText("This account shows 1 thread at a time")).toBeTruthy();
+    expect(await screen.findByText("Grid is full (1)")).toBeTruthy();
     expect(screen.queryAllByTestId("grid-cell")).toHaveLength(0);
   });
 
@@ -672,7 +672,7 @@ describe("Chat engines in Thread mode (F-TH-06, D-2900)", () => {
     expect(options.every((o) => !o.disabled)).toBe(true);
   });
 
-  it("F-TH-06 a thread on an engine the limits leave out shows the gate, with no plans to open", async () => {
+  it("F-TH-06 a thread on an engine the limits leave out stays readable, with no gate card and no plan (DESIGN §9.5)", async () => {
     useSession.setState({ entitlement: LISTED_VIEW });
     const th = thread({ engineId: "opencode" });
     fakeBackend({
@@ -688,11 +688,10 @@ describe("Chat engines in Thread mode (F-TH-06, D-2900)", () => {
       useThreads.getState().select(th.id);
     });
     mount(<ThreadMain />);
-    const gate = await screen.findByTestId("thread-engine-gate");
-    expect(gate.textContent).toContain("This engine isn't available to threads here");
-    expect(gate.textContent).toContain("This thread stays readable");
-    expect(within(gate).queryByRole("button")).toBeNull();
-    expect(gate.textContent).not.toMatch(/\bPro\b|plans?\b/);
+    await screen.findByRole("textbox", { name: "Message" });
+    // The core refuses its turns with its reason (D-127); the UI sells nothing.
+    expect(screen.queryByTestId("thread-engine-gate")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\bPro\b|See plans|upgrade/i);
   });
 
   it("F-TH-06 with no account the same thread shows no gate", async () => {

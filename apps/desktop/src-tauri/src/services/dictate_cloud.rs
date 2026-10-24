@@ -78,7 +78,7 @@ impl Rewriter for HostedRewriter {
         if (self.plan)() == Plan::Free {
             return Err(CloudFailure {
                 kind: CloudFailureKind::NeedsPro,
-                message: "Enhance comes with Vibezeo accounts.".into(),
+                message: "Enhance comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.".into(),
                 detail: "No account is signed in; no text was sent.".into(),
             });
         }
@@ -126,7 +126,7 @@ impl CloudStt for HostedStt {
         if (self.plan)() == Plan::Free {
             return Err(CloudFailure {
                 kind: CloudFailureKind::NeedsPro,
-                message: format!("{FEATURE} comes with Vibezeo accounts."),
+                message: format!("{FEATURE} comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."),
                 detail: "No account is signed in; no audio was sent.".into(),
             });
         }
@@ -250,7 +250,7 @@ mod tests {
         let err = rw
             .rewrite(RewriteMode::Enhance, "hello", None, &[])
             .expect_err("403");
-        assert_eq!(err.message, "Enhance comes with Vibezeo accounts.");
+        assert_eq!(err.message, "Enhance comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.");
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
         assert_eq!(err.kind, CloudFailureKind::NeedsPro);
         assert_eq!(
             err.message,
-            "Cloud transcription comes with Vibezeo accounts."
+            "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."
         );
         assert!(seen.lock().is_empty(), "nothing uploaded");
     }
@@ -333,7 +333,7 @@ mod tests {
             (
                 http(403, "FORBIDDEN_PLAN", None),
                 CloudFailureKind::NeedsPro,
-                "Cloud transcription comes with Vibezeo accounts.",
+                "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
             ),
             (
                 ApiError::Network("refused".into()),

@@ -25,10 +25,11 @@ come with Vibezeo accounts.
   no account and no sign-in, in the app or in the background.
 - [all] **Session search is free.** Turn on Search session text in Settings ›
   Privacy to search what your Claude Code and Codex sessions say.
-- [all] **No plans to choose.** The plans dialog, See plans, Upgrade buttons
-  and Pro badges are gone. The welcome screen says "Free · no account ·
-  nothing sent to Vibezeo", and features that need Vibezeo's servers say they
-  come with Vibezeo accounts.
+- [all] **No plans to choose.** The plans dialog, See plans, Upgrade buttons,
+  Pro badges, limit cards and the rail's plan footer are gone. The welcome
+  screen says "Free · no account · nothing sent to Vibezeo". Features that
+  need Vibezeo's servers say "Comes with Vibezeo accounts", with "Tell me when
+  accounts open" where it helps.
 
 ## 0.9.0
 

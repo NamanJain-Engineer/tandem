@@ -81,12 +81,12 @@ describe("Auto (F-AU-01)", () => {
   it("a refusal shows its message and keeps the dialog open", async () => {
     dialog({
       auto_start: () => {
-        throw { code: "forbidden_plan", message: "Auto needs Vibezeo Pro." };
+        throw { code: "forbidden_plan", message: "Auto comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open." };
       },
     });
     act(() => useSettings.setState({ values: { auto_consent: true, auto_dont_ask: true }, loaded: true }));
     fireEvent.click(screen.getByTestId("auto-start"));
-    expect((await screen.findByTestId("auto-error")).textContent).toBe("Auto needs Vibezeo Pro.");
+    expect((await screen.findByTestId("auto-error")).textContent).toBe("Auto comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.");
     expect(useAuto.getState().dialogFor).toBe("pn_1");
   });
 

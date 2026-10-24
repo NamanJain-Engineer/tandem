@@ -8,7 +8,7 @@ import {
   home,
   invoke,
   paneIds,
-  planFooter,
+  waitSignedIn,
   sendToPane,
   setPlan,
   split,
@@ -115,7 +115,7 @@ describe("E2E-M5-7 updater", () => {
     if (existsSync(installedFile())) rmSync(installedFile());
     await setPlan(email, "free");
     await invoke("entitlement_refresh");
-    await browser.waitUntil(async () => (await planFooter()) === "Free", { timeout: 20_000 });
+    await waitSignedIn();
     const s = await invoke<State>("updates_check_now");
     expect(s.stage).toBe("ready");
     await invoke("updates_install");

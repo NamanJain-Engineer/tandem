@@ -5,7 +5,7 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
+  waitSignedIn,
   waitForApp,
   waitForShell,
 } from "../support/app";
@@ -31,10 +31,7 @@ function balanced(nodes: Node[], dir: "row" | "col"): Node {
 describe("E2E-M3-3 divider drag", () => {
   it("F-CD-02.1 dragging a divider with 8 panes resizes each affected PTY exactly once, after pointer-up", async () => {
     await freshUser("m3-3");
-    await browser.waitUntil(async () => (await planFooter()) === "Free", {
-      timeout: 20_000,
-      timeoutMsg: `footer: ${await planFooter()}`,
-    });
+    await waitSignedIn();
     await addFolder(`/tmp/tandem-e2e-m3-3-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

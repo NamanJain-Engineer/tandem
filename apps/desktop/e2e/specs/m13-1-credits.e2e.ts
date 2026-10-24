@@ -1,7 +1,7 @@
 import { browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { call, freshUser, invoke, planFooter, signUpVerified, uniqueEmail } from "../support/app";
+import { call, freshUser, invoke, signUpVerified, uniqueEmail } from "../support/app";
 import { testRoute, titlebarCredits, waitForEntitlement } from "../support/hosted";
 
 const FIXTURE = fileURLToPath(new URL("../../../../scripts/stripe-fixture.sh", import.meta.url));
@@ -83,7 +83,6 @@ describe("E2E-M13-3 credits on the desktop", () => {
     const res = await call(admin, "POST", `/v1/admin/users/${id}/refund`, { reason: "E2E: asked within 14 days" });
     expect(res.status).toBe(200);
     await waitForEntitlement((e) => e.plan === "free" && (e.credits?.monthly ?? -1) === 0, "Free after the refund", 5_000);
-    expect(await planFooter()).toBe("Free");
     const limits = (await invoke<{ limits: { panes: number | null; conductor: boolean } }>("entitlement_get")).limits;
     expect(limits.panes).toBeNull();
     expect(limits.conductor).toBe(false);

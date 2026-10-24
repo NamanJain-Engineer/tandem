@@ -644,9 +644,10 @@ export function useAddToGrid(): (id: string) => void {
     (id: string) => {
       const result = addToGrid(id);
       if (result === "full") show({ tone: "warning", title: t("thread.grid.full", { n: GRID_MAX }) });
+      // A smaller limit a signed token carries fills the grid sooner (none with no account, D-2900).
       if (result === "limit") {
         const limit = useSession.getState().entitlement?.limits.threadGrid ?? GRID_MAX;
-        show({ tone: "info", title: t("thread.grid.limitTitle", { n: limit }) });
+        show({ tone: "warning", title: t("thread.grid.full", { n: limit }) });
       }
     },
     [addToGrid, show],
