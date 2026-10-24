@@ -198,7 +198,7 @@ export function RoutineEditor({ seed, onClose }: { seed: EditorSeed; onClose: ()
           description={
             limits?.backgroundRoutines
               ? t("routines.editor.backgroundDesc")
-              : t("routines.editor.backgroundPro")
+              : t("routines.editor.backgroundOff")
           }
           checked={form.background}
           disabled={!limits?.backgroundRoutines}

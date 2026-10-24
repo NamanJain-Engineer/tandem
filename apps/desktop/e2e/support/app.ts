@@ -169,13 +169,13 @@ export async function signInDesktop(email: string): Promise<void> {
   await $("button=Continue with email").click();
   await browser.waitUntil(
     async () =>
-      (await $('[data-testid="plan-footer"]').isExisting()) ||
+      (await $('[data-testid="app-shell"]').isExisting()) ||
       (await $('[data-testid="onboarding"]').isExisting()),
     { timeout: 60_000, timeoutMsg: `sign-in didn't finish:\n${browserLog()}` },
   );
   // A brand-new profile (the first spec of a run) gets the wizard first.
   await skipOnboarding();
-  await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
+  await $('[data-testid="app-shell"]').waitForExist({ timeout: 20_000 });
 }
 
 /** `innerText` of the first match. WebKitWebDriver's getText drops text
@@ -188,8 +188,13 @@ export async function textOf(selector: string): Promise<string> {
   return String(text).trim();
 }
 
-export async function planFooter(): Promise<string> {
-  return textOf('[data-testid="plan-footer"]');
+/** Waits until the desktop is signed in to its Vibezeo account (the rail's
+ * plan footer used to show it; there's no plan UI since D-869). */
+export async function waitSignedIn(timeout = 20_000): Promise<void> {
+  await browser.waitUntil(async () => (await invoke<{ signedIn: boolean }>("auth_state")).signedIn, {
+    timeout,
+    timeoutMsg: "the desktop never signed in",
+  });
 }
 
 /** Adds a folder through the rail "+" and the fake picker. */
@@ -385,7 +390,7 @@ export async function freshProfile(): Promise<void> {
 export async function freshOffline(): Promise<void> {
   await resetState();
   await $("button=Use Vibezeo offline").click();
-  await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
+  await $('[data-testid="app-shell"]').waitForExist({ timeout: 20_000 });
 }
 
 /** Dismisses whatever toast or dialog is open with Escape. */

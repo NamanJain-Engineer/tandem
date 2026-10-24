@@ -15,7 +15,12 @@ import { EngineControl } from "./EngineControl";
 import { AutoEnhanceControl, FormattingControl } from "./EnhanceControls";
 import { useSettings } from "../../stores/settings";
 import { useSession } from "../../stores/session";
-import { useUi } from "../../stores/ui";
+
+/** An account that carries Enhance (hosted, D-2903). */
+function withEnhance() {
+  const e = useSession.getState().entitlement!;
+  return { ...e, limits: { ...e.limits, enhance: true } };
+}
 import { Permissions, ShortcutChoice, TryIt } from "./DictateSetup";
 import { GlobeKey } from "./GlobeKey";
 import { DictionarySheet, emptyRule } from "./DictionarySheet";
@@ -437,15 +442,17 @@ describe("Dictionary (F-DI-09, UI-64)", () => {
   const proSync = () =>
     act(() => {
       const e = useSession.getState().entitlement!;
-      useSession.setState({ entitlement: { ...e, plan: "pro", limits: { ...e.limits, dictionarySync: true } } });
+      useSession.setState({ entitlement: { ...e, limits: { ...e.limits, dictionarySync: true } } });
     });
   const word = (id: string, to: string): Rule => ({ ...emptyRule("correction"), id, phrases: [id], replacement: to });
 
-  it("F-DI-09 sync is Pro: Free sees the plans and nothing is sent", async () => {
+  it("F-DI-09 sync is hosted: with no account it says it comes with Vibezeo accounts and nothing is sent", async () => {
     const calls = fakeBackend({ dictionary_list: () => [], dictionary_suggestions: () => [] });
     wrap(<DictionarySheet open onClose={() => undefined} />);
-    fireEvent.click(await screen.findByTestId("dictionary-sync-pro"));
-    expect(useUi.getState().upgrade.open).toBe(true);
+    const label = (await screen.findByTestId("dictionary-sync-pro")).textContent;
+    expect(label).toContain("Comes with Vibezeo accounts");
+    expect(label).toContain("It uses Vibezeo's servers and switches on when Vibezeo accounts open.");
+    expect(label).toContain("Tell me when accounts open");
     expect(calls.some((c) => c.cmd.startsWith("dictionary_sync"))).toBe(false);
   });
 
@@ -620,16 +627,17 @@ describe("Cloud transcription (F-DI-05)", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "dictate_use_local")).toBe(true));
   });
 
-  it("F-DI-05 Free opens the plans; Pro asks once before sending audio", async () => {
+  it("F-DI-05 with no account Cloud stays put (it comes with accounts); with it, asks once before sending audio", async () => {
     const calls = fakeBackend();
-    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "free" } });
     wrap(<EngineControl />);
     const cloud = () => screen.getByRole("radio", { name: /Cloud/ });
     fireEvent.click(cloud());
-    expect(useUi.getState().upgrade.open).toBe(true);
+    expect(screen.getByTestId("dictate-engine").getAttribute("data-engine")).toBe("local");
     expect(calls.some((c) => c.cmd === "settings_set" && c.args?.key === "dictate_engine")).toBe(false);
-    act(() => useUi.setState({ upgrade: { open: false } }));
-    act(() => useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } }));
+    act(() => {
+      const e = useSession.getState().entitlement!;
+      useSession.setState({ entitlement: { ...e, limits: { ...e.limits, cloudStt: true } } });
+    });
     fireEvent.click(cloud());
     fireEvent.click(await screen.findByRole("button", { name: "Use cloud" }));
     await waitFor(() =>
@@ -690,7 +698,7 @@ describe("Enhance and Polish (F-DI-10)", () => {
     expect(screen.getByText("◈ 3")).toBeTruthy();
   });
 
-  it("F-DI-10 no quick actions without the setting or Pro", async () => {
+  it("F-DI-10 no quick actions without the setting or an account that carries Enhance", async () => {
     fakeBackend({ dictate_status: () => STATUS });
     wrap(<DictateWidget />);
     await waitFor(() => expect(screen.getByTestId("widget-text").textContent).toBe("Vibezeo"));
@@ -717,16 +725,15 @@ describe("Enhance and Polish (F-DI-10)", () => {
     );
   });
 
-  it("F-DI-10 Auto-Enhance asks once before any text is sent; Free can't turn it on", async () => {
+  it("F-DI-10 Auto-Enhance asks once before any text is sent; with no account (hosted, D-2903) it can't turn on", async () => {
     const calls = fakeBackend();
-    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "free" } });
     const { unmount } = wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
     expect(
       (screen.getByRole("switch", { name: "Enhance every take automatically" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
     unmount();
-    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } });
+    useSession.setState({ entitlement: withEnhance() });
     wrap(<AutoEnhanceControl label="Enhance every take automatically" />);
     fireEvent.click(screen.getByRole("switch", { name: "Enhance every take automatically" }));
     expect(calls.some((c) => c.cmd === "settings_set")).toBe(false);
@@ -741,7 +748,7 @@ describe("Enhance and Polish (F-DI-10)", () => {
 
   it("F-DI-10 formatting instructions stop at 2,000 characters", async () => {
     fakeBackend();
-    useSession.setState({ entitlement: { ...useSession.getState().entitlement!, plan: "pro" } });
+    useSession.setState({ entitlement: withEnhance() });
     wrap(<FormattingControl label="Formatting instructions" />);
     const box = screen.getByRole("textbox", { name: "Formatting instructions" });
     fireEvent.change(box, { target: { value: "x".repeat(2_500) } });

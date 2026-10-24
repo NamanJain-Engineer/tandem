@@ -119,6 +119,8 @@ function page(browserId: string, url: string, title = ""): BrowserState {
 function core(
   opts: {
     live?: number;
+    /** A live-pane limit a signed token carries (none with no account). */
+    limit?: number;
     panes?: string[];
     tree?: unknown;
     missing?: boolean;
@@ -233,8 +235,8 @@ function core(
     },
     pane_list: (a) => panes.filter((p) => p.tabId === a?.tabId),
     pane_create: (a) => {
-      if (opts.live !== undefined && opts.live >= 4)
-        throw { code: "limit_reached", message: "Free includes 4 live panes" };
+      if (opts.limit !== undefined && (opts.live ?? 0) >= opts.limit)
+        throw { code: "limit_reached", message: `This account runs up to ${opts.limit} live panes` };
       const names = ["Ada", "Bea", "Cleo"];
       const p = {
         ...pane(`pn_${++n}`, String(a?.tabId), 100 + n),
@@ -356,17 +358,27 @@ describe("pane grid (F-CD-02)", () => {
     expect(screen.getAllByRole("button", { name: "Maximize pane" })).toHaveLength(2);
   });
 
-  it("F-CD-03 at the Free pane limit the picker shows the upgrade card and creates nothing", async () => {
-    const { calls } = core({ live: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+  it("F-CD-03 with no account a fifth pane opens the picker: there's no pane limit (D-2900)", async () => {
+    core({ live: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     useSession.setState({ entitlement: FREE_VIEW });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
-    expect(await screen.findByTestId("pane-limit")).toBeTruthy();
-    expect(screen.getByText("Free includes 4 live panes")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "See plans" })).toBeTruthy();
-    expect(screen.queryByTestId("tile-shell")).toBeNull();
-    expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(0);
+    expect(await screen.findByTestId("tile-shell")).toBeTruthy();
+    expect(screen.queryByTestId("pane-limit")).toBeNull();
+  });
+
+  it("F-CD-03 at a pane limit a token carries, the core's reason shows, nothing is sold and no pane opens (DESIGN §9.5)", async () => {
+    core({ live: 4, limit: 4, panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
+    useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, panes: 4 } } });
+    renderCode();
+    await waitFor(() => expect(paneEls()).toHaveLength(1));
+    act(() => void useLayout.getState().requestSplit(TAB.id, "pn_a", "right"));
+    fireEvent.click(await screen.findByTestId("tile-shell"));
+    expect(await screen.findByText("This account runs up to 4 live panes")).toBeTruthy();
+    expect(screen.queryByTestId("pane-limit")).toBeNull();
+    expect(screen.queryByRole("button", { name: "See plans" })).toBeNull();
+    expect(paneEls()).toHaveLength(1);
   });
 
   it("F-CD-02 maximize hides siblings without unmounting them, and restores", async () => {

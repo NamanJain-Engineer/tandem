@@ -285,7 +285,7 @@ pub enum HostedFailure {
     OutOfCredits {
         message: String,
     },
-    /// 403 FORBIDDEN_PLAN: the feature needs Pro.
+    /// 403 FORBIDDEN_PLAN: the account doesn't carry this hosted feature.
     NeedsPro {
         message: String,
     },
@@ -328,7 +328,7 @@ impl HostedFailure {
         }
     }
 
-    /// Maps an API error; `feature` names it in the Pro message ("Cloud transcription").
+    /// Maps an API error; `feature` names it in the message ("Cloud transcription").
     pub fn from_api(err: &ApiError, feature: &str) -> Self {
         let detail = |fallback: &str| match err {
             ApiError::Http {
@@ -351,7 +351,7 @@ impl HostedFailure {
                     message: detail("You're out of credits for now."),
                 },
                 (403, "FORBIDDEN_PLAN") => HostedFailure::NeedsPro {
-                    message: format!("{feature} needs Vibezeo Pro."),
+                    message: format!("{feature} comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."),
                 },
                 (429, "DAILY_LIMIT") => HostedFailure::DailyLimit {
                     message: detail("You've reached today's limit."),
@@ -414,8 +414,6 @@ pub trait ApiClient: Send + Sync {
     async fn refresh(&self, refresh_token: &str) -> Result<TokenPair, ApiError>;
     async fn logout(&self, access: &str, refresh_token: &str) -> Result<(), ApiError>;
     async fn me(&self, access: &str) -> Result<MeResponse, ApiError>;
-    /// Returns the checkout URL to open in the system browser.
-    async fn checkout(&self, access: &str, plan: &str, interval: &str) -> Result<String, ApiError>;
     async fn portal(&self, access: &str) -> Result<String, ApiError>;
     async fn config(&self) -> Result<SignedConfig, ApiError>;
     /// `POST /v1/ai/title` (F-TH-15): a thread title of at most 60 characters.
@@ -592,9 +590,6 @@ impl ApiClient for NoHostedApi {
     async fn me(&self, _: &str) -> Result<MeResponse, ApiError> {
         Err(no_hosted_service())
     }
-    async fn checkout(&self, _: &str, _: &str, _: &str) -> Result<String, ApiError> {
-        Err(no_hosted_service())
-    }
     async fn portal(&self, _: &str) -> Result<String, ApiError> {
         Err(no_hosted_service())
     }
@@ -768,17 +763,6 @@ impl ApiClient for HttpApi {
                 .bearer_auth(access),
         )
         .await
-    }
-
-    async fn checkout(&self, access: &str, plan: &str, interval: &str) -> Result<String, ApiError> {
-        let body = json!({ "plan": plan, "interval": interval });
-        let req = self
-            .net
-            .client()
-            .post(self.url("/v1/billing/checkout"))
-            .bearer_auth(access)
-            .json(&body);
-        self.call::<UrlBody>(req).await.map(|b| b.url)
     }
 
     async fn portal(&self, access: &str) -> Result<String, ApiError> {
@@ -1184,7 +1168,7 @@ mod tests {
         assert_eq!(
             HostedFailure::from_api(&http(403, "FORBIDDEN_PLAN", None), "Cloud transcription")
                 .message(),
-            "Cloud transcription needs Vibezeo Pro."
+            "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."
         );
         assert!(matches!(
             HostedFailure::from_api(
@@ -1223,10 +1207,6 @@ mod tests {
         let api = NoHostedApi;
         assert!(matches!(api.config().await, Err(ApiError::Network(_))));
         assert!(matches!(api.refresh("r").await, Err(ApiError::Network(_))));
-        assert!(matches!(
-            api.checkout("a", "pro", "month").await,
-            Err(ApiError::Network(_))
-        ));
         assert!(matches!(
             api.ai_rewrite("a", "polish", "hi", None, &[]).await,
             Err(ApiError::Network(_))

@@ -70,7 +70,7 @@ export const MILESTONES: readonly Milestone[] = [
     items: [
       "A task tracker on your computer, with statuses, priorities, labels, comments and history, updated live as anyone changes it.",
       "Agents in threads, teammate chats and terminal panes read and update the same tasks through Vibezeo's tasks server.",
-      "Running tasks in their own lanes, and routines that run teammates on a schedule, are built and switch on for everyone in the next release.",
+      "Running tasks in their own lanes, and routines that run teammates on a schedule, free for everyone.",
     ],
   },
   {
@@ -80,7 +80,7 @@ export const MILESTONES: readonly Milestone[] = [
       "Named teammates in Agent mode that run on the engines you already use, each with a brief, notes it remembers between chats and skills it can read.",
       "Chats you can come back to, and after a turn a suggestion of what to remember, for you to keep or discard.",
       "Teammates search their past chats and send each other mail, through one local gateway.",
-      "Lead is made for you; this release includes one teammate besides Lead, and the next has as many as you like.",
+      "Lead is made for you; add as many teammates as you like.",
     ],
   },
   {
@@ -109,11 +109,11 @@ export const MILESTONES: readonly Milestone[] = [
     id: "M7",
     title: "Thread mode",
     items: [
-      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups (Cursor Agent, Grok and OpenCode threads in the next release).",
+      "Claude Code, Codex, Cursor Agent, Grok and OpenCode as conversations: streamed replies, folded tool calls, Stop and queued follow-ups.",
       "Approvals answered inline, once or for the whole thread.",
       "Plan mode with numbered plan versions, and Implement for the one you pick.",
       "A Changes panel with every file a thread changed since it started, and the files it read.",
-      "Up to six threads side by side, in the next release (one at a time in this one).",
+      "Up to six threads side by side.",
       "Switching engines mid-thread, with a summary of the conversation.",
     ],
   },

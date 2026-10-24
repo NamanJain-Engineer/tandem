@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CallLogEntry, CallView, IpcError, UiAction } from "@tandem/protocol";
+import { t } from "../i18n";
 import { listen } from "../ipc/events";
 import { invoke } from "../ipc/invoke";
 import { switchMode } from "../features/shell/actions";
@@ -136,12 +137,16 @@ export function followConductor(): () => void {
   return () => stops.forEach((p) => void p.then((stop) => stop()));
 }
 
-/** Start a call (the ring, the shortcut, the palette), or open the plans on
- * Free. Startup refusals show in the HUD, never silently. */
+/** Start a call (the ring, the shortcut, the palette). Conductor is hosted:
+ * with no account it says it comes with Vibezeo accounts (D-2903). Startup
+ * refusals show in the HUD, never silently. */
 export async function startCall(pushToTalk = false): Promise<void> {
   if (!hasConductor()) {
-    // Says why the plans opened (D-833).
-    useUi.getState().openUpgrade({ kind: "conductor", limit: 0 });
+    useConductor.getState().setView({
+      ...IDLE,
+      phase: "error",
+      error: { code: "needs_pro", message: t("conductor.needsAccounts") },
+    });
     return;
   }
   try {
@@ -149,14 +154,10 @@ export async function startCall(pushToTalk = false): Promise<void> {
     if (v) useConductor.getState().setView(v);
   } catch (e) {
     const err = e as IpcError;
-    if (err.code === "forbidden_plan") {
-      useUi.getState().openUpgrade();
-      return;
-    }
     useConductor.getState().setView({
       ...IDLE,
       phase: "error",
-      error: { code: "connect_failed", message: err.message },
+      error: { code: err.code === "forbidden_plan" ? "needs_pro" : "connect_failed", message: err.message },
     });
   }
 }

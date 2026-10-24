@@ -277,15 +277,16 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 1. Full E2E regression green; gate green.
 2. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json` and the root `Cargo.toml` (Cargo.lock follows).
-   Add a `## x.y.z` section to `CHANGELOG.md` in its format (a summary, then `### Added` /
+   Rename `CHANGELOG.md`'s `## Unreleased` section (where slices gather their notes,
+   D-2906) to `## x.y.z`, or add one, in its format (a summary, then `### Added` /
    `Changed` / `Fixed` / `Security`, each bullet tagged `[lin]`, `[mac]`, `[win]` or `[all]`;
    `pnpm exec tsx scripts/check-changelog.ts` checks it): only what the build really does,
-   and plan limits stated (for example, the six-thread grid is Pro-only).
+   and what needs a Vibezeo account stated (Vibezeo is free, D-869: nothing local is limited).
 3. `TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run` (needs ~5 GB free;
-   `TANDEM_HOSTED=0` = no hosted services, the Free plan runs locally, nothing is
-   sent to our servers).
+   `TANDEM_HOSTED=0` = no hosted services, everything local runs free and unlimited,
+   nothing is sent to our servers).
 4. Smoke-test offline: `xvfb-run -a -s "-screen 0 1440x900x24" sh scripts/agent/smoke-appimage.sh`
-   and look at the screenshots (welcome says "Free plan"; setup starts; the status
+   and look at the screenshots (welcome says "Free · no account · nothing sent to Vibezeo"; setup starts; the status
    bar shows the new version). Step into the new features by hand on a persistent
    display (see the script's header).
 5. Site: copy `dist/Vibezeo_x.y.z_amd64-unsigned.deb` to
@@ -478,7 +479,7 @@ release runs offline. What to watch:
   person (stub it, add it to `HUMAN_TODO.md`, continue).
 - **Every public claim must be true and checkable.** No invented customers,
   revenue, users, quotes, dates or reviews; no feature the shipped build doesn't
-  have; plan limits stated where they apply; demos and illustrations labelled.
+  have; what needs a Vibezeo account stated where it applies; demos and illustrations labelled.
   Reviewers of applications and listings check claims, and one false claim costs
   more than it gains: refuse those requests and offer the honest version.
 - Ask the owner before anything outward-facing that's hard to undo: deploying,

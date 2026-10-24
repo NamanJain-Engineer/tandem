@@ -178,10 +178,11 @@ describe("E2E-M3-9 keyboard", function () {
       await input.waitForDisplayed({ timeout: 3_000 });
       await typeKeys(EN[`cmd.${id}`] ?? id);
       await browser.keys("Enter");
-      // Plan-gated commands are absent on this Free profile (F-RT-04, and
-      // Conductor's mute and call log, D-833): Enter runs nothing.
+      // Conductor's mute and call log are absent without an account (it's
+      // hosted, D-833); routines run with no account (D-2900). Enter on an
+      // absent command runs nothing.
       const gated = COMMANDS.find((c) => c.id === id)?.enabledWhen;
-      if (gated === "routines" || gated === "conductor") {
+      if (gated === "conductor") {
         await browser.pause(500);
         expect((await runs())[id] ?? 0).toBe(was);
       } else {

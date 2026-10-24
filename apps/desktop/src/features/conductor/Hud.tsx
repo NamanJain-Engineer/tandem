@@ -74,15 +74,13 @@ function ErrorAction({ view }: { view: CallView }) {
       ? { label: t("conductor.error.switchMic"), run: () => ui.openSettings("dictate") }
       : code === "out_of_credits"
         ? { label: t("conductor.error.buyCredits"), run: () => ui.openSettings("account") }
-        : code === "needs_pro"
-          ? { label: t("conductor.error.seePlans"), run: () => ui.openUpgrade() }
-          : code === "signed_out"
-            ? { label: t("conductor.error.signIn"), run: () => ui.openSettings("account") }
-            : code === "time_cap"
-              ? { label: t("conductor.error.newCall"), run: () => void startCall() }
-              : code === "turned_off" || code === "not_in_region"
-                ? null
-                : { label: t("conductor.error.tryAgain"), run: () => void startCall() };
+        : code === "signed_out"
+          ? { label: t("conductor.error.signIn"), run: () => ui.openSettings("account") }
+          : code === "time_cap"
+            ? { label: t("conductor.error.newCall"), run: () => void startCall() }
+            : code === "turned_off" || code === "not_in_region" || code === "needs_pro"
+              ? null
+              : { label: t("conductor.error.tryAgain"), run: () => void startCall() };
   if (!action) return null;
   return (
     <Button size="sm" variant="secondary" onClick={action.run} data-testid="conductor-error-action">
