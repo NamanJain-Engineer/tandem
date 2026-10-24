@@ -316,7 +316,7 @@ function Card({ card, onOpen, onConnect }: { card: PluginCard; onOpen: () => voi
       )}
     >
       <div className="flex items-center gap-2">
-        <EngineGlyph letters={card.logo} size={20} />
+        <EngineGlyph letters={card.logo} engine={card.pluginId} size={20} />
         {connected ? (
           <button
             type="button"

@@ -25,6 +25,21 @@
   --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30);
   --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(0 0 0 / 0.30), 0 12px 32px -12px rgb(0 0 0 / 0.60);
   --tn-elev-3: 0 0 0 1px rgb(0 0 0 / 0.50), 0 2px 4px rgb(0 0 0 / 0.20), 0 16px 32px -8px rgb(0 0 0 / 0.40), 0 48px 96px -24px rgb(0 0 0 / 0.65);
+  /* Engine marks (D-1895, DESIGN §4.6): a quiet tint per engine behind its
+     own letters, by OKLCH hue; never a vendor's colour. Shell stays neutral. */
+  --tn-engine-claude: oklch(0.34 0.05 275);
+  --tn-engine-codex: oklch(0.34 0.05 10);
+  --tn-engine-gemini: oklch(0.34 0.05 85);
+  --tn-engine-copilot: oklch(0.34 0.05 120);
+  --tn-engine-cursor-agent: oklch(0.34 0.05 300);
+  --tn-engine-grok: oklch(0.34 0.05 235);
+  --tn-engine-opencode: oklch(0.34 0.05 55);
+  --tn-engine-droid: oklch(0.34 0.05 140);
+  --tn-engine-amp: oklch(0.34 0.05 205);
+  --tn-engine-aider: oklch(0.34 0.05 330);
+  --tn-engine-kimi: oklch(0.34 0.05 25);
+  --tn-engine-antigravity: oklch(0.34 0.05 315);
+  --tn-engine-kiro: oklch(0.34 0.05 165);
 }
 
 [data-theme="light"] {
@@ -43,6 +58,19 @@
   --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
   --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
   --tn-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+  --tn-engine-claude: oklch(0.93 0.035 275);
+  --tn-engine-codex: oklch(0.93 0.035 10);
+  --tn-engine-gemini: oklch(0.93 0.035 85);
+  --tn-engine-copilot: oklch(0.93 0.035 120);
+  --tn-engine-cursor-agent: oklch(0.93 0.035 300);
+  --tn-engine-grok: oklch(0.93 0.035 235);
+  --tn-engine-opencode: oklch(0.93 0.035 55);
+  --tn-engine-droid: oklch(0.93 0.035 140);
+  --tn-engine-amp: oklch(0.93 0.035 205);
+  --tn-engine-aider: oklch(0.93 0.035 330);
+  --tn-engine-kimi: oklch(0.93 0.035 25);
+  --tn-engine-antigravity: oklch(0.93 0.035 315);
+  --tn-engine-kiro: oklch(0.93 0.035 165);
 }
 
 @theme inline {

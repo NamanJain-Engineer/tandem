@@ -3,6 +3,7 @@ import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react"
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip, Count } from "../components/Badge";
+import { ENGINE_MARKS, EngineGlyph } from "../components/EngineGlyph";
 import { WaveformRing } from "../components/WaveformRing";
 import { Button } from "../components/Button";
 import { QRCode } from "../components/QRCode";
@@ -251,6 +252,15 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "sizes", render: () => (<div className="flex items-end gap-2">{([20, 24, 32, 48, 72] as const).map((s) => <Avatar key={s} name="Release Lead" id={`tm_${s}`} size={s} />)}</div>) },
       { name: "status", render: () => <Avatar name="Ana" id="tm_ana" size={32} status="waiting" /> },
       { name: "stack", render: () => <AvatarStack people={[{ name: "Ana", id: "a" }, { name: "Bo", id: "b" }, { name: "Cy", id: "c" }, { name: "Di", id: "d" }]} /> },
+    ],
+  },
+  {
+    id: "engine-glyph",
+    title: "EngineGlyph",
+    spec: "§2.28",
+    states: [
+      { name: "engines", render: () => (<div className="flex flex-wrap items-center gap-2">{ENGINE_MARKS.map((id) => <EngineGlyph key={id} engine={id} letters={id.slice(0, 2).replace(/^./, (c) => c.toUpperCase())} size={24} label={id} />)}</div>) },
+      { name: "sizes", render: () => (<div className="flex items-end gap-2">{([14, 16, 20, 24, 32] as const).map((s) => <EngineGlyph key={s} engine="claude" letters="C" size={s} />)}<EngineGlyph engine="codex" letters="X" size={20} selected /></div>) },
     ],
   },
   {

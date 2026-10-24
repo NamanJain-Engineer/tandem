@@ -427,7 +427,7 @@ Every status indicator pairs colour with a **shape or text label** (never colour
 
 ### 1.6 Iconography
 - lucide-react, 16px in controls, 14px in dense rows and pane headers, 20px in empty states. Stroke width 1.75.
-- Engine marks: *monochrome glyphs* drawn by Tandem (a simple letter-in-circle per engine: C=Claude Code, X=Codex, Cu=Cursor, G=Gemini, Co=Copilot, Gk=Grok, O=OpenCode, D=Droid, A=Amp, Ai=Aider, K=Kimi, plus Shell). **Don't embed vendor logos**; use the name next to the glyph. `EngineGlyph` component (§2).
+- Engine marks (D-1895, D-2602; DESIGN §4.6): our own monogram (C=Claude Code, X=Codex, Cu=Cursor, G=Gemini, Co=Copilot, Gk=Grok, O=OpenCode, D=Droid, A=Amp, Ai=Aider, K=Kimi, Ag=Antigravity, Ki=Kiro) in Inter semibold, colour `fg`, on a 4px-radius tile in the engine's quiet tint: `--tn-engine-<id>` in `brand.css`, dark `oklch(0.34 0.05 h)`, light `oklch(0.93 0.035 h)`, with hues Claude Code 275, Codex 10, Gemini CLI 85, Copilot CLI 120, Cursor Agent 300, Grok 235, OpenCode 55, Droid 140, Amp 205, Aider 330, Kimi 25, Antigravity CLI 315, Kiro CLI 165. Shell, plugins and unknown ids sit on `surface-4`. 16px by default, 14px in pane headers and dense rows; 80% opacity at rest, 100% on the focused pane. `fg` passes 4.5:1 on every tile in both themes (`EngineGlyph.test.tsx`, 26 pairs). The status mark sits beside the tile, never on it, and the engine's name is always beside it. **Never a vendor logo, shape, colour or gradient**; no hue on text, borders or the pane frame.
 
 ### 1.7 Avatars (Teammates)
 - Rounded square (`radius-md`), sizes 20 / 24 / 32 / 48 / 72px.
@@ -702,7 +702,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 - **Copy:** Mod+C copies when there's a selection; Ctrl+C with no selection is sent to the process.
 
 ### 2.28 EngineGlyph and EngineBadge
-- **EngineGlyph:** a 14/16/20px circle with the engine's letters (see §1.6); bg surface-4, fg fg-muted; selected state fg accent.
+- **EngineGlyph:** a 14/16/20/24/32px tile with the engine's letters on its tint (see §1.6); props `letters`, `engine` (the id that picks the tint), `active` (full opacity), `selected` (a 2px accent ring), `label`.
 - **EngineBadge:** the glyph plus the name, plus an optional account label ("Claude Code · Work").
 
 ### 2.29 AccountChip

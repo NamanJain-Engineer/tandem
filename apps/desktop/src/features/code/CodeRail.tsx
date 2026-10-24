@@ -264,6 +264,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           {pane.kind === "agent" ? (
             <EngineGlyph
               letters={engines.find((e) => e.spec.id === pane.engineId)?.spec.logo ?? ""}
+              engine={pane.engineId ?? undefined}
               size={14}
             />
           ) : pane.kind === "browser" ? (

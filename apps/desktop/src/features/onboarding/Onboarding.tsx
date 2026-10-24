@@ -60,7 +60,7 @@ function EnginesStep() {
               data-engine={e.spec.id}
               data-installed={e.install ? "true" : "false"}
             >
-              <EngineGlyph letters={e.spec.logo} size={20} />
+              <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />
               <span className="flex-1 text-fg">{e.spec.label}</span>
               {e.install ? (
                 <Badge variant="done">
@@ -137,7 +137,7 @@ function AccountsStep() {
                 data-engine={e.spec.id}
                 data-signed-in={signedIn ? "true" : "false"}
               >
-                <EngineGlyph letters={e.spec.logo} size={20} />
+                <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />
                 <span className="flex-1 text-fg">{e.spec.label}</span>
                 {account ? (
                   <SignInState account={account} />

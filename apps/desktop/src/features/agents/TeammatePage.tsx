@@ -508,6 +508,7 @@ export function TeammatePage({
             {t("agent.page.poweredBy")}
             <EngineBadge
               letters={engine?.spec.logo ?? ""}
+              engine={tm.engineId}
               name={engine?.spec.label ?? tm.engineId}
               size={14}
             />

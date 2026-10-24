@@ -376,7 +376,7 @@ const PaneView = memo(function PaneView({
         menuItems={menu}
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
         onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
-        glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
+        glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} engine={pane.engineId ?? undefined} size={14} active={focused} /> : undefined}
         name={pane.humanName}
         meta={meta}
         location={
@@ -513,7 +513,7 @@ function PaneCover({
       >
         <StatusDot status={status} size={8} />
         {spec ? (
-          <EngineGlyph letters={spec.logo} size={16} />
+          <EngineGlyph letters={spec.logo} engine={spec.id} size={16} />
         ) : (
           <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />
         )}
@@ -533,7 +533,7 @@ function PaneCover({
       </span>
       <span className="flex items-center gap-2 text-sm text-fg-muted">
         {spec ? (
-          <EngineGlyph letters={spec.logo} size={16} />
+          <EngineGlyph letters={spec.logo} engine={spec.id} size={16} />
         ) : (
           <SquareTerminal size={14} aria-hidden="true" />
         )}

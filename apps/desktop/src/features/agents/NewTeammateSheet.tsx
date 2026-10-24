@@ -83,7 +83,7 @@ function EngineTile({ e, selected, onPick }: { e: EngineView; selected: boolean;
         onClick={onPick}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:shadow-focus focus-visible:outline-none"
       >
-        <EngineGlyph letters={e.spec.logo} size={20} />
+        <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-base text-fg">{e.spec.label}</span>
           <span className="truncate text-sm text-fg-muted">

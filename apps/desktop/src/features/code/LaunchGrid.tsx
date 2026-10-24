@@ -69,7 +69,7 @@ function RemoteLaunchGrid({
     <div className="flex flex-col gap-3" data-testid="launch-grid" data-host={hostId}>
       <ul className="grid grid-cols-2 gap-2">
         {installed.map((e, i) =>
-          tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} size={20} />, where, i === 0),
+          tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />, where, i === 0),
         )}
         {tile(
           "shell",
@@ -212,7 +212,7 @@ function LocalLaunchGrid({
           tile(
             e.spec.id,
             e.spec.label,
-            <EngineGlyph letters={e.spec.logo} size={20} />,
+            <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />,
             e.install?.version ?? null,
             i === 0,
           ),
@@ -301,7 +301,7 @@ function LocalLaunchGrid({
                   data-testid={`missing-${e.spec.id}`}
                   className="flex min-h-9 items-center gap-2 border-b border-divider px-1 py-1 last:border-b-0"
                 >
-                  <EngineGlyph letters={e.spec.logo} size={16} />
+                  <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={16} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm text-fg">{e.spec.label}</span>
                     {/* Who can use it (F-EN-09), from the registry. */}

@@ -62,7 +62,7 @@ export function engineOptionsFor(engines: EngineView[], chatEngines: string[] | 
       return {
         value: e.spec.id,
         label: e.spec.label,
-        icon: <EngineGlyph letters={e.spec.logo} size={14} />,
+        icon: <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={14} />,
         disabled: !e.chatCapable || !onPlan,
         disabledReason: !e.chatCapable
           ? t("thread.composer.terminalOnly")

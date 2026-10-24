@@ -172,9 +172,9 @@ function spec(
 }
 
 const ENGINES: EngineView[] = [
-  ["claude", "Claude Code", "Anthropic", "CC", "claude", "2.1.0"],
-  ["codex", "Codex", "OpenAI", "CX", "codex", "0.46.0"],
-  ["gemini", "Gemini CLI", "Google", "GE", null, "0.9.0"],
+  ["claude", "Claude Code", "Anthropic", "C", "claude", "2.1.0"],
+  ["codex", "Codex", "OpenAI", "X", "codex", "0.46.0"],
+  ["gemini", "Gemini CLI", "Google", "G", null, "0.9.0"],
 ].map(([id, label, vendor, logo, adapter, version]) => ({
   spec: spec(id ?? "", label ?? "", vendor ?? "", logo ?? "", adapter ?? null),
   install: { path: `/usr/local/bin/${id}`, version: version ?? null, source: "shell" },
