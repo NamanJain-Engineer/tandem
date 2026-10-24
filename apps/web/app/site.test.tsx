@@ -246,7 +246,9 @@ describe("public site", () => {
   it("F-TH-06 the home page says threads run every chat engine, six side by side, with no plan (D-2900)", () => {
     const home = html(<HomePage />);
     expect(home).toContain("Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.");
-    expect(home).not.toMatch(/need Pro|next release|in the next\b|this release (has|includes|keeps)/);
+    expect(home).not.toMatch(
+      /need Pro|next release|in the next\b|the next (shows|has|runs|adds|lifts)|this release (has|includes|keeps|shows|runs)/i,
+    );
   });
 
   it("F-WB-01 the changelog lists every closed milestone", () => {

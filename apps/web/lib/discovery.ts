@@ -74,11 +74,9 @@ export function docSource(slug: string): DocSource {
 /** A page for a feature the release doesn't have opens with this label. */
 export const notInApp = (d: DocSource) => d.body.startsWith("> **Not in the app yet.**");
 
-/** A page for a feature that's in the app but doesn't run in this release's
- * download opens with one of these: the next release switches it on, or it
- * needs Vibezeo's servers and comes with accounts (D-869). */
-export const comesLater = (d: DocSource) =>
-  d.body.startsWith("> **In the next release.**") || d.body.startsWith("> **Comes with Vibezeo accounts.**");
+/** A page for a feature that's in the app but needs Vibezeo's servers opens
+ * with DESIGN §9.5's label (D-869, D-2913). */
+export const comesWithAccounts = (d: DocSource) => d.body.startsWith("> **Comes with Vibezeo accounts.**");
 
 /** MDX to plain Markdown: generated components become their tables, site
  * links become absolute, and `<kbd>` keys become code. */
@@ -107,7 +105,7 @@ export function llmsTxt(): string {
 
 ${DOCS_PAGES.map((p) => {
   const d = docSource(p.slug);
-  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : comesLater(d) ? " (Not in this release's download yet.)" : ""}`;
+  return `- [${p.title}](${abs(docsPath(p.slug))}): ${d.description}${notInApp(d) ? " (Not in the app yet.)" : comesWithAccounts(d) ? " (Comes with Vibezeo accounts.)" : ""}`;
 }).join("\n")}
 
 ## Blog

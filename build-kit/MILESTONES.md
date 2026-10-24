@@ -571,7 +571,7 @@ xvfb-run -a pnpm --filter desktop perf -- --suite terminals   # P95 keyâ†’echo â
   - Press Esc mid-drag. Expected: the layout is back to its pre-drag state.
 - **E2E-M3-5 Handback.** Run fake `claude` in an agent pane, then `/exit`. Expected: a shell prompt in the same cwd, and "Saved sessions (1)" in the rail.
 - **E2E-M3-6 Tree kill.** Run `bash -c 'sleep 1000 & sleep 1000'` and close the pane. Expected: `pgrep -f 'sleep 1000'` is empty within 3 s.
-- **E2E-M3-7 No pane limit** (was the Free pane limit; D-869, D-2900). Offline, open 4 panes, then a 5th. Expected: the 5th starts, and the picker opens for a 6th.
+- **E2E-M3-7 No pane limit** (was the Free pane limit; D-869, D-2900). Offline, open 4 panes, then a 5th. Expected: the 5th starts.
 - **E2E-M3-8 Orphans.** kill -9 the app with a live child, then relaunch. Expected: the dialog. Choose Stop. Expected: the PID is gone.
 - **E2E-M3-9 Keyboard.**
   - Ctrl+W/T/D/[/] in a terminal. Expected: bytes 0x17, 0x14, 0x04, 0x1b, 0x1d reach the PTY.

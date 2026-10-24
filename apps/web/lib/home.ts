@@ -30,7 +30,7 @@ export const FEATURES = [
   },
   {
     title: "Switch engines mid-thread",
-    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation. This release shows one thread at a time; the next shows up to six side by side, each with its own composer.",
+    body: "Move a thread to another engine and it starts with a summary of what was said, marked in the conversation.",
   },
   {
     title: "Worktree lanes and handoff",
