@@ -807,6 +807,78 @@ fn f_tl_12_unmasked_panes_are_untouched() {
     assert!(text(&sink).contains("sk_test_4242"));
 }
 
+/// The run wrapper under `shell`: `command` gets `API_KEY`; afterwards the
+/// pane's shell answers `printenv API_KEY || echo after-none`.
+/// `interrupt` sends Ctrl-C once the command printed "started"; without it a
+/// command that may never print (a syntax error) gets a fixed wait instead.
+fn run_under(shell: &str, pane: &str, command: &str, interrupt: bool) -> String {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    let mut s = spec(pane, "");
+    s.program = PathBuf::from(shell);
+    s.args = tandem_pty::env::run_wrapper(
+        std::path::Path::new(shell),
+        command,
+        &["API_KEY".to_string()],
+    )
+    .expect("wrapper");
+    s.env.insert("API_KEY".into(), "value-123".into());
+    s.env.insert("TANDEM_SHELL_TOKEN".into(), "tok-1".into());
+    s.env.insert(
+        "HOME".into(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    );
+    mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+        .expect("spawn");
+    if interrupt {
+        assert!(
+            wait_until(Duration::from_secs(10), || text(&sink).contains("started")),
+            "{shell}: {}",
+            text(&sink)
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        mgr.write(pane, b"\x03").expect("ctrl-c");
+    }
+    std::thread::sleep(Duration::from_millis(if interrupt { 800 } else { 1_500 }));
+    mgr.write(
+        pane,
+        b"printenv API_KEY || echo after-none; printenv TANDEM_SHELL_TOKEN || echo token-none\r",
+    )
+    .expect("write");
+    let done = wait_until(Duration::from_secs(10), || {
+        text(&sink).contains("token-none")
+    });
+    let out = text(&sink);
+    let _ = mgr.kill(pane);
+    assert!(done, "{shell}: {out}");
+    out
+}
+
+fn shells() -> Vec<&'static str> {
+    ["/bin/sh", "/usr/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"]
+        .into_iter()
+        .filter(|s| std::path::Path::new(s).exists())
+        .collect()
+}
+
+#[test]
+fn f_tl_12_5_ctrl_c_on_the_command_still_unsets_the_variables_in_every_shell() {
+    for (i, shell) in shells().into_iter().enumerate() {
+        let out = run_under(shell, &format!("ri{i}"), "echo started; sleep 30", true);
+        assert!(out.contains("after-none"), "{shell}: {out}");
+        assert!(!out.contains("value-123"), "{shell}: {out}");
+    }
+}
+
+#[test]
+fn f_tl_12_5_a_command_that_ends_in_an_operator_cant_swallow_the_unset() {
+    for (i, shell) in shells().into_iter().enumerate() {
+        let out = run_under(shell, &format!("ro{i}"), "echo started &&", false);
+        assert!(out.contains("after-none"), "{shell}: {out}");
+        assert!(!out.contains("value-123"), "{shell}: {out}");
+    }
+}
+
 #[test]
 fn f_tl_12_5_the_command_gets_the_variables_and_the_shell_after_it_doesnt() {
     let mgr = PtyManager::new();

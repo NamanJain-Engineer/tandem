@@ -366,46 +366,58 @@ pub fn agent_wrapper(
 /// variables (and the secret values in them) reach the command only, never a
 /// command line or what's typed afterwards. `None` for cmd.exe, which can't
 /// unset them before handing over.
+///
+/// - The command is an argument (`$1`, `$argv[1]`, a quoted literal), never
+///   pasted into the script, so a trailing `&&`, `|` or `\` can't swallow
+///   the `unset` after it.
+/// - The shell isn't interactive (`-lc`): rc files that start tmux or
+///   re-source `.env` never see the values.
+/// - Ctrl+C ends the command, not the wrapper: the variables are unset
+///   whichever way the command stops.
+/// - `TANDEM_SHELL_TOKEN` goes too: neither the command nor the shell after
+///   it can forge shell-integration marks.
 pub fn run_wrapper(shell: &Path, command: &str, names: &[String]) -> Option<Vec<String>> {
     use tandem_core::shellquote::{quote_path, ShellDialect};
     let shell_str = shell.to_string_lossy();
     // Names are `[A-Za-z_][A-Za-z0-9_]*` (`.env` parsing keeps only those).
-    let names = names.join(" ");
+    let mut all: Vec<&str> = names.iter().map(String::as_str).collect();
+    all.push(TOKEN_VAR);
+    let unset = all.join(" ");
     Some(match shell_kind(shell) {
         ShellKind::Posix => {
             let again = quote_path(&shell_str, ShellDialect::Posix).ok()?;
-            let unset = if names.is_empty() {
-                String::new()
-            } else {
-                format!("unset {names}; ")
-            };
-            vec!["-lic".into(), format!("{command}\n{unset}exec {again} -l")]
+            vec![
+                "-lc".into(),
+                format!("trap : INT\n(eval \"$1\")\nunset {unset}\ntrap - INT\nexec {again} -l"),
+                "vibezeo-run".into(),
+                command.to_string(),
+            ]
         }
         ShellKind::Fish => {
             let again = quote_path(&shell_str, ShellDialect::Posix).ok()?;
-            let unset = if names.is_empty() {
-                String::new()
-            } else {
-                format!("set -e {names}; ")
-            };
             vec![
                 "-l".into(),
-                "-i".into(),
                 "-c".into(),
-                format!("{command}\n{unset}exec {again} -l"),
+                format!(
+                    "function __vibezeo_int --on-signal INT; end\neval $argv[1]\nset -e {unset}\nfunctions -e __vibezeo_int\nexec {again} -l"
+                ),
+                command.to_string(),
             ]
         }
         ShellKind::PowerShell => {
-            let unset = names
-                .split(' ')
-                .filter(|n| !n.is_empty())
-                .map(|n| format!("Remove-Item Env:{n}; "))
-                .collect::<String>();
+            let literal = command.replace('\'', "''");
+            let env = all
+                .iter()
+                .map(|n| format!("Env:{n}"))
+                .collect::<Vec<_>>()
+                .join(",");
             vec![
                 "-NoLogo".into(),
                 "-NoExit".into(),
                 "-Command".into(),
-                format!("{command}\n{unset}"),
+                format!(
+                    "$vibezeoRun = '{literal}'; try {{ Invoke-Expression $vibezeoRun }} finally {{ Remove-Item {env} -ErrorAction SilentlyContinue; Remove-Variable vibezeoRun }}"
+                ),
             ]
         }
         ShellKind::Cmd => return None,
@@ -492,23 +504,26 @@ mod tests {
     #[test]
     fn f_tl_12_run_wrapper_unsets_before_handing_over() {
         let names = vec!["API_KEY".to_string(), "DB_URL".to_string()];
-        let sh = run_wrapper(Path::new("/bin/zsh"), "pnpm dev", &names).expect("posix");
+        let sh = run_wrapper(Path::new("/bin/zsh"), "pnpm dev &&", &names).expect("posix");
+        assert_eq!(sh[0], "-lc");
         assert_eq!(
-            sh,
-            vec![
-                "-lic".to_string(),
-                "pnpm dev\nunset API_KEY DB_URL; exec '/bin/zsh' -l".to_string()
-            ]
+            sh[1],
+            "trap : INT\n(eval \"$1\")\nunset API_KEY DB_URL TANDEM_SHELL_TOKEN\ntrap - INT\nexec '/bin/zsh' -l"
+        );
+        // The command is an argument, not part of the script.
+        assert_eq!(
+            &sh[2..],
+            &["vibezeo-run".to_string(), "pnpm dev &&".to_string()]
         );
         let fish = run_wrapper(Path::new("/usr/bin/fish"), "pnpm dev", &names).expect("fish");
+        assert_eq!(&fish[..2], &["-l".to_string(), "-c".to_string()]);
+        assert!(fish[2].contains("eval $argv[1]\nset -e API_KEY DB_URL TANDEM_SHELL_TOKEN\n"));
+        assert_eq!(fish[3], "pnpm dev");
+        let ps = run_wrapper(Path::new("pwsh.exe"), "echo 'it''s'", &names).expect("pwsh");
         assert_eq!(
-            fish.last().map(String::as_str),
-            Some("pnpm dev\nset -e API_KEY DB_URL; exec '/usr/bin/fish' -l")
+            ps[3],
+            "$vibezeoRun = 'echo ''it''''s'''; try { Invoke-Expression $vibezeoRun } finally { Remove-Item Env:API_KEY,Env:DB_URL,Env:TANDEM_SHELL_TOKEN -ErrorAction SilentlyContinue; Remove-Variable vibezeoRun }"
         );
-        let ps = run_wrapper(Path::new("pwsh.exe"), "pnpm dev", &names).expect("pwsh");
-        assert!(ps
-            .last()
-            .is_some_and(|c| c.contains("Remove-Item Env:API_KEY; Remove-Item Env:DB_URL; ")));
         assert!(run_wrapper(Path::new("cmd.exe"), "x", &names).is_none());
     }
 
