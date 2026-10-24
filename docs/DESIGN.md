@@ -26,7 +26,7 @@ What we have is good engineering wearing a competent but generic coat. Captured 
 | Honesty slips | The upgrade dialog says "Unlimited panes & threads" (`LIMITS`: Pro is 64 panes, 6 threads) and lists the hosted features (Conductor, cloud Dictate, Enhance, Auto) beside local ones as if all were the same kind of thing, though the hosted ones need accounts that aren't open. The download page says "choose Start"; the button reads "Start using Vibezeo". | Our edge is trust. One untrue line on the way to paying costs more than any visual polish buys. |
 | Voice | Honest and exact, often long ("Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed in to your own account. If an engine is missing, Vibezeo shows you how to install it."). | Honesty is our edge; length hides it. |
 
-The plan: keep the identity (DECISIONS: Inter, JetBrains Mono, teal, slate, the two rings), make one design system for both surfaces (§4), cut the site's words in half and show the product sooner (§5.1), and give the app the same light, edges and motion so first run feels like a continuation of the site (§5.3).
+The plan: keep the identity (DECISIONS: Inter, JetBrains Mono, teal, the two rings; the neutrals move from slate to a true neutral, D-1894), make one design system for both surfaces (§4), cut the site's words in half and show the product sooner (§5.1), and give the app the same light, edges and motion so first run feels like a continuation of the site (§5.3).
 
 ---
 
@@ -182,6 +182,7 @@ Migration, slice by slice (each slice is small enough to merge alone while five 
 | T5 | site-motion | Accent discipline on the site (§4.2): eyebrows and inline links go neutral; teal stays on the primary CTA, focus and the one highlight. | Accent count above the fold ≤ 3 (§4.2). |
 | T6 | site-motion | Dark-first product scenes use the same `frame` and the app's real dark surfaces; the site's stage tokens read from `brand.css`. | Scenes and captures sit in one bezel style. |
 | T7 | either | Remove `--shadow-1…3` once no component uses them (grep is empty). | — |
+| T8 | site-motion | The site on ink (D-1894): `--site-stage`, `--site-bezel` and `--site-raised` from the ink scale, the light page `--slate-25` → `--ink-25`, and every slate-tinted alpha (`rgb(148 163 184 / …)` lines, rings, grid, glass, stage line) becomes white alpha in dark and ink alpha in light. | No `--slate-*` or `148 163 184` left in `site.css` or site components; contrast tests pass. |
 
 ### 4.2 Colour
 
@@ -190,18 +191,18 @@ Keep the palette; change how much of it we use.
 - **One accent, three jobs.** Teal (`--tn-accent`: #2DD4BF dark, #0F766E light) is for: the primary action in a view, focus and selection, and the active state of a control (a selected tab, the current mode). It is not for eyebrows, inline links, tick marks, icons in feature lists, or decoration.
   - **Site:** at most three teal elements in any viewport: the primary CTA, the one highlighted phrase in a hero (the `text-ink` gradient, teal → sky), and focus. Eyebrows become `fg-muted` mono caps; inline links are ink with an underline (D-1805 already underlines them); ticks become `fg-subtle` icons.
   - **App:** one accent-filled button per view. Secondary actions are neutral buttons.
-- **Status colours mean status, always** (UI_SPEC §1.3): working sky, waiting amber, done green, idle slate, error rose. Never decorative, never the accent's job. Each pairs with its shape (pulse, diamond, check, hollow circle, triangle).
-- **Neutrals are slate, tuned a little blue** (already). Dark is the brand's home: the app defaults to dark, product imagery is dark in both site themes (D-1801), and the site follows the OS.
+- **Status colours mean status, always** (UI_SPEC §1.3): working sky, waiting amber, done green, idle grey, error rose. Never decorative, never the accent's job. Each pairs with its shape (filled dot with a breathing halo, diamond, check, hollow circle, triangle).
+- **Neutrals are `ink`, a true neutral near-black** (D-1894, from `app-ui`'s D-2600), for the app and the site alike: `--ink-950` #09090B ground, each surface a step lighter (#0E0E10, #121214, #1C1C20, #232327), borders and lines as white alpha in dark and ink alpha in light, never slate-tinted. Slate's blue cast tinted everything, teal included, toward one cool wash. Every premium dark product we measured grounds on a neutral near-black (#08090A, #07080A, #0D0E11): an industry convention, not anyone's signature. On it teal and the status colours read true, and the product, not the grey, carries the colour. A neutral grey is never what makes us recognisable; the teal, the rings and their light, the type and the craft are. Slate stays in the palette for compatibility; no semantic token uses it. Dark is the brand's home: the app defaults to dark, product imagery is dark in both site themes (D-1801), and the site follows the OS or the visitor's choice.
 - **Contrast is AA at least, checked by tests** (`contrast.test.ts`, `site.test.ts`). The pairs we lean on, computed from the tokens:
 
 | Pair | Dark | Light |
 |---|---|---|
-| `fg` on page | 16.8 : 1 | 17.1 : 1 |
-| `fg-muted` on page | 8.2 : 1 | 7.2 : 1 |
-| `fg-subtle` on page / on surface-2 | 5.7 / 5.4 : 1 | 4.9 / 4.7 : 1 (on slate-50) |
-| accent as text on page | 10.6 : 1 | 5.2 : 1 |
+| `fg` on page | 17.0 : 1 | 16.1 : 1 |
+| `fg-muted` on page | 8.0 : 1 | 7.4 : 1 |
+| `fg-subtle` on page / surface-2 / surface-4 | 5.9 / 5.6 / 4.6 : 1 | 5.5 (ink-50) / 6.0 (white) : 1 |
+| accent as text on page | 10.7 : 1 | 5.0 : 1 (ink-50), 5.5 : 1 (white) |
 | `accent-fg` on accent (primary button) | 7.8 : 1 | 5.5 : 1 |
-| status text (working / waiting) on surface | 9.3 / 11.9 : 1 | 5.9 / 5.0 : 1 (sky-700 / amber-700) |
+| status text (working / waiting) on surface-2 | 8.7 / 11.2 : 1 | 5.9 / 5.0 : 1 (sky-700 / amber-700, on white) |
 
   `fg-subtle` is the floor for text; `fg-disabled` is for disabled controls only, never for information. Anything new adds its pair to the relevant test.
 
@@ -246,19 +247,25 @@ Light comes from above. A surface that sits higher catches more of it on its top
 | Level | Used for | Radius | Edge | Shadow (dark) |
 |---|---|---|---|---|
 | 0 · ground | window background, site page | — | — | — |
-| 1 · surface | panes, rails, cards, launch grid tiles | 8 px app panels, 12 px site cards | 1 px `border` (app); gradient edge lit top → quiet bottom (site) | e1: 1 px inner highlight + 1 px contact |
-| 2 · raised | menus, popovers, selects, toasts, a lifted card | 8 px | lit top edge | e2: highlight + contact + 12/32 −12 ambient |
+| 1 · surface | panes, rails, cards, launch grid tiles | 10 px app panels, 12 px site cards | 1 px `border` (app); gradient edge lit top → quiet bottom (site) | e1: 1 px inner highlight + 1 px contact |
+| 2 · raised | menus, popovers, selects, toasts, a lifted card | 10 px | lit top edge | e2: highlight + contact + 12/32 −12 ambient |
 | 3 · floating | dialogs, sheets, command palette, product frames | 12 px app, 16 px site frames | lit top edge, 1 px dark outer ring | e3: ring + contact + 16/32 + 48/96 −24 ambient |
 
-- **Radii nest:** inner radius = outer radius − padding. Controls 6 px, chips and key caps 4 px, panels 8 px, dialogs 12 px, site cards 12 px, frames 16 px around a 10 px screen. No pills except avatars' status dots and toggles (DECISIONS: 6 px controls).
+- **Radii nest:** inner radius = outer radius − padding. Controls 6 px, chips and key caps 4 px, panels, panes, cards and popovers 10 px (a 6 px control inside 4 px of padding), dialogs and sheets 12 px, site cards 12 px, frames 16 px around a 10 px screen (D-1894). No pills except avatars' status dots and toggles (DECISIONS: 6 px controls).
 - **Borders are 1 px hairlines.** In dark themes, separate with a border; in light themes, prefer a background shift plus e1. Never two borders side by side (pane border + header border): one of them goes.
 - **The light is ours:** the two rings' bloom (teal and sky, `bg-lens`) sits behind heroes and the closing call to action, never on a product frame (D-1834). In the app the light appears only as lit edges and, on first run, the rings' bloom behind the welcome title.
-- **Elevation tokens come from `brand.css`** (T1). The app's `--shadow-1…3` retire in T7.
+- **Elevation tokens come from `brand.css`** (T1), one set for both surfaces: `--tn-edge-hi` is the top-edge highlight and `--tn-elev-1…3` the shadows. The app's `--shadow-1…3` alias them (`--shadow-2: var(--tn-elev-2)`) until T7 retires them. If a value is too heavy for the app, it changes in `brand.css`, for both surfaces; there is no second set.
 
 ### 4.6 Icons, engine marks and product imagery
 
 - **Icons:** lucide (ISC licence), 1.75 stroke; 16 px in controls, 14 px in dense rows and pane headers, 20 px in empty states, 24 px on the site's capability rows. Icons label, they don't decorate: a capability row has an icon; a tick list doesn't need one per line.
-- **Engine marks:** our own monochrome monogram in a circle (`EngineGlyph`: C, X, Cu, G, Co, Gk, O, D, A, Ai, K, Ag, Ki), always next to the engine's name. Never a vendor logo, colour or shape (DECISIONS). `app-ui` owns any refinement; the rule is one weight, one size per context, `fg-muted` at rest, `fg` when its pane is focused.
+- **Engine marks (D-1895):** our own monogram (`EngineGlyph`: C, X, Cu, G, Co, Gk, O, D, A, Ai, K, Ag, Ki) on a small **tinted tile**, always next to the engine's name, so four or more panes can be told apart at a glance. The letterform carries identity; the tint is a quiet second cue.
+  - **Tile:** a rounded square, 16 px (14 px in pane headers and dense rows), radius 4 px. The letters are Inter semibold in `fg`, never in the hue.
+  - **Tint:** each engine has its own hue at low chroma, as tokens in `brand.css` (`--tn-engine-<id>`, dark and light, so the site's engine list draws the same tiles): dark `oklch(0.34 0.05 h)`, light `oklch(0.93 0.035 h)`. At that chroma no tile competes with the accent or a status colour (§4.2), and `fg` on every tile passes AA (a contrast test lists them all).
+  - **Hues** (OKLCH angle), chosen away from each vendor's own brand colour: Claude Code 275 (indigo), Codex 10 (rose), Gemini CLI 85 (ochre), Copilot CLI 120 (olive), Cursor Agent 300 (violet), Grok 235 (steel), OpenCode 55 (clay), Droid 140 (moss), Amp 205 (lagoon), Aider 330 (orchid), Kimi 25 (brick), Antigravity CLI 315 (plum), Kiro CLI 165 (mint); Shell and Terminal stay neutral (`surface-4`). Before shipping, `app-ui` checks each against the vendor's current site and logo; any hue that lands near a vendor's brand colour moves to a free angle, and the table here changes with it.
+  - **Where:** wherever `EngineGlyph` stands next to an engine's name: pane headers, the launch grid, the rail's agent rows, thread rail rows, Dashboard rows, the onboarding engines step, engine pickers, and the site's engine list. The status mark always sits beside the tile, never on it, so status stays shape plus status colour and engine stays letters plus tint.
+  - **With the accent and status:** the tints sit at chroma ≤ 0.05, under half the accent's (teal-400 is about 0.13) and the status colours', and never fill more than the 16 px tile. A tile is never the only thing that names its engine.
+  - **Never:** a vendor logo, shape, colour or gradient (DECISIONS); hue on text, borders or the pane frame; a tile at full saturation. At rest the tile shows at 80 % opacity, and at 100 % on the focused pane.
 - **The mark:** the two overlapping rings. It is the only illustration we own. At page scale it becomes the backdrop (`Orbit`); in the app it appears at 16 px in the title bar and at 64–96 px on first run and empty Agent mode.
 - **Product imagery is the product.** Real captures from the shipped build at 2×, labelled with their build (`Vibezeo 0.8.0 · Linux`), or the live demo, or a scene animated from the real UI's components and tokens (`site-motion`). Never a mock-up drawn to look better than the app. When a scene simplifies (fewer panes, scripted output), its caption says so.
 - **Dark stage:** product media sits on the dark stage in both site themes (D-1801), in the `frame` bezel.
@@ -282,7 +289,7 @@ Motion explains change: where something came from, where it went, what it's doin
 Choreography:
 - **Stagger related items by 40–80 ms**, never more than five steps (a list of 20 doesn't cascade for a second).
 - **Enter: fade + 4–8 px rise or scale 0.97 → 1.** Exit: fade, 60–70 % of the entrance's time. Nothing slides more than 24 px in the app.
-- **Status changes animate colour over 180 ms**; "waiting" gets one 600 ms attention pulse, once (UI_SPEC §1.8). A working agent's three-dot pulse is the only perpetual motion in the app.
+- **Status changes animate colour over 180 ms**; "waiting" gets one 600 ms attention pulse, once (UI_SPEC §1.8). A working agent's breathing halo (a filled dot whose halo fades in and out over 1.6 s, D-2601) is the only perpetual motion in the app; under reduced motion the filled dot stays, still.
 - **Site:** reveals by scroll timeline (CSS only), the rings drawing in, the engines' slow orbit and the data-flow packets (D-1842); `site-motion`'s product scenes play once when they enter the viewport and rest on their final frame; they never loop faster than every 8 s and pause off screen.
 - **Transform and opacity only** (and a stroke dash); never animate layout, filters on large areas, or anything that delays the largest paint.
 - **Reduced motion:** under `prefers-reduced-motion: reduce` or Settings › Appearance › Reduce motion, every transform and pulse stops; opacity changes stay at ≤ 120 ms; scenes show their final frame (tests already enforce this: `motion.test.ts`, the site's reduced-motion test).
@@ -364,7 +371,7 @@ Five steps, each with what the person needs to feel, what they see today and the
 3. **Raised surfaces take the brand (app; slice T2).** Menus, the palette, dialogs and sheets get the lit top edge and e2/e3 so they visibly float over terminals.
 4. **The Dashboard is the heart (app).** It earns the craft budget: agents grouped by state (Waiting on you first), each row with glyph, name, workspace, elapsed time in `tabular-nums` and one action. Empty state: "No agents running · Start one from Code, Thread or Agent mode."
 5. **Threads (app).** Transcript at 14/22 in a 72-character measure, tool calls collapsed to one line with their result, approvals as cards with the verb on the button ("Allow once", "Allow for this thread", "Deny").
-6. **Status bar (app).** Quiet by default (branch, version). It speaks only when something matters: "1 agent waiting on you" in amber text, clickable.
+6. **Status bar (app).** Quiet by default: branch and version. Each other item appears only while it is non-zero, and leaves when it isn't (the coordinating session's call, which keeps this intent): agents waiting ("1 waiting on you", amber text, first and clickable), agents working (a count with the working dot), live ports and previews, and the usage window when an account nears its limit. Never more than four items at once; waiting always wins a place.
 7. **Keyboard first, always discoverable.** Every command in the palette shows its shortcut as a `Kbd`; tooltips on icon buttons show the shortcut after the label.
 
 ### 5.5 The moments that lead to paying
