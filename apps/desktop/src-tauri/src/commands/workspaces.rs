@@ -93,7 +93,7 @@ pub async fn workspace_add(
             // The + menu lists the distro's engines: detect them now, as
             // connecting does for an SSH host.
             let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
-            let engines = state.terminals.engines.registry().all().to_vec();
+            let engines = state.terminals.engines.base_registry().all().to_vec();
             tauri::async_runtime::spawn(async move {
                 match wsl.detect_report(&host.id, &distro, &engines).await {
                     Ok(report) => {

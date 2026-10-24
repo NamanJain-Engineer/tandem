@@ -91,7 +91,7 @@ pub async fn engines_list(
         )
         .await
         .unwrap_or_default();
-        let mut list = views(engines.registry().all(), report.as_ref(), &extra);
+        let mut list = views(engines.base_registry().all(), report.as_ref(), &extra);
         list.sort_by_key(|v| v.install.is_none());
         return Ok(list);
     }
@@ -119,7 +119,7 @@ pub async fn engines_detect(
 ) -> Result<DetectionReport, tandem_core::IpcError> {
     if let Some(host) = host_id.filter(|h| h != "local") {
         let host = tandem_core::ids::HostId::from_db(host);
-        let engines = state.terminals.engines.registry().all().to_vec();
+        let engines = state.terminals.engines.base_registry().all().to_vec();
         let row = tandem_store::repo::hosts::get(&state.store, &host).await?;
         if row.kind == "wsl" {
             // Inside the distro's login shell (F-RM-02 "Detection runs

@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Key } from "webdriverio";
-import { fakeEngine, freshUser, home, invoke, mod, planFooter, setPlan } from "../support/app";
+import { fakeEngine, freshUser, home, invoke, mod } from "../support/app";
 import { composer, sendMessage, threadMode, waitForAssistant } from "../support/thread";
 
 type Agent = { id: string; label: string; program: string; args: string[] };
@@ -54,17 +54,26 @@ async function fill(label: string, command: string, args: string): Promise<void>
 
 const agents = () => invoke<Agent[]>("acp_agents_list");
 
+async function transcriptText(): Promise<string> {
+  return browser.execute(
+    () => document.querySelector<HTMLElement>('[data-testid="thread-main"] [role="log"]')?.innerText ?? "",
+  );
+}
+
 // E2E-M18-EN10 ACP agents (F-EN-10): a command that never answers isn't
 // added; the fake agent added by its full path passes the test, is listed
-// "via ACP" in the Thread engine picker, shows Pro's limit on Free and runs
-// a turn on Pro; a secret-shaped variable is refused before anything runs.
+// "via ACP" in the Thread engine picker and runs a turn on Free (D-869); a
+// secret-shaped variable is refused before anything runs; after Remove, its
+// thread says the agent was removed, and the same label added again gets a
+// new id (D-2511).
 describe("E2E-M18-EN10 ACP agents", function () {
   this.timeout(240_000);
-  let email = "";
   let program = "";
+  let id = "";
+  let thread = "";
 
   before(async () => {
-    ({ email } = await freshUser("en10"));
+    await freshUser("en10");
     program = fakeEngine("my-agent", agentDir());
   });
 
@@ -112,45 +121,54 @@ describe("E2E-M18-EN10 ACP agents", function () {
     await press("acp-add-confirm");
     await $('[data-testid="acp-add"]').waitForExist({ reverse: true, timeout: 15_000 });
     const saved = await agents();
-    expect(saved).toEqual([
-      expect.objectContaining({ id: "acp-my-agent", label: "My agent", program, args: ["acp"] }),
-    ]);
-    await $('[data-testid="acp-agent"][data-id="acp-my-agent"]').waitForDisplayed({ timeout: 10_000 });
+    expect(saved).toEqual([expect.objectContaining({ label: "My agent", program, args: ["acp"] })]);
+    id = saved[0]!.id;
+    expect(id).toMatch(/^acp-my-agent-[0-9a-f]{8}$/);
+    await $(`[data-testid="acp-agent"][data-id="${id}"]`).waitForDisplayed({ timeout: 10_000 });
     const views = await invoke<View[]>("engines_list", { hostId: null });
-    const view = views.find((v) => v.spec.id === "acp-my-agent");
+    const view = views.find((v) => v.spec.id === id);
     expect(view).toMatchObject({ added: true, chatCapable: true, install: { path: program } });
     await closeSettings();
   });
 
-  it("F-EN-10.3 on Free the added agent shows the plan's limit in the picker", async () => {
+  it("F-EN-10.3 on Free the added agent is offered in the picker and a thread with it runs a turn", async () => {
     await threadMode();
-    const thread = await invoke<Thread>("thread_create", {
+    const made = await invoke<Thread>("thread_create", {
       args: { kind: "thread", workspaceId: null, engineId: "claude" },
     });
-    const row = $(`[data-testid="thread-row"][data-thread-id="${thread.id}"]`);
+    const row = $(`[data-testid="thread-row"][data-thread-id="${made.id}"]`);
     await row.waitForExist({ timeout: 10_000 });
     await row.click();
     await composer().waitForDisplayed({ timeout: 10_000 });
     await $('[data-testid="composer"] [aria-label="Engine"]').click();
     const option = $('//*[@role="option"][contains(normalize-space(), "My agent · via ACP")]');
     await option.waitForDisplayed({ timeout: 10_000 });
-    expect(await option.getAttribute("aria-disabled")).toBe("true");
-    expect(await option.getText()).toContain("Pro");
+    expect(await option.getAttribute("aria-disabled")).not.toBe("true");
     await browser.keys(Key.Escape);
-  });
-
-  it("F-EN-10.1 on Pro a thread with the added agent runs a turn", async () => {
-    await setPlan(email, "pro");
-    await invoke("entitlement_refresh");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
-    const thread = await invoke<Thread>("thread_create", {
-      args: { kind: "thread", workspaceId: null, engineId: "acp-my-agent" },
+    const agentThread = await invoke<Thread>("thread_create", {
+      args: { kind: "thread", workspaceId: null, engineId: id },
     });
-    const row = $(`[data-testid="thread-row"][data-thread-id="${thread.id}"]`);
-    await row.waitForExist({ timeout: 10_000 });
-    await row.click();
+    thread = agentThread.id;
+    const agentRow = $(`[data-testid="thread-row"][data-thread-id="${thread}"]`);
+    await agentRow.waitForExist({ timeout: 10_000 });
+    await agentRow.click();
     await composer().waitForDisplayed({ timeout: 10_000 });
     await sendMessage("hello");
     await waitForAssistant("You said: hello");
+  });
+
+  it("F-EN-10.3 after Remove the thread says the agent was removed, and the same label gets a new id", async () => {
+    await invoke("acp_agent_remove", { id });
+    // The thread is still open from the last test: its next turn can't start.
+    await sendMessage("again");
+    await browser.waitUntil(async () => (await transcriptText()).includes("This thread's ACP agent was removed."), {
+      timeout: 20_000,
+      timeoutMsg: "the thread didn't say the agent was removed",
+    });
+    const again = await invoke<Agent>("acp_agent_add", {
+      input: { label: "My agent", command: program, args: ["acp"], env: {} },
+    });
+    expect(again.id).not.toBe(id);
+    expect(again.id).toMatch(/^acp-my-agent-[0-9a-f]{8}$/);
   });
 });

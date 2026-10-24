@@ -4,6 +4,7 @@ import type { AcpAgent, EngineView } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { FREE, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { engineOptionsFor } from "../thread/ThreadComposer";
+import { ownSignIn } from "../thread/ThreadMain";
 import { AcpAgents } from "./AcpAgents";
 
 const GOOSE: AcpAgent = {
@@ -26,6 +27,15 @@ function open(handlers: Record<string, (a?: Record<string, unknown>) => unknown>
 
 const type = (testId: string, value: string) =>
   fireEvent.change(screen.getByTestId(testId), { target: { value } });
+
+const goose: EngineView = {
+  spec: { id: "acp-goose-0000002a", label: "Goose", logo: "GO" } as EngineView["spec"],
+  install: { path: "/usr/local/bin/goose", version: null, source: "shell" },
+  chatCapable: true,
+  unsupportedReason: null,
+  extraArgs: [],
+  added: true,
+};
 
 describe("UI-163 ACP agents (F-EN-10)", () => {
   beforeEach(() => resetStores());
@@ -127,18 +137,18 @@ describe("UI-163 ACP agents (F-EN-10)", () => {
     expect(calls.find((c) => c.cmd === "acp_agent_remove")?.args).toEqual({ id: "acp-goose" });
   });
 
-  it('F-EN-10.3 an added agent reads "via ACP" in the picker, and on Free shows the plan\'s limit', () => {
-    const view: EngineView = {
-      spec: { id: "acp-goose", label: "Goose", logo: "GO" } as EngineView["spec"],
-      install: { path: "/usr/local/bin/goose", version: null, source: "shell" },
-      chatCapable: true,
-      unsupportedReason: null,
-      extraArgs: [],
-      added: true,
-    };
-    const free = engineOptionsFor([view], FREE.chatEngines);
-    expect(free[0]).toMatchObject({ label: "Goose · via ACP", disabled: true, disabledReason: "Pro" });
-    const pro = engineOptionsFor([view], null);
+  it('F-EN-10.3 an added agent reads "via ACP" in the picker, and runs on Free (D-869)', () => {
+    const free = engineOptionsFor([goose], FREE.chatEngines);
+    expect(free[0]).toMatchObject({ label: "Goose · via ACP", disabled: false });
+    const pro = engineOptionsFor([goose], null);
     expect(pro[0]).toMatchObject({ label: "Goose · via ACP", disabled: false });
+  });
+
+  it("F-EN-10.1 an added agent's sign-in is its own, never an account's (D-2514)", () => {
+    expect(ownSignIn(goose)).toBe(
+      "Sign in to Goose with its own command in a terminal, then try again. Vibezeo never holds its sign-in.",
+    );
+    expect(ownSignIn({ ...goose, added: false })).toBeNull();
+    expect(ownSignIn(undefined)).toBeNull();
   });
 });

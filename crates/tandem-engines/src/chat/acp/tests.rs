@@ -126,7 +126,12 @@ fn f_th_06_a_decision_picks_the_matching_option() {
     assert_eq!(choose(&all, &deny).as_deref(), Some("opt-reject_once"));
     // Fallbacks, and nothing that fits: the request is answered cancelled.
     let few = opts(&["allow_always", "reject_always"]);
-    assert_eq!(choose(&few, &once).as_deref(), Some("opt-allow_always"));
+    // Allow once is never sent as an always (D-2515).
+    assert_eq!(choose(&few, &once), None);
+    assert_eq!(
+        choose(&opts(&["allow_once"]), &thread).as_deref(),
+        Some("opt-allow_once")
+    );
     assert_eq!(choose(&few, &deny).as_deref(), Some("opt-reject_always"));
     assert_eq!(choose(&opts(&["allow_once"]), &deny), None);
 }
@@ -474,7 +479,10 @@ async fn f_th_06_a_sign_in_error_is_an_auth_error() {
     let (_dir, cwd) = tmp();
     let (s, _rx) = session("auth_error", start(&cwd), &[]).await;
     match s {
-        Err(AdapterError::Auth(m)) => assert_eq!(m, "Grok needs you to sign in."),
+        // The methods the agent named, so the sign-in is its own (D-2514).
+        Err(AdapterError::Auth(m)) => {
+            assert_eq!(m, "Grok needs you to sign in. It offers: Log in with Grok.")
+        }
         Err(other) => panic!("unexpected {other}"),
         Ok(_) => panic!("started"),
     }
@@ -568,4 +576,56 @@ async fn f_ag_06_the_briefing_opens_the_first_acp_prompt_only() {
     s.send_turn(input(&second, "again")).await.expect("send");
     ended(&mut rx, &second).await;
     s.shutdown().await.expect("shutdown");
+}
+
+/// F-EN-10 review: the sign-in an agent wants is named as it named it, so
+/// the person can sign in with the agent's own command (D-2514).
+#[test]
+fn f_en_10_1_a_sign_in_names_the_agents_own_methods() {
+    let init = json!({"protocolVersion": 1, "authMethods": [
+        {"id": "oauth", "name": "Sign in with Block"},
+        {"id": "api-key"},
+        {"name": "\u{1b}[31m"}
+    ]});
+    let methods = probe::auth_method_names(&init);
+    assert_eq!(methods, vec!["Sign in with Block", "api-key", "[31m"]);
+    assert_eq!(
+        sign_in_needed("Goose", &methods),
+        "Goose needs you to sign in. It offers: Sign in with Block, api-key, [31m."
+    );
+    assert_eq!(sign_in_needed("Goose", &[]), "Goose needs you to sign in.");
+}
+
+/// F-EN-10 review: when the ACP flag starts no session (an older Gemini CLI
+/// knows only `--experimental-acp`), the fallback flag runs (D-2516).
+#[cfg(unix)]
+#[tokio::test]
+async fn f_en_10_1_an_acp_command_that_fails_falls_back_to_the_older_flag() {
+    let (_dir, cwd) = tmp();
+    let fails = vec!["gemini".to_string(), "-c".into(), "exit 3".into()];
+    let works = vec![
+        "gemini".to_string(),
+        "-c".into(),
+        script("models_withdrawn", &[]),
+    ];
+    let alone = AcpAdapter::new("gemini", "Gemini CLI", &fails, patterns());
+    let (tx, _rx) = mpsc::channel(64);
+    assert!(alone.start(start(&cwd), tx).await.is_err());
+    let both =
+        AcpAdapter::new("gemini", "Gemini CLI", &fails, patterns()).with_fallback(Some(&works));
+    let (tx, _rx) = mpsc::channel(64);
+    let s = both
+        .start(start(&cwd), tx)
+        .await
+        .expect("the fallback started");
+    s.shutdown().await.expect("shutdown");
+    // A sign-in isn't retried with the other flag.
+    let auth = vec!["gemini".to_string(), "-c".into(), script("auth_error", &[])];
+    let signed_out =
+        AcpAdapter::new("gemini", "Gemini CLI", &auth, patterns()).with_fallback(Some(&works));
+    let (tx, _rx) = mpsc::channel(64);
+    assert!(matches!(
+        signed_out.start(start(&cwd), tx).await,
+        Err(AdapterError::Auth(_))
+    ));
 }

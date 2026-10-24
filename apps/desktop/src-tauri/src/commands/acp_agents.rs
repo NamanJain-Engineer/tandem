@@ -111,24 +111,18 @@ pub async fn acp_agent_add(
 ) -> Result<AcpAgent, IpcError> {
     main_only(&window)?;
     let (program, _) = test_input(&state, &input).await?;
-    let engines = &state.terminals.engines;
-    let taken: Vec<String> = engines
-        .registry()
-        .all()
-        .iter()
-        .map(|e| e.id.clone())
-        .collect();
     let agent = AcpAgent {
-        id: acp_agents::id_for(&input.label, &taken),
+        // Given by the service, under its lock (D-2511).
+        id: String::new(),
         label: input.label.trim().to_string(),
         program: program.to_string_lossy().into_owned(),
         args: input.args.clone(),
         env: input.env.clone(),
     };
-    agent
-        .spec()
-        .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
-    engines.add_acp_agent(agent.clone())?;
+    let agent = state
+        .terminals
+        .engines
+        .add_acp_agent(agent, rand::random())?;
     tracing::info!(code = "acp_agents.added", "an ACP agent was added");
     Ok(agent)
 }
@@ -141,11 +135,8 @@ pub async fn acp_agent_remove(
     id: String,
 ) -> Result<(), IpcError> {
     main_only(&window)?;
-    let engines = &state.terminals.engines;
-    if engines.acp_agent(&id).is_none() {
-        return Err(IpcError::new(ErrorCode::NotFound, "No agent with that id"));
-    }
-    engines.remove_acp_agent(&id)?;
+    state.terminals.engines.remove_acp_agent(&id)?;
+    state.threads.retire_engine(&id).await;
     tracing::info!(code = "acp_agents.removed", "an ACP agent was removed");
     Ok(())
 }

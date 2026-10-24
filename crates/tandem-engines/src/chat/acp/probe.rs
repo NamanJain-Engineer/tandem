@@ -74,10 +74,9 @@ pub async fn probe(
         },
     });
     let answer = async {
-        process
-            .write_line(&request.to_string())
-            .await
-            .map_err(|e| ProbeError::Spawn(e.to_string()))?;
+        // A command that closed its input (or already exited) can't take the
+        // request: what it printed still says what it is.
+        let _ = process.write_line(&request.to_string()).await;
         while let Some(line) = lines.recv().await {
             let ProcessLine::Line(line) = line else {
                 return Err(ProbeError::NotAcp);
@@ -134,7 +133,18 @@ pub fn read_answer(v: &Value) -> Result<AgentInfo, ProbeError> {
             .and_then(Value::as_str)
             .map(|s| s.chars().take(80).collect::<String>())
     };
-    let auth_methods = result
+    let auth_methods = auth_method_names(result);
+    Ok(AgentInfo {
+        name: text("/agentInfo/title").or_else(|| text("/agentInfo/name")),
+        version: text("/agentInfo/version"),
+        protocol_version: version,
+        auth_methods,
+    })
+}
+
+/// The names of the sign-in methods in an `initialize` result (at most 8).
+pub fn auth_method_names(result: &Value) -> Vec<String> {
+    result
         .get("authMethods")
         .and_then(Value::as_array)
         .map(|methods| {
@@ -144,18 +154,18 @@ pub fn read_answer(v: &Value) -> Result<AgentInfo, ProbeError> {
                     m.get("name")
                         .or_else(|| m.get("id"))
                         .and_then(Value::as_str)
-                        .map(|s| s.chars().take(80).collect())
+                        .map(|s| {
+                            s.chars()
+                                .filter(|c| !c.is_control())
+                                .take(80)
+                                .collect::<String>()
+                        })
                 })
+                .filter(|s| !s.trim().is_empty())
                 .take(8)
                 .collect()
         })
-        .unwrap_or_default();
-    Ok(AgentInfo {
-        name: text("/agentInfo/title").or_else(|| text("/agentInfo/name")),
-        version: text("/agentInfo/version"),
-        protocol_version: version,
-        auth_methods,
-    })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -240,6 +250,17 @@ mod tests {
         )
         .await;
         assert_eq!(echo, Err(ProbeError::NotAcp));
+        // One that closes its input before printing: the failed write is
+        // ignored and its output still read.
+        let closed = probe(
+            PathBuf::from("/bin/sh"),
+            vec!["-c".into(), "exec 0<&-; sleep 0.3; echo hello".into()],
+            env.clone(),
+            dir.path().to_path_buf(),
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(closed, Err(ProbeError::NotAcp));
         let gone = probe(
             PathBuf::from("/nonexistent/agent"),
             vec![],

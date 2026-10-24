@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { Bot, FolderOpen, GitBranch, Home, MessagesSquare, X } from "lucide-react";
-import type { IpcError, PlanRevision, Thread } from "@tandem/protocol";
+import type { EngineView, IpcError, PlanRevision, Thread } from "@tandem/protocol";
 import {
   ApprovalCard,
   Banner,
@@ -48,6 +48,13 @@ import { columnsFor, GRID_MAX } from "./grid";
 import { PlanCard, Transcript, approvalLabels, type TranscriptActions } from "./Transcript";
 import { pluginApprovalLabels } from "../plugins/PluginApproval";
 import { parseApproval } from "../plugins/model";
+
+/** How to sign in to an ACP agent the user added: with its own command, in a
+ * terminal (D-2514). Null for every other engine, which signs in through an
+ * account. */
+export function ownSignIn(view: EngineView | undefined): string | null {
+  return view?.added ? t("acp.signInOwn", { label: view.spec.label }) : null;
+}
 
 const STATE_DOT = {
   idle: "idle",
@@ -409,8 +416,15 @@ function ThreadView({
       retry: () => thread && void retry(thread.id).then((e) => e && fail(e)),
       openTerminal: () => switchMode("code"),
       // The engine's login, in a terminal, for the thread's account (F-TH-06).
+      // An added ACP agent signs in its own way: Vibezeo has no account for
+      // it, so it says how instead (D-2514).
       signIn: () => {
         if (!thread) return;
+        const own = ownSignIn(useEngines.getState().list.find((e) => e.spec.id === thread.engineId));
+        if (own) {
+          show({ tone: "info", title: own });
+          return;
+        }
         const mine = useAccounts.getState().list.filter((a) => a.engineId === thread.engineId);
         const account = mine.find((a) => a.id === thread.accountId) ?? mine.find((a) => a.isDefault) ?? null;
         setLogin(
@@ -425,7 +439,7 @@ function ThreadView({
       implementPlan: (version) => thread && void implementPlan(thread.id, version).then((e) => e && fail(e)),
       revisePlan: () => setPrefill({ text: t("thread.plan.revisePrefill"), n: Date.now() }),
     }),
-    [thread, retry, implementPlan, fail],
+    [thread, retry, implementPlan, fail, show],
   );
   const lastMessage = useCallback(() => {
     for (let i = rows.length - 1; i >= 0; i--) {

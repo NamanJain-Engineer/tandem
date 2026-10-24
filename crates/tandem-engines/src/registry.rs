@@ -218,6 +218,11 @@ pub struct EngineSpec {
     pub chat_adapter: Option<String>,
     #[serde(default)]
     pub acp_cmd: Option<Vec<String>>,
+    /// Run instead when `acp_cmd` doesn't start an ACP session: an older
+    /// release's flag (D-2516). Same program.
+    #[serde(default)]
+    #[ts(skip)]
+    pub acp_fallback_cmd: Option<Vec<String>>,
     #[serde(default)]
     pub adapter_versions: Option<String>,
     /// The variable that points the engine at a provider home.
@@ -404,6 +409,11 @@ impl EngineSpec {
         }
         if self.chat_adapter.as_deref() == Some("acp") && self.acp_cmd.is_none() {
             return fail("an ACP engine needs acp_cmd");
+        }
+        if let Some(fallback) = &self.acp_fallback_cmd {
+            if self.acp_cmd.as_ref().and_then(|c| c.first()) != fallback.first() {
+                return fail("acp_fallback_cmd runs acp_cmd's program");
+            }
         }
         if let Some(adapter) = &self.chat_adapter {
             if !matches!(adapter.as_str(), "claude" | "codex" | "acp") {
@@ -828,6 +838,24 @@ mod tests {
         let mut bad = gemini.clone();
         bad.note = Some("two\nlines".into());
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_10_1_gemini_runs_acp_mode_with_the_older_flag_as_fallback() {
+        let reg = EngineRegistry::bundled();
+        let gemini = reg.get("gemini").expect("gemini");
+        assert_eq!(gemini.chat_adapter.as_deref(), Some("acp"));
+        assert_eq!(
+            gemini.acp_cmd,
+            Some(vec!["gemini".to_string(), "--acp".to_string()])
+        );
+        assert_eq!(
+            gemini.acp_fallback_cmd,
+            Some(vec!["gemini".to_string(), "--experimental-acp".to_string()])
+        );
+        let mut other = gemini.clone();
+        other.acp_fallback_cmd = Some(vec!["sh".into(), "-c".into()]);
+        assert!(other.validate().is_err());
     }
 
     #[test]

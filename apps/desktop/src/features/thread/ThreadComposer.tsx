@@ -58,7 +58,8 @@ export function engineOptionsFor(engines: EngineView[], chatEngines: string[] | 
   return engines
     .filter((e) => e.install)
     .map((e) => {
-      const onPlan = chatEngines === null || chatEngines.includes(e.spec.id);
+      // An agent the user added runs on every plan (D-869).
+      const onPlan = chatEngines === null || e.added || chatEngines.includes(e.spec.id);
       return {
         value: e.spec.id,
         // An agent the user added runs through ACP and says so (F-EN-10).

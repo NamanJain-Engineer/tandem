@@ -514,7 +514,7 @@ impl RemoteService {
                     me.emit_progress(&op_id, &host_id, "connected", None, None);
                     // What the + menu offers on this host (F-EN-01 per host).
                     if let Some(engines) = me.engines.get().cloned() {
-                        let list = engines.registry().all().to_vec();
+                        let list = engines.base_registry().all().to_vec();
                         if let Err(e) = me.detect(&host_id, &list).await {
                             tracing::info!(code = "remote.detect_failed", error = %e.message, "couldn't detect the host's engines");
                         }

@@ -13,14 +13,15 @@ Antigravity CLI runs in terminal panes only, as Google ships it. Kiro CLI runs i
 
 ## Any ACP agent in Thread mode
 
-Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok, Kiro CLI and OpenCode do out of the box. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
+Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok, Kiro CLI and OpenCode do out of the box. Gemini CLI runs as `gemini --acp`, or `gemini --experimental-acp` on older releases. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
 
 - **Name**, **Command** (a command on your `PATH`, or its full path), **Arguments** and **Environment variables**. **Goose** fills in `goose acp`.
 - **Test** starts the command, asks it to introduce itself, waits up to 10 seconds and stops it. You see its name, version and how it signs in. If it doesn't answer as an ACP agent, it says "Not an ACP agent" and why, and nothing is saved. **Add** runs the same test before saving.
-- The agent then appears in the Thread engine picker as "via ACP". Threads with it are part of Pro, like other engines beyond Claude Code and Codex. Agents you add run on this computer only, not in SSH or WSL folders.
-- The agent signs in its own way. Vibezeo never sees or keeps its keys: a variable whose value looks like a key or token is refused, and so are variables that change which home an engine uses or what a program loads.
+- The agent then appears in the Thread engine picker as "via ACP", on every plan. Threads run the command at the path saved when you added it, never another program of the same name. Agents you add run on this computer only, not in SSH or WSL folders, and only in Thread mode.
+- **Remove** stops the agent's threads. They stay readable but won't run again: an agent you add later, even with the same name, is a new engine.
+- The agent signs in its own way. Vibezeo never sees or keeps its keys: a variable whose value looks like a key or token is refused, and so are variables that change which home an engine uses or what a program loads. When it asks for a sign-in, the thread names the methods it offers: sign in with the agent's own command in a terminal, then try again.
 
-Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent.
+Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent. When an agent asks for approval without offering a one-time allow, **Allow once** declines the request rather than allowing it for good.
 
 ## One instructions file for every engine
 

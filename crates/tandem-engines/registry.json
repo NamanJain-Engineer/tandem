@@ -237,6 +237,7 @@
     "statusCmd": null,
     "chatAdapter": "acp",
     "acpCmd": ["gemini", "--acp"],
+    "acpFallbackCmd": ["gemini", "--experimental-acp"],
     "adapterVersions": null,
     "providerHomeEnv": null,
     "homeStrategy": "none",

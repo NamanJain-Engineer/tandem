@@ -42,6 +42,8 @@ pub struct EngineService {
     /// ACP agents the user added (F-EN-10), from `$DATA/acp-agents.json`.
     acp_agents: RwLock<Vec<AcpAgent>>,
     acp_file: PathBuf,
+    /// Held across each Add and Remove's read, change and write.
+    acp_edit: Mutex<()>,
 }
 
 /// Where the ACP agents the user added are kept.
@@ -79,6 +81,7 @@ impl EngineService {
         Arc::new(Self {
             acp_agents: RwLock::new(read_agents(&acp_file)),
             acp_file,
+            acp_edit: Mutex::new(()),
             registry: RwLock::new(EngineRegistry::bundled()),
             report: RwLock::new(None),
             detecting: tokio::sync::Mutex::new(()),
@@ -123,7 +126,10 @@ impl EngineService {
         reg
     }
 
-    fn base_registry(&self) -> EngineRegistry {
+    /// The registry without added agents: what hosts are asked for, what
+    /// versions, instructions and usage cover, and what terminal panes
+    /// launch (D-2513).
+    pub fn base_registry(&self) -> EngineRegistry {
         self.registry
             .read()
             .map(|r| r.clone())
@@ -149,8 +155,11 @@ impl EngineService {
         self.acp_agents().into_iter().find(|a| a.id == id)
     }
 
-    /// Saves an agent (already tested) and lists it as installed at its path.
-    pub fn add_acp_agent(&self, agent: AcpAgent) -> Result<(), IpcError> {
+    /// Saves an agent (already tested) under a new id, and lists it as
+    /// installed at its path. The id never repeats one in the registry, and
+    /// `nonce` keeps it from repeating a removed one's (D-2511).
+    pub fn add_acp_agent(&self, mut agent: AcpAgent, nonce: u32) -> Result<AcpAgent, IpcError> {
+        let _edit = self.acp_edit.lock().map_err(|_| busy())?;
         let mut list = self.acp_agents();
         if list.len() >= tandem_engines::acp_agents::MAX_AGENTS {
             return Err(IpcError::new(
@@ -161,26 +170,33 @@ impl EngineService {
                 ),
             ));
         }
+        let taken: Vec<String> = self.registry().all().iter().map(|e| e.id.clone()).collect();
+        agent.id = tandem_engines::acp_agents::id_for(&agent.label, &taken, nonce);
+        agent
+            .spec()
+            .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
         list.push(agent.clone());
         self.save_agents(list)?;
         if let Ok(mut r) = self.report.write() {
             if let Some(report) = r.as_mut() {
-                with_agents(report, &[agent]);
+                with_agents(report, std::slice::from_ref(&agent));
             }
         }
-        Ok(())
+        Ok(agent)
     }
 
     pub fn remove_acp_agent(&self, id: &str) -> Result<(), IpcError> {
-        let list: Vec<AcpAgent> = self
-            .acp_agents()
-            .into_iter()
-            .filter(|a| a.id != id)
-            .collect();
+        let _edit = self.acp_edit.lock().map_err(|_| busy())?;
+        let list = self.acp_agents();
+        if !list.iter().any(|a| a.id == id) {
+            return Err(IpcError::new(ErrorCode::NotFound, "No agent with that id"));
+        }
+        let list: Vec<AcpAgent> = list.into_iter().filter(|a| a.id != id).collect();
         self.save_agents(list)?;
         if let Ok(mut r) = self.report.write() {
             if let Some(report) = r.as_mut() {
                 report.found.retain(|f| f.engine_id != id);
+                report.missing.retain(|m| m != id);
             }
         }
         Ok(())
@@ -635,14 +651,20 @@ fn hook_bin() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
-/// The saved agents, or none when the file is missing or unreadable.
+fn busy() -> IpcError {
+    IpcError::new(ErrorCode::Internal, "Couldn't change the ACP agents")
+}
+
+/// The saved agents, or none when the file is missing or unreadable. Each
+/// is held to the form's rules again: one that fails them is left out.
 fn read_agents(path: &Path) -> Vec<AcpAgent> {
     std::fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_slice::<Vec<AcpAgent>>(&b).ok())
         .unwrap_or_default()
         .into_iter()
-        .filter(|a| a.spec().is_ok())
+        .filter(|a| a.check().is_ok() && a.spec().is_ok())
+        .take(tandem_engines::acp_agents::MAX_AGENTS)
         .collect()
 }
 
@@ -667,6 +689,7 @@ fn with_agents(report: &mut DetectionReport, agents: &[AcpAgent]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use tandem_core::policy::OrgPolicy;
 
     /// D-828: release bundles carry `tandem-hook` beside the app, where
@@ -771,7 +794,7 @@ mod tests {
         let providers = data.root().join("providers");
         let svc = EngineService::new(store.clone(), EventBus::new(), providers.clone());
         let agent = AcpAgent {
-            id: "acp-my-agent".into(),
+            id: String::new(),
             label: "My agent".into(),
             program: program.to_string_lossy().into_owned(),
             args: vec!["acp".into()],
@@ -780,11 +803,12 @@ mod tests {
         if let Ok(mut r) = svc.report.write() {
             *r = Some(DetectionReport::default());
         }
-        svc.add_acp_agent(agent.clone()).expect("add");
-        let spec = svc.get("acp-my-agent").expect("in the registry");
+        let agent = svc.add_acp_agent(agent, 1).expect("add");
+        assert_eq!(agent.id, "acp-my-agent-00000001");
+        let spec = svc.get(&agent.id).expect("in the registry");
         assert_eq!(spec.chat_adapter.as_deref(), Some("acp"));
-        assert!(svc.registry().get("acp-my-agent").is_some());
-        assert_eq!(svc.installed("acp-my-agent"), Some(program.clone()));
+        assert!(svc.registry().get(&agent.id).is_some());
+        assert_eq!(svc.installed(&agent.id), Some(program.clone()));
         // The file is the user's only, and a new run reads it back.
         #[cfg(unix)]
         {
@@ -796,9 +820,106 @@ mod tests {
             assert_eq!(mode & 0o777, 0o600);
         }
         let again = EngineService::new(store, EventBus::new(), providers);
-        assert_eq!(again.acp_agents(), vec![agent]);
-        svc.remove_acp_agent("acp-my-agent").expect("remove");
-        assert!(svc.get("acp-my-agent").is_none());
-        assert!(svc.installed("acp-my-agent").is_none());
+        assert_eq!(again.acp_agents(), vec![agent.clone()]);
+        svc.remove_acp_agent(&agent.id).expect("remove");
+        assert!(svc.get(&agent.id).is_none());
+        assert!(svc.installed(&agent.id).is_none());
+        assert_eq!(
+            svc.remove_acp_agent(&agent.id).expect_err("gone").code,
+            ErrorCode::NotFound
+        );
+    }
+
+    fn agent_at(program: &Path, label: &str) -> AcpAgent {
+        AcpAgent {
+            id: String::new(),
+            label: label.into(),
+            program: program.to_string_lossy().into_owned(),
+            args: vec!["acp".into()],
+            env: BTreeMap::new(),
+        }
+    }
+
+    /// F-EN-10 review: Remove, then Add with the same label, gives a new id,
+    /// so the old threads never run the new agent (D-2511).
+    #[test]
+    fn f_en_10_3_a_removed_agents_id_isnt_given_again() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let program = dir.path().join("goose");
+        std::fs::write(&program, "#!/bin/sh\n").expect("program");
+        let svc = EngineService::new(store, EventBus::new(), data.root().join("providers"));
+        let first = svc
+            .add_acp_agent(agent_at(&program, "Goose"), 5)
+            .expect("add");
+        svc.remove_acp_agent(&first.id).expect("remove");
+        let second = svc
+            .add_acp_agent(agent_at(&program, "Goose"), 6)
+            .expect("add");
+        assert_ne!(first.id, second.id);
+        assert!(svc.get(&first.id).is_none());
+    }
+
+    /// F-EN-10 review: concurrent Adds each land in the file.
+    #[test]
+    fn f_en_10_1_adds_at_once_all_land() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let program = dir.path().join("agent");
+        std::fs::write(&program, "#!/bin/sh\n").expect("program");
+        let providers = data.root().join("providers");
+        let svc = EngineService::new(store.clone(), EventBus::new(), providers.clone());
+        std::thread::scope(|s| {
+            for n in 0..8u32 {
+                let (svc, program) = (&svc, &program);
+                s.spawn(move || {
+                    svc.add_acp_agent(agent_at(program, &format!("Agent {n}")), n)
+                        .expect("add")
+                });
+            }
+        });
+        assert_eq!(svc.acp_agents().len(), 8);
+        let again = EngineService::new(store, EventBus::new(), providers);
+        assert_eq!(again.acp_agents().len(), 8);
+    }
+
+    /// F-EN-10 review: an agent edited into the file past the form's rules
+    /// isn't read back.
+    #[test]
+    fn f_en_10_4_a_saved_agent_that_breaks_the_rules_isnt_read() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join(ACP_AGENTS_FILE);
+        let program = dir.path().join("agent");
+        let mut ok = agent_at(&program, "Fine");
+        ok.id = "acp-fine-00000001".into();
+        let mut bad = agent_at(&program, "Preload");
+        bad.id = "acp-preload-00000002".into();
+        bad.env.insert("LD_PRELOAD".into(), "/tmp/x.so".into());
+        std::fs::write(
+            &file,
+            serde_json::to_vec(&vec![ok.clone(), bad]).expect("json"),
+        )
+        .expect("write");
+        assert_eq!(read_agents(&file), vec![ok]);
+    }
+
+    /// F-EN-10 review: hosts, versions and terminal panes see the registry
+    /// without added agents (D-2513).
+    #[test]
+    fn f_en_10_1_the_base_registry_has_no_added_agents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let program = dir.path().join("agent");
+        std::fs::write(&program, "#!/bin/sh\n").expect("program");
+        let svc = EngineService::new(store, EventBus::new(), data.root().join("providers"));
+        let agent = svc
+            .add_acp_agent(agent_at(&program, "Mine"), 3)
+            .expect("add");
+        assert!(svc.registry().get(&agent.id).is_some());
+        assert!(svc.base_registry().get(&agent.id).is_none());
+        assert!(svc.base_registry().get("claude").is_some());
     }
 }

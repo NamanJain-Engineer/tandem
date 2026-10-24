@@ -16,6 +16,14 @@ use crate::registry::{env_name, pin_reserved, EngineSpec, RegistryError};
 /// The vendor of an added agent's registry entry.
 pub const VENDOR: &str = "ACP agent";
 
+/// Every added agent's id starts with it; no bundled engine's does.
+pub const ID_PREFIX: &str = "acp-";
+
+/// Whether an engine id is an added agent's (one that's still saved or not).
+pub fn is_added_id(id: &str) -> bool {
+    id.starts_with(ID_PREFIX)
+}
+
 /// Saved agents at most.
 pub const MAX_AGENTS: usize = 16;
 
@@ -94,8 +102,10 @@ pub fn check(input: &AcpAgentInput) -> Result<(), AgentError> {
     Ok(())
 }
 
-/// `acp-` and the label's letters and digits, made unique among `taken`.
-pub fn id_for(label: &str, taken: &[String]) -> String {
+/// `acp-`, the label's letters and digits, and `nonce` in hex, made unique
+/// among `taken`. The nonce is random, so an id isn't given again after its
+/// agent is removed: its old threads never run a later agent (D-2511).
+pub fn id_for(label: &str, taken: &[String], nonce: u32) -> String {
     let mut slug: String = label
         .to_ascii_lowercase()
         .chars()
@@ -110,17 +120,33 @@ pub fn id_for(label: &str, taken: &[String]) -> String {
     } else {
         slug.chars().take(24).collect()
     };
-    let base = format!("acp-{}", slug.trim_end_matches('-'));
-    let mut id = base.clone();
-    let mut n = 2;
-    while taken.contains(&id) {
-        id = format!("{base}-{n}");
-        n += 1;
+    let mut n = nonce;
+    loop {
+        let id = format!("{ID_PREFIX}{}-{n:08x}", slug.trim_end_matches('-'));
+        if !taken.contains(&id) {
+            return id;
+        }
+        n = n.wrapping_add(1);
     }
-    id
 }
 
 impl AcpAgent {
+    /// The form's rules, checked again on a saved agent: whenever the file is
+    /// read and before a thread runs it, so an edited file can't slip past
+    /// them.
+    pub fn check(&self) -> Result<(), AgentError> {
+        check(&AcpAgentInput {
+            label: self.label.clone(),
+            command: self.program.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+        })?;
+        if !std::path::Path::new(&self.program).is_absolute() {
+            return Err(AgentError::Command);
+        }
+        Ok(())
+    }
+
     /// The agent as a registry entry: a Thread engine through the ACP
     /// adapter, with no terminal launch, provider home or install command.
     pub fn spec(&self) -> Result<EngineSpec, RegistryError> {
@@ -229,13 +255,13 @@ mod tests {
     #[test]
     fn f_en_10_1_a_saved_agent_is_a_thread_engine_through_acp() {
         let agent = AcpAgent {
-            id: id_for("My Goose!", &[]),
+            id: id_for("My Goose!", &[], 0x2a),
             label: "My Goose!".into(),
             program: "/opt/goose/bin/goose".into(),
             args: vec!["acp".into(), "--with-builtin".into(), "developer".into()],
             env: BTreeMap::new(),
         };
-        assert_eq!(agent.id, "acp-my-goose");
+        assert_eq!(agent.id, "acp-my-goose-0000002a");
         let spec = agent.spec().expect("spec");
         assert_eq!(spec.chat_adapter.as_deref(), Some("acp"));
         assert_eq!(
@@ -249,10 +275,36 @@ mod tests {
         );
         assert_eq!(spec.logo, "MY");
         assert!(spec.provider_home_env.is_none() && spec.headless_cmd.is_none());
+        assert_eq!(id_for("!!!", &[], 1), "acp-agent-00000001");
+    }
+
+    #[test]
+    fn f_en_10_3_an_id_is_never_given_to_another_agent() {
+        // Different nonces: the same label never gets the same id twice.
+        assert_ne!(id_for("Goose", &[], 7), id_for("Goose", &[], 8));
         assert_eq!(
-            id_for("My Goose!", &["acp-my-goose".into()]),
-            "acp-my-goose-2"
+            id_for("Goose", &["acp-goose-00000007".into()], 7),
+            "acp-goose-00000008"
         );
-        assert_eq!(id_for("!!!", &[]), "acp-agent");
+    }
+
+    #[test]
+    fn f_en_10_4_a_saved_agent_is_checked_again() {
+        let mut agent = AcpAgent {
+            id: "acp-goose-00000001".into(),
+            label: "Goose".into(),
+            program: "/usr/local/bin/goose".into(),
+            args: vec!["acp".into()],
+            env: BTreeMap::new(),
+        };
+        assert_eq!(agent.check(), Ok(()));
+        agent.env.insert("LD_PRELOAD".into(), "/tmp/x.so".into());
+        assert_eq!(
+            agent.check(),
+            Err(AgentError::EnvReserved("LD_PRELOAD".into()))
+        );
+        agent.env.clear();
+        agent.program = "goose".into();
+        assert_eq!(agent.check(), Err(AgentError::Command));
     }
 }
