@@ -6,6 +6,7 @@
 //! events and the chat adapters.
 
 pub mod accounts;
+pub mod acp_agents;
 pub mod briefing;
 pub mod chat;
 pub mod detect;

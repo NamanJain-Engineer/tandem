@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  PlanLaunch,
+  PlanView,
   AppBoot,
   AuthState,
   DashboardItem,
@@ -29,6 +31,7 @@ import { listen } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
+import { NOTIFY_HREF } from "../features/billing/ComesWithAccounts";
 import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
 import { DemoShell, PROMPT, run } from "./shell";
 
@@ -301,6 +304,23 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     });
   });
 
+  it("D-2914 demo opens Tell me when accounts open's email, and still no other scheme", () => {
+    core = new DemoCore(0);
+    const opened: string[] = [];
+    const open = window.open;
+    window.open = ((url?: string | URL) => {
+      opened.push(String(url));
+      return null;
+    }) as typeof window.open;
+    try {
+      core.handle("app_open_external", { url: NOTIFY_HREF });
+      core.handle("app_open_external", { url: "file:///etc/passwd" });
+    } finally {
+      window.open = open;
+    }
+    expect(opened).toEqual([NOTIFY_HREF]);
+  });
+
   it("D-2905 demo says routines and task runs work in the app, instead of pretending to", () => {
     core = new DemoCore(0);
     const c = core;
@@ -324,7 +344,6 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       signedIn: false,
       email: null,
       offline: true,
-      offlineDaysLeft: null,
       hosted: false,
       pending: null,
       error: null,
@@ -360,6 +379,28 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
     expect(error.code).toBe("unavailable");
     expect(error.message).toContain("running on your computer");
+  });
+
+  it("F-TK-06 the demo simulates Lead's plan, creates its tasks, shows their runs, and can't run them", async () => {
+    core = new DemoCore(0);
+    const started = core.handle("plan_start", { workspaceId: "ws_demo", goal: "Add dark mode" }) as PlanView;
+    expect([started.state, started.threadId]).toEqual(["planning", ""]);
+    await new Promise((r) => setTimeout(r, 10));
+    const ready = (core.handle("plan_list", {}) as PlanView[])[0]!;
+    expect(ready.state).toBe("ready");
+    expect(ready.tasks.map((t) => t.engineId)).toEqual(["claude", "codex", "claude"]);
+    expect(ready.tasks[0]!.why).toContain("Simulated in the demo");
+    const created = core.handle("plan_create_tasks", { id: ready.id, tasks: ready.tasks.slice(0, 2) }) as PlanView;
+    expect(created.issueIds).toEqual(["TAN-1", "TAN-2"]);
+    expect((core.handle("task_get", { id: "TAN-2" }) as { issue: Issue }).issue.suggested_engine).toBe("codex");
+    // Execute all's check lists the runs and says they start in the app.
+    const launch = core.handle("plan_prepare", { id: ready.id }) as PlanLaunch;
+    expect(launch.blocked).toContain("it works in the app, not in this demo");
+    expect(launch.runs.map((r) => [r.issueId, r.engineLabel, r.reviewEngineLabel])).toEqual([
+      ["TAN-1", "Claude Code", "Codex"],
+      ["TAN-2", "Codex", "Claude Code"],
+    ]);
+    expect(() => core?.handle("plan_execute", { id: ready.id })).toThrow();
   });
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {

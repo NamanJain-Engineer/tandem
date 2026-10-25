@@ -21,6 +21,11 @@ use crate::error::TaskError;
 use crate::lock;
 use crate::model::*;
 
+mod claims;
+pub use claims::{
+    claim_covers, claim_key, normalize_claim_path, normalize_relative_claim_path, overlaps_of,
+};
+
 /// Idempotency keys are remembered this long (F-TK-01 AC2).
 pub const IDEMPOTENCY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
 /// Page size cap for issues (F-TK-02 AC3).
@@ -436,6 +441,13 @@ impl TaskStore {
                 )));
             }
         }
+        if let Some(Some(e)) = &req.suggested_engine {
+            if !valid_engine_id(e) {
+                return Err(TaskError::invalid(
+                    "suggested_engine is an engine id: lowercase letters, digits and -.",
+                ));
+            }
+        }
         if let Some(Some(a)) = &req.assignee {
             if !meta.actors.iter().any(|x| &x.id == a) {
                 return Err(TaskError::invalid(format!(
@@ -586,6 +598,7 @@ impl TaskStore {
             archived: false,
             result: req.result,
             attempts: Vec::new(),
+            suggested_engine: req.suggested_engine.flatten(),
         };
         let _g = lock::acquire(&self.lock_path(&format!("ISSUE-{number}")))?;
         self.write_json(&self.issue_path(number), &issue)?;
@@ -691,6 +704,9 @@ impl TaskStore {
             }
             if let Some(a) = req.assignee {
                 i.assignee = a;
+            }
+            if let Some(e) = req.suggested_engine {
+                i.suggested_engine = e;
             }
             if let Some(r) = req.result {
                 i.result = Some(r);
@@ -850,12 +866,24 @@ impl TaskStore {
     /// A connection for one engine session; its writes are recorded as
     /// `actor`.
     pub fn create_connection(&self, label: &str, actor: &str) -> Result<Connection, TaskError> {
+        self.create_connection_in(label, actor, None)
+    }
+
+    /// A connection whose session works in `scope`; it can claim files
+    /// there (F-TK-05).
+    pub fn create_connection_in(
+        &self,
+        label: &str,
+        actor: &str,
+        scope: Option<ClaimScope>,
+    ) -> Result<Connection, TaskError> {
         let conn = Connection {
             id: tandem_core::ids::new_id("tc"),
             created_at: self.now(),
             label: label.to_string(),
             actor: actor.to_string(),
             revoked_at: None,
+            scope,
         };
         let out = conn.clone();
         self.edit_connections(move |m| {
@@ -926,6 +954,7 @@ fn diff_fields(a: &Issue, b: &Issue) -> Vec<(&'static str, Value, Value)> {
     field!(labels);
     field!(project);
     field!(assignee);
+    field!(suggested_engine);
     field!(archived);
     field!(result);
     if a.attempts != b.attempts {

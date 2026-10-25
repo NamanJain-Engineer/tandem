@@ -72,6 +72,8 @@ setting_keys! {
     RunawayAction,
     NightShiftSummaryAt,
     AgentSandbox,
+    AgentMemoryCap,
+    ChecksOneAtATime,
     DefaultShell,
     WslDefaultDistro,
     TermFontFamily,
@@ -490,6 +492,35 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::OneOf(&["off", "workspace"]),
         Engines,
         ["sandbox", "bubblewrap", "bwrap", "isolate", "security"]
+    ),
+    spec!(
+        AgentMemoryCap,
+        json!("off"),
+        V::OneOf(&["off", "512", "1024", "2048", "4096", "8192", "16384"]),
+        Engines,
+        [
+            "memory",
+            "cap",
+            "limit",
+            "ram",
+            "oom",
+            "resources",
+            "cgroup"
+        ]
+    ),
+    spec!(
+        ChecksOneAtATime,
+        json!(false),
+        V::Bool,
+        Engines,
+        [
+            "checks",
+            "queue",
+            "one at a time",
+            "sequential",
+            "tests",
+            "resources"
+        ]
     ),
     spec!(
         RunawayGuard,

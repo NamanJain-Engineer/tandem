@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, fakeEngine, freshUser, home, invoke, mod } from "../support/app";
+import { addFolder, checkAgain, fakeEngine, freshOffline, home, invoke, mod } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -45,7 +45,8 @@ describe("E2E-M18-RT06 night shift", function () {
   before(async () => {
     fakeEngine("codex", join(home(), "fakebin"));
     usage("97");
-    await freshUser("m18-rt06");
+    // Offline, with no account: the Night Shift needs neither (D-2902, D-2914).
+    await freshOffline();
     await checkAgain();
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");

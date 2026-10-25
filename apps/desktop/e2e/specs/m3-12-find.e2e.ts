@@ -11,10 +11,15 @@ import {
 
 async function countIs(label: string): Promise<void> {
   const count = $('[data-testid="find-count"]');
-  await browser.waitUntil(async () => (await count.getText()) === label, {
-    timeout: 5_000,
-    timeoutMsg: `find count: ${await count.getText()} (wanted ${label})`,
-  });
+  try {
+    await browser.waitUntil(async () => (await count.getText()) === label, { timeout: 5_000 });
+  } catch {
+    // What the bar shows when the wait gives up, and for which query.
+    const query = await $('[data-testid="find-input"]')
+      .getValue()
+      .catch(() => "?");
+    throw new Error(`find count: ${await count.getText()} for "${query}" (wanted ${label})`);
+  }
 }
 
 // E2E-M3-12 Find (F-CD-08 AC1).

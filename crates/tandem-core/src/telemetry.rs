@@ -339,6 +339,9 @@ mod tests {
     fn bundled_allowlist_parses() {
         let allow = Allowlist::bundled();
         assert!(allow.has_event("app_started"));
-        assert!(allow.has_event("upgrade_sheet_opened"));
+        assert!(allow.has_event("terminal_opened"));
+        // Nothing is sold, so there's nothing to count about it (D-2914).
+        assert!(!allow.has_event("upgrade_sheet_opened"));
+        assert!(!allow.has_event("limit_hit"));
     }
 }

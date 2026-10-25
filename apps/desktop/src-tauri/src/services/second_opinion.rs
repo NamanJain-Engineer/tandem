@@ -354,6 +354,7 @@ impl OpinionHost for AppHost {
         let ws = tandem_store::repo::workspaces::get(&self.store, lane)
             .await
             .map_err(|e| IpcError::new(ErrorCode::NotFound, e.to_string()))?;
+        crate::services::lanes::single_repo(&self.store, &ws).await?;
         let files = crate::services::lanes::diff(&self.store, lane).await?;
         Ok((ws.lane_branch.unwrap_or(ws.name), files))
     }

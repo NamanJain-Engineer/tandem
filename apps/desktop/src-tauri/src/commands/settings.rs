@@ -85,6 +85,10 @@ async fn store(state: &AppState, key: SettingKey, value: &Value) -> Result<(), I
     if key == SettingKey::AgentSandbox {
         crate::commands::sandbox::may_turn_on(state.terminals.sandboxer().await.as_ref(), value)?;
     }
+    // A memory cap is offered only where it applies (F-EX-06).
+    if key == SettingKey::AgentMemoryCap {
+        crate::commands::resources::may_cap(&state.terminals.resources.status().await, value)?;
+    }
     settings::set(&state.store, key, value.clone()).await?;
     stored(state, key, value);
     Ok(())
@@ -102,6 +106,10 @@ fn stored(state: &AppState, key: SettingKey, value: &Value) {
     // Off deletes the session index, however it was turned off (F-TH-17).
     if key == SettingKey::SessionSearch && value.as_bool() != Some(true) {
         crate::services::library::delete_index(state.data.root());
+    }
+    // Checks started from now on take turns, or run at once (F-EX-06).
+    if key == SettingKey::ChecksOneAtATime {
+        crate::services::check_queue::set(value.as_bool().unwrap_or(false));
     }
 }
 

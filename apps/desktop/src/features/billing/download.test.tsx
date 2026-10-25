@@ -11,7 +11,6 @@ import { FREE_VIEW, fakeBackend, resetStores } from "../../test/fakeBackend";
 import { SettingsView } from "../settings/SettingsView";
 import { SignIn } from "../signin/SignIn";
 import { TitleBar } from "../shell/TitleBar";
-import { hostedTooltip } from "./ComesWithAccounts";
 
 // The download (TANDEM_HOSTED=0): no account, nothing hosted. DESIGN §5.5 and
 // §9.5 (D-869, D-2903): it never names a plan, a price, an upgrade or credits.
@@ -19,7 +18,6 @@ const NO_ACCOUNTS: AuthState = {
   signedIn: false,
   email: null,
   offline: true,
-  offlineDaysLeft: null,
   hosted: false,
   pending: null,
   error: null,
@@ -61,7 +59,9 @@ describe("the download build says nothing about plans or credits (D-2903, DESIGN
       await act(async () => fireEvent.click(screen.getByRole("button", { name })));
       expect(document.body.textContent, name).not.toMatch(BANNED);
     }
-    expect(screen.queryByTestId("settings-free-line")?.textContent ?? en["settings.freeLine"]).toBe(
+    // DESIGN §5.5: the one quiet line, under the version in Settings › Advanced.
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Advanced" })));
+    expect(screen.getByTestId("settings-free-line").textContent).toBe(
       "Vibezeo is free. If it helps you, tell a friend.",
     );
   });
@@ -109,9 +109,11 @@ describe("the download build says nothing about plans or credits (D-2903, DESIGN
   });
 
   it("F-DI-05 the hosted tooltips and labels use DESIGN §9.5's words, word for word", () => {
-    expect(hostedTooltip()).toBe(
-      "Comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
-    );
+    // Where there's no room (a segment, a switch), the label and the sentence are the tooltip.
+    for (const key of ["dictate.engine.needsPro", "dictate.enhance.needsPro"] as const)
+      expect(en[key], key).toBe(
+        "Comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
+      );
     for (const key of [
       "hosted.withAccounts",
       "hosted.why",

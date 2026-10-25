@@ -4,6 +4,7 @@ import type {
   Forge,
   IpcError,
   LaneChecks,
+  PrsRun,
   RadarMark,
   LandingPlan,
   LandingRun,
@@ -65,6 +66,8 @@ export type WorktreeAsk =
   | { kind: "allowChecks"; worktreeId: string }
   /** UI-157: a worktree's pull request checks (F-WT-08). */
   | { kind: "checks"; worktreeId: string }
+  /** UI-158: a multi-repo worktree's pull requests (F-CD-22). */
+  | { kind: "prs"; worktreeId: string }
   /** UI-155: land the repository's worktrees (F-WT-07). */
   | { kind: "land"; workspaceId: string }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
@@ -606,4 +609,18 @@ export async function loadRadar(laneIds: string[]): Promise<void> {
 /** The note Warn both agents types into `laneId`'s agent about `otherId`. */
 export function radarNote(laneId: string, otherId: string): Promise<Outcome<string>> {
   return run<string>("lane_radar_note", { laneId, otherId });
+}
+
+// ---- Multi-repo pull requests (F-CD-22) -------------------------------------
+
+/** How often UI-158 reads a running pull request run. */
+export const PRS_POLL_MS = 1_000;
+
+/** Pushes and opens the pull requests; the core asks with a native confirm. */
+export function createPullRequests(laneId: string): Promise<Outcome<PrsRun>> {
+  return run<PrsRun>("lane_create_prs", { laneId });
+}
+
+export function pullRequestsRun(laneId: string): Promise<Outcome<PrsRun | null>> {
+  return run<PrsRun | null>("lane_prs_get", { laneId });
 }

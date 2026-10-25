@@ -39,9 +39,7 @@ export function AccountPage() {
       <SettingsGroup>
         <div className="flex items-center gap-3 p-3">
           <p className="flex-1 text-base text-fg">
-            {auth?.offline && auth.offlineDaysLeft !== null
-              ? t("settings.account.offline", { n: Number(auth.offlineDaysLeft) })
-              : t("settings.account.signedOut")}
+            {auth?.offline ? t("settings.account.offline") : t("settings.account.signedOut")}
           </p>
           <Button variant="primary" onClick={() => invoke("auth_sign_in").catch(() => undefined)}>
             {t("settings.account.signIn")}

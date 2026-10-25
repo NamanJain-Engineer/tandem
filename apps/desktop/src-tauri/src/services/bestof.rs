@@ -596,11 +596,17 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
             &state.data,
             &ws,
         ));
+        // F-EX-06: with "one check at a time" on, a lane waits its turn.
+        let queued = crate::services::check_queue::is_on();
         runs::set_check(
             &state.store,
             id.to_string(),
             lane.seat,
-            CheckState::Running,
+            if queued {
+                CheckState::Queued
+            } else {
+                CheckState::Running
+            },
             None,
             None,
         )
@@ -615,6 +621,23 @@ pub async fn check(state: &AppState, id: &str) -> Result<(), IpcError> {
         let slot: GroupSlot = Arc::default();
         let task_slot = slot.clone();
         let task = tokio::spawn(async move {
+            let _turn = crate::services::check_queue::turn().await;
+            if queued {
+                let _ = runs::set_check(
+                    &store,
+                    run_id.clone(),
+                    seat,
+                    CheckState::Running,
+                    None,
+                    None,
+                )
+                .await;
+                bus.publish(BusEvent::new(
+                    Topic::App,
+                    "bestof:changed",
+                    serde_json::json!({ "runId": run_id }),
+                ));
+            }
             let (exit, out) = run_prepared(cmd, &env, CHECK_LIMIT, Some(task_slot)).await;
             let out = Redactor::global()
                 .redact(&tail(&out, TAIL_LINES))
@@ -660,7 +683,11 @@ pub async fn stop_checks(state: &AppState, id: &str) {
         h.abort();
     }
     if let Ok(run) = run_of(state, id).await {
-        for lane in run.lanes.iter().filter(|l| l.check == CheckState::Running) {
+        for lane in run
+            .lanes
+            .iter()
+            .filter(|l| matches!(l.check, CheckState::Running | CheckState::Queued))
+        {
             let _ = runs::set_check(
                 &state.store,
                 id.to_string(),
@@ -803,7 +830,7 @@ pub async fn keep(
         if let Some(l) = &lane.lane_id {
             lanes::stop_panes(
                 &state.store,
-                &state.terminals.pty,
+                &state.terminals,
                 &WorkspaceId::from_db(l.clone()),
             )
             .await?;
@@ -870,7 +897,7 @@ pub async fn keep(
         if let Some(l) = &lane.lane_id {
             if let Err(e) = lanes::remove(
                 &state.store,
-                &state.terminals.pty,
+                &state.terminals,
                 &git,
                 &WorkspaceId::from_db(l.clone()),
                 Some(force(origin)?),
@@ -899,7 +926,7 @@ pub async fn discard(state: &AppState, origin: &Origin, id: &str) -> Result<(), 
             if workspaces::get(&state.store, &lane_id).await.is_ok() {
                 lanes::remove(
                     &state.store,
-                    &state.terminals.pty,
+                    &state.terminals,
                     &git,
                     &lane_id,
                     Some(force(origin)?),
@@ -1057,7 +1084,10 @@ mod tests {
         let mut got = None;
         for _ in 0..100 {
             let r = run_of(&state, &run.id).await.expect("run");
-            if r.lanes.iter().all(|l| l.check != CheckState::Running) {
+            if r.lanes
+                .iter()
+                .all(|l| !matches!(l.check, CheckState::Running | CheckState::Queued))
+            {
                 got = Some(r);
                 break;
             }

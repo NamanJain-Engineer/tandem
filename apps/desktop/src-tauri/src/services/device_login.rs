@@ -104,9 +104,6 @@ mod tests {
         async fn me(&self, _: &str) -> Result<MeResponse, ApiError> {
             unreachable!()
         }
-        async fn portal(&self, _: &str) -> Result<String, ApiError> {
-            unreachable!()
-        }
         async fn config(&self) -> Result<SignedConfig, ApiError> {
             unreachable!()
         }

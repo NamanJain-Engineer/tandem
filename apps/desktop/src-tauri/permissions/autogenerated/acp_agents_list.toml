@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-acp-agents-list"
+description = "Enables the acp_agents_list command without any pre-configured scope."
+commands.allow = ["acp_agents_list"]
+
+[[permission]]
+identifier = "deny-acp-agents-list"
+description = "Denies the acp_agents_list command without any pre-configured scope."
+commands.deny = ["acp_agents_list"]

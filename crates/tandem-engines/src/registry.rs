@@ -218,6 +218,11 @@ pub struct EngineSpec {
     pub chat_adapter: Option<String>,
     #[serde(default)]
     pub acp_cmd: Option<Vec<String>>,
+    /// Run instead when `acp_cmd` doesn't start an ACP session: an older
+    /// release's flag (D-2516). Same program.
+    #[serde(default)]
+    #[ts(skip)]
+    pub acp_fallback_cmd: Option<Vec<String>>,
     #[serde(default)]
     pub adapter_versions: Option<String>,
     /// The variable that points the engine at a provider home.
@@ -306,7 +311,7 @@ fn bare_name(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-fn env_name(s: &str) -> bool {
+pub(crate) fn env_name(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_uppercase() || c == '_')
         && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
@@ -314,7 +319,7 @@ fn env_name(s: &str) -> bool {
 
 /// Variables a Pin may never set: any engine's provider home, and anything
 /// that changes what a process loads or where it looks (F-EN-08).
-fn pin_reserved(name: &str, own_home: Option<&str>) -> bool {
+pub(crate) fn pin_reserved(name: &str, own_home: Option<&str>) -> bool {
     const RESERVED: &[&str] = &[
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
@@ -404,6 +409,11 @@ impl EngineSpec {
         }
         if self.chat_adapter.as_deref() == Some("acp") && self.acp_cmd.is_none() {
             return fail("an ACP engine needs acp_cmd");
+        }
+        if let Some(fallback) = &self.acp_fallback_cmd {
+            if self.acp_cmd.as_ref().and_then(|c| c.first()) != fallback.first() {
+                return fail("acp_fallback_cmd runs acp_cmd's program");
+            }
         }
         if let Some(adapter) = &self.chat_adapter {
             if !matches!(adapter.as_str(), "claude" | "codex" | "acp") {
@@ -590,6 +600,14 @@ impl EngineRegistry {
 
     pub fn all(&self) -> &[EngineSpec] {
         &self.entries
+    }
+
+    /// Adds an entry unless its id is taken (ACP agents the user added,
+    /// F-EN-10).
+    pub fn add(&mut self, spec: EngineSpec) {
+        if self.get(&spec.id).is_none() {
+            self.entries.push(spec);
+        }
     }
 
     pub fn get(&self, id: &str) -> Option<&EngineSpec> {
@@ -805,9 +823,10 @@ mod tests {
         assert_eq!(kiro.home_strategy, HomeStrategy::Env);
         assert_eq!(kiro.login_cmd, Some(vec!["login".to_string()]));
         assert_eq!(kiro.login_mode, LoginMode::Argv);
-        // F-EN-09.3: terminal only, and never headless.
+        // F-EN-09.3: never headless; Antigravity is terminal only (Kiro's
+        // ACP mode came with F-EN-10, D-2510).
+        assert!(agy.chat_adapter.is_none() && agy.acp_cmd.is_none());
         for e in [agy, kiro] {
-            assert!(e.chat_adapter.is_none() && e.acp_cmd.is_none(), "{}", e.id);
             assert!(e.headless_cmd.is_none(), "{}", e.id);
         }
         // F-EN-09.2: Gemini CLI stays, with its note.
@@ -819,5 +838,43 @@ mod tests {
         let mut bad = gemini.clone();
         bad.note = Some("two\nlines".into());
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_10_1_gemini_runs_acp_mode_with_the_older_flag_as_fallback() {
+        let reg = EngineRegistry::bundled();
+        let gemini = reg.get("gemini").expect("gemini");
+        assert_eq!(gemini.chat_adapter.as_deref(), Some("acp"));
+        assert_eq!(
+            gemini.acp_cmd,
+            Some(vec!["gemini".to_string(), "--acp".to_string()])
+        );
+        assert_eq!(
+            gemini.acp_fallback_cmd,
+            Some(vec!["gemini".to_string(), "--experimental-acp".to_string()])
+        );
+        let mut other = gemini.clone();
+        other.acp_fallback_cmd = Some(vec!["sh".into(), "-c".into()]);
+        assert!(other.validate().is_err());
+    }
+
+    #[test]
+    fn f_en_10_1_kiro_is_a_thread_engine_through_its_acp_mode() {
+        let reg = EngineRegistry::bundled();
+        let kiro = reg.get("kiro").expect("kiro");
+        assert_eq!(kiro.chat_adapter.as_deref(), Some("acp"));
+        assert_eq!(
+            kiro.acp_cmd,
+            Some(vec!["kiro-cli".to_string(), "acp".to_string()])
+        );
+        // In the account's own home, like its terminal panes.
+        assert_eq!(kiro.provider_home_env.as_deref(), Some("KIRO_HOME"));
+        assert!(kiro
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("Agent Client Protocol")));
+        // With no account every chat engine runs, Kiro included (D-869).
+        let free = tandem_core::entitlement::Limits::free();
+        assert!(free.allows_chat_engine("kiro"));
     }
 }

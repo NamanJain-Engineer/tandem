@@ -11,7 +11,7 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { ArrowRightLeft, SquareTerminal, X } from "lucide-react";
+import { ArrowRightLeft, Play, SquareTerminal, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -34,6 +34,7 @@ import { useBoot } from "../shell/useBoot";
 import { useCloseConfirm } from "../../stores/closeConfirm";
 import { useFlash } from "../../stores/focus";
 import { useWorkspaces } from "../../stores/workspaces";
+import { useSetting } from "../../stores/settings";
 import { useLaunch } from "../../stores/launch";
 import { useRestore, waitingOnCard } from "../../stores/restore";
 import { invoke } from "../../ipc/invoke";
@@ -65,6 +66,9 @@ import { AccountChip } from "./AccountChip";
 import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
+import { ResourceChip } from "./ResourceChip";
+import { RunDialog } from "../secrets/RunDialog";
+import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
 import { baseBranch, isWorktree } from "../../stores/worktrees";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -281,6 +285,23 @@ const PaneView = memo(function PaneView({
   const meta = relativeCwd(cwd ?? pane.cwd, root);
   const note = useHandoff((st) => st.notes[pane.id]);
   const context = useContexts((st) => st.byPane[pane.id]);
+  // F-EX-06: Freeze/Thaw for a pane on this computer, where it's offered.
+  const freezing = useResources((st) => st.status?.freezing ?? false);
+  const frozen = useResources((st) => st.byPane[pane.id]?.frozen ?? false);
+  const freezable = freezing && home?.kind === "local";
+  // F-TL-12: Run with secrets, from a terminal pane in a folder here; not
+  // where plain terminals open in WSL, since the values would cross unmasked.
+  const plainWsl = useSetting<string | null>("wsl_default_distro", null);
+  const runnable = pane.kind === "terminal" && home?.kind === "local" && !plainWsl;
+  const [running, setRunning] = useState(false);
+  const toggleFrozen = () =>
+    void setFrozen(pane.id, !frozen).catch((e: IpcError) =>
+      show({
+        tone: "error",
+        title: frozen ? t("resources.thawFailed") : t("resources.freezeFailed"),
+        body: e.message,
+      }),
+    );
   const rename = async (name: string): Promise<string | null> => {
     try {
       const stored = await invoke<string>("pane_rename", { paneId: pane.id, humanName: name });
@@ -309,6 +330,16 @@ const PaneView = memo(function PaneView({
     },
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
+    ...(runnable ? [{ id: "run", label: t("run.menu"), onSelect: () => setRunning(true) }] : []),
+    ...(freezable
+      ? [
+          {
+            id: "freeze",
+            label: frozen ? t("resources.thaw") : t("resources.freeze"),
+            onSelect: toggleFrozen,
+          },
+        ]
+      : []),
     {
       id: "handoff",
       label: t("pane.handoff"),
@@ -386,7 +417,19 @@ const PaneView = memo(function PaneView({
             {wt && <WorktreeChip wt={wt} />}
             <AccountChip pane={pane} />
             {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}
+            <ResourceChip paneId={pane.id} />
           </>
+        }
+        actions={
+          runnable ? (
+            <IconButton
+              size="sm"
+              icon={<Play size={13} />}
+              label={t("run.menu")}
+              data-testid="pane-run"
+              onClick={() => setRunning(true)}
+            />
+          ) : undefined
         }
         onRename={rename}
         renaming={renaming}
@@ -418,6 +461,7 @@ const PaneView = memo(function PaneView({
         dragRef={setNodeRef}
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
+      {runnable && <RunDialog paneId={pane.id} tabId={tabId} open={running} onOpenChange={setRunning} />}
       <LimitBanner pane={pane} />
       <GuardBanner paneId={pane.id} />
       {note && (

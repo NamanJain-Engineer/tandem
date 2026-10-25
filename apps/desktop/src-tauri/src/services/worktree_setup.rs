@@ -174,6 +174,7 @@ pub fn state_at(data: &DataDir, main: &Path) -> SetupState {
 pub async fn get(store: &Store, data: &DataDir, ws: &WorkspaceId) -> Result<SetupState, IpcError> {
     let ws = workspaces::get(store, ws).await?;
     local_only(&ws)?;
+    crate::services::lanes::single_repo(store, &ws).await?;
     Ok(state_at(data, &main_root(&ws.root)?))
 }
 
@@ -187,6 +188,7 @@ pub async fn save(
 ) -> Result<SetupState, IpcError> {
     let ws = workspaces::get(store, ws).await?;
     local_only(&ws)?;
+    crate::services::lanes::single_repo(store, &ws).await?;
     let main = main_root(&ws.root)?;
     let config = config.normalized().map_err(setup_err)?;
     setup::write(&main, &config).map_err(setup_err)?;
@@ -207,6 +209,7 @@ pub async fn trust_reviewed(
 ) -> Result<SetupState, IpcError> {
     let ws = workspaces::get(store, ws).await?;
     local_only(&ws)?;
+    crate::services::lanes::single_repo(store, &ws).await?;
     let main = main_root(&ws.root)?;
     let state = state_at(data, &main);
     if state.digest.as_deref() != Some(digest) {
@@ -295,7 +298,8 @@ pub async fn lane_setup(
             "That workspace isn't a worktree",
         ));
     }
-    if row.kind != "local" {
+    // F-CD-22: setup doesn't apply to a multi-repo worktree yet.
+    if row.kind != "local" || crate::services::lanes::is_multi(store, &row).await? {
         return Ok(None);
     }
     let copied = COPIES
@@ -332,6 +336,7 @@ pub async fn setup_pane(
             "That workspace isn't a worktree",
         ));
     }
+    crate::services::lanes::single_repo(store, &row).await?;
     if !Path::new(&row.root).is_dir() {
         return Err(IpcError::new(
             ErrorCode::NotFound,
@@ -375,6 +380,7 @@ pub async fn preview_pane(
             "Previews need a worktree on this computer",
         ));
     }
+    crate::services::lanes::single_repo(store, &row).await?;
     if !Path::new(&row.root).is_dir() {
         return Err(IpcError::new(
             ErrorCode::NotFound,

@@ -54,11 +54,16 @@ const LOOKALIKES: [char; 12] = [
     '\u{0000}',
 ];
 
-fn case_insensitive_fs() -> bool {
+/// True where file names ignore case (macOS's and Windows' default file
+/// systems): `A.ts` and `a.ts` are one file there.
+pub fn case_insensitive_fs() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
-fn fold(s: &str) -> String {
+/// The form two names of one file compare in here: Unicode NFC, and
+/// lowercased where [`case_insensitive_fs`]. Compare with it; keep and show
+/// what was written.
+pub fn fold(s: &str) -> String {
     let nfc: String = s.nfc().collect();
     if case_insensitive_fs() {
         nfc.to_lowercase()
@@ -90,7 +95,8 @@ pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
 /// [`canonical`] for a path that may not exist yet: its deepest existing
 /// ancestor canonicalized, with the missing rest appended as written. `None`
 /// when the missing rest ends in `..`, which only the file system resolves.
-fn canonical_existing(path: &Path) -> Option<PathBuf> {
+/// A new file in a new folder compares with canonical roots this way.
+pub fn canonical_existing(path: &Path) -> Option<PathBuf> {
     let mut missing = Vec::new();
     let mut existing = path;
     loop {
@@ -326,6 +332,43 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn fold_composes_everywhere_and_lowercases_where_case_is_ignored() {
+        let folded = fold("Cafe\u{301}.md");
+        if case_insensitive_fs() {
+            assert_eq!(folded, "caf\u{e9}.md");
+        } else {
+            assert_eq!(folded, "Caf\u{e9}.md");
+        }
+    }
+
+    #[test]
+    fn canonical_existing_resolves_the_deepest_existing_folder() {
+        let (_dir, root) = fixture();
+        let canon = canonical(&root).expect("canon");
+        assert_eq!(
+            canonical_existing(&root.join("src/new/dir/file.md")),
+            Some(canon.join("src").join("new").join("dir").join("file.md"))
+        );
+        assert_eq!(
+            canonical_existing(&root.join("src/main.rs")),
+            Some(canon.join("src").join("main.rs"))
+        );
+        assert_eq!(
+            canonical_existing(&root.join("inner-link/new.txt")),
+            Some(canon.join("src").join("nested").join("new.txt")),
+            "through a link"
+        );
+    }
+
+    /// Windows resolves `..` before it looks, so this is Unix's case.
+    #[cfg(unix)]
+    #[test]
+    fn canonical_existing_leaves_a_missing_folders_parent_to_the_file_system() {
+        let (_dir, root) = fixture();
+        assert_eq!(canonical_existing(&root.join("missing/..")), None);
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]

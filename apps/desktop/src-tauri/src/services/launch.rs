@@ -332,7 +332,17 @@ async fn launch_seat(
                 .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "The worktree has no tab"))?;
             let branch = lane.lane_branch.clone().unwrap_or_default();
             let others: Vec<String> = branches.iter().filter(|b| **b != branch).cloned().collect();
-            let briefing = tandem_git::lanes::briefing(Path::new(&lane.root), &branch, &others);
+            // F-CD-22: a multi-repo worktree's folder isn't one git worktree.
+            let repos: Vec<String> = tandem_store::repo::lane_repos::list(&state.store, &lane.id)
+                .await?
+                .into_iter()
+                .map(|r| r.name)
+                .collect();
+            let briefing = if repos.is_empty() {
+                tandem_git::lanes::briefing(Path::new(&lane.root), &branch, &others)
+            } else {
+                tandem_git::lanes::multi_briefing(Path::new(&lane.root), &branch, &repos, &others)
+            };
             (lane, tab.id, Some(briefing))
         }
         Some(Err(e)) => return Err(e),
