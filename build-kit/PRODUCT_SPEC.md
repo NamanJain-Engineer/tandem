@@ -921,8 +921,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Not for multi-repo worktrees yet** (their menu entries are disabled with "Not available for multi-repo worktrees yet"): Merge into…, Land worktrees, Check overlap, Check pull request, previews, worktree setup and its ports and environment, second opinion, and the intent radar. Local folders only: on SSH hosts and in WSL a folder is never multi-repo.
 
 **Acceptance:**
-1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". On Pro, launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
-2. On Free, the Worktrees option is disabled with the Pro reason, and `lane_create` for the folder is refused with ForbiddenPlan.
+1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". Launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
+2. With no account and no plan check (D-869), New worktree works for the folder, and what needs one repository (Merge into…, for one) is refused up front with "Not available for multi-repo worktrees yet".
 3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.

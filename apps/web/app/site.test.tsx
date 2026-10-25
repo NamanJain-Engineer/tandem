@@ -280,7 +280,7 @@ describe("public site", () => {
     // sentence lives in the feature's own text, which the docs carry.
     expect(home).toMatch(/<a href="\/docs\/thread-mode\/"[^>]*>Thread mode<\/a>/);
     expect(FEATURES.find((f) => f.title === "Thread mode")?.body).toContain(
-      "Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
+      "Threads run Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Kiro CLI, OpenCode and any agent you add that speaks ACP, up to six side by side.",
     );
     expect(home).not.toMatch(
       /need Pro|next release|in the next\b|the next (shows|has|runs|adds|lifts)|this release (has|includes|keeps|shows|runs)/i,

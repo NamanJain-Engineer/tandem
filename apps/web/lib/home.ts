@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Kiro CLI, OpenCode and any agent you add that speaks ACP, up to six side by side.",
   },
   {
     title: "Switch engines mid-thread",
