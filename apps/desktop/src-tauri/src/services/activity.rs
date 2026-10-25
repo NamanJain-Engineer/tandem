@@ -1,4 +1,4 @@
-//! The activity ledger (F-EX-07, ARCHITECTURE §7): one timeline per agent
+//! The activity ledger (F-EX-07, ARCHITECTURE §6.13): one timeline per agent
 //! pane or thread. Events only the ledger knows (turns sent, tools,
 //! subagents, pane approvals, `vibezeo run`) go in `activity`; commands,
 //! checkpoints and thread approvals are read from their own tables. Nothing

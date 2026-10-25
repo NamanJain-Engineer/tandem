@@ -15,6 +15,19 @@ Vibezeo saves a copy of a folder's files just before an agent works on it, so yo
 - **Restore.** Open the sidebar's **Checkpoints** tab (from the **+** menu). Each checkpoint shows how many files differ from now and their diffs. **Restore all files…** or restore the files you tick; files created since are deleted. Vibezeo saves a **Before restore** checkpoint first, and the toast has **Undo**.
 - **Limits.** On by default. 100 checkpoints per folder, kept 14 days; change both, the size limit or turn them off in **Settings › Checkpoints**, which also shows the space used and has **Delete all checkpoints…**. Checkpoints need git installed. They aren't available in folders on SSH hosts yet.
 
+## Activity
+
+**Activity…** in an agent pane's menu, a thread's menu or a Dashboard card's menu shows what that session did, oldest first:
+
+- **Turns** sent to the agent, never their words. A thread's turn offers **Open transcript**.
+- **Files**: a checkpoint was taken because the folder changed since the last one. **Checkpoint** opens the Checkpoints tab.
+- **Commands** run in the pane, as command recall stored them, with their exit codes. With "Remember commands I run" off, they don't appear.
+- **Tools** and **subagents** an agent pane's engine started (their names).
+- **Approvals**: what was asked, the answer and where it came from.
+- **vibezeo run**: the command, the secrets it used (names only), who decided, its exit code and how long it took. Never its output.
+
+**Export…** saves the same events as a JSON Lines file. The activity stays on your computer for 14 days. It doesn't record network connections yet.
+
 ## Command recall
 
 Every command you run in a Vibezeo terminal with shell integration (bash, zsh, fish and PowerShell) is recorded with its folder, exit code and duration. <kbd>Mod+Alt+J</kbd> (**Recall a command…**) searches them.
