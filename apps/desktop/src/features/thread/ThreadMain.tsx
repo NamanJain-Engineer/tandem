@@ -639,26 +639,18 @@ export function dragThread(e: DragEvent, id: string): void {
 /** Adds a thread to the grid and says why when it can't (F-TH-14 AC1). */
 export function useAddToGrid(): (id: string) => void {
   const addToGrid = useThreads((s) => s.addToGrid);
-  const openUpgrade = useUi((s) => s.openUpgrade);
   const { show } = useToast();
   return useCallback(
     (id: string) => {
       const result = addToGrid(id);
       if (result === "full") show({ tone: "warning", title: t("thread.grid.full", { n: GRID_MAX }) });
+      // A smaller limit a signed token carries fills the grid sooner (none with no account, D-2900).
       if (result === "limit") {
-        const limit = useSession.getState().entitlement?.limits.threadGrid ?? 1;
-        show({
-          tone: "info",
-          title: t("thread.grid.freeTitle"),
-          body: t("thread.grid.freeBody"),
-          action: {
-            label: t("thread.grid.plans"),
-            onClick: () => openUpgrade({ kind: "thread_grid", limit }),
-          },
-        });
+        const limit = useSession.getState().entitlement?.limits.threadGrid ?? GRID_MAX;
+        show({ tone: "warning", title: t("thread.grid.full", { n: limit }) });
       }
     },
-    [addToGrid, openUpgrade, show],
+    [addToGrid, show],
   );
 }
 
@@ -751,8 +743,8 @@ export function ThreadMain({ visible = true }: { visible?: boolean }) {
   const selectedId = useThreads((s) => s.selectedId);
   const exists = useThreads((s) => s.list.some((th) => th.id === s.selectedId));
   const saved = useThreads((s) => s.grid);
-  // The plan decides how many show; a saved grid outlives a downgrade.
-  const limit = useSession((s) => s.entitlement?.limits.threadGrid ?? 1);
+  // The limits decide how many show (six with no account, D-2900); a saved grid outlives a smaller limit.
+  const limit = useSession((s) => s.entitlement?.limits.threadGrid ?? GRID_MAX);
   const grid = useMemo(() => (limit > 1 ? saved.slice(0, Math.min(limit, GRID_MAX)) : []), [saved, limit]);
   const { show } = useToast();
   useThreadDrops(show);

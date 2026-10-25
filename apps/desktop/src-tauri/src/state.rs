@@ -648,7 +648,6 @@ impl AppState {
             store: store.clone(),
             teammates: teammates.clone(),
             terminals: terminals.clone(),
-            auth: auth.clone(),
             entitlements: entitlements.clone(),
             threads: threads.clone(),
             notifications: notifications.clone(),
@@ -665,7 +664,6 @@ impl AppState {
             Arc::new(crate::services::task_host::AppExecHost {
                 store: store.clone(),
                 data: data.clone(),
-                auth: auth.clone(),
                 entitlements: entitlements.clone(),
                 terminals: terminals.clone(),
                 teammates: teammates.clone(),

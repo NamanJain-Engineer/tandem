@@ -111,7 +111,8 @@ export function TeammateSettings({ s }: { s: TeammateSummary }) {
     if (!enginesLoaded) void useEngines.getState().refresh();
   }, [enginesLoaded]);
   const accounts = useAccounts((st) => st.list);
-  // Only where routines can run: the plan has them (D-909).
+  // Only where routines can run: the limits have them (D-909; every one
+  // with no account, D-2900).
   const routines = useSession((st) => !!st.entitlement?.limits.routines);
   const update = useTeammates((st) => st.update);
   const remove = useTeammates((st) => st.remove);

@@ -19,7 +19,8 @@ import { useWorktrees, worktreeDiff } from "../../stores/worktrees";
 import { openThread, useReviews, worktreeAgents } from "./WorktreeReview";
 
 /** Who can review (F-WT-05): installed engines; only Thread engines can run
- * read-only, and Free runs only the plan's chat engines. */
+ * read-only, and limits that list chat engines keep to those (none do with
+ * no account, D-2900). */
 export function reviewerOptions(engines: EngineView[], chatEngines: string[] | null): SelectOption[] {
   return engines
     .filter((e) => e.install)
@@ -33,7 +34,7 @@ export function reviewerOptions(engines: EngineView[], chatEngines: string[] | n
           ? t("worktree.opinion.readOnlyNo")
           : onPlan
             ? undefined
-            : t("thread.composer.pro"),
+            : t("thread.composer.notListed"),
       };
     });
 }

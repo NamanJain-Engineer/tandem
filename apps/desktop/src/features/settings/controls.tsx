@@ -354,17 +354,18 @@ export function ThemeCards({ label }: { label: string }) {
   );
 }
 
-/** Search session text (F-TH-17): Pro, and off deletes the index. */
+/** Search session text (F-TH-17): on with no account (D-2900) unless the
+ * limits turn it off; off deletes the index. */
 export function SessionSearchControl({ ids, label }: { ids: Ids; label: string }) {
   const value = useSetting("session_search", false);
-  const pro = useSession((s) => s.entitlement?.limits.sessionSearch ?? false);
+  const allowed = useSession((s) => s.entitlement?.limits.sessionSearch ?? true);
   const { show } = useToast();
   return (
     <Switch
       id={ids.id}
       aria-describedby={ids.describedBy}
       checked={value}
-      disabled={!pro && !value}
+      disabled={!allowed && !value}
       aria-label={label}
       onCheckedChange={(on) =>
         void setLibrarySearch(on).then((out) => {

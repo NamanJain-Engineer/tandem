@@ -4,7 +4,7 @@ import {
   addFolder,
   browserLog,
   freshSignedOut,
-  planFooter,
+  waitSignedIn,
   signInDesktop,
   signUpVerified,
   terminalLines,
@@ -33,13 +33,10 @@ describe("E2E-M2-1 walking skeleton", () => {
     await expectNoSeriousA11yViolationsInBothThemes();
   });
 
-  it("signs in through the scripted browser and shows FREE", async () => {
+  it("signs in through the scripted browser and shows Free", async () => {
     await signInDesktop(email);
     expect(browserLog()).toContain("You can return to Vibezeo.");
-    await browser.waitUntil(async () => (await planFooter()) === "FREE", {
-      timeout: 15_000,
-      timeoutMsg: `footer: ${await planFooter()}`,
-    });
+    await waitSignedIn();
   });
 
   it("opens a workspace with a live shell that runs commands", async () => {

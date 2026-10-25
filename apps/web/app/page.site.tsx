@@ -9,7 +9,6 @@ import { Faq } from "../components/site/home/Faq";
 import { Founder } from "../components/site/home/Founder";
 import { Hero } from "../components/site/home/Hero";
 import { Modes } from "../components/site/home/Modes";
-import { PlanTeaser } from "../components/site/home/PlanTeaser";
 import { StatsBand } from "../components/site/home/StatsBand";
 import { TrustFlow } from "../components/site/home/TrustFlow";
 
@@ -32,7 +31,6 @@ export default function HomePage() {
       <ClaudeBand />
       <StatsBand />
       <Founder />
-      <PlanTeaser />
       <Faq />
       <CtaBand />
     </SiteFrame>

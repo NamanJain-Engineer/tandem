@@ -150,7 +150,8 @@ pub(crate) async fn create_thread(
         Some(r) => r.get(e).is_some(),
         None => state.terminals.engines.installed(e).is_some(),
     };
-    // The last engine, unless the plan no longer runs it (a lapse to Free).
+    // The last engine, unless the limits no longer run it (a token that
+    // lists chat engines).
     let last = text(&defaults, "last_engine").filter(|e| {
         state.entitlements.limits().allows_chat_engine(e)
             && installed(e)

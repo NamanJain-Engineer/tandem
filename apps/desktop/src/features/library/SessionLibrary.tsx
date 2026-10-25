@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { History } from "lucide-react";
 import type { LibraryListing, LibrarySession, TranscriptItem } from "@tandem/protocol";
-import {
-  Badge,
-  Banner,
-  Button,
-  Dialog,
-  EmptyState,
-  EngineGlyph,
-  Input,
-  Skeleton,
-  useToast,
-} from "@tandem/ui";
+import { Banner, Button, Dialog, EmptyState, EngineGlyph, Input, Skeleton, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useEngines } from "../../stores/engines";
 import { showOpened, useHandoff } from "../../stores/handoff";
@@ -171,7 +161,8 @@ function Row({
 function LibraryBody() {
   const hide = () => useLibrary.getState().hide();
   const { show } = useToast();
-  const pro = useSession((s) => s.entitlement?.limits.sessionSearch ?? false);
+  // On with no account (D-2900); limits can still turn it off.
+  const allowed = useSession((s) => s.entitlement?.limits.sessionSearch ?? true);
   const searchOn = useSettings((s) => s.values.session_search === true);
   const [load, setLoad] = useState<Load>({ at: "loading" });
   const [query, setQuery] = useState("");
@@ -281,12 +272,12 @@ function LibraryBody() {
                   setHits(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && pro && searchOn && query.trim()) void fullText();
+                  if (e.key === "Enter" && allowed && searchOn && query.trim()) void fullText();
                 }}
                 className="flex-1"
                 data-testid="library-filter"
               />
-              {pro && searchOn && (
+              {allowed && searchOn && (
                 <Button
                   variant="secondary"
                   disabled={!query.trim()}
@@ -298,10 +289,9 @@ function LibraryBody() {
                 </Button>
               )}
             </div>
-            {!pro ? (
-              <p className="flex items-center gap-2 text-xs text-fg-subtle">
-                <Badge variant="accent">{t("library.pro")}</Badge>
-                {t("library.searchPro")}
+            {!allowed ? (
+              <p className="text-xs text-fg-subtle" data-testid="library-search-unavailable">
+                {t("library.searchUnavailable")}
               </p>
             ) : (
               !searchOn && <p className="text-xs text-fg-subtle">{t("library.searchOff")}</p>

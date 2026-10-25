@@ -517,9 +517,7 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
       </p>
 
       {error && (
-        <Callout tone="error" title={error.message}>
-          {error.code === "limit_reached" ? t("launch.limitBody") : null}
-        </Callout>
+        <Callout tone="error" title={error.message} />
       )}
       {report && (
         <Failures

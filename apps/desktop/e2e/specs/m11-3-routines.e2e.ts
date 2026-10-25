@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, mod, planFooter, setPlan } from "../support/app";
+import { freshUser, invoke, mod } from "../support/app";
 import { chatSpawns, lead, makeTeammate } from "../support/agents";
 import { expectNoSeriousA11yViolations } from "../support/axe";
 
@@ -71,7 +71,7 @@ async function openRoutines(): Promise<void> {
   await $('[data-testid="routines-page"]').waitForDisplayed({ timeout: 10_000 });
 }
 
-// E2E-M11-3 Routine (F-RT-01, F-RT-02, F-RT-04, Pro): the cron builder says
+// E2E-M11-3 Routine (F-RT-01, F-RT-02, F-RT-04; free, D-2900): the cron builder says
 // the schedule in words with the next runs; a due slot fires once into a
 // chat named after the routine with a notification; Run now goes Running
 // then Ready for review; a paused routine doesn't fire; a deleted
@@ -81,9 +81,7 @@ describe("E2E-M11-3 routines", () => {
 
   before(async function () {
     this.timeout(180_000);
-    const { email } = await freshUser("m11-3");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m11-3");
     leadId = (await lead()).id;
     await openRoutines();
   });

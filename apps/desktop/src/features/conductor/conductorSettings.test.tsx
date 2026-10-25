@@ -4,11 +4,17 @@ import type { ConductorMemory, IpcError, WakeStatus } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { emitLocal } from "../../ipc/events";
-import { fakeBackend, resetStores } from "../../test/fakeBackend";
+import { FREE_VIEW, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { SettingsView } from "../settings/SettingsView";
 
-beforeEach(resetStores);
+// Settings › Conductor shows its rows only with an account that carries
+// Conductor (hosted, D-2913); without one it only says so (download.test.tsx).
+beforeEach(() => {
+  resetStores();
+  useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, conductor: true } } });
+});
 afterEach(() => setInvokeBackend(null));
 
 const memory = (over: Partial<ConductorMemory> = {}): ConductorMemory => ({

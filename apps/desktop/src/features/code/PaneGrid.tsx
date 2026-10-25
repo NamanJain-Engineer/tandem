@@ -1,4 +1,5 @@
 import { AutoChip } from "../auto/AutoChip";
+import { useSession } from "../../stores/session";
 import { useAuto } from "../../stores/auto";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -316,7 +317,8 @@ const PaneView = memo(function PaneView({
           .getState()
           .open({ paneId: pane.id, workspaceId: pane.workspaceId, kind: pane.kind, engineId: pane.engineId }),
     },
-    ...(pane.kind === "agent" && pane.engineId
+    // Auto is hosted: absent until an account carries it (D-2903).
+    ...(pane.kind === "agent" && pane.engineId && useSession.getState().entitlement?.limits.auto
       ? [{ id: "auto", label: t("pane.auto"), onSelect: () => useAuto.getState().openDialog(pane.id) }]
       : []),
     { id: "sep-copy", type: "separator" },

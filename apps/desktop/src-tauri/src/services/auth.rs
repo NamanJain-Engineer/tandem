@@ -299,8 +299,8 @@ pub struct AuthState {
     pub offline: bool,
     /// `None` when there's no sign-in deadline (early-access builds).
     pub offline_days_left: Option<i64>,
-    /// False in early-access builds: no accounts yet, the Free plan runs
-    /// locally with no deadline (D-105).
+    /// False in early-access builds: no accounts yet, everything local runs
+    /// with no deadline (D-105, D-2900).
     pub hosted: bool,
     pub pending: Option<PendingSignIn>,
     pub error: Option<AuthFailure>,
@@ -462,7 +462,7 @@ impl AuthService {
         if !self.endpoints.hosted {
             return Err(IpcError::new(
                 ErrorCode::Unavailable,
-                "Vibezeo accounts aren't available in this build. It runs the Free plan without one.",
+                "Vibezeo accounts aren't available in this build. Everything on this computer works without one.",
             ));
         }
         self.cancel_attempt();
@@ -1022,11 +1022,6 @@ pub mod tests {
                 .expect("lock")
                 .clone()
                 .ok_or(ApiError::Decode("no me".into()))
-        }
-        async fn checkout(&self, _a: &str, plan: &str, interval: &str) -> Result<String, ApiError> {
-            Ok(format!(
-                "http://web.test/billing/mock?plan={plan}&interval={interval}"
-            ))
         }
         async fn portal(&self, _a: &str) -> Result<String, ApiError> {
             Ok("http://web.test/billing/mock-portal".into())

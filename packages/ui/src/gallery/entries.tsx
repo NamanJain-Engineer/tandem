@@ -88,7 +88,7 @@ export const galleryEntries: GalleryEntry[] = [
       })),
       { name: "sizes", render: () => (<div className="flex gap-2"><Button size="sm">Small</Button><Button size="md">Medium</Button><Button size="lg">Large</Button></div>) },
       { name: "loading", render: () => <Button variant="primary" loading>Saving</Button> },
-      { name: "disabled", render: () => <Button disabled disabledReason="Included with Pro">Connect</Button> },
+      { name: "disabled", render: () => <Button disabled disabledReason="Comes with Vibezeo accounts">Connect</Button> },
       { name: "with kbd and icon", render: () => <Button variant="primary" iconLeft={<Plus size={14} />} kbd="⌘↩">Send</Button> },
     ],
   },
@@ -357,7 +357,7 @@ export const galleryEntries: GalleryEntry[] = [
         render: () => (
           <SettingsGroup label="Terminal">
             <SettingsRow label="Scrollback lines" description="1,000–100,000" highlighted control={({ id, describedBy }) => <input id={id} aria-describedby={describedBy} type="number" defaultValue={10000} className="h-8 w-24 rounded-sm border border-border bg-surface-4 px-2 text-fg" />} />
-            <SettingsRow label="Conductor" badge={<Badge variant="accent">Pro</Badge>} disabledReason="Included with Pro" control={({ id, describedBy }) => <Switch id={id} aria-describedby={describedBy} checked={false} disabled />} />
+            <SettingsRow label="Conductor" disabledReason="Comes with Vibezeo accounts" control={({ id, describedBy }) => <Switch id={id} aria-describedby={describedBy} checked={false} disabled />} />
           </SettingsGroup>
         ),
       },
@@ -366,7 +366,7 @@ export const galleryEntries: GalleryEntry[] = [
         render: () => <Banner tone={tone} action={{ label: "Retry", onClick: noop }} onDismiss={noop}>You're offline. Local features keep working.</Banner>,
       })),
       { name: "callout", render: () => <Callout tone="accent" title="Free includes 3 workspaces" actions={<Button size="sm" variant="primary">See plans</Button>}>Remove one from the rail (nothing on disk is deleted) or upgrade.</Callout> },
-      { name: "key value", render: () => <KeyValue items={[{ key: "Plan", value: "PRO · renews 12 Oct" }, { key: "Credits", value: "8,420 of 10,000" }]} /> },
+      { name: "key value", render: () => <KeyValue items={[{ key: "Credits", value: "8,420 of 10,000" }]} /> },
       { name: "stepper", render: () => <Stepper steps={["Theme", "Engines", "Dictate", "Workspace"]} current={1} /> },
     ],
   },
