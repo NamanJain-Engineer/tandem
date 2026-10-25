@@ -239,16 +239,16 @@ describe("public site", () => {
       expect(h, name).not.toMatch(/\bPro and Team\b|per seat|money-back/);
     }
     const home = html(<HomePage />);
-    expect(home).toContain("Yes. Vibezeo is free, with no paid plans.");
+    expect(home).toContain("Yes. Vibezeo is free, with no paid plans and no limits on what runs on your computer.");
     expect(html(<DownloadPage />)).toContain("Free, with no paid plans.");
   });
 
-  it("F-TH-06 the home page says this release's threads run Claude Code and Codex, and the next adds the rest", () => {
+  it("F-TH-06 the home page says threads run every chat engine, six side by side, with no plan (D-2900)", () => {
     const home = html(<HomePage />);
-    expect(home).toContain(
-      "Threads run Claude Code and Codex in this release; Cursor Agent, Grok and OpenCode join them in the next.",
+    expect(home).toContain("Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.");
+    expect(home).not.toMatch(
+      /need Pro|next release|in the next\b|the next (shows|has|runs|adds|lifts)|this release (has|includes|keeps|shows|runs)/i,
     );
-    expect(home).not.toContain("need Pro");
   });
 
   it("F-WB-01 the changelog lists every closed milestone", () => {

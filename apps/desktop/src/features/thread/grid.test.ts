@@ -20,7 +20,7 @@ describe("thread grid (F-TH-14)", () => {
     expect(addCell([], "t0", "t1", 1)).toEqual({ grid: [], result: "limit" });
     // With nothing open, the first thread is still just one cell.
     expect(addCell([], null, "t1", 1)).toEqual({ grid: ["t1"], result: "added" });
-    // A grid saved on Pro is still "one at a time" after a downgrade.
+    // A grid saved under a larger limit shows fewer under a smaller one.
     const saved = ["a", "b", "c", "d", "e", "f"];
     expect(addCell(saved, "a", "g", 1).result).toBe("limit");
     expect(addCell(saved, "a", "g", 6).result).toBe("full");

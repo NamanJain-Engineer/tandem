@@ -1,6 +1,6 @@
 // The /docs content generated from code (F-WB-02), so it can't drift: the
 // command registry's shortcuts, the settings schema, the engine registry,
-// the release's platforms and the plan limits. The docs pages render these
+// the release's platforms and Conductor's tools. The docs pages render these
 // tables as HTML (components/docs/Generated.tsx) and /llms-full.txt as
 // Markdown (F-WB-04), from the same rows.
 import registry from "../../../../crates/tandem-engines/registry.json";
@@ -8,8 +8,6 @@ import voiceTools from "../../../api/voice-tools.json";
 import en from "../../../desktop/src/i18n/en.json";
 import settings from "@tandem/protocol/settings.json";
 import shortcuts from "@tandem/protocol/shortcuts.json";
-import { LIMITS } from "@tandem/protocol/plans";
-import { LIMIT_ROWS } from "../limits";
 import { DOWNLOADS } from "../release";
 
 const labels = en as Record<string, string>;
@@ -85,7 +83,6 @@ export function settingsSections(): SettingsSection[] {
 }
 
 export function enginesTable(): Table {
-  const free = LIMITS.free.chatEngines ?? [];
   return {
     attr: "engine",
     head: ["Engine", "Vendor", "Runs in"],
@@ -96,7 +93,7 @@ export function enginesTable(): Table {
         text(e.vendor),
         text(
           e.chatAdapter
-            ? `Terminal panes and Thread mode${free.includes(e.id) ? "" : " (threads in the next release)"}`
+            ? "Terminal panes and Thread mode"
             : "Terminal panes",
         ),
       ],
@@ -112,15 +109,6 @@ export function platformTable(): Table {
       key: d.os,
       cells: [text(d.name), text(d.requirement), text(d.available ? "Available" : "Not yet")],
     })),
-  };
-}
-
-/** The docs' limits table: what this release's download still limits (D-869). */
-export function planLimitsTable(): Table {
-  return {
-    attr: "limit",
-    head: ["Limit", "This release"],
-    rows: LIMIT_ROWS.map((r) => ({ key: r.key, cells: [text(r.label), text(r.value)] })),
   };
 }
 
@@ -198,7 +186,6 @@ export const DOCS_MARKDOWN: Record<string, () => string> = {
       .join("\n\n"),
   EnginesTable: () => tableMarkdown(enginesTable()),
   PlatformMatrix: () => tableMarkdown(platformTable()),
-  PlanLimitsTable: () => tableMarkdown(planLimitsTable()),
   ConductorToolsTable: () => tableMarkdown(conductorToolsTable()),
   ConductorSettingsTable: () => tableMarkdown(conductorSettingsTable()),
 };

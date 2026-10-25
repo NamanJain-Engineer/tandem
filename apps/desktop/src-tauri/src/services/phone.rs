@@ -444,7 +444,7 @@ struct StoredPush {
 /// Which relay a new pairing uses.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PairVia {
-    /// The hosted relay (F-BE-11; Pro).
+    /// The hosted relay (F-BE-11; comes with Vibezeo accounts).
     #[default]
     Relay,
     /// The desktop itself, on the local network (F-RM-04).

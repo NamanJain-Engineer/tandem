@@ -28,7 +28,6 @@ pub struct AppRoutineHost {
     pub store: Store,
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
     pub terminals: Arc<crate::services::terminal::TerminalService>,
-    pub auth: Arc<crate::services::auth::AuthService>,
     pub entitlements: Arc<crate::services::entitlement::EntitlementService>,
     pub threads: Arc<crate::services::threads::ThreadService>,
     pub notifications: Arc<crate::services::notifications::NotificationService>,
@@ -48,10 +47,6 @@ impl RoutineHost for AppRoutineHost {
             .get(engine_id)
             .is_some_and(|s| crate::services::threads::has_chat_adapter(&s))
             && engines.installed(engine_id).is_some()
-    }
-
-    fn signed_in(&self) -> bool {
-        self.auth.is_signed_in()
     }
 
     fn limits(&self) -> Limits {

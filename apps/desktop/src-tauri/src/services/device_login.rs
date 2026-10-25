@@ -104,9 +104,6 @@ mod tests {
         async fn me(&self, _: &str) -> Result<MeResponse, ApiError> {
             unreachable!()
         }
-        async fn checkout(&self, _: &str, _: &str, _: &str) -> Result<String, ApiError> {
-            unreachable!()
-        }
         async fn portal(&self, _: &str) -> Result<String, ApiError> {
             unreachable!()
         }

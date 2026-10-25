@@ -1,6 +1,7 @@
 //! Teammates (F-AG-01, F-AG-02, F-AG-05; ARCHITECTURE §8.1): the record,
 //! its Home folder, the Lead made on first use, and the rail's summaries.
-//! Names are unique case-insensitively; the Free plan has one teammate
+//! Names are unique case-insensitively; a teammate limit, when the limits
+//! carry one (none do with no account, D-2900), counts teammates
 //! besides the Lead; a deleted teammate's files go to the trash.
 
 use std::collections::HashMap;
@@ -332,7 +333,8 @@ pub struct TeammatesService {
     bus: EventBus,
     data: DataDir,
     engines: Arc<dyn EngineFacts>,
-    /// The Free plan's limit (teammates besides the Lead), read per create.
+    /// The limits' teammate cap (besides the Lead; `None` with no
+    /// account), read per create.
     limit: Arc<dyn Fn() -> Option<u32> + Send + Sync>,
     lead: tokio::sync::OnceCell<()>,
     /// A publish is already on its way (chat state changes come in bursts).
@@ -553,7 +555,10 @@ impl TeammatesService {
             if have >= limit {
                 return Err(IpcError::new(
                     ErrorCode::LimitReached,
-                    "Free includes one teammate besides Lead.",
+                    match limit {
+                        1 => "This account keeps one teammate besides Lead.".to_string(),
+                        n => format!("This account keeps up to {n} teammates besides Lead."),
+                    },
                 ));
             }
         }
@@ -1204,7 +1209,7 @@ mod tests {
         let err = svc.create(input("scout", "claude")).await.expect_err("dup");
         assert_eq!(err.code, ErrorCode::Conflict);
         assert_eq!(err.message, "Name already used");
-        // On Free, at the limit, the name is still what's wrong.
+        // At a limit, the name is still what's wrong.
         let (_d2, free) = service(Some(1)).await;
         free.create(input("Scout", "claude")).await.expect("scout");
         let err = free
@@ -1242,7 +1247,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_ag_01_the_free_plan_has_one_teammate_besides_the_lead() {
+    async fn f_ag_01_a_teammate_limit_counts_besides_the_lead() {
         let (_d, svc) = service(Some(1)).await;
         svc.create(input("Scout", "claude")).await.expect("first");
         let err = svc
@@ -1250,7 +1255,7 @@ mod tests {
             .await
             .expect_err("limit");
         assert_eq!(err.code, ErrorCode::LimitReached);
-        assert_eq!(err.message, "Free includes one teammate besides Lead.");
+        assert_eq!(err.message, "This account keeps one teammate besides Lead.");
     }
 
     #[tokio::test]

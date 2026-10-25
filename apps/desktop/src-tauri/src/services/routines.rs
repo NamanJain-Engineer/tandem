@@ -49,7 +49,6 @@ pub trait RoutineHost: Send + Sync {
     async fn teammate(&self, id: &TeammateId) -> Option<Teammate>;
     /// The engine is a chat engine and installed.
     fn chat_engine_ready(&self, engine_id: &str) -> bool;
-    fn signed_in(&self) -> bool;
     fn limits(&self) -> Limits;
     /// Makes the run's chat (unattended, the routine's access, titled with
     /// its name) and sends the instruction.
@@ -118,7 +117,6 @@ pub struct AgentRoutine {
 pub enum FailKind {
     TeammateMissing,
     EngineMissing,
-    SignedOut,
     Plan,
     Limit,
     EngineError,
@@ -129,7 +127,6 @@ impl FailKind {
         match self {
             FailKind::TeammateMissing => "teammate_missing",
             FailKind::EngineMissing => "engine_missing",
-            FailKind::SignedOut => "signed_out",
             FailKind::Plan => "plan",
             FailKind::Limit => "limit",
             FailKind::EngineError => "engine_error",
@@ -345,7 +342,8 @@ impl RoutinesService {
 
     // ── writes ──────────────────────────────────────────────────────────
 
-    /// Creates or edits a routine (F-RT-01). Routines are Pro.
+    /// Creates or edits a routine (F-RT-01). Routines run with no account
+    /// (D-2900) unless the limits turn them off.
     pub async fn save(
         &self,
         input: RoutineInput,
@@ -355,7 +353,7 @@ impl RoutinesService {
         if !host.limits().routines {
             return Err(IpcError::new(
                 ErrorCode::ForbiddenPlan,
-                "Routines are part of Pro.",
+                "Routines are turned off for this account.",
             ));
         }
         let name = input.validate().map_err(invalid)?;
@@ -443,7 +441,8 @@ impl RoutinesService {
         Ok(())
     }
 
-    /// Plan lapse pauses every routine; an upgrade resumes them (F-BL-04).
+    /// Limits without routines pause every routine; limits with them resume
+    /// them (F-BL-04). With no account routines are on (D-2900).
     pub async fn apply_plan(&self, limits: &Limits) {
         match repo::set_paused_by_plan(&self.store, !limits.routines).await {
             Ok(n) if n > 0 => {
@@ -893,16 +892,11 @@ impl RoutinesService {
         let limits = host.limits();
         if !limits.routines || (self.runner() == Runner::Headless && !limits.background_routines) {
             return self
-                .fail(&r, &run, FailKind::Plan, "Routines are part of Pro.".into())
-                .await;
-        }
-        if !host.signed_in() {
-            return self
                 .fail(
                     &r,
                     &run,
-                    FailKind::SignedOut,
-                    "Sign in to run routines.".into(),
+                    FailKind::Plan,
+                    "Routines are turned off for this account.".into(),
                 )
                 .await;
         }
@@ -982,7 +976,6 @@ mod tests {
     struct FakeHost {
         teammate: StdMutex<Option<Teammate>>,
         limits: StdMutex<Limits>,
-        signed_in: bool,
         engine_ready: bool,
         chats: StdMutex<Vec<(ThreadId, String, Access)>>,
         polls: AtomicUsize,
@@ -994,8 +987,7 @@ mod tests {
         fn new(teammate: Teammate) -> Self {
             Self {
                 teammate: StdMutex::new(Some(teammate)),
-                limits: StdMutex::new(pro()),
-                signed_in: true,
+                limits: StdMutex::new(on()),
                 engine_ready: true,
                 chats: StdMutex::default(),
                 polls: AtomicUsize::new(0),
@@ -1025,9 +1017,6 @@ mod tests {
         fn chat_engine_ready(&self, _engine_id: &str) -> bool {
             self.engine_ready
         }
-        fn signed_in(&self) -> bool {
-            self.signed_in
-        }
         fn limits(&self) -> Limits {
             self.limits.lock().expect("lock").clone()
         }
@@ -1053,11 +1042,17 @@ mod tests {
         }
     }
 
-    fn pro() -> Limits {
+    /// What runs with no account: routines and background runs are on
+    /// (D-869, D-2900).
+    fn on() -> Limits {
+        Limits::free()
+    }
+
+    /// Limits that turn routines off (a signed token still can).
+    fn off() -> Limits {
         Limits {
-            routines: true,
-            background_routines: true,
-            task_execution: true,
+            routines: false,
+            background_routines: false,
             ..Limits::free()
         }
     }
@@ -1452,7 +1447,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_rt_01_saving_needs_pro_an_explicit_full_and_a_teammate() {
+    async fn f_rt_01_saving_needs_routines_on_an_explicit_full_and_a_teammate() {
         let f = fixture("2026-10-12T08:00:00Z", Runner::Gui).await;
         let mut full = input(&f, daily9());
         full.access = Access::Full;
@@ -1461,17 +1456,30 @@ mod tests {
         full.full_confirmed = true;
         let saved = f.svc.save(full, None).await.expect("explicit full");
         assert_eq!(saved.access, Access::Full);
-        *f.host.limits.lock().expect("lock") = Limits::free();
+        *f.host.limits.lock().expect("lock") = off();
         let e = f
             .svc
             .save(input(&f, daily9()), None)
             .await
-            .expect_err("free");
+            .expect_err("off");
         assert_eq!(e.code, ErrorCode::ForbiddenPlan);
-        // A plan lapse pauses everything; an upgrade resumes.
-        f.svc.apply_plan(&Limits::free()).await;
+        // Limits that turn routines off pause everything; turning them back on resumes.
+        f.svc.apply_plan(&off()).await;
         assert!(f.svc.get(&saved.id).await.expect("get").paused_by_plan);
-        f.svc.apply_plan(&pro()).await;
+        f.svc.apply_plan(&on()).await;
+        assert!(!f.svc.get(&saved.id).await.expect("get").paused_by_plan);
+    }
+
+    #[tokio::test]
+    async fn f_rt_01_routines_save_and_stay_unpaused_with_no_account() {
+        let f = fixture("2026-10-12T08:00:00Z", Runner::Gui).await;
+        *f.host.limits.lock().expect("lock") = Limits::free();
+        let saved = f
+            .svc
+            .save(input(&f, daily9()), None)
+            .await
+            .expect("routines with no account (D-2900)");
+        f.svc.apply_plan(&Limits::free()).await;
         assert!(!f.svc.get(&saved.id).await.expect("get").paused_by_plan);
     }
 

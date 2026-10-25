@@ -97,7 +97,7 @@ describe("E2E-M5-9 onboarding", () => {
     for (const w of await invoke<Array<{ id: string }>>("workspace_list"))
       await invoke("workspace_remove", { id: w.id });
     await browser.refresh();
-    await $('[data-testid="plan-footer"]').waitForExist({ timeout: 20_000 });
+    await $('[data-testid="app-shell"]').waitForExist({ timeout: 20_000 });
     // Settings › General → "Run setup again" (Mod+, opens Settings).
     await browser.execute(() =>
       (

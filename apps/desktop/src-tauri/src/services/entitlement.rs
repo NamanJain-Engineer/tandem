@@ -99,6 +99,10 @@ struct Inner {
     policy: Option<OrgPolicy>,
     me: Option<MeCache>,
     online: bool,
+    /// Limits a unit test enforces instead (no local limit exists with no
+    /// account since D-2900, so the generic checks need a seam to be tested).
+    #[cfg(test)]
+    test_limits: Option<Limits>,
 }
 
 pub struct EntitlementService {
@@ -160,7 +164,12 @@ impl EntitlementService {
     pub fn view(&self) -> EntitlementView {
         let inner = self.read();
         let now = self.clock.now_ms() / 1000;
-        let (plan, limits, source) = effective_limits(inner.claims.as_ref(), now);
+        #[allow(unused_mut)]
+        let (plan, mut limits, source) = effective_limits(inner.claims.as_ref(), now);
+        #[cfg(test)]
+        if let Some(l) = &inner.test_limits {
+            limits = l.clone();
+        }
         let me = inner.me.as_ref().filter(|_| inner.claims.is_some());
         EntitlementView {
             plan,
@@ -193,6 +202,12 @@ impl EntitlementService {
     /// The limits to enforce right now.
     pub fn limits(&self) -> Limits {
         self.view().limits
+    }
+
+    /// Enforces `limits` from now on, in unit tests only.
+    #[cfg(test)]
+    pub(crate) fn set_test_limits(&self, limits: Limits) {
+        self.write().test_limits = Some(limits);
     }
 
     fn emit(&self) {
@@ -407,8 +422,7 @@ mod tests {
             serde_json::to_value(Limits::free())
         } else {
             serde_json::to_value(Limits {
-                panes: Some(64),
-                workspaces: None,
+                conductor: true,
                 ..Limits::free()
             })
         }
@@ -494,19 +508,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_be_04_signed_out_is_free_and_pro_token_unlocks() {
+    async fn f_be_04_signed_out_is_free_and_a_token_unlocks_hosted_features() {
         let r = rig();
         let key = SigningKey::generate(&mut rand::rngs::OsRng);
         let svc = service(&r, &key);
         assert_eq!(svc.view().plan, Plan::Free);
-        assert_eq!(svc.limits().workspaces, Some(3));
+        // Signed out, everything local is unlimited; hosted features are off (D-2900).
+        assert_eq!(svc.limits(), Limits::free());
+        assert_eq!(svc.limits().workspaces, None);
+        assert!(!svc.limits().conductor);
 
         signed_in(&r).await;
         let now = r.clock.now_ms() / 1000;
         *r.api.me.lock().expect("lock") = Some(me(token(&key, "pro", now + 86_400), Plan::Pro));
         let v = svc.refresh().await;
         assert_eq!((v.plan, v.source), (Plan::Pro, LimitSource::Token));
-        assert_eq!(v.limits.workspaces, None);
+        assert!(v.limits.conductor);
         assert_eq!(v.credits.as_ref().map(|c| c.monthly), Some(10_000));
         assert_eq!(
             r.auth.state().email.as_deref(),

@@ -5,9 +5,7 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
   sendToPane,
-  setPlan,
   shellPid,
   waitForApp,
   waitForPaneText,
@@ -53,11 +51,9 @@ describe("E2E-M4-6 arrange and Card view", () => {
   let ids: string[] = [];
 
   it("F-CD-11.1 auto-arrange turns 5 panes into a 3+2 grid with equal widths in each row", async function () {
-    // Signing a Pro user in through the scripted browser, then five panes.
+    // Signing a user in through the scripted browser, then five panes (no pane limit, D-2900).
     this.timeout(150_000);
-    const { email } = await freshUser("m4-6");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m4-6");
     await addFolder(`/tmp/tandem-e2e-m4-6-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ id: string; tabs: Array<{ id: string }> }>>("workspace_list");
