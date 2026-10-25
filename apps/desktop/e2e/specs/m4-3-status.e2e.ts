@@ -52,9 +52,16 @@ describe("E2E-M4-3 status lifecycle", () => {
     await counters(true);
     const { width, height } = await browser.getWindowSize();
     for (let i = 0; i < 20; i++) await browser.setWindowSize(width - (i % 2 ? 0 : 40), height);
+    // A window resize settles into one PTY resize once the layout is quiet
+    // (F-CD-02 AC1), so a burst that ends where it began can send none: end
+    // narrower and wait for that size to reach a PTY.
+    await browser.setWindowSize(width - 40, height);
+    await browser.waitUntil(async () => (await counters()).ptyResizes > 0, {
+      timeout: 5_000,
+      timeoutMsg: "no resize reached a PTY",
+    });
     await browser.setWindowSize(width, height);
     await browser.pause(1_500);
-    expect((await counters()).ptyResizes).toBeGreaterThan(0);
     expect(await paneStatus(agent ?? "")).toBe(before);
     expect(before).not.toBe("working");
   });

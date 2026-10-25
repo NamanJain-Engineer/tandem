@@ -1176,6 +1176,39 @@ Built by the session that coordinates the parallel milestone sessions, while the
       - LCP at most 1.81 s, CLS at most 0.001, TBT 0 ms;
     - the demo walkthrough.
 
+- Batch `chain25` (after 0.10.0): six more M18 features from four sessions, with 0.10.0's free follow-ups and the coordinating session's review fixes. M18 now owns 22 features, all built: the 16 released in 0.8.0 and 0.9.0, and these 6.
+  - F-EX-06 Resource governor, Linux first, and F-TL-12 Agent-proof secrets, B5's first slice (`product-research` 20f49eaa; D-2545–D-2554).
+    - Each agent pane on this computer gets its own systemd user scope, with an optional memory cap, CPU and memory per pane, Freeze and Thaw, and "One check at a time" for Best of N and the review queue. Every way a pane ends goes through `TerminalService::end_pane`.
+    - Secret names live in SQLite and values in the keychain. Run with secrets opens a new terminal pane whose command alone gets the variables, then unsets them and starts a fresh login shell. The values are masked in the PTY reader, before the screen, the ring, snapshots, Auto or Conductor see them.
+  - F-CD-22 Multi-repo workspaces (`competitive-gaps` 605b9b0b; D-2531–D-2535, D-2581–D-2585).
+    - A folder of repositories gets one worktree across all of them, on one branch name. The diff names each repository, Discard keeps the branches, and pull requests open for each repository.
+    - What needs one repository (setup, landing, checks, previews, second opinion, the radar) says so before it runs.
+  - F-EN-10 Any ACP agent as a thread engine (`m16d-teammate-extras` 2385c3ad; D-2506–D-2511).
+    - Gemini CLI and Kiro CLI are Thread engines through their ACP modes. Settings › Engines adds any ACP agent by its command, after a 10 s `initialize` probe. Secret-shaped variables are refused, and removing an agent ends its live sessions.
+  - F-TK-05 Claims and F-TK-06 Plan with Lead, B3's first slice (`m16a-conductor` 4c19e54b; D-2426–D-2439, D-2820–D-2823).
+    - Agents claim files and folders through the tasks server, and their edits are claimed from `PreToolUse`. Overlaps between worktrees show once in each pane and in the review queue, and claims are released on merge, removal and the sweep.
+    - Lead plans a goal in its own read-only thread. The reply becomes a draft of tasks with an engine each, and Execute all asks first, then runs each task once in its own worktree.
+  - 0.10.0's free follow-ups (`free-for-everyone` 19f44736; D-2914–D-2916): the hosted build's last dead ends, dead billing and telemetry code, the Night Shift E2E with no account, and specs that follow the code.
+  - The coordinating session:
+    - D-872: migrations are numbered in merge order (`0003_bestof_queued`, `0004_lane_repos`, `0005_secrets`), and a test holds every name to its position.
+    - Merges:
+      - F-CD-22's multi-repo Discard and F-TK-05's workspace removal end their panes through F-EX-06's `end_pane`. Removal still returns what it took away, so `end_removed` ends the agents' task sessions and releases their claims.
+      - A spawned pane's resource scope is placed (F-EX-06), then the notices held for it are sent (F-TK-05).
+      - Both sides' `tandem-pty` tests are kept, and one `git` test helper serves F-CD-22's and F-TK-05's tests.
+      - MILESTONES §20: 188 features (65 P0, 67 P1, 56 P2), with M18 owning 22.
+    - E2E fixes found by the full runs, here and on `app-ui`'s merge of chain25:
+      - E2E-M18-TK-06 counts only the tasks it makes (f4d1ca9d). E2E-M18-RT06 now runs the Night Shift offline and leaves its tasks in the shared E2E home, which `resetState` doesn't clear, so the full run met them where TK-06 expected an empty tracker.
+      - `resetState` removes added ACP agents (8585d7de): the one E2E-M18-EN10 leaves showed in E2E-M4-1's launch grid in one full run.
+      - `tandem-hook` writes each debug hook-log line in one write (8585d7de), so two hooks at once can't share a line (E2E-M4-3's F-EN-05.4).
+      - E2E-M4-3's resize burst ends 40 px narrower and waits for a PTY resize (e0c168be). The terminal sends one resize once the layout settles (F-CD-02 AC1), so a burst that ended at its starting width could send none. It passed alone, and failed once after 15 other specs.
+      - E2E-M3-12 reports the find bar's count and query when its wait gives up (3409dcd9). It failed once in two runs of its chunk, and its message had been showing the count from the start of the wait.
+    - E2E-M18-EN10's count is 5.
+  - The gate passed on 3598b0f5:
+    - 2,344 Rust tests (6 ignored);
+    - 1,623 TypeScript tests: desktop 794, UI 412, API 234, web 115, remote 33, mobile 21, protocol 14;
+    - coverage (188 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (579 types).
+  - The full E2E passed 152 of 152 spec files in five chunks, the 6 new M18 specs among them. Chunk 3 first failed E2E-M18-TK-06, then passed 31 of 31 with its fix. Chunk 4 first failed E2E-M4-3 (F-EN-05.3); with that fixed it failed E2E-M3-12 once, and its one confirmation re-run passed 31 of 31. After the gate, the changed `tandem-hook` passed clippy and fmt again.
+
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
 - [x] F-AC-07 Usage dashboard. `tandem_engines::usage_log` reads Claude Code's `projects/**/*.jsonl` and Codex's `sessions/**/*.jsonl` through the registry's `usage_log_globs`, only inside each account's provider home. It streams line by line, and skips and counts a line that isn't JSON, is over 4 MB, or has no usable date or token counts. Only numbers, dates, ids and the working folder are read; no message text is kept. `services::usage_report` turns the scan into 12 weeks of days in the user's zone, totals per engine and per account, and the top 8 workspaces (a folder counts for the workspace whose root holds it). `usage_report` and `usage_share_save` are declared in ARCHITECTURE §3. Workspace menu → **Usage…** opens `UsageDialog`, which has empty, loading, error and populated states, a `Heatmap` (new in `@tandem/ui`, tokens only), engine, account and workspace lists, "N lines skipped", and a share card. The card is drawn on a canvas, shows only engines with usage, and leaves out workspace names unless the user switches them on. Tests: `usage_log` 6 (`f_ac_07_1`–`3` and 3 more), the report 1, `Heatmap` 1, the page 4, and E2E-M16-6 (F-AC-07.1, F-AC-07.2 and a saved PNG).
