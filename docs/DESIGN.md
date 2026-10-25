@@ -52,7 +52,7 @@ Ideas, not quotations. Each ends in a rule we apply.
 
 **Refactoring UI (Wathan, Schoger)**
 - *Hierarchy is not size alone:* de-emphasise secondary text with colour and weight before making the primary bigger. → Three text tones only (`fg`, `fg-muted`, `fg-subtle`); labels get muted, values get ink.
-- *Start with too much white space, then remove it.* → Site sections keep 80–144 px; the app keeps its 4 px grid and compact density, but empty states and first run get room.
+- *Start with too much white space, then remove it.* → Site sections keep 64–96 px (D-1897); the app keeps its 4 px grid and compact density, but empty states and first run get room.
 - *Define systems in advance:* a constrained spacing and type scale beats picking values. → §4; no arbitrary Tailwind values in new code.
 - *Depth from light:* a light top edge and a dark bottom shadow make a surface sit up; two shadows (tight contact + soft ambient) beat one. → §4.5's e1–e3.
 - *Don't use grey on colour; fewer borders* — use spacing, background shifts and shadows to separate. → The rail loses boxed pills (§5.4).
