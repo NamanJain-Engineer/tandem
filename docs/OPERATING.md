@@ -439,7 +439,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   unused client runtime from the marketing pages and the docs (not the demo app;
   D-1843)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
-  and `/download/detect.js` on `/download/`. Site components stay server-only.
+  and `/changelog/0.9.0/` (the Land scene, D-1885), `/download/detect.js` on
+  `/download/` and a blog post's two (`scripts/script-allowlist.mjs`). Site components stay server-only.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are
   off for the export, and the "add a slash" rule is in `vercel.json`.

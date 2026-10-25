@@ -40,7 +40,8 @@
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
   - A motion system, accent discipline and the download's real button (D-1874 to D-1876).
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
-  - A shorter home page (D-1881).
+  - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
+  - The site's dark theme on ink until app-ui's ink semantics land (D-1883, D-1884).
   See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -1985,6 +1986,12 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Checks: web vitest 136/136, `build:site` (52 pages), site Playwright 51/51, design-shots on eight pages (64 captures, all ok, teal 0–2).
   - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.89 s; the other six URLs 1.00 / 1.36–1.73 s; blocking time 0 ms, CLS at most 0.001.
   - The gate: passed (TypeScript 1,607 tests: web 136, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
+- The home cut's review (D-1885): the design lead approved fdcd82aa and took all seven spacing calls into DESIGN (4218a37d). The code review's two must-fixes, tests first:
+  - **The Land scene kept its coverage when it moved:** /changelog/0.9.0/ is in the axe (both themes) and 320 px page lists; scenes.test's AC9 check (decorative, ≥ 80 characters of text alternative) runs on it; scenes.spec plays it (`running`) and checks it with the player blocked (no `data-fx`) and under reduced motion: nothing running, the finished queue showing.
+  - **The footer's "Built with Claude"** pointed at `/#claude`, which moved to /about/ in D-1881; it is `/about/#claude`, and a site test checks every header and footer section link lands on a page that has the section.
+  - Nits taken: the length test waits for the fonts; the allowlist test is exact; the text that called the scene player home-only (site.test, strip-runtime, embed.js, OPERATING §6); media.ts's comment; /about/'s heading takes `SITE.product`; Current state. Left for later: engine names on one line at 1440 (the design lead's polish note), the scene's width in the version page's column, and the scenes' styles loading on every version page.
+  - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 53/53.
+  - The gate: passed (TypeScript 1,608 tests: web 137, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

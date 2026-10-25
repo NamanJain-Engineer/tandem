@@ -12,11 +12,12 @@ import { RELEASE } from "../lib/release";
 import { LANDS, SAMPLE, SCENE_BUILD, atLeast, t } from "../lib/scenes";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
-import { allowedScripts } from "../scripts/script-allowlist.mjs";
+import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 
 // The animated product scenes (F-WB-01 AC9, D-1880, D-1881).
 
 const home = renderToStaticMarkup(<HomePage />);
+const v090 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.9.0" }) }));
 const css = readFileSync(join(import.meta.dirname, "../components/site/scenes/scenes.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 const ALL = { workspace: <WorkspaceScene />, dashboard: <DashboardScene />, review: <ReviewScene />, land: <LandScene /> };
 
@@ -31,8 +32,11 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(h).toMatch(/<div data-stage="" aria-hidden="true" class="frame-screen scene-box">/);
     expect(h).toContain(`Scene from Vibezeo ${SCENE_BUILD}, simplified`);
     expect(h).toContain('<span class="sr-only">What happens.</span>');
-    for (const id of ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)]) {
-      const fig = new RegExp(`<figure data-scene="${id}"[\\s\\S]*?</figure>`).exec(home)?.[0] ?? "";
+    // The home page's scenes, and the Land scene on 0.9.0's page (D-1885).
+    const pages: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
+    if (LANDS) pages.push(["land", v090]);
+    for (const [id, page] of pages) {
+      const fig = new RegExp(`<figure data-scene="${id}"[\\s\\S]*?</figure>`).exec(page)?.[0] ?? "";
       expect(fig, id).toContain('aria-hidden="true"');
       expect(fig, id).toMatch(/<span class="sr-only">[^<]{80,}<\/span>/);
     }
@@ -58,10 +62,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     // The Land scene plays on 0.9.0's changelog page, not the home page
     // (D-1897, D-1885), with the scene player allowed there.
     expect(home).not.toContain('data-scene="land"');
-    const v090 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.9.0" }) }));
     expect(v090.includes('data-scene="land"')).toBe(LANDS);
     expect(v090.includes('<script src="/demo/embed.js" defer=""')).toBe(LANDS);
-    expect(allowedScripts("changelog/0.9.0/index.html")).toContain('<script src="/demo/embed.js" defer="">');
+    expect(allowedScripts("changelog/0.9.0/index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
     const v080 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.8.0" }) }));
     expect(v080).not.toContain("data-scene");
     expect(v080).not.toContain("embed.js");

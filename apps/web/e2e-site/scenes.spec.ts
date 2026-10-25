@@ -82,6 +82,30 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
   expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
 });
 
+test("F-WB-01 AC9 the Land scene plays on 0.9.0's changelog page (D-1885)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/changelog/0.9.0/");
+  await page.locator('[data-scene="land"]').scrollIntoViewIfNeeded();
+  await expect.poll(() => states(page, "land"), { timeout: 10_000 }).toContain("running");
+});
+
+// The Land scene on its own page, without its player and under reduced
+// motion: no effects, and the finished queue showing (D-1885).
+for (const mode of ["player blocked", "reduced motion"] as const) {
+  test(`F-WB-01 AC8 AC9 on 0.9.0's changelog page with the ${mode}, the Land scene shows its final frame`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: mode === "reduced motion" ? "reduce" : "no-preference" });
+    if (mode === "player blocked") await context.route(/\/demo\/embed\.js$/, (route) => route.abort());
+    const page = await context.newPage();
+    await page.goto("/changelog/0.9.0/");
+    await page.waitForLoadState("load");
+    await page.locator('[data-scene="land"]').scrollIntoViewIfNeeded();
+    if (mode === "player blocked") expect(await page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(false);
+    expect(await states(page, "land")).not.toContain("running");
+    expect(await opacity(page, '[data-scene="land"] .sc-dialog-done')).toBe(1);
+    await context.close();
+  });
+}
+
 test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and nothing moves", async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 900 } });
   await context.route(/\/demo\/app\//, (route) => route.fulfill({ status: 204, body: "" }));

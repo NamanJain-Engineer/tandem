@@ -1,4 +1,5 @@
-// The home page's interactive demo (D-128), and its product scenes (D-1880).
+// The home page's interactive demo (D-128), and the product scenes (D-1880)
+// on the home page and /changelog/0.9.0/ (D-1885).
 // It frames /demo/app/ (same origin) once the section nears the viewport,
 // scales the laptop-sized app to the column, and opens it full screen.
 // Phones keep the still image until "Tap to explore". It changes only

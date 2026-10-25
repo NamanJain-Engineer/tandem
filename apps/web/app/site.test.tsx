@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HERO, OWNERSHIP, PRINCIPLES } from "../lib/home";
+import { FOOTER, NAV } from "../components/site/nav";
 import { VIDEO } from "../lib/media";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
@@ -80,6 +81,17 @@ describe("public site", () => {
     const log = html(<ChangelogPage />);
     for (const id of ["roadmap", "new"]) expect(log).toContain(`id="${id}"`);
     expect(log).toContain("None of this is in the download yet");
+  });
+
+  it("F-WB-01 every header and footer link to a section lands on a page that has it (D-1885)", () => {
+    const pages: Record<string, string> = { "/": html(<HomePage />), "/about/": html(<AboutPage />) };
+    const anchored = [...NAV, ...FOOTER.flatMap((g) => g.links)].filter((l) => l.href.includes("#"));
+    expect(anchored.map((l) => l.href)).toContain("/about/#claude");
+    for (const l of anchored) {
+      const [path = "", id] = l.href.split("#");
+      expect(pages[path], l.href).toBeDefined();
+      expect(pages[path], l.href).toContain(`id="${id}"`);
+    }
   });
 
   it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
@@ -300,7 +312,7 @@ describe("public site", () => {
     expect(DEMO_APP).toBe("/demo/app/");
   });
 
-  it("F-WB-01 AC2 (D-128, D-132) only the home page's demo loader, the download page's OS note and a blog post's JSON-LD and reading script (F-WB-06) load scripts, all first-party; no page has a frame or a third-party resource", () => {
+  it("F-WB-01 AC2 (D-128, D-132) only the scene player (the home page and 0.9.0's changelog page), the download page's OS note and a blog post's JSON-LD and reading script (F-WB-06) load scripts, all first-party; no page has a frame or a third-party resource", () => {
     for (const [name, Page] of Object.entries(PAGES)) {
       const h = html(<Page />);
       const scripts = [...h.matchAll(/<script[^>]*>/g)].map((m) => m[0]);

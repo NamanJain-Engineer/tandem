@@ -9,7 +9,7 @@ import { THEME_KEY } from "../lib/theme";
 // against the exported site.
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/404.html", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
+const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/404.html", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
 // The test server answers a missing page with its own 404, so the site's is
 // opened by its file.
 // The page backgrounds (--site-page) of each theme.

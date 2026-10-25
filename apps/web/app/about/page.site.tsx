@@ -105,7 +105,7 @@ export default function AboutPage() {
       <StatsBand />
       <ClaudeBand />
 
-      <Block id="principles" title="What Vibezeo holds to">
+      <Block id="principles" title={`What ${SITE.product} holds to`}>
         <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
           {PRINCIPLES.map((p, i) => (
             <li key={p.title} className={`reveal ${stagger(i)} flex flex-col gap-2 border-l border-line-strong pl-5`}>
