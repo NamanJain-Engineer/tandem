@@ -1,7 +1,7 @@
 # BUILD_LOG
 
 ## Current state
-- Free for everyone (M18, branch `free-for-everyone`, D-2900 to D-2919): the app matches D-869. With no account every local feature is free and unlimited (panes, workspaces, teammates, plugin connections, accounts per engine, six threads, every chat engine, routines, task runs, the Night Shift, session search), the hosted ones say "Comes with Vibezeo accounts", and nothing in the app, demo, docs or site offers a plan. Notes in `CHANGELOG.md`'s `## Unreleased`. See "M18 · Free for everyone".
+- Free for everyone (M18, branch `free-for-everyone`, D-2900 to D-2919): the app matches D-869. With no account every local feature is free and unlimited (panes, workspaces, teammates, plugin connections, accounts per engine, six threads, every chat engine, routines, task runs, the Night Shift, session search), the hosted ones say "Comes with Vibezeo accounts", and nothing in the app, demo, docs or site offers a plan. Released in 0.10.0 (`CHANGELOG.md`'s `## 0.10.0`). See "M18 · Free for everyone".
 - Design direction (`design-lead`, D-1890 to D-1899, then D-2700 on): `docs/DESIGN.md` sets the look, feel and journey for the app and the site after the owner's 20 October ask for a premium feel; `app-ui` and `site-motion` build on it, and the design lead reviews their READYs. See "Design direction (`design-lead`)".
 - Agent sandbox (M18, F-TL-11, branch `product-research`): Settings › Engines › Sandbox agent panes runs the engine of a local agent pane under bubblewrap on Linux (writes only to its folder, git data, provider home, tasks folder and `/tmp`; `~/.ssh`, the other secrets and Vibezeo's own data hidden; `.git/hooks` read-only; engines without a provider home run unsandboxed and say why); macOS and Windows say "Not available on this system yet". See "M18 checklist (Next features: sandbox)".
 - Product research (M18, branch `product-research`, 15 October 2026): `docs/COMPETITIVE_ANALYSIS.md` refreshed (landscape, tracker reaction counts, HN demand signals, and an evidence index in §6), and a new `docs/NEXT_FEATURES.md` added: 21 ranked features with draft acceptance criteria and proposed IDs (F-EN-07…11, F-DB-04, F-AC-08/09, F-TH-17, F-WT-05…08, F-SH-14, F-TL-11, F-TK-05, F-EX-06/07, F-CD-22…24), a build order for the top 10 in eight slices, six bold bets and the owner-only items. The documents only; no product code changed. Reddit couldn't be read from the research environment.
@@ -18,24 +18,17 @@
   - the headers, and no framework chunks on marketing pages;
   - D-1815's redirects, the home page's lazy still with `/demo/`'s video loading nothing until it's played (D-1816, D-1841), and D-1817's slash links, whose payloads answer 200.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.9.0** (Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run`; `Vibezeo_0.9.0_amd64.deb`, SHA-256 `7c711289…2e1883`, and `Vibezeo-0.9.0-1.x86_64.rpm`, SHA-256 `0e82217f…865df0`, 54.1 MB each). The second M18 release, about bringing parallel agents' work home:
-  - Land worktrees: finished worktrees merge into the current branch one after another, each behind the repository's check, with Undo (F-WT-07);
-  - a pull request's failing checks and review comments go back to the worktree's agent, through the person's own `gh` (F-WT-08);
-  - the intent radar notices when two worktrees change the same functions (F-WT-10, first slice);
-  - engine versions, pins, rollback commands and the engines' own background processes (F-EN-08);
-  - the session library across Claude Code and Codex, with search in Pro (F-TH-17);
-  - agent panes in a bubblewrap sandbox on Linux (F-TL-11).
-  Built since 0.8.0 but not in the Free download: F-CN-09's walk-and-review and F-RT-06's Night Shift (both need accounts), the Conductor voice fallback (#83, #85; hosted), and #78's CI changes. The site gains the post "What's new in 0.9.0", six "New in 0.9.0" tiles, a roadmap led by "Everything free" and what's in review, and new figures: 16 milestones, 3,722 automated tests, 145 E2E spec files, 13 engines. Vibezeo is free (D-869): the pricing page is gone (`/pricing/` redirects to `/download/`), no page shows a price, and the notes say the next release removes the download's remaining limits. The demo has no new surfaces (D-868).
-  Verified:
-  - the gate on the release tree d891f4ff (2,148 Rust and 1,574 TypeScript tests, coverage of 182 spec IDs, clippy on Linux, Windows and both Mac architectures, fmt, protocol drift with 554 types);
-  - the full desktop E2E, 145 of 145 spec files in five chunks (36 minutes);
-  - the .rpm on clean Fedora 42, 43 and 44 (images from Fedora's registry);
-  - the AppImage smoke test offline (the welcome says "Free plan", setup lists all 13 engines);
-  - the site from a fresh clone of c5b98702, D-869 included:
-    - `build:site` with `strip-runtime` and `check-routes`: 49 pages, no redirects;
-    - web vitest 114/114 and site Playwright 25/25;
-    - Lighthouse CI on seven URLs, every assertion passing with no warnings (99 or 100 in every category, LCP at most 1.88 s, CLS at most 0.001);
-    - the demo walkthrough.
+- Release: **0.10.0** (24 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on 2cb11440).
+  - **Files:** `Vibezeo_0.10.0_amd64.deb` (SHA-256 `c0085004…4ad9c2`) and `Vibezeo-0.10.0-1.x86_64.rpm` (SHA-256 `755006d1…94b35bb`), 54.2 MB each.
+  - **Vibezeo is free** (D-869; `free-for-everyone`, D-2900 to D-2913): everything that runs on the computer is unlimited with no account:
+    - panes, workspaces, teammates, plugin connections and accounts per engine;
+    - six threads side by side, and every chat engine;
+    - routines (in the background too), task runs, the Night Shift and session search, with no sign-in.
+  - **No plan UI:** the plans dialog, checkout, See plans, Upgrade, the Pro badges, the limit cards and the rail's plan footer are gone.
+  - **Hosted features** say "Comes with Vibezeo accounts" (DESIGN §9.5) and stay off.
+  - **D-871:** the Dictate widget no longer sends events to the main window.
+  - **The site:** the post "What's new in 0.10.0", and copy with no "this release" or "the next". The "New in" tiles stay 0.9.0's, because 0.10.0 only changes things.
+  - Verified: see "Release 0.10.0" in the log below.
   Deploying is merging `product-m0-m5` into `main` (OPERATING §7).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
@@ -1112,6 +1105,31 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - the demo walkthrough.
     The run before D-869, on 4ba32cd9, passed the same checks with 50 pages. The only change after c5b98702 is the download page's "Start using Vibezeo" step (b435a107), and web vitest passed again on it.
   - Merged into `product-m0-m5` by #90 (356bdf30) and deployed by #91 (15696ba3): vibezeo.com serves 0.9.0 since 24 October, and the live checks passed (see Current state). `main` came back into `product-m0-m5` with the design lead's D-1896 (#92) already there.
+
+- Release 0.10.0 (`release-0.10.0`, 24 October): Vibezeo is free. It is product-m0-m5 at 4650d005 (the repository going public, D-870) with these added:
+  - `free-for-everyone` 7e1250c8: D-2900 to D-2913, reviewed by two independent read-only reviews before merging (D-871);
+  - the version, the CHANGELOG's `## 0.10.0` (free-for-everyone's notes, with the platform line), `release.ts`, the post "What's new in 0.10.0", and the .deb and .rpm with SHA256SUMS and the Flatpak and Snap manifests;
+  - D-871's widget capability, comments and smoke-test click;
+  - the site's figures: 3,729 tests and 146 E2E spec files.
+  - **Reviews.**
+    - Rust and the API: no blockers. The one should-fix, the widget's leftover emit-to, is D-871.
+    - The UI, copy and tests found five things the download or the site still showed:
+      - home.ts's "this release… the next";
+      - the Conductor settings and three hosted Privacy switches usable with no account;
+      - the ☰ menu's Sign in;
+      - llms.txt's Conductor label;
+      - the docs' "Plans" headings.
+      free-for-everyone fixed them as D-2913 before the build. The hosted-build and spec items wait in the follow-up list.
+  - **The gate** passed on the release tree (4030634b):
+    - 2,150 Rust tests (6 ignored);
+    - 1,579 TypeScript tests: desktop 750, UI 412, API 234, web 115, remote 33, mobile 21, protocol 14;
+    - coverage (182 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (554 types).
+    - Its first run stopped at the drift check: D-871's comment on `AuthState.hosted` reaches the generated TypeScript, so 4030634b commits the regenerated file. The run resumed at that step on the new commit.
+  - **E2E:** the full desktop suite passed 146 of 146 spec files in five chunks (33 minutes), `m18-free-offline` among them.
+  - **The packages:**
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
+    - The AppImage passed the offline smoke test, and Start opens setup with all 13 engines.
+    - The commits after 2cb11440 are docs, the downloads, the regenerated protocol type and the site's figures. No product code changed.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
