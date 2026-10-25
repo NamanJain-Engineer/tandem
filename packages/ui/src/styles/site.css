@@ -97,8 +97,8 @@
   --site-card:        var(--tn-surface-2);          /* cards and tiles */
   --site-stage:       var(--ink-900);               /* product media backdrop: dark in both themes (ink, D-1894) */
   --site-stage-line:  rgb(255 255 255 / 0.12);
-  --site-stage-fg:    #e6edf5;                      /* text on the stage: the dark theme's, in both themes */
-  --site-stage-muted: #9aa8bb;
+  --site-stage-fg:    #ededef;                      /* text on the stage: the dark theme's, in both themes */
+  --site-stage-muted: #a3a3ac;
   --site-stage-accent: var(--teal-400);
   --site-grid:        rgb(255 255 255 / 0.04);      /* the faint grid of og.png and the video poster */
   --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
@@ -206,6 +206,12 @@
     --tn-text:        #ededef;
     --tn-text-muted:  #a3a3ac;
     --tn-text-subtle: #8b8b95;
+    --tn-text-disabled: var(--ink-500);
+    --tn-status-idle:      var(--ink-300);
+    --tn-status-idle-soft: rgb(161 161 170 / 0.16);
+    --tn-scrollbar:     rgb(255 255 255 / 0.18);
+    --tn-kbd-bg:        var(--ink-800);
+    --tn-ring:          rgb(255 255 255 / 0.09);
   }
 }
 :root[data-theme="dark"], .site [data-theme="dark"] {
@@ -223,6 +229,12 @@
   --tn-text:        #ededef;
   --tn-text-muted:  #a3a3ac;
   --tn-text-subtle: #8b8b95;
+  --tn-text-disabled: var(--ink-500);
+  --tn-status-idle:      var(--ink-300);
+  --tn-status-idle-soft: rgb(161 161 170 / 0.16);
+  --tn-scrollbar:     rgb(255 255 255 / 0.18);
+  --tn-kbd-bg:        var(--ink-800);
+  --tn-ring:          rgb(255 255 255 / 0.09);
 }
 
 /* `light:` for the odd utility that differs by theme (Shiki's colours in
@@ -658,6 +670,12 @@ body.site {
   ::view-transition-group(root) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out-site); }
 }
 .site-header { view-transition-name: site-header; }
+/* Under reduced motion the current page keeps its bar, drawn still, so it
+   isn't marked by colour alone (D-1883). */
+@media (prefers-reduced-motion: reduce) {
+  .hover-bar[aria-current="page"] { position: relative; }
+  .hover-bar[aria-current="page"]::after { content: ""; position: absolute; inset-inline: 0.875rem; bottom: 0.3125rem; height: 1px; border-radius: 1px; background: currentColor; }
+}
 
 /* The phone menu's sheet slides down from under the header (Popover API). */
 @media (prefers-reduced-motion: no-preference) {

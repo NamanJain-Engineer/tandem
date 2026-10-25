@@ -3,8 +3,8 @@ import { AppWindow, Count, Dot, DotChange, Glyph, Lines, Pane, fx, visit } from 
 
 const { claude, codex, gemini } = SAMPLE.worktrees;
 
-/** The hero's scene (D-1880): Code mode over one repository, four live panes
- * (the Free plan's four), each agent in its own worktree. Claude Code fixes
+/** The hero's scene (D-1880): Code mode over one repository, four live panes,
+ * each agent in its own worktree. Claude Code fixes
  * checkout and finishes; Gemini CLI asks before running its tests and the
  * approval is answered; on 0.9.0 the intent radar sees Claude Code and Codex
  * change the same function and both are warned; the finished work arrives

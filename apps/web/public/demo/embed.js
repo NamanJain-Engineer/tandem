@@ -33,7 +33,10 @@
 
   // The product scenes (D-1880): each plays while a third of it (or 120 px)
   // is on screen and the tab is visible, and waits where it is otherwise. A
-  // browser without IntersectionObserver just plays them.
+  // scene in the first screen plays at once, however little of it shows:
+  // the hero's window can start low in a laptop's first screen, and a paused
+  // first frame there would look blank. A browser without
+  // IntersectionObserver just plays them.
   const scenes = document.querySelectorAll("[data-scene]");
   // Tells the theme script the player runs, so it keeps the effects on.
   document.documentElement.setAttribute("data-scenes", "");
@@ -43,17 +46,22 @@
       for (const scene of scenes) scene.toggleAttribute("data-live", seen.has(scene) && !document.hidden);
     };
     if ("IntersectionObserver" in window) {
+      const first = new Set(scenes);
+      // Every 1 % up to a third, so the 120 px test runs as the scene rises.
+      const steps = [];
+      for (let i = 0; i <= 30; i++) steps.push(i / 100);
       const watch = new IntersectionObserver(
         (entries) => {
-          // A third of the scene, or 120 px of it: the hero's window starts
-          // low in a laptop's first screen and must play there.
           for (const x of entries) {
-            if (x.isIntersecting && (x.intersectionRatio >= 0.3 || x.intersectionRect.height >= 120)) seen.add(x.target);
+            // In the first screen: showing when the page opens, or rising
+            // into it (its entry slide) before any scrolling.
+            const opening = first.delete(x.target) || window.scrollY === 0;
+            if (x.isIntersecting && (opening || x.intersectionRatio >= 0.3 || x.intersectionRect.height >= 120)) seen.add(x.target);
             else if (!x.isIntersecting) seen.delete(x.target);
           }
           sync();
         },
-        { threshold: [0, 0.05, 0.1, 0.2, 0.3] },
+        { threshold: steps },
       );
       for (const scene of scenes) watch.observe(scene);
     } else for (const scene of scenes) seen.add(scene);

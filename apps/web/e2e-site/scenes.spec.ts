@@ -32,11 +32,13 @@ for (const [w, h] of [[1440, 900], [1366, 768], [1280, 800]] as const) {
   });
 }
 
-for (const [w, h] of [[1366, 768], [1280, 800], [1536, 864]] as const) {
+// Screen sizes, and the viewports a laptop's browser actually gets once its
+// tabs, address bar and the taskbar take 100–140 px (D-1883).
+for (const [w, h] of [[1366, 768], [1280, 800], [1536, 864], [1100, 768], [1366, 650], [1536, 740], [1280, 700]] as const) {
   test(`F-WB-01 AC9 the hero's scene plays in a ${w}×${h} first screen, without scrolling`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     await page.goto("/");
-    await expect.poll(() => states(page, "workspace"), { timeout: 10_000 }).not.toEqual(["paused"]);
+    await expect.poll(() => states(page, "workspace"), { timeout: 10_000 }).toContain("running");
   });
 }
 

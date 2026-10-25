@@ -71,7 +71,7 @@ describe("F-WB-01 AC9 product scenes", () => {
   });
 
   it("F-WB-01 AC8 AC9 effects run only with motion allowed and the script present, paused until the scene is on screen", () => {
-    const [before, rest] = css.split("@media (prefers-reduced-motion: no-preference) {");
+    const [before, rest] = css.split("@media screen and (prefers-reduced-motion: no-preference) {");
     expect(rest).toBeDefined();
     expect(before).not.toMatch(/animation\s*:/);
     // data-fx is the theme script's mark, kept only while the scene player
@@ -81,6 +81,11 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(css).toMatch(/\[data-scene\]:not\(\[data-live\]\) :is\(\.tn-dot, \.tn-attention\) \{ animation-play-state: paused; \}/);
     for (const m of (rest ?? "").matchAll(/& \[data-fx-[\w]+\]\s*\{ animation: ([^;]+);/g)) expect(m[1], m[0]).toMatch(/ paused$/);
     expect(rest).toMatch(/&\[data-live\] :is\([^)]*\) \{\s*animation-play-state: running;/);
+  });
+
+  it("F-WB-01 AC9 scenes draw with the app's tokens, never literal colours (D-1883)", () => {
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    for (const m of css.matchAll(/rgba?\(.{0,30}/g)) expect(m[0]).toMatch(/^rgb\(var\(--tn-shadow-color\) \//);
   });
 
   it("F-WB-01 AC9 scene keyframes move only transform and opacity (and the counter)", () => {

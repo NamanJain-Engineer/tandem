@@ -12,8 +12,8 @@ const root = document.documentElement;
 function boot(stored?: string) {
   for (const a of [...root.attributes]) root.removeAttribute(a.name);
   document.head.innerHTML =
-    '<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#060a12">' +
-    '<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc">';
+    '<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b">' +
+    '<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">';
   document.body.innerHTML = "";
   localStorage.clear();
   if (stored !== undefined) localStorage.setItem(THEME_KEY, stored);
@@ -50,7 +50,7 @@ describe("F-WB-01 AC4 the theme script", () => {
     expect(root.hasAttribute("data-theme")).toBe(false);
     expect(root.style.colorScheme).toBe("");
     expect(localStorage.length).toBe(0);
-    expect(themeColors()).toEqual(["#060a12", "#f8fafc"]);
+    expect(themeColors()).toEqual(["#09090b", "#fafafa"]);
   });
 
   it("F-WB-01 AC4 F-WB-01 AC6 applies a stored Light or Dark before the body exists, color-scheme and the browser bar included", () => {
@@ -99,18 +99,31 @@ describe("F-WB-01 AC4 the theme script", () => {
     expect(root.hasAttribute("data-theme")).toBe(false);
     expect(root.getAttribute("data-theme-choice")).toBe("system");
     expect(localStorage.length).toBe(0);
-    expect(themeColors()).toEqual(["#060a12", "#f8fafc"]);
+    expect(themeColors()).toEqual(["#09090b", "#fafafa"]);
   });
 
-  it("F-WB-01 AC9 marks the scenes' effects on, and takes the mark off at load unless the scene player said it runs (D-1880)", () => {
+  it("F-WB-01 AC9 marks the scenes' effects on, and takes the mark off once the page is parsed unless the scene player said it runs (D-1880, D-1883)", () => {
+    // The deferred player has run (or failed) by DOMContentLoaded; waiting
+    // for load (fonts, the demo still) would leave a blocked player's scenes
+    // at frame 0 for seconds.
+    const ready = Object.getOwnPropertyDescriptor(Document.prototype, "readyState");
+    Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
+    try {
+      boot();
+      expect(root.hasAttribute("data-fx")).toBe(true);
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      expect(root.hasAttribute("data-fx")).toBe(false);
+      boot();
+      root.setAttribute("data-scenes", "");
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      expect(root.hasAttribute("data-fx")).toBe(true);
+    } finally {
+      delete (document as { readyState?: unknown }).readyState;
+      expect(Object.getOwnPropertyDescriptor(Document.prototype, "readyState")).toEqual(ready);
+    }
+    // Run after parsing (readyState past "loading"), it decides at once.
     boot();
-    expect(root.hasAttribute("data-fx")).toBe(true);
-    window.dispatchEvent(new Event("load"));
     expect(root.hasAttribute("data-fx")).toBe(false);
-    boot();
-    root.setAttribute("data-scenes", "");
-    window.dispatchEvent(new Event("load"));
-    expect(root.hasAttribute("data-fx")).toBe(true);
   });
 
   it("F-WB-01 AC4 follows a choice made in another tab", () => {

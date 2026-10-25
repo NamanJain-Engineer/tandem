@@ -30,7 +30,7 @@ export function Hero() {
       />
       {/* The rings' centre: 380 of 760 viewBox units at 1.28 scale, less the 14 rem lift. */}
       <EngineOrbit top={262} radius={560} />
-      <div className="container-site flex flex-col items-center gap-5 pb-16 pt-10 text-center lg:pb-20 lg:pt-10">
+      <div className="container-site flex flex-col items-center gap-5 pb-16 pt-10 text-center lg:pb-20">
         <a
           href={versionPath(RELEASE.version)}
           className="group inline-flex h-8 items-center gap-2.5 rounded-full bg-(--site-glass) pl-3 pr-2.5 text-caption text-fg shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] transition-colors duration-(--dur-base) hover:bg-(--site-glass-hover)"

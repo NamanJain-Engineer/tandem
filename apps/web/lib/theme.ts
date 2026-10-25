@@ -31,9 +31,9 @@ for(i=0;i<m.length;i++){if(!m[i].hasAttribute("data-content"))m[i].setAttribute(
 function apply(c,quiet){if(!quiet&&d.getAttribute("data-theme-choice")!==c){d.setAttribute("data-theme-switching","");requestAnimationFrame(function(){requestAnimationFrame(function(){d.removeAttribute("data-theme-switching")})})}
 d.setAttribute("data-theme-choice",c);if(ok(c)){d.setAttribute("data-theme",c);d.style.colorScheme=c}else{d.removeAttribute("data-theme");d.style.colorScheme=""}sync(c)}
 apply(read(),true);
-d.setAttribute("data-fx","");window.addEventListener("load",function(){if(!d.hasAttribute("data-scenes"))d.removeAttribute("data-fx")});
+d.setAttribute("data-fx","");function fx(){if(!d.hasAttribute("data-scenes"))d.removeAttribute("data-fx")}
 document.addEventListener("change",function(e){var t=e.target;if(!t||!t.hasAttribute||!t.hasAttribute("data-theme-set"))return;var c=ok(t.value)?t.value:"system";
 try{if(c==="system")localStorage.removeItem(K);else localStorage.setItem(K,c)}catch(x){}apply(c)});
 window.addEventListener("storage",function(e){if(e.key===K||e.key===null)apply(read())});
 window.addEventListener("pageshow",function(e){if(e.persisted)apply(read(),true)});
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){sync(d.getAttribute("data-theme-choice"))})})();`;
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){sync(d.getAttribute("data-theme-choice"));fx()});else fx()})();`;
