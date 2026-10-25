@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use tandem_core::ids::WorkspaceId;
+use tandem_core::ids::{PaneId, WorkspaceId};
 use tandem_core::redact::Redactor;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_pty::PtyManager;
@@ -227,26 +227,59 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
     Ok(out)
 }
 
+/// What [`remove`] took away: the panes it closed, and the folders of the
+/// workspace and its worktrees.
+#[derive(Debug, Default)]
+pub struct Removed {
+    pub panes: Vec<PaneId>,
+    pub folders: Vec<String>,
+}
+
 /// Soft remove. Its worktrees' rows go with it, so their panes stop too;
-/// nothing on disk is touched.
-pub async fn remove(store: &Store, pty: &PtyManager, id: &WorkspaceId) -> Result<(), IpcError> {
+/// nothing on disk is touched. [`end_removed`] comes next.
+pub async fn remove(
+    store: &Store,
+    terms: &crate::services::terminal::TerminalService,
+    id: &WorkspaceId,
+) -> Result<Removed, IpcError> {
+    let mut removed = Removed {
+        folders: vec![workspaces::get(store, id).await?.root],
+        ..Removed::default()
+    };
     let mut ids = vec![id.clone()];
-    ids.extend(
-        workspaces::lanes(store, id)
-            .await?
-            .into_iter()
-            .map(|w| w.id),
-    );
+    for lane in workspaces::lanes(store, id).await? {
+        removed.folders.push(lane.root);
+        ids.push(lane.id);
+    }
     for ws in &ids {
         for tab in tabs::list(store, ws).await? {
             for pane in panes::list_open(store, &tab.id).await? {
-                let _ = pty.kill(pane.id.as_str());
+                let _ = terms.end_pane(pane.id.as_str()).await;
                 panes::close(store, &pane.id).await?;
+                removed.panes.push(pane.id);
             }
         }
     }
     workspaces::remove(store, id).await?;
-    Ok(())
+    Ok(removed)
+}
+
+/// After [`remove`] (F-TK-05): the closed panes' agent sessions end, which
+/// revokes their task connections and drops the notices waiting for them,
+/// and a main checkout's last session releases its claims (D-2427). The
+/// worktrees' claims go too, as nothing will merge or remove them here now
+/// (AC3). Blocking file IO.
+pub fn end_removed(
+    terminals: &crate::services::terminal::TerminalService,
+    tasks: &crate::services::tasks::TasksService,
+    removed: &Removed,
+) {
+    for pane in &removed.panes {
+        terminals.end_tasks_session(pane.as_str());
+    }
+    for folder in &removed.folders {
+        tasks.release_removed(Path::new(folder));
+    }
 }
 
 /// At most this many repositories make up a multi-repo folder (F-CD-22).
@@ -411,6 +444,109 @@ mod tests {
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
         (dir, store)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tk_05_3_removing_a_workspace_ends_its_panes_sessions_and_releases_its_claims() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        // A repository with a worktree, each with an agent's session and
+        // the file it edited.
+        let main = dir.path().join("app");
+        std::fs::create_dir_all(&main).expect("mkdir");
+        git(&main, &["init", "-q"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        let lane_root = main.join(".tandem/worktrees/fix-auth");
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                lane_root.to_str().expect("utf8"),
+                "-b",
+                "tandem/fix-auth",
+            ],
+        );
+        let lane_root = std::fs::canonicalize(lane_root).expect("canonical");
+        let added = add(&store, main.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("ws");
+        let lane = workspaces::add_lane(
+            &store,
+            workspaces::NewLane {
+                parent_id: added.workspace.id.clone(),
+                root: lane_root.to_string_lossy().into_owned(),
+                name: "fix-auth".into(),
+                branch: "tandem/fix-auth".into(),
+                base: "main".into(),
+            },
+        )
+        .await
+        .expect("lane");
+        let tasks = crate::services::tasks::TasksService::new(&data, store.clone(), None);
+        let terminals =
+            crate::services::terminal::TerminalService::new(PtyManager::new(), store.clone());
+        terminals.bind_tasks(&tasks);
+        let mut opened = Vec::new();
+        for (ws, root) in [
+            (&added.workspace.id, Path::new(&added.workspace.root)),
+            (&lane.id, lane_root.as_path()),
+        ] {
+            let tab = tabs::create(&store, ws, None).await.expect("tab");
+            let pane = panes::create(&store, &tab.id, "terminal", None)
+                .await
+                .expect("pane");
+            let id = pane.id.as_str().to_string();
+            tasks.track_scope(&format!("pn:{id}"), Some(root));
+            tasks.claim_edits(&id, &[root.join("a.ts").to_string_lossy().into_owned()]);
+            opened.push(id);
+        }
+        // A notice waits for the worktree's pane, whose process never started.
+        terminals.notice(&opened[1], "app and fix-auth both claim a.ts");
+        let tracker = tasks.tracker.clone().expect("tracker");
+        assert_eq!(tracker.claims().expect("claims").len(), 2);
+        let removed = remove(&store, &terminals, &added.workspace.id)
+            .await
+            .expect("remove");
+        let mut closed: Vec<String> = removed
+            .panes
+            .iter()
+            .map(|p| p.as_str().to_string())
+            .collect();
+        closed.sort();
+        opened.sort();
+        assert_eq!(closed, opened);
+        end_removed(&terminals, &tasks, &removed);
+        assert!(
+            tracker.claims().expect("claims").is_empty(),
+            "the main checkout's went with its last session, the worktree's with it"
+        );
+        for root in [Path::new(&added.workspace.root), lane_root.as_path()] {
+            let folder = crate::services::tasks::claim_scope(root)
+                .expect("scope")
+                .folder;
+            assert!(tasks.panes_in(&folder).is_empty(), "{folder}");
+        }
+        for pane in &opened {
+            assert!(terminals.held_notices_of(pane).is_empty(), "{pane}");
+        }
     }
 
     #[tokio::test]

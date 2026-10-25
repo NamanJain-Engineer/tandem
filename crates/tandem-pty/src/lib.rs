@@ -5,10 +5,12 @@
 
 pub mod env;
 pub mod frame;
+pub mod governor;
 pub mod integration;
 #[cfg(windows)]
 mod job;
 pub mod marks;
+pub mod mask;
 pub mod orphans;
 pub mod ports;
 pub mod quote;
@@ -21,7 +23,7 @@ pub mod text;
 pub mod typing;
 pub mod winpath;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -56,6 +58,10 @@ pub const ACK_LOW: u64 = 1024 * 1024;
 pub const READ_BUF: usize = 64 * 1024;
 /// `pty:state` goes out at most this often per pane (ARCHITECTURE §3.3).
 pub const STATE_DEBOUNCE: Duration = Duration::from_millis(100);
+/// A pane with no view to show them (parked, not shown yet, or its view
+/// gone) keeps its newest this many notices for the next attach; older ones
+/// are dropped (F-TK-05 AC1).
+pub const PENDING_NOTICES_MAX: usize = 20;
 
 /// Receives `pty:state` changes (the app forwards them to the webview).
 pub type StateSink = Arc<dyn Fn(PtyState) + Send + Sync>;
@@ -178,6 +184,10 @@ struct Session {
     writer: Mutex<Box<dyn Write + Send>>,
     sink: Arc<RwLock<Option<Arc<dyn OutputSink>>>>,
     ring: Arc<Mutex<ScrollbackRing>>,
+    /// Notices that found no view, oldest first, for the next attach to send
+    /// (F-TK-05). Only touched under `ring`'s lock, which also orders the
+    /// sink's swaps and the batcher's frames.
+    pending_notices: Mutex<VecDeque<PtyFrame>>,
     flow: Arc<FlowControl>,
     exited: Arc<Mutex<Option<ExitInfo>>>,
     seq: Arc<AtomicU64>,
@@ -189,6 +199,16 @@ struct Session {
     /// Windows: the kill-on-close Job Object holding the tree.
     #[cfg(windows)]
     job: Option<job::Job>,
+    /// Secret values masked in this pane's output (F-TL-12).
+    mask: Option<Arc<MaskSlot>>,
+}
+
+/// A pane's masker; `done` stops its flusher, and `wake` tells it a tail
+/// is held (or the reader ended).
+struct MaskSlot {
+    masker: Mutex<mask::LiteralMasker>,
+    done: AtomicBool,
+    wake: std::sync::Condvar,
 }
 
 /// All live PTYs. Cheap to clone.
@@ -202,6 +222,8 @@ pub struct PtyManager {
     on_mark: Option<MarkSink>,
     on_activity: Option<ActivitySink>,
     on_reader_failure: Option<ReaderFailureSink>,
+    /// Values the pane's next spawn masks (F-TL-12).
+    masks: Arc<DashMap<String, Vec<zeroize::Zeroizing<Vec<u8>>>>>,
 }
 
 enum Msg {
@@ -336,6 +358,7 @@ impl PtyManager {
             ring: Arc::new(Mutex::new(ScrollbackRing::new(
                 spec.scrollback_lines + SCREEN_ROWS,
             ))),
+            pending_notices: Mutex::new(VecDeque::new()),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -352,6 +375,7 @@ impl PtyManager {
             )),
             state_dirty: AtomicBool::new(false),
             spawn_ms: AtomicU64::new(0),
+            mask: self.take_mask(&spec.pane_id),
             #[cfg(windows)]
             job: job::Job::for_process(pid),
         });
@@ -408,6 +432,7 @@ impl PtyManager {
             ring: Arc::new(Mutex::new(ScrollbackRing::new(
                 spec.scrollback_lines + SCREEN_ROWS,
             ))),
+            pending_notices: Mutex::new(VecDeque::new()),
             flow: Arc::new(FlowControl {
                 sent: AtomicU64::new(0),
                 acked: AtomicU64::new(0),
@@ -424,6 +449,7 @@ impl PtyManager {
             )),
             state_dirty: AtomicBool::new(false),
             spawn_ms: AtomicU64::new(spawn_ms),
+            mask: self.take_mask(&spec.pane_id),
             #[cfg(windows)]
             job: None,
         });
@@ -450,6 +476,76 @@ impl PtyManager {
             .unwrap_or(false)
     }
 
+    /// The pane's next spawn masks these values in its output (F-TL-12).
+    pub fn mask_next_spawn(&self, pane: &str, values: Vec<zeroize::Zeroizing<Vec<u8>>>) {
+        self.masks.insert(pane.to_string(), values);
+    }
+
+    fn take_mask(&self, pane: &str) -> Option<Arc<MaskSlot>> {
+        let (_, values) = self.masks.remove(pane)?;
+        let masker = mask::LiteralMasker::new(values.iter().map(|v| v.as_slice()))?;
+        Some(Arc::new(MaskSlot {
+            masker: Mutex::new(masker),
+            done: AtomicBool::new(false),
+            wake: std::sync::Condvar::new(),
+        }))
+    }
+
+    /// Releases a masked pane's held tail after [`mask::HOLD`] of quiet,
+    /// through the screen parser like any read, until the reader ends.
+    fn start_flusher(
+        pane: &str,
+        session: Arc<Session>,
+        slot: Arc<MaskSlot>,
+        colors: Arc<RwLock<TermColors>>,
+        tx: mpsc::SyncSender<Msg>,
+    ) {
+        let spawned = std::thread::Builder::new()
+            .name(format!("pty-mask-{pane}"))
+            .spawn(move || {
+                let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
+                loop {
+                    if slot.done.load(Ordering::Acquire) {
+                        return;
+                    }
+                    // Sleeps until a read holds a tail, then until it's due;
+                    // a read in between restarts the wait.
+                    match masker.due_in() {
+                        None => {
+                            masker = slot.wake.wait(masker).unwrap_or_else(|e| e.into_inner());
+                            continue;
+                        }
+                        Some(left) if !left.is_zero() => {
+                            masker = slot
+                                .wake
+                                .wait_timeout(masker, left)
+                                .unwrap_or_else(|e| e.into_inner())
+                                .0;
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
+                    let held = masker.flush();
+                    let output = match session.side.lock() {
+                        Ok(mut side) => {
+                            let fed = side.feed_raw(&held, &colors.read());
+                            if side.state() != side_published(&side) {
+                                session.state_dirty.store(true, Ordering::Release);
+                            }
+                            fed.output
+                        }
+                        Err(_) => held,
+                    };
+                    if !output.is_empty() && tx.send(Msg::Data(output)).is_err() {
+                        return;
+                    }
+                }
+            });
+        if let Err(err) = spawned {
+            tracing::error!(error = %err, "couldn't start the pty masker");
+        }
+    }
+
     fn start_reader(
         &self,
         pane: &str,
@@ -463,6 +559,15 @@ impl PtyManager {
         let on_activity = self.on_activity.clone();
         let on_failure = self.on_reader_failure.clone();
         let pane_id = pane.to_string();
+        if let Some(slot) = &session.mask {
+            Self::start_flusher(
+                pane,
+                session.clone(),
+                slot.clone(),
+                colors.clone(),
+                tx.clone(),
+            );
+        }
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
             let mut buf = vec![0u8; READ_BUF];
@@ -483,15 +588,41 @@ impl PtyManager {
                 }
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
+                        if let Some(slot) = &session.mask {
+                            // A held tail wasn't a whole value.
+                            let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
+                            let held = masker.flush();
+                            slot.done.store(true, Ordering::Release);
+                            slot.wake.notify_one();
+                            if !held.is_empty() {
+                                let _ = tx.send(Msg::Data(held));
+                            }
+                        }
                         let _ = tx.send(Msg::Eof);
                         return;
                     }
                     Ok(n) => {
+                        // Secret values go before anything reads the output:
+                        // the screen, the ring and every reader of the pane
+                        // see the mask (F-TL-12). The lock keeps the flusher's
+                        // releases in order with the reads.
+                        let mut masker = session
+                            .mask
+                            .as_ref()
+                            .map(|m| m.masker.lock().unwrap_or_else(|e| e.into_inner()));
+                        let masked = masker.as_mut().map(|m| m.push(&buf[..n]));
+                        if let Some(slot) = &session.mask {
+                            slot.wake.notify_one();
+                        }
+                        let input: &[u8] = masked.as_deref().unwrap_or(&buf[..n]);
+                        if input.is_empty() {
+                            continue;
+                        }
                         // Marks come out of the stream first; queries are
                         // answered here, for visible and hidden panes alike,
                         // within the same read (§5.7, §5.8).
                         let raw = || Fed {
-                            output: buf[..n].to_vec(),
+                            output: input.to_vec(),
                             ..Fed::default()
                         };
                         let fed = if gave_up {
@@ -509,7 +640,7 @@ impl PtyManager {
                                         {
                                             panic!("test: a feed panicked");
                                         }
-                                        let fed = side.feed_raw(&buf[..n], &colors.read());
+                                        let fed = side.feed_raw(input, &colors.read());
                                         if side.state() != side_published(&side) {
                                             session.state_dirty.store(true, Ordering::Release);
                                         }
@@ -722,6 +853,9 @@ impl PtyManager {
 
     /// Replaces the sink (webview reload, a parked view shown again) and
     /// returns the ring contents to replay with the position they end at.
+    /// Notices that found no view go to the new sink at once, so the view
+    /// shows them after the replay and before any output that follows
+    /// (F-TK-05 AC1).
     pub fn attach(&self, pane: &str, sink: Arc<dyn OutputSink>) -> Result<Attached, PtyError> {
         let session = self.get(pane)?;
         let ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
@@ -729,7 +863,21 @@ impl PtyManager {
             .flow
             .acked
             .store(session.flow.sent.load(Ordering::Acquire), Ordering::Release);
-        *session.sink.write() = Some(sink);
+        *session.sink.write() = Some(sink.clone());
+        // Still under the ring's lock: no frame of the batcher's and no new
+        // notice comes before these.
+        let mut pending = session
+            .pending_notices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while let Some(frame) = pending.front() {
+            if sink.send(frame.clone()).is_err() {
+                // Gone already: the rest wait for the next attach.
+                break;
+            }
+            pending.pop_front();
+        }
+        drop(pending);
         Ok(Attached {
             replay: ring.contents(),
             end: ring.end(),
@@ -740,8 +888,8 @@ impl PtyManager {
     /// per line, then the screen) stands for everything up to position `at`,
     /// which is what the view had parsed. The sink is dropped, so the program
     /// runs on without backpressure and its output waits in the ring for the
-    /// next attach. False when the ring no longer holds the output after
-    /// `at`; it then replays as it is.
+    /// next attach, as its notices do (see [`Self::notice`]). False when the
+    /// ring no longer holds the output after `at`; it then replays as it is.
     pub fn park(&self, pane: &str, at: u64, base: Vec<Vec<u8>>) -> Result<bool, PtyError> {
         let session = self.get(pane)?;
         let mut ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
@@ -836,12 +984,35 @@ impl PtyManager {
     }
 
     /// Sends a one-line notice frame (e.g. "Folder not found — opened at
-    /// workspace root") in sequence with the pane's output.
+    /// workspace root") in sequence with the pane's output. A notice that
+    /// finds no view (the pane is parked or not shown yet, or its view has
+    /// gone) waits for the next attach; a pane keeps its newest
+    /// [`PENDING_NOTICES_MAX`] (F-TK-05 AC1).
     pub fn notice(&self, pane: &str, message: &str) -> Result<(), PtyError> {
         let session = self.get(pane)?;
-        let seq = session.seq.fetch_add(1, Ordering::AcqRel);
-        if let Some(sink) = session.sink.read().as_ref() {
-            let _ = sink.send(PtyFrame::notice(seq, message));
+        // The ring's lock orders this with the batcher's frames and with
+        // `attach` and `park` swapping the sink: the notice reaches the view
+        // that's attached now, or waits for the one that attaches next.
+        let _ring = session.ring.lock().unwrap_or_else(|e| e.into_inner());
+        let frame = PtyFrame::notice(session.seq.fetch_add(1, Ordering::AcqRel), message);
+        let sent = match session.sink.read().as_ref() {
+            Some(sink) => sink.send(frame.clone()).is_ok(),
+            None => false,
+        };
+        if !sent {
+            let mut pending = session
+                .pending_notices
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if pending.len() >= PENDING_NOTICES_MAX {
+                pending.pop_front();
+                tracing::debug!(
+                    code = "pty.notice_dropped",
+                    pane = %pane,
+                    "a pane with no view dropped its oldest notice"
+                );
+            }
+            pending.push_back(frame);
         }
         Ok(())
     }

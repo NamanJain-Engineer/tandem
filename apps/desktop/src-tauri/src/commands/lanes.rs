@@ -169,7 +169,7 @@ pub async fn lane_remove(
     let git = lanes::git_for(&state.data, &login)?;
     lanes::remove_with_teardown(
         &state.store,
-        &state.terminals.pty,
+        &state.terminals,
         &git,
         &lane_id,
         confirm,

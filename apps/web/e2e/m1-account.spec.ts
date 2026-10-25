@@ -51,25 +51,12 @@ test.describe("@m1 accounts and billing", () => {
     expect(status).toBe(403);
   });
 
-  test("E2E-M1-2 mock upgrade @m1", async ({ page, request }) => {
+  test("E2E-M1-2 the billing page sells nothing (D-869, D-2914) @m1", async ({ page, request }) => {
     await testRoute(request, "plan", { email: "free@tandem.test", plan: "free" });
     await signIn(page, "free@tandem.test", undefined, "/billing");
-    await page.evaluate(() => {
-      const w = window as unknown as { __events: string[]; __started: number };
-      w.__events = [];
-      const source = new EventSource("/v1/me/events", { withCredentials: true });
-      source.addEventListener("entitlement", () => w.__events.push(`entitlement@${Date.now()}`));
-      w.__started = Date.now();
-    });
-    await page.getByRole("button", { name: /Upgrade to Pro/ }).click();
-    await page.waitForURL("**/billing/mock?session=*");
-    const clicked = Date.now();
-    await page.getByRole("button", { name: "Complete purchase" }).click();
-    await expect(page.getByRole("heading", { name: "You're on Pro" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Tandem" })).toHaveAttribute("href", "tandem://");
-    expect((await me(page)).plan).toBe("pro");
-    expect(Date.now() - clicked).toBeLessThan(5000);
-    await testRoute(request, "plan", { email: "free@tandem.test", plan: "free" });
+    await expect(page.getByTestId("nothing-to-buy")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upgrade|Pro|Team/ })).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("$");
   });
 
   test("E2E-M1-2b the SSE invalidation arrives within 5 s @m1", async ({ page, request }) => {
@@ -110,7 +97,8 @@ test.describe("@m1 accounts and billing", () => {
     await testRoute(request, "clock", { advanceMs: 40 * 86_400_000 });
     const after = await me(page);
     expect(after.plan).toBe("free");
-    expect(after.limits.panes).toBe(4);
+    // Back to what runs with no account: nothing local limited (D-2900).
+    expect(after.limits.panes).toBeNull();
     await testRoute(request, "clock", { reset: true });
   });
 

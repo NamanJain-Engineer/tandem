@@ -24,6 +24,7 @@ pub mod presets;
 pub mod restore;
 pub mod routines;
 pub mod search;
+pub mod secrets;
 pub mod sessions;
 pub mod settings;
 pub mod sidebar;

@@ -23,6 +23,7 @@ import { useLayout } from "../../stores/layout";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import { switchMode } from "../shell/actions";
+import { PaneUsageSection } from "./PaneUsage";
 
 /** Ports refresh this often while the tab is on screen. */
 export const REFRESH_MS = 2_000;
@@ -38,10 +39,10 @@ export function urlOf(p: ListeningPort): string {
 
 /** F-WT-06: ports in order, a worktree's after its header. Ports outside
  * worktrees come first, ungrouped. */
-export function groupByWorktree(
-  ports: ListeningPort[],
-): Array<{ branch: string | null; ports: ListeningPort[] }> {
-  const groups = new Map<string, ListeningPort[]>();
+export function groupByWorktree<T extends { laneBranch: string | null }>(
+  ports: T[],
+): Array<{ branch: string | null; ports: T[] }> {
+  const groups = new Map<string, T[]>();
   for (const p of ports) {
     const key = p.laneBranch ?? "";
     groups.set(key, [...(groups.get(key) ?? []), p]);
@@ -62,7 +63,7 @@ function openInBrowser(url: string): void {
 }
 
 /** Shows the pane that started the port. */
-function focusPane(paneId: string, workspaceId: string | null): void {
+export function focusPane(paneId: string, workspaceId: string | null): void {
   const layout = useLayout.getState();
   for (const [tabId, tab] of Object.entries(layout.tabs)) {
     if (tab.panes[paneId]) {
@@ -266,7 +267,10 @@ export function PortsPanel({ visible = true }: { visible?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="ports-panel">
       {header}
-      {body}
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <PaneUsageSection visible={visible} />
+        {body}
+      </div>
       <ConfirmDialog
         open={ask !== null}
         onOpenChange={(o) => !o && setAsk(null)}

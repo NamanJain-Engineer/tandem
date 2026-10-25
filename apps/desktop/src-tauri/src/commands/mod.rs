@@ -3,6 +3,7 @@
 
 pub mod account;
 pub mod accounts;
+pub mod acp_agents;
 pub mod app;
 pub mod auto;
 pub mod bestof;
@@ -28,17 +29,20 @@ pub mod lsp;
 pub mod night_shift;
 pub mod onboarding;
 pub mod phone;
+pub mod plan;
 pub mod plugins;
 pub mod ports;
 pub mod prompts;
 pub mod recall;
 pub mod remote;
+pub mod resources;
 pub mod restore;
 pub mod review;
 pub mod routines;
 pub mod runaway;
 pub mod sandbox;
 pub mod scratchpad;
+pub mod secrets;
 pub mod settings;
 pub mod shell;
 #[cfg(any(target_os = "macos", test))]

@@ -1,14 +1,25 @@
 import { browser } from "@wdio/globals";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, fakeEngine, freshOffline, home, invoke, paneIds, split, waitForPaneText } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  fakeEngine,
+  freshOffline,
+  home,
+  invoke,
+  paneIds,
+  split,
+  waitForPaneText,
+} from "../support/app";
 
 type View = { spec: { id: string; note: string | null }; chatCapable: boolean };
 type Spawn = { argv: string[]; envKeys: string[] };
 
 // E2E-M18-EN09 Engine catalog (F-EN-09): Antigravity CLI and Kiro CLI are
 // detected and launch as terminal engines; Kiro gets its account's home;
-// neither is a Thread engine; Gemini CLI keeps its note.
+// Antigravity isn't a Thread engine, and Kiro is one through its ACP mode
+// (F-EN-10, D-2510); Gemini CLI keeps its note.
 describe("E2E-M18-EN09 engine catalog", function () {
   this.timeout(180_000);
   const bin = join(home(), "fakebin");
@@ -40,11 +51,12 @@ describe("E2E-M18-EN09 engine catalog", function () {
     await waitForPaneText(agy, "Fake agy (test engine)");
   });
 
-  it("F-EN-09.2 and F-EN-09.3 Gemini CLI keeps its note, and neither new engine is a Thread engine", async () => {
+  it("F-EN-09.2 and F-EN-09.3 Gemini CLI keeps its note; Antigravity isn't a Thread engine and Kiro is one through ACP", async () => {
     const views = await invoke<View[]>("engines_list");
     const get = (id: string) => views.find((v) => v.spec.id === id);
     expect(get("gemini")?.spec.note).toContain("Personal Google accounts use Antigravity CLI");
     expect(get("antigravity")?.chatCapable).toBe(false);
-    expect(get("kiro")?.chatCapable).toBe(false);
+    expect(get("kiro")?.chatCapable).toBe(true);
+    expect(get("kiro")?.spec.note).toContain("Agent Client Protocol");
   });
 });

@@ -31,9 +31,4 @@ takesKey: boolean, keyHint: string | null,
 /**
  * Teammates this connection is enabled for.
  */
-teammates: number, 
-/**
- * The limits' connections are used up (none are with no account,
- * D-2900).
- */
-limitReached: boolean, };
+teammates: number, };

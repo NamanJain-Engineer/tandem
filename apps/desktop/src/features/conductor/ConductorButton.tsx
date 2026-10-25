@@ -8,8 +8,9 @@ import { ringState } from "./ring";
 import { useAppActive } from "./useAppActive";
 
 /** The title bar's Conductor button (UI-01 item 8): a 28px ring. A click
- * starts or ends a call; holding it talks while held. Hidden on plans
- * without Conductor, where the palette offers the upgrade instead. */
+ * starts or ends a call; holding it talks while held. Hidden without
+ * Conductor (hosted), where the palette's call command says it comes with
+ * Vibezeo accounts (D-2903). */
 export function ConductorButton() {
   const enabled = useSession((s) => !!s.entitlement?.limits.conductor);
   const view = useConductor((s) => s.view);

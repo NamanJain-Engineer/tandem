@@ -744,7 +744,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
   2a. **Workspace menu** (Code mode only; F-SH-01 item 5 and AC6): a Menu button with the workspace name. Items: "Auto-arrange panes" (Mod+Shift+T), "Card view", "Show terminal sessions" (toggle), "Usage…" (UI-37).
   3. **Omnibox:** centred, 360px wide (it shrinks to an icon under 1180px of window width). It shows "⌕ Search or run" plus a Kbd hint, and clicking it opens the CommandPalette.
   4. **Usage cluster** (the F-AC-04 plan-usage chip): for the active pane's engine account, or the default engine when nothing is focused. It shows the window closest to exhaustion as text ("Claude · 82% · resets 4:10 PM", coloured per the §1.3 meter thresholds) and, when the window is ≥1280px wide, two xs UsageMeters labelled "5h" and "Wk". Hidden if the engine doesn't report usage. Hovering shows a popover: "Claude Code · Work: 5-hour window 62% · resets in 1h 12m; Weekly 38% · resets Mon 09:00", with a "Manage accounts…" link.
-  5. **Credits:** "◈ 8,420" (the credits balance). A tooltip explains what credits pay for ("Credits pay for cloud dictation, prompt Enhance, Conductor and Auto. Coding uses your own AI accounts."). Clicking opens Settings › Account & Plan (UI-114). Below 10% of the monthly grant it turns warning-coloured; at 0 it turns danger-coloured with "0".
+  5. **Credits:** "◈ 8,420" (the credits balance). A tooltip explains what credits pay for ("Credits pay for cloud dictation, prompt Enhance, Conductor and Auto. Coding uses your own AI accounts."). Clicking opens Settings › Account (UI-114). Shown only signed in to a hosted build. Below 10% of the monthly grant it turns warning-coloured; at 0 it turns danger-coloured with "0".
   6. **Notifications:** a bell IconButton with a count badge (waiting items count separately in amber: "3" amber if any are waiting, else neutral). Opens the Notifications popover (UI-40).
   6a. **Update pill:** shown only when an update is staged ("Restart to update") or failed ("Update failed — Retry"); opens UI-130 (F-SH-01 item 9, F-SH-06).
   7. **Sidebar toggle:** IconButton "▣" (Mod+Shift+B), pressed when the sidebar is open.
@@ -853,7 +853,7 @@ The format for each screen is: ID · title · feature codes, then the wireframe,
   - "Sign-in timed out. Try again." (after 5 minutes)
   - "That link has expired."
   - "Couldn't reach Tandem. Check your connection or continue offline."
-- **Acceptance:** the PKCE loopback and deep link both work. Cancel returns to this screen. The offline path lands in onboarding with Free limits.
+- **Acceptance:** the PKCE loopback and deep link both work. Cancel returns to this screen. The offline path lands in onboarding with everything local unlimited (D-2900).
 
 #### UI-04 · Onboarding wizard · EN, AC, DI, SH
 A 4-step Stepper, full-window, content width 720.
@@ -1071,6 +1071,17 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   The rail badge: a `Spinner` with "Checks running", "{n} checks failed: {names}" in the error tone, or a check mark "Checks passed". Nothing shows without a pull request, before the repository is allowed, or on GitLab.
 
 - **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
+- **UI-163 ACP agents** (a section of Settings › Engines, under the engine list; F-EN-10). Heading "ACP agents" with **Add an ACP agent…** (secondary, `Plus`).
+  - Rows: the label, then the program and arguments in `font-mono` `fg-muted` (truncated, full as the tooltip), and **Remove** (ghost). Remove confirms (`ConfirmDialog`, danger): "Remove {name}?" / "Its threads stay readable but won't run again. An agent you add later is a new engine."
+  - States: loading (`Spinner`), error (`Banner` with Try again), empty ("Add any agent that speaks the Agent Client Protocol to use it in Thread mode.").
+  - **Add an ACP agent** (dialog, `md`): description "Vibezeo starts the command and asks it to introduce itself. The agent signs in its own way; Vibezeo never sees its keys."
+    - "Fill in:" then **Goose** (ghost).
+    - Fields: Name, Command (hint "A command on your PATH, or its full path"), Arguments (the extra-arguments parser; an open quote is an error), and Environment variables: rows of name and value with a remove button, **Add a variable**, and the hint "Settings the agent reads, not keys: keep keys in the agent's own sign-in."
+    - Footer: Cancel, **Test** (secondary), **Add** (primary). Both are disabled until Name and Command are filled and the arguments parse.
+  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
+  - The launch sheet never lists added agents: they run in threads only (D-2513).
+    - A passed test shows a success `Banner`: "{name} answered, version {version}." plus "It signs in with: {methods}." A failure or a refused value shows an error `Banner` with the core's message ("Not an ACP agent: …"). Any change clears both.
+  - In the Thread engine picker, an added agent reads "{label} · via ACP".
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -1740,14 +1751,13 @@ One live wall of every agent in every mode: Code panes, Threads and Teammate cha
   | Turn failed | "{title} stopped with an error" | the error reason | "Open", "Restart" | In-app, system |
   | Usage limit | "{account} reached its limit" | "{Engine} · resets {time}" | "Choose account" | In-app, system |
   | Routine result | "{routine} is ready for review" | "Routine · {teammate}" | "Open" | In-app, system |
-  | Routine failed / skipped | "{routine} didn't run" | reason ("Tandem was closed", "Paused on Free") | "Open routine" | In-app |
+  | Routine failed / skipped | "{routine} didn't run" | reason ("Tandem was closed", "Routines are turned off for this account") | "Open routine" | In-app |
   | Task | "{teammate} finished {task}" / "{task} is ready for your review" | "Task #{id}" | "Open task" | In-app, system |
   | Lane cleanup | "{n} finished worktrees can be cleaned up" | "{workspace}" | "Review…" | In-app |
   | Teammate mail | "{from} sent {to} a message" | first line | "Open chat" | In-app |
   | Plugin | "{plugin} needs you to reconnect" | account label | "Reconnect" | In-app, system |
-  | Credits | "Credits are running low" / "You're out of credits" | "{n} left · resets {date}" | "Buy credits" | In-app |
+  | Credits (a hosted build, signed in) | "Credits are running low" / "You're out of credits" | "{n} left · resets {date}" | — | In-app |
   | Update | "Tandem {version} is ready" | "Restart when you're ready" | "Restart" | In-app |
-  | Account | "Your trial ends in 2 days" / "Payment didn't go through" | plan line | "Manage billing" | In-app, system |
 
 - **System notifications** (tauri notification plugin): title = item title, body = source line only (no message text unless "Include message preview" is on). Clicking one focuses the window and performs the jump. Windows needs the AppUserModelID registered on the Start Menu shortcut first.
 - **Acceptance:** clicking a system notification for a pane in another mode lands focus on that pane; approving from the popover resolves the ApprovalCard in the transcript; snooze suppresses system notifications and sound but not in-app items.
@@ -1794,12 +1804,12 @@ Notifications
 │ Accounts               │ ...                                                     │
 │ Teammates              │                                                         │
 │ Dictate                │                                                         │
-│ Conductor        PRO   │                                                         │
+│ Conductor              │                                                         │
 │ Plugins                │                                                         │
 │ Remote                 │                                                         │
 │ Privacy & Telemetry    │                                                         │
 │ Shortcuts              │                                                         │
-│ Account & Plan         │                                                         │
+│ Account                │                                                         │
 │ Updates          •     │                                                         │
 │ Advanced               │                                                         │
 └────────────────────────┴─────────────────────────────────────────────────────────┘
@@ -1808,8 +1818,8 @@ Notifications
 - Content: max-width 720, PageHeader (title + one-line subtitle), groups with 2xs caps labels, one SettingsRow per control.
 - **Filter:** narrows nav items to pages with matching labels/descriptions/keywords and highlights matched rows (accent-soft background for 2s). "No settings match "{q}"".
 - **Saving:** every control applies immediately. When the effect isn't visible, a 1s "Saved" hint appears beside the control. Multi-field forms (SSH host, formatting instructions, persona) have explicit "Save" / "Cancel". Failed writes revert the control and toast "Couldn't save that setting. Try again." with "Retry".
-- **Hosted rows** (features that need Vibezeo's servers) stay visible and say "Comes with Vibezeo accounts"; they never show a plan badge or an upgrade link (D-869, D-2903).
-- **Page ↔ PRODUCT_SPEC F-SH-04 mapping:** Voice is split into Dictate and Conductor; Agents is Teammates; Account is Account & Plan; About content lives in Updates (version, notes) and Advanced (licences, logs). Updates is also reachable from General.
+- **Hosted rows** (features that need Vibezeo's servers): in a build without accounts, the Privacy rows for them (Name threads with AI, Allow Auto…, Share dictionary hints, Find work's ranking, dictionary sync) are absent, and Settings › Conductor shows only "Comes with Vibezeo accounts" with its sentence (D-2913). Nothing shows a plan badge or an upgrade link (D-869, D-2903).
+- **Page ↔ PRODUCT_SPEC F-SH-04 mapping:** Voice is split into Dictate and Conductor; Agents is Teammates; Account is Account; About content lives in Updates (version, notes) and Advanced (licences, logs). Updates is also reachable from General.
 - **Acceptance:** typing "scroll" shows Terminal and highlights "Scrollback lines"; every key round-trips a relaunch; Esc restores focus to the element that opened Settings.
 
 Each page below lists its controls as **Label · control · default · notes**. Labels are final copy.
@@ -1910,17 +1920,14 @@ APP
 - Global rows show a status chip: "Active", "Needs permission" (→ UI-134), "Unavailable on Wayland — use the system shortcut settings" (with the `tandem://dictate/toggle` command to copy), "Paused".
 - "Keyboard shortcuts" link: opens the cheatsheet, a dialog with every shortcut in effect by §5 group and a search box; `Mod+/` also opens it (D-805: a dialog, not a printable page, until printing is checked on every platform).
 
-#### UI-114 · Account & Plan · BE, BL
+#### UI-114 · Account · BE
 ```
 Signed in as ana@example.com                    [Sign out]
-Plan        PRO · renews 12 Oct · $29/month     [Manage billing ↗]
 Credits     ◈ 8,420 of 10,000 this month · resets 12 Oct
-            ▁▂▂▃▅▂▁▃ (30-day spend)            [Buy credits ↗]
             Monthly 6,420 · Purchased 2,000
-Usage       Cloud dictation 1,210 · Enhance 96 · Conductor 3,410 · Auto 864
+            [Refresh]
 ```
 - Shows who's signed in, "Managed by {org}" for an organization, and the credits hosted features use (CreditMeter, KeyValue), with "Refresh". No plan, status, trial or billing (D-869, D-2904). A build without accounts says "Everything on this computer is free and runs without an account. Hosted features, like Conductor and cloud Dictate, come with Vibezeo accounts."
-- "Manage billing" and "Buy credits" open the web portal in the system browser (UI-124). "Refresh plan" link: "Already changed your plan? Refresh".
 - Offline-mode users see "Using Tandem offline · {n} days left before sign-in is needed" with "Sign in".
 
 #### UI-115 · Updates · TL
@@ -2018,7 +2025,7 @@ Error          ▲  Your microphone isn't delivering audio     [Settings]
 │ 63,410 words · 5h 48m · 2,190 takes · 164 wpm      [History & stats…]  │
 └─────────────────────────────────────────────────────────────────────────┘
 ENGINE
-  Transcribe with      [ Local | Cloud ◈ PRO ]
+  Transcribe with      [ Local | Cloud ]
   Model                Parakeet v3 · 670 MB · Active        [Manage models…]
   Language             [ Auto-detect ▾ ]
 MICROPHONE
@@ -2036,7 +2043,7 @@ INSERTION
 WIDGET
   Show widget          [ While recording ▾ ]  Style [ Logo and text ▾ ]
   Follow cursor across displays [●━]     Lock position [━○]
-ENHANCE ◈ PRO
+ENHANCE
   Show Enhance and Polish after each take                        [●━]
   Enhance every take automatically                               [━○]
   Formatting instructions  [ e.g. "Use lowercase in Slack." ] 0/2,000  [Per app…]
@@ -2134,7 +2141,7 @@ Conductor operates Tandem by voice through a closed tool catalog that mirrors th
   - **Confirm on screen** (click or keyboard only; voice can't approve): shell commands, forced worktree removal, plugin spend or destructive approvals, enabling Full access. The row shows "Confirm on screen".
   - Voice or screen: closing panes, executing tasks, creating a teammate, other plugin writes.
   - If the target changes first, the row expires: "Expired — {pane} changed."
-- **Errors:** "Couldn't connect to Conductor. [Try again]" · "You're offline. Conductor needs a connection." · "Your microphone isn't delivering audio. [Switch mic]" · "This call reached its 30-minute limit. [Start a new call]" · "Out of credits. [Buy credits]" (UI-122) · "Sign in to use Conductor. [Sign in]". Startup errors always show; nothing pops up after hang-up.
+- **Errors:** "Couldn't connect to Conductor. [Try again]" · "You're offline. Conductor needs a connection." · "Your microphone isn't delivering audio. [Switch mic]" · "This call reached its 30-minute limit. [Start a new call]" · "Out of credits." (UI-122; nothing to buy, no action, D-2914) · "Sign in to use Conductor. [Sign in]". Startup errors always show; nothing pops up after hang-up.
 - **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search.
 - **Ending:** hang-up, sign-out, an unrecoverable mic, the 30-minute cap or 0 credits. Audio stops at once, pending deliveries are cancelled and queued actions never run. A 3s receipt replaces the HUD: "Call ended · 4:12 · 520 credits · 6 actions [Call log]".
 - **Acceptance:** a voice "yes" never confirms a shell command; hang-up during a pending prompt delivers nothing; a waiting pane never receives Conductor input; after 5 actions the HUD shows 3 chips and "+2"; a hidden window stops the ring's animation loop.
@@ -2214,8 +2221,8 @@ Banners sit under the title bar (full width, 32px, dismissable per session excep
 
 | Condition | Tone | Copy | Action |
 |---|---|---|---|
-| Offline, token valid | info | "You're offline. Local features keep working; your plan stays confirmed until {time}." ({time} = token expiry + 24h grace; network errors alone never downgrade.) | — |
-| Offline, grace over (24h past the token's expiry) | warning, not dismissable | "We couldn't confirm your plan, so Free limits apply until Tandem reconnects. Nothing running was stopped." | "Retry" |
+| Offline, token valid | info | "You're offline. Local features keep working; your account stays confirmed until {time}." ({time} = token expiry + 24h grace; network errors alone never downgrade.) | — |
+| Offline, grace over (24h past the token's expiry) | warning, not dismissable | "We couldn't confirm your account, so hosted features are off until Vibezeo reconnects. Everything on this computer keeps working." | "Retry" |
 | Offline-mode user, day 11–14 | warning | "Sign in within {n} days to keep using Tandem." | "Sign in" |
 | Server unreachable, online | warning | "Can't reach Tandem's servers. Hosted features are paused." | "Status page ↗" |
 | Back online | success toast | "Back online" | — |
@@ -2646,7 +2653,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-111 | Settings › Remote | §4.11 | RM |
 | UI-112 | Settings › Privacy & Telemetry | §4.11 | TL |
 | UI-113 | Settings › Shortcuts | §4.11 | SH |
-| UI-114 | Settings › Account & Plan | §4.11 | BE, BL |
+| UI-114 | Settings › Account | §4.11 | BE |
 | UI-115 | Settings › Updates | §4.11 | TL |
 | UI-116 | Settings › Advanced & Diagnostics | §4.11 | TL |
 | UI-120 | Upgrade sheet (removed, D-869) | §4.14 | BL |
@@ -2676,6 +2683,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-160 | Instructions | §4.2 | EN |
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |
+| UI-163 | ACP agents | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.
@@ -2683,7 +2691,7 @@ All items below were fixed at the source during the consistency pass (see CONSIS
 2. **Branch prefix.** Resolved: every example uses `tandem/{slug}` (DECISIONS/CLAUDE.md).
 3. **Shortcuts.** Resolved: §5 is the canonical map and F-SH-09 matches it (rail, maximize, Arrange, launch sheet, new shortcuts, Win/Linux intercept list, approval keys; `Alt+Space` is not bound on Windows/Linux).
 4. **Settings pages.** Resolved: F-SH-04 now names UI-100 as the binding nav and carries the mapping; F-SH-08 points "Run setup again" at General.
-5. **Title-bar credits** open Settings › Account & Plan (UI-114); there is no "Billing" page.
+5. **Title-bar credits** (a hosted build, signed in) open Settings › Account (UI-114); there is no "Billing" page.
 6. **Onboarding model size.** Resolved: UI-04 shows the manifest size (670 MB, F-DI-04 and ARCHITECTURE §12.4 `approx_mb`).
 7. **Light accent contrast.** Resolved: §1.2 now uses teal-700 (#0f766e) as the light-theme accent, `#7d8ba0` for dark `text-subtle`, and adds `status-*-text` tokens (§7.3). DECISIONS "Visual identity" records the light accent.
 8. **Sidebar and rail sizes.** Resolved to PRODUCT_SPEC: sidebar 470px (320–900, or full-window), rail 180–360px (§1.2 layout constants, §3.3, §3.5).

@@ -31,7 +31,7 @@ async fn context(
     let ws = workspaces::get(&state.store, workspace_id).await?;
     let root = svc::root_of(&ws)?;
     let engines = &state.terminals.engines;
-    let inputs = svc::installed(engines.registry().all(), |id| {
+    let inputs = svc::installed(engines.base_registry().all(), |id| {
         engines.installed(id).is_some()
     });
     Ok((root, inputs))

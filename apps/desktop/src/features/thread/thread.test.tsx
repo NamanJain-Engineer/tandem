@@ -58,6 +58,7 @@ const CLAUDE: EngineView = {
   chatCapable: true,
   unsupportedReason: null,
   extraArgs: [],
+  added: false,
 };
 
 function detail(th: Thread, extra: Partial<ThreadDetail> = {}): ThreadDetail {

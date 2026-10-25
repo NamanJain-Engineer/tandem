@@ -13,11 +13,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::services::terminal::TerminalService;
 use tandem_core::ids::{TabId, WorkspaceId};
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_git::{ForceConfirm, Git, GitError, LaneManager, MergeReport, Repo, StaleLane};
 use tandem_pty::env::{resolve_on_path, LoginEnv};
-use tandem_pty::PtyManager;
 use tandem_store::repo::lane_repos;
 use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::tabs;
@@ -43,6 +43,44 @@ static REMOTE: std::sync::OnceLock<std::sync::Weak<crate::services::remote::Remo
 
 pub fn set_remote(remote: &std::sync::Arc<crate::services::remote::RemoteService>) {
     let _ = REMOTE.set(std::sync::Arc::downgrade(remote));
+}
+
+/// The trackers whose claims a merged or removed lane releases (F-TK-05):
+/// the app's one, set at startup (tests make their own, so every live one
+/// is told).
+static TASKS: std::sync::Mutex<Vec<std::sync::Weak<crate::services::tasks::TasksService>>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub fn set_tasks(tasks: &std::sync::Arc<crate::services::tasks::TasksService>) {
+    if let Ok(mut all) = TASKS.lock() {
+        all.retain(|w| w.strong_count() > 0);
+        all.push(std::sync::Arc::downgrade(tasks));
+    }
+}
+
+/// A lane's worktree was merged (here or by the merge queue) or removed:
+/// its claims go (F-TK-05 AC3). `folder` is the worktree's path resolved
+/// with `contain::canonical`, as its sessions claimed in.
+pub(crate) fn release_claims(folder: &Path) {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.release_folder(folder);
+    }
+}
+
+/// Worktrees deleted outside the app: their claims go, in every tracker
+/// (F-TK-05). Blocking file IO.
+fn prune_gone_claims() {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.prune_gone();
+    }
 }
 
 type Remote = (
@@ -456,6 +494,12 @@ pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeRe
     let branch = lane.lane_branch.unwrap_or_default();
     match LaneManager::merge_into_base(git, &repo, &branch).await {
         Ok(report) => {
+            if report.merged {
+                release_claims(
+                    &tandem_core::contain::canonical(Path::new(&lane.root))
+                        .unwrap_or_else(|_| lane.root.clone().into()),
+                );
+            }
             tracing::info!(
                 code = "lane.merged",
                 merged = report.merged,
@@ -595,10 +639,14 @@ pub async fn create_pr_pane(
 }
 
 /// Stops every open pane in a workspace's tabs.
-pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Result<(), IpcError> {
+pub async fn stop_panes(
+    store: &Store,
+    terms: &TerminalService,
+    ws: &WorkspaceId,
+) -> Result<(), IpcError> {
     for tab in tabs::list(store, ws).await? {
         for pane in panes::list_open(store, &tab.id).await? {
-            let _ = pty.kill(pane.id.as_str());
+            let _ = terms.end_pane(pane.id.as_str()).await;
             panes::close(store, &pane.id).await?;
         }
     }
@@ -611,12 +659,12 @@ pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Re
 /// changes go. Either way the branch and its commits stay.
 pub async fn remove(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
 ) -> Result<(), IpcError> {
-    remove_with_teardown(store, pty, git, id, force, None)
+    remove_with_teardown(store, terms, git, id, force, None)
         .await
         .map(|_| ())
 }
@@ -626,7 +674,7 @@ pub async fn remove(
 /// result never blocks the removal.
 pub async fn remove_with_teardown(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
@@ -654,7 +702,7 @@ pub async fn remove_with_teardown(
                 );
             }
         }
-        stop_panes(store, pty, &lane.id).await?;
+        stop_panes(store, terms, &lane.id).await?;
         remote
             .call::<serde_json::Value>(
                 &host,
@@ -676,7 +724,7 @@ pub async fn remove_with_teardown(
     }
     let repos = lane_repos::list(store, &lane.id).await?;
     if !repos.is_empty() {
-        return remove_multi(store, pty, git, &lane, &repos, force).await;
+        return remove_multi(store, terms, git, &lane, &repos, force).await;
     }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
@@ -688,7 +736,7 @@ pub async fn remove_with_teardown(
             }
         }
     }
-    stop_panes(store, pty, &lane.id).await?;
+    stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop before the folder goes (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
@@ -709,7 +757,10 @@ pub async fn remove_with_teardown(
         .await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
+    let claimed_in =
+        tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
     LaneManager::remove(git, &repo, lane_path, force).await?;
+    release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
@@ -722,7 +773,7 @@ pub async fn remove_with_teardown(
 /// agent left in the parent folder outside them, refuse it first.
 async fn remove_multi(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     lane: &Workspace,
     repos: &[lane_repos::LaneRepo],
@@ -756,7 +807,7 @@ async fn remove_multi(
             return Err(dirty());
         }
     }
-    stop_panes(store, pty, &lane.id).await?;
+    stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop before the folder goes (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
@@ -810,13 +861,17 @@ async fn swept(store: &Store) -> Result<Vec<Workspace>, IpcError> {
         .collect())
 }
 
-/// `lanes_sweep`: `git worktree prune` in each repository with worktrees,
-/// then the merged ones idle for over 7 days. Never deletes a worktree.
+/// `lanes_sweep`: the claims of worktrees that are gone (F-TK-05), then
+/// `git worktree prune` in each repository with worktrees, then the merged
+/// ones idle for over 7 days. Never deletes a worktree.
 pub async fn sweep(
     store: &Store,
     git: &Git,
     now: DateTime<Utc>,
 ) -> Result<Vec<StaleLanes>, IpcError> {
+    if let Err(e) = tokio::task::spawn_blocking(prune_gone_claims).await {
+        tracing::warn!(error = %e, "the claims sweep stopped");
+    }
     let mut out = Vec::new();
     for ws in swept(store).await? {
         let Ok(Some(repo)) = Repo::discover(Path::new(&ws.root)) else {
@@ -941,6 +996,7 @@ mod tests {
     use super::*;
     use std::process::Command;
     use tandem_core::origin::{LocalReview, Origin};
+    use tandem_pty::PtyManager;
 
     /// Plain git for fixtures, with no global or system config.
     fn git_cmd(cwd: &Path, args: &[&str]) -> String {
@@ -1078,7 +1134,8 @@ mod tests {
             .await
             .expect("lane");
         std::fs::write(Path::new(&lane.root).join("wip.txt"), "draft\n").expect("dirty");
-        let err = remove(&fx.store, &PtyManager::new(), &fx.git, &lane.id, None)
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        let err = remove(&fx.store, &terms, &fx.git, &lane.id, None)
             .await
             .expect_err("dirty");
         assert_eq!(err.code, ErrorCode::Conflict);
@@ -1091,7 +1148,7 @@ mod tests {
         let local = LocalReview::check(&Origin::main_window()).expect("main window");
         remove(
             &fx.store,
-            &PtyManager::new(),
+            &terms,
             &fx.git,
             &lane.id,
             Some(ForceConfirm::new(local)),
@@ -1105,6 +1162,82 @@ mod tests {
             .is_empty());
         let branches = git_cmd(Path::new(&fx.repo.root), &["branch", "--list", "tandem/*"]);
         assert!(branches.contains("tandem/fix-auth"), "the branch stays");
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_merging_or_removing_a_lane_releases_its_claims() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let merged = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let removed = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for (pane, lane) in [("p1", &merged), ("p2", &removed)] {
+            tasks
+                .begin_session(
+                    &format!("pn:{pane}"),
+                    "Claude Code",
+                    "me",
+                    Some(Path::new(&lane.root)),
+                )
+                .expect("session");
+            let file = Path::new(&lane.root).join("app.txt");
+            tasks.claim_edits(pane, &[file.to_string_lossy().into_owned()]);
+        }
+        assert_eq!(tracker.claim_overlaps().expect("overlaps").len(), 1);
+        std::fs::write(Path::new(&merged.root).join("app.txt"), "oauth\n").expect("write");
+        git_cmd(Path::new(&merged.root), &["commit", "-qam", "oauth"]);
+        assert!(
+            merge(&fx.store, &fx.git, &merged.id)
+                .await
+                .expect("merge")
+                .merged
+        );
+        let claims = tracker.claims().expect("claims");
+        assert_eq!(claims.len(), 1, "the merged lane's claim went");
+        assert_eq!(claims[0].agent, "fix-auth");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        remove(&fx.store, &terms, &fx.git, &removed.id, None)
+            .await
+            .expect("remove");
+        assert!(tracker.claims().expect("claims").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_the_sweep_drops_the_claims_of_worktrees_deleted_outside_the_app() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let kept = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let deleted = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for lane in [&kept, &deleted] {
+            let scope = crate::services::tasks::claim_scope(Path::new(&lane.root)).expect("scope");
+            tracker
+                .claim_inferred(&scope, &["app.txt".into()])
+                .expect("claim");
+        }
+        std::fs::remove_dir_all(&deleted.root).expect("rm");
+        sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
+        let left: Vec<String> = tracker
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.agent)
+            .collect();
+        assert_eq!(left, ["add-oauth"]);
     }
 
     #[tokio::test]
@@ -1263,6 +1396,7 @@ mod tests {
     #[tokio::test]
     async fn f_cd_22_3_5_the_diff_names_each_repository_and_discard_keeps_the_branches() {
         let (_d, store, git, ws, root) = multi_fixture().await;
+        let terms = TerminalService::new(PtyManager::new(), store.clone());
         let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
         let parent = PathBuf::from(&lane.root);
         std::fs::write(parent.join("web/src/app.ts"), "// web\nchanged\n").expect("write");
@@ -1272,13 +1406,13 @@ mod tests {
         paths.sort_unstable();
         assert_eq!(paths, ["api/new.ts", "web/src/app.ts"]);
         // Dirty: refused; then forced.
-        let e = remove(&store, &PtyManager::new(), &git, &lane.id, None)
+        let e = remove(&store, &terms, &git, &lane.id, None)
             .await
             .expect_err("dirty");
         assert_eq!(e.code, ErrorCode::Conflict);
         let force =
             ForceConfirm::new(LocalReview::check(&Origin::main_window()).expect("main window"));
-        remove(&store, &PtyManager::new(), &git, &lane.id, Some(force))
+        remove(&store, &terms, &git, &lane.id, Some(force))
             .await
             .expect("forced");
         assert!(!parent.exists());
@@ -1351,11 +1485,12 @@ mod tests {
     #[tokio::test]
     async fn f_cd_22_review_discard_survives_a_missing_repository_folder_and_forgets_its_rows() {
         let (_d, store, git, ws, _root) = multi_fixture().await;
+        let terms = TerminalService::new(PtyManager::new(), store.clone());
         let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
         let parent = PathBuf::from(&lane.root);
         // Someone deleted web's worktree by hand.
         std::fs::remove_dir_all(parent.join("web")).expect("rm");
-        remove(&store, &PtyManager::new(), &git, &lane.id, None)
+        remove(&store, &terms, &git, &lane.id, None)
             .await
             .expect("discard without force");
         assert!(!parent.exists());
@@ -1374,7 +1509,7 @@ mod tests {
         );
         // A stray file in the parent folder: Conflict, so Discard can force.
         std::fs::write(PathBuf::from(&again.root).join("notes.txt"), "x").expect("write");
-        let e = remove(&store, &PtyManager::new(), &git, &again.id, None)
+        let e = remove(&store, &terms, &git, &again.id, None)
             .await
             .expect_err("stray file");
         assert_eq!(e.code, ErrorCode::Conflict);

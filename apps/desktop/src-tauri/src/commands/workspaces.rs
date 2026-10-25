@@ -93,7 +93,7 @@ pub async fn workspace_add(
             // The + menu lists the distro's engines: detect them now, as
             // connecting does for an SSH host.
             let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
-            let engines = state.terminals.engines.registry().all().to_vec();
+            let engines = state.terminals.engines.base_registry().all().to_vec();
             tauri::async_runtime::spawn(async move {
                 match wsl.detect_report(&host.id, &distro, &engines).await {
                     Ok(report) => {
@@ -141,7 +141,16 @@ pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Re
         .await
         .ok()
         .map(|ws| crate::services::files::local_root(&ws));
-    workspaces::remove(&state.store, &state.terminals.pty, &id).await?;
+    let removed = workspaces::remove(&state.store, &state.terminals, &id).await?;
+    // Its agents' sessions end and its claims go (F-TK-05): file IO.
+    let (terminals, tasks) = (state.terminals.clone(), state.tasks.clone());
+    let ended = tauri::async_runtime::spawn_blocking(move || {
+        workspaces::end_removed(&terminals, &tasks, &removed);
+    })
+    .await;
+    if let Err(e) = ended {
+        tracing::warn!(error = %e, "a removed workspace's sessions didn't all end");
+    }
     // F-CD-23: its language servers stop with it.
     if let Some(root) = root {
         crate::services::lsp::global().forget(&root).await;
@@ -257,7 +266,7 @@ pub async fn tab_rename(
 #[tauri::command]
 pub async fn tab_close(state: State<'_, AppState>, id: TabId) -> Result<(), IpcError> {
     for pane in tandem_store::repo::panes::list_open(&state.store, &id).await? {
-        let _ = state.terminals.pty.kill(pane.id.as_str());
+        let _ = state.terminals.end_pane(pane.id.as_str()).await;
         tandem_store::repo::panes::close(&state.store, &pane.id).await?;
     }
     Ok(tabs::close(&state.store, &id).await?)

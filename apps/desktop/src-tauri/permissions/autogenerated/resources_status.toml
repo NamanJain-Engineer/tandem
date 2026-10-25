@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-resources-status"
+description = "Enables the resources_status command without any pre-configured scope."
+commands.allow = ["resources_status"]
+
+[[permission]]
+identifier = "deny-resources-status"
+description = "Denies the resources_status command without any pre-configured scope."
+commands.deny = ["resources_status"]
