@@ -3033,6 +3033,7 @@ Built on branch `app-ui` from `product-m0-m5`, after the owner's 20 October requ
     - `brand.css`'s dark ring is white-alpha;
     - the favicon and the blog's og.png are ink;
     - the demo test covers its seeded teammates.
+  - **The site's engine tiles** (must-fix 5, after site-motion's merge): `Engines.tsx` and `EngineOrbit.tsx` pass the registry id (`engineMark`), so the home page draws the same tinted tiles as the app; `home.test.tsx` checks each engine's tile carries its tint. The scenes' own `sc-glyph` monograms are site-motion's and unchanged.
   - **Not changed:** the status bar still reads ports on its own 15 s timer (the Ports tab polls every 2 s only while open); merging them is a later change.
 - Slice 3: vitest cases for the status bar (3), the rail's quiet slot (1), the pane header (3), default pane names and tab labels (2), Agent mode's first run (2), test results (7) and turn summaries (2); unit tests updated where names changed ("Shell · shop", "Needs you", "2 working"). E2E specs updated in the same change: E2E-M4-3 (the rail slot reads "1 working" then "Needs you") and E2E-M3-5 (the pane title is "Claude Code · <folder>").
 - Slice 2: 5 vitest cases (`EngineGlyph.test.tsx`: `fg` on all 26 tiles at AA from `brand.css`'s OKLCH values, chroma ≤ 0.05 and hues ≥ 15° apart, the neutral fallback, opacity and the accessible name).

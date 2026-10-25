@@ -1,7 +1,7 @@
 import { EngineGlyph } from "@tandem/ui/components/EngineGlyph";
 import type { CSSProperties } from "react";
 import { ENGINES } from "../../lib/site";
-import { engineLetters } from "./home/Engines";
+import { engineLetters, engineMark } from "./home/Engines";
 
 /** The engines Vibezeo runs, as their monograms on a slow orbit round the
  * hero's rings (D-1842): every vendor's agent, around one workspace. It's
@@ -28,7 +28,7 @@ export function EngineOrbit({ top, radius }: { top: number; radius: number }) {
             }
           >
             <span className="orbit-upright -ml-[1.375rem] -mt-[1.375rem] flex size-11 items-center justify-center rounded-full bg-(--site-glass) shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
-              <EngineGlyph letters={engineLetters(e)} size={32} />
+              <EngineGlyph letters={engineLetters(e)} engine={engineMark(e).id} size={32} />
             </span>
           </span>
         ))}
