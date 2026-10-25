@@ -2020,6 +2020,12 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **Result:** 7,986 px at 1440. A Playwright test holds it at or under 8,000.
   - **The demo still** is retaken from the 0.10.0 demo at 2×. It differs from the 0.7.2 still only in its version label: the coach card is what 0.10.0's demo still shows, and it changes when app-ui's first-run work reaches the demo.
 
+- D-1886: polish after the home cut went live (#100), from the design lead's note and the code review's "later" list.
+  - **Engine names on one line:** from 1280 px the grid is seven to a row, and each cell's name is set at 13 px with a tighter gap and padding. That fits every name ("Antigravity CLI" is the longest) on one line; `truncate` and the name as `title` cover a font that runs wider. Six columns would add a row and break the 8,000 px budget. Below 1280 the grid is three to a row, and names wrap as before.
+  - **The Land scene at full width on /changelog/0.9.0/:** it sits between the summary and the notes and spans the container, as on the home page, so the app's text is about 14 px instead of 6–7 px in the notes' column. On that page the version links in the side column stay at the top instead of following the reader.
+  - **Its caption** says "Scene from Vibezeo 0.10.0, simplified. New in 0.9.0." (`Scene`'s `since`), so the later build drawn on 0.9.0's page reads as intended.
+  - **Left:** the scenes' styles still load on every version page. The App Router bundles a route's CSS once for all of `[version]`'s pages, and splitting 0.9.0 into its own route isn't worth the routing risk for a stylesheet this small.
+
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2081,6 +2087,10 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Nits taken: the length test waits for the fonts; the allowlist test is exact; the text that called the scene player home-only (site.test, strip-runtime, embed.js, OPERATING §6); media.ts's comment; /about/'s heading takes `SITE.product`; Current state. Left for later: engine names on one line at 1440 (the design lead's polish note), the scene's width in the version page's column, and the scenes' styles loading on every version page.
   - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 53/53.
   - The gate: passed (TypeScript 1,608 tests: web 137, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
+- Merged `product-m0-m5` (59d2f620, after #100 and #101; a fast-forward). The polish slice (D-1886). Tests first: site-quality.spec (every engine name on one line at 1440 and 1280), scenes.spec (the Land scene at more than 90 % of the container on 0.9.0's page), scenes.test (the "New in 0.9.0" caption there, and none on home).
+  - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 54/54, design-shots on eight pages (64 captures, all ok).
+  - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.89–1.90 s; the rest 0.99–1.00 / 1.36–1.81 s; blocking time 0 ms, CLS at most 0.001.
+  - The gate: passed (TypeScript 1,652 tests: web 137, ui 419, desktop 794, api 234, remote 33, mobile 21, protocol 14; Rust 2,344; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
