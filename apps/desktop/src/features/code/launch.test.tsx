@@ -222,6 +222,13 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     expect(screen.getByText("Worktrees aren't available in WSL folders yet")).toBeTruthy();
   });
 
+  it("F-CD-22.1 a multi-repo folder can give each agent its own worktree, on any plan (D-869)", async () => {
+    open({ ...ws("shop", null), repos: ["api", "web"] });
+    await preset("Fleet");
+    const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
+    expect(box.getAttribute("data-disabled")).toBeNull();
+  });
+
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {
     open(ws("notes", null));
     await preset("Fleet");

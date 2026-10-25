@@ -908,6 +908,25 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 1. [manual] Booting "iPhone 16" in the pane shows the home screen within 30 s, and clicks register.
 2. On a Mac without simulators, Simulator is absent from the picker.
 
+#### F-CD-22 Multi-repo workspaces (P2)
+**Story:** My product is an `api` and a `web` repository side by side in one folder. I want one agent to work across both in one worktree, review both diffs, and open both pull requests, linked to each other.
+
+**Behavior:**
+- **A multi-repo workspace** is a local folder that isn't itself in a git repository and whose direct subfolders include at least two git repositories (`<folder>/<name>/.git`; hidden folders don't count). Vibezeo finds them when it lists the folder; up to 12, by name. The rail row shows "{n} repositories" where a repository shows its branch. Nested deeper repositories, submodules and the folder's other subfolders don't count.
+- **Worktrees.** New worktree…, and the launch sheet's Worktrees option, work in a multi-repo workspace: one worktree makes a parent folder `<folder>/.tandem/worktrees/<slug>/` and, inside it, a git worktree of each repository at `<slug>/<name>` on the same branch `tandem/<slug>`, each from its repository's current commit. The slug is free in every repository (F-CD-14's numbering, across all of them). The agent starts in the parent folder, so it sees every repository. If any repository's worktree fails (one without commits, say), the ones already made are removed and the error says which repository failed.
+- **Plan.** Free for everyone, with no plan check (D-869).
+- **Diff.** Open diff lists each repository with its share of the changes ("api · 3 files", "web · No changes"), then the files grouped by repository, each path starting with the repository's name, with F-WT-02's line comments. Paths in comments and the review prompt start with the repository's name (`api/src/a.ts`).
+- **Create pull requests.** For a multi-repo worktree, "Create pull requests" asks first (the native confirm: "Push tandem/<slug> and open a pull request in api and web?"), then for each repository with commits on the branch, through the user's own `git` and `gh` in that repository's worktree: `git push -u origin tandem/<slug>`, then `gh pr create --fill --head tandem/<slug>`. Once all are open, each pull request's body gains a "Related pull requests" list linking the others (`gh pr edit --body-file`). A dialog shows each repository's step and the pull request links; a failure in one repository is shown and doesn't stop the others. Repositories without new commits are skipped and listed. GitLab remotes aren't handled in this slice: they're listed as skipped.
+- **Discard** removes every repository's worktree (each as F-CD-15's Discard, with the same confirm), then the parent folder. The branches are kept.
+- **Not for multi-repo worktrees yet** (their menu entries are disabled with "Not available for multi-repo worktrees yet"): Merge into…, Land worktrees, Check overlap, Check pull request, previews, worktree setup and its ports and environment, second opinion, and the intent radar. Local folders only: on SSH hosts and in WSL a folder is never multi-repo.
+
+**Acceptance:**
+1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". On Pro, launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
+2. On Free, the Worktrees option is disabled with the Pro reason, and `lane_create` for the folder is refused with ForbiddenPlan.
+3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
+4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
+5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
+
 ### 4.3 TH: Thread mode
 
 #### F-TH-01 Thread model and rail (P0)

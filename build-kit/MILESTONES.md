@@ -2051,6 +2051,32 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: multi-repo workspaces (M)
+
+**Goal.** Let one agent work across several repositories that live side by side, with one worktree per repository on one branch, a diff per repository and linked pull requests (F-CD-22). From `docs/NEXT_FEATURES.md` (§1 #18). Built on branch `competitive-gaps`; decisions D-2531–D-2539.
+
+**Owns:** F-CD-22 (P2)
+**Prerequisites.** F-CD-14/15 (worktrees), F-WT-02 (the review bar), F-WT-08's `gh` runner, the entitlement `Limits` (§3.2).
+
+**Ordered tasks**
+1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0004 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
+2. **Diff.** `lane_diff` across the repositories with prefixed paths; sections in the diff dialog.
+3. **Pull requests.** `lane_create_prs` / `lane_prs_get` behind the native confirm; UI-158.
+
+**Verification**
+```bash
+cargo test -p tandem-store f_cd_22 && cargo test -p tandem-desktop --lib f_cd_22
+pnpm --filter desktop exec vitest run -t "F-CD-22"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd22*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories (free for everyone, D-869). Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
@@ -2208,7 +2234,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (65 P0, 67 P1, 52 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 18 so far (F-AC-08, F-AC-09, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EX-06, F-RT-06, F-TH-17, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **185 features** (65 P0, 67 P1, 53 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 19 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EX-06, F-RT-06, F-TH-17, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2230,7 +2256,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (6
 | F-EN-09 | P2 | M18 | F-WT-05 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 |
 | F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
-| F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | | | | | | |
+| F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2257,7 +2283,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 18 = 184 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 19 = 185 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
