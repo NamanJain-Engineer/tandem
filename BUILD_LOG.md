@@ -2375,6 +2375,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - The four new Rust tests failed with the old rule and save points put back, and pass now.
     - `plan.test.tsx` (2): loading, a failed read with its reason, and Retry; the chip from working to waiting to done.
   - **Docs.** PRODUCT_SPEC F-TK-07 (refused edits, loading and errors, the chip, Create tasks after a quit); ARCHITECTURE §9.5 and §9.6; tasks.mdx.
+  - **Gate:** passed on 22d7c7c4:
+    - 2,357 Rust tests (6 ignored) and 1,631 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 189, and protocol drift with 579 types (this line adds none).
+    - E2E: m18-db04 6 of 6, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-wt07 2 of 2.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
