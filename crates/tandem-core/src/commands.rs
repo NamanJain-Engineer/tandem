@@ -306,10 +306,9 @@ static REGISTRY: &[CommandSpec] = &[
         pc_terminal: Some("Ctrl+Shift+End"),
         ..same("terminal.jump_bottom", C::Terminal, None, E::PaneFocused)
     },
-    same("billing.plans", C::App, None, E::Always),
-    // F-CN-01, F-CN-04: Conductor (UI_SPEC §5). On the Free plan the call
-    // command opens the plans instead; mute and the call log are absent,
-    // as there's no call to mute or log (D-833).
+    // F-CN-01, F-CN-04: Conductor (UI_SPEC §5). With no account the call
+    // command says Conductor comes with Vibezeo accounts (D-2903); mute and
+    // the call log are absent, as there's no call to mute or log (D-833).
     same("conductor.call", C::App, Some("Mod+Shift+Space"), E::Always),
     same("conductor.mute", C::App, Some("Mod+Shift+M"), E::Conductor),
     same("conductor.log", C::App, Some("Mod+Shift+."), E::Conductor),

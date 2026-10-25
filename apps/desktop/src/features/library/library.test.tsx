@@ -93,9 +93,10 @@ function open(handlers: Record<string, (a?: Record<string, unknown>) => unknown>
   );
 }
 
-const pro = () =>
+/** Limits that turn session search off (none do with no account, D-2900). */
+const searchOff = () =>
   useSession.setState({
-    entitlement: { ...FREE_VIEW, plan: "pro", limits: { ...FREE_VIEW.limits, sessionSearch: true } },
+    entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, sessionSearch: false } },
   });
 
 describe("UI-162 session library (F-TH-17)", () => {
@@ -179,15 +180,11 @@ describe("UI-162 session library (F-TH-17)", () => {
     });
   });
 
-  it("F-TH-17.4 on Free search says Pro; on Pro with search on a word finds its session", async () => {
+  it("F-TH-17.4 with no account and search on, a word finds its session offline (D-2900)", async () => {
     open({ library_search: () => ["/c"] });
     await screen.findAllByTestId("library-row");
-    expect(screen.getByText("Searching what sessions say is in Vibezeo Pro.")).toBeTruthy();
-    expect(screen.queryByTestId("library-search")).toBeNull();
-    act(() => {
-      pro();
-      useSettings.setState({ values: { session_search: true }, loaded: true });
-    });
+    expect(screen.queryByTestId("library-search-unavailable")).toBeNull();
+    act(() => useSettings.setState({ values: { session_search: true }, loaded: true }));
     fireEvent.change(screen.getByTestId("library-filter"), { target: { value: "notes" } });
     await act(async () => fireEvent.click(screen.getByTestId("library-search")));
     await waitFor(() => expect(screen.getAllByTestId("library-row")).toHaveLength(1));
@@ -195,8 +192,19 @@ describe("UI-162 session library (F-TH-17)", () => {
     expect(calls.find((c) => c.cmd === "library_search")?.args).toEqual({ query: "notes" });
   });
 
-  it("F-TH-17.4 the Privacy switch needs Pro to turn on, and turning it off goes through the core", async () => {
+  it("F-TH-17.4 limits that turn search off say so and offer no plan", async () => {
+    open({ library_search: () => ["/c"] });
+    await screen.findAllByTestId("library-row");
+    act(() => searchOff());
+    expect(screen.getByTestId("library-search-unavailable").textContent).toBe(
+      "Searching what sessions say is turned off for this account.",
+    );
+    expect(screen.queryByTestId("library-search")).toBeNull();
+  });
+
+  it("F-TH-17.4 the Privacy switch turns on with no account, can't when limits turn it off, and off goes through the core", async () => {
     calls = fakeBackend({ library_search_set: () => null });
+    act(() => searchOff());
     const { rerender } = render(
       <UiProvider>
         <SessionSearchControl ids={{ id: "s" }} label="Search session text" />
@@ -205,7 +213,7 @@ describe("UI-162 session library (F-TH-17)", () => {
     const sw = screen.getByRole("switch", { name: "Search session text" });
     expect((sw as HTMLButtonElement).disabled).toBe(true);
     act(() => {
-      pro();
+      useSession.setState({ entitlement: FREE_VIEW });
       useSettings.setState({ values: { session_search: true }, loaded: true });
     });
     rerender(

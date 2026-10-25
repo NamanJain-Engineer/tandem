@@ -1,7 +1,8 @@
 //! The session library (F-TH-17, UI-162): every Claude Code and Codex
 //! session on this computer, from each account's provider home and each
-//! engine's own home; Resume and Continue with another engine; and, on Pro
-//! and opt-in, a local full-text index at `$DATA/session-index.db`.
+//! engine's own home; Resume and Continue with another engine; and, opt-in
+//! (no account needed, D-2900), a local full-text index at
+//! `$DATA/session-index.db`.
 //!
 //! Session text is read only through `tandem_engines::library` and is never
 //! logged; the index stays on this computer (D-2413).
@@ -363,11 +364,12 @@ async fn search_on(state: &AppState) -> bool {
 fn forbidden() -> IpcError {
     IpcError::new(
         ErrorCode::ForbiddenPlan,
-        "Searching session text needs Vibezeo Pro.",
+        "Searching session text is turned off for this account.",
     )
 }
 
-/// `library_search_set`: on needs Pro; off deletes the index.
+/// `library_search_set`: on needs `session_search` in the limits; off
+/// deletes the index.
 pub async fn set_search(state: &AppState, on: bool) -> Result<(), IpcError> {
     if on && !state.entitlements.limits().session_search {
         return Err(forbidden());

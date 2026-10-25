@@ -7,6 +7,30 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.10.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free, with no paid plans, and from this release everything that
+runs on your computer is free and unlimited, with no account. Features that need Vibezeo's servers (cloud dictation, Enhance and
+Polish, dictionary sync, Conductor, Auto, Create with AI and the phone relay)
+come with Vibezeo accounts.
+
+### Changed
+
+- [all] **No limits on your computer.** As many live panes, workspaces,
+  teammates, plugin connections and accounts per engine as you need, six
+  threads side by side, and every chat engine in Thread mode: Cursor Agent,
+  Grok and OpenCode threads run with no account.
+- [all] **Routines, task runs and the Night Shift are free.** They run with
+  no account and no sign-in, in the app or in the background.
+- [all] **Session search is free.** Turn on Search session text in Settings ›
+  Privacy to search what your Claude Code and Codex sessions say.
+- [all] **No plans to choose.** The plans dialog, See plans, Upgrade buttons,
+  Pro badges, limit cards and the rail's plan footer are gone. The welcome
+  screen says "Free · no account · nothing sent to Vibezeo". Features that
+  need Vibezeo's servers say "Comes with Vibezeo accounts", with "Tell me when
+  accounts open" where it helps.
+
 ## 0.9.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

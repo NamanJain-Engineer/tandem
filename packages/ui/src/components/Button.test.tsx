@@ -35,11 +35,11 @@ describe("Button (UI_SPEC §2.1)", () => {
 
   it("explains why it is disabled", () => {
     render(
-      <Button disabled disabledReason="Included with Pro">
+      <Button disabled disabledReason="Comes with Vibezeo accounts">
         Connect
       </Button>,
     );
-    expect(screen.getByRole("button").getAttribute("title")).toBe("Included with Pro");
+    expect(screen.getByRole("button").getAttribute("title")).toBe("Comes with Vibezeo accounts");
   });
 
   it("has no axe violations", async () => {

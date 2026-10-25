@@ -5,8 +5,6 @@ import {
   freshUser,
   invoke,
   paneIds,
-  planFooter,
-  setPlan,
   waitForApp,
 } from "../support/app";
 
@@ -82,9 +80,7 @@ describe("E2E-M5-6 sidebar", () => {
 
   it("F-SH-10.1 toggling the sidebar with 16 panes reflows each pane at most once", async function () {
     this.timeout(150_000);
-    const { email } = await freshUser("m5-6");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m5-6");
     await addFolder(`/tmp/tandem-e2e-m5-6-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");

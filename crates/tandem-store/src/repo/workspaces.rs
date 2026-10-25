@@ -134,7 +134,7 @@ pub async fn add(
             )?;
             if let Some(max) = max_active {
                 if active >= max {
-                    return Err(StoreError::LimitReached(format!("Free includes {max} workspaces")));
+                    return Err(StoreError::LimitReached(format!("This account keeps up to {max} workspaces")));
                 }
             }
             let last: Option<String> = t
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_bl_04_free_limit_of_three_workspaces() {
+    async fn f_bl_04_a_workspace_limit_refuses_the_next_one() {
         let (_d, store) = store();
         for root in ["/w1", "/w2", "/w3"] {
             add(&store, local(root), Some(3))
@@ -597,7 +597,7 @@ mod tests {
             vec!["fix-auth", "fix-auth-2"],
             "worktrees list in creation order"
         );
-        // The Free limit (1 here) counts top-level workspaces only.
+        // A workspace limit (1 here) counts top-level workspaces only.
         assert!(matches!(
             add(&store, local("/other"), Some(1)).await,
             Err(StoreError::LimitReached(_))

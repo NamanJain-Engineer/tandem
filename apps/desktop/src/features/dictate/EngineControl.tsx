@@ -3,23 +3,22 @@ import { Checkbox, ConfirmDialog, SegmentedControl } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useSession } from "../../stores/session";
 import { useSetting, useSettings } from "../../stores/settings";
-import { useUi } from "../../stores/ui";
 
-/** "Transcribe with [Local | Cloud ◈ PRO]" (UI-62, F-DI-05). Cloud needs
- * Pro (Free opens the plans), and the first switch asks before any audio
- * is sent. With Cloud on, the dictionary hints opt-in shows below. */
+/** "Transcribe with [Local | Cloud]" (UI-62, F-DI-05). Cloud is hosted: it
+ * comes with Vibezeo accounts and stays put until the limits carry it
+ * (D-2903), and the first switch asks before any audio is sent. With Cloud
+ * on, the dictionary hints opt-in shows below. */
 export function EngineControl() {
   const engine = useSetting<string>("dictate_engine", "local");
   const consented = useSetting<boolean>("dictate_cloud_consented", false);
   const hints = useSetting<boolean>("dictate_share_hints", false);
-  const plan = useSession((s) => s.entitlement?.plan ?? "free");
+  const hosted = useSession((s) => s.entitlement?.limits.cloudStt ?? false);
   const [ask, setAsk] = useState(false);
-  const pro = plan !== "free";
   const set = (key: "dictate_engine" | "dictate_cloud_consented" | "dictate_share_hints", value: unknown) =>
     void useSettings.getState().set(key, value);
   const choose = (v: string) => {
     if (v === "local") set("dictate_engine", "local");
-    else if (!pro) useUi.getState().openUpgrade();
+    else if (!hosted) return;
     else if (!consented) setAsk(true);
     else set("dictate_engine", "cloud");
   };
@@ -33,7 +32,7 @@ export function EngineControl() {
         onValueChange={choose}
         items={[
           { id: "local", label: t("dictate.engine.local") },
-          { id: "cloud", label: t("dictate.engine.cloud"), tooltip: pro ? undefined : t("dictate.engine.needsPro") },
+          { id: "cloud", label: t("dictate.engine.cloud"), tooltip: hosted ? undefined : t("dictate.engine.needsPro") },
         ]}
       />
       <span className="max-w-80 text-right text-sm text-fg-muted" data-testid="dictate-engine-help">

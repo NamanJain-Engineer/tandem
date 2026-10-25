@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, mod, planFooter, setPlan } from "../support/app";
+import { freshUser, invoke, mod } from "../support/app";
 import { makeTeammate, newChat, sendAndWait, type Teammate } from "../support/agents";
 
 type Routine = { id: string; name: string; access: string; createdByTeammateId: string | null };
@@ -29,9 +29,7 @@ describe("F-RT-05 schedule tool for teammates", () => {
 
   before(async function () {
     this.timeout(180_000);
-    const { email } = await freshUser("rt05");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("rt05");
     rhea = await makeTeammate("Rhea");
     chat = await newChat(rhea.id);
   });

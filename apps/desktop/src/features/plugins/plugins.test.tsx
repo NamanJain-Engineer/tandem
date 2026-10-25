@@ -120,7 +120,7 @@ describe("F-PL-03 UI-90 catalog", () => {
     expect(screen.queryByTestId("plugin-card-github")).toBeNull();
   });
 
-  it("F-PL-03 Free's one connection shows Pro on the Connect buttons", async () => {
+  it("F-PL-03 a card the core marks at a limit shows no plan, badge or limit line: the core's reason comes on Connect (DESIGN §9.5)", async () => {
     calls = fakeBackend({
       plugins_catalog: () => [GITHUB, { ...LINEAR, limitReached: true }],
       held_drafts_list: () => [],
@@ -128,9 +128,10 @@ describe("F-PL-03 UI-90 catalog", () => {
     });
     ui(<PluginsPage />);
     const btn = await screen.findByTestId("plugin-connect-linear");
-    expect(btn.textContent).toBe("Pro");
-    expect(btn.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByTestId("plugin-why-linear").textContent).toBe("Free includes one plugin connection.");
+    expect(btn.textContent).toBe("Connect");
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByTestId("plugin-why-linear")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\bPro\b|At limit/);
     expect(calls.some((c) => c.cmd === "plugin_connect_oauth")).toBe(false);
   });
 
