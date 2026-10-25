@@ -4,7 +4,6 @@ import {
   conductorSettingsTable,
   conductorToolsTable,
   enginesTable,
-  planLimitsTable,
   platformTable,
   settingsSections,
   shortcutsTable,
@@ -64,7 +63,6 @@ export const DOCS_COMPONENTS = {
   SettingsReference,
   EnginesTable: () => <TableView table={enginesTable()} />,
   PlatformMatrix: () => <TableView table={platformTable()} />,
-  PlanLimitsTable: () => <TableView table={planLimitsTable()} />,
   ConductorToolsTable: () => <TableView table={conductorToolsTable()} />,
   ConductorSettingsTable: () => <TableView table={conductorSettingsTable()} />,
 };

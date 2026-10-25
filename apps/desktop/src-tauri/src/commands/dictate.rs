@@ -444,7 +444,7 @@ pub async fn dictate_globe_key_set(
     state.dictate.globe_key_set(do_nothing).await
 }
 
-/// F-DI-09: one sync now (Pro, opted in, signed in).
+/// F-DI-09: one sync now (hosted: opted in, signed in).
 #[tauri::command]
 pub async fn dictionary_sync(
     state: State<'_, AppState>,

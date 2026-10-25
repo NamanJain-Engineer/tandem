@@ -10,10 +10,9 @@ import {
   invoke,
   paneIds,
   pausedCards,
-  planFooter,
+  waitSignedIn,
   relaunch,
   sendToPane,
-  setPlan,
   signInDesktop,
   stopOrphansAutomatically,
   waitForApp,
@@ -54,8 +53,7 @@ describe("E2E-M5-1 crash restore", () => {
   it("F-SH-07.1 after kill -9 with 4 shells and 4 agents: the same layout, 4 live shells at their cwds, 4 paused cards", async function () {
     this.timeout(300_000);
     ({ email } = await freshUser("m5-1"));
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+
     await stopOrphansAutomatically(true);
     const root = `/tmp/tandem-e2e-m5-1-${Date.now()}`;
     await addFolder(root);
@@ -123,7 +121,7 @@ describe("E2E-M5-1 crash restore", () => {
 
   it("F-SH-07.2 Resume on one card spawns exactly one process, in the saved provider home, with --resume <id>", async function () {
     this.timeout(60_000);
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await waitSignedIn();
     const before = await engineSpawns();
     const savedHome = before.at(-1)?.providerHome ?? null;
     expect(savedHome).not.toBeNull();

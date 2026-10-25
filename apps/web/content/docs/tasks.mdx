@@ -15,11 +15,13 @@ Agents in your threads and teammate chats read and update the same tasks through
 
 ## Plan with Lead
 
-Give Lead a goal and it splits it into tasks. On the Tasks page, choose **Plan with Lead…**, write the goal, and pick a workspace on this computer. Lead plans in a new chat in that workspace, where you can follow its reasoning and answer it. It reads the repository but changes nothing.
+Give Lead a goal and it splits it into tasks. On the Tasks page, choose **Plan with Lead…**, write the goal, and pick a workspace on this computer. Lead plans in a new chat in that workspace, where you can follow its reasoning and answer it. It reads the repository but changes nothing, and it can't write tasks from there. When Lead waits for your answer, the plan says so. After 30 minutes of work, Vibezeo stops Lead and the plan says why.
 
-Lead suggests an engine for each task. It sees which engines are installed and how much of each account's usage window is used. The plan comes back as a list you can edit: change titles and descriptions, move a task to another engine, or remove it. Nothing is created until you choose **Create tasks**. The tasks go into a new project named after the goal, and each remembers its engine.
+Lead suggests an engine for each task. It sees which engines are installed and how much of each account's usage window is used. The plan comes back as a list you can edit: change titles and descriptions, move a task to another engine, or remove it. Characters that can hide text are taken out of it. Nothing is created until you choose **Create tasks**. The tasks go into a new project named after the goal, and each remembers its engine. Their history shows Lead wrote them.
 
-**Execute all** runs every task in its own worktree on its engine, with an independent review, at most 4 at once. Like running a single task, it's part of Pro. Review and merging stay with you: finished work shows in the Dashboard's review queue.
+**Execute all…** first lists what it would start. For each task it shows the engine and the account with the most room left, that the task edits in its own worktree, and which engine reviews the work. A task that isn't To do, or that already has a run, is left alone, and the list says why. Nothing starts until you choose **Run**. Then each listed task runs in its own worktree, at most 4 at once. Review and merging stay with you: finished work shows in the Dashboard's review queue.
+
+A plan stays in the Tasks page's header until you remove it or quit Vibezeo. **Remove plan** leaves its tasks in place.
 
 ## Claims
 
@@ -27,6 +29,6 @@ When several agents work in worktrees of one repository, each can say which file
 
 When two worktrees claim the same file, or one claims a folder holding a file the other claims, both worktrees' terminal panes show a line like "add-oauth and fix-auth both claim src/auth/session.ts". The Dashboard's review queue lists every overlap above its items. A worktree's claims go when it's merged or removed, and the main checkout's when its last agent session ends. What one agent says it's doing reaches the others marked as untrusted text, never as instructions.
 
-## Plans
+## Running tasks
 
-Tracking tasks is free. Running a task for you, in its own lane with progress posted as comments and an optional review, by a different engine when you have one, is part of Pro, which comes with Vibezeo accounts. The current download runs the Free plan, so it doesn't run tasks.
+Tracking tasks and running them both work with no account. **Execute…** on a task runs it for you, in its own lane with progress posted as comments and an optional review, by a different engine when you have one.

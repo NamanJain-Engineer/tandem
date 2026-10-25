@@ -809,15 +809,16 @@ impl TerminalService {
         self.pty.shutdown();
     }
 
-    /// The plan's live-pane limit: at the limit no pane or process is
-    /// created and the picker shows the upgrade card (F-CD-03).
+    /// A live-pane limit, when the limits carry one (none do with no
+    /// account, D-2900): at it no pane or process is created and the picker
+    /// shows the limit card (F-CD-03).
     /// Room for `opening` more live panes under the plan's cap: a lineup
     /// launches whole or not at all (F-CD-14).
     pub fn check_room(&self, max_live: Option<u32>, opening: u32) -> Result<(), IpcError> {
         match max_live {
             Some(max) if self.pty.live_count() as u32 + opening > max => Err(IpcError::new(
                 ErrorCode::LimitReached,
-                format!("Free includes {max} live panes"),
+                format!("This account runs up to {max} live panes"),
             )
             .with_stage("panes")),
             _ => Ok(()),
@@ -846,7 +847,7 @@ impl TerminalService {
         match max_live {
             Some(max) if self.pty.live_count() as u32 >= max => Err(IpcError::new(
                 ErrorCode::LimitReached,
-                format!("Free includes {max} live panes"),
+                format!("This account runs up to {max} live panes"),
             )
             .with_stage("panes")),
             _ => Ok(()),

@@ -76,7 +76,7 @@ describe("F-DI-05 Cloud transcription", function () {
     expect(await invoke<boolean>("dictate_use_local")).toBe(false);
   });
 
-  it("F-DI-05 a Free plan sends no audio and offers local", async () => {
+  it("F-DI-05 an account without cloud STT sends no audio and offers local", async () => {
     await testRoute("plan", { email, plan: "free" });
     await waitForEntitlement((e) => e.plan === "free", "Free");
     await resetPlatform();

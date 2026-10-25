@@ -23,7 +23,7 @@ What we have is good engineering wearing a competent but generic coat. Captured 
 | Demo, Agent mode | Two empty states side by side: "No teammates. Add one with +." and "No teammate open / Pick a teammate in the rail." (The installed app creates and opens Lead instead.) | The mode we're proudest of says nothing about what it is for in the one place visitors try it, and offers no button in the main area. |
 | App, rail | Workspace rows carry uppercase bordered pills ("WORKING 1", "WAITING ON YOU") that truncate the workspace name to "sh…". | Status is loud and names are lost: UI_SPEC §1.1's "calm surfaces, loud status" turned up past loud. |
 | App vs site | The site has a lit system (edges, elevation, blooms, expo-out motion, display type). The app has flat surfaces and single grey shadows. | They feel like two products. The download should feel like the site you just left. |
-| Honesty slips | The upgrade dialog says "Unlimited panes & threads" (`LIMITS`: Pro is 64 panes, 6 threads) and lists the hosted features (Conductor, cloud Dictate, Enhance, Auto) beside local ones as if all were the same kind of thing, though the hosted ones need accounts that aren't open. The download page says "choose Start"; the button reads "Start using Vibezeo". | Our edge is trust. One untrue line on the way to paying costs more than any visual polish buys. |
+| Honesty slips (20 October; the upgrade dialog goes with D-869) | The upgrade dialog says "Unlimited panes & threads" (`LIMITS`: Pro is 64 panes, 6 threads) and lists the hosted features (Conductor, cloud Dictate, Enhance, Auto) beside local ones as if all were the same kind of thing, though the hosted ones need accounts that aren't open. The download page says "choose Start"; the button reads "Start using Vibezeo". | Our edge is trust. One untrue line on the way to paying costs more than any visual polish buys. |
 | Voice | Honest and exact, often long ("Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed in to your own account. If an engine is missing, Vibezeo shows you how to install it."). | Honesty is our edge; length hides it. |
 
 The plan: keep the identity (DECISIONS: Inter, JetBrains Mono, teal, the two rings; the neutrals move from slate to a true neutral, D-1894), make one design system for both surfaces (§4), cut the site's words in half and show the product sooner (§5.1), and give the app the same light, edges and motion so first run feels like a continuation of the site (§5.3).
@@ -39,7 +39,7 @@ Five words, each with what it means on screen and what it never does. Every revi
 | **Calm** | Neutrals carry 95 % of every view. One accent, used for the next step. Status colour only where something needs you. Motion settles; nothing loops in the corner of your eye except a working agent. | Badges on everything, colour as decoration, a pulsing upgrade button, confetti. |
 | **Precise** | A 4 px grid, nested radii, aligned baselines, tabular numbers, 1 px hairlines that line up across panes. Copy names the exact thing ("Waiting on you · Claude Code in checkout"). | Half-pixel borders, off-grid gaps, "something went wrong", rounded numbers that are wrong. |
 | **Fast** | Feedback inside 100 ms (Doherty, §2). Hovers 120–180 ms, menus 180 ms, nothing on a critical path over 260 ms. The site paints its h1 under 2 s and runs no framework script. | Spinners for local work, entrance animations that block input, skeletons for things already in memory. |
-| **Trustworthy** | Every claim true of the shipped build (D-128), with its version named. Plan limits stated where they apply. Data flows drawn, not described. Real captures, labelled with their build. | Mock-ups presented as the product, fake urgency, "trusted by" walls, hidden costs, dark patterns in upgrade flows. |
+| **Trustworthy** | Every claim true of the shipped build (D-128), with its version named. Hosted features labelled "Comes with Vibezeo accounts", never priced (§5.5). Data flows drawn, not described. Real captures, labelled with their build. | Mock-ups presented as the product, fake urgency, "trusted by" walls, hidden costs, share or rating nags. |
 | **Crafted** (premium) | Light that comes from somewhere: a lit top edge, layered soft shadows, a bloom behind the hero. Display type tracked tight. Empty states that teach. Details nobody asked for (the key cap that travels 1 px). | Stock gradients, default shadows, generic illustrations, emoji in UI chrome, a different look on every screen. |
 
 Order matters when they conflict: **Trustworthy > Fast > Calm > Precise > Crafted**. A beautiful effect that slows the first paint, or a striking claim we can't prove, loses.
@@ -60,7 +60,7 @@ Ideas, not quotations. Each ends in a rule we apply.
 **The Design of Everyday Things (Norman)**
 - *Affordances and signifiers:* things that can be pressed look pressable. → Buttons have a lit edge and travel 1 px when pressed; rows show a hover fill; drag handles appear on hover.
 - *Feedback:* every action answers at once, and its result is visible. → Send shows the message in the thread immediately; Split shows the pane growing (§4.7).
-- *Mapping:* controls sit next to what they change. → Pane actions live in the pane header; the plan limit is explained on the control that hit it, not in a modal elsewhere.
+- *Mapping:* controls sit next to what they change. → Pane actions live in the pane header; a refusal (no folder, an engine not signed in) is explained on the control that hit it, not in a modal elsewhere.
 - *Constraints and forgiving errors:* prevent the mistake, make undo cheap. → Destructive actions name their object and offer undo where the core allows it.
 - *The gulfs of execution and evaluation:* the user must see what they can do and what happened. → Every agent's state is visible in three places (pane header, rail, Dashboard) with a shape, not colour alone.
 
@@ -73,7 +73,7 @@ Ideas, not quotations. Each ends in a rule we apply.
 **Laws of UX (Yablonski)**
 - *Hick's law:* choice time grows with the number of options. → First run offers one recommended engine and one folder, with "others" one click away; the hero has two CTAs, not three.
 - *Fitts's law:* targets near and large are faster. → Primary CTAs 48 px tall on the site; the composer's send button stays at the composer's edge; pane close targets at least 24 px.
-- *Jakob's law:* people spend most of their time in other products. → Terminals behave like terminals; Ctrl/Cmd+K is the palette; the pricing page looks like a pricing page.
+- *Jakob's law:* people spend most of their time in other products. → Terminals behave like terminals; Ctrl/Cmd+K is the palette; the download page looks like a download page.
 - *Doherty threshold:* under 400 ms keeps people in flow; under 100 ms feels instant. → §1 "Fast"; optimistic UI for local actions.
 - *Aesthetic–usability effect:* attractive designs are perceived as easier to use and are forgiven more. → Craft is not decoration; it buys patience during first run.
 - *Peak–end rule:* people judge an experience by its peak and its end. → Design the first agent finishing (§5.3) and the end of the download (§5.2) as the peaks.
@@ -138,7 +138,7 @@ What they have in common, and what it means for us:
 6. **The product is the hero, and it's real.** Linear, Arc, Apple and BridgeMind show the real product in the first viewport, Linear's as a readable, populated workspace even at 390 px. Raycast and Vercel lean on abstract art, which works for known brands and feels-first rather than explains; an unknown product can't afford it. Mock-ups that look better than the app are what cheap products do. → §4.6, §5.1.1.
 7. **Motion is choreographed and earns its place.** Interface feedback 100–160 ms (Linear, Vercel), reveals 700–800 ms (Stripe, BridgeMind), always an ease-out; the headline lands first, then the action, then the product. Apple ties motion to scroll so it explains the product. → §4.7.
 8. **The voice is confident and specific, and proof sits beside the claim.** Short sentences (4–8 words), "you" as the subject, numbers instead of adjectives; Stripe's live metric, Linear's populated workspace, Warp's live counters and Raycast's exact credit rules each stand next to what they prove. → §4.8.
-9. **The path to paying is short and calm.** As in the pricing table above; trial terms in one line. In the product, Linear and Raycast show a limit where it's met (issue caps, a credit balance in settings), and Warp's docs let you skip sign-up and type straight into a session. Nobody nags on launch. → §5.5.
+9. **The path to paying is short and calm** (studied 20 October; since D-869 Vibezeo has no paid plans, so what carries over is the honesty: free stated plainly, the rules stated in full, nobody nagged). As in the pricing table above; trial terms in one line. In the product, Linear and Raycast show a limit where it's met (issue caps, a credit balance in settings), and Warp's docs let you skip sign-up and type straight into a session. Nobody nags on launch. → §5.5.
 10. **Craft is consistent end to end.** The download page, the installer, the first window and the docs look like the home page. A premium site that hands you a generic app breaks the promise; that's our biggest gap (§0). → §4.1, one token source.
 11. **Weight is earned.** The pages that feel best are not the heaviest; ours paints in under 2 s with no framework script. Keep it: speed is felt as quality (Doherty). → §1 "Fast".
 
@@ -230,7 +230,7 @@ Rules for both:
 - Weights: 400 body, 500 UI labels and buttons in the app, 560–620 site buttons and display, 600 titles. Never 700+ (the trimmed site font stops at 650).
 - Tracking tightens with size (−0.01 em at 20 px to −0.042 em at 76 px); caps open up (+0.06 em app, +0.12 em site mono).
 - Headings balance (`text-wrap: balance`), body text is `pretty`. Measure 45–75 characters.
-- Numbers that change are tabular (`tabular-nums`): counts, timers, meters, prices in tables.
+- Numbers that change are tabular (`tabular-nums`): counts, timers, meters, sizes and figures.
 - Sentence case everywhere: headings, buttons, menu items, labels. Uppercase only for ≤ 3-word mono eyebrows and caps section labels.
 
 ### 4.4 Space and grid
@@ -301,7 +301,7 @@ We sound like a senior engineer you trust: plain, exact, brief, warm without bei
 - **Say what it does, then stop.** One idea per sentence; most sentences under 20 words. Leads are one or two sentences.
 - **Lead with the user's goal, name the product rarely.** "Run every agent side by side" over "Vibezeo runs coding agents side by side".
 - **Concrete over abstract:** numbers, names, versions. "Waiting on you · Codex in checkout", not "Action required".
-- **Honest by construction:** every claim true of the shipped build, with its version where it matters; state limits plainly ("Free runs 4 agents at once"). No superlatives we can't measure ("fastest", "best"), no "AI-powered", no "seamless", "effortless", "revolutionary", "unleash", "supercharge".
+- **Honest by construction:** every claim true of the shipped build, with its version where it matters; state what isn't available plainly ("Comes with Vibezeo accounts"). No superlatives we can't measure ("fastest", "best"), no "AI-powered", no "seamless", "effortless", "revolutionary", "unleash", "supercharge".
 - **Sentence case; verbs on buttons** ("Start agent", "Open folder", "Download for Linux"); a button says what happens, never "OK", "Submit" or "Click here".
 - **Errors:** what happened, why if we know, what to do next, in that order. "Codex isn't signed in. Open a terminal in its pane and run `codex login`." Never blame the user; never "Oops".
 - **Empty states:** what this place is for, plus one action that fills it. (§5.3 has the Agent mode rewrite.)
@@ -325,7 +325,7 @@ Five steps, each with what the person needs to feel, what they see today and the
 1. **Product in the first viewport (site, must).** At 1440×900 and 1280×800 the top 15–25 % of the live demo frame (or `site-motion`'s first scene) shows above the fold, rising into place under the CTAs. On a phone, the still shows below the CTAs within the first 1.5 screens. Keep the largest paint under 2.0 s: the scene's first frame is the still, already lazy-safe (D-1816, D-1842).
 2. **Hero, shorter (copy).** Keep the h1. The lead becomes one sentence about the user's outcome, with the engine count from code and no vendor names: for example "Run every coding agent you use side by side, in real terminals, and see at a glance which one needs you." The four ownership chips stay (they are proof), drawn neutral, not teal.
 3. **Two CTAs, one primary (site).** "Download for Linux" (primary) and "Try it in your browser" (secondary). The meta line under them stays small: "Free · .deb and .rpm · 53 MB · Watch it run (1 min)". On a phone, where a desktop download is a dead end, "Try it in your browser" becomes the primary and the second action is "Email me the link" (a `mailto:` with the download URL, no recipient and no script).
-4. **Half the words (copy, site).** Target ≤ 6,500 px at 1440 px. The order becomes: hero → live demo → "what it feels like" (three animated scenes: many agents at once, the Dashboard telling you who needs you, review and second opinion) → ownership and data flow → engines → the capability index (eight most-used, then "Everything else" to the docs) → pricing teaser → FAQ (four questions) → closing CTA. The Built with Claude band and the stats move to /about/ (they are about us, not the visitor); the founder note stays as one line with a link in the closing band.
+4. **Half the words (copy, site).** Target ≤ 6,500 px at 1440 px. The order becomes: hero → live demo → "what it feels like" (three animated scenes: many agents at once, the Dashboard telling you who needs you, review and second opinion) → ownership and data flow → engines → the capability index (eight most-used, then "Everything else" to the docs) → FAQ (four questions) → closing CTA. The Built with Claude band and the stats move to /about/ (they are about us, not the visitor); the founder note stays as one line with a link in the closing band.
 5. **Accent discipline (site, must).** ≤ 3 teal elements per viewport (§4.2). Eyebrows go `fg-muted`; "Read the docs" appears once per section group, as a neutral text link.
 6. **Scenes, not screenshots (site).** Each mode row shows a short scene built from the real UI (one composited layer, plays once on entry, rests on its final frame, captioned "Scene from Vibezeo 0.8.0, simplified"), with the 2× capture as its poster and reduced-motion state.
 
@@ -352,10 +352,10 @@ Five steps, each with what the person needs to feel, what they see today and the
 
 **They need to feel:** "it already knows my setup, and I got an agent running in a minute." Peak: the first agent's status turning from Working to Done.
 
-**Today:** a welcome screen ("Welcome to Vibezeo", a Free plan callout, "Start using Vibezeo"), then a five-step wizard (engines, accounts, Dictate, privacy, workspace), then Code mode on an empty tab with the launch grid.
+**Today:** a welcome screen ("Welcome to Vibezeo", a Free plan callout (which goes with D-869), "Start using Vibezeo"), then a five-step wizard (engines, accounts, Dictate, privacy, workspace), then Code mode on an empty tab with the launch grid.
 
 **Changes:**
-1. **Welcome (app).** The two rings at 96 px on the brand bloom (`bg-lens` light, from `brand.css`), "Welcome to Vibezeo" at `3xl`, one line ("Run your coding agents side by side, on this computer."), the primary "Start using Vibezeo", and under it one quiet fact line: "Free plan · no account · nothing sent to Vibezeo" (not "nothing leaves this computer": the engines talk to their vendors). The rings draw in once (400 ms, off under reduce).
+1. **Welcome (app).** The two rings at 96 px on the brand bloom (`bg-lens` light, from `brand.css`), "Welcome to Vibezeo" at `3xl`, one line ("Run your coding agents side by side, on this computer."), the primary "Start using Vibezeo", and under it one quiet fact line: "Free · no account · nothing sent to Vibezeo" (not "nothing leaves this computer": the engines talk to their vendors). The rings draw in once (400 ms, off under reduce).
 2. **Three steps, not five (app).** Engines (what we found, with sign-in inline per engine) → Your first folder → Done. Dictate moves to a dismissible tip after the first agent finishes; privacy switches (both off) move to a single line on the Done step with a link to Settings. Hick's law and the goal gradient: fewer, clearer steps. The stepper shows three dots.
 3. **Engines step (app).** Found engines first, each a row with its `EngineGlyph`, name, version and a status: "Signed in", or "Sign in" (opens a terminal in that engine's provider home). Missing engines collapse under "10 more you can install". One engine is preselected as the default: the first signed-in one.
 4. **First folder → first agent in one move (app).** The folder step ends with "Start Claude Code in shop" (the default engine and the chosen folder), which opens Code mode with that agent already launching. The launch grid stays for every later empty tab.
@@ -374,23 +374,32 @@ Five steps, each with what the person needs to feel, what they see today and the
 6. **Status bar (app).** Quiet by default: branch and version. Each other item appears only while it is non-zero, and leaves when it isn't (the coordinating session's call, which keeps this intent): agents waiting ("1 waiting on you", amber text, first and clickable), agents working (a count with the working dot), live ports and previews, and the usage window when an account nears its limit. Never more than four items at once; waiting always wins a place.
 7. **Keyboard first, always discoverable.** Every command in the palette shows its shortcut as a `Kbd`; tooltips on icon buttons show the shortcut after the label.
 
-### 5.5 The moments that lead to paying
+### 5.5 The moments that make someone stay, tell a friend and come back
 
-**They need to feel:** "this is worth it, and they've never tricked me." The app runs the Free plan locally today and nothing can be bought, so every paid surface is about *intent*, honestly framed.
+Vibezeo is free, with no paid plans (D-869, the owner, 24 October). Nothing in the product asks for money, so the journey's last step is no longer a purchase. It is three moments that turn a download into a habit, and a habit into a recommendation. They replace the paying moments of earlier drafts (D-1896).
+
+**They need to feel:** "it already does what I wanted, and it never once tried to sell me something."
+
+**Stay: the first agent working (first run, §5.3).**
+1. From launch to an agent running in a real terminal in under a minute: welcome → engines → folder → "Start {engine} in {folder}".
+2. The peak is the first finish: the pane header turns to Done and one quiet toast says "{engine} finished in {workspace}" with "Review changes". No confetti, no rating prompt, no "share this".
+3. The Dictate tip comes after that finish, once, never before it.
+
+**Tell a friend: the first worktree landed.**
+1. The moment people describe to others is running several agents on one task and merging the best: New worktree… or Best of N, each agent in its own lane, the review queue showing every diff, Approve, merged. That flow gets the craft budget after the Dashboard.
+2. When the first worktree lands, the confirmation names what happened plainly ("Merged tandem/fix-login into main · 3 files"), with Undo where the core allows it.
+3. We earn the recommendation; we never ask for it inside the work. No share prompts, referral codes, star-us banners or "rate Vibezeo" dialogs, and no tracking of who told whom (rule 4 of DECISIONS: nothing leaves the machine by default). One quiet line sits under the version in Settings (beside "Vibezeo {version}"): "Vibezeo is free. If it helps you, tell a friend."
+
+**Come back: exactly where they left off.**
+1. Reopen to the same workspaces, tabs and panes (crash-safe restore), agents paused and ready to resume, nothing re-run on its own.
+2. The Dashboard and the status bar say first who needs you ("1 waiting on you").
+3. After an update, one line in the status bar for one session: "Updated to {version} · What's new", opening the existing What's new sheet only when clicked, instead of on launch.
 
 **Rules (must):**
-1. **Value before price.** No plan prompt during first run, ever. The first upgrade prompt appears only when the user meets a limit by doing something (the fifth pane, the fourth workspace, a second thread at once, a second teammate, a chat engine beyond Claude Code and Codex).
-2. **At the limit, explain on the spot.** Inline at the control that hit it (Norman's mapping), in this order: what happened ("Free runs 4 agents at once"), what still works ("Your 4 agents keep running"), the free way out ("Close one to start another"), then the paid one ("Pro runs up to 64"; the existing `limit.panes.body` copy says "unlimited panes" and must change). The secondary action is the paid one; the primary is the free way out. No modal on top of the user's work.
-3. **Say exactly what Pro is today.** Pro's list names what `LIMITS` gives it and the download runs: "Up to 64 panes", "6 threads side by side", every chat engine, unlimited workspaces, teammates and plugin connections, Routines. Hosted features metered by credits (Conductor, cloud Dictate, Enhance, Auto) and anything that needs Vibezeo's servers are listed under "Comes with accounts", visibly separate. The current "Unlimited panes & threads" line is untrue and must change (copy, must).
-4. **Never disabled-and-mysterious.** Pro and Team buttons that can't work today read "Tell me when accounts open" and open a prefilled email, as the site does; not a greyed "Comes with Vibezeo accounts".
-5. **No pressure mechanics.** No countdowns, no "only today", no repeated prompts for the same limit within a day, no badges on the plan footer, no upgrade nag on launch. The rail's plan footer says "Free" in sentence case, quietly, and opens the plans.
-
-**The pricing page (site):**
-1. Hero: keep "Free to run your agents. Pro when you run a lot." The lead drops to one sentence: "Free is available now for Linux. Pro and Team start with Vibezeo accounts; your agents always run on your own subscriptions."
-2. Three cards side by side, Free emphasised (the only one on sale, "Available now"), Pro and Team calm, each with three to five lines that are true today, and the comparison table generated from `LIMITS` (D-1808) below.
-3. An annual/monthly toggle would need a script; show both prices in each card instead (as today).
-4. Trust under the cards: "Your engines bill you directly. Vibezeo never charges for engine usage. Prices in US dollars, tax added at checkout." Then a four-question FAQ.
-5. The closing band offers the Free download, not "Tell me when".
+1. **No plan UI anywhere.** No plan names, "Free" badges, plan footers, upgrade buttons, "See plans", limit dialogs, trials, prices or "Pro" on any surface of the app or the site, once the release that lifts the limits ships. Until then, the shipped build's limits are stated plainly where they apply, with no upgrade path ("Vibezeo 0.9.0 runs 4 panes at once; the next release lifts this").
+2. **Hosted features carry one phrase, and never a price.** Features that need Vibezeo's servers (Conductor, cloud Dictate, Enhance and Polish, the Auto supervisor, dictionary sync, the phone relay) are labelled **"Comes with Vibezeo accounts"**, word for word, in sentence case, as the 0.9.0 docs already say (D-1896). It is always followed, where there's room, by the sentence that keeps it honest about today: "It uses Vibezeo's servers and switches on when Vibezeo accounts open." Where there isn't room (a badge, a menu row), the tooltip carries that sentence. Where an action is needed: **"Tell me when accounts open"**, a prefilled email to the contact address. Never "Pro", "premium", "paid", "upgrade", "credits", a price or a date.
+3. **Free is said once, plainly, where it answers a question:** the download page, the FAQ and the welcome screen ("Free · no account · nothing sent to Vibezeo"). Not as a badge, and never as "free for now".
+4. **No pressure mechanics, ever:** no countdowns, nag screens, prompts on launch, or interruptions while someone types.
 
 ---
 
@@ -422,7 +431,7 @@ The implementers take slices in this order; each slice is one READY. The words f
 **`app-ui`** (D-2600 on):
 1. T2: brand elevation on raised surfaces (§4.5), after T1 lands.
 2. T3: status as shapes and words in the rail, pane headers and Dashboard (§5.4.1–2).
-3. Honesty fixes in the upgrade surfaces (§5.5 rules 3–4): `upgrade.pro.f1…f4`, `limit.panes.body`, the disabled Pro/Team buttons.
+3. Plan UI out (D-869, done by the `free-for-everyone` session): no upgrade dialog, plan footer, limit prompts or Pro badges remain; hosted features say "Comes with Vibezeo accounts" (§5.5).
 4. First run: the welcome, three steps, first folder → first agent (§5.3).
 5. Launch grid and Agent mode's first run (§5.3.5, and Lead opening in the demo, §5.2).
 6. The demo opening in Code mode with one hint at a time (§5.2).
@@ -433,7 +442,7 @@ The implementers take slices in this order; each slice is one READY. The words f
 2. Product in the first viewport (§5.1.1) and the hero copy (§5.1.2–3).
 3. The three scenes (§5.1.4, §5.1.6, §4.7's scene rules), with posters and reduced-motion frames.
 4. The home page at half its length (§5.1.4); Built with Claude and the stats to /about/.
-5. Pricing and download (§5.2, §5.5), including the download step that quotes the app's button.
+5. Download (§5.2), including the step that quotes the app's button. The pricing page is gone (D-869).
 6. T6: scenes and captures in one bezel.
 
 **design-lead:** T1 (the shared token layer), then design QA on each READY (§6), and this document kept current.
@@ -466,21 +475,17 @@ Exact words for every string §5 changes, checked on 20 October against 0.8.0's 
 | Engines lead | Vibezeo finds the engine CLIs installed on your machine and launches them in panes, each signed in to your own account. If an engine is missing, Vibezeo shows you how to install it. | Vibezeo finds the agent CLIs on your machine and starts each one signed in to your own account. Missing ones come with install steps. |
 | Capabilities h2 | And everything else that works today | Built in, working today |
 | Capabilities (eight, then a link) | 18 tiles | Dictate; Worktree lanes and handoff; Previews per worktree; Files, git and a browser; SSH workspaces; Find work by what it's about; Plugins with approvals; Crash-safe restore. Link: "Everything else in the docs" |
-| Pricing teaser lead | Free is available today; Pro and Team start with Vibezeo accounts. Your agents always run on your own subscriptions. | Free runs on your computer today. Pro and Team start with Vibezeo accounts. |
-| FAQ | six questions | four: "Can I use Vibezeo today?", "Do I need a new AI subscription?", "Does Vibezeo see my API keys or subscription tokens?", "What will it cost?" (answers as today). "How does Vibezeo use Claude?" moves to /about/ with the Built with Claude band; "Which platforms?" is answered by the meta line and /download/. |
+| FAQ | six questions | four: "Can I use Vibezeo today?", "Do I need a new AI subscription?", "Does Vibezeo see my API keys or subscription tokens?", "Is Vibezeo free?" (as 0.9.0 ships it: "Yes. Vibezeo is free, with no paid plans. Your agents run on the AI subscriptions you already have." While a shipped build still has limits, the download page says so, as 0.9.0's does: "The next release removes these limits."). "How does Vibezeo use Claude?" moves to /about/ with the Built with Claude band; "Which platforms?" is answered by the meta line and /download/. |
 | Closing band lead | Download Vibezeo for Linux, then tell us what works and what doesn't at contact@vibezeo.com. | Free for Linux, no account. Tell us what works and what doesn't: {SITE.contactEmail}. |
 | Closing band, one line | — | Built by {founder}. More about Vibezeo → (/about/) |
 
-### 9.2 Site: pricing and download (site-motion)
+### 9.2 Site: download (site-motion; the pricing page is gone, D-869)
 
 | Where | Today | Use |
 |---|---|---|
-| Pricing lead | Free is available now: download Vibezeo 0.8.0 for Linux. Pro and Team start with Vibezeo accounts. Your coding agents always run on your own subscriptions, so Vibezeo never charges for engine usage. | Free is available now for Linux. Pro and Team start with Vibezeo accounts; your agents always run on your own subscriptions. |
-| Under the cards (new) | — | Your engines bill you directly; Vibezeo never charges for engine usage. Prices in US dollars. |
-| Plan cards (`PLANS`) | true today | unchanged |
-| Download step 2 title / body | Start on the Free plan / Open the app and choose Start on the welcome screen. The Free plan runs on your computer, no account needed. | Start on the Free plan / Open the app and choose Start using Vibezeo. The Free plan runs on your computer, no account needed. |
+| Download step 2 title / body | Start / Open the app and choose Start on the welcome screen. It runs on your computer, no account needed. (0.9.0) | Start / Open the app and choose Start using Vibezeo on the welcome screen. It runs on your computer, no account needed. (The button's real label, `signin.earlyAccess.start`; site-motion's branch already reads it from `en.json`.) |
 | Download step 3 body | The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell. | Setup ends by asking for a project folder. Then pick an agent from the launch grid to start it in a real terminal, or Terminal for a shell. |
-| Windows and macOS rows | Coming soon | Coming soon · Tell me when (`mailto:`, as the pricing page does) |
+| Windows and macOS rows | Coming soon | Coming soon · Tell me when (a prefilled `mailto:` to {SITE.contactEmail}) |
 
 ### 9.3 App: welcome and first run (`en.json`) (app-ui)
 
@@ -489,8 +494,8 @@ Exact words for every string §5 changes, checked on 20 October against 0.8.0's 
 | `signin.title` | Welcome to Vibezeo | unchanged |
 | `signin.subtitle` | Run your coding agents side by side. | Run your coding agents side by side, on this computer. |
 | `signin.earlyAccess.start` | Start using Vibezeo | unchanged (the site quotes it) |
-| `signin.earlyAccess.note` | Free plan: 4 panes, 3 workspaces | Free plan · no account · nothing sent to Vibezeo |
-| `signin.earlyAccess.title` / `.body` (callout) | Free plan / Vibezeo runs on this computer… | drop the callout; the note carries it. Pro and Team are explained where they're met (§9.5). |
+| `signin.earlyAccess.note` | Free plan: 4 panes, 3 workspaces | Free · no account · nothing sent to Vibezeo |
+| `signin.earlyAccess.title` / `.body` (callout) | Free plan / Vibezeo runs on this computer… | drop the callout; the note carries it. |
 | Steps | engines, accounts, dictate, privacy, workspace | engines (with sign-in), folder, done |
 | `onboarding.engines.title` / `.body` | Set up your coding agents / Vibezeo runs the agents you already use… | Your coding agents / Vibezeo found these on your computer. Each signs in by itself; Vibezeo never sees its token. |
 | Engine row states | Installed {version} / Not installed / Not signed in | {version} · Signed in / {version} · Sign in (button) / Not installed |
@@ -516,21 +521,15 @@ Exact words for every string §5 changes, checked on 20 October against 0.8.0's 
 | `demo.hint.*`, `demo.try.*` (six-step card) | Your first message is ready… / Try this… | three hints, one at a time: (1) on the waiting agent: "{engine} is waiting on you. Open it to see why." (2) on the thread's composer: "Press Enter to send this task. The agent is simulated and runs in your browser." (3) on Changes: "Open Changes to see what it edited." |
 | Demo end (new, once, in the demo bar) | — | That's the loop. Download for Linux · {size} |
 
-### 9.5 App: plans and limits (app-ui; honesty first, §5.5)
+### 9.5 Hosted features, and the retired plan strings (D-869, D-1896)
 
-| Key | Today | Use |
-|---|---|---|
-| `upgrade.pro.f1` | Unlimited panes & threads | Up to {LIMITS.pro.panes} live panes |
-| `upgrade.pro.f2` | 10,000 credits a month | {LIMITS.pro.threadGrid} threads side by side, with every chat engine |
-| `upgrade.pro.f3` | Conductor, cloud Dictate, Enhance, Auto | Unlimited workspaces, teammates and plugin connections |
-| `upgrade.pro.f4` | Routines, phone remote | Several accounts per engine, and Routines |
-| "Comes with accounts" group (new, under Pro, visibly separate) | — | Comes with Vibezeo accounts: {MONTHLY_CREDITS} credits a month for Conductor, cloud Dictate, Enhance and Auto |
-| `upgrade.withAccounts` (disabled button) | Comes with Vibezeo accounts | Tell me when accounts open (an enabled button opening the same `mailto:` as the site) |
-| `upgrade.recommended` | RECOMMENDED | Recommended |
-| `upgrade.gate.panes` | You hit the Free limit of {n} panes. | Free runs {n} live panes at once. |
-| `upgrade.gate.workspaces` | You hit the Free limit of {n} workspaces. | Free keeps {n} workspaces. |
-| `limit.panes.title` | Free includes {n} live panes | unchanged |
-| `limit.panes.body` | Close a pane to start another, or upgrade for unlimited panes. Running panes aren't affected. | Running panes keep going. Close one to start another; Pro runs up to {LIMITS.pro.panes}. |
-| `limit.panes.manage` / `.plans` | Manage panes / See plans | unchanged; Manage panes is the primary, See plans the secondary |
-| `launch.limitBody` | Close a pane, or upgrade for more live panes. | Close a pane to launch more. Pro runs up to {LIMITS.pro.panes} live panes. |
-| `plan.footer.free` / `.offline` | FREE / OFFLINE | Free / Offline |
+Vibezeo has no paid plans. The plan and limit strings of the earlier deck are retired; the `free-for-everyone` session removes them from the app with the gates. What stays is one honest phrase for the features that need Vibezeo's servers.
+
+| Where | Use, word for word |
+|---|---|
+| Label on a hosted feature (Conductor, cloud Dictate, Enhance and Polish, the Auto supervisor, dictionary sync, the phone relay), in the app, the docs and the site | Comes with Vibezeo accounts |
+| The sentence that follows it (or its tooltip, where there's no room) | It uses Vibezeo's servers and switches on when Vibezeo accounts open. |
+| The action, where one is needed | Tell me when accounts open (a prefilled `mailto:` to {SITE.contactEmail}) |
+| Never, anywhere | Pro, premium, paid, upgrade, plan, trial, credits, a price, a date, "free for now" |
+
+Retired keys and constants (don't translate, restyle or reuse them): `upgrade.*`, `limit.*`, `launch.limitBody`, `plan.footer.*`, `thread.grid.freeTitle`, `thread.grid.freeBody`, `thread.grid.plans`, `thread.engineGate.*`, `agent.new.limit`, `agent.new.upgrade`, `upgrade.gate.teammates`, `plugins.freeLimit`, the `*.upgrade` and `routines.upsell.*` buttons, `signin.earlyAccess.title` and `.body`, and on the site `PLANS`, `PLAN_GROUPS` and the pricing copy. Until the release that lifts the limits ships, a limit the shipped build still enforces is stated as a fact of that version, with no way to pay past it: "Vibezeo {version} runs {n} panes at once. The next release lifts this."

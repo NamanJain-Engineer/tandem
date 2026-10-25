@@ -174,8 +174,9 @@ describe("F-BL-02 customer portal", () => {
     t.clock.set(new Date(new Date(before.paid_until).getTime() + 1000));
     const after = (await (
       await json(t, "GET", "/v1/me", { bearer: await bearerFor(t.deps, userId) })
-    ).json()) as { plan: string; limits: { panes: number } };
-    expect(after).toMatchObject({ plan: "free", limits: { panes: 4 } });
+    ).json()) as { plan: string; limits: { panes: number | null; conductor: boolean } };
+    // Back to what runs with no account: local features unlimited, hosted ones off (D-2900).
+    expect(after).toMatchObject({ plan: "free", limits: { panes: null, conductor: false } });
   });
 });
 

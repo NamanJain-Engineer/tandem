@@ -1,7 +1,7 @@
 // F-TK-04, UI-82/83/84: Execute… asks for the workspace, the runner (a
 // teammate or a bare chat engine), isolation (a new worktree by default),
 // access (Edits by default; Full only with an explicit choice for this task)
-// and the independent review. Runs need sign-in and Pro; at most 4 run at
+// and the independent review. Runs need no account (D-2902); at most 4 run at
 // once and the rest queue. The Runs list shows each attempt with Stop,
 // Resume and Retry.
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +22,6 @@ import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import { useTasks, isIpcError } from "../../stores/tasks";
 import { useTeammates } from "../../stores/teammates";
-import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
 
 /** Runs at once (F-TK-04). */
@@ -34,13 +33,11 @@ const ACTIVE = new Set(["setup", "running", "reviewing"]);
 const REMOTE = new Set(["ssh", "wsl"]);
 
 /** Why Execute can't run here, if it can't. */
-export function useExecuteBlock(): { reason: string; upgrade: boolean } | null {
-  const auth = useSession((s) => s.auth);
+export function useExecuteBlock(): { reason: string } | null {
   const ent = useSession((s) => s.entitlement);
-  // Builds without Vibezeo accounts can't sign in or buy Pro: say so (D-909).
-  if (auth && !auth.hosted) return { reason: t("tasks.exec.earlyAccess"), upgrade: false };
-  if (!auth?.signedIn) return { reason: t("tasks.exec.signIn"), upgrade: false };
-  if (!ent?.limits.taskExecution) return { reason: t("tasks.exec.pro"), upgrade: true };
+  // Runs on this computer with no account (D-869, D-2902); only limits that
+  // turn execution off stop it.
+  if (ent && !ent.limits.taskExecution) return { reason: t("tasks.exec.off") };
   return null;
 }
 
@@ -139,16 +136,7 @@ export function ExecuteDialog({
     >
       <div className="flex flex-col gap-3" data-testid="task-execute-dialog">
         {block && (
-          <Callout
-            tone="info"
-            actions={
-              block.upgrade ? (
-                <Button size="sm" variant="secondary" onClick={() => useUi.getState().openUpgrade()}>
-                  {t("tasks.exec.upgrade")}
-                </Button>
-              ) : undefined
-            }
-          >
+          <Callout tone="info">
             <span data-testid="task-execute-blocked">{block.reason}</span>
           </Callout>
         )}

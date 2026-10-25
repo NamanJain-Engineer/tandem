@@ -78,8 +78,8 @@ impl Rewriter for HostedRewriter {
         if (self.plan)() == Plan::Free {
             return Err(CloudFailure {
                 kind: CloudFailureKind::NeedsPro,
-                message: "Enhance needs Vibezeo Pro.".into(),
-                detail: "The plan is Free; no text was sent.".into(),
+                message: "Enhance comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.".into(),
+                detail: "No account is signed in; no text was sent.".into(),
             });
         }
         self.rt
@@ -126,8 +126,8 @@ impl CloudStt for HostedStt {
         if (self.plan)() == Plan::Free {
             return Err(CloudFailure {
                 kind: CloudFailureKind::NeedsPro,
-                message: format!("{FEATURE} needs Vibezeo Pro."),
-                detail: "The plan is Free; no audio was sent.".into(),
+                message: format!("{FEATURE} comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."),
+                detail: "No account is signed in; no audio was sent.".into(),
             });
         }
         let upload = SttUpload {
@@ -250,7 +250,7 @@ mod tests {
         let err = rw
             .rewrite(RewriteMode::Enhance, "hello", None, &[])
             .expect_err("403");
-        assert_eq!(err.message, "Enhance needs Vibezeo Pro.");
+        assert_eq!(err.message, "Enhance comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.");
     }
 
     #[test]
@@ -297,7 +297,10 @@ mod tests {
             })
             .expect_err("free");
         assert_eq!(err.kind, CloudFailureKind::NeedsPro);
-        assert_eq!(err.message, "Cloud transcription needs Vibezeo Pro.");
+        assert_eq!(
+            err.message,
+            "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open."
+        );
         assert!(seen.lock().is_empty(), "nothing uploaded");
     }
 
@@ -330,7 +333,7 @@ mod tests {
             (
                 http(403, "FORBIDDEN_PLAN", None),
                 CloudFailureKind::NeedsPro,
-                "Cloud transcription needs Vibezeo Pro.",
+                "Cloud transcription comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
             ),
             (
                 ApiError::Network("refused".into()),

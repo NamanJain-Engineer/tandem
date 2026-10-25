@@ -108,7 +108,15 @@ export function AdvancedExtras() {
             },
             {
               key: t("settings.version"),
-              value: t("settings.versionValue", { version: boot?.version ?? "", build: boot?.build ?? "" }),
+              value: (
+                <span className="flex flex-col">
+                  <span>{t("settings.versionValue", { version: boot?.version ?? "", build: boot?.build ?? "" })}</span>
+                  {/* DESIGN §5.5: the one quiet line, under the version. */}
+                  <span className="text-sm text-fg-muted" data-testid="settings-free-line">
+                    {t("settings.freeLine")}
+                  </span>
+                </span>
+              ),
             },
           ]}
         />

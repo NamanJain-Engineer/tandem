@@ -1,8 +1,9 @@
 // The browser demo's Plan with Lead (F-TK-06). The demo runs no engines and
 // has no teammates, so Lead's plan is simulated: a fixed draft for the goal,
-// said to be simulated. Create tasks writes into the demo's tracker; running
-// tasks is Pro, which the download (and so the demo) doesn't have.
-import type { PlanEngine, PlanTask, PlanView } from "@tandem/protocol";
+// said to be simulated. Create tasks writes into the demo's tracker. Execute
+// all shows the runs it would start and says why they start only in the
+// app: a run is an agent in a worktree on your computer.
+import type { PlanEngine, PlanLaunch, PlanTask, PlanView } from "@tandem/protocol";
 import { emitLocal } from "../ipc/events";
 import type { DemoTasks } from "./tasks";
 
@@ -12,6 +13,10 @@ const ENGINES: PlanEngine[] = [
 ];
 
 const NOT_FOUND = { code: "not_found", message: "That plan is gone" };
+
+/** The demo's `task_execute` refusal, word for word. */
+export const RUNS_IN_THE_APP =
+  "Running a task starts an agent in a worktree on your computer, so it works in the app, not in this demo.";
 
 /** What a planning engine might answer for any goal: split, build, check. */
 function draft(goal: string): PlanTask[] {
@@ -83,8 +88,11 @@ export class DemoPlans {
       leadId: "",
       leadEngine: "claude",
       error: null,
+      waiting: false,
       projectId: null,
       issueIds: [],
+      queued: [],
+      skipped: [],
       createdAt: this.now(),
     };
     this.plans.set(v.id, v);
@@ -113,11 +121,33 @@ export class DemoPlans {
     return this.put({ ...v, tasks, issueIds: ids, state: "created" });
   }
 
-  execute(): never {
-    throw {
-      code: "forbidden_plan",
-      message: "Running tasks is part of Pro. You can still track tasks for free.",
+  /** The runs Execute all would start, with why they can't here. */
+  prepare(id: string): PlanLaunch {
+    const v = this.must(id);
+    if (v.state !== "created") throw { code: "invalid", message: "Create the plan's tasks first" };
+    const label = (id: string) => ENGINES.find((e) => e.engineId === id)?.label ?? id;
+    const review = (id: string) => (id === "codex" ? "claude" : "codex");
+    return {
+      blocked: RUNS_IN_THE_APP,
+      runs: v.issueIds.map((issueId, i) => {
+        const engineId = v.tasks[i]?.engineId ?? "claude";
+        return {
+          issueId,
+          title: v.tasks[i]?.title ?? issueId,
+          engineId,
+          engineLabel: label(engineId),
+          accountId: null,
+          accountLabel: null,
+          reviewEngineId: review(engineId),
+          reviewEngineLabel: label(review(engineId)),
+          skip: null,
+        };
+      }),
     };
+  }
+
+  execute(): never {
+    throw { code: "unavailable", message: RUNS_IN_THE_APP };
   }
 
   discard(id: string): null {

@@ -26,7 +26,6 @@ fn task_origin(issue_id: &str, attempt: &AttemptId) -> String {
 pub struct AppExecHost {
     pub store: Store,
     pub data: tandem_core::DataDir,
-    pub auth: Arc<crate::services::auth::AuthService>,
     pub entitlements: Arc<crate::services::entitlement::EntitlementService>,
     pub terminals: Arc<crate::services::terminal::TerminalService>,
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
@@ -34,6 +33,8 @@ pub struct AppExecHost {
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     /// Files what a run holds for review under its task (F-PL-08).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// Accounts' usage windows: the review's account with the most room.
+    pub usage: Arc<crate::services::usage::UsageBoard>,
 }
 
 impl AppExecHost {
@@ -47,10 +48,6 @@ impl AppExecHost {
 impl ExecHost for AppExecHost {
     fn limits(&self) -> Limits {
         self.entitlements.limits()
-    }
-
-    fn signed_in(&self) -> bool {
-        self.auth.is_signed_in()
     }
 
     async fn workspace_root(&self, ws: &WorkspaceId) -> Result<PathBuf, IpcError> {
@@ -216,6 +213,14 @@ impl ExecHost for AppExecHost {
             .filter(|e| crate::services::threads::has_chat_adapter(e))
             .find(|e| engines.installed(&e.id).is_some())
             .map(|e| e.id.clone())
+    }
+
+    async fn review_account(&self, engine: &str) -> Option<AccountId> {
+        crate::services::plan::offered(&self.store, &self.terminals.engines, &self.usage)
+            .await
+            .into_iter()
+            .find(|e| e.engine_id == engine)
+            .and_then(|e| crate::services::plan::roomiest(&e))
     }
 
     async fn notify(&self, title: String, body: String, issue_id: &str) {

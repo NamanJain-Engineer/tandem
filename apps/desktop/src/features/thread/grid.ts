@@ -14,7 +14,7 @@ export function addCell(
 ): { grid: string[]; result: GridAdd } {
   const current = grid.length > 0 ? grid : open ? [open] : [];
   if (current.includes(id)) return { grid, result: "present" };
-  // The plan's limit speaks first: on Free even a grid saved on Pro is "one at a time".
+  // The limit speaks first: a smaller limit than a saved grid shows fewer.
   if (limit < GRID_MAX && current.length >= limit) return { grid, result: "limit" };
   if (current.length >= GRID_MAX) return { grid, result: "full" };
   return { grid: [...current, id], result: "added" };

@@ -413,10 +413,11 @@ impl ThreadService {
         let _ = self.plan_limits.set(limits);
     }
 
-    /// Free threads run only the plan's chat engines (PRODUCT_SPEC §3.2,
-    /// D-127). Checked when a thread is made, switched or starts a turn, so
-    /// a thread made on Pro stays readable after a lapse but can't run.
-    /// Teammate chats follow their own limits (M10).
+    /// Threads run only the chat engines the limits allow (D-127). With no
+    /// account that is every engine (D-869, D-2900); a signed token that
+    /// lists engines narrows it. Checked when a thread is made, switched or
+    /// starts a turn, so a thread stays readable when its engine drops out
+    /// but can't run. Teammate chats follow their own limits (M10).
     fn check_plan_engine(&self, kind: ThreadKind, engine_id: &str) -> Result<(), IpcError> {
         let allowed = kind != ThreadKind::Thread
             || self
@@ -428,7 +429,7 @@ impl ThreadService {
         } else {
             Err(IpcError::new(
                 ErrorCode::ForbiddenPlan,
-                tandem_core::entitlement::CHAT_ENGINE_ON_PRO,
+                tandem_core::entitlement::CHAT_ENGINE_NOT_ALLOWED,
             ))
         }
     }
@@ -5707,18 +5708,19 @@ mod tests {
         f.svc.stop(&f.thread.id).await.expect("stop");
     }
 
-    /// A plan switch the tests can flip: Pro (every engine) until `free`.
+    /// A switch the tests can flip: no account (every engine) until a token
+    /// that lists only Claude Code and Codex arrives.
     fn plan_switch(svc: &ThreadService) -> Arc<std::sync::atomic::AtomicBool> {
-        let free = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let on_free = free.clone();
+        let listed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let on_list = listed.clone();
         svc.set_plan_limits(Arc::new(move || {
             let mut limits = tandem_core::entitlement::Limits::free();
-            if !on_free.load(Ordering::SeqCst) {
-                limits.chat_engines = None;
+            if on_list.load(Ordering::SeqCst) {
+                limits.chat_engines = Some(vec!["claude".into(), "codex".into()]);
             }
             limits
         }));
-        free
+        listed
     }
 
     fn new_thread(f: &Fixture, engine: &str, kind: ThreadKind) -> NewThread {
@@ -5738,7 +5740,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_th_06_free_plan_starts_threads_only_on_claude_code_and_codex() {
+    async fn f_th_06_limits_that_list_engines_start_threads_only_on_those() {
         let f = fixture(OnStop::Ack, hang()).await;
         plan_switch(&f.svc).store(true, Ordering::SeqCst);
         for engine in ["claude", "codex"] {
@@ -5755,12 +5757,15 @@ mod tests {
                 .await
                 .expect_err(engine);
             assert_eq!(err.code, ErrorCode::ForbiddenPlan, "{engine}");
-            assert_eq!(err.message, tandem_core::entitlement::CHAT_ENGINE_ON_PRO);
+            assert_eq!(
+                err.message,
+                tandem_core::entitlement::CHAT_ENGINE_NOT_ALLOWED
+            );
         }
     }
 
     #[tokio::test]
-    async fn f_th_06_pro_plan_starts_threads_on_every_chat_engine() {
+    async fn f_th_06_with_no_account_threads_start_on_every_chat_engine() {
         let f = fixture(OnStop::Ack, hang()).await;
         plan_switch(&f.svc);
         for engine in ["claude", "codex", "cursor", "grok", "opencode"] {
@@ -5773,14 +5778,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_th_06_free_plan_refuses_switching_a_thread_to_an_acp_engine() {
+    async fn f_th_06_listed_engines_refuse_switching_a_thread_to_another() {
         let f = fixture(OnStop::Ack, hang()).await;
         plan_switch(&f.svc).store(true, Ordering::SeqCst);
         let err = f
             .svc
             .switch_engine(&f.thread.id, "cursor", None, "divider".into())
             .await
-            .expect_err("cursor on Free");
+            .expect_err("cursor not listed");
         assert_eq!(err.code, ErrorCode::ForbiddenPlan);
         let kept = f.svc.thread(&f.thread.id).await.expect("thread");
         assert_eq!(kept.engine_id, "claude");
@@ -5788,38 +5793,38 @@ mod tests {
             .svc
             .switch_engine(&f.thread.id, "codex", None, "divider".into())
             .await
-            .expect("codex on Free");
+            .expect("codex listed");
         assert_eq!(codex.engine_id, "codex");
     }
 
     #[tokio::test]
-    async fn f_th_06_after_a_lapse_an_acp_thread_keeps_its_history_but_starts_no_turn() {
+    async fn f_th_06_when_its_engine_drops_out_a_thread_keeps_its_history_but_starts_no_turn() {
         let f = fixture(OnStop::Ack, hang()).await;
-        let free = plan_switch(&f.svc);
+        let listed = plan_switch(&f.svc);
         let acp = f
             .svc
             .create(new_thread(&f, "grok", ThreadKind::Thread))
             .await
-            .expect("grok on Pro");
-        free.store(true, Ordering::SeqCst);
+            .expect("grok with no account");
+        listed.store(true, Ordering::SeqCst);
         let err = f
             .svc
             .send(&acp.id, "hello".into(), Vec::new(), false)
             .await
-            .expect_err("grok on Free");
+            .expect_err("grok not listed");
         assert_eq!(err.code, ErrorCode::ForbiddenPlan);
         let err = f
             .svc
             .send(&acp.id, "hello".into(), Vec::new(), true)
             .await
-            .expect_err("queued on Free");
+            .expect_err("queued, not listed");
         assert_eq!(err.code, ErrorCode::ForbiddenPlan);
         assert_eq!(f.adapter.starts.load(Ordering::SeqCst), 0);
         assert!(repo::turns(&f.store, &acp.id)
             .await
             .expect("turns")
             .is_empty());
-        // Still readable, and it can move to an engine Free runs.
+        // Still readable, and it can move to a listed engine.
         assert!(f.svc.get(&acp.id).await.is_ok());
         assert!(f.svc.events(&acp.id, None, 50).await.is_ok());
         f.svc
@@ -5829,7 +5834,7 @@ mod tests {
         f.svc
             .send(&acp.id, "hello".into(), Vec::new(), false)
             .await
-            .expect("Claude Code on Free");
+            .expect("Claude Code listed");
         f.svc.stop(&acp.id).await.expect("stop");
     }
 

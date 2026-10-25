@@ -11,14 +11,12 @@ import {
   invoke,
   mod,
   paneIds,
-  setPlan,
   split,
   typeKeys,
   fakeLog,
   userHome,
   waitForPaneText,
 } from "../support/app";
-import { waitForEntitlement } from "../support/hosted";
 
 type Account = { id: string; engineId: string; homePath: string };
 type Session = {
@@ -117,18 +115,18 @@ async function rowClick(sessionId: string, testId: string): Promise<void> {
 // account's home and in Claude Code's own home, a Codex session in its own
 // home and an unreadable file are listed; Resume runs `claude --resume <id>`
 // in the session's folder with the account's CLAUDE_CONFIG_DIR; Continue
-// opens the handoff sheet with the transcript's brief; search is Pro and
-// turning it off deletes the index.
+// opens the handoff sheet with the transcript's brief; search needs no
+// plan (D-2900): it waits for the Privacy switch, and turning it off deletes
+// the index.
 describe("E2E-M18-TH17 session library", function () {
   this.timeout(240_000);
   const repo = `/tmp/tandem-e2e-th17-${Date.now()}`;
-  let email = "";
   let accountHome = "";
 
   before(async () => {
     mkdirSync(repo, { recursive: true });
     execFileSync("git", ["init", "-q", repo]);
-    ({ email } = await freshUser("th17"));
+    await freshUser("th17");
     await addFolder(repo);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
     // A Claude Code pane makes the default account and its home.
@@ -230,10 +228,11 @@ describe("E2E-M18-TH17 session library", function () {
     });
   });
 
-  it("F-TH-17.4 search is Pro; on, a word from a prompt finds its session; off deletes the index", async () => {
-    await expect(invoke("library_search", { query: "checkout" })).rejects.toThrow(/forbidden_plan/);
-    await setPlan(email, "pro");
-    await waitForEntitlement((e) => e.plan === "pro", "Pro", 30_000);
+  it("F-TH-17.4 search needs no plan; on, a word from a prompt finds its session; off deletes the index", async () => {
+    // Off until the person turns it on, never for want of a plan.
+    await expect(invoke("library_search", { query: "checkout" })).rejects.toThrow(
+      /Turn on Search session text/,
+    );
     await invoke("library_search_set", { on: true });
     const keys = await invoke<string[]>("library_search", { query: "checkout" });
     expect(keys).toHaveLength(1);

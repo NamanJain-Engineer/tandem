@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, freshUser, home, invoke, mod, planFooter, setPlan } from "../support/app";
+import { addFolder, freshOffline, home, invoke, mod } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -18,6 +18,12 @@ type Ws = { id: string; root: string };
 type Thread = { id: string; title: string; workspaceId: string | null; kind: string };
 type Issue = { id: string; title: string; status: string; project: string | null; suggested_engine?: string };
 type AttemptView = { attempt: { issueId: string; engineId: string; laneWorkspaceId: string | null } };
+type Plan = {
+  state: string;
+  issueIds: string[];
+  queued: string[];
+  skipped: Array<{ issueId: string; reason: string }>;
+};
 
 const GOAL = "Add OAuth sign-in with Google";
 
@@ -51,15 +57,24 @@ async function planToDraft(): Promise<void> {
   await $('[data-testid="plan-dialog"][data-state="ready"]').waitForExist({ timeout: 60_000 });
 }
 
+/** Text a WebKitWebDriver `getText` would drop. */
+async function text(selector: string): Promise<string> {
+  return String(await $(selector).getProperty("textContent"));
+}
+
 // E2E-M18-TK-06 Plan with Lead (F-TK-06): the fake Claude is Lead; it
 // answers the plan request with two tasks, the second on an engine that
-// wasn't offered.
+// wasn't offered. With no account (D-869): runs need none.
 describe("E2E-M18-TK-06 plan with Lead", function () {
   this.timeout(300_000);
 
-  it("F-TK-06.1-4 Free: Lead plans in its thread, the edited draft becomes tasks, and Execute all isn't offered", async () => {
+  after(async () => {
+    await invoke("test_task_lane_delay", { ms: 0 });
+  });
+
+  it("F-TK-06.1-4 Lead plans in its thread, the edited draft becomes tasks, and Execute all shows its runs, then starts each once", async () => {
     await freshOffline();
-    const dir = repo("tk06-free");
+    const dir = repo("tk06");
     await addFolder(dir);
     const ws = (await invoke<Ws[]>("workspace_list")).find((w) => w.root === dir)!;
     await planToDraft();
@@ -93,47 +108,68 @@ describe("E2E-M18-TK-06 plan with Lead", function () {
     expect(made.map((i) => i.title).sort()).toEqual(["OAuth routes", "Write the sign-in page"]);
     expect(made.every((i) => i.status === "todo" && i.project && i.suggested_engine)).toBe(true);
     expect(new Set(made.map((i) => i.project)).size).toBe(1);
+    const routes = made.find((i) => i.title === "OAuth routes")!;
+    const page2 = made.find((i) => i.title === "Write the sign-in page")!;
 
-    // Signed out on Free: no Execute all; the plan says why where it would be.
-    expect(await $('[data-testid="plan-execute"]').isExisting()).toBe(false);
-    expect(String(await $('[data-testid="plan-execute-blocked"]').getProperty("textContent"))).toBe(
-      "Sign in to run tasks. Your tasks stay available offline. Your tasks are saved; run them later or one at a time.",
+    // The routes task already runs from its own Execute… (held in setup).
+    await invoke("test_task_lane_delay", { ms: 60_000 });
+    await invoke("task_execute", {
+      input: {
+        issueId: routes.id,
+        workspaceId: ws.id,
+        engineId: routes.suggested_engine,
+        isolation: "lane",
+        access: "edits",
+        review: false,
+      },
+    });
+
+    // Execute all… shows each run first: nothing starts until Run.
+    await $('[data-testid="plan-execute"]').click();
+    await $('[data-testid="plan-launch-run"]').waitForExist({ timeout: 10_000 });
+    const rows = await $$('[data-testid="plan-launch-run"]');
+    expect(rows.length).toBe(2);
+    const shown: string[] = [];
+    const skips: string[] = [];
+    for (const r of rows) {
+      shown.push(String(await r.getProperty("textContent")));
+      skips.push((await r.getAttribute("data-skip")) ?? "");
+    }
+    const at = (id: string) => made.findIndex((i) => i.id === id);
+    expect(skips[at(routes.id)]).toBe("running");
+    expect(shown[at(routes.id)]).toContain("Left alone: already running");
+    expect(shown[at(page2.id)]).toContain(`${page2.id} · Write the sign-in page`);
+    expect(shown[at(page2.id)]).toContain("Edits in its own worktree · reviewed by ");
+    const runsOf = async (id: string) =>
+      (await invoke<AttemptView[]>("task_attempts_list")).filter((r) => r.attempt.issueId === id);
+    expect(await runsOf(page2.id)).toEqual([]);
+    await $('[data-testid="plan-confirm-back"]').click();
+    await $('[data-testid="plan-created"]').waitForExist({ timeout: 5_000 });
+    expect(await runsOf(page2.id)).toEqual([]);
+
+    await $('[data-testid="plan-execute"]').click();
+    await $('[data-testid="plan-confirm-run"]').waitForClickable({ timeout: 10_000 });
+    expect(await text('[data-testid="plan-confirm-run"]')).toBe("Run 1 task");
+    await $('[data-testid="plan-confirm-run"]').click();
+    await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
+    expect(await text('[data-testid="plan-skipped"]')).toBe(`Left alone: ${routes.id} (already running).`);
+
+    // One run per task: the page's on its suggested engine; the routes
+    // task keeps only its own.
+    const plan = (await invoke<Plan[]>("plan_list")).find((p) => p.state === "started")!;
+    expect(plan.queued).toEqual([page2.id]);
+    expect(plan.skipped).toEqual([{ issueId: routes.id, reason: "running" }]);
+    const run = await browser.waitUntil(
+      async () => {
+        const r = await runsOf(page2.id);
+        return r.length === 1 ? r[0]! : false;
+      },
+      { timeout: 15_000, timeoutMsg: "the page task got no run" },
     );
-    expect(await invoke<AttemptView[]>("task_attempts_list")).toEqual([]);
-    // Closed, the plan waits in the header.
+    expect(run.attempt.engineId).toBe(page2.suggested_engine);
+    expect(await runsOf(routes.id)).toHaveLength(1);
+    expect(await $('[data-testid="plan-execute"]').isExisting()).toBe(false);
     await $('[data-testid="plan-close"]').click();
     await $('[data-testid="plan-dialog"]').waitForExist({ reverse: true, timeout: 5_000 });
-  });
-
-  it("F-TK-06.4 Pro: Execute all starts one run per task on its suggested engine", async () => {
-    const { email } = await freshUser("tk06");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
-    const dir = repo("tk06-pro");
-    await addFolder(dir);
-    await planToDraft();
-    await $('[data-testid="plan-create"]').click();
-    await $('[data-testid="plan-execute"]').waitForClickable({ timeout: 10_000 });
-    await $('[data-testid="plan-execute"]').click();
-    await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
-    // This plan's tasks (the tracker keeps the Free run's too).
-    const plan = (await invoke<Array<{ state: string; issueIds: string[] }>>("plan_list")).find(
-      (p) => p.state === "started",
-    )!;
-    const made = (await issues()).filter((i) => plan.issueIds.includes(i.id));
-    expect(made).toHaveLength(2);
-    const runs = await browser.waitUntil(
-      async () => {
-        const all = (await invoke<AttemptView[]>("task_attempts_list")).filter((r) =>
-          plan.issueIds.includes(r.attempt.issueId),
-        );
-        return all.length === made.length ? all : false;
-      },
-      { timeout: 15_000, timeoutMsg: "not every task got a run" },
-    );
-    for (const issue of made) {
-      const run = runs.find((r) => r.attempt.issueId === issue.id);
-      expect(run?.attempt.engineId).toBe(issue.suggested_engine);
-    }
   });
 });

@@ -31,6 +31,7 @@ import type {
   Turn,
   WorkspaceSummary,
 } from "@tandem/protocol";
+import { LIMITS } from "@tandem/protocol/plans";
 import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
@@ -46,7 +47,7 @@ import {
 } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
-import { DemoPlans } from "./plan";
+import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen } from "./shell";
@@ -89,31 +90,12 @@ const AUTH: AuthState = {
   error: null,
 };
 
-/** The Free plan, as the released download runs it (D-128). */
+/** What the released download runs with no account (D-128): every local
+ * feature, unlimited (D-869, D-2900). */
 const ENTITLEMENT: EntitlementView = {
   plan: "free",
   status: "none",
-  limits: {
-    panes: 4,
-    workspaces: 3,
-    threadGrid: 1,
-    teammates: 1,
-    routines: false,
-    backgroundRoutines: false,
-    taskExecution: false,
-    pluginConnections: 1,
-    accountsPerEngine: 1,
-    cloudStt: false,
-    enhance: false,
-    conductor: false,
-    auto: false,
-    phone: false,
-    admin: false,
-    chatEngines: ["claude", "codex"],
-    creditPacks: false,
-    dictionarySync: false,
-    sessionSearch: false,
-  },
+  limits: { ...LIMITS.free },
   source: "free",
   credits: null,
   policy: null,
@@ -1194,8 +1176,9 @@ export class DemoCore {
       case "editor_tabs_save":
         this.files.saveTabs(args?.state as EditorTabs);
         return null;
-      // Tasks are a Free feature of the download, so the demo keeps them in
-      // the page. Running one is Pro, which the download doesn't have.
+      // Tasks are a feature of the download, so the demo keeps them in the
+      // page. Running one starts an agent in a worktree on your computer,
+      // which a web page can't (D-2905).
       case "tasks_meta":
         return this.tasks.meta();
       case "tasks_list":
@@ -1218,6 +1201,8 @@ export class DemoCore {
         return this.plans.list();
       case "plan_create_tasks":
         return this.plans.createTasks(String(args?.id ?? ""), (args?.tasks ?? []) as PlanTask[]);
+      case "plan_prepare":
+        return this.plans.prepare(String(args?.id ?? ""));
       case "plan_execute":
         return this.plans.execute();
       case "plan_discard":
@@ -1244,7 +1229,7 @@ export class DemoCore {
             "Plugins sign in to your own accounts, so they don't connect inside this demo. In the app, this page lists them.",
         };
       // Checkpoints, saved prompts and Best of N work on the folders on your
-      // computer; the phone pairs through a Pro account. Each says so here
+      // computer; the phone pairs over your own network. Each says so here
       // instead of answering with the wrong shape (D-833).
       case "checkpoints_list":
       case "checkpoint_create":
@@ -1286,8 +1271,24 @@ export class DemoCore {
         throw {
           code: "unavailable",
           message:
-            "A phone pairs with the app, over your own network or with a Pro account, so it works in the app, not in this demo.",
+            "A phone pairs with the app over your own network, so it works in the app, not in this demo.",
         };
+      // Routines, task runs and Night Shift start agents on your computer,
+      // free in the download (D-2900); a web page can't, so each says so
+      // (D-833, D-2905).
+      case "routine_save":
+      case "routine_run_now":
+      case "routine_preview_schedule":
+      case "routines_background_set":
+        throw {
+          code: "unavailable",
+          message: "Routines run your teammates on your computer, so they work in the app, not in this demo.",
+        };
+      case "task_execute":
+      case "night_schedule":
+        throw { code: "unavailable", message: RUNS_IN_THE_APP };
+      case "night_accounts":
+        return [];
       case "scratchpad_list":
         return this.notes.list();
       case "scratchpad_read":

@@ -669,7 +669,6 @@ impl AppState {
             store: store.clone(),
             teammates: teammates.clone(),
             terminals: terminals.clone(),
-            auth: auth.clone(),
             entitlements: entitlements.clone(),
             threads: threads.clone(),
             notifications: notifications.clone(),
@@ -682,17 +681,18 @@ impl AppState {
             clock.clone(),
             tasks.tracker.clone(),
         );
+        let usage: Arc<crate::services::usage::UsageBoard> = Arc::default();
         task_exec.set_host(exec_host.unwrap_or_else(|| {
             Arc::new(crate::services::task_host::AppExecHost {
                 store: store.clone(),
                 data: data.clone(),
-                auth: auth.clone(),
                 entitlements: entitlements.clone(),
                 terminals: terminals.clone(),
                 teammates: teammates.clone(),
                 threads: threads.clone(),
                 notifications: notifications.clone(),
                 gateway: gateway.clone(),
+                usage: usage.clone(),
             })
         }));
         // Teammate mail (F-AG-12) lands in teammate chats.
@@ -884,7 +884,7 @@ impl AppState {
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),
-            usage: Arc::default(),
+            usage,
             runaway,
             night_shift,
             threads,

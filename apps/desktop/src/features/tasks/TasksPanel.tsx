@@ -246,7 +246,7 @@ export function TasksPanel({ header }: { header?: ReactNode }) {
   );
 }
 
-/** Plans this run holds that aren't finished, newest first (F-TK-06). */
+/** Every plan until it's removed, newest first (F-TK-06, F-TK-07). */
 function OpenPlans() {
   const plans = usePlans((s) => s.plans);
   // Every plan until it's removed (F-TK-07), newest first.
@@ -256,6 +256,7 @@ function OpenPlans() {
     failed: "error",
     ready: "waiting",
     created: "done",
+    starting: "working",
     started: "working",
   } as const;
   return (

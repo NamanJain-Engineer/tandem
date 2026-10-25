@@ -458,7 +458,7 @@ grep -Eq 'posthog|sentry' "$E2E_LAST_HOME/net.log" && exit 1 || true
   2. Launch the desktop fresh and click **Sign in**. The scripted browser signs in. Expected: the tab shows "You can return to Tandem."; the rail footer shows "FREE".
   3. Open workspace `/tmp/ws1`. Expected: a tab with a live shell.
   4. Type `echo hi`. Expected: the output shows `hi`.
-- **E2E-M2-2 Free gate.** Add 3 workspaces. The 4th opens the upgrade sheet. Mock checkout. Expected: within 5 s the footer reads "PRO · 10,000 credits" and the 4th workspace can be added.
+- **E2E-M2-2 No workspace limit** (was the Free gate; D-869, D-2900). Add 5 workspaces on a free account. Expected: all five are added, the footer reads "Free" and nothing offers a plan.
 - **E2E-M2-3 Deep links.** With the app closed, run the binary with `tandem-dev://open?path=/tmp/x`. Expected: `/tmp/x` is added as a workspace. Then try `tandem-dev://../../etc` and a 5 KB link. Expected: "Unrecognized link" and no state change.
 - **E2E-M2-4 Single instance and window state.** A second launch exits 0 in under 1 s and the first window is focused. Maximize, quit and relaunch. Expected: maximized. A saved off-screen position: expected fully on-screen. On Linux, the maximize label toggles "Maximize"/"Restore". Tabbing through the title bar follows visual order, with every control named.
 - **E2E-M2-5 Settings and theme.** Press `Mod+,`. Expected: Settings opens. Type "scroll". Expected: the Terminal page, with the scrollback control highlighted. Press Esc. Expected: the previous mode and focus return. Switch to the Light theme. Expected: the terminal palette changes within 200 ms, with the same PID. OSC 11 returns the background token. Set each key, relaunch: every value persists.
@@ -571,7 +571,7 @@ xvfb-run -a pnpm --filter desktop perf -- --suite terminals   # P95 key→echo �
   - Press Esc mid-drag. Expected: the layout is back to its pre-drag state.
 - **E2E-M3-5 Handback.** Run fake `claude` in an agent pane, then `/exit`. Expected: a shell prompt in the same cwd, and "Saved sessions (1)" in the rail.
 - **E2E-M3-6 Tree kill.** Run `bash -c 'sleep 1000 & sleep 1000'` and close the pane. Expected: `pgrep -f 'sleep 1000'` is empty within 3 s.
-- **E2E-M3-7 Free pane limit.** Open 4 panes, then try a 5th. Expected: the upgrade card, and the spawn log shows no new process.
+- **E2E-M3-7 No pane limit** (was the Free pane limit; D-869, D-2900). Offline, open 4 panes, then a 5th. Expected: the 5th starts.
 - **E2E-M3-8 Orphans.** kill -9 the app with a live child, then relaunch. Expected: the dialog. Choose Stop. Expected: the PID is gone.
 - **E2E-M3-9 Keyboard.**
   - Ctrl+W/T/D/[/] in a terminal. Expected: bytes 0x17, 0x14, 0x04, 0x1b, 0x1d reach the PTY.
@@ -1461,7 +1461,7 @@ xvfb-run -a pnpm --filter desktop e2e -- --spec 'e2e/specs/m11-*.e2e.ts'
   - A paused routine. Expected: no fire. A deleted teammate. Expected: an error on the row and no spawn.
 - **E2E-M11-4 Missed run.** Closed across the due time and reopened within 24 h. Expected: exactly one late run.
 - **E2E-M11-5 Background.** Enable. Expected: the unit files exist. Disable. Expected: removed. With the GUI running, `--run-routines`. Expected: exits without running anything.
-- **E2E-M11-6 Free.** Expected: the Routines upsell, and Execute disabled with the plan copy.
+- **E2E-M11-6 Free offline** (was the Free upsell; D-869, D-2900, D-2902). Offline with no account. Expected: Routines offers New routine and saves one; Execute isn't blocked and the core takes a run without sign-in or a plan.
 
 **Exit checklist:** G green · DST and cron tables fully covered · the headless mode's single-instance lock is tested.
 **HUMAN_TODO:** *Manual QA:* launchd on macOS, Task Scheduler on Windows, systemd user timers (with lingering) on Ubuntu and Fedora, and behaviour across sleep and wake.
@@ -2074,7 +2074,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **E2E**
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
 - **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; neither new engine is chat-capable.
-- **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` is refused on Free, finds the session by a prompt word on Pro, and turning search off deletes `session-index.db`.
+- **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` waits for the Privacy switch (never for a plan, D-2900), finds the session by a prompt word once it's on, and turning search off deletes `session-index.db`.
 - **E2E-M18-EN08 Engine versions.** A fake Codex installed under `node_modules` at 1.2.0 and a recording `npm` on the login PATH. Expected: "1.2.0 · npm" with no npm call until Check for updates, which runs `npm view @openai/codex version`; pinned Codex and Claude Code panes start with `check_for_update_on_startup=false` and `DISABLE_AUTOUPDATER`; a failure since 1.3.0 shows the banner and Roll back shows `npm install -g @openai/codex@1.2.0` without running it; a detached Codex is listed alone and Stop ends it after a confirm.
 
 ---
@@ -2125,6 +2125,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 ```
 
 **E2E**
+- **E2E-M18-FREE Free offline** (`m18-free-offline.e2e.ts`, D-869, D-2900). Offline with no account. Expected: a thread on Cursor Agent streams its reply, and session search turns on and finds a session by a prompt word. (The fifth pane, the fourth workspace, routines and task runs are E2E-M3-7, E2E-M2-2 and E2E-M11-6.)
 - **E2E-M18-TL11 Agent sandbox** (`m18-tl11-sandbox.e2e.ts`, needs `bwrap` on the test machine). With the setting off, an agent pane has no chip. With Workspace, the next agent pane shows "Sandboxed"; its engine writes in its folder but not in `$HOME` or `/var/tmp`, can't read `~/.ssh/id_ed25519`, can't write `.git/hooks/pre-commit`, and can commit.
 
 ---
@@ -2156,8 +2157,8 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 - **E2E-M18-WT-05 Second opinion.** A worktree with a Claude Code agent and two changed files; Codex reviews it. Expected: a Read only Codex thread in the worktree whose first message has the task, the diff and the headings; two placed comments and a General one; Send to agent carries all three; a worktree with no changes has nothing to review.
 - **E2E-M18-CN-09 Walk-and-review.** A Pro call with a done agent in a git folder. Expected: `review_next`, `review_send_back` (the review prompt reaches the agent's pane), the agent finishes again, `review_next` and `review_approve` approve it; a paired phone's `review.current` returns the item and its migration diff, and `review.approve` is refused.
 - **E2E-M18-TK-05 Claims.** Two worktrees' fake Claude Code agents. Expected: one claims `src/auth/` with the tool, the other's edit of `src/auth/session.ts` is claimed from its hook; both panes show "… both claim src/auth/session.ts" once and the review queue lists the overlap; an overlap that arises while a worktree's tab is hidden and its pane parked reaches that pane when its tab is shown; removing one worktree clears it.
-- **E2E-M18-TK-06 Plan with Lead.** A git workspace and the fake Claude as Lead. Expected: Plan with Lead opens "Plan: …" in that workspace with the goal and the markers; the fake reply becomes a draft of two tasks, one engine falling back; an edited title is what Create tasks writes, as two To do tasks in a new project with their engines; on Free, Execute all starts nothing and says it needs Pro.
-- **E2E-M18-TK-07 Follow a plan through.** A Pro user, a git workspace and the fake Claude. Expected: a thread in a worktree that writes a file claims it; Execute all's runs show in the plan as they move from queued to in review with Approve; after the runs' worktrees are committed, Land 2 approved… opens Land worktrees with both chosen in plan order; after a restart of the app the plan is still listed with its tasks.
+- **E2E-M18-TK-06 Plan with Lead.** A git workspace, no account (D-869), and the fake Claude as Lead. Expected: Plan with Lead opens "Plan: …" in that workspace with the goal and the markers; the fake reply becomes a draft of two tasks, one engine falling back; an edited title is what Create tasks writes, as two To do tasks in a new project with their engines; with one task already running from its own Execute…, Execute all… lists both runs and starts nothing until Run; after Run the other task has one run on its suggested engine, the running one keeps its single run, and the plan says it left that one alone.
+- **E2E-M18-TK-07 Follow a plan through.** A git workspace, no account (D-869), and the fake Claude. Expected: a thread in a worktree that writes a file claims it; after Execute all… and Run, the plan shows its runs as they move from queued to in review with Approve; after the runs' worktrees are committed, Land 2 approved… opens Land worktrees with both chosen in plan order; after a restart of the app the plan is still listed with its tasks.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
