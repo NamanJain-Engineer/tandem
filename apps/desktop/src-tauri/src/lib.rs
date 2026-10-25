@@ -309,6 +309,8 @@ macro_rules! app_commands {
             commands::secrets::secrets_agents_apply,
             commands::secrets::run_rules_list,
             commands::secrets::run_rules_set,
+            commands::activity::activity_list,
+            commands::activity::activity_export,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -718,13 +720,16 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(async move {
         let _ = tandem_store::repo::bestof::settle_checks(&store).await;
     });
-    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    // Command recall and the activity ledger keep their retention at
+    // startup and hourly (F-EX-02, F-EX-07).
     let recall = state.recall.clone();
+    let activity = state.terminals.activity.clone();
     tauri::async_runtime::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
             tick.tick().await;
             recall.prune().await;
+            activity.prune().await;
         }
     });
     let staging = state.data.staging();

@@ -180,6 +180,11 @@ impl StatusService {
         ));
     }
 
+    /// The app's clock, for subsystems built on the status service.
+    pub fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+
     /// The app's bus, for subsystems built on the status service.
     pub fn bus(&self) -> &EventBus {
         &self.bus

@@ -146,6 +146,8 @@ pub struct TerminalService {
     sandbox_alerted: std::sync::atomic::AtomicBool,
     /// Agent panes' scopes, usage and Freeze (F-EX-06).
     pub resources: Arc<crate::services::resources::ResourcesService>,
+    /// F-EX-07: each agent pane's and thread's ledger.
+    pub activity: Arc<crate::services::activity::ActivityService>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -284,6 +286,8 @@ impl TerminalService {
         } else {
             crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone())
         };
+        let activity =
+            crate::services::activity::ActivityService::new(store.clone(), status.clock());
         Arc::new(Self {
             pty,
             engines,
@@ -312,6 +316,7 @@ impl TerminalService {
             sandbox_alert: std::sync::OnceLock::new(),
             sandbox_alerted: std::sync::atomic::AtomicBool::new(false),
             resources,
+            activity,
         })
     }
 

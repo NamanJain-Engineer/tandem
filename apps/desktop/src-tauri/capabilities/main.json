@@ -318,6 +318,8 @@
     "allow-secrets-agents-apply",
     "allow-run-rules-list",
     "allow-run-rules-set",
+    "allow-activity-list",
+    "allow-activity-export",
     "allow-thread-create",
     "allow-thread-list",
     "allow-thread-get",

@@ -767,9 +767,12 @@ impl AppState {
             terminals.clone(),
         );
         threads.set_checkpoints(checkpoints.clone());
+        threads.set_activity(terminals.activity.clone());
         let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
+        let hook_activity = terminals.activity.clone();
         terminals.set_prompt_hook(Arc::new(move |pane, late| {
             let (cps, store) = (hook_cps.clone(), hook_store.clone());
+            let activity = hook_activity.clone();
             Box::pin(async move {
                 use tandem_store::repo::{panes, workspaces};
                 let Ok(record) = panes::get(&store, &pane).await else {
@@ -778,18 +781,26 @@ impl AppState {
                 let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
                     return;
                 };
-                cps.before_turn(
-                    crate::services::checkpoints::Request {
-                        folder: std::path::PathBuf::from(&ws.root),
-                        workspace_id: Some(ws.id.as_str().to_string()),
-                        pane_id: Some(pane.as_str().to_string()),
-                        label: record.human_name.unwrap_or_default(),
-                        late,
-                        ..Default::default()
-                    },
-                    tandem_store::repo::checkpoints::CheckpointReason::Prompt,
-                )
-                .await;
+                let is_agent = record.kind == "agent";
+                let made = cps
+                    .before_turn(
+                        crate::services::checkpoints::Request {
+                            folder: std::path::PathBuf::from(&ws.root),
+                            workspace_id: Some(ws.id.as_str().to_string()),
+                            pane_id: Some(pane.as_str().to_string()),
+                            label: record.human_name.unwrap_or_default(),
+                            late,
+                            ..Default::default()
+                        },
+                        tandem_store::repo::checkpoints::CheckpointReason::Prompt,
+                    )
+                    .await;
+                // F-EX-07: the prompt, never its text.
+                if is_agent {
+                    activity
+                        .turn("pane", pane.as_str(), made.map(|c| c.id))
+                        .await;
+                }
             })
         }));
         let ports = crate::services::ports::PortsService::new(store.clone());

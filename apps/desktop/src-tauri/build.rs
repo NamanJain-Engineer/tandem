@@ -240,6 +240,8 @@ const COMMANDS: &[&str] = &[
     "secrets_agents_apply",
     "run_rules_list",
     "run_rules_set",
+    "activity_list",
+    "activity_export",
     "thread_create",
     "thread_list",
     "thread_get",

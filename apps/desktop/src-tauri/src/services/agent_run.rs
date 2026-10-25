@@ -134,9 +134,13 @@ impl AgentRuns {
             Ok(c) => c,
             Err(why) => return RunReply::refused(why),
         };
-        if let Err(why) = self.decide(&checked).await {
-            return RunReply::refused(why);
-        }
+        let decided = match self.decide(&checked).await {
+            Ok(d) => d,
+            Err((d, why)) => {
+                self.ledger(&checked, d, None, None).await;
+                return RunReply::refused(why);
+            }
+        };
         let resolved = match secrets::resolve(self.keychain.as_ref(), &checked.vars) {
             Ok(r) => r,
             Err(e) => return RunReply::refused(e.message),
@@ -152,14 +156,43 @@ impl AgentRuns {
             code = "secrets.agent_run",
             "an agent's run with secrets started"
         );
-        run(
+        let started = std::time::Instant::now();
+        let reply = run(
             &checked.command,
             &checked.cwd,
             &env,
             &resolved.secrets,
             RUN_LIMIT,
         )
-        .await
+        .await;
+        let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        self.ledger(&checked, decided, reply.exit_code, Some(took))
+            .await;
+        reply
+    }
+
+    /// The run in the pane's ledger (F-EX-07): its line, the secrets' names,
+    /// who decided, its exit code and how long it took. Never its output.
+    async fn ledger(
+        &self,
+        c: &Checked,
+        decided: &'static str,
+        exit_code: Option<i32>,
+        duration_ms: Option<i64>,
+    ) {
+        self.terminals
+            .activity
+            .run(
+                c.pane.as_str(),
+                crate::services::activity::RunRecord {
+                    command: c.command.clone(),
+                    secrets: c.secrets.clone(),
+                    decided,
+                    exit_code,
+                    duration_ms,
+                },
+            )
+            .await;
     }
 
     /// Where it comes from, what it runs and what it uses.
@@ -237,22 +270,23 @@ impl AgentRuns {
 
     /// A repository rule, this agent's earlier "Allow for this agent", or
     /// the person's answer.
-    async fn decide(&self, c: &Checked) -> Result<(), String> {
+    /// Who decided (as the ledger names it), or that and why not.
+    async fn decide(&self, c: &Checked) -> Result<&'static str, (&'static str, String)> {
         if RunRules::load(&self.data).allows(&c.repo, &c.command) {
-            return Ok(());
+            return Ok("rule");
         }
         if self
             .terminals
             .agent_run_allowed(c.pane.as_str(), &c.command)
         {
-            return Ok(());
+            return Ok("allowed_before");
         }
         let with = if c.secrets.is_empty() {
             "with the folder's .env".to_string()
         } else {
             format!("with {}", c.secrets.join(", "))
         };
-        let (_, ticket) = self.broker.request(ApprovalRequest {
+        let (view, ticket) = self.broker.request(ApprovalRequest {
             source: SourceRef::Pane {
                 pane_id: c.pane.as_str().to_string(),
             },
@@ -265,18 +299,46 @@ impl AgentRuns {
             ),
             options: vec![ApprovalScope::Once, ApprovalScope::Conversation],
         });
-        match ticket.outcome().await {
+        let outcome = ticket.outcome().await;
+        let (decided, answer) = match &outcome {
+            ApprovalOutcome::Allowed { scope, via } => {
+                let who = if *scope == ApprovalScope::Conversation {
+                    "agent"
+                } else {
+                    "once"
+                };
+                (who, format!("allowed:{}", via_name(*via)))
+            }
+            ApprovalOutcome::Denied { via, .. } => {
+                ("declined", format!("denied:{}", via_name(*via)))
+            }
+            ApprovalOutcome::Expired => ("expired", "expired".into()),
+            ApprovalOutcome::Cancelled => ("cancelled", "cancelled".into()),
+        };
+        self.terminals
+            .activity
+            .approval(c.pane.as_str(), &view.summary, &answer)
+            .await;
+        match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
                 if scope == ApprovalScope::Conversation {
                     self.terminals.allow_agent_run(c.pane.as_str(), &c.command);
                 }
-                Ok(())
+                Ok(decided)
             }
-            ApprovalOutcome::Denied { .. } => Err(DECLINED.into()),
-            ApprovalOutcome::Expired => Err(EXPIRED.into()),
-            ApprovalOutcome::Cancelled => Err(CANCELLED.into()),
+            ApprovalOutcome::Denied { .. } => Err((decided, DECLINED.into())),
+            ApprovalOutcome::Expired => Err((decided, EXPIRED.into())),
+            ApprovalOutcome::Cancelled => Err((decided, CANCELLED.into())),
         }
     }
+}
+
+/// `ApprovalVia` as stored (`inline`, `dashboard`, …).
+fn via_name(via: tandem_core::approvals::ApprovalVia) -> String {
+    serde_json::to_value(via)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 /// The last [`OUTPUT_CAP`] bytes of what a run prints.
@@ -535,6 +597,32 @@ mod tests {
             .await
             .expect("count");
         assert_eq!(stored, 0);
+        // F-EX-07: the ledger has each answer and each run, never the value.
+        let events = fx
+            .terminals
+            .activity
+            .list("pane", fx.agent.as_str())
+            .await
+            .expect("ledger");
+        let kinds: Vec<(&str, Option<&str>)> = events
+            .iter()
+            .map(|e| (e.kind.as_str(), e.decided.as_deref()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("approval", Some("allowed:inline")),
+                ("run", Some("once")),
+                ("approval", Some("allowed:inline")),
+                ("run", Some("once")),
+            ]
+        );
+        assert_eq!(events[1].summary, "printenv API_KEY");
+        assert_eq!(events[1].secrets, vec!["stripe-test"]);
+        assert_eq!(events[1].exit_code, Some(0));
+        assert!(events[1].duration_ms.is_some());
+        let all = serde_json::to_string(&events).expect("json");
+        assert!(!all.contains(VALUE) && !all.contains("[REDACTED]"), "{all}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

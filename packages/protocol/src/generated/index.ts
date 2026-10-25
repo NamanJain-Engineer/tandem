@@ -5,6 +5,7 @@ export type * from "./AccountId";
 export type * from "./AccountOverride";
 export type * from "./AccountSessions";
 export type * from "./AccountUsage";
+export type * from "./ActivityEvent";
 export type * from "./AddedWorkspace";
 export type * from "./AgentStatus";
 export type * from "./AgentsMdPlan";

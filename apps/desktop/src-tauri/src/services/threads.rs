@@ -229,6 +229,8 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// Saves the folder before each turn (F-EX-01); unset in tests.
     checkpoints: std::sync::OnceLock<Arc<crate::services::checkpoints::CheckpointService>>,
+    /// F-EX-07: each turn sent goes in the thread's ledger.
+    activity: std::sync::OnceLock<Arc<crate::services::activity::ActivityService>>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
     /// Hears every teammate chat turn that ended (learning, F-AG-08).
@@ -375,6 +377,7 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             checkpoints: std::sync::OnceLock::new(),
+            activity: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
             health_sink: std::sync::OnceLock::new(),
@@ -385,6 +388,10 @@ impl ThreadService {
 
     pub fn set_checkpoints(&self, c: Arc<crate::services::checkpoints::CheckpointService>) {
         let _ = self.checkpoints.set(c);
+    }
+
+    pub fn set_activity(&self, a: Arc<crate::services::activity::ActivityService>) {
+        let _ = self.activity.set(a);
     }
 
     /// The app's titler and data folder (tests may leave them unset).
@@ -1671,24 +1678,32 @@ impl ThreadService {
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
         // F-EX-01: the folder as it was before the engine hears the message.
+        let mut checkpoint = None;
         if let (Some(cps), Some(ws)) = (self.checkpoints.get(), thread.workspace_id.as_ref()) {
-            cps.before_turn(
-                crate::services::checkpoints::Request {
-                    folder: std::path::PathBuf::from(&thread.cwd),
-                    workspace_id: Some(ws.as_str().to_string()),
-                    thread_id: Some(id.as_str().to_string()),
-                    turn_id: Some(turn_id.as_str().to_string()),
-                    label: repo::get(&self.store, id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|t| t.title)
-                        .unwrap_or_default(),
-                    ..Default::default()
-                },
-                tandem_store::repo::checkpoints::CheckpointReason::Turn,
-            )
-            .await;
+            checkpoint = cps
+                .before_turn(
+                    crate::services::checkpoints::Request {
+                        folder: std::path::PathBuf::from(&thread.cwd),
+                        workspace_id: Some(ws.as_str().to_string()),
+                        thread_id: Some(id.as_str().to_string()),
+                        turn_id: Some(turn_id.as_str().to_string()),
+                        label: repo::get(&self.store, id)
+                            .await
+                            .ok()
+                            .flatten()
+                            .map(|t| t.title)
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    },
+                    tandem_store::repo::checkpoints::CheckpointReason::Turn,
+                )
+                .await;
+        }
+        // F-EX-07: the turn, never its text.
+        if let Some(activity) = self.activity.get() {
+            activity
+                .turn("thread", id.as_str(), checkpoint.map(|c| c.id))
+                .await;
         }
         let seeded = seed.is_some();
         let text = match seed {
@@ -3741,6 +3756,47 @@ mod tests {
         }
         assert_eq!(detail.thread.state, ThreadState::Done);
         assert_eq!(detail.running, None);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_2_a_turn_goes_in_the_ledger_without_its_text() {
+        let script: Script = Arc::new(|turn, tx| {
+            play(tx, vec![ev(&turn, end(TurnEndReason::Completed))]);
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        let activity =
+            crate::services::activity::ActivityService::new(f.store.clone(), Arc::new(SystemClock));
+        f.svc.set_activity(activity.clone());
+        let sentence = "please rename the quarterly flamingo report";
+        f.svc
+            .send(&f.thread.id, sentence.into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        let events = activity
+            .list("thread", f.thread.id.as_str())
+            .await
+            .expect("list");
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            (events[0].kind.as_str(), events[0].summary.as_str()),
+            ("turn", "Turn sent")
+        );
+        let rows: Vec<String> = f
+            .store
+            .read(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT source_id || kind || summary || detail_json || COALESCE(checkpoint_id, '') FROM activity",
+                )?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .expect("rows");
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|r| !r.contains("flamingo")), "{rows:?}");
     }
 
     #[tokio::test]
