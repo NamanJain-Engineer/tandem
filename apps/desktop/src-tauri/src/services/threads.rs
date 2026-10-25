@@ -752,6 +752,27 @@ impl ThreadService {
         Ok(())
     }
 
+    /// Ends the live sessions of the threads on `engine_id`, an ACP agent
+    /// the user removed: a running turn is stopped first. The threads stay,
+    /// and their next turn says the agent was removed (F-EN-10).
+    pub async fn retire_engine(self: &Arc<Self>, engine_id: &str) {
+        let ids: Vec<String> = match self.runtimes.lock() {
+            Ok(m) => m.keys().cloned().collect(),
+            Err(poisoned) => poisoned.into_inner().keys().cloned().collect(),
+        };
+        for raw in ids {
+            let id = ThreadId::from_db(raw);
+            let Ok(thread) = self.thread(&id).await else {
+                continue;
+            };
+            if thread.engine_id != engine_id {
+                continue;
+            }
+            let _ = self.stop(&id).await;
+            let _ = self.retire_session(&id).await;
+        }
+    }
+
     /// `thread_switch_engine` (F-TH-16, between turns): the new engine starts
     /// a fresh session, seeded with a summary of the conversation at its
     /// first turn, which opens with `divider`; this thread's allow rules
@@ -2411,7 +2432,7 @@ impl AppLauncher {
         remote.client(&host).await?;
         let mut report = remote.report(&host).await;
         if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
-            let list = self.terminals.engines.registry().all().to_vec();
+            let list = self.terminals.engines.base_registry().all().to_vec();
             report = remote.detect(&host, &list).await.ok();
         }
         let found = report
@@ -2554,7 +2575,7 @@ impl AppLauncher {
             None => None,
         };
         if report.as_ref().and_then(|r| r.get(&engine.id)).is_none() {
-            let list = self.terminals.engines.registry().all().to_vec();
+            let list = self.terminals.engines.base_registry().all().to_vec();
             let fresh = wsl.detect_report(&host, &distro, &list).await?;
             if let Some(r) = &remote {
                 r.publish_report(&host, &fresh).await?;
@@ -2698,7 +2719,20 @@ impl AppLauncher {
                 thread.id.as_str().to_string(),
             ),
         };
-        tasks.chat_server(&session_key(&thread.id), &label, &actor)
+        // A thread in a local folder claims files in its working tree
+        // (F-TK-05); an SSH host's or a WSL distro's folder isn't one here.
+        let kind = match &thread.workspace_id {
+            Some(ws) => tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+                .await
+                .ok()
+                .map(|w| w.kind),
+            None => None,
+        };
+        let folder = match kind.as_deref() {
+            Some("ssh" | "wsl") => None,
+            _ => Some(std::path::PathBuf::from(&thread.cwd)),
+        };
+        tasks.chat_server(&session_key(&thread.id), &label, &actor, folder.as_deref())
     }
 
     /// The teammates whose chats this launcher starts.
@@ -2768,17 +2802,8 @@ impl AppLauncher {
             Arc::new(tandem_engines::chat::codex::CodexAdapter::new(codex_limits)),
         ];
         // Every engine that speaks the Agent Client Protocol (F-TH-06).
-        let registry = terminals.engines.registry();
-        for engine in registry.all() {
-            if let (Some("acp"), Some(cmd)) = (engine.chat_adapter.as_deref(), &engine.acp_cmd) {
-                adapters.push(Arc::new(tandem_engines::chat::acp::AcpAdapter::new(
-                    &engine.id,
-                    &engine.label,
-                    cmd,
-                    engine.limit_patterns.clone(),
-                )));
-            }
-        }
+        let registry = terminals.engines.base_registry();
+        adapters.extend(registry.all().iter().filter_map(acp_adapter));
         adapters
     }
 
@@ -2983,6 +3008,38 @@ impl AppLauncher {
     }
 }
 
+/// Why a thread's engine can't be found: an added agent's was removed.
+fn engine_gone(engine_id: &str) -> IpcError {
+    if tandem_engines::acp_agents::is_added_id(engine_id) {
+        IpcError::new(
+            ErrorCode::EngineMissing,
+            "This thread's ACP agent was removed. Its messages stay here; add the agent again in Settings › Engines to start a new thread with it.",
+        )
+    } else {
+        IpcError::new(
+            ErrorCode::EngineMissing,
+            "This engine isn't known to Vibezeo",
+        )
+    }
+}
+
+/// The ACP adapter for an engine that speaks it (an added agent's, built
+/// when its thread starts).
+fn acp_adapter(engine: &tandem_engines::EngineSpec) -> Option<Arc<dyn ChatAdapter>> {
+    match (engine.chat_adapter.as_deref(), &engine.acp_cmd) {
+        (Some("acp"), Some(cmd)) => Some(Arc::new(
+            tandem_engines::chat::acp::AcpAdapter::new(
+                &engine.id,
+                &engine.label,
+                cmd,
+                engine.limit_patterns.clone(),
+            )
+            .with_fallback(engine.acp_fallback_cmd.as_ref()),
+        )),
+        _ => None,
+    }
+}
+
 #[async_trait]
 impl ChatLauncher for AppLauncher {
     fn model_for(&self, thread: &ThreadRecord) -> (Option<String>, Option<String>) {
@@ -3035,13 +3092,22 @@ impl ChatLauncher for AppLauncher {
         thread: &ThreadRecord,
     ) -> Result<(Arc<dyn ChatAdapter>, ChatStart), IpcError> {
         let engines = &self.terminals.engines;
-        let engine = engines.get(&thread.engine_id).ok_or_else(|| {
-            IpcError::new(
-                ErrorCode::EngineMissing,
-                "This engine isn't known to Vibezeo",
-            )
-        })?;
-        let adapter = self.adapters.get(&engine.id).cloned().ok_or_else(|| {
+        let engine = engines
+            .get(&thread.engine_id)
+            .ok_or_else(|| engine_gone(&thread.engine_id))?;
+        // An added agent runs as it's saved now, held to the form's rules
+        // again (D-2511); its adapter is built from those settings each time.
+        let added = engines.acp_agent(&engine.id);
+        if let Some(agent) = &added {
+            agent
+                .check()
+                .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
+        }
+        let adapter = match &added {
+            Some(_) => acp_adapter(&engine),
+            None => self.adapters.get(&engine.id).cloned(),
+        }
+        .ok_or_else(|| {
             IpcError::new(
                 ErrorCode::EngineUnsupported,
                 format!(
@@ -3050,6 +3116,18 @@ impl ChatLauncher for AppLauncher {
                 ),
             )
         })?;
+        // An added ACP agent is a command on this computer (F-EN-10).
+        if added.is_some()
+            && (self.remote_host(thread).await?.is_some() || self.wsl_host(thread).await?.is_some())
+        {
+            return Err(IpcError::new(
+                ErrorCode::EngineUnsupported,
+                format!(
+                    "{} runs on this computer only. Start the thread in a local folder.",
+                    engine.label
+                ),
+            ));
+        }
         if let Some((remote, host)) = self.remote_host(thread).await? {
             return self
                 .prepare_remote(thread, &engine, adapter, remote, host)
@@ -3060,16 +3138,21 @@ impl ChatLauncher for AppLauncher {
                 .prepare_wsl(thread, &engine, adapter, host, distro)
                 .await;
         }
-        let program = self
-            .terminals
-            .resolve_engine(&engine)
-            .await
-            .ok_or_else(|| {
-                IpcError::new(
-                    ErrorCode::EngineMissing,
-                    format!("{} isn't installed on this machine.", engine.label),
-                )
-            })?;
+        // An added agent runs its saved path, never a namesake on the PATH
+        // (D-2512).
+        let program = match &added {
+            Some(agent) => {
+                let path = std::path::PathBuf::from(&agent.program);
+                path.is_file().then_some(path)
+            }
+            None => self.terminals.resolve_engine(&engine).await,
+        }
+        .ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::EngineMissing,
+                format!("{} isn't installed on this machine.", engine.label),
+            )
+        })?;
         let cwd = std::path::PathBuf::from(&thread.cwd);
         let launch = engines
             .agent_launch(
@@ -3089,6 +3172,11 @@ impl ChatLauncher for AppLauncher {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         env.extend(crate::services::fake_engine_env());
+        // An added agent's own variables, checked when it was added.
+        if let Some(agent) = &added {
+            env.retain(|(k, _)| !agent.env.contains_key(k));
+            env.extend(agent.env.clone());
+        }
         let stdio_servers: Vec<_> = self.tasks_server(thread).await.into_iter().collect();
         let (config, endpoint) = self.mcp_config(thread, &stdio_servers).await?;
         let origin = self.origin(thread).await;
@@ -5725,6 +5813,33 @@ mod tests {
             assert_eq!(
                 err.message,
                 tandem_core::entitlement::CHAT_ENGINE_NOT_ALLOWED
+            );
+        }
+    }
+
+    /// D-869: with no account, a thread runs on an ACP agent the user added.
+    #[tokio::test]
+    async fn f_en_10_3_with_no_account_a_thread_runs_on_an_added_agent() {
+        let f = fixture(OnStop::Ack, hang()).await;
+        plan_switch(&f.svc);
+        let agent = "acp-my-agent-0000002a";
+        let made = f
+            .svc
+            .create(new_thread(&f, agent, ThreadKind::Thread))
+            .await;
+        assert!(made.is_ok(), "{made:?}");
+        let switched = f
+            .svc
+            .switch_engine(&f.thread.id, agent, None, "divider".into())
+            .await
+            .expect("an added agent with no account");
+        assert_eq!(switched.engine_id, agent);
+        // No bundled engine takes the added agents' prefix.
+        for spec in tandem_engines::EngineRegistry::bundled().all() {
+            assert!(
+                !tandem_engines::acp_agents::is_added_id(&spec.id),
+                "{}",
+                spec.id
             );
         }
     }

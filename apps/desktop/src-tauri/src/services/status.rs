@@ -74,6 +74,9 @@ pub type TurnSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// `(pane_id, tool_name)` for every tool report (the runaway guard, F-AC-09).
 pub type ToolSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+/// `(pane_id, paths)`: the files an agent's edit tool is about to change
+/// (F-TK-05 inferred claims).
+pub type EditSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
 
 pub struct StatusService {
     pub store: Arc<StatusStore>,
@@ -102,6 +105,7 @@ pub struct StatusService {
     screen: std::sync::OnceLock<ScreenSource>,
     on_turn: std::sync::OnceLock<TurnSink>,
     on_tool: std::sync::OnceLock<ToolSink>,
+    on_edit: std::sync::OnceLock<EditSink>,
 }
 
 /// `(pane_id, engine_session_id)`.
@@ -125,6 +129,7 @@ impl StatusService {
             screen: std::sync::OnceLock::new(),
             on_turn: std::sync::OnceLock::new(),
             on_tool: std::sync::OnceLock::new(),
+            on_edit: std::sync::OnceLock::new(),
             bus,
             clock,
         })
@@ -402,6 +407,11 @@ impl StatusService {
         let _ = self.on_tool.set(sink);
     }
 
+    /// Told of the files agents' edits change (set once, at startup).
+    pub fn set_edit_sink(&self, sink: EditSink) {
+        let _ = self.on_edit.set(sink);
+    }
+
     /// Where the tick reads screens from (set once, at startup).
     pub fn set_screen_source(&self, source: ScreenSource) {
         let _ = self.screen.set(source);
@@ -482,6 +492,13 @@ impl StatusService {
                     (report.event, &report.payload.tool, self.on_tool.get())
                 {
                     sink(&pane, tool);
+                }
+                if let (ReportEvent::Working, false, Some(sink)) = (
+                    report.event,
+                    report.payload.paths.is_empty(),
+                    self.on_edit.get(),
+                ) {
+                    sink(&pane, &report.payload.paths);
                 }
                 if let Some(u) = report.update() {
                     self.apply(&pane, u);
@@ -626,6 +643,37 @@ mod tests {
 
     fn status(s: &Arc<StatusService>, pane: &str) -> Option<AgentStatus> {
         s.store.get(&SessionKey::pane(pane)).map(|r| r.status)
+    }
+
+    #[test]
+    fn f_tk_05_2_an_edit_report_hands_its_paths_to_the_claims() {
+        let (s, clock) = service();
+        type Seen = Vec<(String, Vec<String>)>;
+        let seen: Arc<Mutex<Seen>> = Arc::default();
+        let sink = seen.clone();
+        s.set_edit_sink(Arc::new(move |pane, paths| {
+            if let Ok(mut v) = sink.lock() {
+                v.push((pane.to_string(), paths.to_vec()));
+            }
+        }));
+        s.watch("pn_1", &[], &[], None);
+        let report = |tool: &str, paths: Vec<String>| StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Working,
+            ts: clock.now_ms(),
+            payload: ReportPayload {
+                tool: Some(tool.into()),
+                paths,
+                ..ReportPayload::default()
+            },
+        };
+        s.on_report(report("Bash", Vec::new()));
+        s.on_report(report("Edit", vec!["/r/a.ts".into()]));
+        assert_eq!(
+            *seen.lock().expect("seen"),
+            vec![("pn_1".to_string(), vec!["/r/a.ts".to_string()])]
+        );
     }
 
     #[test]

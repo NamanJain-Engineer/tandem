@@ -141,7 +141,9 @@ fn main() {
                 .append(true)
                 .open(path)
             {
-                let _ = writeln!(f, "{body}");
+                // One write per line, so hooks that run at once can't
+                // interleave a line.
+                let _ = f.write_all(format!("{body}\n").as_bytes());
             }
         }
     }

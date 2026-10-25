@@ -40,8 +40,16 @@
 //! ("5s", "2h"), as engines do (F-AC-05).
 //!
 //! `/tasks <tool> <json>` calls a tool of the `tandem_tasks` stdio server
-//! named in `--mcp-config`, which it starts once and keeps, as engines keep
-//! their MCP servers; it prints `tasks[<server pid>]: <answer>` (D-1606).
+//! named in `--mcp-config` (else in `$CLAUDE_CONFIG_DIR/.claude.json`, a
+//! terminal pane's), which it starts once and keeps, as engines keep their
+//! MCP servers; it prints `tasks[<server pid>]: <answer>` (D-1606).
+//!
+//! As a chat engine, a plan request (F-TK-06) is answered with two tasks
+//! between its markers, the second on an engine that wasn't offered.
+//!
+//! `/edit <path>` (as `claude`) reports an Edit of that file in the cwd
+//! (`PreToolUse` with its `file_path`), appends a line to it, then Stop
+//! (F-TK-05 inferred claims).
 //!
 //! Sign-in (F-AC-02): `/login` asks for a code like a device flow and, once a
 //! line is typed, writes `$CLAUDE_CONFIG_DIR/.credentials.json`; `/logout`
@@ -175,6 +183,32 @@ fn version(name: &str) -> String {
 fn send_line(v: serde_json::Value) {
     println!("{v}");
     let _ = std::io::stdout().flush();
+}
+
+/// Lead's answer to a plan request (F-TK-06): two tasks between the
+/// prompt's markers, the second on an engine Vibezeo didn't offer.
+fn plan_reply(text: &str) -> Option<String> {
+    let nonce = text
+        .split("PLAN-BEGIN-")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .to_string();
+    let first = text
+        .split("Engines a task can run on")
+        .nth(1)?
+        .lines()
+        .find_map(|l| l.strip_prefix("- `"))?
+        .split('`')
+        .next()?
+        .to_string();
+    let plan = serde_json::json!({"tasks": [
+        {"title": "Add the OAuth routes", "description": "Done when /auth/google answers.", "engine": first, "why": "It has room left"},
+        {"title": "Write the sign-in page", "description": "A page with both buttons.", "engine": "no-such-engine"}
+    ]});
+    Some(format!(
+        "I read the repository.\nPLAN-BEGIN-{nonce}\n{plan}\nPLAN-END-{nonce}\nTwo tasks."
+    ))
 }
 
 /// A second opinion (F-WT-05): findings on the first added line of the
@@ -617,10 +651,28 @@ struct TasksServer {
 
 static TASKS: std::sync::Mutex<Option<TasksServer>> = std::sync::Mutex::new(None);
 
+/// The `tandem_tasks` entry Vibezeo wrote into the provider home's
+/// `.claude.json` (a terminal pane's agent; its connection is in the env).
+fn home_tasks_server() -> Option<(String, Vec<String>)> {
+    let home = PathBuf::from(std::env::var_os("CLAUDE_CONFIG_DIR")?);
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).ok()?).ok()?;
+    let server = doc.pointer("/mcpServers/tandem_tasks")?;
+    let args = server
+        .get("args")?
+        .as_array()?
+        .iter()
+        .filter_map(|a| a.as_str().map(str::to_string))
+        .collect();
+    Some((server.get("command")?.as_str()?.to_string(), args))
+}
+
 impl TasksServer {
     fn start() -> Result<Self, String> {
         let argv: Vec<String> = std::env::args().skip(1).collect();
-        let (command, args) = chat::stdio_server(&argv, "tandem_tasks").ok_or("no tasks server")?;
+        let (command, args) = chat::stdio_server(&argv, "tandem_tasks")
+            .or_else(home_tasks_server)
+            .ok_or("no tasks server")?;
         let mut child = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
@@ -831,6 +883,41 @@ fn answer(name: &str, text: &str) -> bool {
                 out(&format!("sh exit: {}\r\n", o.status.code().unwrap_or(-1)));
             }
             Err(e) => out(&format!("sh failed: {e}\r\n")),
+        }
+        return true;
+    }
+    // `/edit <path>` (F-TK-05): an Edit's PreToolUse names the file; the
+    // edit itself stays here.
+    if let Some(path) = t.strip_prefix("/edit ") {
+        let file = std::env::current_dir()
+            .unwrap_or_default()
+            .join(path.trim());
+        if claude {
+            hook(
+                "PreToolUse",
+                serde_json::json!({ "tool_name": "Edit", "tool_input": {
+                    "file_path": file.display().to_string(),
+                    "old_string": "SECRET OLD TEXT",
+                    "new_string": "SECRET NEW TEXT",
+                }}),
+            );
+        }
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let wrote = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file)
+            .and_then(|mut f| f.write_all(b"edited\n"))
+            .is_ok();
+        out(&format!(
+            "{} {}\r\n",
+            if wrote { "edited" } else { "couldn't edit" },
+            path.trim()
+        ));
+        if claude {
+            hook("Stop", serde_json::json!({ "stop_hook_active": false }));
         }
         return true;
     }

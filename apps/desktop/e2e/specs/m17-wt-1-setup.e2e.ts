@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, settled, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
 import { newWorktree, pick, repoMenu } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -126,8 +126,20 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await browser.waitUntil(async () => (await command.getValue()) === "echo changed > setup-marker.txt", {
       timeout: 5_000,
     });
-    await command.clearValue();
+    // clearValue doesn't reach the field's React state under WebKitGTK and
+    // leaves the old command: select all and delete, as a person would.
+    await command.click();
+    await browser.keys([mod(), "a"]);
+    await browser.keys("Delete");
+    await browser.waitUntil(async () => (await command.getValue()) === "", {
+      timeout: 5_000,
+      timeoutMsg: "the setup command didn't clear",
+    });
     await command.addValue("echo saved > setup-marker.txt");
+    await browser.waitUntil(async () => (await command.getValue()) === "echo saved > setup-marker.txt", {
+      timeout: 5_000,
+      timeoutMsg: "the setup command didn't take the new text",
+    });
     await settled();
     await $('[data-testid="worktree-setup-save"]').click();
     await $('[data-testid="worktree-setup"]').waitForExist({ reverse: true, timeout: 5_000 });

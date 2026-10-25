@@ -377,7 +377,7 @@ curl -sI http://127.0.0.1:8787/v1/health | grep -qi 'x-tandem-min-version'
 **Early slices:**
 - ▸slice F-SH-02 → M3: the segmented mode switch with mounted surfaces; Agent and Thread show interim surfaces.
 - ▸slice F-SH-03 → M3: the Code rail list, add/select, and the footer with plan and credits.
-- ▸slice F-CD-01 → M3: add a workspace via the picker or a deep link, dedupe, tabs, the Free limit of 3.
+- ▸slice F-CD-01 → M3: add a workspace via the picker or a deep link, dedupe, tabs, no limit with no account (D-2900).
 - ▸slice F-CD-03 → M3: one plain login shell per tab, over a per-pane channel.
 
 **Prerequisites.** M1 (auth endpoints, `/me`, config, client verifiers).
@@ -434,7 +434,7 @@ curl -sI http://127.0.0.1:8787/v1/health | grep -qi 'x-tandem-min-version'
     - Launch at login (autostart, off) on the General page. The tray arrives with Dictate (M8) and background routines (M11).
 11. **Skeleton slices.**
     - Code rail: Open workspace with a non-blocking picker, dedupe by canonical path, tabs.
-    - Free plan: a 4th workspace opens the UI-120 upgrade sheet; Upgrade opens web checkout.
+    - No workspace limit with no account (D-2900); the upgrade sheet and in-app checkout were removed (D-869).
     - One plain-shell `TerminalView` per tab, using `tandem-pty` minimal spawn/read/write/resize/kill with the login-shell env and a Tauri `Channel<Vec<u8>>` per pane.
     - The mode switch with interim surfaces.
 
@@ -895,7 +895,7 @@ command -v act && act -W .github/workflows/release.yml -j linux --dryrun || true
    - Rows grouped by engine, with label, plan, usage summary, Default badge, and Set default / Sign out / Remove.
    - Add account: a dialog with a mini terminal running `login_cmd` in a new home, with success detected via `status_cmd`.
    - Cancel kills the login process and deletes the new home.
-   - Free plan: 1 account per engine (upgrade sheet).
+   - No limit on accounts per engine with no account (D-2900).
 6. **Account resolution (F-AC-03).** The resolver order is explicit > teammate > workspace override > default. There is a workspace override setting, and the AccountChip switches the *next* session only.
 7. **Limit card (F-AC-05, UI-36).**
    - Terminal limits come from `limit_patterns` with a parsed `resets_at`.
@@ -1627,7 +1627,7 @@ cargo test -p tandem-voice f_di_05 && cargo test --workspace invariant_rule_7
   - A seat change. Expected: the Stripe quantity is updated.
 - **E2E-M13-5 Audit.** A Team member starts a Full session. Expected: an audit row. A Pro user. Expected: none.
 - **E2E-M13-6 Transparency.** Enable cloud STT. Expected: its row reads "On", with the destination.
-- **E2E-M13-7 Refund.** An admin refund. Expected: Free limits, and the monthly bucket at 0.
+- **E2E-M13-7 Refund.** An admin refund. Expected: the no-account limits (nothing local capped, hosted features off), and the monthly bucket at 0.
 
 **Exit checklist:** G green · every hosted route is in the `requirePlan` table test · no request bodies in the API logs.
 **HUMAN_TODO:**
@@ -2051,11 +2051,37 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: multi-repo workspaces (M)
+
+**Goal.** Let one agent work across several repositories that live side by side, with one worktree per repository on one branch, a diff per repository and linked pull requests (F-CD-22). From `docs/NEXT_FEATURES.md` (§1 #18). Built on branch `competitive-gaps`; decisions D-2531–D-2539.
+
+**Owns:** F-CD-22 (P2)
+**Prerequisites.** F-CD-14/15 (worktrees), F-WT-02 (the review bar), F-WT-08's `gh` runner, the entitlement `Limits` (§3.2).
+
+**Ordered tasks**
+1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0004 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
+2. **Diff.** `lane_diff` across the repositories with prefixed paths; sections in the diff dialog.
+3. **Pull requests.** `lane_create_prs` / `lane_prs_get` behind the native confirm; UI-158.
+
+**Verification**
+```bash
+cargo test -p tandem-store f_cd_22 && cargo test -p tandem-desktop --lib f_cd_22
+pnpm --filter desktop exec vitest run -t "F-CD-22"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd22*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories (free for everyone, D-869). Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
 
-**Owns:** F-EN-07, F-EN-08, F-EN-09, F-TH-17 (P2)
+**Owns:** F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-TH-17 (P2)
 **Prerequisites.** M4 (engine registry and detection), M17's F-WT-01 (worktree copy patterns).
 
 **Ordered tasks**
@@ -2063,6 +2089,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 2. **Engine catalog (F-EN-09).** Registry rows for Antigravity CLI and Kiro CLI from the vendors' docs (D-2404), the `note` field (Gemini CLI's), shown in the launch grid's not-installed list and Settings › Engines.
 3. **Engine versions (F-EN-08).** The registry's `updates` table (npm package, native versions folder and installer, Pin switch, self-updating methods); `tandem_engines::versions` (install method from where the command resolves, the version book, rollback commands); `$DATA/engine-versions.json` fed by Thread turn results; Pin in the pane launch; the background process list behind a `ProcessTable` trait; commands `engine_versions`, `engine_check_update`, `engine_pin`, `engine_rollback_command`, `engine_background`, `engine_background_stop`; UI-161 in Settings › Engines and the thread's banner.
 4. **Session library (F-TH-17).** `tandem_engines::library` (Claude Code's `projects/*/*.jsonl` and Codex's `sessions/**/*.jsonl` through a `SessionFs`, never through a link), every account's home and each engine's own; commands `library_list`, `library_transcript`, `library_resume`, `library_brief`, `library_continue`, `library_search`, `library_search_set`; the `sessionSearch` limit and the `session_search` setting; `$DATA/session-index.db` (FTS5); UI-162 from the command palette, Continue through UI-13.
+5. **ACP agents (F-EN-10).** Gemini CLI's `--acp` as a built-in Thread engine; `tandem_engines::acp_agents` (the form's rules, an agent as a registry entry) and `chat::acp::probe` (`initialize` with a 10 s limit); `$DATA/acp-agents.json` merged into the engine service's registry and detection; commands `acp_agents_list`, `acp_agent_test`, `acp_agent_add`, `acp_agent_remove`; UI-163 in Settings › Engines and "via ACP" in the Thread engine picker.
 
 **Verification**
 ```bash
@@ -2073,7 +2100,8 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **E2E**
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
-- **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; neither new engine is chat-capable.
+- **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; Antigravity isn't chat-capable, and Kiro is, through its ACP mode (F-EN-10, D-2510).
+- **E2E-M18-EN10 ACP agents.** `/bin/sleep 30` added as an agent; then the fake engine linked as `my-agent` outside the login PATH, added by its full path with `acp`. Expected: "Not an ACP agent: it didn't answer within 10 seconds" after 10 s and nothing saved; an `OPENAI_API_KEY` of `sk-proj-…` refused; the fake agent's test shows its name and version, Add lists it, `engines_list` has it `added`; the picker offers "My agent · via ACP" and a thread with it answers "You said: hello" with no account (D-869); after Remove the thread says the agent was removed, and the same label added again gets a new id.
 - **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` waits for the Privacy switch (never for a plan, D-2900), finds the session by a prompt word once it's on, and turning search off deletes `session-index.db`.
 - **E2E-M18-EN08 Engine versions.** A fake Codex installed under `node_modules` at 1.2.0 and a recording `npm` on the login PATH. Expected: "1.2.0 · npm" with no npm call until Check for updates, which runs `npm view @openai/codex version`; pinned Codex and Claude Code panes start with `check_for_update_on_startup=false` and `DISABLE_AUTOUPDATER`; a failure since 1.3.0 shows the banner and Roll back shows `npm install -g @openai/codex@1.2.0` without running it; a detached Codex is listed alone and Stop ends it after a confirm.
 
@@ -2206,17 +2234,20 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04, F-CN-09 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
 1. **Second opinion (F-WT-05).** `services::second_opinion` (the prompt, the reply parser, the runner and its bus event), `lane_second_opinion`, the reviewer sheet and the review bar's General comment and reviewing state.
 2. **Review queue (F-DB-04).** `services::review_queue` (the status listener, the risk rules, diff-hash approvals, snooze, the repository's check), `review_*` commands, the Dashboard panel's Review view.
 3. **Walk-and-review, first slice (F-CN-09).** The Review group of Conductor tools over the queue's walk, the phone's `review.current` and Review tab (web and app). Later: local voice and voice second opinions.
+4. **Claims (F-TK-05).** `claims.json` and the `claim`, `release` and `list_claims` tools in `tandem-tasks`; sessions' working trees; inferred claims from `PreToolUse` edit paths; overlap notices in panes and the review queue; release on merge, removal and the main checkout's last session; the briefing line. Later: claims inferred from checkpoints, and notices in chat threads.
+5. **Plan with Lead (F-TK-06; bold bet B3's first slice).** `services::plan` (the planning prompt with the offered engines and their usage, the nonce-marked reply parser, the draft), `plan_*` commands, `Issue.suggested_engine`, Execute all through F-TK-04, and the Tasks page's plan sheet. Later: Lead answering agents, second-engine review and merging.
 
 **Verification**
 ```bash
 cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
+cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
@@ -2224,6 +2255,8 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **E2E**
 - **E2E-M18-WT-05 Second opinion.** A worktree with a Claude Code agent and two changed files; Codex reviews it. Expected: a Read only Codex thread in the worktree whose first message has the task, the diff and the headings; two placed comments and a General one; Send to agent carries all three; a worktree with no changes has nothing to review.
 - **E2E-M18-CN-09 Walk-and-review.** A Pro call with a done agent in a git folder. Expected: `review_next`, `review_send_back` (the review prompt reaches the agent's pane), the agent finishes again, `review_next` and `review_approve` approve it; a paired phone's `review.current` returns the item and its migration diff, and `review.approve` is refused.
+- **E2E-M18-TK-05 Claims.** Two worktrees' fake Claude Code agents. Expected: one claims `src/auth/` with the tool, the other's edit of `src/auth/session.ts` is claimed from its hook; both panes show "… both claim src/auth/session.ts" once and the review queue lists the overlap; an overlap that arises while a worktree's tab is hidden and its pane parked reaches that pane when its tab is shown; removing one worktree clears it.
+- **E2E-M18-TK-06 Plan with Lead.** A git workspace, no account (D-869), and the fake Claude as Lead. Expected: Plan with Lead opens "Plan: …" in that workspace with the goal and the markers; the fake reply becomes a draft of two tasks, one engine falling back; an edited title is what Create tasks writes, as two To do tasks in a new project with their engines; with one task already running from its own Execute…, Execute all… lists both runs and starts nothing until Run; after Run the other task has one run on its suggested engine, the running one keeps its single run, and the plan says it left that one alone.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
@@ -2232,7 +2265,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **185 features** (65 P0, 67 P1, 53 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 19 so far (F-AC-08, F-AC-09, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **189 features** (65 P0, 67 P1, 57 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 23 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2254,7 +2287,8 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **185 features** (6
 | F-EN-09 | P2 | M18 | F-WT-05 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 |
 | F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
-| F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-EX-07 | P2 | M18 | | | |
+| F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
+| F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-EX-07 | P2 | M18 | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2281,7 +2315,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **185 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 18 = 184 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 22 = 188 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

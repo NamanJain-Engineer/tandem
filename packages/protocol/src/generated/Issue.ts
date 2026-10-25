@@ -22,4 +22,8 @@ assignee: string | null, created_at: number, updated_at: number, archived: boole
 /**
  * The Markdown summary of the work (F-TK-04).
  */
-result: string | null, attempts: Array<TaskAttemptRecord>, };
+result: string | null, attempts: Array<TaskAttemptRecord>, 
+/**
+ * The engine a plan suggested for it (F-TK-06): Execute starts there.
+ */
+suggested_engine?: string, };

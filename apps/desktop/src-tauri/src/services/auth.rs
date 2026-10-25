@@ -33,8 +33,6 @@ use super::opener::UrlOpener;
 
 pub const KEY_ACCOUNT: &str = "credentials-key";
 pub const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-/// Offline mode works this long before sign-in is needed (UI-133).
-pub const OFFLINE_DAYS: i64 = 14;
 const AAD: &[u8] = b"tandem-credentials-v1";
 const FILE_VERSION: u8 = 1;
 
@@ -297,8 +295,6 @@ pub struct AuthState {
     pub email: Option<String>,
     /// Using Tandem without an account (UI-03 offline path).
     pub offline: bool,
-    /// `None` when there's no sign-in deadline (early-access builds).
-    pub offline_days_left: Option<i64>,
     /// False in early-access builds: no accounts yet, everything local runs
     /// with no deadline (D-105, D-2900).
     pub hosted: bool,
@@ -428,16 +424,11 @@ impl AuthService {
 
     pub fn state(&self) -> AuthState {
         let inner = self.lock();
-        let now = self.clock.now_ms();
         let offline = inner.creds.is_none() && inner.offline_started_at.is_some();
         AuthState {
             signed_in: inner.creds.is_some(),
             email: inner.creds.as_ref().and_then(|c| c.email.clone()),
             offline,
-            offline_days_left: inner
-                .offline_started_at
-                .filter(|_| offline && self.endpoints.hosted)
-                .map(|start| (OFFLINE_DAYS - (now - start) / 86_400_000).max(0)),
             hosted: self.endpoints.hosted,
             pending: inner.attempt.as_ref().map(|a| PendingSignIn {
                 op_id: a.op_id.clone(),
@@ -742,7 +733,8 @@ impl AuthService {
         tracing::info!(code = "auth.signed_out", "signed out");
     }
 
-    /// "Use Tandem offline": Free limits, sign-in needed within 14 days.
+    /// "Use Tandem offline": everything local, with no sign-in deadline or
+    /// countdown (DESIGN §5.5 rule 4, D-2914).
     pub fn continue_offline(&self) -> i64 {
         let now = self.clock.now_ms();
         let started = *self.lock().offline_started_at.get_or_insert(now);
@@ -1022,9 +1014,6 @@ pub mod tests {
                 .expect("lock")
                 .clone()
                 .ok_or(ApiError::Decode("no me".into()))
-        }
-        async fn portal(&self, _a: &str) -> Result<String, ApiError> {
-            Ok("http://web.test/billing/mock-portal".into())
         }
         async fn config(&self) -> Result<SignedConfig, ApiError> {
             Err(ApiError::Network("not in tests".into()))
@@ -1380,7 +1369,6 @@ pub mod tests {
         r.clock.advance(Duration::from_secs(30 * 86_400));
         let s = auth.state();
         assert!(s.offline && !s.hosted);
-        assert_eq!(s.offline_days_left, None, "no sign-in deadline");
         let err = auth.sign_in().await.expect_err("no accounts yet");
         assert_eq!(err.code, ErrorCode::Unavailable);
         assert!(
@@ -1393,10 +1381,10 @@ pub mod tests {
     async fn sign_out_and_offline_mode() {
         let r = rig();
         r.auth.continue_offline();
-        let s = r.auth.state();
-        assert!(s.offline && s.offline_days_left == Some(OFFLINE_DAYS));
-        r.clock.advance(Duration::from_secs(12 * 86_400));
-        assert_eq!(r.auth.state().offline_days_left, Some(2));
+        assert!(r.auth.state().offline);
+        // No deadline: offline mode doesn't count down (D-2914).
+        r.clock.advance(Duration::from_secs(30 * 86_400));
+        assert!(r.auth.state().offline);
         signed_in(&r).await;
         assert!(!r.auth.state().offline);
         r.auth.sign_out().await;

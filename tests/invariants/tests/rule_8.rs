@@ -225,6 +225,7 @@ fn hostile_issue() -> tandem_tasks::Issue {
         archived: false,
         result: None,
         attempts: vec![],
+        suggested_engine: None,
     }
 }
 

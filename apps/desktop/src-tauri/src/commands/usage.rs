@@ -13,7 +13,7 @@ use crate::state::AppState;
 pub async fn usage_report(state: State<'_, AppState>) -> Result<UsageReport, IpcError> {
     let accounts = accounts::list(&state.store).await?;
     let workspaces = workspaces::list(&state.store).await?;
-    let registry = state.terminals.engines.registry();
+    let registry = state.terminals.engines.base_registry();
     let now = chrono::Local::now();
     let (today, tz) = (now.date_naive(), *now.offset());
     tokio::task::spawn_blocking(move || {
@@ -35,7 +35,7 @@ pub async fn usage_sessions(
         .into_iter()
         .filter(|a| account_id.as_ref().is_none_or(|id| *id == a.id))
         .collect();
-    let registry = state.terminals.engines.registry();
+    let registry = state.terminals.engines.base_registry();
     let since = state.clock.now_ms() - crate::services::usage::SESSIONS_SPAN_MS;
     let panes = state.terminals.status.engine_sessions();
     tokio::task::spawn_blocking(move || {

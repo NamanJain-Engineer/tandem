@@ -14,6 +14,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../migrations/0003_bestof_queued.sql"),
     ),
     (
+        "0004_lane_repos",
+        include_str!("../migrations/0004_lane_repos.sql"),
+    ),
+    (
         "0005_secrets",
         include_str!("../migrations/0005_secrets.sql"),
     ),
@@ -167,6 +171,31 @@ mod tests {
             .expect("count");
         assert_eq!(left, 0);
         assert!(dir.path().join("backups/tandem-2.db").is_file());
+    }
+
+    /// `user_version` counts positions in `MIGRATIONS`, so each name's number
+    /// is its position, and every file in `migrations/` is listed once.
+    /// Branches that each add a migration get their numbers in merge order
+    /// (D-872).
+    #[test]
+    fn migrations_are_numbered_by_position_and_all_listed() {
+        for (index, (name, _)) in MIGRATIONS.iter().enumerate() {
+            assert!(
+                name.starts_with(&format!("{:04}_", index + 1)),
+                "{name} is at position {}",
+                index + 1
+            );
+        }
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut files: Vec<String> = std::fs::read_dir(&dir)
+            .expect("migrations dir")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .filter(|f| f.ends_with(".sql"))
+            .map(|f| f.trim_end_matches(".sql").to_string())
+            .collect();
+        files.sort();
+        let listed: Vec<String> = MIGRATIONS.iter().map(|(n, _)| (*n).to_string()).collect();
+        assert_eq!(files, listed);
     }
 
     #[test]

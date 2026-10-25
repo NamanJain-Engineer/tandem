@@ -43,8 +43,9 @@ export async function copyDiagnostics(toast: Toast): Promise<void> {
   }
 }
 
+/** Opens the web account page, where "Delete account…" lives (F-TL-05). */
 export async function openBilling(
-  target: { type: "portal" } | { type: "credits" } | { type: "account" },
+  target: { type: "account" },
   toast: Toast,
 ): Promise<boolean> {
   try {

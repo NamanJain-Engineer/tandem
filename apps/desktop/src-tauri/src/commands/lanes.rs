@@ -13,6 +13,7 @@ use tandem_store::repo::workspaces::{self as repo, Workspace};
 
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
 use crate::services::merge_queue::{self, LandingPlan, LandingRun};
+use crate::services::multi_prs::{self, PrsRun};
 use crate::services::pr_checks::{self, Gh, ImportedComments, LaneChecks, LoginGh};
 use crate::services::radar::{self, RadarMark};
 use crate::services::worktree_setup::{self, LaneSetup, RemoveReport, SetupState};
@@ -526,4 +527,53 @@ pub async fn lane_radar_note(
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
     radar::note(&state.store, &git, &lane_id, &other_id).await
+}
+
+// ---- Multi-repo pull requests (F-CD-22) -------------------------------------
+
+/// Pushes the branch and opens a linked pull request in each of a
+/// multi-repo worktree's repositories, after the native confirm. Only the
+/// main window can.
+#[tauri::command]
+pub async fn lane_create_prs(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+) -> Result<PrsRun, IpcError> {
+    let origin = Origin::Local {
+        window: window.label().to_string(),
+    };
+    LocalReview::check(&origin).ok_or_else(|| {
+        IpcError::new(
+            ErrorCode::PermissionDenied,
+            "Opening pull requests needs the main window",
+        )
+    })?;
+    let (_, branch, repos) = multi_prs::lane_of(&state.store, &lane_id).await?;
+    let login = state.terminals.login_env().await;
+    let gh = LoginGh::find(&login).ok_or_else(|| {
+        IpcError::new(ErrorCode::EngineMissing, "GitHub CLI (gh) isn't installed")
+    })?;
+    let git = lanes::git_for(&state.data, &login)?;
+    let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
+    if !confirm_native(
+        &app,
+        "Open pull requests?",
+        &format!(
+            "Push {branch} and open a pull request in {}? Each one links the others.",
+            names.join(", ")
+        ),
+        "Open pull requests",
+    )
+    .await
+    {
+        return Err(IpcError::new(ErrorCode::Cancelled, "Nothing was pushed"));
+    }
+    multi_prs::start(&state.store, state.data.run(), git, Box::new(gh), &lane_id).await
+}
+
+#[tauri::command]
+pub async fn lane_prs_get(lane_id: WorkspaceId) -> Result<Option<PrsRun>, IpcError> {
+    Ok(multi_prs::get(lane_id.as_str()))
 }

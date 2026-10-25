@@ -93,7 +93,7 @@ pub async fn workspace_add(
             // The + menu lists the distro's engines: detect them now, as
             // connecting does for an SSH host.
             let (wsl, remote) = (state.wsl.clone(), state.remote.clone());
-            let engines = state.terminals.engines.registry().all().to_vec();
+            let engines = state.terminals.engines.base_registry().all().to_vec();
             tauri::async_runtime::spawn(async move {
                 match wsl.detect_report(&host.id, &distro, &engines).await {
                     Ok(report) => {
@@ -137,7 +137,17 @@ pub async fn workspace_rename(
 
 #[tauri::command]
 pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
-    workspaces::remove(&state.store, &state.terminals, &id).await
+    let removed = workspaces::remove(&state.store, &state.terminals, &id).await?;
+    // Its agents' sessions end and its claims go (F-TK-05): file IO.
+    let (terminals, tasks) = (state.terminals.clone(), state.tasks.clone());
+    let ended = tauri::async_runtime::spawn_blocking(move || {
+        workspaces::end_removed(&terminals, &tasks, &removed);
+    })
+    .await;
+    if let Err(e) = ended {
+        tracing::warn!(error = %e, "a removed workspace's sessions didn't all end");
+    }
+    Ok(())
 }
 
 /// Points a workspace at its folder's new location ("Locate…", F-SH-03).

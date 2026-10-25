@@ -185,7 +185,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. **Mode switch** (F-SH-02).
 5. **Workspace menu**, Code mode only. It contains Auto-arrange panes, Card view, Show terminal sessions (toggle) and Usage….
 6. **Plan-usage chip** (F-AC-04).
-7. **Conductor button** (F-CN-04). Hidden on the Free plan, where it becomes an upgrade entry in the palette.
+7. **Conductor button** (F-CN-04). Hidden without Conductor (hosted); the palette's call command then says it comes with Vibezeo accounts (D-2903).
 8. **Notifications bell** with a count badge that shows `99+` above 99 (F-DB-02).
 9. **Update pill**, shown only when an update is staged or has failed (F-SH-06).
 10. **Right sidebar** toggle (`Mod+Shift+B`).
@@ -583,7 +583,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Exit:**
   - An agent's final output chunk is always flushed and rendered before any exit notice.
   - Exit notice: "Process exited (code N)". For plain shells: **Restart** / **Close**.
-- **Limits:** the entitlement limits the count of live PTYs (§3.2). At the limit, the pane picker shows an upgrade card instead of spawning.
+- **Limits:** none with no account (§3.2, D-2900). A limit a signed entitlement carries is enforced by the core, which refuses the spawn with its reason; nothing offers a plan (D-2910).
 
 **Data:** in memory. Saved session metadata goes in SQLite `sessions`, and scrollback snapshots in `$DATA/scrollback/<pane>.bin`, written at quit and capped to the last 2,000 lines, for restore display only.
 
@@ -594,7 +594,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. Closing a pane running `bash -c 'sleep 1000 & sleep 1000'` leaves no `sleep` processes after 3 s.
 5. With a hidden pane, a program that writes `ESC[c` receives a DA response within 100 ms.
 6. On Windows, launching `claude` in a workspace containing a malicious `claude.cmd` executes the PATH binary, not the workspace file.
-7. At the Free limit (4 live panes), a fifth spawn is refused with the upgrade card and no process is created.
+7. With no account there's no live-pane limit: offline, a fifth pane starts (D-2900, E2E-M3-7). A limit a signed entitlement carries refuses the spawn with the core's reason, and no process is created.
 8. After a crash with a live child, the next launch offers to stop the orphan, and choosing Stop kills it.
 
 #### F-CD-04 Terminal rendering and performance (P0)
@@ -800,7 +800,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Base = the current HEAD of the parent workspace.
 - `.tandem/` is appended to `.git/info/exclude` if absent. Tandem never edits `.gitignore`.
 - Each lane is registered as a **child workspace** of the parent repo. It is listed under the parent in the rail and the Dashboard, and each lane opens its pane in its own tab.
-- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees."
+- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees." It then asks the agent to claim files before editing them (F-TK-05).
 - **Lane menu:**
   - Open in Files.
   - Diff vs base.
@@ -907,6 +907,25 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 **Acceptance:**
 1. [manual] Booting "iPhone 16" in the pane shows the home screen within 30 s, and clicks register.
 2. On a Mac without simulators, Simulator is absent from the picker.
+
+#### F-CD-22 Multi-repo workspaces (P2)
+**Story:** My product is an `api` and a `web` repository side by side in one folder. I want one agent to work across both in one worktree, review both diffs, and open both pull requests, linked to each other.
+
+**Behavior:**
+- **A multi-repo workspace** is a local folder that isn't itself in a git repository and whose direct subfolders include at least two git repositories (`<folder>/<name>/.git`; hidden folders don't count). Vibezeo finds them when it lists the folder; up to 12, by name. The rail row shows "{n} repositories" where a repository shows its branch. Nested deeper repositories, submodules and the folder's other subfolders don't count.
+- **Worktrees.** New worktree…, and the launch sheet's Worktrees option, work in a multi-repo workspace: one worktree makes a parent folder `<folder>/.tandem/worktrees/<slug>/` and, inside it, a git worktree of each repository at `<slug>/<name>` on the same branch `tandem/<slug>`, each from its repository's current commit. The slug is free in every repository (F-CD-14's numbering, across all of them). The agent starts in the parent folder, so it sees every repository. If any repository's worktree fails (one without commits, say), the ones already made are removed and the error says which repository failed.
+- **Plan.** Free for everyone, with no plan check (D-869).
+- **Diff.** Open diff lists each repository with its share of the changes ("api · 3 files", "web · No changes"), then the files grouped by repository, each path starting with the repository's name, with F-WT-02's line comments. Paths in comments and the review prompt start with the repository's name (`api/src/a.ts`).
+- **Create pull requests.** For a multi-repo worktree, "Create pull requests" asks first (the native confirm: "Push tandem/<slug> and open a pull request in api and web?"), then for each repository with commits on the branch, through the user's own `git` and `gh` in that repository's worktree: `git push -u origin tandem/<slug>`, then `gh pr create --fill --head tandem/<slug>`. Once all are open, each pull request's body gains a "Related pull requests" list linking the others (`gh pr edit --body-file`). A dialog shows each repository's step and the pull request links; a failure in one repository is shown and doesn't stop the others. Repositories without new commits are skipped and listed. GitLab remotes aren't handled in this slice: they're listed as skipped.
+- **Discard** removes every repository's worktree (each as F-CD-15's Discard, with the same confirm), then the parent folder. The branches are kept.
+- **Not for multi-repo worktrees yet** (their menu entries are disabled with "Not available for multi-repo worktrees yet"): Merge into…, Land worktrees, Check overlap, Check pull request, previews, worktree setup and its ports and environment, second opinion, and the intent radar. Local folders only: on SSH hosts and in WSL a folder is never multi-repo.
+
+**Acceptance:**
+1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". On Pro, launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
+2. On Free, the Worktrees option is disabled with the Pro reason, and `lane_create` for the folder is refused with ForbiddenPlan.
+3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
+4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
+5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
 
 ### 4.3 TH: Thread mode
 
@@ -1215,7 +1234,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 1. Fixture stores for Claude Code in two provider homes and Codex in its own home list four sessions under their repositories, with engine, account and date. A file that fails to parse is counted as skipped.
 2. Resume on a Claude Code session opens an agent pane in the session's folder, running `claude --resume <id>` with that account's `CLAUDE_CONFIG_DIR`.
 3. "Continue with another engine…" opens F-CD-16's sheet with a brief from the transcript, and Start opens the target in the session's folder with the brief as its first prompt.
-4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file, and on Free `library_search` is refused. A session holding a token-shaped string is found by its other words, while the index file, its title and its transcript never contain the token.
+4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file. Search needs no account (D-2900); limits that turn it off make `library_search` refuse. A session holding a token-shaped string is found by its other words, while the index file, its title and its transcript never contain the token.
 5. The library never opens a file named `.credentials.json` or `auth.json`. An invariant test over a recording file-system fake checks this.
 
 ### 4.4 EN: Engines
@@ -1373,7 +1392,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Two new terminal engines**, added from each vendor's own documentation (checked 15 October 2026, D-2404):
   - **Antigravity CLI** (Google): command `agy`, `agy --version`, installed with Google's script (`curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, `irm https://antigravity.google/cli/install.ps1 | iex` on Windows). It signs in through the browser and keeps its token in the system keyring, and its docs name no way to move its home, so it has one account per computer (`homeStrategy: none`). It reads `GEMINI.md` and `AGENTS.md` (F-EN-07).
   - **Kiro CLI** (AWS): command `kiro-cli`, `kiro-cli --version`, installed with `curl -fsSL https://cli.kiro.dev/install | bash`. `KIRO_HOME` points it at a provider home, so each account has its own (F-AC-01). Sign in and out with `kiro-cli login` and `kiro-cli logout`, run in the account's home.
-  - Both run in terminal panes only, unmodified and signed in by themselves. Neither is a Thread engine, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO).
+  - Both run in terminal panes, unmodified and signed in by themselves, and Vibezeo never runs them headless: Antigravity's terms for third-party automation wait on the owner (HUMAN_TODO). Antigravity CLI is not a Thread engine. Kiro CLI became one through its documented ACP mode with F-EN-10 (D-2510).
   - Screen patterns that need a signed-in run to record (ready, waiting, limit) start empty, so status falls back to output and quiet (F-EN-06); usage limits use the common patterns.
 - **Engine notes:** a registry entry may carry a `note`, shown on its tile in the launch grid's "Not installed" list and in Settings › Engines. Gemini CLI's says: "Google serves Gemini CLI to paid API keys and Gemini Code Assist Standard or Enterprise. Personal Google accounts use Antigravity CLI."
 - **Models from the engines:** a Thread engine's model picker leads with what the engine reports at run time (Codex's `model/list`, ACP's `session/new`), then the remote and bundled catalog (F-TH-08); with nothing reported, the catalog fills it. Terminal engines have no picker: Antigravity and Kiro choose their model inside their own UI (D-2405).
@@ -1381,8 +1400,37 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 **Acceptance:**
 1. With `agy` and `kiro-cli` on the login PATH, both are detected and launch in terminal panes. Two Kiro accounts get two provider homes, each passed as `KIRO_HOME`; Antigravity offers one account.
 2. Gemini CLI stays listed, with its note about API keys and enterprise access.
-3. Neither new engine appears as a Thread engine, in the teammate engine picker, or in any headless run.
+3. Antigravity CLI appears in no Thread engine picker, teammate engine picker or headless run. Kiro CLI appears as a Thread and teammate engine through `kiro-cli acp`, as every ACP engine does (F-EN-10 supersedes this criterion's first version, D-2510), and in no headless run.
 4. When Codex reports its models, they lead the picker, before the catalog's; when it reports none, the picker lists the catalog.
+
+#### F-EN-10 Any ACP agent as a thread engine (P2)
+**Story:** An agent I use speaks the Agent Client Protocol, but Vibezeo doesn't list it. I add it by its command and use it in Thread mode, signed in the agent's own way.
+
+**Behavior:**
+- **Built-in ACP mode**, from the vendor's documentation (checked 16 October 2026, D-2506): Gemini CLI (`gemini --acp`, or `--experimental-acp` when an older Gemini CLI doesn't start with `--acp`, D-2516) and Kiro CLI (`kiro-cli acp`, in its account's provider home) become Thread engines beside Cursor, Grok and OpenCode; Kiro's note says it runs through ACP (D-2510). Antigravity CLI gets one once its ACP mode ships.
+- **Settings › Engines › ACP agents** (UI-163) lists the agents the user added, and **Add an ACP agent…** takes:
+  - a label (1–40 characters);
+  - a command: a name on the login shell's PATH or an absolute path;
+  - arguments;
+  - environment variables.
+  A **Goose** preset fills in `goose acp`.
+- **Test** runs the command in the user's home folder with the login environment plus the given variables, sends `initialize`, and waits up to 10 s. It shows the agent's name and version, its protocol version and its sign-in methods, then stops the process.
+  - No answer, a crash, an answer that isn't the Agent Client Protocol, or a protocol version Vibezeo doesn't speak shows "Not an ACP agent" with the reason, and nothing is saved.
+  - **Add** runs the same test again and saves only when it passes.
+- **Saved agents** live in the file `$DATA/acp-agents.json` (D-2509): label, the command resolved to an absolute path when added, arguments and environment. They appear in the Thread engine picker, labelled "via ACP", and never among terminal engines, hosts' engines or engine versions (D-2513). A thread runs the agent's saved path and nothing found on the PATH (D-2512), with its current settings, which are checked again whenever they're read. **Remove** deletes one; its threads stay readable and say the engine was removed. An id is never given to another agent, so a later agent with the same label never picks up the old threads (D-2511).
+- **Sign-in is the agent's own.** Vibezeo never reads, stores or proxies an agent's credentials:
+  - an environment value that looks like a secret (the redactor's patterns) is refused, with "Keep keys in the agent's own sign-in";
+  - a variable that steers other engines or what a process loads is refused, as in Pin (D-2503);
+  - an agent that answers `session/new` with an auth error shows the sign-in methods it named and asks the person to sign in with the agent's own command in a terminal; Vibezeo's account sign-in is never offered for it (D-2514);
+  - **Allow once** is never sent as an "always": when an agent offers no one-time allow, Allow once answers cancelled (D-2515).
+- **Plan:** none. Added agents run as threads with no account, as every chat engine does (D-869).
+- ACP shows what each agent exposes and no more; no transcript, usage or status beyond its updates.
+
+**Acceptance:**
+1. Kiro CLI is a Thread engine through `kiro-cli acp`. Adding the fake engine's ACP mode by its absolute command passes the test, shows its name and version, and appears in the Thread engine picker labelled "via ACP"; a thread with it runs a turn.
+2. A command that doesn't answer `initialize` within 10 s shows "Not an ACP agent", and nothing is saved.
+3. With no account, a thread with the added agent runs a turn (D-869). Removing the agent and adding another with the same label gives a new id, and the old thread says the engine was removed.
+4. An environment value matching a secret pattern, or a reserved variable, is refused before anything runs.
 
 ### 4.5 AC: Accounts and usage
 
@@ -1934,6 +1982,63 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Stop during lane creation leaves no running process and no half-created lane (the lane is rolled back if empty).
 4. With review on, a review comment with a verdict is posted after the attempt.
 
+#### F-TK-05 Claims (P2)
+**Story:** Three agents work in worktrees of one repository. Before one edits `src/auth/session.ts`, it claims the file and sees that another worktree's agent already said it's changing the auth folder. I see the overlap in both panes and in the review queue, before git ever reports a conflict.
+
+**Behavior:**
+- **Three task tools** (F-TK-02's server): `claim(paths, intent)`, `release(paths?)` and `list_claims()`.
+  - A claim is a file or a folder (covering everything in it) in the session's working tree, named relative to the session's folder or by an absolute path inside the tree, never by a pattern (`*` or `?`), with what the agent says it's changing (at most 50 paths a call, 500 characters of intent).
+  - Claims belong to the working tree: a relaunched agent in the same worktree keeps them. A session outside a git working tree can't claim.
+  - `claim` answers with the overlaps its working tree now has; `list_claims` with this worktree's claims, the other worktrees' claims in the same repository and the overlaps.
+  - What another agent wrote (its worktree's name, its paths and its intent) is returned wrapped as untrusted, like task comments: data, never instructions.
+- **Briefing:** a worktree's briefing (F-CD-15) asks the agent to claim before editing and to check `list_claims`.
+- **Inferred claims:** when an agent with status hooks is about to edit a file (Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit), its working tree claims that file. The hook sends the file's path only, never the edit.
+- **Overlaps:** two working trees of one repository overlap when they claim the same file, or one claims a folder holding a file the other claims.
+  - A new overlap shows once as a notice in both worktrees' terminal panes: "add-oauth and fix-auth both claim src/auth/session.ts". A path that newly overlaps is announced again; an overlap that ended and comes back is new.
+  - The review queue (F-DB-04) shows every current overlap above its items, naming both worktrees and up to 5 paths.
+- **Release:** a worktree's claims go when it's merged cleanly or removed. The main checkout's claims go when its last agent session ends. `release` gives up paths (and what's inside a released folder), or every claim without paths.
+
+**Acceptance:**
+1. Two agents claiming overlapping paths produce one overlap notice naming both worktrees and the paths.
+2. An agent that edits `a.ts` without claiming gets an inferred claim from its `PreToolUse` event.
+3. Claims are released when the worktree is merged or removed.
+4. `list_claims` returns other agents' intents inside untrusted fences.
+
+#### F-TK-06 Plan with Lead (P2)
+**Story:** I have a goal bigger than one agent's task. I give it to Lead, the built-in teammate. Lead reads the repository and splits the goal into tasks, each with the engine it suggests. I adjust the plan, approve it, and every task runs in its own worktree. The review queue (F-DB-04) fills as they finish.
+
+**Behavior (first slice; bold bet B3, "The Foreman"):**
+- **Plan with Lead…** on the Tasks page asks for a goal (up to 4,000 characters) and a local workspace.
+- **Lead plans in its own thread.** Vibezeo opens a new Lead chat in that workspace, titled "Plan: <goal>", at Read access. Its first message has:
+  - the goal;
+  - the engines that can run tasks here, each with its accounts' fullest usage window (for example "claude: 62 % of the 5-hour window used, resets 14:10");
+  - the reply format: one JSON block between markers that carry a fresh code.
+
+  You can read Lead's reasoning in that thread, and answer it there. Lead gets no tasks tools in that thread, so nothing reaches the tracker before you approve.
+  - When Lead waits for your answer, the plan says so: "Lead is waiting for your answer in its thread".
+  - After 30 minutes of work (time waiting for you doesn't count), Vibezeo stops Lead's turn and the plan fails, saying why.
+- **The draft.** When Lead's turn ends, Vibezeo reads the block and shows the plan as editable rows: title, description and engine (a menu of the engines offered). It holds 1–12 tasks.
+  - An engine Lead names that wasn't offered becomes Lead's own engine, and the row says so.
+  - A reply without a readable block fails the plan with "Lead's reply had no plan", and offers Plan again. Lead naming the markers after its plan doesn't hide the plan. A reply over 512 KB isn't read.
+  - Characters that can hide text (controls, bidi controls and Unicode tags) are taken out of every row, and a title is one line.
+  - Nothing is written until you choose **Create tasks**.
+- **Create tasks** puts the rows into the tracker (F-TK-01) as To do tasks in a new project named after the goal, written as Lead. Each task remembers its suggested engine, and F-TK-04's Execute dialog starts on that engine. If writing stops partway, the project and the tasks written so far stay, their rows can't be changed, and Create tasks writes the rest.
+- **Execute all…** first shows what it starts. Nothing runs until you choose **Run**:
+  - each task, with its engine and that engine's account with the most room as usage reads now (or the engine's own sign-in);
+  - that each one edits in its own worktree, and the engine its independent review uses (F-TK-04's: a different engine when one is installed);
+  - the tasks it leaves alone, and why. Only To do tasks with no run under way start.
+
+  Then it runs those tasks through F-TK-04's queue, at Edits, at most 4 at once. It starts once: while its runs are queuing the plan says "Starting the runs…", and the plan keeps what it queued. If a run fails to start, the plan says why and Execute all can go again without queuing anything twice.
+  It needs no account (D-869). When the limits turn runs off, the check says so where Run would be, and the tasks stay usable.
+- **Not in this slice:** Lead answering agents' questions, and merging. Review and merge stay yours.
+- A plan lives until you remove it or the app quits, and a reloaded window lists it again. **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
+
+**Acceptance:**
+1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
+2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
+3. Create tasks writes one To do task per row in a new project, each with its suggested engine, as Lead. Nothing is written before it, and trying again after a failure writes no task twice.
+4. Execute all lists each run (engine, account, its own worktree, the review's engine) and starts none until you confirm. Then it starts one attempt per To do task on its suggested engine, in a worktree, and none for a task that's already running. When the limits turn runs off, it starts none and says why.
+
 ### 4.9 RT: Routines
 
 #### F-RT-01 Routine model (P1)
@@ -2261,7 +2366,7 @@ Each ready module needs:
   - A quick tap during mic start-up is still honoured as a full hold/release.
 - **Cancel:** Esc while recording, or the widget's ×, discards the take.
 - **Deep link:** `tandem://dictate/toggle` works as a fallback trigger, for example for Wayland users who can't register a global hook.
-- **Plan:** local Dictate is available on the Free plan.
+- **Account:** local Dictate needs no account.
 
 **Acceptance:**
 1. A simulated hold → speak (WAV fixture) → release inserts the fixture's transcript into a test text field (integration test with the fake insertion backend).
@@ -3036,11 +3141,21 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 - **Interactive demo:** a browser-only replica of the Code, Thread and Dashboard surfaces built from `packages/ui` components with sample data and **no network or mic access**. It is labelled "Interactive demo · sample data".
 - **Performance:** Lighthouse ≥90 for performance and accessibility on `/` and `/pricing`.
 - **Legal:** a cookie-consent banner **before** any non-essential cookies or analytics load. The site ships no analytics by default.
+- **Theme (D-1870):** System, Light or Dark, chosen in the header (the phone menu below 640 px) on every page: marketing pages, the blog, the docs, the 404 and the account portal. System, which follows the OS live, is the default. An inline script in `<head>` applies the choice before the first paint as `data-theme-choice` on `<html>` (and `data-theme` when it isn't System), so no page paints in the wrong theme, and `color-scheme` follows. The choice is kept in `localStorage` under one key, `vibezeo-theme`, written only when the visitor picks Light or Dark (System removes it); every read and write is wrapped so a blocked storage still leaves a working page. Without JavaScript the pages follow the OS and the control is not shown. Every site colour token has a value for each theme. Product media keep the app's dark screen in both themes, inside a bezel that follows the theme; share images don't change.
+- **Motion (D-1874):** motion tokens (easings and named durations) in `site.css`; scroll-driven reveals in CSS (`animation-timeline: view()`) inside `@supports`, so content is simply there where the browser lacks it; staggered entrances; and hover and focus micro-interactions. Nothing moves under `prefers-reduced-motion: reduce`, and nothing that moves changes layout.
+- **Product scenes (D-1880):** animated scenes of the product in HTML, CSS and SVG, built from `packages/ui` tokens and the app's own words, showing only what the shipped build does. They are decorative (`aria-hidden`) with a text alternative beside them, pause when off screen or in a hidden tab, and under reduced motion show a still, complete frame.
 
 **Acceptance:**
 1. Lighthouse CI thresholds pass.
 2. No analytics or ads script loads before consent (Playwright network assertion).
 3. The pricing page values match `GET /config` prices (a build-time check).
+4. Every exported page carries the theme script inline in `<head>`, before the body. It sets `data-theme-choice` from storage before the body is parsed (unset or unreadable storage gives `system`), and the header's control (System, Light, Dark) switches the page at once, marks the choice, and keeps it across pages and reloads.
+5. Every site colour pair the site draws meets WCAG 2.2 AA in both themes, and axe finds nothing serious on any page in either theme, whether it comes from the OS or the control.
+6. Choosing Light while the OS is dark (and Dark while it's light) applies every site and app token of that theme and the matching `color-scheme`, docs and blog code blocks included.
+7. Nothing is stored until the visitor picks a theme, and then only `vibezeo-theme`.
+8. With reduced motion nothing on any page animates, and every product scene shows its complete final frame; elsewhere the reveals sit inside `@supports (animation-timeline: view())`.
+9. Each product scene is `aria-hidden` with a text alternative, uses only words from the app's catalog (`en.json`) or the site's own copy, pauses its animations off screen and in a hidden tab, and the home page keeps its Lighthouse budgets (performance ≥ 0.99, LCP ≤ 2.0 s, CLS ≤ 0.02).
+10. No first viewport at 1440×900, in either theme, shows more than three teal things (the primary action, the one highlighted phrase, the mark; DESIGN §4.2): eyebrows, inline links, ticks and list icons are neutral.
 
 #### F-WB-02 Docs (P1)
 **Behavior:**
@@ -3086,7 +3201,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
   - `/blog/tags/<tag>/`: the posts with that tag, newest first.
   - `/blog/feed.xml`: an Atom feed of every published post.
 - Drafts are built by `next dev` only, never exported, listed or fed.
-- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. A post page may carry two scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
+- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2) beyond the site's theme script (F-WB-01 AC4), no cookies, no storage beyond the visitor's theme choice, no third-party resources or embeds. A post page may carry two more scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
 - Subscribing is the Atom feed or an email to the contact address. No newsletter form.
 - Dates appear on blog pages only inside `<time datetime>` elements and as JSON-LD date fields; the site's no-year rule holds for everything else.
 - Linked from the header, the footer, the sitemap and `/llms.txt`.
@@ -3097,7 +3212,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 3. Each post page has one `h1`, the author, a `<time datetime>` for its date, a reading time, its tags linking to their tag pages, and links to its neighbours; a post without a cover renders without an image.
 4. Each tag page lists exactly the posts with that tag.
 5. `/blog/feed.xml` is valid Atom with one entry per published post, and every blog page links it with `<link rel="alternate" type="application/atom+xml">`.
-6. After `build:site`, the blog's index and tag pages carry no script, a post page carries only its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
+6. After `build:site`, the blog's index and tag pages carry no script but the theme script, a post page only that, its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
 7. The sitemap, `/llms.txt`, the header and the footer link the blog, and every blog URL answers at its trailing-slash form with no redirect.
 8. Lighthouse CI on `/blog/` and one post meets the site's budgets (each category ≥ 0.95, CLS ≤ 0.02).
 
@@ -3593,7 +3708,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
   - `command`: one command line, up to 4,000 characters, with F-WT-06's placeholders. It's trusted with the setup and teardown commands and `env` (F-WT-01): an untrusted preview never runs.
   - `port`: which port of the block the preview answers on, as an offset (0 is `VIBEZEO_PORT`; default 0, smaller than `ports`).
   - `path`: what to open, starting with `/` (default `/`).
-- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane. It counts toward the live panes (4 on Free).
+- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane.
 - **Ready.** While a worktree has a preview configured, Vibezeo checks every 2 s whether something accepts connections on its preview port on 127.0.0.1. Once it does, the worktree's rail row shows a **Preview** button that opens `http://<slug>.localhost:<port><path>` (F-WT-06's address rule) in a sidebar browser tab. It goes away when the port stops answering. Checking only connects; it sends nothing.
 - **Best of N.** Compare (F-EX-04) gets **Previews**: it starts each lane's preview where it isn't running, then opens a sidebar browser tab per lane as each becomes ready, titled with the lane's branch. Each column shows its preview's state: "Starting…", **Open preview**, or "No preview" (the repository has none). Lanes on SSH hosts or in WSL show "No preview".
 - **Side by side.** Choosing two lanes' previews (in Compare, or "Compare previews…" in a worktree's menu, then the other worktree) opens a tab in the repository with two browser panes side by side, each loading one preview, labelled with its branch.

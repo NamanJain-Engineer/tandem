@@ -673,7 +673,7 @@ async fn window_points(state: &AppState) -> HashMap<String, f64> {
         .into_iter()
         .filter(|a| rises.contains_key(a.id.as_str()))
         .collect();
-    let registry = state.terminals.engines.registry();
+    let registry = state.terminals.engines.base_registry();
     let panes = state.terminals.status.engine_sessions();
     let since = now - crate::services::usage::SESSIONS_SPAN_MS;
     let shares = tokio::task::spawn_blocking(move || {

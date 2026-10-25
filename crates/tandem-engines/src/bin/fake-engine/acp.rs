@@ -171,6 +171,7 @@ pub fn run(name: &str) {
                 "protocolVersion": 1,
                 "agentCapabilities": {"loadSession": true, "promptCapabilities": {"image": false}, "mcpCapabilities": {"http": true}},
                 "authMethods": [{"id": "login", "name": "Log in"}],
+                "agentInfo": {"name": name, "title": super::label(name), "version": "1.0.0-fake"},
             })),
             "session/new" | "session/load" => {
                 if setting(name).as_deref() == Some("signed-out") {

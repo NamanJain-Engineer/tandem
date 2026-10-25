@@ -1,11 +1,13 @@
-// The home page's interactive demo (D-128): the only script on the marketing
-// pages. It frames /demo/app/ (same origin) once the section nears the
-// viewport, scales the laptop-sized app to the column, and opens it full
-// screen. Phones keep the still image until "Tap to explore". It changes only
+// The home page's interactive demo (D-128), and the product scenes (D-1880)
+// on the home page and /changelog/0.9.0/ (D-1885).
+// It frames /demo/app/ (same origin) once the section nears the viewport,
+// scales the laptop-sized app to the column, and opens it full screen.
+// Phones keep the still image until "Tap to explore". It changes only
 // what's inside [data-demo-stage], which React's hydration doesn't touch
 // (inner HTML). It also gives the product video its poster as the video
-// nears (D-1816). No other origin, no storage, no network beyond the demo's
-// own files and the poster.
+// nears (D-1816), and plays the product scenes while they're on screen. No
+// other origin, no storage, no network beyond the demo's own files and the
+// poster.
 (() => {
   "use strict";
   // A `poster` attribute downloads with the page, and on a slow connection
@@ -28,6 +30,44 @@
       { rootMargin: "600px" },
     );
     near.observe(video);
+  }
+
+  // The product scenes (D-1880): each plays while a third of it (or 120 px)
+  // is on screen and the tab is visible, and waits where it is otherwise. A
+  // scene in the first screen plays at once, however little of it shows:
+  // the hero's window can start low in a laptop's first screen, and a paused
+  // first frame there would look blank. A browser without
+  // IntersectionObserver just plays them.
+  const scenes = document.querySelectorAll("[data-scene]");
+  // Tells the theme script the player runs, so it keeps the effects on.
+  document.documentElement.setAttribute("data-scenes", "");
+  if (scenes.length) {
+    const seen = new Set();
+    const sync = () => {
+      for (const scene of scenes) scene.toggleAttribute("data-live", seen.has(scene) && !document.hidden);
+    };
+    if ("IntersectionObserver" in window) {
+      const first = new Set(scenes);
+      // Every 1 % up to a third, so the 120 px test runs as the scene rises.
+      const steps = [];
+      for (let i = 0; i <= 30; i++) steps.push(i / 100);
+      const watch = new IntersectionObserver(
+        (entries) => {
+          for (const x of entries) {
+            // In the first screen: showing when the page opens, or rising
+            // into it (its entry slide) before any scrolling.
+            const opening = first.delete(x.target) || window.scrollY === 0;
+            if (x.isIntersecting && (opening || x.intersectionRatio >= 0.3 || x.intersectionRect.height >= 120)) seen.add(x.target);
+            else if (!x.isIntersecting) seen.delete(x.target);
+          }
+          sync();
+        },
+        { threshold: steps },
+      );
+      for (const scene of scenes) watch.observe(scene);
+    } else for (const scene of scenes) seen.add(scene);
+    document.addEventListener("visibilitychange", sync);
+    sync();
   }
 
   const slot = document.querySelector("[data-demo-embed]");

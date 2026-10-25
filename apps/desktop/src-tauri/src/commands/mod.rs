@@ -3,6 +3,7 @@
 
 pub mod account;
 pub mod accounts;
+pub mod acp_agents;
 pub mod activity;
 pub mod app;
 pub mod auto;
@@ -28,6 +29,7 @@ pub mod limits;
 pub mod night_shift;
 pub mod onboarding;
 pub mod phone;
+pub mod plan;
 pub mod plugins;
 pub mod ports;
 pub mod prompts;

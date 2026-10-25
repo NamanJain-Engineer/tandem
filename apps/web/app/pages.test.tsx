@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RELEASES, versionPath } from "../lib/changelog";
 import { formatSize, releaseAssets } from "../lib/manifest";
 import { RELEASE } from "../lib/release";
+import { THEME_KEY } from "../lib/theme";
 import AboutPage from "./about/page.site";
 import ChangelogPage from "./changelog/page.site";
 import VersionPage from "./changelog/[version]/page.site";
@@ -21,6 +24,22 @@ import TermsPage from "./terms/page.site";
 const html = (el: ReactElement) => renderToStaticMarkup(el);
 
 describe("inner pages", () => {
+  it("F-WB-01 AC7 /privacy names the one thing the site stores: the theme choice, under its key (D-1872)", () => {
+    const h = html(<PrivacyPage />);
+    expect(h).toContain(`<code>${THEME_KEY}</code>`);
+    expect(h).toContain("It never leaves your browser, and choosing System removes it.");
+  });
+
+  it("F-WB-01 /download's second step quotes the welcome screen's real button (DESIGN §5.2, D-1876)", () => {
+    const en = JSON.parse(readFileSync(join(import.meta.dirname, "../../desktop/src/i18n/en.json"), "utf8")) as Record<string, string>;
+    const h = html(<DownloadPage />);
+    expect(en["signin.earlyAccess.start"]).toBe("Start using Vibezeo");
+    expect(h).toContain(`choose ${en["signin.earlyAccess.start"]} on the welcome screen. It runs on your computer, no account needed.`);
+    expect(h).not.toMatch(/choose Start(?! using Vibezeo)/);
+    // Step 3 (DESIGN §9.2).
+    expect(h).toContain("Setup ends by asking for a project folder.");
+  });
+
   it("F-WB-01 /download says it's free with no limits, and never that a release keeps or removes them (D-869, D-2900)", () => {
     const h = html(<DownloadPage />);
     expect(h).toContain("Free, with no paid plans.");

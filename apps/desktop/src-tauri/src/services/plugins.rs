@@ -73,9 +73,6 @@ pub struct PluginCard {
     pub key_hint: Option<String>,
     /// Teammates this connection is enabled for.
     pub teammates: u32,
-    /// The limits' connections are used up (none are with no account,
-    /// D-2900).
-    pub limit_reached: bool,
 }
 
 /// A step of a connect flow (`plugins:connect`).
@@ -365,7 +362,6 @@ impl PluginService {
         module: &dyn VendorModule,
         conn: Option<&PluginConnection>,
         teammates: u32,
-        limit_reached: bool,
     ) -> PluginCard {
         let m = module.manifest();
         let can = self.availability(module);
@@ -402,7 +398,6 @@ impl PluginService {
             takes_key: m.auth == AuthKind::ApiKey || m.alt_auth == Some(AuthKind::ApiKey),
             key_hint: m.key_hint.map(str::to_string),
             teammates,
-            limit_reached,
         }
     }
 
@@ -427,7 +422,6 @@ impl PluginService {
     pub async fn catalog(&self) -> Result<Vec<PluginCard>, IpcError> {
         let connections = repo::connections(&self.store).await.map_err(store_err)?;
         let counts = self.teammate_counts().await;
-        let limit = self.limit_reached().await;
         let mut cards = Vec::new();
         for module in self.modules() {
             let id = module.manifest().id;
@@ -436,14 +430,13 @@ impl PluginService {
                 .filter(|c| c.plugin_id == id && c.status != ConnectionStatus::Disconnected)
                 .collect();
             if mine.is_empty() {
-                cards.push(self.card(module.as_ref(), None, 0, limit));
+                cards.push(self.card(module.as_ref(), None, 0));
             }
             for c in mine {
                 cards.push(self.card(
                     module.as_ref(),
                     Some(c),
                     counts.get(&c.id).copied().unwrap_or(0),
-                    limit,
                 ));
             }
         }
@@ -459,7 +452,7 @@ impl PluginService {
             .get(connection)
             .copied()
             .unwrap_or(0);
-        Ok(self.card(module.as_ref(), Some(&conn), n, self.limit_reached().await))
+        Ok(self.card(module.as_ref(), Some(&conn), n))
     }
 
     async fn connection(&self, id: &ConnectionId) -> Result<PluginConnection, IpcError> {

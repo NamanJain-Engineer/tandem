@@ -34,7 +34,7 @@ function Featured({ post }: { post: Post }) {
       </div>
       <div className="flex flex-col items-start gap-5 lg:col-span-5">
         <p className="eyebrow">Latest</p>
-        <h2 className="text-display-lg text-balance text-fg transition-colors duration-(--dur-base) group-hover:text-accent">
+        <h2 className="text-display-lg text-balance text-fg transition-colors duration-(--dur-base) group-hover:text-fg-muted">
           <a
             href={post.path}
             className="after:absolute after:inset-0 focus-visible:outline-none"
