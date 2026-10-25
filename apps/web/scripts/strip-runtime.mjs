@@ -5,8 +5,9 @@
 // about half of each page's HTML) runs for nothing and delays the page.
 //
 // The docs are static pages too (D-1843). Kept: the demo app. Afterwards
-// the only scripts left must be F-WB-01 AC2's two: /demo/embed.js on the
-// home page and /download/detect.js on /download/. Anything else fails the
+// the only scripts left must be F-WB-01 AC2's: /demo/embed.js on the home
+// page and on /changelog/0.9.0/ (its Land scene, D-1885), and
+// /download/detect.js on /download/. Anything else fails the
 // build, so a client component added to a marketing page can't silently
 // stop working. A blog post page also keeps its JSON-LD (D-1852) and
 // /blog/blog.js (D-1860); the list is scripts/script-allowlist.mjs.

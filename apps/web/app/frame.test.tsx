@@ -5,9 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Keys, keyLabel, linuxKeys } from "../components/site/Keys";
 import { SiteFooter } from "../components/site/SiteFooter";
+import { Shell } from "../components/Shell";
 import { SiteHeader } from "../components/site/SiteHeader";
 import { FOOTER, NAV } from "../components/site/nav";
 import { SITE } from "../lib/site";
+import { THEME_SCRIPT } from "../lib/theme";
 import RootLayout, { viewport } from "./layout.site";
 
 // The site's frame (M15 redesign, D-1800–D-1802): header, phone menu,
@@ -22,6 +24,22 @@ describe("site frame", () => {
     for (const n of NAV) expect(menu, n.href).toContain(`href="${n.href}"`);
     expect(h).not.toContain("<script");
     expect(h).not.toMatch(/<h1[\s>]/);
+  });
+
+  it("F-WB-01 AC4 the header offers System, Light and Dark, and the phone menu does too (D-1870)", () => {
+    const h = renderToStaticMarkup(<SiteHeader />);
+    for (const name of ["theme", "theme-menu"]) {
+      const radios = [...h.matchAll(/<input type="radio" data-theme-set=""[^>]*name="([\w-]+)" value="(\w+)"/g)]
+        .filter((m) => m[1] === name)
+        .map((m) => m[2]);
+      expect(radios, name).toEqual(["system", "light", "dark"]);
+    }
+    expect(h.match(/<legend class="sr-only">Theme<\/legend>/g)?.length).toBe(2);
+    // The account portal's pages get it too.
+    expect(renderToStaticMarkup(<Shell title="Account">{null}</Shell>)).toMatch(/<fieldset class="theme-switch[^"]*"><legend class="sr-only">Theme<\/legend>/);
+    // Hidden from the start without the script: the page then follows the OS.
+    const css = readFileSync(join(import.meta.dirname, "../../../packages/ui/src/styles/site.css"), "utf8");
+    expect(css).toContain(":root:not([data-theme-choice]) :is(.theme-switch, .theme-only) { display: none !important; }");
   });
 
   it("F-WB-01 the header marks the page being shown", () => {
@@ -39,10 +57,13 @@ describe("site frame", () => {
     expect(FOOTER.map((c) => c.title)).toEqual(["Product", "Docs", "Company", "Legal"]);
   });
 
-  it("F-WB-01 the site follows the OS theme with CSS only (D-1801)", () => {
+  it("F-WB-01 AC4 the root layout opens with the theme script and forces no theme (D-1801, D-1871)", () => {
     const h = renderToStaticMarkup(<RootLayout>{null}</RootLayout>);
-    expect(h).not.toContain("data-theme");
-    expect(h).not.toContain("<script");
+    // The script sets the choice in the browser; the server never picks one.
+    expect(h).not.toMatch(/<html[^>]*data-theme/);
+    expect(h.match(/<script/g)?.length).toBe(1);
+    expect(h).toMatch(/^<html[^>]*><head><script data-theme-boot="">/);
+    expect(h).toContain(THEME_SCRIPT.slice(0, 40));
     expect(viewport.colorScheme).toBe("dark light");
     const css = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
     expect(css).toContain('@import "@tandem/ui/site.css"');

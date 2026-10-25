@@ -22,7 +22,7 @@ export const FOOTER: ReadonlyArray<{ title: string; links: readonly FooterLink[]
       { href: "/demo/", label: "Live demo" },
       { href: "/changelog/", label: "Changelog" },
       { href: "/blog/", label: "Blog" },
-      { href: "/#claude", label: "Built with Claude" },
+      { href: "/about/#claude", label: "Built with Claude" },
     ],
   },
   {

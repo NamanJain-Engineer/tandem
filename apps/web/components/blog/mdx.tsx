@@ -5,7 +5,8 @@ import { cx } from "../../lib/cx";
 // How a post's Markdown renders (F-WB-06): the site's type and tokens, in a
 // 68-character column. Server components only. Code is highlighted at build
 // time by fumadocs-mdx's Shiki, in a light and a dark theme; the CSS below
-// picks the one matching the visitor's OS theme, as the site does (D-1801).
+// picks the one matching the site's theme: the OS's under System, or the visitor's
+// Light or Dark (D-1801, D-1870).
 
 /** Styles the body's elements; on the wrapper so they reach what MDX emits. */
 export const PROSE = cx(
@@ -13,7 +14,7 @@ export const PROSE = cx(
   "[&>*+*]:mt-6",
   "[&_strong]:font-semibold [&_strong]:text-fg",
   // GFM footnotes: small superscript links, and the notes in a quiet block at the end
-  "[&_sup>a]:ml-0.5 [&_sup>a]:font-mono [&_sup>a]:text-[0.75em] [&_sup>a]:text-accent [&_sup>a]:no-underline",
+  "[&_sup>a]:ml-0.5 [&_sup>a]:font-mono [&_sup>a]:text-[0.75em] [&_sup>a]:text-fg-muted [&_sup>a]:no-underline",
   "[&_[data-footnotes]]:!mt-14 [&_[data-footnotes]]:border-t [&_[data-footnotes]]:border-line [&_[data-footnotes]]:pt-6 [&_[data-footnotes]]:text-copy-sm [&_[data-footnotes]_h2]:sr-only",
   // keys: a lit cap, as in the docs
   "[&_kbd]:inline-flex [&_kbd]:min-h-6 [&_kbd]:items-center [&_kbd]:rounded-[6px] [&_kbd]:bg-(--tn-kbd-bg) [&_kbd]:px-1.5 [&_kbd]:font-mono [&_kbd]:text-[0.75rem] [&_kbd]:leading-none [&_kbd]:text-fg [&_kbd]:shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong),inset_0_-2px_0_var(--site-line)]",
@@ -92,7 +93,7 @@ function CodeBlock({
       className={cx(
         className,
         "overflow-x-auto p-5 pr-24 font-mono text-[0.8125rem] leading-6 text-fg",
-        "[&_span]:text-(--shiki-dark) [@media(prefers-color-scheme:light)]:[&_span]:text-(--shiki-light)",
+        "[&_span]:text-(--shiki-dark) light:[&_span]:text-(--shiki-light)",
       )}
     />
   );
@@ -140,14 +141,14 @@ export const BLOG_MDX = {
       href={href}
       {...p}
       {...(/^https?:\/\//.test(href) ? { rel: "noopener noreferrer" } : {})}
-      className="font-medium text-accent underline decoration-[color-mix(in_oklab,currentColor_40%,transparent)] decoration-1 underline-offset-[0.2em] hover:decoration-current"
+      className="font-medium text-fg underline decoration-[color-mix(in_oklab,currentColor_40%,transparent)] decoration-1 underline-offset-[0.2em] hover:decoration-current"
     />
   ),
   ul: (p: Props<"ul">) => <ul {...p} className="flex flex-col gap-2 pl-5 [&>li]:list-disc [&>li]:pl-1 [&>li]:marker:text-fg-subtle" />,
   ol: (p: Props<"ol">) => <ol {...p} className="flex flex-col gap-2 pl-5 [&>li]:list-decimal [&>li]:pl-1 [&>li]:marker:font-mono [&>li]:marker:text-caption [&>li]:marker:text-fg-subtle" />,
   li: (p: Props<"li">) => <li {...p} className="[&>ul]:mt-2 [&>ol]:mt-2" />,
   blockquote: (p: Props<"blockquote">) => (
-    <blockquote {...p} className="border-l-2 border-accent pl-5 text-fg [&>p]:text-pretty" />
+    <blockquote {...p} className="border-l-2 border-line-strong pl-5 text-fg [&>p]:text-pretty" />
   ),
   hr: () => <hr className="horizon !my-12" />,
   table: (p: Props<"table">) => (

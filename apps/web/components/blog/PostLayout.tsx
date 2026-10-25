@@ -31,7 +31,7 @@ function Contents({ toc }: { toc: readonly TocItem[] }) {
             <a
               href={t.url}
               className={cx(
-                "-ml-px block border-l border-transparent py-1.5 text-caption text-pretty text-fg-muted transition-colors duration-(--dur-base) hover:border-accent hover:text-fg",
+                "-ml-px block border-l border-transparent py-1.5 text-caption text-pretty text-fg-muted transition-colors duration-(--dur-base) hover:border-line-strong hover:text-fg",
                 t.depth > 2 ? "pl-6" : "pl-3",
               )}
             >
@@ -83,7 +83,7 @@ function Neighbour({ post, rel }: { post: Post; rel: "newer" | "older" }) {
         {rel === "newer" ? "Newer" : "Older"}
         {rel === "older" && <Icon icon={ArrowRight} size={14} />}
       </span>
-      <span className="text-title text-balance text-fg group-hover:text-accent" style={{ viewTransitionName: titleTransition(post.slug) }}>
+      <span className="text-title text-balance text-fg group-hover:text-fg-muted" style={{ viewTransitionName: titleTransition(post.slug) }}>
         {post.title}
       </span>
       <PostDate date={post.date} className="text-caption text-fg-muted" />

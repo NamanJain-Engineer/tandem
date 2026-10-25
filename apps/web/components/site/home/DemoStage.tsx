@@ -30,8 +30,8 @@ export function DemoStage() {
       <div className="relative mx-auto flex w-full max-w-stage flex-col gap-6 px-(--site-gutter)">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3">
-            <span className="inline-flex h-7 items-center gap-2 self-start rounded-full bg-(--site-glass) px-3 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-accent shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--tn-accent)]" />
+            <span className="inline-flex h-7 items-center gap-2 self-start rounded-full bg-(--site-glass) px-3 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-fg-muted shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-subtle" />
               Interactive demo · sample data
             </span>
             <h2 id="try-title" className="text-sheen text-display-md text-fg">
@@ -39,7 +39,7 @@ export function DemoStage() {
             </h2>
           </div>
           <div className="hidden lg:block">
-            <a href="/demo/app/" data-demo-open="" className={siteButton("secondary", "md")}>
+            <a href="/demo/app/" data-demo-open="" className={siteButton("secondary", "md", "icon-turn")}>
               <Icon icon={Maximize2} size={16} />
               Explore full screen
             </a>

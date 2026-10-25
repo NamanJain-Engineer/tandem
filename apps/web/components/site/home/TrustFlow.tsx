@@ -1,6 +1,5 @@
 import { ArrowLeftRight, ArrowRight, Ban, HardDrive, KeyRound, Plug, Server, Terminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { PRINCIPLES } from "../../../lib/home";
 import { RELEASE } from "../../../lib/release";
 import { cx } from "../../../lib/cx";
 import { docsPath } from "../../../lib/docs/pages";
@@ -21,7 +20,8 @@ const FLOWS: Array<{ icon: LucideIcon; to: string; via: string; line: "solid" | 
   { icon: Plug, to: "Services you connect", from: "Plugins", via: "Only what you allow; writes ask you first", line: "dashed" },
 ];
 
-/** #principles (§6.10): how data moves, then the four principles. The
+/** #principles (§6.10): how data moves. The four principles that followed
+ * repeated the ownership chips and live on /about/ (D-1897, D-1885). The
  * diagram is HTML, so it reflows on a phone; its text is the description. */
 export function TrustFlow() {
   return (
@@ -34,7 +34,7 @@ export function TrustFlow() {
           <h2 id="principles-title" className="max-w-[28em] text-display-md text-fg [text-wrap:pretty]">
             Nothing leaves your machine unless you opt in.{" "}
             <span className="text-fg-muted">
-              Engines sign in by themselves, in their own folders, and Vibezeo never reads, copies or proxies their
+              Engines sign in by themselves, in their own folders. Vibezeo never reads, copies or proxies their
               tokens.
             </span>
           </h2>
@@ -47,7 +47,7 @@ export function TrustFlow() {
               <ul className="flex flex-col gap-3">
                 {ON_COMPUTER.map((n) => (
                   <li key={n.title} className="flex gap-3 rounded-[10px] bg-page p-4 shadow-[inset_0_0_0_1px_var(--site-line)]">
-                    <Icon icon={n.icon} size={20} className="mt-0.5 shrink-0 text-accent" />
+                    <Icon icon={n.icon} size={20} className="mt-0.5 shrink-0 text-fg-muted" />
                     <span className="flex flex-col gap-0.5">
                       <span className="text-copy font-semibold text-fg">{n.title}</span>
                       <span className="text-copy-sm text-fg-muted">{n.body}</span>
@@ -64,7 +64,7 @@ export function TrustFlow() {
                       aria-hidden="true"
                       className={cx(
                         "relative hidden h-0 flex-1 border-t-2 lg:block",
-                        f.line === "solid" && "border-accent",
+                        f.line === "solid" && "border-fg-muted",
                         f.line === "dashed" && "border-dashed border-fg-subtle",
                         f.line === "none" && "border-dotted border-border-strong",
                       )}
@@ -72,7 +72,7 @@ export function TrustFlow() {
                       {/* D-1842: data moving where it really moves; nothing on the line to us. */}
                       {f.line !== "none" && (
                         <span className="flow-packet absolute -top-[5px] left-0 w-full">
-                          <span className="absolute right-0 top-0 size-2 rounded-full bg-accent shadow-[0_0_10px_var(--tn-accent)]" />
+                          <span className="absolute right-0 top-0 size-2 rounded-full bg-fg shadow-[0_0_10px_var(--tn-text)]" />
                         </span>
                       )}
                       {f.line === "solid" && (
@@ -93,7 +93,7 @@ export function TrustFlow() {
                       f.line === "none" ? "border-dashed border-line-strong text-fg-muted" : "surface text-fg",
                     )}
                   >
-                    <Icon icon={f.line === "none" ? Server : f.icon} size={18} className={f.line === "none" ? "text-fg-subtle" : "text-accent"} />
+                    <Icon icon={f.line === "none" ? Server : f.icon} size={18} className={f.line === "none" ? "text-fg-subtle" : "text-fg-muted"} />
                     <span className={cx("text-copy-sm font-medium", f.line === "none" && "line-through decoration-fg-subtle")}>
                       {f.to}
                     </span>
@@ -108,15 +108,6 @@ export function TrustFlow() {
             <TextLink href={docsPath("privacy")}>Privacy and data flows</TextLink>
           </figcaption>
         </figure>
-
-        <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
-          {PRINCIPLES.map((p) => (
-            <li key={p.title} className="reveal flex flex-col gap-2 border-l border-line-strong pl-5 [border-image:linear-gradient(180deg,var(--tn-accent),transparent)_1]">
-              <h3 className="text-title text-fg">{p.title}</h3>
-              <p className="text-copy-sm text-fg-muted">{p.body}</p>
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

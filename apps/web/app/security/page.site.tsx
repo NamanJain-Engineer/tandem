@@ -58,7 +58,7 @@ export default function SecurityPage() {
         Email{" "}
         <a
           href={`mailto:${SITE.contactEmail}?subject=Security%20report`}
-          className="text-accent hover:underline"
+          className="text-fg underline"
         >
           {SITE.contactEmail}
         </a>{" "}
