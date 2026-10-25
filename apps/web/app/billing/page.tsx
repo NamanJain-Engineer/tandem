@@ -2,13 +2,10 @@
 
 import { useState } from "react";
 import { Button } from "@tandem/ui";
-import { PRICES } from "@tandem/protocol/plans";
 import { Card, Notice, Shell } from "../../components/Shell";
 import { api, ApiFailure } from "../../lib/api";
 import { planLine } from "../../lib/plan";
 import { useMe } from "../../lib/useMe";
-
-const dollars = (cents: number) => `$${(cents / 100).toFixed(0)}`;
 
 export default function BillingPage() {
   const { me, error } = useMe();
@@ -51,36 +48,10 @@ export default function BillingPage() {
           </Card>
           {me.plan === "free" && (
             <Card>
-              <h2 className="text-lg font-semibold">Upgrade</h2>
-              <p className="mt-1 text-sm text-fg-muted">
-                Pro includes unlimited panes and workspaces, routines, cloud dictation and 10,000 credits a
-                month. 7-day free trial.
+              <p className="text-sm text-fg-muted" data-testid="nothing-to-buy">
+                There&apos;s nothing to buy: everything that runs on your computer works without an account.
+                Hosted features come with Vibezeo accounts.
               </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button
-                  variant="primary"
-                  loading={busy === "pro-month"}
-                  onClick={() => go("pro-month", "/v1/billing/checkout", { plan: "pro", interval: "month" })}
-                >
-                  {`Upgrade to Pro · ${dollars(PRICES.pro.month)}/month`}
-                </Button>
-                <Button
-                  variant="secondary"
-                  loading={busy === "pro-year"}
-                  onClick={() => go("pro-year", "/v1/billing/checkout", { plan: "pro", interval: "year" })}
-                >
-                  {`Pro yearly · ${dollars(PRICES.pro.year)}/year`}
-                </Button>
-                <Button
-                  variant="secondary"
-                  loading={busy === "team"}
-                  onClick={() =>
-                    go("team", "/v1/billing/checkout", { plan: "team", interval: "month", seats: 2 })
-                  }
-                >
-                  {`Team · ${dollars(PRICES.team.month)}/seat/month`}
-                </Button>
-              </div>
             </Card>
           )}
           {failure && <Notice tone="error">{failure}</Notice>}

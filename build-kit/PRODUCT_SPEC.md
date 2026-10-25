@@ -185,7 +185,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. **Mode switch** (F-SH-02).
 5. **Workspace menu**, Code mode only. It contains Auto-arrange panes, Card view, Show terminal sessions (toggle) and Usage….
 6. **Plan-usage chip** (F-AC-04).
-7. **Conductor button** (F-CN-04). Hidden on the Free plan, where it becomes an upgrade entry in the palette.
+7. **Conductor button** (F-CN-04). Hidden without Conductor (hosted); the palette's call command then says it comes with Vibezeo accounts (D-2903).
 8. **Notifications bell** with a count badge that shows `99+` above 99 (F-DB-02).
 9. **Update pill**, shown only when an update is staged or has failed (F-SH-06).
 10. **Right sidebar** toggle (`Mod+Shift+B`).
@@ -583,7 +583,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Exit:**
   - An agent's final output chunk is always flushed and rendered before any exit notice.
   - Exit notice: "Process exited (code N)". For plain shells: **Restart** / **Close**.
-- **Limits:** the entitlement limits the count of live PTYs (§3.2). At the limit, the pane picker shows an upgrade card instead of spawning.
+- **Limits:** none with no account (§3.2, D-2900). A limit a signed entitlement carries is enforced by the core, which refuses the spawn with its reason; nothing offers a plan (D-2910).
 
 **Data:** in memory. Saved session metadata goes in SQLite `sessions`, and scrollback snapshots in `$DATA/scrollback/<pane>.bin`, written at quit and capped to the last 2,000 lines, for restore display only.
 
@@ -594,7 +594,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. Closing a pane running `bash -c 'sleep 1000 & sleep 1000'` leaves no `sleep` processes after 3 s.
 5. With a hidden pane, a program that writes `ESC[c` receives a DA response within 100 ms.
 6. On Windows, launching `claude` in a workspace containing a malicious `claude.cmd` executes the PATH binary, not the workspace file.
-7. At the Free limit (4 live panes), a fifth spawn is refused with the upgrade card and no process is created.
+7. With no account there's no live-pane limit: offline, a fifth pane starts (D-2900, E2E-M3-7). A limit a signed entitlement carries refuses the spawn with the core's reason, and no process is created.
 8. After a crash with a live child, the next launch offers to stop the orphan, and choosing Stop kills it.
 
 #### F-CD-04 Terminal rendering and performance (P0)
@@ -1234,7 +1234,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 1. Fixture stores for Claude Code in two provider homes and Codex in its own home list four sessions under their repositories, with engine, account and date. A file that fails to parse is counted as skipped.
 2. Resume on a Claude Code session opens an agent pane in the session's folder, running `claude --resume <id>` with that account's `CLAUDE_CONFIG_DIR`.
 3. "Continue with another engine…" opens F-CD-16's sheet with a brief from the transcript, and Start opens the target in the session's folder with the brief as its first prompt.
-4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file, and on Free `library_search` is refused. A session holding a token-shaped string is found by its other words, while the index file, its title and its transcript never contain the token.
+4. With search on, a word from a fixture prompt finds its session. Turning search off deletes the index file. Search needs no account (D-2900); limits that turn it off make `library_search` refuse. A session holding a token-shaped string is found by its other words, while the index file, its title and its transcript never contain the token.
 5. The library never opens a file named `.credentials.json` or `auth.json`. An invariant test over a recording file-system fake checks this.
 
 ### 4.4 EN: Engines
@@ -2366,7 +2366,7 @@ Each ready module needs:
   - A quick tap during mic start-up is still honoured as a full hold/release.
 - **Cancel:** Esc while recording, or the widget's ×, discards the take.
 - **Deep link:** `tandem://dictate/toggle` works as a fallback trigger, for example for Wayland users who can't register a global hook.
-- **Plan:** local Dictate is available on the Free plan.
+- **Account:** local Dictate needs no account.
 
 **Acceptance:**
 1. A simulated hold → speak (WAV fixture) → release inserts the fixture's transcript into a test text field (integration test with the fake insertion backend).
@@ -3673,7 +3673,7 @@ Built on branch `competitive-gaps` from `docs/COMPETITIVE_ANALYSIS.md` (rows 1�
   - `command`: one command line, up to 4,000 characters, with F-WT-06's placeholders. It's trusted with the setup and teardown commands and `env` (F-WT-01): an untrusted preview never runs.
   - `port`: which port of the block the preview answers on, as an offset (0 is `VIBEZEO_PORT`; default 0, smaller than `ports`).
   - `path`: what to open, starting with `/` (default `/`).
-- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane. It counts toward the live panes (4 on Free).
+- **Running it.** "Start preview" in a worktree's ⋯ menu runs the command in a terminal pane named "Preview" in the worktree's tab, with the worktree's variables, so its output is visible and it can be stopped. A worktree made from New worktree or the launch sheet with a trusted setup and preview runs both in the setup pane, setup first (`<setup> && <preview>`); with a trusted preview and no setup, it starts the preview pane.
 - **Ready.** While a worktree has a preview configured, Vibezeo checks every 2 s whether something accepts connections on its preview port on 127.0.0.1. Once it does, the worktree's rail row shows a **Preview** button that opens `http://<slug>.localhost:<port><path>` (F-WT-06's address rule) in a sidebar browser tab. It goes away when the port stops answering. Checking only connects; it sends nothing.
 - **Best of N.** Compare (F-EX-04) gets **Previews**: it starts each lane's preview where it isn't running, then opens a sidebar browser tab per lane as each becomes ready, titled with the lane's branch. Each column shows its preview's state: "Starting…", **Open preview**, or "No preview" (the repository has none). Lanes on SSH hosts or in WSL show "No preview".
 - **Side by side.** Choosing two lanes' previews (in Compare, or "Compare previews…" in a worktree's menu, then the other worktree) opens a tab in the repository with two browser panes side by side, each loading one preview, labelled with its branch.

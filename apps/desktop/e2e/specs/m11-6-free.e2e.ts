@@ -49,7 +49,6 @@ describe("E2E-M11-6 free offline", () => {
     await execute.click();
     await $('[data-testid="task-execute-dialog"]').waitForDisplayed({ timeout: 10_000 });
     expect(await $('[data-testid="task-execute-blocked"]').isExisting()).toBe(false);
-    // An unknown workspace is the only thing wrong: no sign-in, no plan.
     const refused = await invoke("task_execute", {
       input: {
         issueId: id,
@@ -64,6 +63,9 @@ describe("E2E-M11-6 free offline", () => {
       () => "",
       (e: Error) => e.message,
     );
+    // Past the limits and with no sign-in check, it reaches the workspace
+    // lookup: the unknown workspace is the one thing refused (D-2914).
+    expect(refused).toContain('"code":"not_found"');
     expect(refused).not.toContain("forbidden_plan");
     expect(refused).not.toContain("unauthenticated");
     await browser.keys("Escape");

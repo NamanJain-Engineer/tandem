@@ -11,10 +11,6 @@ export type AuthState = { signedIn: boolean, email: string | null,
  */
 offline: boolean, 
 /**
- * `None` when there's no sign-in deadline (early-access builds).
- */
-offlineDaysLeft: number | null, 
-/**
  * False in early-access builds: no accounts yet, everything local runs
  * with no deadline (D-105, D-2900).
  */

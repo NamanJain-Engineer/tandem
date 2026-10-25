@@ -377,7 +377,7 @@ curl -sI http://127.0.0.1:8787/v1/health | grep -qi 'x-tandem-min-version'
 **Early slices:**
 - ▸slice F-SH-02 → M3: the segmented mode switch with mounted surfaces; Agent and Thread show interim surfaces.
 - ▸slice F-SH-03 → M3: the Code rail list, add/select, and the footer with plan and credits.
-- ▸slice F-CD-01 → M3: add a workspace via the picker or a deep link, dedupe, tabs, the Free limit of 3.
+- ▸slice F-CD-01 → M3: add a workspace via the picker or a deep link, dedupe, tabs, no limit with no account (D-2900).
 - ▸slice F-CD-03 → M3: one plain login shell per tab, over a per-pane channel.
 
 **Prerequisites.** M1 (auth endpoints, `/me`, config, client verifiers).
@@ -434,7 +434,7 @@ curl -sI http://127.0.0.1:8787/v1/health | grep -qi 'x-tandem-min-version'
     - Launch at login (autostart, off) on the General page. The tray arrives with Dictate (M8) and background routines (M11).
 11. **Skeleton slices.**
     - Code rail: Open workspace with a non-blocking picker, dedupe by canonical path, tabs.
-    - Free plan: a 4th workspace opens the UI-120 upgrade sheet; Upgrade opens web checkout.
+    - No workspace limit with no account (D-2900); the upgrade sheet and in-app checkout were removed (D-869).
     - One plain-shell `TerminalView` per tab, using `tandem-pty` minimal spawn/read/write/resize/kill with the login-shell env and a Tauri `Channel<Vec<u8>>` per pane.
     - The mode switch with interim surfaces.
 
@@ -895,7 +895,7 @@ command -v act && act -W .github/workflows/release.yml -j linux --dryrun || true
    - Rows grouped by engine, with label, plan, usage summary, Default badge, and Set default / Sign out / Remove.
    - Add account: a dialog with a mini terminal running `login_cmd` in a new home, with success detected via `status_cmd`.
    - Cancel kills the login process and deletes the new home.
-   - Free plan: 1 account per engine (upgrade sheet).
+   - No limit on accounts per engine with no account (D-2900).
 6. **Account resolution (F-AC-03).** The resolver order is explicit > teammate > workspace override > default. There is a workspace override setting, and the AccountChip switches the *next* session only.
 7. **Limit card (F-AC-05, UI-36).**
    - Terminal limits come from `limit_patterns` with a parsed `resets_at`.
@@ -1627,7 +1627,7 @@ cargo test -p tandem-voice f_di_05 && cargo test --workspace invariant_rule_7
   - A seat change. Expected: the Stripe quantity is updated.
 - **E2E-M13-5 Audit.** A Team member starts a Full session. Expected: an audit row. A Pro user. Expected: none.
 - **E2E-M13-6 Transparency.** Enable cloud STT. Expected: its row reads "On", with the destination.
-- **E2E-M13-7 Refund.** An admin refund. Expected: Free limits, and the monthly bucket at 0.
+- **E2E-M13-7 Refund.** An admin refund. Expected: the no-account limits (nothing local capped, hosted features off), and the monthly bucket at 0.
 
 **Exit checklist:** G green · every hosted route is in the `requirePlan` table test · no request bodies in the API logs.
 **HUMAN_TODO:**

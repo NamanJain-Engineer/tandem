@@ -84,7 +84,6 @@ const AUTH: AuthState = {
   signedIn: false,
   email: null,
   offline: true,
-  offlineDaysLeft: null,
   hosted: false,
   pending: null,
   error: null,
@@ -279,7 +278,7 @@ function pane(
 
 const API_WS = WORKSPACES[1] ?? WORKSPACE;
 
-/** Four live panes: the Free plan's limit. */
+/** Four live panes, as a busy morning might have. */
 const PANES: PaneRecord[] = [
   pane("pn_claude", "agent", "claude", "Fixer"),
   pane("pn_codex", "agent", "codex", "Reviewer"),
@@ -1037,7 +1036,8 @@ export class DemoCore {
         return this.send(t, last?.event.type === "user" ? last.event.text : "");
       }
       case "app_open_external":
-        if (typeof args?.url === "string" && args.url.startsWith("https://"))
+        // Web links, and the prefilled email "Tell me when accounts open" writes (D-2914).
+        if (typeof args?.url === "string" && /^(https:\/\/|mailto:)/.test(args.url))
           window.open(args.url, "_blank", "noopener");
         return null;
       case "fs_list":

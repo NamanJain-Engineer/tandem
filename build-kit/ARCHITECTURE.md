@@ -983,7 +983,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | Command | Args | Returns | Errors |
 |---|---|---|---|
 | `auth_sign_in` | — → op | result via `auth:changed` | Unavailable (categorized: browser / callback / expired / network) |
-| `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offlineDaysLeft?}` | — |
+| `auth_cancel` / `auth_sign_out` / `auth_state` | `{opId}` / — / — | — / — / `AuthState {signedIn, email?, offline, hosted}` (no offline countdown, D-2914) | — |
 | `auth_continue_offline` | — | — | — |
 | `entitlement_get` / `entitlement_refresh` | — | `EntitlementView {plan, status, limits, source:"token"\|"grace"\|"free", credits:{monthly, purchased, resetsAt, cap, spent, grant}, policy: OrgPolicy?, org: {id, name, role}?, monthlyGrant, …}`. `policy` is the last verified token's (it survives a cached token that stops verifying, D-607); `OrgPolicy` mirrors `@tandem/protocol/team` (F-BL-06). The core enforces it at every engine launch (allowed engines) and thread session start (max access, Full-access audit, F-TL-10), and locks the telemetry toggles | — |
 | `billing_open` | `{target: {type:"portal"} \| {type:"credits"} \| {type:"account"}}` (no `upgrade`: nothing is sold, D-869, D-2904; `account` opens `{web}/account`, where "Delete account…" lives, F-TL-05) | — (system browser) | Unauthenticated |
@@ -2013,7 +2013,7 @@ Persistence: every envelope except `*Delta` is appended to `thread_messages`; de
 
 ### 8.1 Teammate lifecycle [F-AG-01..05, F-AG-13]
 - First launch: create Lead (`is_lead=1`, pinned, default brief from F-AG-01), home `$DATA/teammates/<id>/` with `memory/NOTES.md`, `memory/ABOUT_YOU.md`, `skills/`.
-- Name uniqueness via `name_fold`; 1–40 chars. Free plan: Lead + 1 (checked in service and via `LimitReached`).
+- Name uniqueness via `name_fold`; 1–40 chars. No limit with no account (D-2900); a limit an entitlement carries is checked in the service (`LimitReached`).
 - Avatar: `hue = avatar_hue ?? (fnv1a64(id) % 12)`; gradient and initials rendered by `packages/ui` `<Avatar seed>` (pure, snapshot-tested).
 - Delete: move home to `$DATA/trash/teammates/<id>-<ts>/`, soft-delete row; chats remain (orphaned teammate label "Deleted teammate").
 - Engine change: next chat uses the new engine; existing chats keep theirs; memory files untouched (F-AG-05 AC1).
