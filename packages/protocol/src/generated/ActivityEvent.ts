@@ -29,4 +29,8 @@ secrets: Array<string>,
  * `allowed_before`, `declined`, `expired`, `cancelled`, or an approval's
  * state and where it was answered (`allowed:dashboard`).
  */
-decided: string | null, };
+decided: string | null, 
+/**
+ * The engine a turn went to (`claude`).
+ */
+engine: string | null, };

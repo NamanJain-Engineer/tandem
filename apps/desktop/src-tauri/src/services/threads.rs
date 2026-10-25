@@ -1702,7 +1702,12 @@ impl ThreadService {
         // F-EX-07: the turn, never its text.
         if let Some(activity) = self.activity.get() {
             activity
-                .turn("thread", id.as_str(), checkpoint.map(|c| c.id))
+                .turn(
+                    "thread",
+                    id.as_str(),
+                    Some(thread.engine_id.as_str()),
+                    checkpoint.map(|c| c.id),
+                )
                 .await;
         }
         let seeded = seed.is_some();

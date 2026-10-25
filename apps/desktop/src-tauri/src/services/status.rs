@@ -180,6 +180,14 @@ impl StatusService {
         ));
     }
 
+    /// The pane's engine is running (watched from launch to handback).
+    pub fn watching(&self, pane: &str) -> bool {
+        self.watched
+            .lock()
+            .map(|w| w.contains_key(pane))
+            .unwrap_or(false)
+    }
+
     /// The app's clock, for subsystems built on the status service.
     pub fn clock(&self) -> Arc<dyn Clock> {
         self.clock.clone()

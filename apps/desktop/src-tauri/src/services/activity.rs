@@ -39,6 +39,8 @@ pub struct ActivityEvent {
     /// `allowed_before`, `declined`, `expired`, `cancelled`, or an approval's
     /// state and where it was answered (`allowed:dashboard`).
     pub decided: Option<String>,
+    /// The engine a turn went to (`claude`).
+    pub engine: Option<String>,
 }
 
 impl ActivityEvent {
@@ -53,6 +55,7 @@ impl ActivityEvent {
             duration_ms: None,
             secrets: Vec::new(),
             decided: None,
+            engine: None,
         }
     }
 }
@@ -98,14 +101,20 @@ impl ActivityService {
 
     /// A turn went to a thread's engine, or a prompt to an agent pane's.
     /// Never its text.
-    pub async fn turn(&self, source_kind: &'static str, id: &str, checkpoint: Option<String>) {
+    pub async fn turn(
+        &self,
+        source_kind: &'static str,
+        id: &str,
+        engine: Option<&str>,
+        checkpoint: Option<String>,
+    ) {
         self.record(NewActivity {
             source_kind,
             source_id: id.to_string(),
             kind: "turn",
             at: self.clock.now_ms(),
             summary: "Turn sent".into(),
-            detail: serde_json::json!({}),
+            detail: serde_json::json!({ "engine": engine }),
             checkpoint_id: checkpoint,
         })
         .await;
@@ -196,6 +205,7 @@ impl ActivityService {
                 .get("decided")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
+            e.engine = d.get("engine").and_then(|v| v.as_str()).map(str::to_string);
             e.exit_code = d
                 .get("exit_code")
                 .and_then(serde_json::Value::as_i64)
@@ -331,7 +341,8 @@ mod tests {
         cps::insert(&store, checkpoint("cp_1", "pn_1", t0))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("cp_1".into())).await;
+        svc.turn("pane", "pn_1", Some("claude"), Some("cp_1".into()))
+            .await;
         let t1 = tick(&clock);
         let first = command(&store, "pn_1", "pnpm test", t1, 0).await;
         tick(&clock);
@@ -343,7 +354,8 @@ mod tests {
         cps::insert(&store, checkpoint("cp_2", "pn_1", t3))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("cp_2".into())).await;
+        svc.turn("pane", "pn_1", Some("claude"), Some("cp_2".into()))
+            .await;
         tick(&clock);
         svc.approval(
             "pn_1",
@@ -396,8 +408,8 @@ mod tests {
     async fn f_ex_07_2_turn_and_run_rows_hold_names_and_numbers_only() {
         let (_d, store, _clock, svc) = fixture();
         // Everything the recorders are handed for a turn and a run.
-        svc.turn("thread", "th_1", None).await;
-        svc.turn("pane", "pn_1", None).await;
+        svc.turn("thread", "th_1", Some("codex"), None).await;
+        svc.turn("pane", "pn_1", Some("claude"), None).await;
         svc.run(
             "pn_1",
             RunRecord {
@@ -429,7 +441,7 @@ mod tests {
     #[tokio::test]
     async fn f_ex_07_3_export_is_json_lines_of_the_same_events_in_order() {
         let (_d, store, clock, svc) = fixture();
-        svc.turn("pane", "pn_1", None).await;
+        svc.turn("pane", "pn_1", Some("claude"), None).await;
         let t = tick(&clock);
         command(&store, "pn_1", "make", t, 0).await;
         tick(&clock);
@@ -496,10 +508,11 @@ mod tests {
     #[tokio::test]
     async fn f_ex_07_a_threads_ledger_has_its_turns_and_only_panes_and_threads_have_one() {
         let (_d, _store, _clock, svc) = fixture();
-        svc.turn("thread", "th_1", None).await;
+        svc.turn("thread", "th_1", Some("codex"), None).await;
         let events = svc.list("thread", "th_1").await.expect("list");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "turn");
+        assert_eq!(events[0].engine.as_deref(), Some("codex"));
         assert!(svc.list("routine", "r_1").await.is_err());
         assert!(svc.list("pane", "pn_none").await.expect("list").is_empty());
     }

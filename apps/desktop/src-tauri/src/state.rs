@@ -770,9 +770,13 @@ impl AppState {
         threads.set_activity(terminals.activity.clone());
         let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
         let hook_activity = terminals.activity.clone();
+        let hook_status = terminals.status.clone();
         terminals.set_prompt_hook(Arc::new(move |pane, late| {
             let (cps, store) = (hook_cps.clone(), hook_store.clone());
             let activity = hook_activity.clone();
+            // After handback the pane is a shell: what's typed is a command
+            // (command recall has it), not a turn.
+            let engine_running = hook_status.watching(pane.as_str());
             Box::pin(async move {
                 use tandem_store::repo::{panes, workspaces};
                 let Ok(record) = panes::get(&store, &pane).await else {
@@ -781,7 +785,8 @@ impl AppState {
                 let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
                     return;
                 };
-                let is_agent = record.kind == "agent";
+                let is_agent = record.kind == "agent" && engine_running;
+                let engine = record.engine_id.clone();
                 let made = cps
                     .before_turn(
                         crate::services::checkpoints::Request {
@@ -798,7 +803,7 @@ impl AppState {
                 // F-EX-07: the prompt, never its text.
                 if is_agent {
                     activity
-                        .turn("pane", pane.as_str(), made.map(|c| c.id))
+                        .turn("pane", pane.as_str(), engine.as_deref(), made.map(|c| c.id))
                         .await;
                 }
             })

@@ -26,6 +26,7 @@ const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
   durationMs: null,
   secrets: [],
   decided: null,
+  engine: null,
   ...over,
 });
 
