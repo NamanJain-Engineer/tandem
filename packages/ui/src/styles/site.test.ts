@@ -110,7 +110,7 @@ describe("F-WB-01 site.css (D-1801)", () => {
     for (const t of brandAliases) expect(brandLight.has(t), t).toBe(true);
     // The app's own tokens come from tokens.css's [data-theme="light"],
     // which the OS block above mirrors.
-    expect(appLight.get("--tn-bg")).toBe("var(--slate-50)");
+    expect(appLight.get("--tn-bg")).toBe("var(--ink-50)"); // ink since D-1894
   });
 
   it("F-WB-01 AC6 the OS's light never overrides a visitor's Dark (D-1870)", () => {
