@@ -137,11 +137,10 @@ describe("UI-163 ACP agents (F-EN-10)", () => {
     expect(calls.find((c) => c.cmd === "acp_agent_remove")?.args).toEqual({ id: "acp-goose" });
   });
 
-  it('F-EN-10.3 an added agent reads "via ACP" in the picker, and runs on Free (D-869)', () => {
+  it('F-EN-10.3 an added agent reads "via ACP" in the picker, enabled with no account (D-869)', () => {
     const free = engineOptionsFor([goose], FREE.chatEngines);
+    expect(FREE.chatEngines).toBeNull();
     expect(free[0]).toMatchObject({ label: "Goose · via ACP", disabled: false });
-    const pro = engineOptionsFor([goose], null);
-    expect(pro[0]).toMatchObject({ label: "Goose · via ACP", disabled: false });
   });
 
   it("F-EN-10.1 an added agent's sign-in is its own, never an account's (D-2514)", () => {

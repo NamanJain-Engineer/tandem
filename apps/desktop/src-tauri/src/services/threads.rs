@@ -410,7 +410,6 @@ impl ThreadService {
     /// but can't run. Teammate chats follow their own limits (M10).
     fn check_plan_engine(&self, kind: ThreadKind, engine_id: &str) -> Result<(), IpcError> {
         let allowed = kind != ThreadKind::Thread
-            || tandem_engines::acp_agents::is_added_id(engine_id)
             || self
                 .plan_limits
                 .get()
@@ -5744,11 +5743,11 @@ mod tests {
         }
     }
 
-    /// D-869: an ACP agent the user added runs as a thread on every plan.
+    /// D-869: with no account, a thread runs on an ACP agent the user added.
     #[tokio::test]
-    async fn f_en_10_3_on_free_a_thread_runs_on_an_added_agent() {
+    async fn f_en_10_3_with_no_account_a_thread_runs_on_an_added_agent() {
         let f = fixture(OnStop::Ack, hang()).await;
-        plan_switch(&f.svc).store(true, Ordering::SeqCst);
+        plan_switch(&f.svc);
         let agent = "acp-my-agent-0000002a";
         let made = f
             .svc
@@ -5759,7 +5758,7 @@ mod tests {
             .svc
             .switch_engine(&f.thread.id, agent, None, "divider".into())
             .await
-            .expect("an added agent on Free");
+            .expect("an added agent with no account");
         assert_eq!(switched.engine_id, agent);
         // No bundled engine takes the added agents' prefix.
         for spec in tandem_engines::EngineRegistry::bundled().all() {

@@ -62,7 +62,7 @@ async function transcriptText(): Promise<string> {
 
 // E2E-M18-EN10 ACP agents (F-EN-10): a command that never answers isn't
 // added; the fake agent added by its full path passes the test, is listed
-// "via ACP" in the Thread engine picker and runs a turn on Free (D-869); a
+// "via ACP" in the Thread engine picker and runs a turn with no account (D-869); a
 // secret-shaped variable is refused before anything runs; after Remove, its
 // thread says the agent was removed, and the same label added again gets a
 // new id (D-2511).
@@ -131,7 +131,7 @@ describe("E2E-M18-EN10 ACP agents", function () {
     await closeSettings();
   });
 
-  it("F-EN-10.3 on Free the added agent is offered in the picker and a thread with it runs a turn", async () => {
+  it("F-EN-10.3 with no account the added agent is offered in the picker and a thread with it runs a turn", async () => {
     await threadMode();
     const made = await invoke<Thread>("thread_create", {
       args: { kind: "thread", workspaceId: null, engineId: "claude" },

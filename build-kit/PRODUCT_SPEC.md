@@ -1404,13 +1404,13 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - a variable that steers other engines or what a process loads is refused, as in Pin (D-2503);
   - an agent that answers `session/new` with an auth error shows the sign-in methods it named and asks the person to sign in with the agent's own command in a terminal; Vibezeo's account sign-in is never offered for it (D-2514);
   - **Allow once** is never sent as an "always": when an agent offers no one-time allow, Allow once answers cancelled (D-2515).
-- **Plan:** none. Added agents run as threads for everyone (D-869).
+- **Plan:** none. Added agents run as threads with no account, as every chat engine does (D-869).
 - ACP shows what each agent exposes and no more; no transcript, usage or status beyond its updates.
 
 **Acceptance:**
 1. Kiro CLI is a Thread engine through `kiro-cli acp`. Adding the fake engine's ACP mode by its absolute command passes the test, shows its name and version, and appears in the Thread engine picker labelled "via ACP"; a thread with it runs a turn.
 2. A command that doesn't answer `initialize` within 10 s shows "Not an ACP agent", and nothing is saved.
-3. On Free, a thread with the added agent runs a turn (D-869). Removing the agent and adding another with the same label gives a new id, and the old thread says the engine was removed.
+3. With no account, a thread with the added agent runs a turn (D-869). Removing the agent and adding another with the same label gives a new id, and the old thread says the engine was removed.
 4. An environment value matching a secret pattern, or a reserved variable, is refused before anything runs.
 
 ### 4.5 AC: Accounts and usage

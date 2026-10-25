@@ -873,9 +873,8 @@ mod tests {
             .note
             .as_deref()
             .is_some_and(|n| n.contains("Agent Client Protocol")));
-        // Free's thread engines are unchanged: Kiro in a thread is Pro.
+        // With no account every chat engine runs, Kiro included (D-869).
         let free = tandem_core::entitlement::Limits::free();
-        assert!(!free.allows_chat_engine("kiro"));
-        assert!(free.allows_chat_engine("claude") && free.allows_chat_engine("codex"));
+        assert!(free.allows_chat_engine("kiro"));
     }
 }
