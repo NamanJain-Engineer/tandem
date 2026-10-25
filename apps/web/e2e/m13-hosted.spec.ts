@@ -132,7 +132,8 @@ test.describe("@m13 hosted services, credits and Team", () => {
     await signIn(page, email);
     const view = await me(page);
     expect(view.plan).toBe("free");
-    expect(view.limits.panes).toBe(4);
+    // The no-account limits: nothing local capped, hosted features off (D-2900).
+    expect(view.limits.panes).toBeNull();
     expect(view.credits.monthly).toBe(0);
     // Back to the seed's lapsed subscription (ended 10 days ago).
     await testRoute(request, "plan", { email, plan: "pro", status: "canceled", periodEndDays: -10 });

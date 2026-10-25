@@ -29,6 +29,7 @@ import { listen } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
+import { NOTIFY_HREF } from "../features/billing/ComesWithAccounts";
 import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
 import { DemoShell, PROMPT, run } from "./shell";
 
@@ -301,6 +302,23 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     });
   });
 
+  it("D-2914 demo opens Tell me when accounts open's email, and still no other scheme", () => {
+    core = new DemoCore(0);
+    const opened: string[] = [];
+    const open = window.open;
+    window.open = ((url?: string | URL) => {
+      opened.push(String(url));
+      return null;
+    }) as typeof window.open;
+    try {
+      core.handle("app_open_external", { url: NOTIFY_HREF });
+      core.handle("app_open_external", { url: "file:///etc/passwd" });
+    } finally {
+      window.open = open;
+    }
+    expect(opened).toEqual([NOTIFY_HREF]);
+  });
+
   it("D-2905 demo says routines and task runs work in the app, instead of pretending to", () => {
     core = new DemoCore(0);
     const c = core;
@@ -324,7 +342,6 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       signedIn: false,
       email: null,
       offline: true,
-      offlineDaysLeft: null,
       hosted: false,
       pending: null,
       error: null,
