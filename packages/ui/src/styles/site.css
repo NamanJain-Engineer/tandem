@@ -41,7 +41,7 @@
     --tn-status-done-soft: rgb(22 163 74 / 0.10);
     --tn-status-idle: var(--ink-400);
     --tn-status-idle-soft: rgb(113 113 122 / 0.12);
-    --tn-status-error: var(--rose-600);
+    --tn-status-error: var(--rose-700);
     --tn-status-error-soft: rgb(225 29 72 / 0.10);
     --tn-success: var(--green-600);
     --tn-warning: var(--amber-600);

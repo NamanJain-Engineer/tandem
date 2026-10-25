@@ -44,7 +44,7 @@ function Row({ e, now }: { e: HistoryEntry; now: number }) {
       <span className="flex min-w-0 items-center gap-2 text-xs text-fg-muted">
         <span className="truncate">{e.cwd}</span>
         {e.exitCode !== null && (
-          <span className={cx("shrink-0", ok ? "text-done-text" : "text-error")}>
+          <span className={cx("shrink-0", ok ? "text-done-text" : "text-danger")}>
             {ok ? t("recall.ok") : t("recall.failed", { code: e.exitCode })}
           </span>
         )}

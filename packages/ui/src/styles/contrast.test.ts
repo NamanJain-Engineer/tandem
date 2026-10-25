@@ -68,6 +68,7 @@ const TEXT = [
   "--tn-status-waiting-text",
   "--tn-status-done-text",
   "--tn-warning-text",
+  "--tn-status-error",
   "--tn-danger",
 ];
 /** Text on its own coloured fill (buttons, highlighted rows). */

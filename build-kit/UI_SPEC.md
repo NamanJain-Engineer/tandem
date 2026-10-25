@@ -216,7 +216,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-status-done-soft:    rgb(22 163 74 / 0.10);
   --tn-status-idle:         var(--ink-400);
   --tn-status-idle-soft:    rgb(113 113 122 / 0.12);
-  --tn-status-error:        var(--rose-600);
+  --tn-status-error:        var(--rose-700);  /* AA as text too: it labels errors across the app */
   --tn-status-error-soft:   rgb(225 29 72 / 0.10);
 
   --tn-success: var(--green-600);
@@ -390,7 +390,7 @@ These replace the slate-on-navy look the app shipped with up to 0.8.0. The direc
   - `Badge quiet`: a dot and sentence-case coloured text with no box ("● Needs you" in `waiting-text`), for rows that must stay calm. The boxed badge stays for rare flags.
   - `Count`: a 16px tabular pill for unread and queued counts, "99+" above 99, tones neutral, accent and strong.
   - `TimeAgo` / `compactAgo`: "now", "4m", "2h", "3d" in a `<time>` whose tooltip is the full date; labels come from the caller's `en.json`.
-- **Contrast:** every text token passes 4.5:1 and every status mark and the focus ring 3:1 on all five surfaces in both themes (`contrast.test.ts`). Light `status-done` moved to green-700 for that.
+- **Contrast:** every text token passes 4.5:1 and every status mark and the focus ring 3:1 on all five surfaces in both themes (`contrast.test.ts`). Light `status-done` moved to green-700 for that, and light `status-error` to rose-700, because `text-error` labels errors as text across the app (rose-600 was 4.27:1 on the ink-50 background). `warning-text` is a token too.
 
 ### 1.3 Colour usage rules
 | Use | Token | Never |
