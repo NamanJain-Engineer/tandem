@@ -96,7 +96,7 @@ export function PostRow({ post, headingLevel = 3 }: { post: Post; headingLevel?:
         <PostDate date={post.date} />
       </div>
       <div className="flex flex-col gap-3 md:col-span-9">
-        <H className="text-display-md text-balance text-fg transition-colors duration-(--dur-base) group-hover:text-accent">
+        <H className="text-display-md text-balance text-fg transition-colors duration-(--dur-base) group-hover:text-fg-muted">
           <a
             href={post.path}
             className="after:absolute after:inset-0 focus-visible:outline-none"
@@ -122,7 +122,7 @@ export function PostCard({ post }: { post: Post }) {
     <li className="reveal flex">
       <a href={post.path} className="surface surface-hover group flex w-full flex-col gap-3 p-6">
         <span className="font-mono text-[0.6875rem] uppercase tracking-[0.1em] text-fg-muted">{post.tags.join(" · ")}</span>
-        <span className="text-title text-balance text-fg group-hover:text-accent" style={{ viewTransitionName: titleTransition(post.slug) }}>
+        <span className="text-title text-balance text-fg group-hover:text-fg-muted" style={{ viewTransitionName: titleTransition(post.slug) }}>
           {post.title}
         </span>
         <span className="line-clamp-3 text-copy-sm text-pretty text-fg-muted">{post.description}</span>
@@ -215,7 +215,7 @@ export function Subscribe({ id = "subscribe", className }: { id?: string; classN
           </h2>
           <p className="text-copy text-pretty text-fg-muted">
             New posts arrive in the Atom feed, in any feed reader. Questions or ideas for a post? Write to{" "}
-            <a href={`mailto:${SITE.contactEmail}`} className="text-accent">
+            <a href={`mailto:${SITE.contactEmail}`} className="text-fg">
               {SITE.contactEmail}
             </a>
             .

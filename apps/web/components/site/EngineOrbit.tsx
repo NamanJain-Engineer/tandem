@@ -13,6 +13,7 @@ export function EngineOrbit({ top, radius }: { top: number; radius: number }) {
   return (
     <div
       aria-hidden="true"
+      data-orbit=""
       className="pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden md:block [mask-image:linear-gradient(to_bottom,black_30%,transparent_80%)]"
     >
       <div className="orbit-spin absolute left-1/2 size-0" style={{ top }}>

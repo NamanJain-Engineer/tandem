@@ -1,11 +1,12 @@
 import { Badge, type BadgeVariant } from "@tandem/ui/components/Badge";
 import { CLAUDE } from "../../../lib/home";
 import { Section } from "../Section";
+import { stagger } from "../../../lib/motion";
 
 const TAG: Record<string, BadgeVariant> = {
   Shipped: "done",
   "How we build": "outline",
-  "Built, live when accounts open": "waiting",
+  "Comes with Vibezeo accounts": "waiting",
 };
 
 /** #claude (§6.11): what's shipped, how it's built, and what's built but not live. */
@@ -19,8 +20,8 @@ export function ClaudeBand() {
       lead="Vibezeo gives Claude Code a persistent workspace: run several sessions at once, see which one needs you, and pick up where you left off after a restart, all on your own Claude subscription."
     >
       <ul className="grid gap-4 md:grid-cols-3">
-        {CLAUDE.map((c) => (
-          <li key={c.title} className="reveal surface flex flex-col gap-4 p-6 lg:p-7">
+        {CLAUDE.map((c, i) => (
+          <li key={c.title} className={`reveal ${stagger(i)} surface flex flex-col gap-4 p-6 lg:p-7`}>
             <Badge variant={TAG[c.tag] ?? "outline"} dot className="self-start">
               {c.tag}
             </Badge>

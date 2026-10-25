@@ -314,6 +314,13 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    plan must match the download's (`ENTITLEMENT` in `src/demo/backend.ts`), and
    anything new and visible in the release should be added to it with a test in
    `demo.test.ts`. List the surfaces in the release pull request.
+   The home page's product scenes (D-1880, `components/site/scenes`) follow
+   the same rule: they draw only what the download does, with the app's own
+   words from `en.json`, and label the build from `lib/release.ts`. A scene
+   or part of one that needs a newer release is gated on it (`LANDS` in
+   `lib/scenes.ts` switches on 0.9.0's landing queue and intent radar): after
+   bumping `release.ts`, look at each scene's final frame in both themes and
+   check it against the release.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)
@@ -422,7 +429,7 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/about/`,
   `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
-  runs), then walk the demo:
+  runs; `pnpm --filter web lhci:dark` runs the same in the dark theme, D-1870), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
@@ -432,7 +439,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   unused client runtime from the marketing pages and the docs (not the demo app;
   D-1843)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
-  and `/download/detect.js` on `/download/`. Site components stay server-only.
+  and `/changelog/0.9.0/` (the Land scene, D-1885), `/download/detect.js` on
+  `/download/` and a blog post's two (`scripts/script-allowlist.mjs`). Site components stay server-only.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are
   off for the export, and the "add a slash" rule is in `vercel.json`.

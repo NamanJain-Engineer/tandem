@@ -2,6 +2,7 @@ import { siteButton } from "@tandem/ui/components/SiteButton";
 import { Download, Info, ShieldCheck, Terminal } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import en from "../../../desktop/src/i18n/en.json";
 import { CommandLine } from "../../components/site/CommandLine";
 import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
@@ -13,6 +14,7 @@ import { RELEASES, versionPath } from "../../lib/changelog";
 import { formatSize, releaseAssets } from "../../lib/manifest";
 import { CHECKSUMS_URL, DOWNLOADS, RELEASE, assetUrl } from "../../lib/release";
 import { SITE } from "../../lib/site";
+import { stagger } from "../../lib/motion";
 
 export const metadata: Metadata = { title: "Download", alternates: { canonical: "/download/" } };
 
@@ -23,12 +25,13 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
     body: "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
   },
   {
-    title: "Start using Vibezeo",
-    body: "Open the app and choose Start using Vibezeo on the welcome screen. It runs on your computer, no account needed.",
+    // The welcome screen's own button, from the app's catalog (DESIGN §5.2, §9.2).
+    title: en["signin.earlyAccess.start"],
+    body: `Open the app and choose ${en["signin.earlyAccess.start"]} on the welcome screen. It runs on your computer, no account needed.`,
   },
   {
     title: "Add a project folder",
-    body: "The launch grid lists the agents it found: pick one to start it in a real terminal, or Terminal for a shell.",
+    body: "Setup ends by asking for a project folder. Then pick an agent from the launch grid to start it in a real terminal, or Terminal for a shell.",
   },
   {
     title: "Split, and keep an eye on them",
@@ -73,7 +76,7 @@ export default function DownloadPage() {
           <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[0.8125rem] text-fg-muted">
             <span>Released · {RELEASE.version}</span>
             <span aria-hidden="true" className="text-fg-subtle">·</span>
-            <a href={versionPath(RELEASE.version)} className="text-accent">
+            <a href={versionPath(RELEASE.version)} className="text-fg">
               Release notes
             </a>
           </p>
@@ -100,7 +103,7 @@ export default function DownloadPage() {
                   <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-48 opacity-70" />
                   <div className="flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-center gap-4">
-                      <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-[12px] text-accent shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
+                      <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-[12px] text-fg shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
                         <Icon icon={Terminal} size={22} />
                       </span>
                       <div className="flex flex-col gap-1">
@@ -159,7 +162,7 @@ export default function DownloadPage() {
                         ))}
                       </dl>
                       <p className="flex items-start gap-2.5 text-copy-sm text-fg-muted">
-                        <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-accent" />
+                        <Icon icon={ShieldCheck} size={18} className="mt-0.5 shrink-0 text-fg-muted" />
                         <span>
                           This release isn&apos;t code-signed, so the checksum is how you confirm it&apos;s ours:
                           compare the output of <code className="font-mono text-fg">sha256sum</code> with the
@@ -179,7 +182,7 @@ export default function DownloadPage() {
       <Section id="getting-started" tone="raised" eyebrow="Getting started" title="Running in four steps">
         <ol className="grid gap-4 md:grid-cols-2">
           {START.map((s, i) => (
-            <li key={s.title} className="reveal surface-raised flex gap-5 p-6 lg:p-7">
+            <li key={s.title} className={`reveal ${stagger(i)} surface-raised flex gap-5 p-6 lg:p-7`}>
               <span className="keycap !h-9 !min-w-9 shrink-0 !px-0 !text-[0.8125rem] text-fg-muted">
                 {String(i + 1).padStart(2, "0")}
               </span>
@@ -201,7 +204,7 @@ export default function DownloadPage() {
             <ul className="flex flex-col gap-3">
               {INCLUDES.map((s) => (
                 <li key={s} className="flex items-start gap-2.5 text-copy text-fg-muted">
-                  <Icon icon={Info} size={16} className="mt-1.5 shrink-0 text-accent" />
+                  <Icon icon={Info} size={16} className="mt-1.5 shrink-0 text-fg-muted" />
                   {s}
                 </li>
               ))}
