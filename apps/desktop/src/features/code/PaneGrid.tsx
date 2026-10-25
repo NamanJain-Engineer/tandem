@@ -68,6 +68,7 @@ import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
 import { ResourceChip } from "./ResourceChip";
 import { ApprovalBanner } from "./ApprovalBanner";
+import { useActivity } from "../../stores/activity";
 import { RunDialog } from "../secrets/RunDialog";
 import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
@@ -332,6 +333,15 @@ const PaneView = memo(function PaneView({
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
     ...(runnable ? [{ id: "run", label: t("run.menu"), onSelect: () => setRunning(true) }] : []),
+    ...(pane.kind === "agent"
+      ? [
+          {
+            id: "activity",
+            label: t("activity.menu"),
+            onSelect: () => useActivity.getState().show({ source: "pane", id: pane.id, title }),
+          },
+        ]
+      : []),
     ...(freezable
       ? [
           {

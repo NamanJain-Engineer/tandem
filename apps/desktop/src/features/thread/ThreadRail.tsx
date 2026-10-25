@@ -1,3 +1,4 @@
+import { useActivity } from "../../stores/activity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, MessagesSquare, Plus, Search } from "lucide-react";
 import type { Thread, ThreadState } from "@tandem/protocol";
@@ -71,6 +72,11 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
       label: thread.pinned ? t("thread.rail.unpin") : t("thread.rail.pin"),
       disabled: thread.archived,
       onSelect: () => void update(thread.id, { pinned: !thread.pinned }),
+    },
+    {
+      id: "activity",
+      label: t("activity.menu"),
+      onSelect: () => useActivity.getState().show({ source: "thread", id: thread.id, title }),
     },
     {
       id: "grid",
@@ -159,7 +165,9 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
               className="size-1.5 shrink-0 rounded-full bg-accent"
             />
           )}
-          <span className={"shrink-0 text-sm " + (selected ? "text-fg-muted" : "text-fg-subtle")}>{rightLabel(thread, now)}</span>
+          <span className={"shrink-0 text-sm " + (selected ? "text-fg-muted" : "text-fg-subtle")}>
+            {rightLabel(thread, now)}
+          </span>
           <EngineGlyph letters={glyph} size={14} label={engine ?? undefined} />
         </button>
       </ContextMenu>

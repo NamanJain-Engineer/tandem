@@ -36,6 +36,7 @@ import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
+import { useActivity } from "../../stores/activity";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -148,6 +149,26 @@ function AgentCard({
       : []),
     ...(item.source.type === "pane"
       ? [{ id: "handoff", label: t("dashboard.handoff"), onSelect: () => handOff(item) }]
+      : []),
+    ...(item.source.type === "pane" || item.source.type === "thread"
+      ? [
+          {
+            id: "activity",
+            label: t("activity.menu"),
+            onSelect: () =>
+              useActivity
+                .getState()
+                .show(
+                  item.source.type === "pane"
+                    ? { source: "pane", id: item.source.paneId, title }
+                    : {
+                        source: "thread",
+                        id: item.source.type === "thread" ? item.source.threadId : "",
+                        title,
+                      },
+                ),
+          },
+        ]
       : []),
     ...(item.status === "working"
       ? [{ id: "stop", label: t("dashboard.stop"), danger: true, onSelect: () => void stopAgent(item) }]
