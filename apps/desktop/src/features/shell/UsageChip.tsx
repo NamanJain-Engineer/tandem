@@ -53,10 +53,10 @@ export function useChipAccount(): string | null {
 }
 
 /** "5h" and "Wk" meters beside the chip on wide windows (D-113). */
-const SHORT: Record<string, string> = { "5h": "5h", week: "Wk" };
+export const SHORT: Record<string, string> = { "5h": "5h", week: "Wk" };
 
 /** "5-hour window", "Weekly"; other windows by their kind ("3d"). */
-function windowName(kind: string): string {
+export function windowName(kind: string): string {
   if (kind === "5h") return t("usage.fiveHour");
   if (kind === "week") return t("usage.weekly");
   return kind;

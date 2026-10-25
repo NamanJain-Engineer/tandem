@@ -197,7 +197,7 @@ function Row({
         </ContextMenu>
       )}
       {!renaming && (
-        <span className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+        <span className="absolute right-1 top-1 hidden items-center gap-0.5 group-hover:flex group-focus-within:flex">
           {s.chatCapable && (
             <IconButton
               size="sm"

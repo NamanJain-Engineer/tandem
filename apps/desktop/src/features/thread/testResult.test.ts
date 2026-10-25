@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { testResult } from "./tool";
 
-describe("D-2604 test results from command output", () => {
+describe("UI-21 F-TH-12 test results from command output (D-2604)", () => {
   it.each([
     ["vitest", " Test Files  4 passed (4)\n      Tests  18 passed (18)", { passed: 18, failed: 0 }],
     ["vitest with failures", "      Tests  2 failed | 16 passed (18)", { passed: 16, failed: 2 }],

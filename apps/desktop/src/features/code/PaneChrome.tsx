@@ -10,6 +10,8 @@ export type PaneChromeProps = {
   /** When the agent entered its working or waiting status (ms): shown as
    * the time it has been at it (D-2603). */
   since?: number | null;
+  /** Its tab is on screen: the elapsed time only ticks then. */
+  visible?: boolean;
   focused: boolean;
   /** Alone in its tab: no maximize control (F-CD-02). */
   solo: boolean;
@@ -121,11 +123,9 @@ function PaneName({
   );
 }
 
-/** UI_SPEC §2.20: the 30 px header of every pane. The whole header drags
- * the pane, except its buttons. */
-/** "4m" since `since`, ticking every 30 s. */
-function Elapsed({ since, status }: { since: number; status: Status }) {
-  const now = useNow(30_000);
+/** "4m" since `since`, ticking every 30 s while its pane is shown. */
+function Elapsed({ since, status, visible }: { since: number; status: Status; visible: boolean }) {
+  const now = useNow(30_000, visible);
   return (
     <span
       data-testid="pane-elapsed"
@@ -145,10 +145,13 @@ const elapsed = (since: number, now: number) =>
     days: (n) => t("time.days", { n }),
   });
 
+/** UI_SPEC §2.20: the 30 px header of every pane. The whole header drags
+ * the pane, except its buttons. */
 export function PaneChrome({
   title,
   status,
   since = null,
+  visible = true,
   focused,
   solo,
   maximized,
@@ -216,7 +219,7 @@ export function PaneChrome({
       )}
       {location}
       <span className="flex-1" />
-      {since !== null && <Elapsed since={since} status={status} />}
+      {since !== null && <Elapsed since={since} status={status} visible={visible} />}
       {badges}
       {/* Buttons don't start a drag. They stay quiet until the header is
           hovered or holds focus (D-2603). */}

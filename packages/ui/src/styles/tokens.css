@@ -106,6 +106,7 @@
   /* feedback */
   --tn-success: var(--green-400);
   --tn-warning: var(--amber-400);
+  --tn-warning-text: var(--amber-400); /* warning as text (meters at 80%, cautions) */
   --tn-danger:  var(--rose-400);
   --tn-danger-hover: var(--rose-300);
   --tn-danger-fg: #2b0710;
@@ -168,6 +169,7 @@
 
   --tn-success: var(--green-600);
   --tn-warning: var(--amber-600);
+  --tn-warning-text: var(--amber-700); /* AA as text on every light surface */
   --tn-danger:  var(--rose-700);   /* §5.4: 4.5:1 as text (rose-600 was 4.3:1 on bg) */
   --tn-danger-hover: var(--rose-800);
   --tn-danger-fg: #ffffff;
@@ -220,6 +222,7 @@
   --color-error-soft: var(--tn-status-error-soft);
   --color-success: var(--tn-success);
   --color-warning: var(--tn-warning);
+  --color-warning-text: var(--tn-warning-text);
   --color-danger: var(--tn-danger);
   --color-danger-hover: var(--tn-danger-hover);
   --color-danger-fg: var(--tn-danger-fg);

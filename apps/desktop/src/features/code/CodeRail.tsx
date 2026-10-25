@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   Cloud,
@@ -135,7 +135,7 @@ function SessionDot({ paneId }: { paneId: string }) {
   );
 }
 
-/** The right slot of a workspace row (F-SH-03): Working n, Waiting on you,
+/** The right slot of a workspace row (F-SH-03): n working, Needs you,
  * Failed, or nothing; and the unread dot when something finished unseen. */
 function useWorkspaceStatus(ws: WorkspaceSummary): {
   working: number;
@@ -198,11 +198,23 @@ function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
 
 /** The row's branch, while nothing needs saying about its agents: the
  * status slot wins the room, so the name never truncates (D-2603). */
-function BranchChip({ ws, selected }: { ws: WorkspaceSummary; selected: boolean }) {
+function BranchChip({
+  ws,
+  selected,
+  testId,
+  children,
+}: {
+  ws: WorkspaceSummary;
+  selected: boolean;
+  testId?: string;
+  /** Instead of the branch (a multi-repo workspace's repository count). */
+  children?: ReactNode;
+}) {
   const s = useWorkspaceStatus(ws);
   if (s.waiting || s.working > 0 || s.failed) return null;
   return (
     <span
+      data-testid={testId}
       className={cx(
         "inline-flex min-w-0 max-w-[84px] shrink items-center gap-0.5 truncate text-xs",
         // fg-subtle fails AA on the selected row's accent-soft (D-705).
@@ -210,7 +222,7 @@ function BranchChip({ ws, selected }: { ws: WorkspaceSummary; selected: boolean 
       )}
     >
       <GitBranch size={12} aria-hidden="true" />
-      <span className="truncate">{ws.branch}</span>
+      <span className="truncate">{children ?? ws.branch}</span>
     </span>
   );
 }
@@ -467,19 +479,13 @@ export function CodeRail() {
           ),
           trailing: (
             <>
-              {isMultiRepo(ws) && (
-                <span
-                  data-testid="workspace-repos"
-                  className={cx(
-                    "inline-flex min-w-0 shrink items-center gap-0.5 truncate text-xs",
-                    ws.id === activeId ? "text-fg-muted" : "text-fg-subtle",
-                  )}
-                >
-                  <GitBranch size={12} aria-hidden="true" />
-                  <span className="truncate">{t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}</span>
-                </span>
+              {isMultiRepo(ws) ? (
+                <BranchChip ws={ws} selected={ws.id === activeId} testId="workspace-repos">
+                  {t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}
+                </BranchChip>
+              ) : (
+                ws.branch && <BranchChip ws={ws} selected={ws.id === activeId} />
               )}
-              {ws.branch && <BranchChip ws={ws} selected={ws.id === activeId} />}
               <WorkspaceSlot ws={ws} />
               {ws.liveCount > 0 && (
                 <Count value={ws.liveCount} label={t("rail.live", { n: ws.liveCount })} />

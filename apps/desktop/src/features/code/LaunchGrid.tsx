@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, Globe, RefreshCw, Smartphone, SquareTerminal } from "lucide-react";
 import type { EngineView, InstallCommands } from "@tandem/protocol";
 import { Button, EngineGlyph, IconButton, Kbd, Spinner, cx } from "@tandem/ui";
@@ -33,10 +33,9 @@ function onNumberKey(ids: string[], onPick: (id: string) => void, busy: string |
 function TileKey({ n }: { n: number }) {
   if (n > 9) return null;
   return (
-    <Kbd
-      keys={String(n)}
-      className="ml-auto shrink-0 opacity-60 group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100"
-    />
+    <span aria-hidden="true" className="ml-auto inline-flex shrink-0">
+      <Kbd keys={String(n)} className="opacity-60 group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100" />
+    </span>
   );
 }
 
@@ -46,9 +45,14 @@ function installCommand(install: InstallCommands | undefined, platform: string |
   return platform === "macos" ? install.mac : platform === "windows" ? install.win : install.lin;
 }
 
-/** An install command in mono with a copy button that says it copied. */
-function CopyCommand({ command }: { command: string }) {
+/** An install command in mono with a copy button named for its engine;
+ * "Copied" is announced and clears after 1.5 s. */
+function CopyCommand({ command, engine }: { command: string; engine: string }) {
   const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
   return (
     <span className="flex min-w-0 items-center gap-1 rounded-sm bg-surface-1 py-0.5 pl-2 pr-0.5">
       <code className="min-w-0 truncate font-mono text-xs text-fg-muted" title={command}>
@@ -57,15 +61,19 @@ function CopyCommand({ command }: { command: string }) {
       <IconButton
         size="sm"
         icon={copied ? <Check size={12} /> : <Copy size={12} />}
-        label={copied ? t("launch.copied") : t("launch.copyInstall")}
+        label={t("launch.copyInstall", { name: engine })}
         onClick={() =>
           void copyText(command).then((ok) => {
             if (!ok) return;
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            if (timer.current) clearTimeout(timer.current);
+            timer.current = setTimeout(() => setCopied(false), 1500);
           })
         }
       />
+      <span role="status" className="sr-only">
+        {copied ? t("launch.copied") : ""}
+      </span>
     </span>
   );
 }
@@ -104,6 +112,7 @@ function RemoteLaunchGrid({
     host?.kind === "wsl"
       ? t("picker.inDistro", { distro: host.wslDistro ?? host.label })
       : t("picker.onHost", { host: host?.label ?? "" });
+  const order = [...installed.map((e) => e.spec.id), "shell", ...(browser ? ["browser"] : [])];
   const tile = (id: string, label: string, glyph: React.ReactNode, detail: string | null, first: boolean) => (
     <li key={id}>
       <button
@@ -112,6 +121,7 @@ function RemoteLaunchGrid({
         autoFocus={autoFocus && first}
         disabled={busy !== null}
         onClick={() => onPick(id)}
+        aria-keyshortcuts={order.indexOf(id) < 9 ? String(order.indexOf(id) + 1) : undefined}
         className={TILE}
       >
         {busy === id ? <Spinner /> : glyph}
@@ -119,11 +129,17 @@ function RemoteLaunchGrid({
           <span className="truncate text-base font-medium text-fg">{label}</span>
           {detail && <span className="truncate text-xs text-fg-subtle">{detail}</span>}
         </span>
+        <TileKey n={order.indexOf(id) + 1} />
       </button>
     </li>
   );
   return (
-    <div className="flex flex-col gap-3" data-testid="launch-grid" data-host={hostId}>
+    <div
+      className="flex flex-col gap-3"
+      data-testid="launch-grid"
+      data-host={hostId}
+      onKeyDown={onNumberKey(order, onPick, busy)}
+    >
       <ul className="grid grid-cols-2 gap-2">
         {installed.map((e, i) =>
           tile(e.spec.id, e.spec.label, <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={20} />, where, i === 0),
@@ -385,7 +401,7 @@ function LocalLaunchGrid({
                     )}
                     {installCommand(e.spec.install, platform) && (
                       <span data-testid={`install-command-${e.spec.id}`} className="mt-0.5 flex">
-                        <CopyCommand command={installCommand(e.spec.install, platform) ?? ""} />
+                        <CopyCommand command={installCommand(e.spec.install, platform) ?? ""} engine={e.spec.label} />
                       </span>
                     )}
                   </span>

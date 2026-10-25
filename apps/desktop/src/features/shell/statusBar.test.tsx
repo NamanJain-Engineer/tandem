@@ -72,7 +72,7 @@ const listening = (port: number): ListeningPort => ({
   url: `http://localhost:${port}`,
 });
 
-describe("D-2603 status bar at a glance (UI §3.6)", () => {
+describe("§3.6 status bar at a glance (D-2603)", () => {
   beforeEach(() => {
     resetStores();
     useStatus.setState({ records: {}, unread: {} });

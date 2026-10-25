@@ -193,7 +193,7 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
   });
 });
 
-describe("D-2604 scannable turns", () => {
+describe("UI-21 F-TH-12 scannable turns (D-2604)", () => {
   const edit = (id: string, path: string, diff: string): ThreadEvent => ({
     type: "tool",
     id,
@@ -234,6 +234,33 @@ describe("D-2604 scannable turns", () => {
     const rows = toRows(view);
     const summary = rows[rows.length - 1];
     expect(summary).toMatchObject({ kind: "summary", files: 2, add: 4, del: 2, tests: { passed: 18, failed: 0 } });
+  });
+
+  it("a declined or failed edit isn't counted; a multi-file diff counts each file", () => {
+    seq = 0;
+    const denied: ThreadEvent = { ...(edit("a", "src/a.ts", "@@ -1 +1 @@\n-x\n+y") as ToolEvent), status: "denied" };
+    const failed: ThreadEvent = { ...(edit("b", "src/b.ts", "@@ -1 +1 @@\n-x\n+y") as ToolEvent), status: "error" };
+    const multi = edit(
+      "c",
+      "src/c.ts, src/d.ts, src/e.ts",
+      [
+        "--- a/src/c.ts\n+++ b/src/c.ts\n@@ -1 +1 @@\n-1\n+1",
+        "--- a/src/d.ts\n+++ b/src/d.ts\n@@ -1 +1 @@\n+2",
+        "--- /dev/null\n+++ b/src/e.ts\n@@ -0,0 +1 @@\n+3",
+      ].join("\n"),
+    );
+    const view = play(
+      env("t1", { type: "user", text: "go", attachments: [] }),
+      env("t1", denied),
+      env("t1", failed),
+      env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
+      env("t2", { type: "user", text: "again", attachments: [] }, 0),
+      env("t2", multi, 1),
+      env("t2", { type: "turn_end", reason: "completed", blockedActions: 0 }, 2),
+    );
+    const summaries = toRows(view).filter((r) => r.kind === "summary");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({ files: 3, add: 3, del: 1 });
   });
 
   it("a turn that only read and talked needs no summary", () => {

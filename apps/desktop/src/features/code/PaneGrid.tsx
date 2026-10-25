@@ -405,6 +405,7 @@ const PaneView = memo(function PaneView({
         title={title}
         status={status}
         since={pane.kind === "agent" && (status === "working" || status === "waiting") ? agentSince : null}
+        visible={visible}
         focused={focused && !solo}
         solo={solo}
         maximized={maximized}

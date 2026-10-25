@@ -19,7 +19,7 @@ const show = () =>
     </UiProvider>,
   );
 
-describe("D-2603 Agent mode's first run", () => {
+describe("UI-70 Agent mode's first run (D-2603)", () => {
   beforeEach(() => {
     resetStores();
     useNewTeammate.setState({ open: false, prefill: null, template: null });

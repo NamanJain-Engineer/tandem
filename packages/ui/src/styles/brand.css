@@ -15,7 +15,7 @@
   /* Light: the two rings' teal and sky */
   --tn-glow-a:      rgb(45 212 191 / 0.16);
   --tn-glow-b:      rgb(56 189 248 / 0.11);
-  --tn-ring:        rgb(148 163 184 / 0.11);      /* the rings' line art */
+  --tn-ring:        rgb(255 255 255 / 0.08);      /* the rings' line art */
   --tn-ring-lit:    rgb(94 234 212 / 0.42);       /* where the light catches them */
   --tn-spot:        rgb(45 212 191 / 0.07);       /* a card's top light on hover */
   /* The highlight ink: teal → sky */

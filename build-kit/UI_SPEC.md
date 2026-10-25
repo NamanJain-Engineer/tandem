@@ -158,6 +158,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   /* feedback */
   --tn-success: var(--green-400);
   --tn-warning: var(--amber-400);
+  --tn-warning-text: var(--amber-400); /* warning as text (meters at 80%, cautions) */
   --tn-danger:  var(--rose-400);
   --tn-danger-hover: var(--rose-300);
   --tn-danger-fg: #2b0710;
@@ -174,7 +175,6 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-scrollbar:     rgb(255 255 255 / 0.16);
   --tn-selection:     rgb(45 212 191 / 0.28);
   --tn-kbd-bg:        var(--ink-775);
-  --tn-shadow-color:  0 0 0;
 }
 
 /* ---------- Semantic tokens: LIGHT ---------- */
@@ -221,6 +221,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
   --tn-success: var(--green-600);
   --tn-warning: var(--amber-600);
+  --tn-warning-text: var(--amber-700); /* AA as text on every light surface */
   --tn-danger:  var(--rose-700);   /* §5.4: 4.5:1 as text (rose-600 was 4.3:1 on bg) */
   --tn-danger-hover: var(--rose-800);
   --tn-danger-fg: #ffffff;
@@ -235,7 +236,6 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --tn-scrollbar:     rgb(9 9 11 / 0.20);
   --tn-selection:     rgb(15 118 110 / 0.20);
   --tn-kbd-bg:        var(--ink-50);
-  --tn-shadow-color:  9 9 11;
 }
 
 /* ---------- Theme mapping for Tailwind 4 ---------- */
@@ -274,6 +274,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
   --color-error-soft: var(--tn-status-error-soft);
   --color-success: var(--tn-success);
   --color-warning: var(--tn-warning);
+  --color-warning-text: var(--tn-warning-text);
   --color-danger: var(--tn-danger);
   --color-danger-hover: var(--tn-danger-hover);
   --color-danger-fg: var(--tn-danger-fg);
@@ -596,7 +597,7 @@ Used for the **mode switcher** and small toggles.
 - **Platform aware:** `Kbd.Mod` renders ⌘ on mac and Ctrl elsewhere; Alt/⌥ likewise.
 
 ### 2.20 PaneChrome (header for every pane)
-> **D-2603 (developer-first):** an agent that is working or waiting shows how long it has been at it ("4m", amber while it waits; tooltip "Working for 4m") before the badges, from its status record's `since`. The maximize, menu and close buttons sit at half opacity until the header is hovered or holds focus; their tooltips carry their shortcuts. Panes without a title are named for their engine or shell and their folder: "Claude Code · shop", "Shell · api", "Shell · shop 2" (the pane's cwd, else the workspace's name); with no folder known, "{Engine} · n" as before.
+> **D-2603 (developer-first):** an agent that is working or waiting shows how long it has been at it ("4m", amber while it waits; tooltip "Working · 4m" or "Needs you · 4m"; it ticks only while its tab is on screen) before the badges, from its status record's `since`. The maximize, menu and close buttons sit at half opacity until the header is hovered or holds focus; their tooltips carry their shortcuts. Panes without a title are named for their engine or shell and their folder: "Claude Code · shop", "Shell · api", "Shell · shop 2" (the pane's cwd, else the workspace's name); with no folder known, "{Engine} · n" as before.
 Height 30px, bg surface-2, bottom divider. Layout (left→right):
 ```
 [drag grip ⋮⋮][StatusDot][EngineGlyph] Title (editable on dbl-click) · branch chip · account chip   ...   [ctx meter][⤢ maximize][⋯ menu][× close]
@@ -826,7 +827,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 
 ### 3.6 Status bar (22px) · SH, TL
 - Surface-1, text-2xs, fg-muted.
-- **D-2603 (DESIGN §5.4.6):** quiet by default: the branch (with ahead/behind and its pull request's CI state: "CI passed", "CI running", "CI failed (2)", opening the checks) and the version. Then, each only while non-zero: agents "1 waiting" (amber, first) and "2 working", each opening the Dashboard filtered to it; the listening ports (":5173" or "3 ports", opening the Ports tab; read every 15 s while the window has focus); and the fullest usage window of the title bar chip's account ("5h 42%", warning or danger past the meter thresholds). Dictate and the connection keep their places.
+- **D-2603 (DESIGN §5.4.6):** quiet by default: the branch (with ahead/behind and its pull request's CI state: "CI passed", "CI running", "CI cancelled", "CI failed (2)", opening the checks; both follow the Files tab's context) and the version. Then, each only while non-zero: agents "1 waiting" (amber, first) and "2 working", each opening the Dashboard filtered to it; the listening ports (":5173" or "3 ports", opening the Ports tab; read every 15 s while the window has focus); and the fullest usage window of the title bar chip's account ("5h 42%", "Wk 42%", warning or danger past the meter thresholds). Dictate and the connection keep their places.
 - **Left segment:** the git branch of the focused workspace, with ahead/behind counts. Clicking opens the Files tab's Changes view.
 - **Centre:** "3 working · 1 waiting · 5 idle" (each clickable; it filters the Dashboard).
 - **Right segment:**

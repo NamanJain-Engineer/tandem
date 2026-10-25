@@ -2772,7 +2772,7 @@ Built on branch `app-ui` from `product-m0-m5`, after the owner's 20 October requ
   - **Rail:** quiet "Needs you" / "n working" / "Failed", names keep 10 characters, the branch gives way to a status, live panes as a `Count`. Teammate rows are two lines with the latest activity on every row.
   - **Pane headers:** elapsed time while working or waiting; actions quiet until hover or focus.
   - **Default names:** "Claude Code · shop", "Shell · api", "Shell · shop 2"; unrenamed tabs read as their task or workspace.
-  - **Launch grid:** coloured 24px marks, "Detected · v…", number keys 1–9, copyable install commands, "Launch several…" and "New worktree…" as buttons.
+  - **Launch grid:** 20px engine tiles, "Default · v{version}" on the default engine and "v{version}" on the rest, number keys 1–9 (local and remote grids; the key caps are hidden from screen readers, which get `aria-keyshortcuts`), copyable install commands with a per-engine copy button and an announced "Copied", "Launch several…" and "New worktree…" as buttons.
   - **Agent mode's first run:** "Hand work to a teammate", one primary action and the template cards. The demo seeds Lead and three teammates (working, waiting, idle) and the templates.
   - **T3:** status in the rail, pane headers and teammate rows is shapes and sentence-case words; `Badge` itself is sentence case (no capitals or caps tracking) at `h-4.5`.
   - **Threads:** "+n previous tool calls" with the latest call in view, test results on commands, a closing summary of files changed and tests.
@@ -2787,6 +2787,22 @@ Built on branch `app-ui` from `product-m0-m5`, after the owner's 20 October requ
 
 ### M18 · Developer-first UI log
 - Review of slices 1 and 2 (25 October): teammate avatars keep their rounded-square shape at every size (`avatarRadius`: 4px to 24, 6px at 32, 10px from 48); the theme swatches use ink tokens; `brand.css`'s light theme drops its last slate tints (elevations, edges, ring, fill) for ink; the EngineGlyph test checks `text-fg` exactly and both themes' chroma and hues; `TimeAgo` has a gallery state, stops ticking when `now` is pinned, gives screen readers the full date and renders nothing for a NaN time; dead `.tn-dot*` CSS and `--tn-shadow-color` are gone, and E2E-M2-5's reduced-motion probe checks `.tn-breathe`; the phone pages' and Remote manifest's `#060a12` are ink. The demo scrolls sideways at 390 px wide because the desktop window's minimum is 960 px: out of scope for the app.
+- Review of slice 3 (25 October):
+  - **`warning-text`:** the token now exists (amber-400 dark, amber-700 light, AA on every surface), so the usage window, limit and guard cards finally render their warning colour. A test fails on any `*-text` colour utility without a token; it also caught `text-danger-text` and `text-error-text`, now `text-danger` and `text-error`.
+  - **Turn summaries:** they count only edits that succeeded, and files come from the diff's `+++` headers.
+  - **Tests:** names carry spec IDs, and the launch grid has key and copy tests.
+  - **Smaller fixes:**
+    - the pane timer ticks only on visible tabs;
+    - CI reads "cancelled" when a run was cancelled and follows the Files tab's context;
+    - the status bar uses UsageChip's window names;
+    - the teammate row's hover actions sit on its first line;
+    - the turn summary's label reaches screen readers;
+    - a tab rename starts from the full task;
+    - the multi-repo chip gives way to a status;
+    - `brand.css`'s dark ring is white-alpha;
+    - the favicon and the blog's og.png are ink;
+    - the demo test covers its seeded teammates.
+  - **Not changed:** the status bar still reads ports on its own 15 s timer (the Ports tab polls every 2 s only while open); merging them is a later change.
 - Slice 3: vitest cases for the status bar (3), the rail's quiet slot (1), the pane header (3), default pane names and tab labels (2), Agent mode's first run (2), test results (7) and turn summaries (2); unit tests updated where names changed ("Shell · shop", "Needs you", "2 working"). E2E specs updated in the same change: E2E-M4-3 (the rail slot reads "1 working" then "Needs you") and E2E-M3-5 (the pane title is "Claude Code · <folder>").
 - Slice 2: 5 vitest cases (`EngineGlyph.test.tsx`: `fg` on all 26 tiles at AA from `brand.css`'s OKLCH values, chroma ≤ 0.05 and hues ≥ 15° apart, the neutral fallback, opacity and the accessible name).
 - Slice 1: 7 new vitest cases (`Primitives.test.tsx`: shapes, the halo, quiet badges, counts, relative times) and a contrast case (the dark surfaces rise in lightness and are neutral); the light `status-done` mark moved to green-700 to keep 3:1 on the new background. The gallery shows the quiet badges and counts.

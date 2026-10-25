@@ -8,7 +8,8 @@ import { useDashboard } from "../../stores/dashboard";
 import { useStatus } from "../../stores/status";
 import { fullest, useUsage } from "../../stores/usage";
 import { useWorktrees } from "../../stores/worktrees";
-import { useChipAccount } from "./UsageChip";
+import { SHORT as SHORT_WINDOW, useChipAccount, windowName } from "./UsageChip";
+import { checksState } from "../code/PullRequestChecks";
 import { useFiles } from "../../stores/files";
 import { gitKey, useGitContext } from "../../stores/git";
 import { useDictate } from "../../stores/dictate";
@@ -39,7 +40,8 @@ export function StatusBar() {
       ? t("git.branch.counts", { ahead: status.ahead, behind: status.behind })
       : t("git.branch.unpublished")
     : null;
-  const workspaceId = useWorkspaces((s) => s.activeId);
+  // CI follows the same workspace as the branch: the Files tab's context.
+  const workspaceId = useWorkspaces((s) => (active.kind === "context" ? active.workspaceId : null) ?? s.activeId);
   const openChanges = () => {
     if (!context) return;
     useFiles.getState().showView(gitKey(context), "changes");
@@ -137,8 +139,7 @@ function ChecksSegment({ workspaceId }: { workspaceId: string }) {
   const checks = useWorktrees((s) => s.checks[workspaceId]);
   if (checks?.state !== "ready" || !checks.pr || checks.checks.length === 0) return null;
   const failed = checks.checks.filter((c) => c.bucket === "fail").length;
-  const running = checks.checks.some((c) => c.bucket === "pending");
-  const state = failed > 0 ? "failed" : running ? "running" : "passed";
+  const state = checksState(checks.checks);
   return (
     <button
       type="button"
@@ -147,8 +148,17 @@ function ChecksSegment({ workspaceId }: { workspaceId: string }) {
       onClick={() => useWorktrees.getState().open({ kind: "checks", worktreeId: workspaceId })}
       className={cx(SEGMENT, state === "failed" && "text-danger", state === "passed" && "text-done-text")}
     >
-      <span aria-hidden="true" className="inline-flex"><StatusDot status={state === "failed" ? "error" : state === "running" ? "working" : "done"} size={6} /></span>
-      {state === "failed" ? t("status.ciFailed", { n: failed }) : state === "running" ? t("status.ciRunning") : t("status.ciPassed")}
+      <span aria-hidden="true" className="inline-flex"><StatusDot
+          status={state === "failed" ? "error" : state === "running" ? "working" : state === "cancelled" ? "idle" : "done"}
+          size={6}
+        /></span>
+      {state === "failed"
+        ? t("status.ciFailed", { n: failed })
+        : state === "running"
+          ? t("status.ciRunning")
+          : state === "cancelled"
+            ? t("status.ciCancelled")
+            : t("status.ciPassed")}
     </button>
   );
 }
@@ -164,10 +174,10 @@ function UsageSegment() {
   return (
     <span
       data-testid="status-usage"
-      title={t("status.usageTooltip", { window: top.kind, pct: Math.round(top.usedPct) })}
+      title={t("status.usageTooltip", { window: windowName(top.kind), pct: Math.round(top.usedPct) })}
       className={cx("tabular-nums", tone === "warning" && "text-warning-text", tone === "danger" && "text-danger")}
     >
-      {t("status.usage", { window: top.kind, pct: Math.round(top.usedPct) })}
+      {t("status.usage", { window: SHORT_WINDOW[top.kind] ?? top.kind, pct: Math.round(top.usedPct) })}
     </span>
   );
 }

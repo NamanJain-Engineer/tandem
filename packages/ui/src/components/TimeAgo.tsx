@@ -25,6 +25,7 @@ export function useNow(everyMs = 60_000, enabled = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!enabled) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), everyMs);
     return () => clearInterval(id);
   }, [everyMs, enabled]);

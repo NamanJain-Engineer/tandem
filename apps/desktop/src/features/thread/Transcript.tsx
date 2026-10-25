@@ -326,9 +326,9 @@ const RowView = memo(function RowView({
       return (
         <p
           data-testid="turn-summary"
-          aria-label={t("thread.summary.label")}
           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 py-0.5 text-sm text-fg-muted"
         >
+          <span className="sr-only">{t("thread.summary.labelPrefix")}</span>
           <CheckCircle2 size={13} aria-hidden="true" className="shrink-0 text-done-text" />
           {row.files > 0 && (
             <span>

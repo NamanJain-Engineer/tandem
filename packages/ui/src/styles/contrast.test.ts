@@ -2,7 +2,7 @@
 // needs 4.5:1 against every surface it sits on; UI parts that carry meaning
 // (status dots, the focus ring) need 3:1. Alpha colours are blended over the
 // surface they're drawn on before measuring.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -67,6 +67,7 @@ const TEXT = [
   "--tn-status-working-text",
   "--tn-status-waiting-text",
   "--tn-status-done-text",
+  "--tn-warning-text",
   "--tn-danger",
 ];
 /** Text on its own coloured fill (buttons, highlighted rows). */
@@ -130,5 +131,24 @@ describe("§5.4 WCAG 2.2 AA contrast over the tokens", () => {
     ]);
     expect(ratio(t, "--a", "--tn-bg")).toBeCloseTo(21, 1);
     expect(ratio(t, "--b", "--tn-bg")).toBeCloseTo(4.48, 1);
+  });
+
+  it("every *-text colour utility the code uses has a token behind it", () => {
+    const theme = css.slice(css.indexOf("@theme inline"));
+    const used = new Set<string>();
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules") walk(p);
+        } else if (/\.tsx?$/.test(e.name)) {
+          for (const m of readFileSync(p, "utf8").matchAll(/\b(?:text|bg|border)-([a-z]+(?:-[a-z]+)*-text)\b/g)) used.add(m[1] as string);
+        }
+      }
+    };
+    walk(join(import.meta.dirname, ".."));
+    walk(join(import.meta.dirname, "../../../../apps/desktop/src"));
+    expect(used.has("warning-text")).toBe(true);
+    expect([...used].filter((name) => !theme.includes(`--color-${name}:`))).toEqual([]);
   });
 });

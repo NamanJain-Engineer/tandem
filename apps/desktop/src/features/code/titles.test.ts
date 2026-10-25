@@ -56,7 +56,7 @@ describe("pane titles (F-EN-06)", () => {
     });
   });
 
-  it("D-2603 without a title, panes are named for their engine or shell and their folder", () => {
+  it("F-EN-06 D-2603 without a title, panes are named for their engine or shell and their folder", () => {
     const shell = { kind: "terminal", engineId: null };
     const panes = {
       a: pane("a", 1, shell),
@@ -98,7 +98,7 @@ describe("pane titles (F-EN-06)", () => {
   });
 });
 
-describe("D-2603 tab labels", () => {
+describe("UI-10 tab labels (D-2603)", () => {
   it("a default tab reads as its task, else its workspace; a name the user gave stays", () => {
     expect(tabLabel("Tab 1", "shop")).toBe("shop");
     expect(tabLabel("Tab 3", "shop")).toBe("shop 3");

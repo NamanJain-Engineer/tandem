@@ -45,6 +45,7 @@
     --tn-status-error-soft: rgb(225 29 72 / 0.10);
     --tn-success: var(--green-600);
     --tn-warning: var(--amber-600);
+    --tn-warning-text: var(--amber-700);
     --tn-danger: var(--rose-700);
     --tn-danger-hover: var(--rose-800);
     --tn-danger-fg: #ffffff;

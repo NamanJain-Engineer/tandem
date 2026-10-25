@@ -43,6 +43,13 @@ function mailRow(key: string, e: Ev<"mail_row">): Row {
   return { kind: "mail", key, mailId: e.mailId, from: e.from, to: e.to, preview: e.preview };
 }
 
+/** The files a unified diff touches, from its `+++ b/<path>` headers. */
+export function diffPaths(diff: string): string[] {
+  return [...diff.matchAll(/^\+\+\+ (?:b\/)?(.+)$/gm)]
+    .map((m) => (m[1] as string).trim())
+    .filter((p) => p !== "/dev/null");
+}
+
 /** Consecutive tool calls fold from this many (UI-21). */
 export const FOLD_AT = 3;
 
@@ -63,8 +70,10 @@ export function toRows(view: ThreadView): Row[] {
     for (const item of turn.items) {
       const e = item.event;
       if (e.type !== "tool") continue;
-      if (e.diff && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
-        edited.add(e.argSummary);
+      // Only edits that happened: a declined or failed patch keeps its diff.
+      if (e.status === "ok" && e.diff && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
+        const paths = diffPaths(e.diff);
+        for (const path of paths.length > 0 ? paths : [e.argSummary]) edited.add(path);
         const c = diffCounts(e.diff);
         add += c.add;
         del += c.del;

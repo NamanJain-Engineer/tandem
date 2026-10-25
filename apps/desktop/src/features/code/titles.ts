@@ -168,12 +168,12 @@ const DEFAULT_TAB = /^Tab (\d+)$/;
 /** A tab's label (D-2603). A name the user gave stays as it is. A default
  * "Tab n" reads as its task (the first agent's work title, five words at
  * most) or else its workspace: "shop", then "shop 2". */
-export function tabLabel(name: string, workspace: string, task: string | null = null): string {
+export function tabLabel(name: string, workspace: string, task: string | null = null, words = 5): string {
   const m = DEFAULT_TAB.exec(name);
   if (!m) return name;
   if (task?.trim()) {
-    const words = task.trim().split(/\s+/);
-    return words.length > 5 ? `${words.slice(0, 5).join(" ")}…` : words.join(" ");
+    const parts = task.trim().split(/\s+/);
+    return parts.length > words ? `${parts.slice(0, words).join(" ")}…` : parts.join(" ");
   }
   const n = Number(m[1]);
   return n > 1 ? t("pane.folderN", { folder: workspace, n }) : workspace;

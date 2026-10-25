@@ -26,7 +26,7 @@ function show(over: Partial<Parameters<typeof PaneChrome>[0]> = {}) {
   );
 }
 
-describe("D-2603 pane header", () => {
+describe("§2.20 pane header (D-2603)", () => {
   beforeEach(() => {
     resetStores();
     fakeBackend();
@@ -39,7 +39,7 @@ describe("D-2603 pane header", () => {
     const { unmount } = show({ since: NOW - 4 * 60_000 });
     const el = screen.getByTestId("pane-elapsed");
     expect(el.textContent).toBe("4m");
-    expect(el.getAttribute("title")).toBe("Working for 4m");
+    expect(el.getAttribute("title")).toBe("Working · 4m");
     unmount();
     show({ status: "waiting", since: NOW - 2 * 3_600_000 });
     expect(screen.getByTestId("pane-elapsed").className).toMatch(/text-waiting-text/);

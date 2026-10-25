@@ -168,7 +168,10 @@ function TabItem({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const label = tabLabel(tab.name, workspace, useTabTask(tab.id));
+  const task = useTabTask(tab.id);
+  const label = tabLabel(tab.name, workspace, task);
+  // A rename starts from the whole task, not the label's shortened form.
+  const draftFrom = tabLabel(tab.name, workspace, task, Number.POSITIVE_INFINITY);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
   });
@@ -179,7 +182,7 @@ function TabItem({
   const settled = useRef(false);
   const startRename = () => {
     settled.current = false;
-    setDraft(label);
+    setDraft(draftFrom);
     setRenaming(true);
   };
   const done = (name: string | null) => {
@@ -187,7 +190,7 @@ function TabItem({
     settled.current = true;
     setRenaming(false);
     const next = name?.trim();
-    if (next && next !== tab.name && next !== label)
+    if (next && next !== tab.name && next !== label && next !== draftFrom)
       void useWorkspaces
         .getState()
         .renameTab(tab.workspaceId, tab.id, next)
