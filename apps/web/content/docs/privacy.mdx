@@ -35,7 +35,22 @@ What it doesn't cover:
   - a value printed with colours or other escape codes inside it, or JSON-escaped, URL-encoded or otherwise encoded;
   - a value a full-screen program draws in pieces as it redraws the screen.
 - Programs the command starts in the background keep the values after it exits; only the shell after it starts without them.
-- Agent panes never get the values in this version, and there's no `vibezeo run` command line yet.
+- Chat threads, routines and the Night Shift can't use secrets: they have no pane to ask in.
 - The Flatpak build can't run with secrets yet.
+
+### Agents: `vibezeo run`
+
+An agent in an agent pane runs a command that needs secrets as `vibezeo run -- pnpm deploy`. The agent never sees the values: Vibezeo runs the command itself and hands back what it printed.
+
+1. **The pane asks first:** "Wants to: run `pnpm deploy` with stripe-test", on the pane, its Dashboard card and as a notification. It names the secrets, never their values. Choose **Allow once**, **Allow for this agent** (that exact command, until you close the pane) or **Deny**. Unanswered after 30 minutes, it's denied.
+2. **Vibezeo runs it** in the agent's folder (it must be the pane's folder or a folder inside it), with your login environment and the folder's `.env`, references replaced, for up to 10 minutes. It runs outside the agent's sandbox, which is why it asks.
+3. **The agent gets the output**, the last 64 KB with every secret value shown as `[REDACTED]`, and the command's exit code.
+
+One argument is a command line for the shell (`vibezeo run 'pnpm build && pnpm deploy'`); several are a program and its arguments. The question shows exactly what will run.
+
+- **Commands agents can run without asking** (Settings › Secrets): per folder, a command such as `pnpm deploy`. It then runs with any arguments (`pnpm deploy --prod`), never chained, piped or redirected (`pnpm deploy; rm -rf x` still asks). Worktrees use their folder's rules.
+- **Tell agents in this folder** (in the Run with secrets dialog) adds one paragraph to the folder's `AGENTS.md`, shown as a change first: put `vibezeo run --` before commands that need secrets. It names no secrets.
+- `vibezeo run` says why and exits 1 outside an agent pane, in SSH and WSL panes, in the Flatpak build, for a missing secret and when you deny. On Windows it runs commands with `cmd /C` and hasn't been tested there yet.
+- Your answers and the runs aren't stored.
 
 Settings › Privacy › Delete local data… removes every secret from the keychain too.
