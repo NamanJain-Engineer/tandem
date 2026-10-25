@@ -33,6 +33,8 @@ pub struct AppExecHost {
     pub notifications: Arc<crate::services::notifications::NotificationService>,
     /// Files what a run holds for review under its task (F-PL-08).
     pub gateway: Arc<crate::services::gateway::GatewayService>,
+    /// Accounts' usage windows: the review's account with the most room.
+    pub usage: Arc<crate::services::usage::UsageBoard>,
 }
 
 impl AppExecHost {
@@ -211,6 +213,14 @@ impl ExecHost for AppExecHost {
             .filter(|e| crate::services::threads::has_chat_adapter(e))
             .find(|e| engines.installed(&e.id).is_some())
             .map(|e| e.id.clone())
+    }
+
+    async fn review_account(&self, engine: &str) -> Option<AccountId> {
+        crate::services::plan::offered(&self.store, &self.terminals.engines, &self.usage)
+            .await
+            .into_iter()
+            .find(|e| e.engine_id == engine)
+            .and_then(|e| crate::services::plan::roomiest(&e))
     }
 
     async fn notify(&self, title: String, body: String, issue_id: &str) {

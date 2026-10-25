@@ -1596,7 +1596,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) still has D-2438 and D-2439 (F-TK-05's review fixes took D-2434 to D-2437). REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) has D-2824 to D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, and F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October). REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -2162,7 +2162,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - **Docs.** PRODUCT_SPEC F-TK-05 (a folder needn't end in `/`, never a pattern, paths fenced); ARCHITECTURE §3.2 (`pty_attach`'s `live` and `state`), §3.4 and §5.1 (held notices), §6.6, §9.1, §9.2, §9.3 and §9.5; MILESTONES' E2E-M18-TK-05; REMAINING.
   - **Unlike the review's plan,** an agent's claim refuses `*` and `?` but not `[`, and inferred claims refuse none of the three (D-2434). Five files in this repository have `[` in their path (Next.js routes such as `apps/web/app/blog/[slug]/page.site.tsx`), and an edit to one must still claim.
   - **Not in this round:**
-    - A notice sent while a view is parking (one IPC round trip, between its serialize and `pty_park`) is lost.
+    - A notice that arrives while a view parks (one IPC round trip, between its serialize and `pty_park`, `TerminalView.tsx`) still goes to the closing view, so it's lost. The coordinator's review of 75adeb2e found it again.
     - A paused agent (F-AC-09) swaps its view for the paused card without parking, so notices during a pause are lost. Its output still replays from the ring.
     - The Accounts sign-in pane's small terminal ignores notices.
     - `lanes::stop_panes` doesn't end its panes' tasks sessions, so their connections and held notices stay until the app restarts.
@@ -2176,6 +2176,29 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E: m18-tk05 3 of 3, m18-db04 6 of 6, m18-cn09 3 of 3 and m18-tk06 2 of 2.
     - cdn.pyke.io is blocked in this container, so the app and the invariants were built against ONNX Runtime 1.28.0 (the version ort-sys expects) from PyPI's wheel, checksum-checked and linked dynamically. Nothing from it is committed.
     - E2E first needed `pnpm db:migrate && pnpm db:seed` (sign-up's 500, docs/OPERATING.md).
+
+- [x] F-TK-06 Plan with Lead, the coordinator's review fixes (D-2438, D-2439, D-2820 to D-2823). Built after merging release-0.10.0 2cb11440 (free-for-everyone, D-2902) and product-m0-m5 9efa06e3. Each code fix began with a failing `F-TK-06` or `F-TK-04` test.
+  - **Must-fix.**
+    - **No plan gating (D-869).** Plan with Lead has no Free or Pro path. `useExecuteBlock` and the Upgrade button are gone from it; Execute all asks the app, whose `can_execute` (unchanged, the release's) checks only `limits.task_execution`. The Pro copy left the demo, PRODUCT_SPEC, tasks.mdx, ARCHITECTURE and D-2433, and the E2E's Free case went with the gate.
+    - **Ask before running (D-2438).** Execute all… shows each run first: the task, its engine and that engine's account with the most room as usage reads now, "Edits in its own worktree", the engine its review uses, and the tasks it leaves alone with the reason. Nothing starts until Run, and Run starts exactly what was shown (`plan_prepare`, then `plan_execute`, which refuses without it).
+    - **No task runs twice (D-2439).** F-TK-04's `execute` refuses a task with a run queued or under way (Conflict), an archived one, or a Done or Canceled one, and its check and new attempt share a lock. Execute all runs only To do tasks and leaves the rest alone (`skipped`). The plan moves to Starting under its lock, so a second click or a reopened dialog can't start it again. It keeps what it queued (`queued`), and a start that fails partway goes back to Created without queuing those again.
+  - **Also in this round.**
+    - **Lead's reply (items 4 and 5, D-2820).** Text that can hide words (controls but a description's line breaks and tabs, bidi controls, Unicode tags) comes out of every row, and a title is one line. A reply over 512 KB isn't read. The plan is the last begin marker whose text up to the next end marker reads as one, so naming the markers afterwards doesn't hide it. Create tasks writes as Lead.
+    - **Accounts and the review (items 6 and 7, D-2821).** `roomiest` takes an account with room left, then one with no reading (the default first), then the full one that resets first, and usage is read again at the check. F-TK-04's review runs on its engine's roomiest account, and its verdict is its own: a comment written as the review's thread, else its reply. PRODUCT_SPEC no longer lists second-engine reviews as not in the slice, since F-TK-04's review already uses another engine.
+    - **Planning ends (items 8 and 9, D-2822).** After 30 minutes of Lead's work the plan stops Lead's turn and fails, saying why; time waiting for your answer doesn't count, and the plan says it's waiting. Lead's planning chat gets no tasks server.
+    - **Plans stay usable (item 10, D-2823).** The window loads `plan_list` when it opens. Created and started plans have Remove plan, which leaves their tasks. Create tasks that fails partway keeps its project and the tasks written, locks their rows, and the next try writes the rest.
+    - **Housekeeping (item 11).** `docs/HANDOFF_m16a-conductor.md` is gone, and the fake engine's `plan_reply` and `second_opinion_reply` each have their own doc comment.
+  - **Tests** (9 new Rust, 6 new TypeScript):
+    - `services::plan` (13 in all: 6 new, 2 rewritten, 2 extended): new are the plan found past later mentions of its markers and cleaned, Create tasks again after a failure writing nothing twice, waiting for you and the 30-minute stop, tasks left alone with one start from two clicks, a start that fails partway, and the roomiest account. Rewritten: the check, then exactly what it showed; runs off. Extended: the start (its chat is withheld from the tasks server) and Create tasks (written as Lead, a hidden character taken out).
+    - `services::tasks_exec` (2): a task runs once at a time and only while it can, and two starts at once make one run; the review's account and its own verdict.
+    - `services::tasks` (1): a planning chat gets no tasks server.
+    - `plan.test.tsx` (10 in all: 6 new, replacing Free's and Pro's): the check and Run with no account; runs off; Starting, also when reopened; Lead waiting; rows written before a failure; plans after a reload and Remove plan. `demo.test.ts` F-TK-06 adds the demo's check.
+    - E2E: `m18-tk06-plan-with-lead.e2e.ts` is one run with no account. The plan reaches a draft and its tasks are created. One task is started by hand first; Execute all… lists both runs and Back starts nothing; Run starts the other task once on its engine and leaves the running one with its single run.
+  - **Docs.** PRODUCT_SPEC F-TK-06 (behavior, AC3 and AC4); ARCHITECTURE §3.2 (`task_execute`'s errors, `plan_*` with `plan_prepare`), §3.3 (`tasks:plan`), §9.4 and §9.6; tasks.mdx; MILESTONES' E2E-M18-TK-06; D-2433.
+  - **Not in this round:**
+    - Plans don't survive a restart, and a planning chat whose plan is gone gets its tasks server back after one (F-TK-07 keeps plans and withholds their chats again).
+    - The check names the review's engine, not its account: the review takes its engine's roomiest account when it starts.
+    - A plan's runs aren't followed in the plan yet (F-TK-07).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -2224,8 +2247,8 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - An engine Lead names that wasn't offered becomes Lead's own and the row says so, rather than failing the plan.
   - Execute all uses each engine's account with the most room: the lowest fullest window, else the default.
 - D-2432: The suggested engine is stored on the task (`suggested_engine`), not only in the plan. A plan lives in memory and ends with the app, but its tasks outlive it, and Execute starts on their engine later too.
-- D-2433: Execute all is refused as a whole on Free or signed out (`can_execute` before the first run), never partway through.
-  - On Free the plan doesn't show a disabled button. It says, where the button would be, that running tasks is part of Pro and that the tasks are saved (DESIGN §5.5 rules 2 and 4).
+- D-2433: Execute all is refused as a whole when runs are off (`can_execute` before the first run), never partway through. Since D-869 and D-2902 that's only the limits' `task_execution`: no account and no plan.
+  - The plan doesn't show a disabled button. Execute all's check says why where Run would be, and that the tasks are saved (DESIGN §5.5 rules 2 and 4).
   - Each task runs in its own worktree at Edits with the review on: F-TK-04's defaults, with no Full access and no shared folder from a batch. A plan's runs queue behind F-TK-04's 4 at once.
 - D-2434: A claim's path is a file or a folder in the working tree, and claims compare as the file system does.
   - A path covers itself and everything under `path/`, so a folder needn't end in `/`. A trailing `/` is dropped, so claims saved with one still compare.
@@ -2248,6 +2271,30 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - A pane whose session begins is told the overlaps of its working tree announced before it (the announced paths only). The startup check runs before any pane attaches, so this is how existing overlaps reach a pane, as well as reaching agents that start later.
   - A terminal agent's session is tracked (`track_scope`) whatever "Expose tasks to terminal agents" says, so its edits claim and its pane is told. Only its connection depends on the setting.
   - `check_overlaps` holds one guard from reading the claims to the sink. So the startup check and the watcher take turns: no notice goes out twice, and an older list never arrives last. The notice sink runs under the guard and must never call back into the tracker.
+
+- D-2438: Execute all shows its runs before it starts any, and starts what it showed (the review of 75adeb2e, must-fix 2).
+  - `plan_prepare` reads usage again and answers each run: the task, its engine, that engine's account with the most room (or the engine's own sign-in), the engine its independent review uses, and why a task is left alone. The plan keeps those runs, and `plan_execute` starts exactly them; without them it refuses.
+  - Run is the check's one accent button, and Back returns to the plan. When the limits turn runs off, the check says so where Run would be and offers none (DESIGN §5.5).
+  - The demo's check lists its simulated runs and says they start in the app.
+- D-2439: One run per task at a time, from Execute… and Execute all alike (must-fix 3).
+  - F-TK-04's `execute` refuses a task with a run queued or under way (Conflict), an archived one, or a Done or Canceled one (Invalid). A task in progress or in review can still be run again from Execute…, F-TK-04's re-run. The check and the new attempt hold one lock, so two starts make one run.
+  - Execute all runs only To do tasks and leaves the others alone, keeping each one's reason (`skipped`).
+  - The plan is Starting while its runs queue, set under the plans' lock and shown to every window, so it starts once. It keeps what it queued (`queued`). A start that fails partway goes back to Created with the error, and the next one skips those.
+- D-2820: What Lead wrote is cleaned, found even when Lead names the markers again, and written as Lead (items 4 and 5).
+  - Controls (but a description's line breaks and tabs), bidi controls and Unicode tags come out of titles, descriptions and reasons, in the draft and again when Create tasks writes them. A repository file can't hide instructions for an edit-access run in text you can't see. Titles and reasons are one line.
+  - The reply is read only up to 512 KB. The plan is the last begin marker (of the last 8) whose text up to the next end marker parses as a plan.
+  - Tasks are written as Lead (its teammate id): Lead wrote them and you approved them, and their history says so.
+- D-2821: The account with the most room means room left first, and the review takes it too (items 6 and 7).
+  - Order: under 100 % (the lowest first), then no reading (the default first), then full (the one that resets first). No reading is unknown, not full.
+  - Usage is read again when Execute all shows its runs, not taken from when Lead planned.
+  - F-TK-04's review asks `ExecHost::review_account`, its engine's roomiest account, instead of that engine's default. Its verdict is a `Verdict:` comment written as the review's own thread, else its reply; another run's verdict on the same task doesn't count.
+- D-2822: Planning has an end, and its chat has no tasks tools (items 8 and 9).
+  - A plan stops Lead's turn after 30 minutes of work and fails, saying why. Time Lead waits for your answer doesn't count, and the plan says it's waiting.
+  - `TasksService::withhold(session_key)` gives Lead's planning chat no tasks server, so "nothing is written before Create tasks" doesn't rest on Lead obeying. The set lives in memory, as plans do; F-TK-07 keeps plans across restarts and withholds their chats again.
+- D-2823: Plans stay reachable, and Create tasks can be tried again (item 10).
+  - The window loads `plan_list` when it opens; events that arrived meanwhile win.
+  - A created or started plan has Remove plan: the plan goes and its tasks stay. Before tasks exist, the words stay Discard plan.
+  - Create tasks that fails partway keeps its project and the tasks written (`issueIds` while Ready), and the plan keeps the rows. Those rows are locked, and the next try writes the rest into the same project. Tries run one at a time.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

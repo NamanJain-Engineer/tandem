@@ -58,6 +58,7 @@ macro_rules! app_commands {
             commands::plan::plan_list,
             commands::plan::plan_get,
             commands::plan::plan_create_tasks,
+            commands::plan::plan_prepare,
             commands::plan::plan_execute,
             commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,

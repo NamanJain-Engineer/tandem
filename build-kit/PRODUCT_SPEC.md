@@ -1966,26 +1966,30 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - the engines that can run tasks here, each with its accounts' fullest usage window (for example "claude: 62 % of the 5-hour window used, resets 14:10");
   - the reply format: one JSON block between markers that carry a fresh code.
 
-  You can read Lead's reasoning in that thread, and answer it there.
+  You can read Lead's reasoning in that thread, and answer it there. Lead gets no tasks tools in that thread, so nothing reaches the tracker before you approve.
+  - When Lead waits for your answer, the plan says so: "Lead is waiting for your answer in its thread".
+  - After 30 minutes of work (time waiting for you doesn't count), Vibezeo stops Lead's turn and the plan fails, saying why.
 - **The draft.** When Lead's turn ends, Vibezeo reads the block and shows the plan as editable rows: title, description and engine (a menu of the engines offered). It holds 1–12 tasks.
   - An engine Lead names that wasn't offered becomes Lead's own engine, and the row says so.
-  - A reply without a readable block fails the plan with "Lead's reply had no plan", and offers Plan again.
+  - A reply without a readable block fails the plan with "Lead's reply had no plan", and offers Plan again. Lead naming the markers after its plan doesn't hide the plan. A reply over 512 KB isn't read.
+  - Characters that can hide text (controls, bidi controls and Unicode tags) are taken out of every row, and a title is one line.
   - Nothing is written until you choose **Create tasks**.
-- **Create tasks** puts the rows into the tracker (F-TK-01) as To do tasks in a new project named after the goal. Each task remembers its suggested engine, and F-TK-04's Execute dialog starts on that engine.
-- **Execute all** runs every task of the plan through F-TK-04's queue:
-  - each in its own worktree, at Edits;
-  - on its suggested engine, using that engine's account with the most room;
-  - with the independent review on.
+- **Create tasks** puts the rows into the tracker (F-TK-01) as To do tasks in a new project named after the goal, written as Lead. Each task remembers its suggested engine, and F-TK-04's Execute dialog starts on that engine. If writing stops partway, the project and the tasks written so far stay, their rows can't be changed, and Create tasks writes the rest.
+- **Execute all…** first shows what it starts. Nothing runs until you choose **Run**:
+  - each task, with its engine and that engine's account with the most room as usage reads now (or the engine's own sign-in);
+  - that each one edits in its own worktree, and the engine its independent review uses (F-TK-04's: a different engine when one is installed);
+  - the tasks it leaves alone, and why. Only To do tasks with no run under way start.
 
-  At most 4 run at once and the rest queue. Like F-TK-04, it needs sign-in and Pro. On Free, the plan explains that where the button is, and the tasks stay usable.
-- **Not in this slice:** Lead answering agents' questions, reviews by a second engine, and merging. Review and merge stay yours.
-- A plan lives until it's created or discarded, or the app quits. Lead's thread keeps the reply.
+  Then it runs those tasks through F-TK-04's queue, at Edits, at most 4 at once. It starts once: while its runs are queuing the plan says "Starting the runs…", and the plan keeps what it queued. If a run fails to start, the plan says why and Execute all can go again without queuing anything twice.
+  It needs no account (D-869). When the limits turn runs off, the check says so where Run would be, and the tasks stay usable.
+- **Not in this slice:** Lead answering agents' questions, and merging. Review and merge stay yours.
+- A plan lives until you remove it or the app quits, and a reloaded window lists it again. **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
 
 **Acceptance:**
 1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
 2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
-3. Create tasks writes one To do task per row in a new project, each with its suggested engine. Nothing is written before it.
-4. Execute all starts one attempt per task on its suggested engine, in a worktree. On Free it starts none and says why.
+3. Create tasks writes one To do task per row in a new project, each with its suggested engine, as Lead. Nothing is written before it, and trying again after a failure writes no task twice.
+4. Execute all lists each run (engine, account, its own worktree, the review's engine) and starts none until you confirm. Then it starts one attempt per To do task on its suggested engine, in a worktree, and none for a task that's already running. When the limits turn runs off, it starts none and says why.
 
 ### 4.9 RT: Routines
 

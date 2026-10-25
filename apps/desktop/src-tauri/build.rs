@@ -393,6 +393,7 @@ const COMMANDS: &[&str] = &[
     "plan_list",
     "plan_get",
     "plan_create_tasks",
+    "plan_prepare",
     "plan_execute",
     "plan_discard",
     "task_attempts_list",

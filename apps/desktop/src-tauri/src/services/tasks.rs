@@ -36,6 +36,9 @@ pub struct TasksService {
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     /// Overlaps already announced, by [`overlap_keys`].
     announced: Mutex<HashSet<String>>,
+    /// Chats that get no tasks server, by session key: Lead's planning
+    /// chats (F-TK-06), so nothing reaches the tracker before you approve.
+    withheld: Mutex<HashSet<String>>,
     /// Held by a check from reading the claims to telling the sink, and by
     /// a session's start: one at a time (F-TK-05).
     checking: Mutex<()>,
@@ -266,6 +269,7 @@ impl TasksService {
             sessions: Mutex::default(),
             watcher: Mutex::default(),
             announced: Mutex::default(),
+            withheld: Mutex::default(),
             checking: Mutex::default(),
             on_overlap: std::sync::OnceLock::new(),
             on_notice: std::sync::OnceLock::new(),
@@ -629,9 +633,24 @@ impl TasksService {
         actor: &str,
         folder: Option<&Path>,
     ) -> Option<StdioServer> {
+        if self
+            .withheld
+            .lock()
+            .map(|w| w.contains(key))
+            .unwrap_or(true)
+        {
+            return None;
+        }
         self.bin.as_ref()?;
         let conn = self.begin_session(key, label, actor, folder)?;
         self.server(["--connection".into(), conn])
+    }
+
+    /// The chat's sessions get no tasks server from now on (`th:<id>`).
+    pub fn withhold(&self, key: &str) {
+        if let Ok(mut w) = self.withheld.lock() {
+            w.insert(key.to_string());
+        }
     }
 
     /// The server entry for terminal engines' own config: the connection
@@ -731,6 +750,22 @@ mod tests {
         assert_eq!(t.env_vars, vec![CONNECTION_ENV.to_string()]);
         assert!(t.args.contains(&"--connection-env".to_string()));
         assert!(tasks.expose_to_terminals().await, "on by default");
+    }
+
+    #[tokio::test]
+    async fn f_tk_06_lead_planning_gets_no_tasks_server() {
+        let (_d, tasks) = service(Some("/opt/v/tandem-tasks".into())).await;
+        tasks.withhold("th:plan");
+        assert!(tasks
+            .chat_server("th:plan", "Lead", "tm_lead", None)
+            .is_none());
+        assert!(
+            tasks.connection_of("th:plan").is_none(),
+            "no connection made"
+        );
+        assert!(tasks
+            .chat_server("th:other", "Lead", "tm_lead", None)
+            .is_some());
     }
 
     #[tokio::test]

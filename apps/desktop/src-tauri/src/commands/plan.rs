@@ -7,7 +7,7 @@ use tauri::State;
 use tandem_core::ids::WorkspaceId;
 use tandem_core::{ErrorCode, IpcError};
 
-use crate::services::plan::{PlanService, PlanTask, PlanView};
+use crate::services::plan::{PlanLaunch, PlanService, PlanTask, PlanView};
 use crate::state::AppState;
 
 fn plans(state: &AppState) -> Result<Arc<PlanService>, IpcError> {
@@ -48,7 +48,13 @@ pub fn plan_create_tasks(
     plans(&state)?.create_tasks(&id, tasks)
 }
 
-/// Every task through F-TK-04's queue. Needs sign-in and Pro.
+/// What Execute all starts, read now, for you to confirm.
+#[tauri::command]
+pub async fn plan_prepare(state: State<'_, AppState>, id: String) -> Result<PlanLaunch, IpcError> {
+    plans(&state)?.prepare(&id).await
+}
+
+/// The runs `plan_prepare` showed, through F-TK-04's queue.
 #[tauri::command]
 pub async fn plan_execute(state: State<'_, AppState>, id: String) -> Result<PlanView, IpcError> {
     plans(&state)?.execute(&id).await

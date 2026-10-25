@@ -252,7 +252,13 @@ function OpenPlans() {
   const live = Object.values(plans)
     .filter((p) => p.state !== "started")
     .sort((a, b) => b.createdAt - a.createdAt);
-  const STATUS = { planning: "working", failed: "error", ready: "waiting", created: "done" } as const;
+  const STATUS = {
+    planning: "working",
+    failed: "error",
+    ready: "waiting",
+    created: "done",
+    starting: "working",
+  } as const;
   return (
     <>
       {live.map((p) => (

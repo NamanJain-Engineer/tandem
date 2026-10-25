@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  PlanLaunch,
   PlanView,
   AppBoot,
   AuthState,
@@ -363,7 +364,7 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(error.message).toContain("running on your computer");
   });
 
-  it("F-TK-06 the demo simulates Lead's plan, creates its tasks, and can't run them", async () => {
+  it("F-TK-06 the demo simulates Lead's plan, creates its tasks, shows their runs, and can't run them", async () => {
     core = new DemoCore(0);
     const started = core.handle("plan_start", { workspaceId: "ws_demo", goal: "Add dark mode" }) as PlanView;
     expect([started.state, started.threadId]).toEqual(["planning", ""]);
@@ -375,6 +376,13 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     const created = core.handle("plan_create_tasks", { id: ready.id, tasks: ready.tasks.slice(0, 2) }) as PlanView;
     expect(created.issueIds).toEqual(["TAN-1", "TAN-2"]);
     expect((core.handle("task_get", { id: "TAN-2" }) as { issue: Issue }).issue.suggested_engine).toBe("codex");
+    // Execute all's check lists the runs and says they start in the app.
+    const launch = core.handle("plan_prepare", { id: ready.id }) as PlanLaunch;
+    expect(launch.blocked).toContain("it works in the app, not in this demo");
+    expect(launch.runs.map((r) => [r.issueId, r.engineLabel, r.reviewEngineLabel])).toEqual([
+      ["TAN-1", "Claude Code", "Codex"],
+      ["TAN-2", "Codex", "Claude Code"],
+    ]);
     expect(() => core?.handle("plan_execute", { id: ready.id })).toThrow();
   });
 

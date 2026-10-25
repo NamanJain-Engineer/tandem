@@ -185,9 +185,6 @@ fn send_line(v: serde_json::Value) {
     let _ = std::io::stdout().flush();
 }
 
-/// A second opinion (F-WT-05): findings on the first added line of the
-/// first two files in the prompt's diff (the second by its file name only),
-/// one on a line the diff doesn't show, and a free line.
 /// Lead's answer to a plan request (F-TK-06): two tasks between the
 /// prompt's markers, the second on an engine Vibezeo didn't offer.
 fn plan_reply(text: &str) -> Option<String> {
@@ -214,6 +211,9 @@ fn plan_reply(text: &str) -> Option<String> {
     ))
 }
 
+/// A second opinion (F-WT-05): findings on the first added line of the
+/// first two files in the prompt's diff (the second by its file name only),
+/// one on a line the diff doesn't show, and a free line.
 fn second_opinion_reply(text: &str) -> Option<String> {
     if !text.contains("second opinion") || !text.contains("## Findings") {
         return None;

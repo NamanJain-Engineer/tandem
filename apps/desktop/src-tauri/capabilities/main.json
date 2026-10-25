@@ -45,6 +45,7 @@
     "allow-plan-list",
     "allow-plan-get",
     "allow-plan-create-tasks",
+    "allow-plan-prepare",
     "allow-plan-execute",
     "allow-plan-discard",
     "allow-task-attempts-list",
