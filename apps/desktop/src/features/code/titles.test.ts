@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EngineView, PaneRecord } from "@tandem/protocol";
-import { PromptCapture, cleanTitle, paneTitles, promptTitle } from "./titles";
+import { PromptCapture, cleanTitle, paneTitles, promptTitle, tabLabel } from "./titles";
 
 const pane = (id: string, at: number, extra: Partial<PaneRecord> = {}): PaneRecord => ({
   id,
@@ -56,6 +56,24 @@ describe("pane titles (F-EN-06)", () => {
     });
   });
 
+  it("D-2603 without a title, panes are named for their engine or shell and their folder", () => {
+    const shell = { kind: "terminal", engineId: null };
+    const panes = {
+      a: pane("a", 1, shell),
+      b: pane("b", 2),
+      c: pane("c", 3, { ...shell, cwd: "/code/api/" }),
+      d: pane("d", 4, shell),
+      e: pane("e", 5),
+    };
+    expect(paneTitles(panes, engines, {}, "shop")).toEqual({
+      a: "Shell · shop",
+      b: "Claude Code · shop",
+      c: "Shell · api",
+      d: "Shell · shop 2",
+      e: "Claude Code · shop 2",
+    });
+  });
+
   it("F-CD-12 the first name sits beside the title and doesn't replace it", () => {
     expect(paneTitles({ a: pane("a", 1, { humanName: "Rhea" }) }, engines, { a: { hook: "x" } })).toEqual({
       a: "x",
@@ -77,5 +95,14 @@ describe("pane titles (F-EN-06)", () => {
     c.input("\r");
     c.input("second\r");
     expect(got).toEqual(["hello world"]);
+  });
+});
+
+describe("D-2603 tab labels", () => {
+  it("a default tab reads as its task, else its workspace; a name the user gave stays", () => {
+    expect(tabLabel("Tab 1", "shop")).toBe("shop");
+    expect(tabLabel("Tab 3", "shop")).toBe("shop 3");
+    expect(tabLabel("Tab 2", "shop", "Fix the redirect loop after login on checkout")).toBe("Fix the redirect loop after…");
+    expect(tabLabel("Build", "shop", "Fix it")).toBe("Build");
   });
 });

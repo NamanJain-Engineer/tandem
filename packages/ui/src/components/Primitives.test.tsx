@@ -41,6 +41,13 @@ describe("D-2601 quiet Badge and Count", () => {
     expect(b.className).toMatch(/text-waiting-text/);
   });
 
+  it("T3 a boxed badge is sentence case too, on the 4px scale", () => {
+    render(<Badge variant="accent">Beta</Badge>);
+    const b = screen.getByText("Beta");
+    expect(b.className).not.toMatch(/uppercase|tracking-caps|\[18px\]/);
+    expect(b.className).toMatch(/h-4\.5/);
+  });
+
   it("a count caps at 99+ and takes an accessible name", () => {
     render(<Count value={140} label="140 unread" />);
     expect(screen.getByRole("img", { name: "140 unread" }).textContent).toBe("99+");

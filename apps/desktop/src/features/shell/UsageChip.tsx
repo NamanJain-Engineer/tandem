@@ -40,7 +40,7 @@ export function usageChip(view: UsageView | undefined, engine: string) {
 
 /** The focused agent pane's account; with nothing focused, the default
  * engine's default account (UI_SPEC §3.2). */
-function useChipAccount(): string | null {
+export function useChipAccount(): string | null {
   const tabId = useWorkspaces((ws) => (ws.activeId ? (ws.activeTab[ws.activeId] ?? null) : null));
   const focused = useLayout((l) => {
     const tab = tabId ? l.tabs[tabId] : undefined;

@@ -27,12 +27,14 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useSetting } from "../../stores/settings";
+import { paneKey, useStatus } from "../../stores/status";
 import { useWorkspaces } from "../../stores/workspaces";
 import { pickAndAddWorkspace } from "../shell/actions";
 import { PaneDndProvider, useNewTabTarget, useDrag } from "./dnd";
 import { useFileDrops } from "./drops";
 import { PaneGrid } from "./PaneGrid";
 import { PanePicker } from "./PanePicker";
+import { promptTitle, tabLabel, useFirstPrompts } from "./titles";
 import type { TerminalOptions } from "./TerminalView";
 import { webglPool } from "./webglPool";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
@@ -140,17 +142,33 @@ function TabStrip({
 }
 
 /** One tab: select, double-click or F2 to rename, close, drag to reorder. */
+/** The work title of a tab's first agent pane: its engine's hook title or
+ * the first prompt typed into it. */
+function useTabTask(tabId: string): string | null {
+  const first = useLayout((st) => {
+    const panes = Object.values(st.tabs[tabId]?.panes ?? {}).filter((p) => p.kind === "agent");
+    panes.sort((a, b) => a.createdAt - b.createdAt);
+    return panes[0]?.id ?? null;
+  });
+  const hook = useStatus((st) => (first ? (st.records[paneKey(first)]?.title ?? null) : null));
+  const prompt = useFirstPrompts((st) => (first ? (st.prompts[first] ?? null) : null));
+  return hook?.trim() || (prompt ? promptTitle(prompt) : null);
+}
+
 function TabItem({
   tab,
+  workspace,
   selected,
   onSelect,
   onClose,
 }: {
   tab: Tab;
+  workspace: string;
   selected: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const label = tabLabel(tab.name, workspace, useTabTask(tab.id));
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
   });
@@ -161,7 +179,7 @@ function TabItem({
   const settled = useRef(false);
   const startRename = () => {
     settled.current = false;
-    setDraft(tab.name);
+    setDraft(label);
     setRenaming(true);
   };
   const done = (name: string | null) => {
@@ -169,7 +187,7 @@ function TabItem({
     settled.current = true;
     setRenaming(false);
     const next = name?.trim();
-    if (next && next !== tab.name)
+    if (next && next !== tab.name && next !== label)
       void useWorkspaces
         .getState()
         .renameTab(tab.workspaceId, tab.id, next)
@@ -190,7 +208,7 @@ function TabItem({
       {renaming ? (
         <input
           autoFocus
-          aria-label={t("code.renameTab", { name: tab.name })}
+          aria-label={t("code.renameTab", { name: label })}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -220,14 +238,15 @@ function TabItem({
               startRename();
             }
           }}
-          className="h-full whitespace-nowrap rounded-sm px-2.5 focus-visible:shadow-focus focus-visible:outline-none"
+          title={label}
+          className="h-full max-w-[220px] truncate whitespace-nowrap rounded-sm px-2.5 focus-visible:shadow-focus focus-visible:outline-none"
         >
-          {tab.name}
+          {label}
         </button>
       )}
       <button
         type="button"
-        aria-label={t("code.closeTab", { name: tab.name })}
+        aria-label={t("code.closeTab", { name: label })}
         onClick={onClose}
         className="mr-1 inline-flex size-5 items-center justify-center rounded-xs text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
       >
@@ -305,6 +324,7 @@ export function CodeMain({ visible }: { visible: boolean }) {
               <TabItem
                 key={tab.id}
                 tab={tab}
+                workspace={active.name}
                 selected={tab.id === activeTabId}
                 onSelect={() => selectTab(active.id, tab.id)}
                 onClose={() => void closeTab(active.id, tab.id)}

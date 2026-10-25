@@ -1,12 +1,15 @@
 import { useRef, useState, type HTMLAttributes, type ReactNode, type Ref } from "react";
 import { GripVertical, Maximize2, Minimize2, MoreHorizontal, SquareTerminal, X } from "lucide-react";
-import { IconButton, Menu, StatusDot, Tooltip, cx, type MenuEntry, type Status } from "@tandem/ui";
+import { IconButton, Menu, StatusDot, Tooltip, compactAgo, cx, useNow, type MenuEntry, type Status } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 export type PaneChromeProps = {
   title: string;
   status: Status;
+  /** When the agent entered its working or waiting status (ms): shown as
+   * the time it has been at it (D-2603). */
+  since?: number | null;
   focused: boolean;
   /** Alone in its tab: no maximize control (F-CD-02). */
   solo: boolean;
@@ -118,9 +121,32 @@ function PaneName({
 
 /** UI_SPEC §2.20: the 30 px header of every pane. The whole header drags
  * the pane, except its buttons. */
+/** "4m" since `since`, ticking every 30 s. */
+function Elapsed({ since, status }: { since: number; status: Status }) {
+  const now = useNow(30_000);
+  return (
+    <span
+      data-testid="pane-elapsed"
+      title={t(status === "waiting" ? "pane.waitingFor" : "pane.workingFor", { time: elapsed(since, now) })}
+      className={cx("shrink-0 text-xs tabular-nums", status === "waiting" ? "text-waiting-text" : "text-fg-subtle")}
+    >
+      {elapsed(since, now)}
+    </span>
+  );
+}
+
+const elapsed = (since: number, now: number) =>
+  compactAgo(since, now, {
+    now: t("time.now"),
+    minutes: (n) => t("time.minutes", { n }),
+    hours: (n) => t("time.hours", { n }),
+    days: (n) => t("time.days", { n }),
+  });
+
 export function PaneChrome({
   title,
   status,
+  since = null,
   focused,
   solo,
   maximized,
@@ -187,10 +213,12 @@ export function PaneChrome({
       )}
       {location}
       <span className="flex-1" />
+      {since !== null && <Elapsed since={since} status={status} />}
       {badges}
-      {/* Buttons don't start a drag. */}
+      {/* Buttons don't start a drag. They stay quiet until the header is
+          hovered or holds focus (D-2603). */}
       <div
-        className="flex shrink-0 items-center"
+        className="flex shrink-0 items-center opacity-50 transition-opacity duration-[var(--dur-fast)] focus-within:opacity-100 group-hover/chrome:opacity-100"
         onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >

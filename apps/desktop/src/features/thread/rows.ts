@@ -1,5 +1,6 @@
 import type { ApprovalDecisionView, ThreadEvent, TurnEndReason } from "@tandem/protocol";
 import type { ThreadView } from "./reducer";
+import { diffCounts, testResult, type TestResult } from "./tool";
 
 type Ev<T extends ThreadEvent["type"]> = Extract<ThreadEvent, { type: T }>;
 export type ToolEvent = Ev<"tool">;
@@ -26,6 +27,16 @@ export type Row =
   | { kind: "mail"; key: string; mailId: string; from: string; to: string; preview: string }
   | { kind: "plan"; key: string; version: number }
   | { kind: "end"; key: string; reason: TurnEndReason; blocked: number }
+  /** A finished turn's closing line (D-2604): files it edited with their
+   * diff stats, and its last test run. Only from events the engine sent. */
+  | {
+      kind: "summary";
+      key: string;
+      files: number;
+      add: number;
+      del: number;
+      tests: { passed: number; failed: number } | null;
+    }
   | { kind: "working"; key: string; turnId: string };
 
 function mailRow(key: string, e: Ev<"mail_row">): Row {
@@ -44,6 +55,21 @@ export function toRows(view: ThreadView): Row[] {
     const decisions = new Map<string, ApprovalDecisionView>();
     for (const item of turn.items) {
       if (item.event.type === "approval_resolved") decisions.set(item.event.id, item.event.decision);
+    }
+    const edited = new Set<string>();
+    let add = 0;
+    let del = 0;
+    let tests: TestResult | null = null;
+    for (const item of turn.items) {
+      const e = item.event;
+      if (e.type !== "tool") continue;
+      if (e.diff && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
+        edited.add(e.argSummary);
+        const c = diffCounts(e.diff);
+        add += c.add;
+        del += c.del;
+      }
+      if (e.verb === "bash") tests = testResult(e.output) ?? tests;
     }
     let tools: Array<{ key: string; tool: ToolEvent }> = [];
     const flush = () => {
@@ -127,6 +153,8 @@ export function toRows(view: ThreadView): Row[] {
           if (e.reason === "cancelled" || e.blockedActions > 0) {
             rows.push({ kind: "end", key, reason: e.reason, blocked: e.blockedActions });
           }
+          if (e.reason !== "cancelled" && (edited.size > 0 || tests))
+            rows.push({ kind: "summary", key: `${key}:summary`, files: edited.size, add, del, tests });
           break;
         default:
           break;

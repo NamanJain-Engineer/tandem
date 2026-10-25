@@ -192,3 +192,58 @@ describe("transcript rows (F-TH-12, UI-21)", () => {
     ).toBe(next);
   });
 });
+
+describe("D-2604 scannable turns", () => {
+  const edit = (id: string, path: string, diff: string): ThreadEvent => ({
+    type: "tool",
+    id,
+    verb: "edit",
+    argSummary: path,
+    status: "ok",
+    output: null,
+    outputTruncated: false,
+    outputFile: null,
+    diff,
+    detail: null,
+  });
+  const bash = (id: string, cmd: string, output: string, status: ToolEvent["status"] = "ok"): ThreadEvent => ({
+    type: "tool",
+    id,
+    verb: "bash",
+    argSummary: cmd,
+    status,
+    output,
+    outputTruncated: false,
+    outputFile: null,
+    diff: null,
+    detail: null,
+  });
+
+  it("a finished turn closes with what it changed and how its last test run went", () => {
+    seq = 0;
+    const view = play(
+      env("t1", { type: "user", text: "fix it", attachments: [] }),
+      env("t1", edit("a", "src/a.ts", "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-x\n+y\n+z")),
+      env("t1", edit("b", "src/b.ts", "@@ -1 +1 @@\n-old\n+new")),
+      env("t1", edit("c", "src/a.ts", "@@ -3 +3,2 @@\n+w")),
+      env("t1", bash("d", "pnpm test", " Tests  3 failed | 15 passed (18)", "error")),
+      env("t1", bash("e", "pnpm test", " Test Files  4 passed (4)\n      Tests  18 passed (18)")),
+      env("t1", { type: "assistant", markdown: "Fixed." }),
+      env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
+    );
+    const rows = toRows(view);
+    const summary = rows[rows.length - 1];
+    expect(summary).toMatchObject({ kind: "summary", files: 2, add: 4, del: 2, tests: { passed: 18, failed: 0 } });
+  });
+
+  it("a turn that only read and talked needs no summary", () => {
+    seq = 0;
+    const view = play(
+      env("t1", { type: "user", text: "explain", attachments: [] }),
+      env("t1", tool("a")),
+      env("t1", { type: "assistant", markdown: "It does x." }),
+      env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
+    );
+    expect(toRows(view).some((r) => r.kind === "summary")).toBe(false);
+  });
+});

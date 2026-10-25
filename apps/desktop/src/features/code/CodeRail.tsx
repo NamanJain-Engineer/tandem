@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  Count,
   EngineGlyph,
   IconButton,
   StatusDot,
@@ -156,14 +157,25 @@ function useWorkspaceStatus(ws: WorkspaceSummary): {
   }, [ws.tabs, tabs, records, unread]);
 }
 
+/** Quiet, never a box (D-2603): amber "Needs you", a working dot and its
+ * count, or "Failed". */
 function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
   const s = useWorkspaceStatus(ws);
   const slot = s.waiting ? (
-    <Badge variant="waiting">{t("rail.waiting")}</Badge>
+    <Badge variant="waiting" quiet>
+      {t("rail.waiting")}
+    </Badge>
   ) : s.working > 0 ? (
-    <Badge variant="working">{t("rail.working", { n: s.working })}</Badge>
+    <span className="inline-flex items-center gap-1 text-xs tabular-nums text-fg-muted">
+      <span aria-hidden="true" className="inline-flex">
+        <StatusDot status="working" size={6} />
+      </span>
+      {t("rail.working", { n: s.working })}
+    </span>
   ) : s.failed ? (
-    <Badge variant="error">{t("rail.failed")}</Badge>
+    <Badge variant="error" quiet>
+      {t("rail.failed")}
+    </Badge>
   ) : null;
   return (
     <>
@@ -180,6 +192,25 @@ function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
         />
       )}
     </>
+  );
+}
+
+/** The row's branch, while nothing needs saying about its agents: the
+ * status slot wins the room, so the name never truncates (D-2603). */
+function BranchChip({ ws, selected }: { ws: WorkspaceSummary; selected: boolean }) {
+  const s = useWorkspaceStatus(ws);
+  if (s.waiting || s.working > 0 || s.failed) return null;
+  return (
+    <span
+      className={cx(
+        "inline-flex min-w-0 max-w-[84px] shrink items-center gap-0.5 truncate text-xs",
+        // fg-subtle fails AA on the selected row's accent-soft (D-705).
+        selected ? "text-fg-muted" : "text-fg-subtle",
+      )}
+    >
+      <GitBranch size={12} aria-hidden="true" />
+      <span className="truncate">{ws.branch}</span>
+    </span>
   );
 }
 
@@ -200,7 +231,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
   const rows = ws.tabs.flatMap((tab) => {
     const t2 = tabs[tab.id];
     if (!t2?.tree) return [];
-    const names = paneTitles(t2.panes, engines, browserSources(t2.panes, pages));
+    const names = paneTitles(t2.panes, engines, browserSources(t2.panes, pages), ws.name);
     return Object.values(t2.panes)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((p) => ({ tab, pane: p, title: names[p.id] ?? "" }));
@@ -429,23 +460,10 @@ export function CodeRail() {
           ),
           trailing: (
             <>
-              {ws.branch && (
-                <span
-                  className={
-                    "inline-flex max-w-[84px] shrink-0 items-center gap-0.5 truncate text-sm " +
-                    // fg-subtle fails AA on the selected row's accent-soft (D-705).
-                    (ws.id === activeId ? "text-fg-muted" : "text-fg-subtle")
-                  }
-                >
-                  <GitBranch size={12} aria-hidden="true" />
-                  <span className="truncate">{ws.branch}</span>
-                </span>
-              )}
+              {ws.branch && <BranchChip ws={ws} selected={ws.id === activeId} />}
               <WorkspaceSlot ws={ws} />
               {ws.liveCount > 0 && (
-                <span aria-label={t("rail.live", { n: ws.liveCount })}>
-                  <Badge>{ws.liveCount}</Badge>
-                </span>
+                <Count value={ws.liveCount} label={t("rail.live", { n: ws.liveCount })} />
               )}
             </>
           ),

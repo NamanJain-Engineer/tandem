@@ -63,14 +63,24 @@ export function promptTitle(prompt: string): string {
   return words.length > 8 ? `${head}…` : head;
 }
 
+/** The last segment of a path ("/code/shop/" → "shop"). */
+export function baseName(path: string | null | undefined): string | null {
+  const parts = (path ?? "").split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? null;
+}
+
 /** Pane titles (F-EN-06, UI-11): agent panes use the hook title, the
- * cleaned OSC title, the first prompt, and finally "{Engine} · n";
- * terminals are "Shell · n" — numbered per engine in creation order. The
- * pane's first name (F-CD-12) is shown beside the title, not instead. */
+ * cleaned OSC title, the first prompt, and finally their engine and folder,
+ * "{Engine} · shop"; terminals are "Shell · shop" (D-2603). The folder is
+ * the pane's own, else `folder` (the workspace's name); a second pane of
+ * the same kind in the same folder is "… · shop 2". Without any folder they
+ * fall back to "{Engine} · n" and "Shell · n". The pane's first name
+ * (F-CD-12) is shown beside the title, not instead. */
 export function paneTitles(
   panes: Record<string, PaneRecord>,
   engines: EngineView[],
   sources: Record<string, TitleSources> = {},
+  folder: string | null = null,
 ): Record<string, string> {
   const spec = (id: string | null) => engines.find((e) => e.spec.id === id)?.spec;
   const sorted = Object.values(panes).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
@@ -79,12 +89,20 @@ export function paneTitles(
     sorted.map((p) => {
       if (p.kind === "browser") return [p.id, browserTitle(p, sources[p.id]?.page)];
       if (p.kind === "simulator") return [p.id, p.title ?? t("pane.simulator")];
-      const key = p.kind === "agent" ? (p.engineId ?? "agent") : "shell";
+      const where = baseName(p.cwd) ?? folder;
+      const key = `${p.kind === "agent" ? (p.engineId ?? "agent") : "shell"}|${where ?? ""}`;
       const n = (counts.get(key) ?? 0) + 1;
       counts.set(key, n);
       const s = p.kind === "agent" ? spec(p.engineId) : undefined;
       const engine = p.kind === "agent" ? (s?.label ?? p.engineId ?? "Agent") : null;
-      const fallback = engine ? t("pane.engine", { engine, n }) : t("pane.shell", { n });
+      const place = where ? (n > 1 ? t("pane.folderN", { folder: where, n }) : where) : null;
+      const fallback = place
+        ? engine
+          ? t("pane.engineIn", { engine, folder: place })
+          : t("pane.shellIn", { folder: place })
+        : engine
+          ? t("pane.engine", { engine, n })
+          : t("pane.shell", { n });
       if (p.kind !== "agent") return [p.id, p.title ?? fallback];
       const src = sources[p.id] ?? {};
       const osc = src.osc ? cleanTitle(src.osc, s?.titlePatterns ?? []) : "";
@@ -144,3 +162,20 @@ export class PromptCapture {
     }
   }
 }
+
+const DEFAULT_TAB = /^Tab (\d+)$/;
+
+/** A tab's label (D-2603). A name the user gave stays as it is. A default
+ * "Tab n" reads as its task (the first agent's work title, five words at
+ * most) or else its workspace: "shop", then "shop 2". */
+export function tabLabel(name: string, workspace: string, task: string | null = null): string {
+  const m = DEFAULT_TAB.exec(name);
+  if (!m) return name;
+  if (task?.trim()) {
+    const words = task.trim().split(/\s+/);
+    return words.length > 5 ? `${words.slice(0, 5).join(" ")}…` : words.join(" ");
+  }
+  const n = Number(m[1]);
+  return n > 1 ? t("pane.folderN", { folder: workspace, n }) : workspace;
+}
+

@@ -30,10 +30,7 @@ describe("E2E-M4-3 status lifecycle", () => {
       async () =>
         (await $(slot)
           .getText()
-          .catch(() => "")) === "WORKING 1" ||
-        (await $(slot)
-          .getText()
-          .catch(() => "")) === "Working 1",
+          .catch(() => "")) === "1 working",
       {
         timeout: 5_000,
         timeoutMsg: `rail: ${await $(slot)
@@ -42,7 +39,7 @@ describe("E2E-M4-3 status lifecycle", () => {
       },
     );
     await waitForStatus(agent, "waiting");
-    expect((await $(slot).getText()).toLowerCase()).toBe("waiting on you");
+    expect(await $(slot).getText()).toBe("Needs you");
     // Look away before it finishes: it ends unread.
     await $(`[data-testid="pane"][data-pane-id="${shell}"] [data-testid="terminal"]`).click();
     await waitForStatus(agent, "done", 10_000);

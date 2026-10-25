@@ -2,6 +2,8 @@
  * real interface runs against this simulation, in memory. Nothing runs and
  * nothing leaves the browser. */
 import type {
+  TeammateSummary,
+  TeammateTemplate,
   EditorTabs,
   AppBoot,
   AttachSnapshot,
@@ -151,6 +153,94 @@ function spec(
     note: null,
     updates: null,
   };
+}
+
+/** The app's four local templates (services::teammate_draft::templates). */
+const TEMPLATES: TeammateTemplate[] = [
+  {
+    id: "reviewer",
+    name: "Reviewer",
+    brief:
+      "You review changes before they land. Read the diff and its tests, check correctness, edge cases and security, and list findings most severe first with the file and line. Never approve something you couldn't follow; say what was unclear.",
+  },
+  {
+    id: "release-notes",
+    name: "Release notes writer",
+    brief:
+      "You draft release notes from merged changes. Group them for users as New, Improved and Fixed, in plain words. Verify every line against the repository. Never publish; hand the draft back for review.",
+  },
+  {
+    id: "researcher",
+    name: "Researcher",
+    brief:
+      "You answer questions about the codebase and its dependencies. Read before you conclude, cite the files and lines you relied on, and say plainly when you're not sure. Never change files unless asked.",
+  },
+  {
+    id: "triage",
+    name: "Triage",
+    brief:
+      "You triage incoming issues and failures. Reproduce what you can, find the likely cause and the owner, and suggest a priority with one line of reasoning. Never close an issue without saying why.",
+  },
+];
+
+/** Agent mode's teammates in the demo (D-2603): Lead and three made from
+ * the templates, each at a different point in its work. */
+function demoTeammates(now: number): TeammateSummary[] {
+  const row = (
+    id: string,
+    name: string,
+    brief: string,
+    engineId: string,
+    over: Partial<TeammateSummary>,
+    lead = false,
+  ): TeammateSummary => ({
+    teammate: {
+      id,
+      name,
+      avatarHue: null,
+      avatarImage: null,
+      brief,
+      engineId,
+      model: null,
+      effort: null,
+      preferredAccountId: null,
+      home: `~/.vibezeo/teammates/${id}`,
+      places: ["/home/you/code/shop"],
+      settings: { memoryCap: 200, learnMode: "ask", mayMessage: true, maySchedule: false, defaultAccess: "edits" },
+      isLead: lead,
+      pinned: lead,
+      sortKey: id,
+      createdAt: now - 86_400_000 * 3,
+    },
+    chatCapable: true,
+    working: 0,
+    waiting: false,
+    failed: false,
+    lastLine: null,
+    lastAt: null,
+    chats: 0,
+    ...over,
+  });
+  return [
+    row("tm_lead", "Lead", "You coordinate the other teammates and keep the plan.", "claude", {
+      lastLine: "Split the checkout fix between Reviewer and Triage",
+      lastAt: now - 4 * 60_000,
+    }, true),
+    row("tm_reviewer", "Reviewer", TEMPLATES[0]?.brief ?? "", "codex", {
+      working: 1,
+      lastLine: "Reading the diff in src/checkout/redirect.ts",
+      lastAt: now - 60_000,
+    }),
+    row("tm_release", "Release notes writer", TEMPLATES[1]?.brief ?? "", "claude", {
+      waiting: true,
+      lastLine: "Needs a yes on the 0.9.0 notes",
+      lastAt: now - 12 * 60_000,
+    }),
+    row("tm_research", "Researcher", TEMPLATES[2]?.brief ?? "", "gemini", {
+      lastLine: "Mapped every caller of nextStep()",
+      lastAt: now - 26 * 3_600_000,
+    }),
+  ];
 }
 
 const ENGINES: EngineView[] = [
@@ -902,11 +992,15 @@ export class DemoCore {
         return null;
       }
       case "thread_list":
-        // The demo has threads, not teammates (Agent mode stays empty there).
+        // Teammates' chats aren't simulated: their pages open on an empty chat.
         if (args?.kind === "teammate_chat") return [];
         return [...this.threads.values()].map((t) => t.thread);
       case "teammate_list":
-        return [];
+        return demoTeammates(Date.now());
+      case "teammate_templates":
+        return TEMPLATES;
+      case "teammate_suggestions":
+        return ["Review the open diff", "What changed since yesterday?", "Write the release notes"];
       case "teammate_create":
       case "teammate_draft_with_ai":
         throw {

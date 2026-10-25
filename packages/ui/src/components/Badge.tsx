@@ -39,7 +39,8 @@ const QUIET: Record<BadgeVariant, string> = {
   outline: "text-fg-muted",
 };
 
-/** UI_SPEC §2.13: 18px, text-2xs medium. Status badges use the *-text tokens.
+/** UI_SPEC §2.13: 18px, text-2xs medium, sentence case (DESIGN §4.3, T3).
+ * Status badges use the *-text tokens.
  * `quiet` drops the box and the capitals for a dot and sentence-case text
  * ("● Needs you"), for rows that must stay calm (D-2601). */
 export function Badge({
@@ -57,13 +58,13 @@ export function Badge({
 }) {
   if (quiet)
     return (
-      <span className={cx("inline-flex h-[18px] shrink-0 items-center gap-1.5 text-xs font-medium", QUIET[variant], className)}>
+      <span className={cx("inline-flex h-4.5 shrink-0 items-center gap-1.5 text-xs font-medium", QUIET[variant], className)}>
         {dot && <span aria-hidden="true" className={cx("size-1.5 rounded-full", DOT[variant] ?? "bg-fg-muted")} />}
         {children}
       </span>
     );
   return (
-    <span className={cx("inline-flex h-[18px] shrink-0 items-center gap-1 rounded-xs px-1.5 text-2xs font-medium uppercase tracking-caps", BADGE[variant], className)}>
+    <span className={cx("inline-flex h-4.5 shrink-0 items-center gap-1 rounded-xs px-1.5 text-2xs font-medium", BADGE[variant], className)}>
       {dot && <span aria-hidden="true" className={cx("size-1.5 rounded-full", DOT[variant] ?? "bg-fg-muted")} />}
       {children}
     </span>

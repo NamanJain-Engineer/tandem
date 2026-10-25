@@ -116,17 +116,17 @@ describe("UI-70 Agent rail", () => {
 
   it("F-AG-02 the trailing slot: Failed before Waiting before working", async () => {
     const rows = await screen.findAllByTestId("teammate-row");
-    expect(within(rows[0] as HTMLElement).getByTestId("teammate-trailing").textContent).toBe("● Working 2");
-    expect(within(rows[1] as HTMLElement).getByTestId("teammate-trailing").textContent).toBe("▲ Failed");
+    expect(within(rows[0] as HTMLElement).getByTestId("teammate-trailing").textContent).toBe("2 working");
+    expect(within(rows[1] as HTMLElement).getByTestId("teammate-trailing").textContent).toBe("Failed");
   });
 
-  it("F-AG-02.1 a pending approval shows Waiting on you as soon as the change arrives", async () => {
+  it("F-AG-02.1 a pending approval shows Needs you as soon as the change arrives", async () => {
     await screen.findAllByTestId("teammate-row");
     act(() =>
       emitLocal("teammates:changed", { teammates: [list[0], summary(SCOUT, { waiting: true }), list[2]] }),
     );
     const scout = screen.getAllByTestId("teammate-row")[0] as HTMLElement;
-    expect(within(scout).getByTestId("teammate-trailing").textContent).toBe("◆ Waiting on you");
+    expect(within(scout).getByTestId("teammate-trailing").textContent).toBe("Needs you");
     expect(scout.dataset.status).toBe("waiting");
   });
 

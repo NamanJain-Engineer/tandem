@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, type ReactNode } from "react";
-import { ArrowDown, ChevronDown, ChevronRight, Copy, Info, Paperclip, Pencil } from "lucide-react";
+import { ArrowDown, CheckCircle2, ChevronDown, ChevronRight, Copy, Info, Paperclip, Pencil } from "lucide-react";
 import type { ApprovalDecisionView } from "@tandem/protocol";
 import {
   ApprovalCard,
@@ -304,18 +304,46 @@ const RowView = memo(function RowView({
       return <Reasoning text={row.text} durationMs={row.durationMs} streaming={row.streaming} />;
     case "tool":
       return <Tool tool={row.tool} />;
-    case "tools":
+    case "tools": {
+      // The latest call stays in view; the ones before it fold (D-2604).
+      const earlier = row.tools.slice(0, -1);
+      const last = row.tools[row.tools.length - 1];
       return (
         <ToolGroup
-          summary={t("thread.tools", { n: row.tools.length })}
+          summary={t("thread.tools.previous", { n: earlier.length })}
           collapseLabel={t("thread.tools.collapse")}
-          status={groupStatus(row.tools)}
-          statusLabel={statusLabel(groupStatus(row.tools))}
+          status={groupStatus(earlier)}
+          statusLabel={statusLabel(groupStatus(earlier))}
+          tail={last && <Tool tool={last} />}
         >
-          {row.tools.map((tool) => (
+          {earlier.map((tool) => (
             <Tool key={tool.id} tool={tool} />
           ))}
         </ToolGroup>
+      );
+    }
+    case "summary":
+      return (
+        <p
+          data-testid="turn-summary"
+          aria-label={t("thread.summary.label")}
+          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 py-0.5 text-sm text-fg-muted"
+        >
+          <CheckCircle2 size={13} aria-hidden="true" className="shrink-0 text-done-text" />
+          {row.files > 0 && (
+            <span>
+              {t("thread.summary.files", { n: row.files })}{" "}
+              <span className="tabular-nums text-diff-add-fg">{t("thread.summary.add", { n: row.add })}</span>{" "}
+              <span className="tabular-nums text-diff-del-fg">{t("thread.summary.del", { n: row.del })}</span>
+            </span>
+          )}
+          {row.files > 0 && row.tests && <span aria-hidden="true">·</span>}
+          {row.tests && (
+            <span className={cx("tabular-nums", row.tests.failed > 0 && "text-danger")}>
+              {t("thread.tool.tests", { passed: row.tests.passed, failed: row.tests.failed })}
+            </span>
+          )}
+        </p>
       );
     case "assistant":
       return (

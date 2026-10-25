@@ -561,7 +561,7 @@ Used for the **mode switcher** and small toggles.
 - `aria-live="polite"` (errors: `assertive`).
 
 ### 2.13 Badge / Chip
-- **Badge:** 18px tall, radius xs, text-2xs medium. Variants neutral | accent | working | waiting | done | idle | error | outline. Optional leading dot.
+- **Badge:** 18px tall, radius xs, text-2xs medium, sentence case (T3; no capitals or caps tracking). Variants neutral | accent | working | waiting | done | idle | error | outline. Optional leading dot.
 - **Chip:** 24px, radius full, removable (×), used for attachments, @mentions, filters and action results.
 
 ### 2.14 Avatar
@@ -596,6 +596,7 @@ Used for the **mode switcher** and small toggles.
 - **Platform aware:** `Kbd.Mod` renders ⌘ on mac and Ctrl elsewhere; Alt/⌥ likewise.
 
 ### 2.20 PaneChrome (header for every pane)
+> **D-2603 (developer-first):** an agent that is working or waiting shows how long it has been at it ("4m", amber while it waits; tooltip "Working for 4m") before the badges, from its status record's `since`. The maximize, menu and close buttons sit at half opacity until the header is hovered or holds focus; their tooltips carry their shortcuts. Panes without a title are named for their engine or shell and their folder: "Claude Code · shop", "Shell · api", "Shell · shop 2" (the pane's cwd, else the workspace's name); with no folder known, "{Engine} · n" as before.
 Height 30px, bg surface-2, bottom divider. Layout (left→right):
 ```
 [drag grip ⋮⋮][StatusDot][EngineGlyph] Title (editable on dbl-click) · branch chip · account chip   ...   [ctx meter][⤢ maximize][⋯ menu][× close]
@@ -788,6 +789,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 - **Offline:** a thin 2px warning line appears along the bottom of the title bar, and the status bar says "Offline · local features still work".
 
 ### 3.3 Left rail · SH
+> **D-2603:** a workspace row's status is quiet: amber "Needs you", or a working dot with "n working", or "Failed" in rose, never a boxed chip. The name keeps at least 10 characters; the branch gives way to a status, and live panes are a `Count` pill. Teammate rows (UI-70) are two lines: name with Failed > Needs you > n working > age, then the latest activity.
 - **Width:** default 248px, drag-resizable between 180 and 360px (F-SH-03); the width persists per mode.
 - **Collapse** with Mod+\ (§5), or by dragging below 160px. Collapsed it is a 52px icon rail showing avatars/glyphs with tooltips.
 - **Background** surface-1, with a 1px right border.
@@ -824,6 +826,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 
 ### 3.6 Status bar (22px) · SH, TL
 - Surface-1, text-2xs, fg-muted.
+- **D-2603 (DESIGN §5.4.6):** quiet by default: the branch (with ahead/behind and its pull request's CI state: "CI passed", "CI running", "CI failed (2)", opening the checks) and the version. Then, each only while non-zero: agents "1 waiting" (amber, first) and "2 working", each opening the Dashboard filtered to it; the listening ports (":5173" or "3 ports", opening the Ports tab; read every 15 s while the window has focus); and the fullest usage window of the title bar chip's account ("5h 42%", warning or danger past the meter thresholds). Dictate and the connection keep their places.
 - **Left segment:** the git branch of the focused workspace, with ahead/behind counts. Clicking opens the Files tab's Changes view.
 - **Centre:** "3 working · 1 waiting · 5 idle" (each clickable; it filters the Dashboard).
 - **Right segment:**
@@ -938,6 +941,7 @@ Tandem runs the agents you already use. Nothing is bundled, and your AI accounts
 ### 4.2 Code mode
 
 #### UI-10 · Code mode: empty workspace · CD, EN
+> **D-2603:** "Start an agent in {name}" over "It runs in a real terminal in this folder." (DESIGN §9.4). Engine tiles are e1 surfaces with the engine's 20px tile (§1.6), "Default · v{version}" on the default engine and "v{version}" on the rest, and a key cap 1–9; the number keys launch while focus is in the grid. Engines not installed list this OS's install command in mono with a copy button beside Install. Under the grid, "Launch several…" is a secondary button and "New worktree…" (repositories on this machine) a ghost button beside it. A tab still called "Tab n" reads as its first agent's task (five words) or its workspace ("shop", "shop 2"); a name the user gave is kept.
 ```
 ┌───────────────────────────────── main ─────────────────────────────────┐
 │                          ⌂ shop (~/code/shop)  ⎇ main                    │
@@ -1137,6 +1141,7 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 - **Keyboard:** Mod+N new thread · Mod+L focus composer · Mod+D split · Mod+[ / Mod+] cycle grid panes · Mod+Alt+C toggle Changes · Mod+F find in thread · Alt+↑ / Alt+↓ previous/next message · Mod+Shift+H hand off · F2 rename · Mod+Backspace archive (asks first).
 
 #### UI-21 · Thread view: transcript items · TH
+> **D-2604 (scannable turns):** three or more consecutive tool calls fold to "+n previous tool calls" with the latest call still shown beneath. A command whose output ends in a test summary (vitest, jest, cargo, pytest) shows "18 passed · 0 failed" as its meta. A finished turn that edited files or ran tests closes with one line: "Changed 2 files +14 −6 · 18 passed · 0 failed". All of it comes from the tool events the engines send; nothing is inferred beyond their diffs and output.
 | Item | Rendering | Labels |
 |---|---|---|
 | User message | Right-aligned block, surface-3, radius md, max 72% width, attachment chips above text | Hover: "Edit and resend", "Copy" |
@@ -1287,6 +1292,7 @@ OVERRIDES
 ### 4.5 Agent mode
 
 #### UI-70 · Teammate rail · AG
+> **D-2603:** Agent mode's first run (no teammates) shows "Hand work to a teammate", one primary "New teammate" and the local templates as cards (avatar, name, the brief's first line); a card opens New teammate filled in. Loading shows two skeleton cards; if the templates can't load, the primary action stands alone.
 ```
 ┌ TEAMMATES      + ⋯ ┐
 │ ┌──┐ Lead      ● 2 │   ← pinned Lead: 32px avatar, status summary

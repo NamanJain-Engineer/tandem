@@ -34,11 +34,14 @@ import { useComposerDictation } from "../dictate/useComposerDictation";
 export const useNewTeammate = create<{
   open: boolean;
   prefill: string | null;
-  show: (o: boolean, prefill?: string) => void;
+  /** A template picked before the sheet opened (Agent mode's first run, D-2603). */
+  template: TeammateTemplate | null;
+  show: (o: boolean, prefill?: string, template?: TeammateTemplate) => void;
 }>((set) => ({
   open: false,
   prefill: null,
-  show: (open, prefill) => set({ open, prefill: prefill ?? null }),
+  template: null,
+  show: (open, prefill, template) => set({ open, prefill: prefill ?? null, template: template ?? null }),
 }));
 
 const NAME_MAX = 40;
@@ -141,6 +144,12 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const [templates, setTemplates] = useState<TeammateTemplate[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const picked = useNewTeammate((s) => s.template);
+  useEffect(() => {
+    if (!picked) return;
+    setName(picked.name);
+    setBrief(picked.brief);
+  }, [picked]);
 
   const { chat, terminal } = useMemo(() => engineGroups(engines), [engines]);
   // The first installed chat engine (Claude Code first) is the default pick.

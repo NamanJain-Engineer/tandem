@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Bot, CalendarClock, Home, MessagesSquare, Plus, Settings2, SquareTerminal } from "lucide-react";
-import type { IpcError, PluginCard, TeammateSummary, Thread, ThreadState } from "@tandem/protocol";
+import type { IpcError, PluginCard, TeammateSummary, TeammateTemplate, Thread, ThreadState } from "@tandem/protocol";
 import {
   Avatar,
   Banner,
@@ -19,6 +19,7 @@ import {
   EngineBadge,
   Input,
   Menu,
+  Skeleton,
   StatusDot,
   Tabs,
   cx,
@@ -39,6 +40,7 @@ import { teammateStatus } from "./AgentRail";
 import { launchInTerminal } from "./launchInTerminal";
 import { mailMention } from "./mention";
 import { MemoryTab } from "./MemoryTab";
+import { useNewTeammate } from "./NewTeammateSheet";
 import { SkillsTab } from "./SkillsTab";
 import { SuggestionCards } from "./Suggestions";
 
@@ -640,6 +642,7 @@ export function AgentMain({
     }
   }, [selectedId, loaded, list, select]);
   if (!open) {
+    if (loaded && list.length === 0) return <FirstRun />;
     return (
       <div className="flex h-full items-center justify-center">
         <EmptyState
@@ -664,3 +667,70 @@ export function AgentMain({
     </>
   );
 }
+
+/** Agent mode's first run (D-2603): one primary action and the local
+ * templates as cards, each opening New teammate filled in. The templates
+ * load from the core; while they do the cards are skeletons, and if they
+ * can't load, the primary action stands alone. */
+export function FirstRun() {
+  const [state, setState] = useState<
+    { at: "loading" } | { at: "error" } | { at: "ready"; templates: TeammateTemplate[] }
+  >({ at: "loading" });
+  useEffect(() => {
+    let live = true;
+    void invoke<TeammateTemplate[]>("teammate_templates").then(
+      (templates) => live && setState({ at: "ready", templates: templates ?? [] }),
+      () => live && setState({ at: "error" }),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  const show = useNewTeammate((s) => s.show);
+  return (
+    <div className="flex h-full items-center justify-center overflow-y-auto p-6" data-testid="agent-first-run">
+      <div className="flex w-full max-w-[560px] flex-col gap-5">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-xl font-semibold tracking-tight text-fg">{t("agent.first.title")}</h2>
+          <p className="text-base text-fg-muted">{t("agent.first.body")}</p>
+        </div>
+        <div>
+          <Button variant="primary" iconLeft={<Plus size={14} aria-hidden="true" />} onClick={() => show(true)} data-testid="first-run-new">
+            {t("agent.first.new")}
+          </Button>
+        </div>
+        {state.at === "loading" ? (
+          <div className="grid grid-cols-2 gap-2" aria-busy="true" aria-label={t("agent.first.loading")}>
+            <Skeleton height={72} />
+            <Skeleton height={72} />
+          </div>
+        ) : state.at === "ready" && state.templates.length > 0 ? (
+          <section className="flex flex-col gap-2" aria-labelledby="first-run-templates">
+            <h3 id="first-run-templates" className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+              {t("agent.first.templates")}
+            </h3>
+            <ul className="grid grid-cols-2 gap-2">
+              {state.templates.slice(0, 6).map((tpl) => (
+                <li key={tpl.id}>
+                  <button
+                    type="button"
+                    data-testid={`first-run-template-${tpl.id}`}
+                    onClick={() => show(true, undefined, tpl)}
+                    className="flex h-full w-full items-start gap-3 rounded-md border border-border bg-surface-2 p-3 text-left shadow-e1 hover:border-border-strong hover:bg-surface-3 focus-visible:shadow-focus focus-visible:outline-none"
+                  >
+                    <Avatar name={tpl.name} id={tpl.id} size={32} />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-base font-medium text-fg">{tpl.name}</span>
+                      <span className="line-clamp-2 text-sm text-fg-muted">{tpl.brief.split("\n")[0]}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
