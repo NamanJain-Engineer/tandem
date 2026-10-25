@@ -725,14 +725,18 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     backend({ task_attempts_list: () => [run("TAN-1", "running", 2)] });
     usePlans.setState({ plans: { pl_1: STARTED }, openId: null });
     wrap();
-    const shape = () => screen.getByTestId("plan-reopen").querySelector('[role="img"]')?.getAttribute("aria-label");
+    const shape = () =>
+      screen.getByTestId("plan-reopen").querySelector('[role="img"]')?.getAttribute("aria-label");
     await waitFor(() => expect(useTasks.getState().attemptsStatus).toBe("ready"));
     expect(shape()).toBe("Working");
     // Its question came to you.
     act(() =>
       usePlans
         .getState()
-        .apply({ ...STARTED, questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })] }),
+        .apply({
+          ...STARTED,
+          questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })],
+        }),
     );
     await waitFor(() => expect(shape()).toBe("Waiting for you"));
     // Answered, it works on; then it waits for an approval.
