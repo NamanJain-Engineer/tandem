@@ -211,6 +211,8 @@ macro_rules! app_commands {
             commands::lsp::lsp_references,
             commands::lsp::lsp_hover,
             commands::lsp::lsp_trust,
+            commands::lsp::lsp_close,
+            commands::lsp::lsp_files_changed,
             commands::checkpoints::checkpoints_list,
             commands::checkpoints::checkpoint_create,
             commands::checkpoints::checkpoint_diff,
@@ -684,6 +686,8 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
     // F-CD-23: language servers stop after ten idle minutes.
+    // Servers run in $DATA/lsp, not in the repository (D-2580).
+    crate::services::lsp::set_work_dir(state.data.root().join("lsp"));
     tauri::async_runtime::spawn(crate::services::lsp::run_reaper());
     // F-WT-10: the intent radar follows checkpoints.
     tauri::async_runtime::spawn(crate::services::radar::run(

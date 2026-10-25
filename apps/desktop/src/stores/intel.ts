@@ -13,6 +13,12 @@ import { useSidebar } from "./sidebar";
 
 /** The editor's text reaches the server this long after the last edit. */
 export const SYNC_MS = 500;
+/** A first request may start the server (up to 30 s) before its own 10 s:
+ * the UI waits longer, so people see the core's "didn't answer". */
+export const LSP_TIMEOUT_MS = 45_000;
+/** Trusting waits for the person at the native confirm. */
+const TRUST_TIMEOUT_MS = 10 * 60_000;
+const SLOW = { timeoutMs: LSP_TIMEOUT_MS };
 
 export type At = { line: number; character: number };
 
@@ -111,7 +117,7 @@ export const useIntel = create<IntelStore>((set, get) => {
     const id = docId(context, path);
     set((s) => ({ pending: { ...s.pending, [id]: true } }));
     try {
-      const doc = await invoke<LspDocument | null>("lsp_sync", { context, path, text });
+      const doc = await invoke<LspDocument | null>("lsp_sync", { context, path, text }, SLOW);
       if (doc) set((s) => ({ docs: { ...s.docs, [id]: doc } }));
     } catch (e) {
       note(id, message(e));
@@ -148,7 +154,7 @@ export const useIntel = create<IntelStore>((set, get) => {
       const id = docId(context, path);
       note(id, null);
       try {
-        const found = await invoke<LspLocation[]>("lsp_definition", { context, path, text, ...at });
+        const found = await invoke<LspLocation[]>("lsp_definition", { context, path, text, ...at }, SLOW);
         const first = found[0];
         if (!first) {
           note(id, t("intel.noDefinition", { name: nameAt(text, at) }));
@@ -167,7 +173,7 @@ export const useIntel = create<IntelStore>((set, get) => {
       const name = nameAt(text, at);
       set({ refs: { key, name, status: "loading", items: [], error: null } });
       try {
-        const found = await invoke<LspLocation[]>("lsp_references", { context, path, text, ...at });
+        const found = await invoke<LspLocation[]>("lsp_references", { context, path, text, ...at }, SLOW);
         const items = here
           ? found
           : found.map((l) => (l.inFolder ? { ...l, path: filesTarget(context, l.path).path } : l));
@@ -180,7 +186,7 @@ export const useIntel = create<IntelStore>((set, get) => {
 
     hover: async (context, path, text, at) => {
       try {
-        return await invoke<string | null>("lsp_hover", { context, path, text, ...at });
+        return await invoke<string | null>("lsp_hover", { context, path, text, ...at }, SLOW);
       } catch {
         return null;
       }
@@ -191,7 +197,7 @@ export const useIntel = create<IntelStore>((set, get) => {
     trust: async (context, path, text) => {
       const id = docId(context, path);
       try {
-        await invoke("lsp_trust", { context, path });
+        await invoke("lsp_trust", { context, path }, { timeoutMs: TRUST_TIMEOUT_MS });
       } catch (e) {
         if ((e as IpcError)?.code !== "cancelled") note(id, message(e));
         return;

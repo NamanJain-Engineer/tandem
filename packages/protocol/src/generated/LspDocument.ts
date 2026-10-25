@@ -13,4 +13,9 @@ language: string | null,
 /**
  * The server's name.
  */
-server: string | null, state: LspState, message: string | null, diagnostics: Array<LspDiagnostic>, };
+server: string | null, state: LspState, message: string | null, diagnostics: Array<LspDiagnostic>, 
+/**
+ * `untrusted` for a worktree whose agents run sandboxed: it's trusted
+ * on its own (D-2580).
+ */
+sandboxed: boolean, };

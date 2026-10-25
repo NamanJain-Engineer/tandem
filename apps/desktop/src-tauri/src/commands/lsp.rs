@@ -1,6 +1,7 @@
 //! Code intelligence in the editor and diffs (ARCHITECTURE §3.2 "Files,
 //! editor, browser, scratchpad"; F-CD-23). Language servers run on this
-//! machine only; a folder on an SSH host has none.
+//! machine only; a folder on an SSH host or in WSL has none, and none
+//! starts before its repository is trusted (D-2580).
 
 use std::path::{Path, PathBuf};
 
@@ -15,6 +16,7 @@ use crate::services::lsp::{self, LspDocument, LspLocation, LspState, ServerSpec}
 use crate::state::AppState;
 
 const REMOTE: &str = "Code intelligence works on folders on this computer";
+const OUTSIDE: &str = "Outside this folder: read only, without code intelligence";
 
 /// A folder on this computer: not on an SSH host or in WSL.
 async fn on_this_computer(app: &AppState, context: &FileContext) -> Result<bool, IpcError> {
@@ -59,24 +61,6 @@ fn target(root: PathBuf, path: String) -> Result<Target, IpcError> {
     })
 }
 
-/// The repository whose trust a folder's servers need: its main checkout
-/// (a worktree shares its repository's trust), or the folder itself.
-fn repository_of(root: &Path) -> PathBuf {
-    crate::services::worktree_setup::main_root(&root.to_string_lossy())
-        .unwrap_or_else(|_| root.to_path_buf())
-}
-
-/// The installed server that waits for the repository's trust (D-2580), or
-/// `None` when the request may go ahead.
-fn waits_for_trust(
-    data: &DataDir,
-    t: &Target,
-    available: impl Fn(&ServerSpec) -> bool,
-) -> Option<&'static ServerSpec> {
-    let spec = lsp::spec_for(&t.path)?;
-    (available(spec) && !lsp::is_trusted(data, &repository_of(&t.root))).then_some(spec)
-}
-
 fn back(t: &Target, mut found: Vec<LspLocation>) -> Vec<LspLocation> {
     if !t.prefix.is_empty() {
         for l in found.iter_mut().filter(|l| l.in_folder) {
@@ -86,17 +70,113 @@ fn back(t: &Target, mut found: Vec<LspLocation>) -> Vec<LspLocation> {
     found
 }
 
-/// The file's server target, or `None` for a folder on an SSH host or in WSL.
-async fn local(
-    app: &AppState,
-    context: &FileContext,
-    path: String,
-) -> Result<Option<Target>, IpcError> {
+/// Whose trust a folder's servers need (D-2580).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TrustScope {
+    /// The repository's main checkout, or the worktree itself.
+    key: PathBuf,
+    /// A worktree whose agents run in the F-TL-11 sandbox: it doesn't
+    /// inherit its repository's trust, since what the agent wrote there
+    /// would run outside the sandbox.
+    sandboxed: bool,
+}
+
+/// The scope for a folder: its repository's (a worktree shares it), or its
+/// own when agents run sandboxed and it's a worktree.
+fn scope_for(root: &Path, sandbox_on: bool) -> TrustScope {
+    let main = crate::services::worktree_setup::main_root(&root.to_string_lossy())
+        .unwrap_or_else(|_| root.to_path_buf());
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let is_worktree = canon(&main) != canon(root);
+    if sandbox_on && is_worktree {
+        TrustScope {
+            key: root.to_path_buf(),
+            sandboxed: true,
+        }
+    } else {
+        TrustScope {
+            key: main,
+            sandboxed: false,
+        }
+    }
+}
+
+async fn scope(app: &AppState, root: &Path) -> TrustScope {
+    let sandbox_on = tandem_store::repo::settings::get(
+        &app.store,
+        tandem_core::settings::SettingKey::AgentSandbox,
+    )
+    .await
+    .ok()
+    .and_then(|v| v.as_str().map(str::to_string))
+    .is_some_and(|v| v == "workspace");
+    scope_for(root, sandbox_on)
+}
+
+/// The installed server that waits for trust, or `None` when the request
+/// may go ahead. A server that isn't installed says so instead.
+fn waits_for_trust(
+    data: &DataDir,
+    scope: &TrustScope,
+    path: &str,
+    available: impl Fn(&ServerSpec) -> bool,
+) -> Option<&'static ServerSpec> {
+    let spec = lsp::spec_for(path)?;
+    (available(spec) && !lsp::is_trusted(data, &scope.key)).then_some(spec)
+}
+
+/// Where a request goes.
+enum Where {
+    /// A folder on an SSH host or in WSL.
+    Remote,
+    /// An absolute path outside the folder (a dependency's source, opened
+    /// read only from a definition).
+    Outside,
+    Here(Target),
+}
+
+async fn locate(app: &AppState, context: &FileContext, path: String) -> Result<Where, IpcError> {
     if !on_this_computer(app, context).await? {
-        return Ok(None);
+        return Ok(Where::Remote);
     }
     let root = app.files.root(context).await?;
-    target(root, path).map(Some)
+    Ok(match target(root, path) {
+        Ok(t) => Where::Here(t),
+        Err(_) => Where::Outside,
+    })
+}
+
+fn quiet_doc(message: &str) -> LspDocument {
+    LspDocument {
+        language: None,
+        server: None,
+        state: LspState::None,
+        message: Some(message.to_string()),
+        diagnostics: Vec::new(),
+        sandboxed: false,
+    }
+}
+
+/// The file's target, if its server may run now; else what to answer.
+enum Ready {
+    Go(Target, std::sync::Arc<tandem_pty::env::LoginEnv>),
+    Untrusted(&'static ServerSpec, bool),
+    Elsewhere(Where),
+}
+
+async fn ready(app: &AppState, context: &FileContext, path: String) -> Result<Ready, IpcError> {
+    let t = match locate(app, context, path).await? {
+        Where::Here(t) => t,
+        other => return Ok(Ready::Elsewhere(other)),
+    };
+    let login = app.terminals.login_env().await;
+    let scope = scope(app, &t.root).await;
+    if let Some(spec) = waits_for_trust(&app.data, &scope, &t.path, |s| {
+        lsp::global().available(s, &login)
+    }) {
+        return Ok(Ready::Untrusted(spec, scope.sandboxed));
+    }
+    Ok(Ready::Go(t, login))
 }
 
 #[tauri::command]
@@ -106,20 +186,12 @@ pub async fn lsp_sync(
     path: String,
     text: String,
 ) -> Result<LspDocument, IpcError> {
-    let Some(t) = local(&app, &context, path).await? else {
-        return Ok(LspDocument {
-            language: None,
-            server: None,
-            state: LspState::None,
-            message: Some(REMOTE.to_string()),
-            diagnostics: Vec::new(),
-        });
-    };
-    let login = app.terminals.login_env().await;
-    if let Some(spec) = waits_for_trust(&app.data, &t, |s| lsp::global().available(s, &login)) {
-        return Ok(lsp::untrusted_doc(spec));
+    match ready(&app, &context, path).await? {
+        Ready::Go(t, login) => lsp::global().sync(&t.root, &t.path, &text, &login).await,
+        Ready::Untrusted(spec, sandboxed) => Ok(lsp::untrusted_doc(spec, sandboxed)),
+        Ready::Elsewhere(Where::Outside) => Ok(quiet_doc(OUTSIDE)),
+        Ready::Elsewhere(_) => Ok(quiet_doc(REMOTE)),
     }
-    lsp::global().sync(&t.root, &t.path, &text, &login).await
 }
 
 #[tauri::command]
@@ -131,23 +203,16 @@ pub async fn lsp_definition(
     line: u32,
     character: u32,
 ) -> Result<Vec<LspLocation>, IpcError> {
-    if !on_this_computer(&app, &context).await? {
-        return Ok(lsp::fallback_definition(&path, &text, line, character));
+    match ready(&app, &context, path.clone()).await? {
+        Ready::Go(t, login) => {
+            let found = lsp::global()
+                .definition(&t.root, &t.path, &text, line, character, &login)
+                .await?;
+            Ok(back(&t, found))
+        }
+        // The same-file fallback needs no server.
+        _ => Ok(lsp::fallback_definition(&path, &text, line, character)),
     }
-    let Some(t) = local(&app, &context, path).await? else {
-        return Ok(Vec::new());
-    };
-    let login = app.terminals.login_env().await;
-    if waits_for_trust(&app.data, &t, |s| lsp::global().available(s, &login)).is_some() {
-        return Ok(back(
-            &t,
-            lsp::fallback_definition(&t.path, &text, line, character),
-        ));
-    }
-    let found = lsp::global()
-        .definition(&t.root, &t.path, &text, line, character, &login)
-        .await?;
-    Ok(back(&t, found))
 }
 
 #[tauri::command]
@@ -159,17 +224,15 @@ pub async fn lsp_references(
     line: u32,
     character: u32,
 ) -> Result<Vec<LspLocation>, IpcError> {
-    let Some(t) = local(&app, &context, path).await? else {
-        return Ok(Vec::new());
-    };
-    let login = app.terminals.login_env().await;
-    if waits_for_trust(&app.data, &t, |s| lsp::global().available(s, &login)).is_some() {
-        return Ok(Vec::new());
+    match ready(&app, &context, path).await? {
+        Ready::Go(t, login) => {
+            let found = lsp::global()
+                .references(&t.root, &t.path, &text, line, character, &login)
+                .await?;
+            Ok(back(&t, found))
+        }
+        _ => Ok(Vec::new()),
     }
-    let found = lsp::global()
-        .references(&t.root, &t.path, &text, line, character, &login)
-        .await?;
-    Ok(back(&t, found))
 }
 
 #[tauri::command]
@@ -181,20 +244,56 @@ pub async fn lsp_hover(
     line: u32,
     character: u32,
 ) -> Result<Option<String>, IpcError> {
-    let Some(t) = local(&app, &context, path).await? else {
-        return Ok(None);
-    };
-    let login = app.terminals.login_env().await;
-    if waits_for_trust(&app.data, &t, |s| lsp::global().available(s, &login)).is_some() {
-        return Ok(None);
+    match ready(&app, &context, path).await? {
+        Ready::Go(t, login) => {
+            lsp::global()
+                .hover(&t.root, &t.path, &text, line, character, &login)
+                .await
+        }
+        _ => Ok(None),
     }
-    lsp::global()
-        .hover(&t.root, &t.path, &text, line, character, &login)
-        .await
 }
 
-/// Trusts the file's repository for language servers (D-2580): from the
-/// main window, after the native confirm.
+/// The editor closed the file (`textDocument/didClose`).
+#[tauri::command]
+pub async fn lsp_close(
+    app: State<'_, AppState>,
+    context: FileContext,
+    path: String,
+) -> Result<(), IpcError> {
+    if let Where::Here(t) = locate(&app, &context, path).await? {
+        lsp::global().close(&t.root, &t.path).await;
+    }
+    Ok(())
+}
+
+/// Files changed on disk in the context's folder (the Files watcher's
+/// batch): its servers hear `workspace/didChangeWatchedFiles`.
+#[tauri::command]
+pub async fn lsp_files_changed(
+    app: State<'_, AppState>,
+    context: FileContext,
+    paths: Vec<String>,
+) -> Result<(), IpcError> {
+    if !on_this_computer(&app, &context).await? {
+        return Ok(());
+    }
+    let root = app.files.root(&context).await?;
+    let mut by_root: std::collections::BTreeMap<PathBuf, Vec<String>> = Default::default();
+    for p in paths.into_iter().take(2000) {
+        if let Ok(t) = target(root.clone(), p) {
+            by_root.entry(t.root).or_default().push(t.path);
+        }
+    }
+    for (r, rels) in by_root {
+        lsp::global().changed(&r, &rels).await;
+    }
+    Ok(())
+}
+
+/// Trusts the file's repository for language servers (D-2580), or a
+/// sandboxed worktree on its own: from the main window, after the native
+/// confirm.
 #[tauri::command]
 pub async fn lsp_trust(
     app_handle: AppHandle,
@@ -212,33 +311,43 @@ pub async fn lsp_trust(
             "Trusting a repository needs the main window",
         )
     })?;
-    let Some(t) = local(&app, &context, path).await? else {
+    let Where::Here(t) = locate(&app, &context, path).await? else {
         return Err(IpcError::new(ErrorCode::Invalid, REMOTE).with_stage("lsp"));
     };
-    let repo = repository_of(&t.root);
-    let name = repo
+    let scope = scope(&app, &t.root).await;
+    let name = scope
+        .key
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| repo.to_string_lossy().into_owned());
-    let body = format!(
-        "rust-analyzer, typescript-language-server, pyright and gopls can run {name}'s build \
-         scripts, macros, plugins or Python interpreter when they load it, and its worktrees' too. \
-         Trust it only if you trust its code."
-    );
-    if !confirm_native(
-        &app_handle,
-        &format!("Trust {name} for language servers?"),
-        &body,
-        "Trust",
-    )
-    .await
-    {
+        .unwrap_or_else(|| scope.key.to_string_lossy().into_owned());
+    let (title, body) = if scope.sandboxed {
+        (
+            format!("Trust the worktree {name} for language servers?"),
+            format!(
+                "The agent's code will run outside its sandbox. rust-analyzer, \
+                 typescript-language-server, pyright and gopls can run {name}'s build scripts, \
+                 macros, plugins or Python interpreter when they load it. Trust it only if you've \
+                 read what the agent wrote."
+            ),
+        )
+    } else {
+        (
+            format!("Trust {name} for language servers?"),
+            format!(
+                "rust-analyzer, typescript-language-server, pyright and gopls can run {name}'s \
+                 build scripts, macros, plugins or Python interpreter when they load it, and its \
+                 worktrees' too. Trust it only if you trust its code."
+            ),
+        )
+    };
+    if !confirm_native(&app_handle, &title, &body, "Trust").await {
         return Err(IpcError::new(ErrorCode::Cancelled, "Not trusted"));
     }
-    lsp::trust(&app.data, &repo)?;
+    lsp::trust(&app.data, &scope.key)?;
     tracing::info!(
         code = "lsp.trusted",
-        "repository trusted for language servers"
+        sandboxed = scope.sandboxed,
+        "trusted for language servers"
     );
     Ok(())
 }
@@ -311,16 +420,19 @@ mod tests {
             ".tandem/worktrees/tidy",
         ]);
         let installed = |_: &ServerSpec| true;
-        let t = |p: &str| target(repo.clone(), p.into()).expect("target");
+        let waits = |p: &str, sandbox: bool, avail: &dyn Fn(&ServerSpec) -> bool| {
+            let t = target(repo.clone(), p.into()).expect("target");
+            waits_for_trust(&data, &scope_for(&t.root, sandbox), &t.path, avail).is_some()
+        };
         // Every server waits, pyright too.
         for p in ["src/main.rs", "web/app.ts", "cmd/main.go", "main.py"] {
-            assert!(waits_for_trust(&data, &t(p), installed).is_some(), "{p}");
+            assert!(waits(p, false, &installed), "{p}");
         }
         // An uninstalled server says it's missing instead; other files have
         // no server.
-        assert!(waits_for_trust(&data, &t("src/main.rs"), |_| false).is_none());
-        assert!(waits_for_trust(&data, &t("notes.md"), installed).is_none());
-        let doc = lsp::untrusted_doc(lsp::spec_for("a.rs").expect("spec"));
+        assert!(!waits("src/main.rs", false, &|_| false));
+        assert!(!waits("notes.md", false, &installed));
+        let doc = lsp::untrusted_doc(lsp::spec_for("a.rs").expect("spec"), false);
         assert_eq!(doc.state, LspState::Untrusted);
         assert_eq!(
             doc.message.as_deref(),
@@ -328,16 +440,34 @@ mod tests {
         );
         // Trusting the repository lets its servers start, its worktrees' too.
         lsp::trust(&data, &repo).expect("trust");
-        assert!(waits_for_trust(&data, &t("src/main.rs"), installed).is_none());
+        assert!(!waits("src/main.rs", false, &installed));
+        assert!(!waits(
+            ".tandem/worktrees/tidy/src/main.rs",
+            false,
+            &installed
+        ));
+        let lane = repo.join(".tandem/worktrees/tidy");
         assert!(
-            waits_for_trust(&data, &t(".tandem/worktrees/tidy/src/main.rs"), installed).is_none()
+            waits_for_trust(&data, &scope_for(&lane, false), "src/main.rs", installed).is_none()
         );
-        let lane = target(repo.join(".tandem/worktrees/tidy"), "src/main.rs".into()).expect("lane");
-        assert!(waits_for_trust(&data, &lane, installed).is_none());
         // Another repository isn't covered.
         let other = tmp.path().join("other");
         std::fs::create_dir_all(&other).expect("mkdir");
-        let elsewhere = target(other, "src/main.rs".into()).expect("other");
-        assert!(waits_for_trust(&data, &elsewhere, installed).is_some());
+        assert!(
+            waits_for_trust(&data, &scope_for(&other, false), "src/main.rs", installed).is_some()
+        );
+        // With sandboxed agents, a worktree needs its own trust, and says
+        // so; the repository itself keeps its trust.
+        let sandboxed = scope_for(&lane, true);
+        assert!(sandboxed.sandboxed);
+        assert!(waits_for_trust(&data, &sandboxed, "src/main.rs", installed).is_some());
+        assert!(!waits("src/main.rs", true, &installed));
+        let doc = lsp::untrusted_doc(lsp::spec_for("a.rs").expect("spec"), true);
+        assert_eq!(
+            doc.message.as_deref(),
+            Some("rust-analyzer is off until you trust this worktree")
+        );
+        lsp::trust(&data, &lane).expect("trust the worktree");
+        assert!(waits_for_trust(&data, &sandboxed, "src/main.rs", installed).is_none());
     }
 }

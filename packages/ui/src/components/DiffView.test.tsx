@@ -108,5 +108,8 @@ describe("DiffView names (F-CD-23)", () => {
     fireEvent.click(document.querySelector('[data-testid="diff-name"][data-name="util"]') as HTMLElement);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Go to definition" }));
     expect(onDefinition).toHaveBeenCalledWith({ path: "src/main.py", line: 1, character: 7, name: "util" });
+    // Names are buttons: the keyboard reaches them.
+    expect(helper?.tagName).toBe("BUTTON");
+    expect(screen.getAllByRole("button", { name: "helper" }).length).toBeGreaterThan(0);
   });
 });

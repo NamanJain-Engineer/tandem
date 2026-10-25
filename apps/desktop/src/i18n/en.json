@@ -1424,6 +1424,7 @@
   "intel.errors": "{n, plural, one {# error} other {# errors}}",
   "intel.warnings": "{n, plural, one {# warning} other {# warnings}}",
   "intel.trust": "Trust repository…",
+  "intel.trustWorktree": "Trust worktree…",
   "intel.noDefinition": "No definition found for {name}",
   "intel.references.region": "References",
   "intel.references.list": "References found",

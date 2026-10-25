@@ -143,16 +143,19 @@ function NamedText({
     if (start > at) parts.push(text.slice(at, start));
     const name = m[0];
     const target: DiffNameTarget = { path, line, character: start, name };
+    // A button, so the keyboard reaches it (Tab, then Enter or Space).
     const span = (
-      <span
+      <button
+        type="button"
         key={start}
         data-testid="diff-name"
         data-name={name}
+        aria-haspopup="menu"
         onClick={() => setPicked(start)}
-        className="cursor-pointer rounded-xs hover:bg-surface-3 hover:underline"
+        className="m-0 inline cursor-pointer rounded-xs border-0 bg-transparent p-0 text-inherit [font:inherit] hover:bg-surface-3 hover:underline focus-visible:shadow-focus focus-visible:outline-none"
       >
         {name}
-      </span>
+      </button>
     );
     parts.push(
       picked === start ? (
@@ -362,7 +365,13 @@ export function DiffView({
   return (
     <div data-testid="diff-view" className={cx("flex flex-col gap-2", className)}>
       {files.map((f) => (
-        <FileBlock key={`${f.oldPath ?? ""}:${f.path}`} file={f} labels={l} comments={comments} names={names} />
+        <FileBlock
+          key={`${f.oldPath ?? ""}:${f.path}`}
+          file={f}
+          labels={l}
+          comments={comments}
+          names={names}
+        />
       ))}
     </div>
   );

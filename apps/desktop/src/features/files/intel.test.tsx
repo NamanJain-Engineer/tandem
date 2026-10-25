@@ -44,6 +44,7 @@ function doc(path: string, text: string): LspDocument {
           state: "ready",
           message: null,
           diagnostics: [],
+          sandboxed: false,
         }
       : {
           language: "TypeScript",
@@ -51,6 +52,7 @@ function doc(path: string, text: string): LspDocument {
           state: "untrusted",
           message: "typescript-language-server is off until you trust this repository",
           diagnostics: [],
+          sandboxed: false,
         };
   if (path.endsWith(".rs"))
     return {
@@ -59,6 +61,7 @@ function doc(path: string, text: string): LspDocument {
       state: "none",
       message: "No language server for Rust",
       diagnostics: [],
+      sandboxed: false,
     };
   return {
     language: "Python",
@@ -79,6 +82,7 @@ function doc(path: string, text: string): LspDocument {
           ]
         : [],
     ),
+    sandboxed: false,
   };
 }
 
@@ -248,6 +252,27 @@ describe("Code intelligence in the Files editor (F-CD-23)", () => {
     await waitFor(() => expect(status()).toBe("typescript-language-server"));
     expect(calls.find((c) => c.cmd === "lsp_trust")?.args).toMatchObject({ path: "app.ts" });
     expect(screen.queryByTestId("intel-trust")).toBeNull();
+  });
+
+  it("F-CD-23 a sandboxed worktree is trusted on its own, and the status line says so", () => {
+    const doc: LspDocument = {
+      language: "Rust",
+      server: "rust-analyzer",
+      state: "untrusted",
+      message: "rust-analyzer is off until you trust this worktree",
+      diagnostics: [],
+      sandboxed: true,
+    };
+    expect(intelStatus(doc, false)?.text).toBe("rust-analyzer is off until you trust this worktree");
+  });
+
+  it("F-CD-23 closing a tab tells the language server", async () => {
+    const calls = setup();
+    await openFile("main.py");
+    act(() => useFiles.getState().close("main.py"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "lsp_close")?.args).toMatchObject({ path: "main.py" }),
+    );
   });
 
   it("F-CD-23 the status line's words", () => {

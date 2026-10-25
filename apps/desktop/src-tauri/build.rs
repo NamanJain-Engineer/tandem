@@ -121,6 +121,8 @@ const COMMANDS: &[&str] = &[
     "lsp_references",
     "lsp_hover",
     "lsp_trust",
+    "lsp_close",
+    "lsp_files_changed",
     "checkpoints_list",
     "checkpoint_create",
     "checkpoint_diff",

@@ -296,7 +296,7 @@ function IntelStatus({ context, path }: { context: FileContext; path: string }) 
             void useIntel.getState().trust(context, path, text);
           }}
         >
-          {t("intel.trust")}
+          {doc.sandboxed ? t("intel.trustWorktree") : t("intel.trust")}
         </Button>
       )}
     </span>

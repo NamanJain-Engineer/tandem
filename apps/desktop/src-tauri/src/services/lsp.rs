@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tandem_core::DataDir;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::{mpsc, oneshot, Notify};
 use ts_rs::TS;
 
 use tandem_core::{ErrorCode, IpcError};
@@ -47,6 +47,10 @@ pub struct ServerSpec {
     pub program: &'static str,
     pub args: &'static [&'static str],
     pub exts: &'static [&'static str],
+    /// Arguments that must succeed for the program to count as installed:
+    /// rustup's `rust-analyzer` proxy exists without the component and
+    /// only fails when run.
+    pub probe: Option<&'static [&'static str]>,
 }
 
 pub const SERVERS: &[ServerSpec] = &[
@@ -56,6 +60,7 @@ pub const SERVERS: &[ServerSpec] = &[
         program: "rust-analyzer",
         args: &[],
         exts: &["rs"],
+        probe: Some(&["--version"]),
     },
     ServerSpec {
         language: "TypeScript",
@@ -63,6 +68,7 @@ pub const SERVERS: &[ServerSpec] = &[
         program: "typescript-language-server",
         args: &["--stdio"],
         exts: &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"],
+        probe: None,
     },
     ServerSpec {
         language: "Python",
@@ -70,6 +76,7 @@ pub const SERVERS: &[ServerSpec] = &[
         program: "pyright-langserver",
         args: &["--stdio"],
         exts: &["py"],
+        probe: None,
     },
     ServerSpec {
         language: "Go",
@@ -77,6 +84,7 @@ pub const SERVERS: &[ServerSpec] = &[
         program: "gopls",
         args: &[],
         exts: &["go"],
+        probe: None,
     },
 ];
 
@@ -169,6 +177,10 @@ pub struct LspDocument {
     pub state: LspState,
     pub message: Option<String>,
     pub diagnostics: Vec<LspDiagnostic>,
+    /// `untrusted` for a worktree whose agents run sandboxed: it's trusted
+    /// on its own (D-2580).
+    #[serde(default)]
+    pub sandboxed: bool,
 }
 
 // ---- The client -------------------------------------------------------------
@@ -176,18 +188,53 @@ pub struct LspDocument {
 type Reader = Box<dyn AsyncRead + Send + Unpin>;
 type Writer = Box<dyn AsyncWrite + Send + Unpin>;
 
+/// Why a request got no answer.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ClientError {
+    /// No answer within the request's limit; the request was cancelled.
+    #[error("didn't answer")]
+    Timeout,
+    #[error("the server stopped")]
+    Stopped,
+    /// Its input is full: it isn't reading what we send.
+    #[error("it isn't reading its input")]
+    Stalled,
+    /// The server answered with an error.
+    #[error("{0}")]
+    Server(String),
+}
+
+/// A message larger than this is skipped (a parsed `Value` takes many times
+/// its text's size).
+const MAX_FRAME: usize = 8 * 1024 * 1024;
+const MAX_HEADER_LINE: usize = 1024;
+const MAX_HEADERS: usize = 32;
+/// Writing one message may take this long; past it the server is stuck.
+const WRITE_LIMIT: Duration = Duration::from_secs(10);
+/// Messages waiting to be written; a full queue means a stuck server.
+const QUEUE: usize = 256;
+/// The end of the server's stderr kept for "stopped: …".
+const STDERR_TAIL: usize = 4096;
+/// `stop` takes at most this long before the process tree is killed.
+const STOP_LIMIT: Duration = Duration::from_secs(4);
+
 /// One running server.
 pub struct Client {
-    writer: tokio::sync::Mutex<Writer>,
-    pending: Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>,
+    /// Frames for the writer task (which owns the server's stdin).
+    out: mpsc::Sender<Vec<u8>>,
+    pending: Mutex<HashMap<i64, oneshot::Sender<Result<Value, ClientError>>>>,
     next: AtomicI64,
     alive: AtomicBool,
-    /// Published diagnostics by URI, and a count per URI of publishes.
+    /// Published diagnostics by file (parsed from the URI, so a server that
+    /// re-encodes it still matches), and a count of publishes per file.
     diags: Mutex<HashMap<String, (u64, Vec<LspDiagnostic>)>>,
     published: Notify,
     /// The text last sent per URI, with its version.
-    docs: tokio::sync::Mutex<HashMap<String, (i32, String)>>,
+    docs: Mutex<HashMap<String, (i32, String)>>,
     child: Mutex<Option<tokio::process::Child>>,
+    /// The process group (Unix) or process (Windows) to kill.
+    tree: Option<u32>,
+    stderr: Arc<Mutex<std::collections::VecDeque<u8>>>,
     /// Why it stopped, once it has.
     ended: Mutex<Option<String>>,
 }
@@ -196,29 +243,94 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-async fn read_frame<R: AsyncRead + Unpin>(r: &mut BufReader<R>) -> Option<Value> {
-    let mut len: Option<usize> = None;
-    loop {
-        let mut line = String::new();
-        if r.read_line(&mut line).await.ok()? == 0 {
-            return None;
+/// One read from the server.
+enum Frame {
+    Message(Value),
+    /// Unreadable or too large: skipped, the stream stays in step.
+    Skip,
+    /// The stream ended or broke.
+    End,
+}
+
+/// `\uD800`…`\uDFFF` escapes replaced by `\uFFFD`: JavaScript servers send
+/// lone surrogates, which serde_json refuses. Only for a message that
+/// failed to parse.
+fn without_surrogates(body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len());
+    let mut i = 0;
+    while i < body.len() {
+        let esc = body.get(i..i + 6);
+        let is_surrogate = esc.is_some_and(|e| {
+            e[0] == b'\\'
+                && (e[1] == b'u' || e[1] == b'U')
+                && (e[2] == b'd' || e[2] == b'D')
+                && matches!(e[3], b'8'..=b'9' | b'a'..=b'f' | b'A'..=b'F')
+        });
+        if is_surrogate {
+            out.extend_from_slice(b"\\uFFFD");
+            i += 6;
+        } else {
+            out.push(body[i]);
+            i += 1;
         }
-        let line = line.trim_end();
-        if line.is_empty() {
+    }
+    out
+}
+
+async fn read_frame<R: AsyncRead + Unpin>(r: &mut BufReader<R>) -> Frame {
+    let mut len: Option<usize> = None;
+    let mut headers = 0;
+    loop {
+        let mut line = Vec::new();
+        let mut limited = AsyncReadExt::take(&mut *r, MAX_HEADER_LINE as u64 + 1);
+        match limited.read_until(b'\n', &mut line).await {
+            Ok(0) | Err(_) => return Frame::End,
+            Ok(_) => {}
+        }
+        // A header line that long, or that many, isn't LSP: give up.
+        headers += 1;
+        if !line.ends_with(b"\n") || headers > MAX_HEADERS {
+            return Frame::End;
+        }
+        let text = String::from_utf8_lossy(&line);
+        let text = text.trim_end();
+        if text.is_empty() {
             break;
         }
-        if let Some(v) = line.strip_prefix("Content-Length:") {
-            len = v.trim().parse().ok();
+        if let Some((name, value)) = text.split_once(':') {
+            if name.trim().eq_ignore_ascii_case("content-length") {
+                len = value.trim().parse().ok();
+            }
         }
     }
-    let len = len?;
-    // A frame over 64 MiB isn't a reply anyone wants.
-    if len > 64 * 1024 * 1024 {
-        return None;
+    let Some(len) = len else {
+        return Frame::End;
+    };
+    if len > MAX_FRAME {
+        let left = len as u64;
+        let mut skip = AsyncReadExt::take(&mut *r, left);
+        return match tokio::io::copy(&mut skip, &mut tokio::io::sink()).await {
+            Ok(n) if n == left => Frame::Skip,
+            _ => Frame::End,
+        };
     }
     let mut body = vec![0u8; len];
-    r.read_exact(&mut body).await.ok()?;
-    serde_json::from_slice(&body).ok()
+    if r.read_exact(&mut body).await.is_err() {
+        return Frame::End;
+    }
+    match serde_json::from_slice(&body) {
+        Ok(v) => Frame::Message(v),
+        Err(_) => serde_json::from_slice(&without_surrogates(&body))
+            .map(Frame::Message)
+            .unwrap_or(Frame::Skip),
+    }
+}
+
+fn frame(v: &Value) -> Vec<u8> {
+    let body = serde_json::to_vec(v).unwrap_or_default();
+    let mut out = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+    out.extend_from_slice(&body);
+    out
 }
 
 fn severity(n: Option<u64>) -> Severity {
@@ -251,25 +363,99 @@ fn diagnostic(v: &Value) -> LspDiagnostic {
     }
 }
 
+/// The key a file's diagnostics are kept under: its path, so `file:///C:/x`
+/// and `file:///c%3A/x` are one file.
+fn diag_key(uri: &str) -> String {
+    match uri_path(uri) {
+        #[cfg(windows)]
+        Some(p) => p.to_string_lossy().to_lowercase(),
+        #[cfg(not(windows))]
+        Some(p) => p.to_string_lossy().into_owned(),
+        None => uri.to_string(),
+    }
+}
+
+/// The last line of the server's stderr, for "stopped: …".
+fn last_line(tail: &std::collections::VecDeque<u8>) -> Option<String> {
+    let bytes: Vec<u8> = tail.iter().copied().collect();
+    let text = String::from_utf8_lossy(&bytes);
+    let line = text.lines().rev().map(str::trim).find(|l| !l.is_empty())?;
+    Some(line.chars().take(200).collect())
+}
+
+/// Kills a server's whole tree: its process group on Unix, `taskkill /T`
+/// on Windows (cargo check and tsserver are its children).
+async fn kill_tree(id: u32) {
+    let argv: Vec<String> = if cfg!(windows) {
+        ["taskkill", "/T", "/F", "/PID", &id.to_string()]
+            .map(String::from)
+            .to_vec()
+    } else {
+        ["kill", "-KILL", "--", &format!("-{id}")]
+            .map(String::from)
+            .to_vec()
+    };
+    let mut cmd = tokio::process::Command::new(&argv[0]);
+    cmd.args(&argv[1..])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Ok(mut child) = cmd.spawn() {
+        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    }
+}
+
 impl Client {
-    pub fn start(
-        reader: Reader,
-        writer: Writer,
-        child: Option<tokio::process::Child>,
-    ) -> Arc<Self> {
+    pub fn start(spawned: Spawned) -> Arc<Self> {
+        let (out, mut queue) = mpsc::channel::<Vec<u8>>(QUEUE);
+        let tail = Arc::new(Mutex::new(std::collections::VecDeque::new()));
         let me = Arc::new(Self {
-            writer: tokio::sync::Mutex::new(writer),
+            out,
             pending: Mutex::default(),
             next: AtomicI64::new(1),
             alive: AtomicBool::new(true),
             diags: Mutex::default(),
             published: Notify::new(),
-            docs: tokio::sync::Mutex::default(),
-            child: Mutex::new(child),
+            docs: Mutex::default(),
+            tree: spawned.tree,
+            child: Mutex::new(spawned.child),
+            stderr: tail.clone(),
             ended: Mutex::new(None),
         });
+        // The writer: one message at a time, each within WRITE_LIMIT.
+        let weak = Arc::downgrade(&me);
+        let mut writer = spawned.writer;
+        tokio::spawn(async move {
+            while let Some(bytes) = queue.recv().await {
+                let wrote = tokio::time::timeout(WRITE_LIMIT, async {
+                    writer.write_all(&bytes).await?;
+                    writer.flush().await
+                })
+                .await;
+                if !matches!(wrote, Ok(Ok(()))) {
+                    if let Some(me) = weak.upgrade() {
+                        me.end("it stopped reading its input".into());
+                    }
+                    break;
+                }
+            }
+        });
+        if let Some(mut err) = spawned.stderr {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = err.read(&mut buf).await {
+                    if n == 0 {
+                        break;
+                    }
+                    let mut t = lock(&tail);
+                    t.extend(&buf[..n]);
+                    let over = t.len().saturating_sub(STDERR_TAIL);
+                    t.drain(..over);
+                }
+            });
+        }
         let reading = me.clone();
-        tokio::spawn(async move { reading.read_loop(reader).await });
+        tokio::spawn(async move { reading.read_loop(spawned.reader).await });
         me
     }
 
@@ -281,9 +467,33 @@ impl Client {
         lock(&self.ended).clone()
     }
 
+    /// Marks it stopped (once) and fails what waits on it.
+    fn end(&self, why: String) {
+        self.alive.store(false, Ordering::SeqCst);
+        lock(&self.ended).get_or_insert(why);
+        for (_, tx) in lock(&self.pending).drain() {
+            let _ = tx.send(Err(ClientError::Stopped));
+        }
+        self.published.notify_waiters();
+    }
+
+    /// Queues a message without waiting: a full queue is a stuck server.
+    fn send(&self, v: &Value) -> Result<(), ClientError> {
+        match self.out.try_send(frame(v)) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => Err(ClientError::Stalled),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(ClientError::Stopped),
+        }
+    }
+
     async fn read_loop(self: Arc<Self>, reader: Reader) {
         let mut r = BufReader::new(reader);
-        while let Some(msg) = read_frame(&mut r).await {
+        loop {
+            let msg = match read_frame(&mut r).await {
+                Frame::Message(m) => m,
+                Frame::Skip => continue,
+                Frame::End => break,
+            };
             let id = msg.get("id").cloned();
             let method = msg.get("method").and_then(Value::as_str);
             match (id, method) {
@@ -292,13 +502,16 @@ impl Client {
                     let Some(id) = id.as_i64() else { continue };
                     if let Some(tx) = lock(&self.pending).remove(&id) {
                         let out = match msg.get("error") {
-                            Some(e) => Err(e["message"].as_str().unwrap_or("error").to_string()),
+                            Some(e) => Err(ClientError::Server(
+                                e["message"].as_str().unwrap_or("error").to_string(),
+                            )),
                             None => Ok(msg.get("result").cloned().unwrap_or(Value::Null)),
                         };
                         let _ = tx.send(out);
                     }
                 }
-                // The server asks us something: answer so it doesn't wait.
+                // The server asks us something: answer without waiting on
+                // the writer, so a busy input never stalls reading.
                 (Some(id), Some(m)) => {
                     let result = if m == "workspace/configuration" {
                         let n = msg["params"]["items"].as_array().map_or(0, Vec::len);
@@ -306,19 +519,17 @@ impl Client {
                     } else {
                         Value::Null
                     };
-                    let _ = self
-                        .send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-                        .await;
+                    let _ = self.send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }));
                 }
                 (None, Some("textDocument/publishDiagnostics")) => {
-                    let uri = msg["params"]["uri"].as_str().unwrap_or("").to_string();
+                    let uri = msg["params"]["uri"].as_str().unwrap_or("");
                     let list: Vec<LspDiagnostic> = msg["params"]["diagnostics"]
                         .as_array()
                         .map(|a| a.iter().take(1000).map(diagnostic).collect())
                         .unwrap_or_default();
                     {
                         let mut d = lock(&self.diags);
-                        let e = d.entry(uri).or_insert((0, Vec::new()));
+                        let e = d.entry(diag_key(uri)).or_insert((0, Vec::new()));
                         e.0 += 1;
                         e.1 = list;
                     }
@@ -327,22 +538,11 @@ impl Client {
                 _ => {}
             }
         }
-        self.alive.store(false, Ordering::SeqCst);
-        lock(&self.ended).get_or_insert_with(|| "it exited".to_string());
-        for (_, tx) in lock(&self.pending).drain() {
-            let _ = tx.send(Err("the server stopped".into()));
-        }
-        self.published.notify_waiters();
-    }
-
-    async fn send(&self, v: &Value) -> Result<(), String> {
-        let body = serde_json::to_vec(v).map_err(|e| e.to_string())?;
-        let mut w = self.writer.lock().await;
-        w.write_all(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes())
-            .await
-            .map_err(|e| e.to_string())?;
-        w.write_all(&body).await.map_err(|e| e.to_string())?;
-        w.flush().await.map_err(|e| e.to_string())
+        let why = match last_line(&lock(&self.stderr)) {
+            Some(line) => format!("it exited ({line})"),
+            None => "it exited".to_string(),
+        };
+        self.end(why);
     }
 
     pub async fn request(
@@ -350,36 +550,36 @@ impl Client {
         method: &str,
         params: Value,
         limit: Duration,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ClientError> {
         if !self.alive() {
-            return Err("the server stopped".into());
+            return Err(ClientError::Stopped);
         }
         let id = self.next.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
         lock(&self.pending).insert(id, tx);
-        if let Err(e) = self
-            .send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
-            .await
+        if let Err(e) =
+            self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
         {
             lock(&self.pending).remove(&id);
             return Err(e);
         }
         match tokio::time::timeout(limit, rx).await {
             Ok(Ok(out)) => out,
-            Ok(Err(_)) => Err("the server stopped".into()),
+            Ok(Err(_)) => Err(ClientError::Stopped),
             Err(_) => {
                 lock(&self.pending).remove(&id);
-                Err("timeout".into())
+                // The server may stop working on it.
+                let _ = self.notify("$/cancelRequest", json!({ "id": id }));
+                Err(ClientError::Timeout)
             }
         }
     }
 
-    pub async fn notify(&self, method: &str, params: Value) -> Result<(), String> {
+    pub fn notify(&self, method: &str, params: Value) -> Result<(), ClientError> {
         self.send(&json!({ "jsonrpc": "2.0", "method": method, "params": params }))
-            .await
     }
 
-    async fn initialize(&self, root: &Path) -> Result<(), String> {
+    async fn initialize(&self, root: &Path) -> Result<(), ClientError> {
         let uri = file_uri(root);
         let params = json!({
             "processId": std::process::id(),
@@ -393,76 +593,122 @@ impl Client {
                     "references": {},
                     "publishDiagnostics": { "relatedInformation": false },
                 },
-                "workspace": { "configuration": true, "workspaceFolders": true },
+                "workspace": {
+                    "configuration": true,
+                    "workspaceFolders": true,
+                    "didChangeWatchedFiles": { "dynamicRegistration": false },
+                },
             },
         });
         self.request("initialize", params, INIT_LIMIT).await?;
-        self.notify("initialized", json!({})).await
+        self.notify("initialized", json!({}))
     }
 
-    /// Sends the editor's text: open on first sight, then full changes.
-    /// Sends the text if the server hasn't it yet; true when it was sent.
-    async fn sync(&self, uri: &str, path: &str, text: &str) -> Result<bool, String> {
-        let mut docs = self.docs.lock().await;
+    /// Sends the text if the server hasn't it yet (open on first sight,
+    /// then full changes); true when it was sent. Nothing waits while the
+    /// document map is held.
+    fn sync(&self, uri: &str, path: &str, text: &str) -> Result<bool, ClientError> {
+        let mut docs = lock(&self.docs);
         match docs.get_mut(uri) {
             None => {
                 self.notify(
                     "textDocument/didOpen",
                     json!({ "textDocument": { "uri": uri, "languageId": language_id(path), "version": 1, "text": text } }),
-                )
-                .await?;
+                )?;
                 docs.insert(uri.to_string(), (1, text.to_string()));
             }
             Some((version, last)) if last != text => {
-                *version += 1;
-                *last = text.to_string();
-                let v = *version;
+                let v = *version + 1;
                 self.notify(
                     "textDocument/didChange",
                     json!({ "textDocument": { "uri": uri, "version": v }, "contentChanges": [{ "text": text }] }),
-                )
-                .await?;
+                )?;
+                *version = v;
+                *last = text.to_string();
             }
             Some(_) => return Ok(false),
         }
         Ok(true)
     }
 
+    /// The editor closed the file: the server reads it from disk again.
+    fn close(&self, uri: &str) {
+        if lock(&self.docs).remove(uri).is_some() {
+            let _ = self.notify(
+                "textDocument/didClose",
+                json!({ "textDocument": { "uri": uri } }),
+            );
+        }
+        lock(&self.diags).remove(&diag_key(uri));
+    }
+
+    /// Files changed on disk (an agent, git): `workspace/didChangeWatchedFiles`.
+    fn changed(&self, uris: &[String]) {
+        if uris.is_empty() {
+            return;
+        }
+        let changes: Vec<Value> = uris
+            .iter()
+            .map(|u| json!({ "uri": u, "type": 2 }))
+            .collect();
+        let _ = self.notify(
+            "workspace/didChangeWatchedFiles",
+            json!({ "changes": changes }),
+        );
+    }
+
     fn publishes(&self, uri: &str) -> u64 {
-        lock(&self.diags).get(uri).map_or(0, |e| e.0)
+        lock(&self.diags).get(&diag_key(uri)).map_or(0, |e| e.0)
     }
 
     fn diagnostics(&self, uri: &str) -> Vec<LspDiagnostic> {
         lock(&self.diags)
-            .get(uri)
+            .get(&diag_key(uri))
             .map(|e| e.1.clone())
             .unwrap_or_default()
     }
 
-    /// Asks the server to shut down, then ends it.
+    /// Asks the server to shut down, then ends it and its children, within
+    /// [`STOP_LIMIT`] whatever it does.
     pub async fn stop(&self) {
-        if self.alive() {
-            let _ = self
-                .request("shutdown", Value::Null, Duration::from_secs(2))
-                .await;
-            let _ = self.notify("exit", Value::Null).await;
+        let polite = async {
+            if self.alive() {
+                let _ = self
+                    .request("shutdown", Value::Null, Duration::from_secs(2))
+                    .await;
+                let _ = self.notify("exit", Value::Null);
+            }
+            let child = lock(&self.child).take();
+            if let Some(mut child) = child {
+                let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+                let _ = child.start_kill();
+            }
+        };
+        let _ = tokio::time::timeout(STOP_LIMIT, polite).await;
+        if let Some(id) = self.tree {
+            kill_tree(id).await;
         }
-        let child = lock(&self.child).take();
-        if let Some(mut child) = child {
-            let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+        if let Some(mut child) = lock(&self.child).take() {
             let _ = child.start_kill();
         }
-        self.alive.store(false, Ordering::SeqCst);
+        self.end("stopped".into());
     }
 }
 
+/// `file://` and the path, percent-encoded.
 pub fn file_uri(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('\\', "/");
-    let s = if s.starts_with('/') {
-        s
-    } else {
-        format!("/{s}")
+    #[cfg(windows)]
+    let s = {
+        // `C:\x` is `file:///C:/x`.
+        let s = p.to_string_lossy().replace('\\', "/");
+        if s.starts_with('/') {
+            s
+        } else {
+            format!("/{s}")
+        }
     };
+    #[cfg(not(windows))]
+    let s = p.to_string_lossy().into_owned();
     let mut out = String::from("file://");
     for b in s.bytes() {
         match b {
@@ -493,6 +739,7 @@ fn uri_path(uri: &str) -> Option<PathBuf> {
     }
     let s = String::from_utf8(bytes).ok()?;
     // `file:///C:/x` on Windows.
+    #[cfg(windows)]
     let s = match s.strip_prefix('/') {
         Some(rest) if rest.len() > 1 && rest.as_bytes()[1] == b':' => rest.to_string(),
         _ => s,
@@ -506,7 +753,11 @@ fn uri_path(uri: &str) -> Option<PathBuf> {
 pub struct Spawned {
     pub reader: Reader,
     pub writer: Writer,
+    /// Its stderr, whose end says why it stopped.
+    pub stderr: Option<Reader>,
     pub child: Option<tokio::process::Child>,
+    /// Its process group (Unix) or process (Windows), killed with it.
+    pub tree: Option<u32>,
 }
 
 /// Starts servers (the real one runs the program on the login PATH; tests
@@ -516,7 +767,85 @@ pub trait Spawner: Send + Sync {
     fn spawn(&self, spec: &ServerSpec, root: &Path, login: &LoginEnv) -> Result<Spawned, String>;
 }
 
-pub struct LoginSpawner;
+/// Servers run here, not in the repository: on Windows npm's `.cmd` shims
+/// look for `node` in the current folder first. The folder reaches the
+/// server through `rootUri` and `workspaceFolders`.
+static WORK_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Sets the folder servers run in (`$DATA/lsp`), once at startup.
+pub fn set_work_dir(dir: PathBuf) {
+    let _ = WORK_DIR.set(dir);
+}
+
+fn work_dir() -> PathBuf {
+    let dir = WORK_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| std::env::temp_dir().join("vibezeo-lsp"));
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// How long an "installed?" answer is kept.
+const PROBE_TTL: Duration = Duration::from_secs(60);
+
+/// Runs `argv` with the login environment and a 5 s limit; true when it
+/// exits 0.
+fn probe(argv: &[std::ffi::OsString], login: &LoginEnv) -> bool {
+    let Some((program, args)) = argv.split_first() else {
+        return false;
+    };
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args)
+        .env_clear()
+        .envs(&login.vars)
+        .current_dir(work_dir())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(25)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
+/// `argv` as run on the host when Vibezeo is a Flatpak (D-2032), with
+/// exactly `env`; as is otherwise.
+fn host_argv(
+    argv: Vec<std::ffi::OsString>,
+    cwd: &Path,
+    env: &[(String, String)],
+) -> Vec<std::ffi::OsString> {
+    if !tandem_core::sandbox::in_flatpak() {
+        return argv;
+    }
+    let Some((program, args)) = argv.split_first() else {
+        return argv;
+    };
+    tandem_core::sandbox::flatpak_host_argv(program, args, Some(cwd), Some(env))
+}
+
+/// The real servers: on the login PATH, run with the login environment.
+#[derive(Default)]
+pub struct LoginSpawner {
+    probed: Mutex<HashMap<(String, String), (bool, Instant)>>,
+}
 
 impl LoginSpawner {
     fn program(spec: &ServerSpec, login: &LoginEnv) -> Option<PathBuf> {
@@ -524,36 +853,98 @@ impl LoginSpawner {
         let pathext = login.vars.get("PATHEXT").map(String::as_str);
         resolve_on_path(spec.program, path, pathext)
     }
+
+    /// The server's environment: the login's, and Go never switching (and
+    /// downloading) toolchains on its own.
+    fn env(login: &LoginEnv) -> Vec<(String, String)> {
+        let mut vars: Vec<(String, String)> = login
+            .vars
+            .iter()
+            .filter(|(k, _)| k.as_str() != "GOTOOLCHAIN")
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        vars.push(("GOTOOLCHAIN".into(), "local".into()));
+        vars
+    }
+
+    fn installed(&self, spec: &ServerSpec, login: &LoginEnv) -> bool {
+        let path = login.vars.get("PATH").cloned().unwrap_or_default();
+        let key = (spec.program.to_string(), path);
+        if let Some((ok, at)) = lock(&self.probed).get(&key) {
+            if at.elapsed() < PROBE_TTL {
+                return *ok;
+            }
+        }
+        let ok = if tandem_core::sandbox::in_flatpak() {
+            // The program lives on the host: ask the host's shell.
+            let check = format!("command -v {} >/dev/null", spec.program);
+            let mut argv: Vec<std::ffi::OsString> = vec!["sh".into(), "-c".into(), check.into()];
+            if let Some(args) = spec.probe {
+                argv = vec![spec.program.into()];
+                argv.extend(args.iter().map(Into::into));
+            }
+            probe(&host_argv(argv, &work_dir(), &Self::env(login)), login)
+        } else {
+            match (Self::program(spec, login), spec.probe) {
+                (None, _) => false,
+                (Some(_), None) => true,
+                (Some(p), Some(args)) => {
+                    let mut argv: Vec<std::ffi::OsString> = vec![p.into()];
+                    argv.extend(args.iter().map(Into::into));
+                    probe(&argv, login)
+                }
+            }
+        };
+        lock(&self.probed).insert(key, (ok, Instant::now()));
+        ok
+    }
 }
 
 impl Spawner for LoginSpawner {
     fn available(&self, spec: &ServerSpec, login: &LoginEnv) -> bool {
-        Self::program(spec, login).is_some()
+        self.installed(spec, login)
     }
 
-    fn spawn(&self, spec: &ServerSpec, root: &Path, login: &LoginEnv) -> Result<Spawned, String> {
-        let program = Self::program(spec, login).ok_or("it isn't installed")?;
-        let mut cmd = tokio::process::Command::new(program);
-        cmd.args(spec.args)
-            .current_dir(root)
+    fn spawn(&self, spec: &ServerSpec, _root: &Path, login: &LoginEnv) -> Result<Spawned, String> {
+        let program: std::ffi::OsString = if tandem_core::sandbox::in_flatpak() {
+            spec.program.into()
+        } else {
+            Self::program(spec, login)
+                .ok_or("it isn't installed")?
+                .into()
+        };
+        let cwd = work_dir();
+        let env = Self::env(login);
+        let mut argv = vec![program];
+        argv.extend(spec.args.iter().map(Into::into));
+        let argv = host_argv(argv, &cwd, &env);
+        let mut cmd = tokio::process::Command::new(&argv[0]);
+        cmd.args(&argv[1..])
+            .current_dir(&cwd)
             .env_clear()
-            .envs(&login.vars)
+            .envs(env)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        // Its own process group, so cargo check and tsserver go with it.
+        #[cfg(unix)]
+        cmd.process_group(0);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: no console flashes up.
-            cmd.creation_flags(0x0800_0000);
+            // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP.
+            cmd.creation_flags(0x0800_0000 | 0x0000_0200);
         }
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
         let reader = child.stdout.take().ok_or("no stdout")?;
         let writer = child.stdin.take().ok_or("no stdin")?;
+        let stderr = child.stderr.take().map(|e| Box::new(e) as Reader);
         Ok(Spawned {
+            tree: child.id(),
             reader: Box::new(reader),
             writer: Box::new(writer),
+            stderr,
             child: Some(child),
         })
     }
@@ -577,7 +968,7 @@ pub struct Lsp {
     pub starts: AtomicU64,
 }
 
-static LSP: LazyLock<Lsp> = LazyLock::new(|| Lsp::new(Box::new(LoginSpawner)));
+static LSP: LazyLock<Lsp> = LazyLock::new(|| Lsp::new(Box::<LoginSpawner>::default()));
 
 /// The app's servers.
 pub fn global() -> &'static Lsp {
@@ -665,8 +1056,9 @@ impl Lsp {
             }
         };
         self.starts.fetch_add(1, Ordering::SeqCst);
-        let client = Client::start(spawned.reader, spawned.writer, spawned.child);
+        let client = Client::start(spawned);
         if let Err(why) = client.initialize(root).await {
+            let why = client.ended().unwrap_or_else(|| why.to_string());
             client.stop().await;
             self.failed(&key, why.clone());
             return Err(NoServer {
@@ -726,21 +1118,30 @@ impl Lsp {
         gone.len()
     }
 
-    /// Stops servers idle for `idle` or longer.
+    /// Stops servers idle for `idle` or longer, and drops dead ones, which
+    /// count toward the failure limit (a crash loop stops being retried).
+    /// They stop outside the map's lock.
     pub async fn reap(&self, idle: Duration) -> usize {
-        let mut running = self.running.lock().await;
-        let now = Instant::now();
-        let stale: Vec<Key> = running
-            .iter()
-            .filter(|(_, r)| now.duration_since(*lock(&r.last)) >= idle || !r.client.alive())
-            .map(|(k, _)| k.clone())
-            .collect();
-        for k in &stale {
-            if let Some(r) = running.remove(k) {
-                r.client.stop().await;
+        let gone: Vec<(Key, Arc<Running>)> = {
+            let mut running = self.running.lock().await;
+            let now = Instant::now();
+            let stale: Vec<Key> = running
+                .iter()
+                .filter(|(_, r)| now.duration_since(*lock(&r.last)) >= idle || !r.client.alive())
+                .map(|(k, _)| k.clone())
+                .collect();
+            stale
+                .into_iter()
+                .filter_map(|k| running.remove(&k).map(|r| (k, r)))
+                .collect()
+        };
+        for (key, r) in &gone {
+            if !r.client.alive() {
+                self.failed(key, r.client.ended().unwrap_or_else(|| "it exited".into()));
             }
+            r.client.stop().await;
         }
-        stale.len()
+        gone.len()
     }
 
     /// Every server stops (the app quits).
@@ -748,6 +1149,40 @@ impl Lsp {
         let all: Vec<Arc<Running>> = self.running.lock().await.drain().map(|(_, r)| r).collect();
         for r in all {
             r.client.stop().await;
+        }
+    }
+
+    /// The editor closed `rel`: its server reads the file from disk again.
+    pub async fn close(&self, root: &Path, rel: &str) {
+        let (Ok(full), Some(spec)) = (inside(root, rel), spec_for(rel)) else {
+            return;
+        };
+        let key: Key = (root.to_path_buf(), spec.program);
+        let running = self.running.lock().await.get(&key).cloned();
+        if let Some(r) = running {
+            r.client.close(&file_uri(&full));
+        }
+    }
+
+    /// Files under `root` changed on disk (an agent, git): every server for
+    /// `root` hears `workspace/didChangeWatchedFiles`. Files the editor has
+    /// open keep the editor's text, which the next sync brings.
+    pub async fn changed(&self, root: &Path, rels: &[String]) {
+        let uris: Vec<String> = rels
+            .iter()
+            .filter_map(|r| inside(root, r).ok())
+            .map(|p| file_uri(&p))
+            .collect();
+        let clients: Vec<Arc<Running>> = self
+            .running
+            .lock()
+            .await
+            .iter()
+            .filter(|((r, _), _)| r == root)
+            .map(|(_, v)| v.clone())
+            .collect();
+        for r in clients {
+            r.client.changed(&uris);
         }
     }
 
@@ -824,16 +1259,20 @@ pub fn trust(data: &DataDir, main: &Path) -> Result<(), IpcError> {
 }
 
 /// What `lsp_sync` says for an installed server that waits for trust.
-pub fn untrusted_doc(spec: &ServerSpec) -> LspDocument {
+/// A sandboxed worktree is trusted on its own (D-2580).
+pub fn untrusted_doc(spec: &ServerSpec, sandboxed: bool) -> LspDocument {
+    let what = if sandboxed {
+        "this worktree"
+    } else {
+        "this repository"
+    };
     LspDocument {
         language: Some(spec.language.to_string()),
         server: Some(spec.server.to_string()),
         state: LspState::Untrusted,
-        message: Some(format!(
-            "{} is off until you trust this repository",
-            spec.server
-        )),
+        message: Some(format!("{} is off until you trust {what}", spec.server)),
         diagnostics: Vec::new(),
+        sandboxed,
     }
 }
 
@@ -864,6 +1303,7 @@ fn no_server_doc(spec: Option<&ServerSpec>, why: Option<NoServer>) -> LspDocumen
             (None, None) => "No language server for this file".to_string(),
         }),
         diagnostics: Vec::new(),
+        sandboxed: false,
     }
 }
 
@@ -886,7 +1326,7 @@ impl Lsp {
         };
         let uri = file_uri(&full);
         let before = client.publishes(&uri);
-        let sent = match client.sync(&uri, rel, text).await {
+        let sent = match client.sync(&uri, rel, text) {
             Ok(sent) => sent,
             Err(why) => {
                 return Ok(no_server_doc(
@@ -913,6 +1353,7 @@ impl Lsp {
             state: LspState::Ready,
             message: None,
             diagnostics: client.diagnostics(&uri),
+            sandboxed: false,
         })
     }
 
@@ -936,11 +1377,12 @@ impl Lsp {
             return Ok(None);
         };
         let uri = file_uri(&full);
-        client.sync(&uri, rel, text).await.map_err(|e| {
+        client.sync(&uri, rel, text).map_err(|e| {
             IpcError::new(
                 ErrorCode::Unavailable,
                 format!("{} stopped: {e}", spec.server),
             )
+            .with_stage("lsp")
         })?;
         let mut params = json!({
             "textDocument": { "uri": uri },
@@ -951,7 +1393,7 @@ impl Lsp {
         }
         match client.request(method, params, REQUEST_LIMIT).await {
             Ok(v) => Ok(Some(v)),
-            Err(e) if e == "timeout" => Err(IpcError::new(
+            Err(ClientError::Timeout) => Err(IpcError::new(
                 ErrorCode::Unavailable,
                 format!("{} didn't answer", spec.server),
             )
@@ -987,7 +1429,7 @@ impl Lsp {
             )
             .await?
         {
-            Some(v) => Ok(locations(root, &v, Some((rel, text)))),
+            Some(v) => Ok(locations(root, &v, Some((rel, text))).await),
             None => Ok(fallback_definition(rel, text, line, character)),
         }
     }
@@ -1003,7 +1445,7 @@ impl Lsp {
         character: u32,
         login: &LoginEnv,
     ) -> Result<Vec<LspLocation>, IpcError> {
-        Ok(self
+        match self
             .ask(
                 "textDocument/references",
                 root,
@@ -1015,8 +1457,10 @@ impl Lsp {
                 json!({ "context": { "includeDeclaration": true } }),
             )
             .await?
-            .map(|v| locations(root, &v, Some((rel, text))))
-            .unwrap_or_default())
+        {
+            Some(v) => Ok(locations(root, &v, Some((rel, text))).await),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// `lsp_hover`: the hover's plain text.
@@ -1065,27 +1509,58 @@ fn hover_text(v: &Value) -> String {
     }
 }
 
-fn preview(root: &Path, path: &Path, line: u32, open: Option<(&str, &str)>) -> String {
-    let text = match open {
-        Some((rel, text)) if root.join(rel) == path => Some(text.to_string()),
-        _ => std::fs::read_to_string(path).ok(),
-    };
-    text.and_then(|t| {
-        t.lines()
-            .nth(line as usize)
-            .map(|l| l.trim().chars().take(200).collect())
+/// Previews read at most this much of a file.
+const PREVIEW_READ: u64 = 2 * 1024 * 1024;
+
+/// Each location's line of text: from the editor's text for the open file,
+/// else read once per file (at most [`PREVIEW_READ`]), off the async runtime.
+async fn fill_previews(
+    root: &Path,
+    found: &mut [(PathBuf, LspLocation)],
+    open: Option<(&str, &str)>,
+) {
+    let open_path = open.map(|(rel, text)| (root.join(rel), text.to_string()));
+    let wanted: Vec<(PathBuf, u32)> = found.iter().map(|(p, l)| (p.clone(), l.line)).collect();
+    let lines = tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut files: HashMap<PathBuf, Option<String>> = HashMap::new();
+        wanted
+            .into_iter()
+            .map(|(path, line)| {
+                let text = files
+                    .entry(path.clone())
+                    .or_insert_with(|| match &open_path {
+                        Some((p, t)) if *p == path => Some(t.clone()),
+                        _ => {
+                            let mut buf = Vec::new();
+                            std::fs::File::open(&path)
+                                .and_then(|f| f.take(PREVIEW_READ).read_to_end(&mut buf))
+                                .ok()
+                                .map(|_| String::from_utf8_lossy(&buf).into_owned())
+                        }
+                    });
+                text.as_deref()
+                    .and_then(|t| t.lines().nth(line as usize))
+                    .map(|l| l.trim().chars().take(200).collect::<String>())
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<String>>()
     })
-    .unwrap_or_default()
+    .await
+    .unwrap_or_default();
+    for ((_, loc), line) in found.iter_mut().zip(lines) {
+        loc.preview = line;
+    }
 }
 
 /// A `Location`, `Location[]` or `LocationLink[]` answer.
-fn locations(root: &Path, v: &Value, open: Option<(&str, &str)>) -> Vec<LspLocation> {
+async fn locations(root: &Path, v: &Value, open: Option<(&str, &str)>) -> Vec<LspLocation> {
     let items: Vec<&Value> = match v {
         Value::Array(a) => a.iter().collect(),
         Value::Null => Vec::new(),
         one => vec![one],
     };
-    items
+    let mut found: Vec<(PathBuf, LspLocation)> = items
         .into_iter()
         .take(1000)
         .filter_map(|item| {
@@ -1097,22 +1572,26 @@ fn locations(root: &Path, v: &Value, open: Option<(&str, &str)>) -> Vec<LspLocat
                 .get("range")
                 .or_else(|| item.get("targetSelectionRange"))?;
             let path = uri_path(uri)?;
-            let line = u32_of(&range["start"]["line"]);
             let (rel, in_folder) = match path.strip_prefix(root) {
                 Ok(rel) => (rel.to_string_lossy().replace('\\', "/"), true),
                 Err(_) => (path.to_string_lossy().into_owned(), false),
             };
-            Some(LspLocation {
-                preview: preview(root, &path, line, open),
-                path: rel,
-                in_folder,
-                line,
-                character: u32_of(&range["start"]["character"]),
-                end_line: u32_of(&range["end"]["line"]),
-                end_character: u32_of(&range["end"]["character"]),
-            })
+            Some((
+                path,
+                LspLocation {
+                    preview: String::new(),
+                    path: rel,
+                    in_folder,
+                    line: u32_of(&range["start"]["line"]),
+                    character: u32_of(&range["start"]["character"]),
+                    end_line: u32_of(&range["end"]["line"]),
+                    end_character: u32_of(&range["end"]["character"]),
+                },
+            ))
         })
-        .collect()
+        .collect();
+    fill_previews(root, &mut found, open).await;
+    found.into_iter().map(|(_, l)| l).collect()
 }
 
 /// The word at a 0-based line and UTF-16 character.
@@ -1178,6 +1657,174 @@ pub fn fallback_definition(rel: &str, text: &str, line: u32, character: u32) -> 
 mod tests {
     use super::*;
 
+    /// A client wired to `server`, whose side the test drives byte by byte.
+    fn raw_client() -> (Arc<Client>, tokio::io::DuplexStream) {
+        let (client_side, server_side) = tokio::io::duplex(1 << 16);
+        let (cr, cw) = tokio::io::split(client_side);
+        let client = Client::start(Spawned {
+            reader: Box::new(cr),
+            writer: Box::new(cw),
+            stderr: None,
+            child: None,
+            tree: None,
+        });
+        (client, server_side)
+    }
+
+    fn raw(body: &[u8]) -> Vec<u8> {
+        let mut out = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
+        out.extend_from_slice(body);
+        out
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_framing_skips_bad_and_huge_messages_and_reads_lone_surrogates() {
+        let (client, mut server) = raw_client();
+        let uri = file_uri(Path::new("/w/a.py"));
+        let publish = |msg: &str| {
+            format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{{"uri":"{uri}","diagnostics":[{{"range":{{"start":{{"line":0,"character":0}},"end":{{"line":0,"character":1}}}},"message":"{msg}"}}]}}}}"#
+            )
+        };
+        // Not JSON: skipped. Too large: skipped without losing step.
+        server.write_all(&raw(b"{not json")).await.expect("write");
+        let big = vec![b' '; MAX_FRAME + 10];
+        server.write_all(&raw(&big)).await.expect("write");
+        // A lone surrogate, as JavaScript servers send: read, not fatal.
+        server
+            .write_all(&raw(publish("bad \\ud800 char").as_bytes()))
+            .await
+            .expect("write");
+        let wait = async {
+            while client.publishes(&uri) == 0 {
+                client.published.notified().await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(5), wait)
+            .await
+            .expect("the diagnostic arrived");
+        assert!(client.alive(), "a bad message doesn't end the server");
+        assert_eq!(client.diagnostics(&uri)[0].message, "bad \u{fffd} char");
+        // A server that re-encodes the URI still matches the file.
+        let encoded = uri.replace(".py", "%2Epy");
+        assert_eq!(diag_key(&encoded), diag_key(&uri));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn f_cd_23_a_stuck_server_times_out_is_cancelled_and_stops_in_bounded_time() {
+        let (client, mut server) = raw_client();
+        // The server reads nothing back: the request times out…
+        let e = client
+            .request("textDocument/hover", json!({}), REQUEST_LIMIT)
+            .await
+            .expect_err("no answer");
+        assert_eq!(e, ClientError::Timeout);
+        // …and $/cancelRequest follows it.
+        let mut got = vec![0u8; 4096];
+        let n = tokio::time::timeout(Duration::from_secs(1), server.read(&mut got))
+            .await
+            .expect("read")
+            .expect("bytes");
+        let text = String::from_utf8_lossy(&got[..n]).into_owned();
+        assert!(text.contains("textDocument/hover"));
+        let mut rest = text;
+        while !rest.contains("$/cancelRequest") {
+            let n = server.read(&mut got).await.expect("bytes");
+            rest.push_str(&String::from_utf8_lossy(&got[..n]));
+        }
+        // stop() ends within its limit though the server never answers.
+        let started = tokio::time::Instant::now();
+        client.stop().await;
+        assert!(started.elapsed() <= STOP_LIMIT + Duration::from_secs(1));
+        assert!(!client.alive());
+    }
+
+    /// Servers that exit as soon as they start.
+    struct CrashingSpawner;
+
+    impl Spawner for CrashingSpawner {
+        fn available(&self, _: &ServerSpec, _: &LoginEnv) -> bool {
+            true
+        }
+        fn spawn(&self, _: &ServerSpec, _: &Path, _: &LoginEnv) -> Result<Spawned, String> {
+            let (client_side, server_side) = tokio::io::duplex(1 << 16);
+            // Answers initialize, then exits.
+            tokio::spawn(async move {
+                let (sr, mut sw) = tokio::io::split(server_side);
+                let mut r = BufReader::new(sr);
+                if let Frame::Message(m) = read_frame(&mut r).await {
+                    let reply = json!({ "jsonrpc": "2.0", "id": m["id"], "result": { "capabilities": {} } });
+                    let _ = sw.write_all(&frame(&reply)).await;
+                }
+            });
+            let (cr, cw) = tokio::io::split(client_side);
+            Ok(Spawned {
+                reader: Box::new(cr),
+                writer: Box::new(cw),
+                stderr: None,
+                child: None,
+                tree: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_crash_loop_reaches_the_retry_limit_through_the_reaper() {
+        let (_t, root) = folder();
+        let lsp = Lsp::new(Box::new(CrashingSpawner));
+        let spec = spec_for("main.py").expect("spec");
+        for _ in 0..MAX_FAILURES {
+            let client = lsp.client(&root, spec, &login()).await.expect("starts");
+            let wait = async {
+                while client.alive() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            };
+            tokio::time::timeout(Duration::from_secs(5), wait)
+                .await
+                .expect("it exits");
+            // The reaper finds it dead, and counts that.
+            assert_eq!(lsp.reap(IDLE).await, 1);
+        }
+        let why = lsp
+            .client(&root, spec, &login())
+            .await
+            .err()
+            .expect("not retried");
+        assert_eq!(why.state, LspState::Failed);
+        assert!(
+            why.message.starts_with("pyright stopped:"),
+            "{}",
+            why.message
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_cd_23_rustups_proxy_without_the_component_isnt_a_server() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("tmp");
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("mkdir");
+        let ra = bin.join("rust-analyzer");
+        let write = |code: i32| {
+            std::fs::write(&ra, format!("#!/bin/sh\nexit {code}\n")).expect("write");
+            std::fs::set_permissions(&ra, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        };
+        let mut login = login();
+        login
+            .vars
+            .insert("PATH".into(), format!("{}:/usr/bin:/bin", bin.display()));
+        let spec = spec_for("a.rs").expect("spec");
+        // rustup's proxy: present, but `--version` fails.
+        write(1);
+        assert!(!LoginSpawner::default().available(spec, &login));
+        write(0);
+        assert!(LoginSpawner::default().available(spec, &login));
+        // Servers without a probe count when they're on the PATH.
+        assert!(!LoginSpawner::default().available(spec_for("a.go").expect("go"), &login));
+    }
+
     /// Serves `tandem_engines::fake_lsp` in-process for every spec.
     struct FakeSpawner {
         installed: bool,
@@ -1195,7 +1842,9 @@ mod tests {
             Ok(Spawned {
                 reader: Box::new(cr),
                 writer: Box::new(cw),
+                stderr: None,
                 child: None,
+                tree: None,
             })
         }
     }

@@ -199,6 +199,8 @@
     "allow-lsp-references",
     "allow-lsp-hover",
     "allow-lsp-trust",
+    "allow-lsp-close",
+    "allow-lsp-files-changed",
     "allow-checkpoints-list",
     "allow-checkpoint-create",
     "allow-checkpoint-diff",
