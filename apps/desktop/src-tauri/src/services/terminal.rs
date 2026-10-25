@@ -122,6 +122,8 @@ pub struct TerminalService {
     /// Agent panes whose first start resumes their saved session (the
     /// session library's Resume, F-TH-17).
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Run with secrets: a pane's first spawn runs this (F-TL-12).
+    runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -145,6 +147,8 @@ pub struct TerminalService {
     /// without it (a notification, F-TL-11).
     sandbox_alert: std::sync::OnceLock<SandboxAlert>,
     sandbox_alerted: std::sync::atomic::AtomicBool,
+    /// Agent panes' scopes, usage and Freeze (F-EX-06).
+    pub resources: Arc<crate::services::resources::ResourcesService>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
@@ -277,6 +281,12 @@ impl TerminalService {
         } else {
             None
         };
+        // Unit tests never make real scopes on the machine running them.
+        let resources = if cfg!(test) {
+            crate::services::resources::ResourcesService::inert(store.clone(), status.bus().clone())
+        } else {
+            crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone())
+        };
         Arc::new(Self {
             pty,
             engines,
@@ -292,6 +302,7 @@ impl TerminalService {
             agent_inputs: Default::default(),
             agent_panes: Default::default(),
             resume_first: Default::default(),
+            runs: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -302,6 +313,7 @@ impl TerminalService {
             sandboxed: Default::default(),
             sandbox_alert: std::sync::OnceLock::new(),
             sandbox_alerted: std::sync::atomic::AtomicBool::new(false),
+            resources,
         })
     }
 
@@ -866,6 +878,61 @@ impl TerminalService {
             .await
     }
 
+    /// The pane's next spawn runs `run`'s command with its variables, masked
+    /// (F-TL-12).
+    pub fn set_pending_run(&self, pane: &PaneId, run: crate::services::secrets::PendingRun) {
+        if let Ok(mut runs) = self.runs.lock() {
+            runs.insert(pane.to_string(), run);
+        }
+    }
+
+    fn take_run(&self, pane: &PaneId) -> Option<crate::services::secrets::PendingRun> {
+        self.runs.lock().ok()?.remove(pane.as_str())
+    }
+
+    /// Ends a pane's processes for good (F-EX-06): a frozen pane is thawed
+    /// first so they see the hangup, its parked run goes, and once they're
+    /// killed its scope is stopped with anything that outlived the kill.
+    pub async fn end_pane(&self, pane: &str) -> Result<tandem_pty::ExitInfo, tandem_pty::PtyError> {
+        self.drop_run(pane);
+        let unit = self.resources.forget(pane).await;
+        let ended = self.pty.kill(pane);
+        if let Some(unit) = unit {
+            self.resources.stop_scope(unit).await;
+        }
+        ended
+    }
+
+    /// A closed pane's parked run goes, values and all.
+    pub fn drop_run(&self, pane: &str) {
+        if let Ok(mut runs) = self.runs.lock() {
+            runs.remove(pane);
+        }
+    }
+
+    /// Why Run with secrets can't start in this app's local panes, if it
+    /// can't: plain terminals open in WSL, or the shell can't hand the
+    /// variables to one command only.
+    pub async fn run_blocked(&self) -> Option<&'static str> {
+        if self.plain_wsl_distro().await.is_some() {
+            return Some(RUN_IN_WSL);
+        }
+        let login = self.login_env().await;
+        let shell = self.plain_shell(&login).await.ok()?;
+        (env::shell_kind(&shell) == env::ShellKind::Cmd).then_some(RUN_NEEDS_SHELL)
+    }
+
+    /// The shell a local plain terminal starts: Settings › Terminal's, or
+    /// the login shell.
+    async fn plain_shell(&self, login: &LoginEnv) -> Result<PathBuf, IpcError> {
+        let configured = settings::get(&self.store, SettingKey::DefaultShell).await?;
+        Ok(configured
+            .as_str()
+            .filter(|s| !s.is_empty() && Path::new(s).is_absolute())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| login.shell.clone()))
+    }
+
     /// The pane's first start resumes its saved session instead of starting
     /// a new one (F-TH-17).
     pub fn resume_on_first_start(&self, pane: &PaneId) {
@@ -1013,6 +1080,10 @@ impl TerminalService {
         if record.kind != "agent" {
             if let Some(distro) = self.plain_wsl_distro().await {
                 if let Some(linux) = tandem_core::wslpath::to_wsl_path(&cwd.to_string_lossy()) {
+                    if self.take_run(pane).is_some() {
+                        // The values would cross into the distro unmasked.
+                        return Err(IpcError::new(ErrorCode::Unavailable, RUN_IN_WSL));
+                    }
                     return self
                         .launch_wsl(pane, &distro, &linux, None, cols, rows, sink, mode)
                         .await;
@@ -1020,12 +1091,7 @@ impl TerminalService {
             }
         }
         let login = self.login_env().await;
-        let configured = settings::get(&self.store, SettingKey::DefaultShell).await?;
-        let shell = configured
-            .as_str()
-            .filter(|s| !s.is_empty() && Path::new(s).is_absolute())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| login.shell.clone());
+        let shell = self.plain_shell(&login).await?;
         let scrollback = settings::get(&self.store, SettingKey::TermScrollback)
             .await?
             .as_u64()
@@ -1036,6 +1102,7 @@ impl TerminalService {
         let integration = self.integration_for(&shell).await;
         // Agent panes run the engine under the login shell and hand back to
         // it when the engine exits (F-CD-03 AC3).
+        let mut run_mask = None;
         let (args, extra_env, engine, launched) = if record.kind == "agent" {
             let engine = record
                 .engine_id
@@ -1114,6 +1181,14 @@ impl TerminalService {
                     .await,
             );
             (args, env, Some(engine), Some(launch))
+        } else if let Some(run) = self.take_run(pane) {
+            // Run with secrets: the variables reach the command only, and
+            // the shell after it starts without them (F-TL-12).
+            let names: Vec<String> = run.env.iter().map(|(k, _)| k.clone()).collect();
+            let args = env::run_wrapper(&shell, &run.command, &names)
+                .ok_or_else(|| IpcError::new(ErrorCode::Invalid, RUN_NEEDS_SHELL))?;
+            run_mask = Some(run.mask);
+            (args, run.env, None, None)
         } else if let Some((kind, dir)) = &integration {
             let launch =
                 integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
@@ -1181,6 +1256,9 @@ impl TerminalService {
             }
             _ => None,
         };
+        if let Some(values) = run_mask {
+            self.pty.mask_next_spawn(pane.as_str(), values);
+        }
         let spawned = self.pty.spawn(spec, sink);
         let info = match spawned {
             Ok(info) => info,
@@ -1208,6 +1286,14 @@ impl TerminalService {
         }
         if let Some(text) = notice {
             let _ = self.pty.notice(pane.as_str(), text);
+        }
+        // F-EX-06: a local agent pane gets its own scope, from its first
+        // process on; what it had before (a restart) is gone.
+        if let Some(old) = self.resources.forget(pane.as_str()).await {
+            self.resources.stop_scope(old).await;
+        }
+        if engine.is_some() {
+            self.resources.place(pane.as_str(), info.pid).await;
         }
         self.send_held_notices(pane.as_str());
         tracing::info!(code = "pty.spawned", pid = info.pid, "terminal started");
@@ -1689,6 +1775,13 @@ impl TerminalService {
     /// The engine's executable from the login PATH only, never the workspace
     /// folder (F-CD-03 AC6).
     pub async fn resolve_engine(&self, engine: &EngineSpec) -> Option<PathBuf> {
+        // An added ACP agent is its saved path or nothing: never a program of
+        // the same name found on a PATH (D-2512).
+        if tandem_engines::acp_agents::is_added_id(&engine.id) {
+            let agent = self.engines.acp_agent(&engine.id)?;
+            let path = PathBuf::from(agent.program);
+            return path.is_file().then_some(path);
+        }
         // Where detection found it (known install folders included).
         if let Some(p) = self.engines.installed(&engine.id).filter(|p| p.is_file()) {
             return Some(p);
@@ -1752,6 +1845,12 @@ impl TerminalService {
             .collect()
     }
 }
+
+/// Run with secrets doesn't start in a pane that opens in WSL.
+pub const RUN_IN_WSL: &str = "Run with secrets doesn't work in terminals that open in WSL yet";
+
+/// Run with secrets needs a shell that can unset the variables after the command.
+pub const RUN_NEEDS_SHELL: &str = "Run with secrets needs a POSIX shell, fish or PowerShell";
 
 /// The `wsl_default_distro` setting as a distro name `wsl.exe -d` can take.
 fn plain_distro(value: &serde_json::Value) -> Option<String> {
@@ -2059,6 +2158,48 @@ mod tests {
         assert_eq!(svc.pty.live_count(), 0);
     }
 
+    /// F-EN-10 review: an added agent whose saved program is gone isn't
+    /// replaced by a program of the same name on the PATH (D-2512).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_en_10_1_an_added_agent_runs_its_saved_path_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = TerminalService::new(PtyManager::new(), store);
+        let (saved, other) = (dir.path().join("saved"), dir.path().join("other"));
+        for d in [&saved, &other] {
+            std::fs::create_dir_all(d).expect("mkdir");
+            let p = d.join("goose");
+            std::fs::write(&p, "#!/bin/sh\n").expect("write");
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert("PATH".to_string(), other.display().to_string());
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let agent = svc
+            .engines
+            .add_acp_agent(
+                tandem_engines::acp_agents::AcpAgent {
+                    id: String::new(),
+                    label: "Goose".into(),
+                    program: saved.join("goose").display().to_string(),
+                    args: vec!["acp".into()],
+                    env: std::collections::BTreeMap::new(),
+                },
+                9,
+            )
+            .expect("add");
+        let spec = svc.engines.get(&agent.id).expect("spec");
+        assert_eq!(svc.resolve_engine(&spec).await, Some(saved.join("goose")));
+        std::fs::remove_file(saved.join("goose")).expect("rm");
+        assert_eq!(svc.resolve_engine(&spec).await, None);
+    }
+
     #[test]
     fn f_rm_02_plain_terminals_use_the_chosen_distro() {
         assert_eq!(
@@ -2068,6 +2209,25 @@ mod tests {
         assert_eq!(plain_distro(&serde_json::json!(null)), None);
         assert_eq!(plain_distro(&serde_json::json!("")), None);
         assert_eq!(plain_distro(&serde_json::json!("--exec")), None);
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_a_closed_panes_parked_run_goes_with_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = TerminalService::new(PtyManager::new(), store);
+        let pane = PaneId::from_db("pn_run".to_string());
+        svc.set_pending_run(
+            &pane,
+            crate::services::secrets::PendingRun {
+                command: "true".into(),
+                env: vec![("A".into(), "value-1".into())],
+                mask: Vec::new(),
+            },
+        );
+        svc.drop_run(pane.as_str());
+        assert!(svc.take_run(&pane).is_none());
     }
 
     #[tokio::test]

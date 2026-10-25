@@ -197,7 +197,7 @@ pub async fn pane_close(state: State<'_, AppState>, pane_id: PaneId) -> Result<(
 pub async fn close_pane(state: &AppState, pane_id: &PaneId) -> Result<(), IpcError> {
     // A queued restore never starts once its pane is gone (F-SH-07).
     state.restore.forget(pane_id);
-    let _ = state.terminals.pty.kill(pane_id.as_str());
+    let _ = state.terminals.end_pane(pane_id.as_str()).await;
     state.terminals.status.unwatch(pane_id.as_str());
     state.terminals.end_tasks_session(pane_id.as_str());
     state.terminals.forget_sandbox(pane_id.as_str());
@@ -340,8 +340,9 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
-pub fn pty_kill(state: State<'_, AppState>, pane_id: PaneId) -> Result<ExitInfo, IpcError> {
-    Ok(state.terminals.pty.kill(pane_id.as_str())?)
+pub async fn pty_kill(state: State<'_, AppState>, pane_id: PaneId) -> Result<ExitInfo, IpcError> {
+    // A frozen pane is thawed first, so its processes see the hangup (F-EX-06).
+    Ok(state.terminals.end_pane(pane_id.as_str()).await?)
 }
 
 /// Theme colours for OSC 10/11/12 answers (F-SH-05 AC2).

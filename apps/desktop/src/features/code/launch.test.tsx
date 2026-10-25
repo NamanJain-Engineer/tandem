@@ -222,6 +222,13 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     expect(screen.getByText("Worktrees aren't available in WSL folders yet")).toBeTruthy();
   });
 
+  it("F-CD-22.1 a multi-repo folder can give each agent its own worktree, on any plan (D-869)", async () => {
+    open({ ...ws("shop", null), repos: ["api", "web"] });
+    await preset("Fleet");
+    const box = screen.getByRole("checkbox", { name: /Give each agent its own worktree/ });
+    expect(box.getAttribute("data-disabled")).toBeNull();
+  });
+
   it("UI-12 outside a git repository the worktree box is off and says why", async () => {
     open(ws("notes", null));
     await preset("Fleet");
@@ -315,6 +322,16 @@ describe("launch sheet (F-CD-14, UI-12)", () => {
     fireEvent.click(go());
     await waitFor(() => expect(named("launch_lineup")).toHaveLength(1));
     expect((named("launch_lineup")[0]?.args as { seats: Seat[] }).seats[0]?.engineId).toBe("claude");
+  });
+
+  it("F-EN-10.1 an added ACP agent isn't a terminal engine in the sheet (D-2513)", async () => {
+    const added = { ...engine("acp-goose-0000002a", "Goose"), chatCapable: true, added: true } as EngineView;
+    open(ws("shop", "main"), { engines_list: () => [added, engine("codex", "Codex")], engines_report: () => null }, false);
+    await waitFor(() => expect(go().textContent).toContain("Launch 1 agent"));
+    expect(screen.queryByText("Goose")).toBeNull();
+    fireEvent.click(go());
+    await waitFor(() => expect(named("launch_lineup")).toHaveLength(1));
+    expect((named("launch_lineup")[0]?.args as { seats: Seat[] }).seats[0]?.engineId).toBe("codex");
   });
 
   it("F-CD-14.4 Save as preset stores the current lineup under a name", async () => {

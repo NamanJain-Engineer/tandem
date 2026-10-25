@@ -11,7 +11,6 @@ const EARLY_ACCESS: AuthState = {
   signedIn: false,
   email: null,
   offline: true,
-  offlineDaysLeft: null,
   hosted: false,
   pending: null,
   error: null,

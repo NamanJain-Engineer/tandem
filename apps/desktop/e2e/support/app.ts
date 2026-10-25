@@ -332,6 +332,11 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
     if (c.connectionId) await invoke("plugin_disconnect", { connectionId: c.connectionId });
   }
   await invoke("test_plugin_allowlist", { pluginIds: null });
+  // Added ACP agents outlive specs too (F-EN-10): a later spec's engine
+  // lists and launch grid must not show one.
+  for (const a of await invoke<Array<{ id: string }>>("acp_agents_list")) {
+    await invoke("acp_agent_remove", { id: a.id });
+  }
   await invoke("auth_sign_out");
   // A first run has no engine accounts yet (the wizard's Accounts step, D-114).
   if (!onboarded) {

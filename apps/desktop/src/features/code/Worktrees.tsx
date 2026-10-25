@@ -22,6 +22,7 @@ import {
   allowChecks,
   baseBranch,
   createPullRequest,
+  createPullRequests,
   createWorktree,
   PREVIEW_POLL_MS,
   loadForge,
@@ -42,6 +43,7 @@ import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
 import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
 import { RadarMark } from "./IntentRadar";
+import { PullRequestsDialog } from "./MultiPullRequests";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
@@ -72,7 +74,41 @@ function parentName(wt: WorkspaceSummary): string {
 }
 
 /** The worktree menu (rail row ⋯ and the pane ⋯ menu, UI_SPEC §4.3). */
+/** What a multi-repo worktree's menu keeps (F-CD-22); the rest need one
+ * repository and are disabled for now. */
+const MULTI_KEEPS = new Set(["wt-diff", "wt-files", "wt-sep", "wt-discard"]);
+
+/** F-CD-22: pushes and opens a linked pull request per repository. */
+async function openPullRequests(wt: WorkspaceSummary, show: Show): Promise<void> {
+  const out = await createPullRequests(wt.id);
+  if (out.ok) useWorktrees.getState().open({ kind: "prs", worktreeId: wt.id });
+  else if (out.error.code !== "cancelled") show({ tone: "error", title: out.error.message });
+}
+
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
+  const entries = singleRepoMenu(wt, base, show);
+  if ((wt.repos?.length ?? 0) === 0) return entries;
+  const kept = entries.map((e): MenuEntry => {
+    if (MULTI_KEEPS.has(e.id) || e.type === "separator" || e.type === "label") return e;
+    return { ...e, disabled: true } as MenuEntry;
+  });
+  const prs: MenuEntry = {
+    id: "wt-prs",
+    label: t("worktree.multi.prs"),
+    disabled: wt.missing || wt.kind !== "local",
+    onSelect: () => void openPullRequests(wt, show),
+  };
+  // Create pull requests sits after Open in Files; the rest wait.
+  const at = kept.findIndex((e) => e.id === "wt-files") + 1;
+  return [
+    ...kept.slice(0, at),
+    prs,
+    { id: "wt-multi-note", type: "label", label: t("worktree.multi.notYet") },
+    ...kept.slice(at),
+  ];
+}
+
+function singleRepoMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
   const open = useWorktrees.getState().open;
   return [
     {
@@ -409,19 +445,42 @@ function DiffDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void
             <Skeleton height={96} />
           </div>
         ) : (
-          <ReviewDiff
-            wt={wt}
-            files={files}
-            onSecondOpinion={() => useWorktrees.getState().open({ kind: "opinion", worktreeId: wt.id })}
-            labels={{
-              empty: t("worktree.diffEmpty"),
-              binary: t("diff.binary"),
-              truncated: t("diff.truncated"),
-              showLarge: (n) => t("diff.showLarge", { n }),
-              collapse: (path) => t("diff.collapse", { path }),
-              expand: (path) => t("diff.expand", { path }),
-            }}
-          />
+          <>
+            {wt.repos && wt.repos.length > 0 ? (
+              // F-CD-22: each repository's share of the changes; its files
+              // follow under its name.
+              <ul
+                data-testid="diff-repos"
+                className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-fg-muted"
+              >
+                {wt.repos.map((repo) => (
+                  <li key={repo} data-testid="diff-repo" data-repo={repo}>
+                    {t("worktree.multi.repoSummary", {
+                      repo,
+                      n: files.filter((f) => f.path.startsWith(`${repo}/`)).length,
+                    })}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <ReviewDiff
+              wt={wt}
+              files={files}
+              onSecondOpinion={
+                wt.repos && wt.repos.length > 0
+                  ? undefined
+                  : () => useWorktrees.getState().open({ kind: "opinion", worktreeId: wt.id })
+              }
+              labels={{
+                empty: t("worktree.diffEmpty"),
+                binary: t("diff.binary"),
+                truncated: t("diff.truncated"),
+                showLarge: (n) => t("diff.showLarge", { n }),
+                collapse: (path) => t("diff.collapse", { path }),
+                expand: (path) => t("diff.expand", { path }),
+              }}
+            />
+          </>
         )}
       </div>
     </Dialog>
@@ -560,6 +619,10 @@ export function WorktreeDialogs() {
     ) : (
       <AllowChecksDialog wt={wt} folder={parentName(wt)} onClose={close} />
     );
+  }
+  if (ask.kind === "prs") {
+    const wt = list.find((w) => w.id === ask.worktreeId);
+    return wt ? <PullRequestsDialog wt={wt} onClose={close} /> : null;
   }
   if (ask.kind === "land") {
     const ws = list.find((w) => w.id === ask.workspaceId);

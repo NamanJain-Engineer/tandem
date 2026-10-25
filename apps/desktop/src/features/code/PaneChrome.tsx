@@ -28,6 +28,8 @@ export type PaneChromeProps = {
   location?: ReactNode;
   /** Renames the pane; resolves to an error message, or null when done. */
   onRename?: (name: string) => Promise<string | null>;
+  /** Buttons before maximize (Run with secrets, F-TL-12). */
+  actions?: ReactNode;
   /** Asked from the menu: start editing the name. */
   renaming?: boolean;
   onRenamingChange?: (renaming: boolean) => void;
@@ -137,6 +139,7 @@ export function PaneChrome({
   onRename,
   renaming = false,
   onRenamingChange,
+  actions,
 }: PaneChromeProps) {
   const keys = useShortcutKeys();
   return (
@@ -194,6 +197,7 @@ export function PaneChrome({
         onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
+        {actions}
         {!solo && (
           <IconButton
             size="sm"

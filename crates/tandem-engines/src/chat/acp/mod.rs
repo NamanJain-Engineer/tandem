@@ -510,9 +510,11 @@ impl AcpParser {
 /// The option that carries a decision, if the agent offered one.
 pub fn choose(options: &[PermissionOption], decision: &ApprovalDecision) -> Option<String> {
     let wanted: &[&str] = match decision {
+        // Once is never sent as always: with no one-time allow on offer, it's
+        // cancelled (D-2515).
         ApprovalDecision::Allow {
             scope: ApprovalScope::Once,
-        } => &["allow_once", "allow_always"],
+        } => &["allow_once"],
         ApprovalDecision::Allow { .. } => &["allow_always", "allow_once"],
         ApprovalDecision::Deny { .. } => &["reject_once", "reject_always"],
     };
@@ -537,6 +539,19 @@ pub fn offered(result: &Value) -> Option<Vec<ModelOffer>> {
             })
             .collect(),
     )
+}
+
+/// What a thread says when the agent wants a sign-in: the methods it named,
+/// as it named them (D-2514).
+pub fn sign_in_needed(label: &str, methods: &[String]) -> String {
+    if methods.is_empty() {
+        format!("{label} needs you to sign in.")
+    } else {
+        format!(
+            "{label} needs you to sign in. It offers: {}.",
+            methods.join(", ")
+        )
+    }
 }
 
 /// Whether an error from the agent is about signing in.
@@ -656,6 +671,8 @@ pub struct AcpAdapter {
     label: String,
     /// `acpCmd` after the program (the resolved executable runs them).
     args: Vec<String>,
+    /// Tried when `args` don't start a session (D-2516).
+    fallback: Option<Vec<String>>,
     limit_patterns: Vec<String>,
 }
 
@@ -670,11 +687,23 @@ impl AcpAdapter {
             engine_id: engine_id.into(),
             label: label.into(),
             args: acp_cmd.iter().skip(1).cloned().collect(),
+            fallback: None,
             limit_patterns,
         }
     }
 
+    /// The engine's `acpFallbackCmd`, run when `acpCmd` starts no session
+    /// (an older release that knows only the old flag).
+    pub fn with_fallback(mut self, cmd: Option<&Vec<String>>) -> Self {
+        self.fallback = cmd.map(|c| c.iter().skip(1).cloned().collect());
+        self
+    }
+
     pub(crate) fn launch(&self, req: &ChatStart) -> ProcessSpec {
+        self.launch_with(req, &self.args)
+    }
+
+    fn launch_with(&self, req: &ChatStart, args: &[String]) -> ProcessSpec {
         let env: Vec<(String, String)> = req
             .env
             .iter()
@@ -683,7 +712,7 @@ impl AcpAdapter {
             .collect();
         let spec = ProcessSpec::new(
             req.program.clone(),
-            self.args.iter().map(OsString::from).collect(),
+            args.iter().map(OsString::from).collect(),
             env,
             req.cwd.clone(),
         );
@@ -735,7 +764,20 @@ impl ChatAdapter for AcpAdapter {
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
         let spec = self.launch(&req);
-        self.start_with(spec, req, events).await
+        let first = self.start_with(spec, req.clone(), events.clone()).await;
+        match (first, &self.fallback) {
+            // A sign-in isn't a flag problem: the older flag wouldn't help.
+            (Err(e), Some(fallback)) if !matches!(e, AdapterError::Auth(_)) => {
+                tracing::info!(
+                    code = "acp.fallback",
+                    engine = %self.engine_id,
+                    "the ACP command started no session; trying the older flag"
+                );
+                let spec = self.launch_with(&req, fallback);
+                self.start_with(spec, req, events).await
+            }
+            (first, _) => first,
+        }
     }
 }
 
@@ -897,7 +939,10 @@ impl AcpSession {
                     .await
                     .map_err(|e| {
                         if is_auth(e.code, &e.message) {
-                            AdapterError::Auth(format!("{} needs you to sign in.", self.label))
+                            AdapterError::Auth(sign_in_needed(
+                                &self.label,
+                                &probe::auth_method_names(&init),
+                            ))
                         } else {
                             AdapterError::Protocol(e.message)
                         }
@@ -1288,6 +1333,8 @@ impl ChatSession for AcpSession {
         Ok(())
     }
 }
+
+pub mod probe;
 
 #[cfg(test)]
 mod tests;

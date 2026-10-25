@@ -1250,6 +1250,8 @@ impl QueueHost for AppHost {
     async fn run_check(&self, command: &str, cwd: &Path) -> (Option<i32>, String) {
         use crate::services::bestof;
         let env = self.state().terminals.login_env().await.vars.clone();
+        // F-EX-06: with "one check at a time" on, it waits for its turn.
+        let _turn = crate::services::check_queue::turn().await;
         let (exit, out) = bestof::run_check(command, cwd, &env, CHECK_LIMIT, None).await;
         let out = tandem_core::redact::Redactor::global()
             .redact(&bestof::tail(&out, bestof::TAIL_LINES))
