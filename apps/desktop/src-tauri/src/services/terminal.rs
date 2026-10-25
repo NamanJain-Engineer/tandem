@@ -118,6 +118,12 @@ pub struct TerminalService {
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Run with secrets: a pane's first spawn runs this (F-TL-12).
     runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
+    /// `vibezeo run` commands each agent pane may run without asking ("Allow
+    /// for this agent", F-TL-12): exact command lines, for the pane's life.
+    agent_runs:
+        std::sync::Mutex<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+    /// `$DATA/run/bin`, holding `vibezeo`, once it's installed.
+    run_bin: std::sync::OnceLock<PathBuf>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -294,6 +300,8 @@ impl TerminalService {
             agent_panes: Default::default(),
             resume_first: Default::default(),
             runs: Default::default(),
+            agent_runs: Default::default(),
+            run_bin: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -828,11 +836,38 @@ impl TerminalService {
         ended
     }
 
-    /// A closed pane's parked run goes, values and all.
+    /// A closed pane's parked run goes, values and all, and so do the
+    /// commands its agent was allowed to run.
     pub fn drop_run(&self, pane: &str) {
         if let Ok(mut runs) = self.runs.lock() {
             runs.remove(pane);
         }
+        if let Ok(mut allowed) = self.agent_runs.lock() {
+            allowed.remove(pane);
+        }
+    }
+
+    /// "Allow for this agent": `command` runs from `pane` without asking
+    /// until the pane closes.
+    pub fn allow_agent_run(&self, pane: &str, command: &str) {
+        if let Ok(mut allowed) = self.agent_runs.lock() {
+            allowed
+                .entry(pane.to_string())
+                .or_default()
+                .insert(command.to_string());
+        }
+    }
+
+    pub fn agent_run_allowed(&self, pane: &str, command: &str) -> bool {
+        self.agent_runs
+            .lock()
+            .map(|a| a.get(pane).is_some_and(|c| c.contains(command)))
+            .unwrap_or(false)
+    }
+
+    /// Agent panes started from now on find `vibezeo` in `dir` first.
+    pub fn set_run_bin(&self, dir: PathBuf) {
+        let _ = self.run_bin.set(dir);
     }
 
     /// Why Run with secrets can't start in this app's local panes, if it
@@ -1088,10 +1123,11 @@ impl TerminalService {
             let argv = self
                 .sandbox_argv(pane, &root, launch.home.as_deref(), launch.spec.argv())
                 .await;
-            let args = env::agent_wrapper(
+            let args = env::agent_wrapper_with(
                 &shell,
                 &argv,
                 integration.as_ref().map(|(_, dir)| dir.as_path()),
+                self.run_bin.get().map(PathBuf::as_path),
             )
             .map_err(|_| {
                 self.status.unwatch(pane.as_str());

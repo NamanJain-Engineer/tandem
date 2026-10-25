@@ -312,6 +312,19 @@ pub fn agent_wrapper(
     engine: &[String],
     integration: Option<&Path>,
 ) -> Result<Vec<String>, tandem_core::shellquote::UnsafeFilename> {
+    agent_wrapper_with(shell, engine, integration, None)
+}
+
+/// [`agent_wrapper`], with `run_bin` (`$DATA/run/bin`, F-TL-12's `vibezeo`)
+/// first on the engine's PATH. It's set on the engine's own command, after
+/// the login profiles ran, so a profile that sets PATH outright can't drop
+/// it, and the shell that takes the pane back doesn't keep it.
+pub fn agent_wrapper_with(
+    shell: &Path,
+    engine: &[String],
+    integration: Option<&Path>,
+    run_bin: Option<&Path>,
+) -> Result<Vec<String>, tandem_core::shellquote::UnsafeFilename> {
     use crate::integration::{handback_tail, IntegratedShell};
     use tandem_core::shellquote::{quote_path, quote_paths, ShellDialect};
     let shell_str = shell.to_string_lossy();
@@ -321,7 +334,11 @@ pub fn agent_wrapper(
     };
     Ok(match shell_kind(shell) {
         ShellKind::Posix => {
-            let cmd = quote_paths(engine, ShellDialect::Posix)?;
+            let mut cmd = quote_paths(engine, ShellDialect::Posix)?;
+            if let Some(bin) = run_bin {
+                let bin = quote_path(&bin.to_string_lossy(), ShellDialect::Posix)?;
+                cmd = format!("PATH={bin}:\"$PATH\" {cmd}");
+            }
             let again = quote_path(&shell_str, ShellDialect::Posix)?;
             let tail = tail.unwrap_or_else(|| format!("unset t; exec {again} -l"));
             vec![
@@ -332,7 +349,11 @@ pub fn agent_wrapper(
             ]
         }
         ShellKind::Fish => {
-            let cmd = quote_paths(engine, ShellDialect::Posix)?;
+            let mut cmd = quote_paths(engine, ShellDialect::Posix)?;
+            if let Some(bin) = run_bin {
+                let bin = quote_path(&bin.to_string_lossy(), ShellDialect::Posix)?;
+                cmd = format!("env PATH={bin}:(string join : $PATH) {cmd}");
+            }
             let again = quote_path(&shell_str, ShellDialect::Posix)?;
             let tail = tail.unwrap_or_else(|| format!("exec {again} -l"));
             vec![
@@ -347,12 +368,24 @@ pub fn agent_wrapper(
         ShellKind::PowerShell => {
             let cmd = quote_paths(engine, ShellDialect::PowerShell)?;
             let tail = tail.map(|t| format!("{t}; ")).unwrap_or_default();
+            // PowerShell can't scope a variable to one command: PATH is put
+            // back before the shell takes the pane.
+            let (path_on, path_off) = match run_bin {
+                Some(bin) => (
+                    format!(
+                        "$p = $env:PATH; $env:PATH = {} + [IO.Path]::PathSeparator + $env:PATH; ",
+                        quote_path(&bin.to_string_lossy(), ShellDialect::PowerShell)?
+                    ),
+                    "$env:PATH = $p; Remove-Variable p; ".to_string(),
+                ),
+                None => (String::new(), String::new()),
+            };
             vec![
                 "-NoLogo".into(),
                 "-NoExit".into(),
                 "-Command".into(),
                 format!(
-                    "$t = $env:{TOKEN_VAR}; Remove-Item Env:{TOKEN_VAR}; & {cmd}; Write-Host -NoNewline \"$([char]27)]7770;handback;$t;$LASTEXITCODE$([char]7)\"; {tail}Remove-Variable t"
+                    "$t = $env:{TOKEN_VAR}; Remove-Item Env:{TOKEN_VAR}; {path_on}& {cmd}; {path_off}Write-Host -NoNewline \"$([char]27)]7770;handback;$t;$LASTEXITCODE$([char]7)\"; {tail}Remove-Variable t"
                 ),
             ]
         }
@@ -644,6 +677,85 @@ mod tests {
                 && pwsh[3].contains("Remove-Item Env:TANDEM_SHELL_TOKEN; & 'claude';")
         );
         assert!(agent_wrapper(Path::new("/bin/sh"), &["claude\nrm".into()], None).is_err());
+    }
+
+    #[test]
+    fn f_tl_12_7_the_engine_finds_vibezeo_first_on_its_path() {
+        let bin = Path::new("/d/run/bin");
+        let sh = agent_wrapper_with(Path::new("/bin/zsh"), &["claude".into()], None, Some(bin))
+            .expect("wrap");
+        assert!(
+            sh[1].contains("; PATH='/d/run/bin':\"$PATH\" 'claude'; c=$?;"),
+            "{}",
+            sh[1]
+        );
+        let fish = agent_wrapper_with(
+            Path::new("/usr/bin/fish"),
+            &["codex".into()],
+            None,
+            Some(bin),
+        )
+        .expect("wrap");
+        assert!(
+            fish[3].contains("; env PATH='/d/run/bin':(string join : $PATH) 'codex';"),
+            "{}",
+            fish[3]
+        );
+        let pwsh = agent_wrapper_with(
+            Path::new("C:/pwsh.exe"),
+            &["claude".into()],
+            None,
+            Some(bin),
+        )
+        .expect("wrap");
+        assert!(
+            pwsh[3].contains("$env:PATH = '/d/run/bin' + [IO.Path]::PathSeparator + $env:PATH; & 'claude'; $env:PATH = $p;"),
+            "{}",
+            pwsh[3]
+        );
+        assert_eq!(
+            agent_wrapper_with(Path::new("/bin/sh"), &["claude".into()], None, None),
+            agent_wrapper(Path::new("/bin/sh"), &["claude".into()], None)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tl_12_7_vibezeo_is_on_the_engines_path_even_when_a_profile_resets_path() {
+        let dir = tempfile::tempdir().expect("dir");
+        let bin = dir.path().join("run/bin");
+        std::fs::create_dir_all(&bin).expect("mkdir");
+        let probe = bin.join("vibezeo");
+        std::fs::write(&probe, "#!/bin/sh\necho probe-ok\n").expect("write");
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod");
+        }
+        // A login profile that sets PATH outright, as Debian's /etc/profile does.
+        std::fs::write(
+            dir.path().join(".profile"),
+            "PATH=/usr/bin:/bin; export PATH\n",
+        )
+        .expect("profile");
+        let args = agent_wrapper_with(
+            Path::new("/bin/sh"),
+            &["sh".into(), "-c".into(), "vibezeo; exit 3".into()],
+            None,
+            Some(&bin),
+        )
+        .expect("wrap");
+        let out = Command::new("/bin/sh")
+            .args(&args[..1])
+            .arg(args[1].replace("; exec '/bin/sh' -l", ""))
+            .env("HOME", dir.path())
+            .env("ENV", dir.path().join(".profile"))
+            .stdin(Stdio::null())
+            .output()
+            .expect("run");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("probe-ok"), "{text}");
+        assert!(text.contains("handback;"), "{text}");
     }
 
     #[cfg(unix)]

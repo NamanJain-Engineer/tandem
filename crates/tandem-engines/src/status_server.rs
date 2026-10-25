@@ -404,7 +404,7 @@ mod tests {
             Box::pin(async move {
                 RunReply {
                     exit_code: Some(7),
-                    output: format!("ran {} in {}", req.command, req.cwd),
+                    output: format!("ran {} in {}", req.argv.join(" "), req.cwd),
                     ..RunReply::default()
                 }
             })
@@ -415,7 +415,7 @@ mod tests {
         RunRequest {
             pane_id: pane.into(),
             cwd: "/w".into(),
-            command: "pnpm deploy".into(),
+            argv: vec!["pnpm".into(), "deploy".into()],
             ts: now_ms(),
             nonce: nonce.into(),
         }

@@ -1213,6 +1213,25 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let state = engines_state.state::<AppState>();
                 state.terminals.status.start(&state.data.run()).await;
+                // `vibezeo run` (F-TL-12): agents find `vibezeo` first on
+                // their PATH, and its requests reach the app's handler.
+                if let Some(server) = state.terminals.status.server() {
+                    if let Some(hook) = services::engines::hook_bin() {
+                        match services::agent_run::install(&state.data.run(), &hook) {
+                            Ok(bin) => state.terminals.set_run_bin(bin),
+                            Err(err) => tracing::warn!(code = "secrets.vibezeo_install_failed", error = %err, "agents won't find vibezeo"),
+                        }
+                    }
+                    server.set_run_handler(std::sync::Arc::new(services::agent_run::Handler(
+                        services::agent_run::AgentRuns::new(
+                            state.store.clone(),
+                            state.keychain.clone(),
+                            state.approvals.broker.clone(),
+                            state.terminals.clone(),
+                            state.data.root().to_path_buf(),
+                        ),
+                    )));
+                }
                 state.terminals.engines.load_cached().await;
                 let config = state.config.refresh().await;
                 state.terminals.engines.apply_config(&config);

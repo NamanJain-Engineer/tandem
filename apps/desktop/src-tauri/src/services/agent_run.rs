@@ -1,0 +1,700 @@
+//! `vibezeo run` for agents (F-TL-12 slice 2, ARCHITECTURE §6.3c): an agent
+//! pane asks the app, over its signed status channel, to run a command with
+//! the folder's secrets. The app checks where it comes from, asks (or finds
+//! a repository rule, or this agent's "Allow for this agent"), runs it with
+//! the login environment and the resolved `.env`, and replies with the
+//! output, every secret value masked, and the exit code. The values never
+//! enter the agent's process, and nothing about the run is stored.
+
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tandem_core::approvals::{
+    ApprovalBroker, ApprovalKind, ApprovalOutcome, ApprovalRequest, ApprovalScope,
+};
+use tandem_core::ids::PaneId;
+use tandem_core::keychain::Keychain;
+use tandem_core::run_request::{self, RunReply, RunRequest, OUTPUT_CAP};
+use tandem_core::run_rules::RunRules;
+use tandem_core::secrets as refs;
+use tandem_core::shellquote::ShellDialect;
+use tandem_core::source::SourceRef;
+use tandem_engines::status_server::RunHandler;
+use tandem_pty::mask::LiteralMasker;
+use tandem_store::repo::{panes, secrets as names, workspaces};
+use tandem_store::Store;
+use tokio::io::AsyncReadExt;
+
+use crate::services::secrets;
+use crate::services::terminal::TerminalService;
+
+/// Outside an agent pane (a plain terminal, a chat thread, a routine, the
+/// Night Shift): nothing to ask on, so nothing runs.
+pub const OUTSIDE: &str = "vibezeo run works in agent panes in Vibezeo";
+pub const REMOTE: &str = "vibezeo run doesn't work in SSH or WSL panes yet";
+pub const FLATPAK: &str = "vibezeo run isn't available in the Flatpak build yet";
+pub const DECLINED: &str = "Not allowed: you declined";
+pub const EXPIRED: &str = "Not allowed: nobody answered in 30 minutes";
+pub const CANCELLED: &str = "Not allowed: the pane closed before an answer";
+
+/// A run is stopped after this long.
+pub const RUN_LIMIT: Duration = Duration::from_secs(10 * 60);
+
+/// The program `vibezeo run` is, in `$DATA/run/bin`.
+pub fn program_name() -> &'static str {
+    if cfg!(windows) {
+        "vibezeo.exe"
+    } else {
+        "vibezeo"
+    }
+}
+
+/// Makes `$DATA/run/bin` hold only `vibezeo`: a link to the hook helper
+/// (a copy on Windows, where links need a privilege). Returns the folder.
+pub fn install(run_dir: &Path, hook: &Path) -> std::io::Result<PathBuf> {
+    let bin = run_dir.join("bin");
+    std::fs::create_dir_all(&bin)?;
+    let name = program_name();
+    for entry in std::fs::read_dir(&bin)?.flatten() {
+        if entry.file_name() != name {
+            let path = entry.path();
+            let _ = if path.is_dir() && !path.is_symlink() {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+        }
+    }
+    let target = bin.join(name);
+    #[cfg(unix)]
+    {
+        if std::fs::read_link(&target).ok().as_deref() != Some(hook) {
+            let _ = std::fs::remove_file(&target);
+            std::os::unix::fs::symlink(hook, &target)?;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::copy(hook, &target)?;
+    }
+    Ok(bin)
+}
+
+pub struct AgentRuns {
+    store: Store,
+    keychain: Arc<dyn Keychain>,
+    broker: Arc<ApprovalBroker>,
+    terminals: Arc<TerminalService>,
+    /// Where `run-rules.json` lives.
+    data: PathBuf,
+}
+
+/// The handler the status server calls.
+pub struct Handler(pub Arc<AgentRuns>);
+
+impl RunHandler for Handler {
+    fn run(&self, req: RunRequest) -> Pin<Box<dyn Future<Output = RunReply> + Send>> {
+        let me = self.0.clone();
+        Box::pin(async move { me.handle(req).await })
+    }
+}
+
+/// What a run will use, once it's checked.
+struct Checked {
+    pane: PaneId,
+    cwd: PathBuf,
+    command: String,
+    vars: Vec<refs::EnvVar>,
+    secrets: Vec<String>,
+    repo: String,
+}
+
+impl AgentRuns {
+    pub fn new(
+        store: Store,
+        keychain: Arc<dyn Keychain>,
+        broker: Arc<ApprovalBroker>,
+        terminals: Arc<TerminalService>,
+        data: PathBuf,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            store,
+            keychain,
+            broker,
+            terminals,
+            data,
+        })
+    }
+
+    pub async fn handle(&self, req: RunRequest) -> RunReply {
+        let checked = match self.check(&req).await {
+            Ok(c) => c,
+            Err(why) => return RunReply::refused(why),
+        };
+        if let Err(why) = self.decide(&checked).await {
+            return RunReply::refused(why);
+        }
+        let resolved = match secrets::resolve(self.keychain.as_ref(), &checked.vars) {
+            Ok(r) => r,
+            Err(e) => return RunReply::refused(e.message),
+        };
+        let login = self.terminals.login_env().await;
+        let mut env: Vec<(String, String)> = login
+            .vars
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        env.extend(resolved.env);
+        tracing::info!(
+            code = "secrets.agent_run",
+            "an agent's run with secrets started"
+        );
+        run(
+            &checked.command,
+            &checked.cwd,
+            &env,
+            &resolved.secrets,
+            RUN_LIMIT,
+        )
+        .await
+    }
+
+    /// Where it comes from, what it runs and what it uses.
+    async fn check(&self, req: &RunRequest) -> Result<Checked, String> {
+        if tandem_core::sandbox::in_flatpak() {
+            return Err(FLATPAK.into());
+        }
+        let pane = PaneId::from_db(req.pane_id.clone());
+        let record = panes::get_open(&self.store, &pane)
+            .await
+            .map_err(|_| OUTSIDE.to_string())?;
+        if record.kind != "agent" {
+            return Err(OUTSIDE.into());
+        }
+        let ws = workspaces::get(&self.store, &record.workspace_id)
+            .await
+            .map_err(|_| OUTSIDE.to_string())?;
+        if ws.kind != "local" {
+            return Err(REMOTE.into());
+        }
+        // The folder the pane is in: its worktree, for a worktree's pane.
+        let root = std::fs::canonicalize(&ws.root)
+            .map_err(|_| "This pane's folder is missing".to_string())?;
+        let cwd = std::fs::canonicalize(&req.cwd)
+            .ok()
+            .filter(|c| c.starts_with(&root))
+            .ok_or_else(|| format!("vibezeo run works inside this pane's folder, {}", ws.root))?;
+        let dialect = if cfg!(windows) {
+            ShellDialect::Cmd
+        } else {
+            ShellDialect::Posix
+        };
+        let command = run_request::command_line(&req.argv, dialect).map_err(str::to_string)?;
+        let vars = secrets::read_env(&root)
+            .map_err(|e| e.message)?
+            .map(|(_, v)| v)
+            .unwrap_or_default();
+        let mut used = Vec::new();
+        for p in refs::plan(&vars) {
+            if p.malformed {
+                return Err(format!(
+                    "{} isn't a valid vibezeo-secret:// reference",
+                    p.name
+                ));
+            }
+            if let Some(name) = p.secret {
+                if !names::exists(&self.store, &name)
+                    .await
+                    .map_err(|e| e.to_string())?
+                {
+                    return Err(format!("No secret named {name}"));
+                }
+                if !used.contains(&name) {
+                    used.push(name);
+                }
+            }
+        }
+        // Rules belong to the repository: a worktree uses its main checkout's.
+        let repo = match &ws.parent_id {
+            Some(parent) => workspaces::get(&self.store, parent)
+                .await
+                .map(|p| p.root)
+                .unwrap_or_else(|_| ws.root.clone()),
+            None => ws.root.clone(),
+        };
+        Ok(Checked {
+            pane,
+            cwd,
+            command,
+            vars,
+            secrets: used,
+            repo,
+        })
+    }
+
+    /// A repository rule, this agent's earlier "Allow for this agent", or
+    /// the person's answer.
+    async fn decide(&self, c: &Checked) -> Result<(), String> {
+        if RunRules::load(&self.data).allows(&c.repo, &c.command) {
+            return Ok(());
+        }
+        if self
+            .terminals
+            .agent_run_allowed(c.pane.as_str(), &c.command)
+        {
+            return Ok(());
+        }
+        let with = if c.secrets.is_empty() {
+            "with the folder's .env".to_string()
+        } else {
+            format!("with {}", c.secrets.join(", "))
+        };
+        let (_, ticket) = self.broker.request(ApprovalRequest {
+            source: SourceRef::Pane {
+                pane_id: c.pane.as_str().to_string(),
+            },
+            kind: ApprovalKind::Command,
+            summary: format!("run `{}` {with}", c.command),
+            detail: format!(
+                "vibezeo run in {}: `{}` {with}. It runs outside the agent, and its output comes back with the values hidden.",
+                c.cwd.display(),
+                c.command
+            ),
+            options: vec![ApprovalScope::Once, ApprovalScope::Conversation],
+        });
+        match ticket.outcome().await {
+            ApprovalOutcome::Allowed { scope, .. } => {
+                if scope == ApprovalScope::Conversation {
+                    self.terminals.allow_agent_run(c.pane.as_str(), &c.command);
+                }
+                Ok(())
+            }
+            ApprovalOutcome::Denied { .. } => Err(DECLINED.into()),
+            ApprovalOutcome::Expired => Err(EXPIRED.into()),
+            ApprovalOutcome::Cancelled => Err(CANCELLED.into()),
+        }
+    }
+}
+
+/// The last [`OUTPUT_CAP`] bytes of what a run prints.
+#[derive(Default)]
+struct Tail {
+    bytes: Vec<u8>,
+    cut: bool,
+}
+
+impl Tail {
+    fn push(&mut self, chunk: &[u8]) {
+        self.bytes.extend_from_slice(chunk);
+        if self.bytes.len() > OUTPUT_CAP {
+            let drop = self.bytes.len() - OUTPUT_CAP;
+            self.bytes.drain(..drop);
+            self.cut = true;
+        }
+    }
+}
+
+/// Runs `command` under `sh -c` (`cmd /C` on Windows) in `cwd` with exactly
+/// `env`, stdout and stderr together through a masker for `values`, for up
+/// to `limit`.
+pub async fn run(
+    command: &str,
+    cwd: &Path,
+    env: &[(String, String)],
+    values: &[String],
+    limit: Duration,
+) -> RunReply {
+    let mut cmd = if cfg!(windows) {
+        let mut c = tokio::process::Command::new("cmd");
+        c.arg("/C").arg(command);
+        c
+    } else {
+        let mut c = tokio::process::Command::new("/bin/sh");
+        c.arg("-c").arg(command);
+        c
+    };
+    cmd.current_dir(cwd)
+        .env_clear()
+        .envs(env.iter().map(|(k, v)| (k, v)))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return RunReply::refused(format!("Couldn't start the command: {e}")),
+    };
+    let pid = child.id();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+    for pipe in [
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn tokio::io::AsyncRead + Send + Unpin>),
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn tokio::io::AsyncRead + Send + Unpin>),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut pipe = pipe;
+            let mut buf = vec![0u8; 8192];
+            while let Ok(n) = pipe.read(&mut buf).await {
+                if n == 0 || tx.send(buf[..n].to_vec()).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    drop(tx);
+    let mut masker = LiteralMasker::new(values.iter().map(String::as_bytes));
+    let mut tail = Tail::default();
+    let collected = async {
+        while let Some(chunk) = rx.recv().await {
+            match masker.as_mut() {
+                Some(m) => tail.push(&m.push(&chunk)),
+                None => tail.push(&chunk),
+            }
+        }
+        child.wait().await
+    };
+    let (status, error) = match tokio::time::timeout(limit, collected).await {
+        Ok(Ok(status)) => (Some(status), None),
+        Ok(Err(e)) => (None, Some(format!("The command failed: {e}"))),
+        Err(_) => {
+            kill_group(pid);
+            (
+                None,
+                Some(format!("Stopped after {} minutes", limit.as_secs() / 60)),
+            )
+        }
+    };
+    if let Some(m) = masker.as_mut() {
+        tail.push(&m.flush());
+    }
+    RunReply {
+        exit_code: status.and_then(|s| s.code()),
+        output: String::from_utf8_lossy(&tail.bytes).into_owned(),
+        cut: tail.cut,
+        error,
+    }
+}
+
+fn kill_group(pid: Option<u32>) {
+    if let Some(pid) = pid {
+        crate::services::bestof::kill_group(pid);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use tandem_core::approvals::{ApprovalDecision, ApprovalVia};
+    use tandem_core::keychain::MemoryKeychain;
+    use tandem_store::repo::tabs;
+
+    const VALUE: &str = "sk_test_4242xyz";
+
+    struct Fx {
+        _dir: tempfile::TempDir,
+        root: PathBuf,
+        store: Store,
+        broker: Arc<ApprovalBroker>,
+        terminals: Arc<TerminalService>,
+        runs: Arc<AgentRuns>,
+        agent: PaneId,
+        plain: PaneId,
+    }
+
+    async fn fixture(env: &str) -> Fx {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("shop");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        std::fs::write(root.join(".env"), env).expect(".env");
+        let ws = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(5))
+            .await
+            .expect("ws")
+            .workspace;
+        let tab = tabs::list(&store, &ws.id).await.expect("tabs").remove(0);
+        let agent = panes::create_with(&store, &tab.id, "agent", None, Some("claude".into()))
+            .await
+            .expect("agent")
+            .id;
+        let plain = panes::create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("plain")
+            .id;
+        let kc: Arc<dyn Keychain> = Arc::new(MemoryKeychain::new());
+        secrets::set(&store, kc.as_ref(), "stripe-test", VALUE, 1)
+            .await
+            .expect("secret");
+        let broker = ApprovalBroker::new(Arc::new(tandem_core::clock::SystemClock));
+        let terminals = TerminalService::new(tandem_pty::PtyManager::new(), store.clone());
+        let runs = AgentRuns::new(
+            store.clone(),
+            kc,
+            broker.clone(),
+            terminals.clone(),
+            data.root().to_path_buf(),
+        );
+        Fx {
+            root: std::fs::canonicalize(&root).expect("canon"),
+            _dir: dir,
+            store,
+            broker,
+            terminals,
+            runs,
+            agent,
+            plain,
+        }
+    }
+
+    fn req(pane: &PaneId, cwd: &Path, argv: &[&str]) -> RunRequest {
+        RunRequest {
+            pane_id: pane.as_str().to_string(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            argv: argv.iter().map(|a| a.to_string()).collect(),
+            ts: 0,
+            nonce: "0123456789abcdef".into(),
+        }
+    }
+
+    /// Starts a run and waits for its approval to appear.
+    async fn asked(
+        fx: &Fx,
+        r: RunRequest,
+    ) -> (
+        tandem_core::approvals::ApprovalView,
+        tokio::task::JoinHandle<RunReply>,
+    ) {
+        let runs = fx.runs.clone();
+        let task = tokio::spawn(async move { runs.handle(r).await });
+        for _ in 0..200 {
+            if let Some(v) = fx.broker.pending().into_iter().next() {
+                return (v, task);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("no approval: {:?}", task.await.ok());
+    }
+
+    fn allow(fx: &Fx, v: &tandem_core::approvals::ApprovalView, scope: ApprovalScope) {
+        fx.broker
+            .resolve(
+                &v.id,
+                ApprovalDecision::Allow { scope },
+                ApprovalVia::Inline,
+            )
+            .expect("resolve");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_allow_once_runs_it_with_the_value_masked_and_asks_by_name() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\nPORT=3000\n").await;
+        let (view, task) = asked(
+            &fx,
+            req(&fx.agent, &fx.root.join("sub"), &["printenv", "API_KEY"]),
+        )
+        .await;
+        assert_eq!(view.summary, "run `printenv API_KEY` with stripe-test");
+        assert_eq!(
+            view.source,
+            SourceRef::Pane {
+                pane_id: fx.agent.as_str().to_string()
+            }
+        );
+        assert_eq!(
+            view.options,
+            vec![ApprovalScope::Once, ApprovalScope::Conversation]
+        );
+        assert!(!view.detail.contains(VALUE) && !view.summary.contains(VALUE));
+        allow(&fx, &view, ApprovalScope::Once);
+        let reply = task.await.expect("task");
+        assert_eq!(reply.error, None);
+        assert_eq!(reply.exit_code, Some(0));
+        assert_eq!(reply.output, "[REDACTED]\n");
+        // Once is once: the same command asks again.
+        let (again, task) = asked(&fx, req(&fx.agent, &fx.root, &["printenv", "PORT"])).await;
+        allow(&fx, &again, ApprovalScope::Once);
+        assert_eq!(task.await.expect("task").output, "3000\n");
+        // The pane's approvals aren't stored.
+        let stored: i64 = fx
+            .store
+            .read(|c| Ok(c.query_row("SELECT COUNT(*) FROM approvals", [], |r| r.get(0))?))
+            .await
+            .expect("count");
+        assert_eq!(stored, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_the_exit_code_comes_back_and_long_output_keeps_its_end() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let command = "head -c 70000 /dev/zero | tr '\\0' a; printf 'END %s' \"$API_KEY\"; exit 3";
+        fx.terminals.allow_agent_run(fx.agent.as_str(), command);
+        let reply = fx.runs.handle(req(&fx.agent, &fx.root, &[command])).await;
+        assert_eq!(reply.exit_code, Some(3));
+        assert!(reply.cut);
+        assert_eq!(reply.output.len(), OUTPUT_CAP);
+        assert!(
+            reply.output.ends_with("aEND [REDACTED]"),
+            "{}",
+            &reply.output[OUTPUT_CAP - 40..]
+        );
+        assert!(!reply.output.contains(VALUE));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_9_deny_runs_nothing_and_allow_for_this_agent_covers_that_command_only() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["touch", "ran"])).await;
+        fx.broker
+            .resolve(
+                &view.id,
+                ApprovalDecision::Deny { reason: None },
+                ApprovalVia::Inline,
+            )
+            .expect("deny");
+        let reply = task.await.expect("task");
+        assert_eq!(reply.error.as_deref(), Some(DECLINED));
+        assert_eq!(reply.exit_code, None);
+        assert!(!fx.root.join("ran").exists());
+
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "one"])).await;
+        allow(&fx, &view, ApprovalScope::Conversation);
+        assert_eq!(task.await.expect("task").output, "one\n");
+        // The same command runs without asking...
+        let reply = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "one"]))
+            .await;
+        assert_eq!(reply.output, "one\n");
+        // ...a different one asks...
+        let (other, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "one", "two"])).await;
+        assert!(other.summary.contains("echo one two"));
+        fx.broker.cancel_source(&other.source);
+        assert_eq!(task.await.expect("task").error.as_deref(), Some(CANCELLED));
+        // ...and closing the pane forgets it.
+        fx.terminals.drop_run(fx.agent.as_str());
+        let (_, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "one"])).await;
+        fx.broker.cancel_source(&SourceRef::Pane {
+            pane_id: fx.agent.as_str().to_string(),
+        });
+        let _ = task.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_9_a_repository_rule_runs_its_command_with_arguments_without_asking() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        // The rule is keyed by the workspace's root as it was added.
+        let ws_root = workspaces::get(
+            &fx.store,
+            &panes::get(&fx.store, &fx.agent)
+                .await
+                .expect("pane")
+                .workspace_id,
+        )
+        .await
+        .expect("ws")
+        .root;
+        let mut rules = RunRules::default();
+        rules.set(&ws_root, &["echo deploy".into()]).expect("rule");
+        rules.save(&fx.runs.data).expect("save");
+        let reply = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "deploy", "--prod"]))
+            .await;
+        assert_eq!(reply.output, "deploy --prod\n");
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo deploy; touch x"])).await;
+        assert!(view.summary.contains("echo deploy; touch x"));
+        fx.broker.cancel_source(&view.source);
+        let _ = task.await;
+        assert!(!fx.root.join("x").exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_10_outside_an_agent_pane_or_with_a_missing_secret_nothing_runs() {
+        let fx = fixture("API_KEY=vibezeo-secret://gone\n").await;
+        let refused = |r: RunReply| r.error.unwrap_or_default();
+        assert_eq!(
+            refused(
+                fx.runs
+                    .handle(req(&fx.plain, &fx.root, &["touch", "a"]))
+                    .await
+            ),
+            OUTSIDE
+        );
+        let nobody = PaneId::from_db("pn_nope".into());
+        assert_eq!(
+            refused(
+                fx.runs
+                    .handle(req(&nobody, &fx.root, &["touch", "a"]))
+                    .await
+            ),
+            OUTSIDE
+        );
+        assert_eq!(
+            refused(
+                fx.runs
+                    .handle(req(&fx.agent, &fx.root, &["touch", "a"]))
+                    .await
+            ),
+            "No secret named gone"
+        );
+        std::fs::write(fx.root.join(".env"), "A=1\n").expect(".env");
+        let outside = fx.root.parent().expect("parent").to_path_buf();
+        assert!(refused(
+            fx.runs
+                .handle(req(&fx.agent, &outside, &["touch", "a"]))
+                .await
+        )
+        .starts_with("vibezeo run works inside this pane's folder"));
+        assert_eq!(
+            refused(
+                fx.runs
+                    .handle(req(&fx.agent, &fx.root, &["touch", "a\nb"]))
+                    .await
+            ),
+            run_request::NO_LINE_BREAKS
+        );
+        std::fs::write(fx.root.join(".env"), "A=vibezeo-secret://Bad\n").expect(".env");
+        assert!(refused(
+            fx.runs
+                .handle(req(&fx.agent, &fx.root, &["touch", "a"]))
+                .await
+        )
+        .contains("isn't a valid vibezeo-secret:// reference"));
+        assert!(fx.broker.pending().is_empty());
+        assert!(!fx.root.join("a").exists());
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_7_run_bin_holds_only_vibezeo() {
+        let dir = tempfile::tempdir().expect("dir");
+        let run = dir.path().join("run");
+        std::fs::create_dir_all(run.join("bin/stray")).expect("mkdir");
+        std::fs::write(run.join("bin/claude"), "x").expect("write");
+        let hook = dir.path().join("tandem-hook");
+        std::fs::write(&hook, "#!/bin/sh\n").expect("hook");
+        let bin = install(&run, &hook).expect("install");
+        let names: Vec<String> = std::fs::read_dir(&bin)
+            .expect("read")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["vibezeo".to_string()]);
+        assert_eq!(std::fs::read_link(bin.join("vibezeo")).expect("link"), hook);
+        // Again is a no-op.
+        install(&run, &hook).expect("again");
+    }
+}
