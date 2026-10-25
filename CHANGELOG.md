@@ -7,6 +7,18 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Added
+
+- [all] **Code intelligence in the editor and diffs.** With the language
+  servers you already have (rust-analyzer, typescript-language-server, pyright,
+  gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
+  references (Shift+F12), shows hover text and underlines problems, and
+  worktree and review diffs jump from a changed name to its definition or
+  callers. No server runs until you trust the repository (each worktree on its
+  own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+
 ## 0.10.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
