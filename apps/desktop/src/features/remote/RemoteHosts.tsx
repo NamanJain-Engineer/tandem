@@ -20,7 +20,6 @@ import { t, type MessageKey } from "../../i18n";
 import { useRemote, isUp } from "../../stores/remote";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useUi } from "../../stores/ui";
-import { useSession } from "../../stores/session";
 
 /** `user@host:port` as typed. */
 export function address(h: HostView): string {
@@ -337,12 +336,7 @@ export function RemoteFolderPicker({ host, onClose }: { host: HostView | null; o
     const err = await useWorkspaces.getState().addRemote({ kind: "ssh", root: path, hostId: host.id });
     setAdding(false);
     if (err) {
-      if (err.code === "limit_reached")
-        useUi.getState().openUpgrade({
-          kind: "workspaces",
-          limit: useSession.getState().entitlement?.limits.workspaces ?? 3,
-        });
-      else show({ tone: "error", title: err.message });
+      show({ tone: "error", title: err.message });
       return;
     }
     onClose();

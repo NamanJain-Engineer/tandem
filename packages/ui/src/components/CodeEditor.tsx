@@ -3,15 +3,12 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { LanguageDescription, bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension, type Text } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
-  Decoration,
-  type DecorationSet,
   drawSelection,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
-  hoverTooltip,
   keymap,
   lineNumbers,
 } from "@codemirror/view";
@@ -54,111 +51,7 @@ const theme = EditorView.theme({
   ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--color-divider)" },
   ".cm-panel input, .cm-panel button": { fontSize: "var(--text-sm)" },
   ".cm-tooltip": { backgroundColor: "var(--color-surface-3)", border: "1px solid var(--color-border)" },
-  ".cm-diag-error": { textDecoration: "underline wavy var(--color-error)", textUnderlineOffset: "3px" },
-  ".cm-diag-warning": { textDecoration: "underline wavy var(--color-warning)", textUnderlineOffset: "3px" },
-  ".cm-diag-info": { textDecoration: "underline dotted var(--color-info)", textUnderlineOffset: "3px" },
-  ".cm-intel-hover": {
-    maxWidth: "560px",
-    // At most 12 lines show; the rest scrolls.
-    maxHeight: "calc(12 * 1.5em + 12px)",
-    overflowY: "auto",
-    padding: "6px 8px",
-    margin: "0",
-    fontFamily: "var(--font-mono)",
-    fontSize: "var(--text-xs)",
-    lineHeight: "1.5",
-    whiteSpace: "pre-wrap",
-    color: "var(--color-fg)",
-  },
 });
-
-/** A place in the text: 0-based line and UTF-16 character (as language
- * servers count, and CodeMirror too). */
-export type EditorPosition = { line: number; character: number };
-
-/** A language server's diagnostic (the shape of `LspDiagnostic`). */
-export type EditorDiagnostic = {
-  line: number;
-  character: number;
-  endLine: number;
-  endCharacter: number;
-  severity: "error" | "warning" | "info" | "hint";
-  message: string;
-};
-
-/** Code intelligence from a language server (F-CD-23). */
-export type CodeIntel = {
-  /** Plain text for the name under the pointer, or null. */
-  hover?: (at: EditorPosition) => Promise<string | null>;
-  /** F12 and Mod+click. */
-  definition?: (at: EditorPosition) => void;
-  /** Shift+F12. */
-  references?: (at: EditorPosition) => void;
-  diagnostics?: EditorDiagnostic[];
-};
-
-function positionOf(doc: Text, pos: number): EditorPosition {
-  const line = doc.lineAt(pos);
-  return { line: line.number - 1, character: pos - line.from };
-}
-
-function offsetOf(doc: Text, line: number, character: number): number {
-  if (line >= doc.lines) return doc.length;
-  const l = doc.line(Math.max(0, line) + 1);
-  return l.from + Math.min(Math.max(0, character), l.length);
-}
-
-const setDiagnostics = StateEffect.define<EditorDiagnostic[]>();
-
-type DiagState = { list: EditorDiagnostic[]; marks: DecorationSet };
-
-function diagMarks(doc: Text, list: EditorDiagnostic[]): DecorationSet {
-  const ranges = list
-    .map((d) => {
-      const from = offsetOf(doc, d.line, d.character);
-      let to = offsetOf(doc, d.endLine, d.endCharacter);
-      // An empty range marks the character after it (or before, at a line end).
-      if (to <= from) to = Math.min(from + 1, doc.length);
-      const tone = d.severity === "error" ? "error" : d.severity === "warning" ? "warning" : "info";
-      return { from, to, tone };
-    })
-    .filter((r) => r.to > r.from)
-    .sort((a, b) => a.from - b.from || a.to - b.to);
-  const b = new RangeSetBuilder<Decoration>();
-  for (const r of ranges) b.add(r.from, r.to, Decoration.mark({ class: `cm-diag-${r.tone}` }));
-  return b.finish();
-}
-
-const diagnosticsField = StateField.define<DiagState>({
-  create: () => ({ list: [], marks: Decoration.none }),
-  update(v, tr) {
-    let next = tr.docChanged ? { list: v.list, marks: v.marks.map(tr.changes) } : v;
-    for (const e of tr.effects) if (e.is(setDiagnostics)) next = { list: e.value, marks: diagMarks(tr.state.doc, e.value) };
-    return next;
-  },
-  provide: (f) => EditorView.decorations.from(f, (v) => v.marks),
-});
-
-/** The diagnostics' messages at `pos`. */
-function messagesAt(state: EditorState, pos: number): string[] {
-  const out: string[] = [];
-  state.field(diagnosticsField).marks.between(pos, pos, (from, to) => {
-    if (pos < from || pos > to) return;
-    const at = positionOf(state.doc, from);
-    for (const d of state.field(diagnosticsField).list) {
-      if (d.line === at.line && d.character === at.character) out.push(d.message);
-    }
-  });
-  return [...new Set(out)];
-}
-
-function hoverBox(text: string): HTMLElement {
-  const el = document.createElement("pre");
-  el.className = "cm-intel-hover";
-  el.setAttribute("data-testid", "editor-hover");
-  el.textContent = text;
-  return el;
-}
 
 /** The language for a file name, loaded on first use. */
 export function languageFor(path: string): LanguageDescription | null {
@@ -182,49 +75,20 @@ export type CodeEditorProps = {
   onSave?: () => void;
   /** Puts the cursor on this line (1-based); a new `nonce` repeats it. */
   goto?: { line: number; col?: number; nonce: number } | null;
-  /** F-CD-23: hover, go to definition, references and diagnostics. */
-  intel?: CodeIntel;
   className?: string;
 };
 
 /** CodeMirror 6 for the Files editor (F-CD-19): highlighting by file name,
  * undo, search (Mod+F), Mod+S to save, read-only mode and go-to-line. */
-export function CodeEditor({ value, docKey, path, label, readOnly = false, onChange, onSave, goto, intel, className }: CodeEditorProps) {
+export function CodeEditor({ value, docKey, path, label, readOnly = false, onChange, onSave, goto, className }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const handlers = useRef({ onChange, onSave, intel });
-  handlers.current = { onChange, onSave, intel };
+  const handlers = useRef({ onChange, onSave });
+  handlers.current = { onChange, onSave };
   const lang = useRef(new Compartment());
   const ro = useRef(new Compartment());
   const aria = useRef(new Compartment());
   const loadedKey = useRef<string | null>(null);
-
-  const at = (v: EditorView): EditorPosition => positionOf(v.state.doc, v.state.selection.main.head);
-
-  const intelExtensions = (): Extension[] => [
-    diagnosticsField,
-    hoverTooltip(async (v, pos) => {
-      const messages = messagesAt(v.state, pos);
-      const ask = handlers.current.intel?.hover;
-      const served = ask ? await ask(positionOf(v.state.doc, pos)).catch(() => null) : null;
-      const text = [...messages, served?.trim() ?? ""].filter(Boolean).join("\n\n");
-      if (!text) return null;
-      const word = v.state.wordAt(pos);
-      return { pos: word?.from ?? pos, end: word?.to ?? pos, above: true, create: () => ({ dom: hoverBox(text) }) };
-    }),
-    EditorView.domEventHandlers({
-      mousedown: (e, v) => {
-        const go = handlers.current.intel?.definition;
-        if (!go || e.button !== 0 || !(e.metaKey || e.ctrlKey)) return false;
-        const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-        if (pos === null) return false;
-        e.preventDefault();
-        v.dispatch({ selection: { anchor: pos } });
-        go(positionOf(v.state.doc, pos));
-        return true;
-      },
-    }),
-  ];
 
   const extensions = (): Extension[] => [
     lineNumbers(),
@@ -245,26 +109,6 @@ export function CodeEditor({ value, docKey, path, label, readOnly = false, onCha
           return true;
         },
       },
-      {
-        key: "F12",
-        preventDefault: true,
-        run: (v) => {
-          const go = handlers.current.intel?.definition;
-          if (!go) return false;
-          go(at(v));
-          return true;
-        },
-      },
-      {
-        key: "Shift-F12",
-        preventDefault: true,
-        run: (v) => {
-          const find = handlers.current.intel?.references;
-          if (!find) return false;
-          find(at(v));
-          return true;
-        },
-      },
       ...defaultKeymap,
       ...historyKeymap,
       ...searchKeymap,
@@ -272,7 +116,6 @@ export function CodeEditor({ value, docKey, path, label, readOnly = false, onCha
     ]),
     syntaxHighlighting(highlight),
     theme,
-    ...intelExtensions(),
     lang.current.of([]),
     ro.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
     aria.current.of(EditorView.contentAttributes.of({ "aria-label": label })),
@@ -337,12 +180,6 @@ export function CodeEditor({ value, docKey, path, label, readOnly = false, onCha
       live = false;
     };
   }, [path, docKey]);
-
-  // The server's diagnostics for the text as it is now.
-  const diagnostics = intel?.diagnostics;
-  useEffect(() => {
-    view.current?.dispatch({ effects: setDiagnostics.of(diagnostics ?? []) });
-  }, [diagnostics, docKey]);
 
   useEffect(() => {
     const v = view.current;

@@ -1,28 +1,35 @@
-import { ExternalLink } from "lucide-react";
-import { Badge, Button, KeyValue, SettingsGroup, useToast } from "@tandem/ui";
+import { Button, KeyValue, SettingsGroup } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { totalCredits, useSession } from "../../stores/session";
-import { useUi } from "../../stores/ui";
-import { openBilling } from "../shell/actions";
+import { NOTIFY_HREF } from "../billing/ComesWithAccounts";
 
 const date = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" }) : "";
 
-/** UI-114 Account & Plan (F-BL-02 in-app). */
+/** UI-114 Account: who's signed in, and the credits hosted features use.
+ * Nothing is sold, so there's no plan, checkout or billing here (D-869,
+ * D-2904). */
 export function AccountPage() {
   const auth = useSession((s) => s.auth);
   const e = useSession((s) => s.entitlement);
   const refresh = useSession((s) => s.refreshEntitlement);
-  const openUpgrade = useUi((s) => s.openUpgrade);
-  const { show } = useToast();
 
   if (auth && !auth.hosted) {
     return (
       <SettingsGroup>
-        <p className="p-3 text-base text-fg" data-testid="account-early-access">
-          {t("settings.account.earlyAccess")}
-        </p>
+        <div className="flex flex-col items-start gap-1 p-3">
+          <p className="text-base text-fg" data-testid="account-early-access">
+            {t("settings.account.earlyAccess")}
+          </p>
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => invoke("app_open_external", { url: NOTIFY_HREF }).catch(() => undefined)}
+          >
+            {t("hosted.notify")}
+          </Button>
+        </div>
       </SettingsGroup>
     );
   }
@@ -44,21 +51,9 @@ export function AccountPage() {
     );
   }
 
-  const plan = e?.plan ?? "free";
-  const status = (e?.status ?? "none") as "active" | "trialing" | "past_due" | "canceled" | "none";
-  const statusText =
-    plan === "free"
-      ? null
-      : e?.cancelAtPeriodEnd && e.paidUntil
-        ? t("settings.account.until", { date: date(e.paidUntil) })
-        : status in { active: 1, trialing: 1, past_due: 1, canceled: 1 }
-          ? `${t(`settings.account.status.${status}` as "settings.account.status.active")}${e?.paidUntil && status !== "past_due" ? ` · ${t("settings.account.renews", { date: date(e.paidUntil) })}` : ""}`
-          : null;
   const total = totalCredits(e) ?? 0;
   const grant = e?.credits?.grant ?? e?.monthlyGrant ?? 10_000;
-  // Team: billing is the org owner's and admins' (UI-114).
-  const org = plan === "team" ? (e?.org ?? null) : null;
-  const billingAdmin = !org || org.role !== "member";
+  const org = e?.org ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,20 +71,18 @@ export function AccountPage() {
         <div className="flex flex-col gap-4 p-3">
           <KeyValue
             items={[
-              {
-                key: t("settings.account.plan"),
-                value: (
-                  <span className="inline-flex items-center gap-2" data-testid="account-plan">
-                    <Badge variant={plan === "free" ? "neutral" : "accent"}>{plan.toUpperCase()}</Badge>
-                    {statusText && <span className="text-fg-muted">{statusText}</span>}
-                    {org && (
-                      <span className="text-fg-muted" data-testid="account-org">
-                        {t("settings.account.managedBy", { org: org.name })}
-                      </span>
-                    )}
-                  </span>
-                ),
-              },
+              ...(org
+                ? [
+                    {
+                      key: t("settings.account.org"),
+                      value: (
+                        <span className="text-fg-muted" data-testid="account-org">
+                          {t("settings.account.managedBy", { org: org.name })}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
               ...(e?.credits
                 ? [
                     {
@@ -121,30 +114,6 @@ export function AccountPage() {
             ]}
           />
           <div className="flex flex-wrap gap-2">
-            {plan === "free" ? (
-              <Button variant="primary" onClick={() => openUpgrade()}>
-                {t("settings.account.seePlans")}
-              </Button>
-            ) : billingAdmin ? (
-              <Button
-                iconRight={<ExternalLink size={14} />}
-                onClick={() => void openBilling({ type: "portal" }, show)}
-              >
-                {t("settings.account.manageBilling")}
-              </Button>
-            ) : (
-              <span className="self-center text-sm text-fg-muted" data-testid="account-ask-admin">
-                {t("settings.account.askAdmin")}
-              </span>
-            )}
-            {billingAdmin && (
-              <Button
-                iconRight={<ExternalLink size={14} />}
-                onClick={() => void openBilling({ type: "credits" }, show)}
-              >
-                {t("settings.account.buyCredits")}
-              </Button>
-            )}
             <Button variant="link" onClick={() => void refresh()}>
               {t("settings.account.refresh")}
             </Button>

@@ -27,14 +27,7 @@ pub async fn lane_create(
 ) -> Result<Workspace, IpcError> {
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    lanes::create(
-        &state.store,
-        &git,
-        &state.entitlements.limits(),
-        &workspace_id,
-        &slug_source,
-    )
-    .await
+    lanes::create(&state.store, &git, &workspace_id, &slug_source).await
 }
 
 #[tauri::command]
@@ -174,11 +167,7 @@ pub async fn lane_remove(
     };
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    let root = repo::get(&state.store, &lane_id)
-        .await
-        .ok()
-        .map(|ws| crate::services::files::local_root(&ws));
-    let report = lanes::remove_with_teardown(
+    lanes::remove_with_teardown(
         &state.store,
         &state.terminals.pty,
         &git,
@@ -186,12 +175,7 @@ pub async fn lane_remove(
         confirm,
         Some((&state.data, &login)),
     )
-    .await?;
-    // F-CD-23: the worktree's language servers stop with it.
-    if let Some(root) = root {
-        crate::services::lsp::global().forget(&root).await;
-    }
-    Ok(report)
+    .await
 }
 
 #[tauri::command]
@@ -586,7 +570,7 @@ pub async fn lane_create_prs(
     {
         return Err(IpcError::new(ErrorCode::Cancelled, "Nothing was pushed"));
     }
-    multi_prs::start(&state.store, git, Box::new(gh), &lane_id).await
+    multi_prs::start(&state.store, state.data.run(), git, Box::new(gh), &lane_id).await
 }
 
 #[tauri::command]

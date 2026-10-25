@@ -22,4 +22,7 @@ accepted = [
   "NCSA",
 ]
 ignore-build-dependencies = true
+# Vibezeo's own crates (publish = false) aren't third-party: leave them out
+# of the notices (D-870).
+private = { ignore = true }
 ignore-dev-dependencies = true

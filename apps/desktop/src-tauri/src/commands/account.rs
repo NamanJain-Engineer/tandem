@@ -87,18 +87,15 @@ pub async fn entitlement_refresh(state: State<'_, AppState>) -> Result<Entitleme
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum BillingTarget {
-    Upgrade {
-        plan: String,
-        interval: String,
-    },
     Portal,
     Credits,
     /// The web account page, where "Delete account…" lives (F-TL-05).
     Account,
 }
 
-/// Opens checkout, the billing portal, the credits page or the account page
-/// in the system browser (never an in-app webview for payment, UI-121).
+/// Opens the billing portal, the credits page or the account page in the
+/// system browser (never an in-app webview for payment, UI-121). There's no
+/// checkout: nothing is sold (D-869, D-2904).
 #[tauri::command]
 pub async fn billing_open(
     state: State<'_, AppState>,
@@ -107,25 +104,11 @@ pub async fn billing_open(
     if !state.auth.is_signed_in() {
         return Err(IpcError::new(
             ErrorCode::Unauthenticated,
-            "Sign in to upgrade",
+            "Sign in to your Vibezeo account first.",
         ));
     }
     let api = state.api.clone();
     let url = match target {
-        BillingTarget::Upgrade { plan, interval } => {
-            if !matches!(plan.as_str(), "pro" | "team")
-                || !matches!(interval.as_str(), "month" | "year")
-            {
-                return Err(IpcError::new(ErrorCode::Invalid, "Unknown plan"));
-            }
-            state
-                .auth
-                .with_token(move |t| {
-                    let (api, plan, interval) = (api.clone(), plan.clone(), interval.clone());
-                    async move { api.checkout(&t, &plan, &interval).await }
-                })
-                .await
-        }
         BillingTarget::Portal => {
             state
                 .auth

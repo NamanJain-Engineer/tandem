@@ -221,7 +221,7 @@ pub async fn teammate_suggestions(
     Ok(crate::services::teammates::suggestions(&teammate.brief))
 }
 
-/// `teammate_draft_with_ai` (F-AG-04): Pro, signed in and online; nothing
+/// `teammate_draft_with_ai` (F-AG-04): hosted, signed in and online; nothing
 /// is saved.
 #[tauri::command]
 pub async fn teammate_draft_with_ai(
@@ -237,7 +237,7 @@ pub async fn teammate_draft_with_ai(
     if view.plan == tandem_core::entitlement::Plan::Free {
         return Err(IpcError::new(
             ErrorCode::ForbiddenPlan,
-            "Create with AI is part of Pro.",
+            "Create with AI comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
         ));
     }
     if !state.endpoints.hosted || !view.online || !state.auth.is_signed_in() {

@@ -209,6 +209,14 @@ E2E lessons (each cost a debugging round):
   `/__say`, `/__state`, `/__control` and `/__close` steer it; `test_conductor_inject`
   runs doer tool calls the mock doer doesn't plan, and `test_conductor_clock` moves
   only the call's clock (the 30-minute cap).
+- Conductor's free primary against Google's real Gemini Live (D-1018):
+  `GEMINI_API_KEY=… bash scripts/agent/gemini-live-check.sh` (about a minute;
+  `--long` adds a 12-minute call past Google's 10-minute reconnect). The API's
+  `GeminiLive` mints each token and the app's own client opens it; tokens stay in
+  a private temp file and are never printed. In a cloud session, add
+  `GEMINI_API_KEY` in the environment's settings and start a new session (a
+  running one doesn't see it). The WebSocket goes out directly, which works
+  from Claude's cloud containers.
 - Dictate specs download models from `scripts/serve-models.ts` (:8792, the real
   `~/.cache/tandem-models`; run `bash scripts/fetch-models.sh base.en parakeet`
   first). The runner points `HOME` at the test's home, so anything that needs the
@@ -269,15 +277,16 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
 1. Full E2E regression green; gate green.
 2. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json` and the root `Cargo.toml` (Cargo.lock follows).
-   Add a `## x.y.z` section to `CHANGELOG.md` in its format (a summary, then `### Added` /
+   Rename `CHANGELOG.md`'s `## Unreleased` section (where slices gather their notes,
+   D-2906) to `## x.y.z`, or add one, in its format (a summary, then `### Added` /
    `Changed` / `Fixed` / `Security`, each bullet tagged `[lin]`, `[mac]`, `[win]` or `[all]`;
    `pnpm exec tsx scripts/check-changelog.ts` checks it): only what the build really does,
-   and plan limits stated (for example, the six-thread grid is Pro-only).
+   and what needs a Vibezeo account stated (Vibezeo is free, D-869: nothing local is limited).
 3. `TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run` (needs ~5 GB free;
-   `TANDEM_HOSTED=0` = no hosted services, the Free plan runs locally, nothing is
-   sent to our servers).
+   `TANDEM_HOSTED=0` = no hosted services, everything local runs free and unlimited,
+   nothing is sent to our servers).
 4. Smoke-test offline: `xvfb-run -a -s "-screen 0 1440x900x24" sh scripts/agent/smoke-appimage.sh`
-   and look at the screenshots (welcome says "Free plan"; setup starts; the status
+   and look at the screenshots (welcome says "Free · no account · nothing sent to Vibezeo"; setup starts; the status
    bar shows the new version). Step into the new features by hand on a persistent
    display (see the script's header).
 5. Site: copy `dist/Vibezeo_x.y.z_amd64-unsigned.deb` to
@@ -409,8 +418,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
 - Check a site change before deploying: `pnpm --filter web exec vitest run`,
   `pnpm --filter web build:site`, the home page's demo in a real browser
   (`PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
-  against `apps/web/out`), Lighthouse CI on `/` and `/pricing/`
-  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/pricing/`,
+  against `apps/web/out`), Lighthouse CI on `/` and `/download/`
+  (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/about/`,
   `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
   runs), then walk the demo:
@@ -470,7 +479,7 @@ release runs offline. What to watch:
   person (stub it, add it to `HUMAN_TODO.md`, continue).
 - **Every public claim must be true and checkable.** No invented customers,
   revenue, users, quotes, dates or reviews; no feature the shipped build doesn't
-  have; plan limits stated where they apply; demos and illustrations labelled.
+  have; what needs a Vibezeo account stated where it applies; demos and illustrations labelled.
   Reviewers of applications and listings check claims, and one false claim costs
   more than it gains: refuse those requests and offer the honest version.
 - Ask the owner before anything outward-facing that's hard to undo: deploying,

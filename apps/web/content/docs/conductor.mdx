@@ -3,7 +3,7 @@ title: Conductor
 description: A voice-driven coordinator for your agents.
 ---
 
-> **Part of Pro.** Conductor is in the app, and it runs on Pro and Team, which come with Vibezeo accounts: its calls use Vibezeo's hosted voice service and are paid for in credits. The current download runs the Free plan, so it can't make calls. [The changelog](/changelog/) says what each release contains.
+> **Comes with Vibezeo accounts.** It uses Vibezeo's servers and switches on when Vibezeo accounts open. Conductor is in the app; until then the download can't make calls. [The changelog](/changelog/) says what each release contains.
 
 Conductor is a coordinator you talk to. It starts agents, prompts them, reads what they wrote, finds work, changes a few settings and reports back, while you keep your hands on the keyboard or away from it. A call has two parts: a realtime voice model you talk with, and a planner behind it that turns what you asked for into the app's own actions, which run on your computer.
 
@@ -17,7 +17,7 @@ Conductor is a coordinator you talk to. It starts agents, prompts them, reads wh
 
 The microphone opens as soon as you start a call, so you can talk while it connects: up to 3 seconds of early speech is kept and sent once the call is connected. A call uses the Dictate microphone setting and never opens a Bluetooth headset's mic on its own. While a call has the microphone, Dictate waits. A microphone that stops delivering sound ends the call with "The microphone isn't delivering audio." and a button to switch microphones.
 
-A call ends when you hang up, sign out, or run out of credits, or when it reaches its 30-minute limit (with a spoken and on-screen notice 2 minutes before). When it ends, its audio stops at once and anything it was about to type is cancelled.
+A call ends when you hang up or sign out, or when it reaches its 30-minute limit (with a spoken and on-screen notice 2 minutes before). When it ends, its audio stops at once and anything it was about to type is cancelled.
 
 ## What it can do
 
@@ -61,7 +61,7 @@ Conductor can't merge, discard or stop anything from the queue. When nothing is 
 
 ## The HUD and the floating ring
 
-During a call a card at the top of the window shows Conductor's ring and its state (**Connecting**, **Listening**, **Thinking**, **Working on it** or **Speaking**), the last thing you said, and a chip for each action, with a ✓ or ✗ when it finishes. The newest 3 chips show and older ones fold into **+N**, which opens the call log. When Conductor asks something, **Yes** and **No** appear. The card also shows how long the call has run and about how many minutes your credits cover, with **Mute** and **End**.
+During a call a card at the top of the window shows Conductor's ring and its state (**Connecting**, **Listening**, **Thinking**, **Working on it** or **Speaking**), the last thing you said, and a chip for each action, with a ✓ or ✗ when it finishes. The newest 3 chips show and older ones fold into **+N**, which opens the call log. When Conductor asks something, **Yes** and **No** appear. The card also shows how long the call has run, with **Mute** and **End**.
 
 Settings › Conductor › **Floating ring** adds a ring that floats over every app. Drag it anywhere and it stays there; click it to start or end a call, hold it to talk, and hover for **Mute**, **Call log** and **End**. If the display it was on is gone, it comes back to the top-right corner of the main one.
 
@@ -87,8 +87,8 @@ When a call ends, **After each call** decides what happens to what you said abou
 
 Settings › Conductor › **Wake phrase "Hey Conductor"** listens for the phrase on your computer, with a small speech model that comes with the app; no audio leaves your computer until a call starts. It uses the Dictate microphone, with a choice of sensitivity (Low, Medium or High), and it pauses while Dictate or a call is using the microphone, while media plays on Bluetooth headphones, and, with **Pause while watching videos** on (the default), while anything is playing. If the model didn't pass its false-trigger test, the setting stays off and says so.
 
-## Credits
+## Privacy
 
-A call costs 20 credits for every started 10 seconds it's connected, about 120 credits a minute. Starting a call holds 10 minutes of credits, topped up as the call goes on, and whatever the call didn't use comes back when it ends. A call that's still connecting when you hang up costs nothing. The HUD shows about how many minutes your credits cover, and a call ends when they run out.
+Your voice leaves your computer only while a call is connected. It goes straight from the app to Google's Gemini Live, with a token for that one call from Vibezeo's servers, and the planner's requests (what you asked, and the names and states above) go to Vibezeo's servers and Anthropic's Claude. Google's free service may keep what you say, use it to improve its products and have people review it, so keep private details off calls.
 
-Your voice goes to the hosted voice service only while a call is connected, and the planner's requests (what you asked, and the names and states above) go to Vibezeo's servers.
+Calls from the EEA, Switzerland and the UK never use Google's free service: they go to a backup voice provider, or Conductor says it isn't available in your country yet. A call Google can't take moves to the backup by itself. The call log stays on your computer, and Vibezeo's servers keep no recording. The [privacy page](/privacy/) lists every provider.

@@ -26,7 +26,6 @@ fn task_origin(issue_id: &str, attempt: &AttemptId) -> String {
 pub struct AppExecHost {
     pub store: Store,
     pub data: tandem_core::DataDir,
-    pub auth: Arc<crate::services::auth::AuthService>,
     pub entitlements: Arc<crate::services::entitlement::EntitlementService>,
     pub terminals: Arc<crate::services::terminal::TerminalService>,
     pub teammates: Arc<crate::services::teammates::TeammatesService>,
@@ -49,10 +48,6 @@ impl ExecHost for AppExecHost {
         self.entitlements.limits()
     }
 
-    fn signed_in(&self) -> bool {
-        self.auth.is_signed_in()
-    }
-
     async fn workspace_root(&self, ws: &WorkspaceId) -> Result<PathBuf, IpcError> {
         let w = tandem_store::repo::workspaces::get(&self.store, ws).await?;
         Ok(PathBuf::from(w.root))
@@ -70,14 +65,7 @@ impl ExecHost for AppExecHost {
         slug: &str,
     ) -> Result<(WorkspaceId, PathBuf), IpcError> {
         let git = self.git().await?;
-        let lane = crate::services::lanes::create(
-            &self.store,
-            &git,
-            &self.entitlements.limits(),
-            ws,
-            slug,
-        )
-        .await?;
+        let lane = crate::services::lanes::create(&self.store, &git, ws, slug).await?;
         Ok((lane.id, PathBuf::from(lane.root)))
     }
 

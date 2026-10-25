@@ -458,7 +458,7 @@ grep -Eq 'posthog|sentry' "$E2E_LAST_HOME/net.log" && exit 1 || true
   2. Launch the desktop fresh and click **Sign in**. The scripted browser signs in. Expected: the tab shows "You can return to Tandem."; the rail footer shows "FREE".
   3. Open workspace `/tmp/ws1`. Expected: a tab with a live shell.
   4. Type `echo hi`. Expected: the output shows `hi`.
-- **E2E-M2-2 Free gate.** Add 3 workspaces. The 4th opens the upgrade sheet. Mock checkout. Expected: within 5 s the footer reads "PRO · 10,000 credits" and the 4th workspace can be added.
+- **E2E-M2-2 No workspace limit** (was the Free gate; D-869, D-2900). Add 5 workspaces on a free account. Expected: all five are added, the footer reads "Free" and nothing offers a plan.
 - **E2E-M2-3 Deep links.** With the app closed, run the binary with `tandem-dev://open?path=/tmp/x`. Expected: `/tmp/x` is added as a workspace. Then try `tandem-dev://../../etc` and a 5 KB link. Expected: "Unrecognized link" and no state change.
 - **E2E-M2-4 Single instance and window state.** A second launch exits 0 in under 1 s and the first window is focused. Maximize, quit and relaunch. Expected: maximized. A saved off-screen position: expected fully on-screen. On Linux, the maximize label toggles "Maximize"/"Restore". Tabbing through the title bar follows visual order, with every control named.
 - **E2E-M2-5 Settings and theme.** Press `Mod+,`. Expected: Settings opens. Type "scroll". Expected: the Terminal page, with the scrollback control highlighted. Press Esc. Expected: the previous mode and focus return. Switch to the Light theme. Expected: the terminal palette changes within 200 ms, with the same PID. OSC 11 returns the background token. Set each key, relaunch: every value persists.
@@ -571,7 +571,7 @@ xvfb-run -a pnpm --filter desktop perf -- --suite terminals   # P95 key→echo �
   - Press Esc mid-drag. Expected: the layout is back to its pre-drag state.
 - **E2E-M3-5 Handback.** Run fake `claude` in an agent pane, then `/exit`. Expected: a shell prompt in the same cwd, and "Saved sessions (1)" in the rail.
 - **E2E-M3-6 Tree kill.** Run `bash -c 'sleep 1000 & sleep 1000'` and close the pane. Expected: `pgrep -f 'sleep 1000'` is empty within 3 s.
-- **E2E-M3-7 Free pane limit.** Open 4 panes, then try a 5th. Expected: the upgrade card, and the spawn log shows no new process.
+- **E2E-M3-7 No pane limit** (was the Free pane limit; D-869, D-2900). Offline, open 4 panes, then a 5th. Expected: the 5th starts.
 - **E2E-M3-8 Orphans.** kill -9 the app with a live child, then relaunch. Expected: the dialog. Choose Stop. Expected: the PID is gone.
 - **E2E-M3-9 Keyboard.**
   - Ctrl+W/T/D/[/] in a terminal. Expected: bytes 0x17, 0x14, 0x04, 0x1b, 0x1d reach the PTY.
@@ -1461,7 +1461,7 @@ xvfb-run -a pnpm --filter desktop e2e -- --spec 'e2e/specs/m11-*.e2e.ts'
   - A paused routine. Expected: no fire. A deleted teammate. Expected: an error on the row and no spawn.
 - **E2E-M11-4 Missed run.** Closed across the due time and reopened within 24 h. Expected: exactly one late run.
 - **E2E-M11-5 Background.** Enable. Expected: the unit files exist. Disable. Expected: removed. With the GUI running, `--run-routines`. Expected: exits without running anything.
-- **E2E-M11-6 Free.** Expected: the Routines upsell, and Execute disabled with the plan copy.
+- **E2E-M11-6 Free offline** (was the Free upsell; D-869, D-2900, D-2902). Offline with no account. Expected: Routines offers New routine and saves one; Execute isn't blocked and the core takes a run without sign-in or a plan.
 
 **Exit checklist:** G green · DST and cron tables fully covered · the headless mode's single-instance lock is tested.
 **HUMAN_TODO:** *Manual QA:* launchd on macOS, Task Scheduler on Windows, systemd user timers (with lingering) on Ubuntu and Fedora, and behaviour across sleep and wake.
@@ -2059,7 +2059,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **Prerequisites.** F-CD-14/15 (worktrees), F-WT-02 (the review bar), F-WT-08's `gh` runner, the entitlement `Limits` (§3.2).
 
 **Ordered tasks**
-1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0003 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
+1. **Model and creation.** Detection of a multi-repo folder (`repos` on `WorkspaceSummary`); migration 0004 `lane_repos`; `lane_create` for a multi-repo folder (one slug free in every repository, roll back on failure); the `multiRepo` plan limit; the launch sheet; Discard.
 2. **Diff.** `lane_diff` across the repositories with prefixed paths; sections in the diff dialog.
 3. **Pull requests.** `lane_create_prs` / `lane_prs_get` behind the native confirm; UI-158.
 
@@ -2071,33 +2071,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 ```
 
 **E2E**
-- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories, signed in on Pro. Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
-
-**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
-
----
-
-## M18 · Next features: code intelligence (M)
-
-**Goal.** Definitions, references, hover and diagnostics in the Files editor and the worktree diffs, from the language servers the user already has (F-CD-23). From `docs/NEXT_FEATURES.md` (§1 #19). Built on branch `competitive-gaps`; decisions D-2536–D-2539.
-
-**Owns:** F-CD-23 (P2)
-**Prerequisites.** F-CD-19 (the Files editor), F-WT-02 (the worktree diff), F-WT-10 (the tree-sitter index, for the fallback).
-
-**Ordered tasks**
-1. **Client.** `services::lsp`: a JSON-RPC client over stdio (Content-Length framing) behind a transport, the server registry (rust-analyzer, typescript-language-server, pyright-langserver, gopls), start on first use per folder and language, idle stop after 10 minutes, at most 4, restarts bounded; `didOpen`/`didChange`, `definition`, `references`, `hover`, `publishDiagnostics`. A `fake-lsp` fixture binary in `tandem-engines` (feature `fixtures`) for tests and E2E.
-2. **Commands.** `lsp_sync`, `lsp_definition`, `lsp_references`, `lsp_hover`; the tree-sitter fallback for definitions.
-3. **UI.** The editor's keys, hover, diagnostics and status line; the References panel; the diff's name menu.
-
-**Verification**
-```bash
-cargo test -p tandem-desktop --lib f_cd_23
-pnpm --filter desktop exec vitest run -t "F-CD-23"
-dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd23*.e2e.ts'
-```
-
-**E2E**
-- **E2E-M18-CD23-1 Code intelligence.** A Python folder with the fake language server on PATH as `pyright-langserver`. Expected: the status line says pyright is off until the repository is trusted, and Trust repository… (native confirm: yes) starts it; F12 on a call opens the definition in the other file; Shift+F12 lists the references; the status line counts a diagnostic; a Rust file says "No language server for Rust"; with the fake server also as `typescript-language-server`, a TypeScript file's server starts without asking again.
+- **E2E-M18-CD22-1 Multi-repo worktree.** A folder holding `api` and `web` repositories (free for everyone, D-869). Expected: the row says "2 repositories"; New worktree makes `tandem/<slug>` in both under one parent folder; Open diff shows both repositories' sections; Discard removes both worktrees and keeps both branches.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 
@@ -2126,7 +2100,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 **E2E**
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
 - **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; neither new engine is chat-capable.
-- **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` is refused on Free, finds the session by a prompt word on Pro, and turning search off deletes `session-index.db`.
+- **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` waits for the Privacy switch (never for a plan, D-2900), finds the session by a prompt word once it's on, and turning search off deletes `session-index.db`.
 - **E2E-M18-EN08 Engine versions.** A fake Codex installed under `node_modules` at 1.2.0 and a recording `npm` on the login PATH. Expected: "1.2.0 · npm" with no npm call until Check for updates, which runs `npm view @openai/codex version`; pinned Codex and Claude Code panes start with `check_for_update_on_startup=false` and `DISABLE_AUTOUPDATER`; a failure since 1.3.0 shows the banner and Roll back shows `npm install -g @openai/codex@1.2.0` without running it; a detached Codex is listed alone and Stop ends it after a confirm.
 
 ---
@@ -2177,6 +2151,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 ```
 
 **E2E**
+- **E2E-M18-FREE Free offline** (`m18-free-offline.e2e.ts`, D-869, D-2900). Offline with no account. Expected: a thread on Cursor Agent streams its reply, and session search turns on and finds a session by a prompt word. (The fifth pane, the fourth workspace, routines and task runs are E2E-M3-7, E2E-M2-2 and E2E-M11-6.)
 - **E2E-M18-TL11 Agent sandbox** (`m18-tl11-sandbox.e2e.ts`, needs `bwrap` on the test machine). With the setting off, an agent pane has no chip. With Workspace, the next agent pane shows "Sandboxed"; its engine writes in its folder but not in `$HOME` or `/var/tmp`, can't read `~/.ssh/id_ed25519`, can't write `.git/hooks/pre-commit`, and can commit.
 
 ---
@@ -2211,7 +2186,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (65 P0, 67 P1, 52 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 18 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-RT-06, F-TH-17, F-TL-11, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **183 features** (65 P0, 67 P1, 51 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 17 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-RT-06, F-TH-17, F-TL-11, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2233,7 +2208,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (6
 | F-EN-09 | P2 | M18 | F-WT-05 | P2 | M18 | F-WT-06 | P2 | M18 | F-WT-09 | P2 | M18 |
 | F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
-| F-CD-22 | P2 | M18 | F-CD-23 | P2 | M18 | | | | | | |
+| F-CD-22 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2260,7 +2235,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **184 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 18 = 184 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 17 = 183 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

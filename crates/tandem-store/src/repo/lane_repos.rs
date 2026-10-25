@@ -52,6 +52,37 @@ pub async fn set(
         .await
 }
 
+/// A multi-repo worktree's row and its repositories, in one transaction.
+pub async fn add_lane(
+    store: &Store,
+    lane: crate::repo::workspaces::NewLane,
+    repos: Vec<LaneRepo>,
+) -> Result<crate::repo::workspaces::Workspace, StoreError> {
+    store
+        .write(move |t| {
+            let ws = crate::repo::workspaces::add_lane_in(t, lane)?;
+            for r in &repos {
+                t.execute(
+                    "INSERT INTO lane_repos (lane_id, name, repo_root, root, base) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![ws.id.as_str(), r.name, r.repo_root, r.root, r.base],
+                )?;
+            }
+            Ok(ws)
+        })
+        .await
+}
+
+/// Forgets a worktree's repositories (it was discarded).
+pub async fn clear(store: &Store, lane: &WorkspaceId) -> Result<(), StoreError> {
+    let lane = lane.as_str().to_string();
+    store
+        .write(move |t| {
+            t.execute("DELETE FROM lane_repos WHERE lane_id = ?1", [lane.as_str()])?;
+            Ok(())
+        })
+        .await
+}
+
 /// A worktree's repositories by name; empty for an ordinary worktree.
 pub async fn list(store: &Store, lane: &WorkspaceId) -> Result<Vec<LaneRepo>, StoreError> {
     let lane = lane.as_str().to_string();

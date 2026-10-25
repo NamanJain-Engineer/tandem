@@ -6,8 +6,9 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -100,6 +101,7 @@ pub fn get(lane_id: &str) -> Option<PrsRun> {
 /// `lane_create_prs`, after the confirm: records the run and starts it.
 pub async fn start(
     store: &Store,
+    run_dir: PathBuf,
     git: Git,
     gh: Box<dyn Gh>,
     id: &WorkspaceId,
@@ -134,7 +136,7 @@ pub async fn start(
     }
     let run = get(&key).ok_or_else(|| IpcError::new(ErrorCode::Io, "The run went missing"))?;
     tokio::spawn(async move {
-        drive(&git, gh.as_ref(), &key, &branch, &repos).await;
+        drive(&git, gh.as_ref(), &run_dir, &key, &branch, &repos).await;
     });
     Ok(run)
 }
@@ -160,8 +162,68 @@ fn arg(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| (*s).to_string()).collect()
 }
 
-/// Each repository in turn; one failing doesn't stop the others.
-pub async fn drive(git: &Git, gh: &dyn Gh, key: &str, branch: &str, repos: &[LaneRepo]) {
+/// A push gets this long; a hung one fails its repository, not the run.
+pub const PUSH_LIMIT: Duration = Duration::from_secs(5 * 60);
+
+/// Clears `running` however `drive` ends, so a retry isn't refused.
+struct Finished<'a>(&'a str);
+
+impl Drop for Finished<'_> {
+    fn drop(&mut self) {
+        if let Some(run) = lock().get_mut(self.0) {
+            run.running = false;
+        }
+    }
+}
+
+/// The open pull request for `branch` in `root`, if there is one.
+async fn existing_pr(gh: &dyn Gh, root: &Path, branch: &str) -> Option<String> {
+    let out = gh
+        .run(
+            root,
+            &arg(&["pr", "view", branch, "--json", "url", "--jq", ".url"]),
+        )
+        .await;
+    let url = out.stdout.trim();
+    (out.code == Some(0) && url.starts_with("https://")).then(|| url.to_string())
+}
+
+/// Writes `text` to a new file only this run can have made, in `dir`.
+fn body_file(dir: &Path, text: &str) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir)?;
+    for _ in 0..8 {
+        let path = dir.join(format!("pr-body-{}.md", uuid::Uuid::new_v4()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut f) => {
+                f.write_all(text.as_bytes())?;
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other(
+        "couldn't make a file for the description",
+    ))
+}
+
+/// Each repository in turn; one failing doesn't stop the others. A
+/// repository whose pull request is already open (a re-run) keeps it and
+/// gets linked. Body files go in `run_dir` ($DATA/run), one per edit.
+pub async fn drive(
+    git: &Git,
+    gh: &dyn Gh,
+    run_dir: &Path,
+    key: &str,
+    branch: &str,
+    repos: &[LaneRepo],
+) {
+    let _finished = Finished(key);
     let mut opened: Vec<(usize, String)> = Vec::new();
     for (i, r) in repos.iter().enumerate() {
         let root = Path::new(&r.root);
@@ -181,8 +243,9 @@ pub async fn drive(git: &Git, gh: &dyn Gh, key: &str, branch: &str, repos: &[Lan
             continue;
         }
         set(key, i, |s| s.state = PrStepState::Pushing);
-        let pushed = git
-            .run(
+        let pushed = tokio::time::timeout(
+            PUSH_LIMIT,
+            git.run(
                 Mode::Write,
                 root,
                 &[
@@ -191,26 +254,28 @@ pub async fn drive(git: &Git, gh: &dyn Gh, key: &str, branch: &str, repos: &[Lan
                     OsStr::new("origin"),
                     OsStr::new(branch),
                 ],
-            )
-            .await;
-        match pushed {
-            Ok(out) if out.success() => {}
-            Ok(out) => {
-                set(key, i, |s| {
-                    s.state = PrStepState::Failed;
-                    s.reason = Some(first_line(&out.stderr));
-                });
-                continue;
-            }
-            Err(e) => {
-                set(key, i, |s| {
-                    s.state = PrStepState::Failed;
-                    s.reason = Some(e.to_string());
-                });
-                continue;
-            }
+            ),
+        )
+        .await;
+        let failed = match pushed {
+            Ok(Ok(out)) if out.success() => None,
+            Ok(Ok(out)) => Some(first_line(&out.stderr)),
+            Ok(Err(e)) => Some(e.to_string()),
+            Err(_) => Some("git push didn't finish in 5 minutes".to_string()),
+        };
+        if let Some(why) = failed {
+            set(key, i, |s| {
+                s.state = PrStepState::Failed;
+                s.reason = Some(why);
+            });
+            continue;
         }
         set(key, i, |s| s.state = PrStepState::Creating);
+        if let Some(link) = existing_pr(gh, root, branch).await {
+            set(key, i, |s| s.url = Some(link.clone()));
+            opened.push((i, link));
+            continue;
+        }
         let out = gh
             .run(root, &arg(&["pr", "create", "--fill", "--head", branch]))
             .await;
@@ -240,55 +305,70 @@ pub async fn drive(git: &Git, gh: &dyn Gh, key: &str, branch: &str, repos: &[Lan
             continue;
         }
         set(key, *i, |s| s.state = PrStepState::Linking);
-        let root = Path::new(&repos[*i].root);
-        let body = gh
-            .run(
-                root,
-                &arg(&["pr", "view", url, "--json", "body", "--jq", ".body"]),
-            )
-            .await;
-        let others: Vec<String> = opened
-            .iter()
-            .filter(|(j, _)| j != i)
-            .map(|(j, u)| format!("- {}: {u}", repos[*j].name))
-            .collect();
-        let text = format!(
-            "{}\n\nRelated pull requests:\n{}\n",
-            body.stdout.trim_end(),
-            others.join("\n")
-        );
-        let file =
-            std::env::temp_dir().join(format!("vibezeo-pr-body-{}-{i}.md", std::process::id()));
-        let linked = match std::fs::write(&file, text) {
-            Ok(()) => {
-                let path = file.to_string_lossy().into_owned();
-                let out = gh
-                    .run(root, &arg(&["pr", "edit", url, "--body-file", &path]))
-                    .await;
-                let _ = std::fs::remove_file(&file);
-                (out.code == Some(0))
-                    .then_some(())
-                    .ok_or(first_line(&out.stderr))
-            }
-            Err(e) => Err(e.to_string()),
-        };
-        set(key, *i, |s| match linked {
-            Ok(()) => s.state = PrStepState::Done,
-            Err(why) => {
-                // The pull request is open; only its links failed.
-                s.state = PrStepState::Done;
+        let linked = link_others(gh, run_dir, repos, &opened, *i, url).await;
+        set(key, *i, |s| {
+            // The pull request is open either way; only its links can fail.
+            s.state = PrStepState::Done;
+            if let Err(why) = linked {
                 s.reason = Some(format!("Couldn't link the others: {why}"));
             }
         });
-    }
-    if let Some(run) = lock().get_mut(key) {
-        run.running = false;
     }
     tracing::info!(
         code = "lane.prs_done",
         opened = opened.len(),
         "pull requests opened"
     );
+}
+
+/// Adds "Related pull requests" to pull request `i`'s description, keeping
+/// what it says. A description that can't be read is left alone.
+async fn link_others(
+    gh: &dyn Gh,
+    run_dir: &Path,
+    repos: &[LaneRepo],
+    opened: &[(usize, String)],
+    i: usize,
+    url: &str,
+) -> Result<(), String> {
+    let root = Path::new(&repos[i].root);
+    let body = gh
+        .run(
+            root,
+            &arg(&["pr", "view", url, "--json", "body", "--jq", ".body"]),
+        )
+        .await;
+    if body.code != Some(0) {
+        return Err(format!(
+            "its description couldn't be read ({})",
+            first_line(&body.stderr)
+        ));
+    }
+    let mut text = body.stdout.trim_end().to_string();
+    let others: Vec<String> = opened
+        .iter()
+        .filter(|(j, _)| *j != i)
+        .map(|(j, u)| format!("- {}: {u}", repos[*j].name))
+        .filter(|line| !text.contains(line.as_str()))
+        .collect();
+    if others.is_empty() {
+        return Ok(());
+    }
+    if !text.contains("Related pull requests:") {
+        text.push_str("\n\nRelated pull requests:");
+    }
+    text.push('\n');
+    text.push_str(&others.join("\n"));
+    text.push('\n');
+    let file = body_file(run_dir, &text).map_err(|e| e.to_string())?;
+    let path = file.to_string_lossy().into_owned();
+    let out = gh
+        .run(root, &arg(&["pr", "edit", url, "--body-file", &path]))
+        .await;
+    let _ = std::fs::remove_file(&file);
+    (out.code == Some(0))
+        .then_some(())
+        .ok_or_else(|| first_line(&out.stderr))
 }
 
 #[cfg(test)]
@@ -325,8 +405,33 @@ mod tests {
                 .map(String::as_str)
                 .zip(args.get(1).map(String::as_str))
             {
-                Some(("pr", "create")) => ok(format!("https://github.com/o/{repo}/pull/1\n")),
-                Some(("pr", "view")) => ok("Fill body\n".into()),
+                Some(("pr", "create")) => {
+                    self.edits
+                        .lock()
+                        .expect("edits")
+                        .entry(repo.clone())
+                        .or_insert_with(|| "Fill body\n".into());
+                    ok(format!("https://github.com/o/{repo}/pull/1\n"))
+                }
+                // `pr view <branch> --json url`: open once created.
+                Some(("pr", "view")) if args.get(4).map(String::as_str) == Some("url") => {
+                    if self.edits.lock().expect("edits").contains_key(&repo) {
+                        ok(format!("https://github.com/o/{repo}/pull/1\n"))
+                    } else {
+                        GhOut {
+                            code: Some(1),
+                            stdout: String::new(),
+                            stderr: "no pull requests found".into(),
+                        }
+                    }
+                }
+                Some(("pr", "view")) => ok(self
+                    .edits
+                    .lock()
+                    .expect("edits")
+                    .get(&repo)
+                    .cloned()
+                    .unwrap_or_default()),
                 Some(("pr", "edit")) => {
                     let body = std::fs::read_to_string(&args[4]).unwrap_or_default();
                     self.edits.lock().expect("edits").insert(repo, body);
@@ -424,7 +529,7 @@ mod tests {
                     .collect(),
             },
         );
-        drive(&git, &gh, key, "tandem/tidy", &repos).await;
+        drive(&git, &gh, &root.join("run"), key, "tandem/tidy", &repos).await;
         let run = get(key).expect("run");
         assert!(!run.running);
         let states: Vec<(String, PrStepState, Option<String>)> = run
@@ -462,6 +567,32 @@ mod tests {
         );
         assert!(edits["web"].contains("- api: https://github.com/o/api/pull/1"));
         assert!(edits["api"].starts_with("Fill body"));
+        // A re-run keeps the open pull requests, links them once, and
+        // creates none.
+        let creates = || {
+            gh.calls
+                .lock()
+                .expect("calls")
+                .iter()
+                .filter(|(_, a)| a.get(1).map(String::as_str) == Some("create"))
+                .count()
+        };
+        let before = creates();
+        drive(&git, &gh, &root.join("run"), key, "tandem/tidy", &repos).await;
+        assert_eq!(creates(), before);
+        let again = gh.edits.lock().expect("edits").clone();
+        assert_eq!(
+            again["api"]
+                .matches("- web: https://github.com/o/web/pull/1")
+                .count(),
+            1
+        );
+        assert!(!get(key).expect("run").running);
+        // Body files don't stay behind.
+        let left = std::fs::read_dir(root.join("run"))
+            .map(|d| d.count())
+            .unwrap_or(0);
+        assert_eq!(left, 0);
         lock().remove(key);
     }
 }

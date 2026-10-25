@@ -73,7 +73,8 @@ pub struct PluginCard {
     pub key_hint: Option<String>,
     /// Teammates this connection is enabled for.
     pub teammates: u32,
-    /// Free's one connection is used up (Connect shows "Pro").
+    /// The limits' connections are used up (none are with no account,
+    /// D-2900).
     pub limit_reached: bool,
 }
 
@@ -405,7 +406,7 @@ impl PluginService {
         }
     }
 
-    /// Free's limit (§3.2): one connection; `None` is unlimited.
+    /// The limits' connection cap; `None` (no account, D-2900) is unlimited.
     async fn limit_reached(&self) -> bool {
         let Some(max) = self.entitlements.limits().plugin_connections else {
             return false;
@@ -471,7 +472,7 @@ impl PluginService {
     }
 
     /// Whether a new connection of `module` may be made (allowlist, preview,
-    /// Free's limit); a reconnect of an existing one skips the limit.
+    /// limits' cap); a reconnect of an existing one skips the limit.
     async fn may_connect(
         &self,
         module: &dyn VendorModule,
@@ -493,7 +494,7 @@ impl PluginService {
         if !reconnect && self.limit_reached().await {
             return Err(IpcError::new(
                 ErrorCode::ForbiddenPlan,
-                "Free includes one plugin connection.",
+                "This account's plugin connections are used up.",
             ));
         }
         Ok(())

@@ -165,6 +165,19 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
     expect(named("conductor_end_call")).toHaveLength(1);
   });
 
+  it("F-CN-01 a country the voice service can't serve offers no Try again (D-1018)", () => {
+    hud(
+      live({
+        phase: "error",
+        error: { code: "not_in_region", message: "Conductor's voice isn't available in your country yet." },
+      }),
+    );
+    expect(screen.getByTestId("conductor-error-message").textContent).toBe(
+      "Conductor's voice isn't available in your country yet.",
+    );
+    expect(screen.queryByTestId("conductor-error-action")).toBeNull();
+  });
+
   it("F-CN-01.1 the receipt shows time, credits and actions", () => {
     hud(live({ phase: "ended", receipt: { callId: "vs_1", seconds: 65, credits: 140, actions: 5 } }));
     expect(screen.getByTestId("conductor-receipt").textContent).toContain(
@@ -179,21 +192,22 @@ describe("Conductor HUD (F-CN-04, UI-61)", () => {
 });
 
 describe("Conductor ring and commands (F-CN-01, F-CN-04)", () => {
-  it("F-CN-04 the ring is hidden on Free, where the call command opens the plans", () => {
+  it("F-CN-04 with no account the ring is hidden, and the call command says Conductor comes with accounts (D-2903)", () => {
     render(
       <UiProvider>
         <ConductorButton />
       </UiProvider>,
     );
     expect(screen.queryByTestId("conductor-button")).toBeNull();
-    runCommand("conductor.call");
-    expect(useUi.getState().upgrade.open).toBe(true);
-    // The plans say why they opened (D-833).
-    expect(useUi.getState().upgrade.gate?.kind).toBe("conductor");
+    act(() => runCommand("conductor.call"));
+    // It says why, never silently, and never names a plan or a price (D-833, D-869).
+    const view = useConductor.getState().view;
+    expect(view.phase).toBe("error");
+    expect(view.error).toEqual({ code: "needs_pro", message: "Conductor comes with Vibezeo accounts. It uses Vibezeo's servers and switches on when Vibezeo accounts open." });
     expect(named("conductor_start_call")).toHaveLength(0);
   });
 
-  it("F-CN-01 on Pro a click starts a call", async () => {
+  it("F-CN-01 with Conductor in the limits a click starts a call", async () => {
     pro();
     render(
       <UiProvider>
@@ -328,7 +342,7 @@ describe("Call log (F-CN-04, UI-66)", () => {
 });
 
 describe("Conductor settings (F-CN-04, UI-67)", () => {
-  it("F-CN-04 keep call logs: absent on Free; on Pro it stores days or off", async () => {
+  it("F-CN-04 keep call logs: absent without Conductor; with it, it stores days or off", async () => {
     const { unmount } = render(
       <UiProvider>
         <ConductorCallSettings />
@@ -379,7 +393,7 @@ describe("Floating ring (F-CN-04, UI-61)", () => {
     await waitFor(() => expect(named("conductor_end_call")).toHaveLength(1));
   });
 
-  it("F-CN-04 the floating ring switch is a Pro setting", async () => {
+  it("F-CN-04 the floating ring switch shows only with Conductor", async () => {
     pro();
     render(
       <UiProvider>

@@ -17,6 +17,7 @@ type Entitlement = {
   policy: { maxAccess: string; auditEnabled: boolean; forceTelemetryOff: boolean } | null;
   org: { name: string; role: string } | null;
   credits: { monthly: number; purchased: number; cap: number | null } | null;
+  limits: { conductor: boolean };
 };
 
 export async function entitlement(): Promise<Entitlement> {

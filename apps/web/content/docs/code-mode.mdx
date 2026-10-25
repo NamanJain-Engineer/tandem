@@ -11,28 +11,12 @@ Code mode is a grid of real PTY terminals. Each pane runs an agent CLI or a shel
 - **Review queue.** Agents that finish with changes wait in one list, across every engine, with what they touched. See [Review queue](#review-queue) below.
 - **Worktrees.** Run a task in its own git worktree, under `<repo>/.tandem/worktrees/<name>` on a `tandem/<name>` branch, then merge it back or clean it up. See [Worktrees](#worktrees) below.
 - **Handoff.** Hand a session to another engine with a written summary, in a pane beside it or as a thread.
-- **Find work.** **Find work…** in the command palette (<kbd>Mod+K</kbd>) finds work by what it's about. Describe it, such as "the login tests", and it lists open panes, threads and teammates, best first; choose one to go to it, and a pane flashes. It reads each pane's name, title, engine, folder and last 20 lines of output, each thread's title and last message, and each teammate's name, the first line of its brief and its last message, with anything that looks like a key or password removed first. It ranks them on your computer. Ranking them with Vibezeo's AI is a Pro feature that comes with Vibezeo accounts.
-- **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click. The editor can go to definitions and find references with the language servers you have; see [Code intelligence](#code-intelligence) below.
+- **Find work.** **Find work…** in the command palette (<kbd>Mod+K</kbd>) finds work by what it's about. Describe it, such as "the login tests", and it lists open panes, threads and teammates, best first; choose one to go to it, and a pane flashes. It reads each pane's name, title, engine, folder and last 20 lines of output, each thread's title and last message, and each teammate's name, the first line of its brief and its last message, with anything that looks like a key or password removed first. It ranks them on your computer. Ranking them with Vibezeo's AI: **Comes with Vibezeo accounts.** It uses Vibezeo's servers and switches on when Vibezeo accounts open.
+- **Around the terminals.** A Files tab with a code editor, a git panel, a browser and a Scratchpad sit in the sidebar. Paths and URLs a program prints open with <kbd>Mod</kbd>+Click.
 - **Checkpoints and more.** Vibezeo saves a folder's files before agents change them, so you can rewind; it also recalls commands you ran, lists the ports your panes' servers use, runs Best of N and keeps a prompt library. See [Checkpoints and workflow tools](/docs/workflow-tools/).
 - **Restore.** After a crash or relaunch, layouts come back and agents return paused, ready to resume their session.
 
-On the Free plan you can have 4 live panes and 3 workspaces; see [Accounts and limits](/docs/accounts-and-limits/).
-
-## Code intelligence
-
-The Files editor uses the language server for a file's language when it's on your login PATH: `rust-analyzer` for Rust, `typescript-language-server` for TypeScript and JavaScript, `pyright-langserver` for Python and `gopls` for Go. Vibezeo never installs one; install it the way you usually would and it's picked up.
-
-- **Go to definition:** <kbd>F12</kbd>, or <kbd>Mod</kbd>+Click on a name. A definition in another file opens in a new tab at its line.
-- **Find references:** <kbd>Shift+F12</kbd> lists every reference under the editor with its file, line and text. Choose one to open it; <kbd>Esc</kbd> closes the list.
-- **Hover:** rest the pointer on a name to see what the server says about it, such as its type or signature.
-- **Problems:** the server's errors and warnings are underlined, with the message on hover, and the line beside the tabs counts them ("2 errors, 1 warning").
-- **In diffs:** in a worktree's diff and the review queue's, click a name on a changed or unchanged line of the new side for **Go to definition** or **Find references** in that worktree. The result opens in the Files editor.
-
-Language servers can run a repository's own code when they load it: build scripts and macros, TypeScript plugins, toolchain switches, the Python interpreter a project names. So they start only once you trust the repository: until then the line beside the tabs says, for example, "rust-analyzer is off until you trust this repository", with **Trust repository…**. Trusting it covers its worktrees and is kept on this computer.
-
-The server reads the text as it is in the editor, unsaved edits included. A server starts the first time you need it for a folder (each worktree has its own), stops after 10 minutes without use, and at most 4 run at once. Everything stays on your computer.
-
-Without a server for the language, the line beside the tabs says so, such as "No language server for Python", and its tooltip names what to install. Go to definition still finds a definition of the same name in the same file for Rust, TypeScript and Python. A server that fails says "rust-analyzer stopped: …" and is tried again on your next request, up to 3 times in 10 minutes; one that takes over 10 seconds to answer says "rust-analyzer didn't answer". Folders on SSH hosts and in WSL don't have code intelligence yet.
+There's no limit on live panes or workspaces; Vibezeo is free (see [Accounts and limits](/docs/accounts-and-limits/)).
 
 ## Review queue
 
@@ -62,7 +46,7 @@ Each item shows:
 A new worktree has only the files git tracks: no `.env`, no local config, no installed dependencies. **Worktree setup…** describes what each new worktree of the repository gets, and saves it as `.vibezeo/worktree.json` in the repository, so you can commit it and share it. Vibezeo never commits it for you.
 
 - **Copy into each new worktree.** One pattern per line, written as in `.gitignore`, such as `.env*` or `config/local.yml` (a `!` line excludes). Matching files are copied from your main checkout into every new worktree, however it was made. A file the worktree already has is never overwritten, symbolic links are skipped, and folders git ignores, such as `node_modules`, are only searched when a pattern names a path inside them. The copy stops at 2,000 files or 512 MB. On filesystems with copy-on-write, such as btrfs and XFS, files are cloned rather than copied, so even a large `node_modules` or a dev database file arrives almost at once and takes no extra space until one side changes; the message after the worktree is made says how many were cloned.
-- **Setup command.** Runs in a new terminal in the worktree, such as `pnpm install`, so you can watch it and stop it. It counts toward your live panes (4 on Free). It runs for worktrees you make with **New worktree…** or the launch sheet; worktrees made for Best of N, task runs and handoff get the copy only.
+- **Setup command.** Runs in a new terminal in the worktree, such as `pnpm install`, so you can watch it and stop it. It runs for worktrees you make with **New worktree…** or the launch sheet; worktrees made for Best of N, task runs and handoff get the copy only.
 - **Teardown command.** Runs in the worktree when you choose **Discard worktree…**, before its folder is deleted, such as `docker compose down`; the worktrees Best of N removes don't run it. It gets 2 minutes. If it fails or times out the worktree is still discarded, and the message says what happened.
 - **Trust.** Commands from the file run only once you've trusted them on this computer. Saving in **Worktree setup…** trusts them. If the file arrives or changes some other way, for example in a pull, the next new worktree shows **Review worktree setup** with the commands as written, and nothing runs until you choose **Trust and run**. **Not now** still gives you the worktree, with the copied files.
 
@@ -87,7 +71,7 @@ A preview runs your app's dev server in each worktree, on the worktree's own por
 
 - `command` is filled in like the environment, so `{{port}}` is the worktree's first port. `port` says which port of the block the server answers on (0 is the first) and `path` what to open.
 - The preview command is trusted with the setup and teardown commands and the environment: until you trust them on this computer, it never runs, and **Start preview** shows the review first.
-- **Start preview** in a worktree's ⋯ menu runs it in a terminal named Preview in the worktree, where you can watch it and stop it. A new worktree with a trusted setup runs the setup and then the preview in the same terminal; with no setup, the preview starts on its own. It counts toward your live panes (4 on Free).
+- **Start preview** in a worktree's ⋯ menu runs it in a terminal named Preview in the worktree, where you can watch it and stop it. A new worktree with a trusted setup runs the setup and then the preview in the same terminal; with no setup, the preview starts on its own.
 - Once something answers on the preview's port, the worktree's row in the rail shows **Preview**, which opens it in a browser tab in the sidebar, at `<worktree>.localhost` where your computer resolves it. Vibezeo checks every 2 seconds by connecting to the port on your own computer; it sends nothing.
 - In Best of N's **Compare**, **Previews** starts every lane's preview and opens a browser tab for each one as it comes up.
 - To see two versions side by side, choose **Compare previews…** in a worktree's ⋯ menu (or **Side by side…** in Best of N's **Compare**) and tick the other worktree. Vibezeo starts any preview that isn't running, waits up to a minute for both to answer, then opens a new tab in the repository with two browser panes, each named after its worktree's branch.
@@ -154,9 +138,9 @@ Files in other languages, files over 512 KB, and anything past a worktree's firs
 
 ### Multi-repo workspaces
 
-Add a folder that holds several repositories side by side, such as `shop/` with `api/` and `web/`, and Vibezeo treats them as one workspace. Its rail row says how many repositories it holds ("2 repositories"). Only repositories directly inside the folder count, up to 12, and the folder itself mustn't be inside a repository.
+Add a folder that holds several repositories side by side, such as `shop/` with `api/` and `web/`, and Vibezeo treats them as one workspace. Its rail row says how many repositories it holds ("2 repositories"). Only repositories directly inside the folder count, and a repository's extra checkouts (its own worktrees beside it) count once. A folder with more than 12 isn't treated as multi-repo: add the repositories you work in on their own. The folder itself mustn't be inside a repository.
 
-On Pro, **New worktree…** and the launch sheet's worktrees work across all of them. Each worktree is a folder `shop/.tandem/worktrees/<name>/` holding a worktree of every repository, all on the same branch `tandem/<name>`, so one agent started there can change both the API and the web app together. If one repository can't get a worktree (it has no commits yet, for example), none is made and Vibezeo says which.
+**New worktree…** and the launch sheet's worktrees work across all of them. Each worktree is a folder `shop/.tandem/worktrees/<name>/` holding a worktree of every repository, all on the same branch `tandem/<name>`, so one agent started there can change both the API and the web app together. If one repository can't get a worktree (it has no commits yet, for example), none is made and Vibezeo says which.
 
 - **Open diff** shows each repository's share of the changes, then the files under each repository's name. Comments for the agent work as for any worktree.
 - **Create pull requests** asks first, then in each repository with new commits pushes the branch and opens a pull request with your own `git` and GitHub CLI (`gh`). Each pull request's description then links the others. Repositories without new commits, and GitLab ones for now, are skipped and listed.

@@ -7,7 +7,7 @@ use tauri::State;
 use crate::services::tasks_exec::{AttemptView, ExecuteInput};
 use crate::state::AppState;
 
-/// Execute… (UI-82). Needs sign-in and Pro; never started by assigning.
+/// Execute… (UI-82). Needs no account (D-2902); never started by assigning.
 #[tauri::command]
 pub async fn task_execute(
     state: State<'_, AppState>,

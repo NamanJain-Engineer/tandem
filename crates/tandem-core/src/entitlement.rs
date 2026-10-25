@@ -57,42 +57,40 @@ pub struct Limits {
     /// Full-text search across engine sessions (F-TH-17).
     #[serde(default)]
     pub session_search: bool,
-    /// Worktrees across a multi-repo folder (F-CD-22). Defaults to false so
-    /// an older API's entitlement still parses.
-    #[serde(default)]
-    pub multi_repo: bool,
 }
 
 impl Limits {
-    /// The Free matrix (PRODUCT_SPEC §3.2). Pinned to the same fixture as the
-    /// TypeScript plans module.
+    /// What runs with no account: every local feature, unlimited (D-869,
+    /// D-2900). Only the hosted features, which need Vibezeo's servers, stay
+    /// off until accounts open. Pinned to the same fixture as the TypeScript
+    /// plans module.
     pub fn free() -> Self {
         Self {
-            panes: Some(4),
-            workspaces: Some(3),
-            thread_grid: 1,
-            teammates: Some(1),
-            routines: false,
-            background_routines: false,
-            task_execution: false,
-            plugin_connections: Some(1),
-            accounts_per_engine: Some(1),
+            panes: None,
+            workspaces: None,
+            thread_grid: 6,
+            teammates: None,
+            routines: true,
+            background_routines: true,
+            task_execution: true,
+            plugin_connections: None,
+            accounts_per_engine: None,
             cloud_stt: false,
             enhance: false,
             conductor: false,
             auto: false,
             phone: false,
             admin: false,
-            chat_engines: Some(vec!["claude".to_string(), "codex".to_string()]),
+            chat_engines: None,
             credit_packs: false,
             dictionary_sync: false,
-            session_search: false,
-            multi_repo: false,
+            session_search: true,
         }
     }
 
-    /// Whether Thread mode may run `engine_id` on this plan (`chat_engines`:
-    /// `None` = every chat engine; Free lists Claude Code and Codex).
+    /// Whether Thread mode may run `engine_id` (`chat_engines`: `None` =
+    /// every chat engine, which is what runs with no account; a token may
+    /// still list some).
     pub fn allows_chat_engine(&self, engine_id: &str) -> bool {
         self.chat_engines
             .as_ref()
@@ -100,9 +98,9 @@ impl Limits {
     }
 }
 
-/// Why a Free thread can't use an ACP engine (PRODUCT_SPEC §3.2).
-pub const CHAT_ENGINE_ON_PRO: &str =
-    "Free threads run Claude Code and Codex. Pro runs every chat engine.";
+/// Why a thread can't use a chat engine its limits leave out. Nothing local
+/// leaves one out since D-869; a signed token from an older API still can.
+pub const CHAT_ENGINE_NOT_ALLOWED: &str = "This chat engine isn't available to threads here.";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -332,9 +330,7 @@ pub(crate) mod tests {
         } else {
             let mut l = Limits::free();
             l.panes = Some(64);
-            l.workspaces = None;
-            l.routines = true;
-            l.chat_engines = None;
+            l.conductor = true;
             serde_json::to_value(l).expect("limits")
         };
         let payload = serde_json::json!({
@@ -352,17 +348,46 @@ pub(crate) mod tests {
     const NOW: i64 = 1_800_000_000;
 
     #[test]
-    fn f_th_06_free_threads_run_only_claude_code_and_codex() {
+    fn f_th_06_threads_with_no_account_run_every_chat_engine() {
         let free = Limits::free();
-        assert!(free.allows_chat_engine("claude"));
-        assert!(free.allows_chat_engine("codex"));
-        for acp in ["cursor", "grok", "opencode"] {
-            assert!(!free.allows_chat_engine(acp), "{acp} runs on Free");
-        }
-        let mut pro = Limits::free();
-        pro.chat_engines = None;
         for any in ["claude", "codex", "cursor", "grok", "opencode"] {
-            assert!(pro.allows_chat_engine(any), "{any} blocked on Pro");
+            assert!(
+                free.allows_chat_engine(any),
+                "{any} blocked with no account"
+            );
+        }
+        // A token that lists engines still narrows them.
+        let mut listed = Limits::free();
+        listed.chat_engines = Some(vec!["claude".to_string()]);
+        assert!(listed.allows_chat_engine("claude"));
+        assert!(!listed.allows_chat_engine("cursor"));
+    }
+
+    /// D-869, D-2900: every local feature is free and unlimited; the hosted
+    /// ones stay off until accounts open.
+    #[test]
+    fn f_cd_03_local_features_are_unlimited_with_no_account() {
+        let free = Limits::free();
+        assert_eq!(free.panes, None, "panes");
+        assert_eq!(free.workspaces, None, "workspaces");
+        assert_eq!(free.teammates, None, "teammates");
+        assert_eq!(free.plugin_connections, None, "plugin connections");
+        assert_eq!(free.accounts_per_engine, None, "accounts per engine");
+        assert_eq!(free.chat_engines, None, "chat engines");
+        assert_eq!(free.thread_grid, 6, "thread grid");
+        assert!(free.routines && free.background_routines);
+        assert!(free.task_execution && free.session_search);
+        assert!(!free.phone, "the phone relay needs accounts");
+        for (name, on) in [
+            ("cloud_stt", free.cloud_stt),
+            ("enhance", free.enhance),
+            ("conductor", free.conductor),
+            ("auto", free.auto),
+            ("admin", free.admin),
+            ("credit_packs", free.credit_packs),
+            ("dictionary_sync", free.dictionary_sync),
+        ] {
+            assert!(!on, "{name} is hosted and stays off");
         }
     }
 
@@ -407,7 +432,7 @@ pub(crate) mod tests {
         let claims = verify_entitlement(&token(&signing, "pro", exp), &keys).expect("valid");
         let at_23h = effective_limits(Some(&claims), exp + 23 * 3600);
         assert_eq!((at_23h.0, at_23h.2), (Plan::Pro, LimitSource::Grace));
-        assert_eq!(at_23h.1.panes, Some(64));
+        assert!(at_23h.1.conductor);
         let at_25h = effective_limits(Some(&claims), exp + 25 * 3600);
         assert_eq!((at_25h.0, at_25h.2), (Plan::Free, LimitSource::Free));
         assert_eq!(

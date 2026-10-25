@@ -33,35 +33,38 @@ export type Limits = {
   dictionarySync: boolean;
   /** Full-text search across engine sessions (F-TH-17). */
   sessionSearch: boolean;
-  /** Worktrees across a multi-repo folder (F-CD-22). */
-  multiRepo: boolean;
 };
 
+/**
+ * `free` is what runs with no account: every local feature, unlimited (D-869,
+ * D-2900). The hosted features need Vibezeo's servers and stay off until
+ * accounts open. `pro` and `team` are kept for the hosted API's plan ids and
+ * are supersets of `free`; nothing in the app sells them.
+ */
 export const LIMITS: Record<Plan, Limits> = {
   free: {
-    panes: 4,
-    workspaces: 3,
-    threadGrid: 1,
-    teammates: 1,
-    routines: false,
-    backgroundRoutines: false,
-    taskExecution: false,
-    pluginConnections: 1,
-    accountsPerEngine: 1,
+    panes: null,
+    workspaces: null,
+    threadGrid: 6,
+    teammates: null,
+    routines: true,
+    backgroundRoutines: true,
+    taskExecution: true,
+    pluginConnections: null,
+    accountsPerEngine: null,
     cloudStt: false,
     enhance: false,
     conductor: false,
     auto: false,
     phone: false,
     admin: false,
-    chatEngines: ["claude", "codex"],
+    chatEngines: null,
     creditPacks: false,
     dictionarySync: false,
-    sessionSearch: false,
-    multiRepo: false,
+    sessionSearch: true,
   },
   pro: {
-    panes: 64,
+    panes: null,
     workspaces: null,
     threadGrid: 6,
     teammates: null,
@@ -80,7 +83,6 @@ export const LIMITS: Record<Plan, Limits> = {
     creditPacks: true,
     dictionarySync: true,
     sessionSearch: true,
-    multiRepo: true,
   },
   team: {
     panes: null,
@@ -102,7 +104,6 @@ export const LIMITS: Record<Plan, Limits> = {
     creditPacks: true,
     dictionarySync: true,
     sessionSearch: true,
-    multiRepo: true,
   },
 };
 

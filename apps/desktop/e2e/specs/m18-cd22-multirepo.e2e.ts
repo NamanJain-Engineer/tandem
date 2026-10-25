@@ -2,11 +2,11 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshUser, home, planFooter, setPlan, settled, userHome } from "../support/app";
+import { addFolder, freshOffline, home, settled, userHome } from "../support/app";
 import { newWorktree, pick } from "../support/worktrees";
 
 // E2E-M18-CD22-1 Multi-repo worktree (F-CD-22): a folder holding `api` and
-// `web` repositories, on Pro. The row says "2 repositories"; New worktree
+// `web` repositories, free for everyone (D-869). The row says "2 repositories"; New worktree
 // makes tandem/<slug> in both under one parent folder; Open diff lists both
 // repositories; Discard removes both worktrees and keeps both branches.
 
@@ -55,12 +55,8 @@ describe("E2E-M18-CD22-1 multi-repo worktree", function () {
       git(repo, "commit", "-q", "-m", "first");
     }
     writeFileSync(join(userHome(), ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@vibezeo.test\n");
-    const { email } = await freshUser("cd22");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), {
-      timeout: 20_000,
-      timeoutMsg: "the plan never showed Pro",
-    });
+    // Free for everyone (D-869): no account or plan needed.
+    await freshOffline();
     await addFolder(folder);
   });
 

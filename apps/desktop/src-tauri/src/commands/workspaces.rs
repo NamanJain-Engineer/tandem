@@ -137,16 +137,7 @@ pub async fn workspace_rename(
 
 #[tauri::command]
 pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
-    let root = repo::get(&state.store, &id)
-        .await
-        .ok()
-        .map(|ws| crate::services::files::local_root(&ws));
-    workspaces::remove(&state.store, &state.terminals.pty, &id).await?;
-    // F-CD-23: its language servers stop with it.
-    if let Some(root) = root {
-        crate::services::lsp::global().forget(&root).await;
-    }
-    Ok(())
+    workspaces::remove(&state.store, &state.terminals.pty, &id).await
 }
 
 /// Points a workspace at its folder's new location ("Locate…", F-SH-03).

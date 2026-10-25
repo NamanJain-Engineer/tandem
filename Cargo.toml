@@ -4,8 +4,10 @@ members = ["crates/*", "apps/desktop/src-tauri", "tests/invariants"]
 
 [workspace.package]
 edition = "2021"
-license = "MIT"
-version = "0.8.0"
+# All rights reserved until the owner picks an open-source licence (D-870),
+# the same as the Flatpak and Snap metadata.
+license = "LicenseRef-proprietary"
+version = "0.10.0"
 publish = false
 
 [workspace.dependencies]

@@ -34,6 +34,10 @@ pub struct WorkspaceSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub repos: Option<Vec<String>>,
+    /// F-CD-22: why a folder of repositories isn't multi-repo (too many).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub repos_note: Option<String>,
 }
 
 /// `workspace_add` result.
@@ -189,6 +193,7 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
         // A remote folder is checked when its host is reached.
         let local = ws.kind == "local";
         let branch = if local { git_branch(root) } else { None };
+        let mut repos_note = None;
         let repos = if !local {
             Vec::new()
         } else if ws.parent_id.is_some() {
@@ -198,7 +203,14 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
                 .map(|r| r.name)
                 .collect()
         } else if branch.is_none() {
-            multi_repos(root)
+            match detect_multi_repo(root) {
+                MultiRepo::Repos(r) => r,
+                MultiRepo::TooMany(n) => {
+                    repos_note = Some(too_many_repos(n));
+                    Vec::new()
+                }
+                MultiRepo::No => Vec::new(),
+            }
         } else {
             Vec::new()
         };
@@ -208,6 +220,7 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
             live_count: live,
             tabs,
             repos: (!repos.is_empty()).then_some(repos),
+            repos_note,
             workspace: ws,
         });
     }
@@ -239,30 +252,82 @@ pub async fn remove(store: &Store, pty: &PtyManager, id: &WorkspaceId) -> Result
 /// At most this many repositories make up a multi-repo folder (F-CD-22).
 pub const MAX_REPOS: usize = 12;
 
-/// F-CD-22: the git repositories directly inside `root`, by name, when
-/// there are at least two and `root` isn't itself in a repository. Hidden
-/// folders don't count; nested deeper repositories aren't looked for.
-pub fn multi_repos(root: &Path) -> Vec<String> {
+/// What F-CD-22's detection found in a folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MultiRepo {
+    /// Not a multi-repo folder.
+    No,
+    /// At least two repositories, by name.
+    Repos(Vec<String>),
+    /// More than [`MAX_REPOS`]: not treated as multi-repo.
+    TooMany(usize),
+}
+
+/// The git common directory of the repository checked out at `dir`: its
+/// `.git` folder, or for a linked worktree the main repository's.
+fn common_dir(dir: &Path) -> Option<PathBuf> {
+    let dot = dir.join(".git");
+    let meta = std::fs::symlink_metadata(&dot).ok()?;
+    let git_dir = if meta.is_dir() {
+        dot
+    } else if meta.is_file() {
+        let text = std::fs::read_to_string(&dot).ok()?;
+        let pointer = text.trim().strip_prefix("gitdir:")?.trim();
+        let g = dir.join(pointer);
+        match std::fs::read_to_string(g.join("commondir")) {
+            Ok(c) => g.join(c.trim()),
+            Err(_) => g,
+        }
+    } else {
+        return None;
+    };
+    std::fs::canonicalize(git_dir).ok()
+}
+
+/// F-CD-22: the git repositories directly inside `root`, when there are at
+/// least two and `root` isn't itself in a repository. Hidden folders and
+/// symlinks don't count; nested deeper repositories aren't looked for.
+/// Checkouts of one repository (a folder and its sibling worktree) count
+/// once, under the first name.
+pub fn detect_multi_repo(root: &Path) -> MultiRepo {
     if root.ancestors().any(|a| a.join(".git").exists()) {
-        return Vec::new();
+        return MultiRepo::No;
     }
     let Ok(entries) = std::fs::read_dir(root) else {
-        return Vec::new();
+        return MultiRepo::No;
     };
     let mut names: Vec<String> = entries
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| e.file_name().into_string().ok())
         .filter(|n| !n.starts_with('.'))
-        .filter(|n| root.join(n).join(".git").exists())
         .collect();
     names.sort();
-    names.truncate(MAX_REPOS);
-    if names.len() >= 2 {
-        names
-    } else {
-        Vec::new()
+    let mut seen = std::collections::BTreeSet::new();
+    let repos: Vec<String> = names
+        .into_iter()
+        .filter(|n| common_dir(&root.join(n)).is_some_and(|c| seen.insert(c)))
+        .collect();
+    match repos.len() {
+        0 | 1 => MultiRepo::No,
+        n if n > MAX_REPOS => MultiRepo::TooMany(n),
+        _ => MultiRepo::Repos(repos),
     }
+}
+
+/// The repositories of a multi-repo folder; empty when it isn't one.
+pub fn multi_repos(root: &Path) -> Vec<String> {
+    match detect_multi_repo(root) {
+        MultiRepo::Repos(r) => r,
+        _ => Vec::new(),
+    }
+}
+
+/// Why a folder of repositories isn't multi-repo, when that's the reason.
+pub fn too_many_repos(n: usize) -> String {
+    format!(
+        "This folder holds {n} repositories, more than {MAX_REPOS}, so its worktrees aren't made across them. Add the repositories you work in on their own."
+    )
 }
 
 /// The checked-out branch from `.git/HEAD` (worktrees follow `gitdir:`),
@@ -296,6 +361,50 @@ pub fn git_branch(root: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use tandem_core::DataDir;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["-c", "user.name=T", "-c", "user.email=t@t"])
+            .args(args)
+            .status()
+            .expect("git")
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn f_cd_22_review_checkouts_of_one_repository_count_once_and_too_many_isnt_multi() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let root = std::fs::canonicalize(tmp.path()).expect("canonical");
+        for name in ["app", "web"] {
+            let r = root.join(name);
+            std::fs::create_dir_all(&r).expect("mkdir");
+            git(&r, &["init", "-q", "-b", "main"]);
+            git(&r, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        }
+        // app's own worktree beside it is the same repository.
+        git(
+            &root.join("app"),
+            &["worktree", "add", "-q", "-b", "hotfix", "../app-hotfix"],
+        );
+        assert_eq!(
+            detect_multi_repo(&root),
+            MultiRepo::Repos(vec!["app".into(), "web".into()])
+        );
+        // Just app and its worktree: one repository, not multi-repo.
+        std::fs::remove_dir_all(root.join("web")).expect("rm");
+        assert_eq!(detect_multi_repo(&root), MultiRepo::No);
+        // More than 12: not multi-repo, with the reason.
+        for i in 0..=MAX_REPOS {
+            let r = root.join(format!("r{i:02}"));
+            std::fs::create_dir_all(&r).expect("mkdir");
+            git(&r, &["init", "-q"]);
+        }
+        assert_eq!(detect_multi_repo(&root), MultiRepo::TooMany(MAX_REPOS + 2));
+        assert!(multi_repos(&root).is_empty());
+        assert!(too_many_repos(14).contains("more than 12"));
+    }
 
     fn store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().expect("tempdir");

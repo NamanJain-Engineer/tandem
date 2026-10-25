@@ -1,12 +1,28 @@
-# Tandem
+# Vibezeo
 
-A cross-platform desktop workspace for building software with the coding-agent CLIs you already pay for: terminal panes (Code mode), coding sessions read as conversations (Thread mode), and persistent teammates (Agent mode). Tandem hosts those engines. It never reads their tokens, and nothing leaves your machine unless you turn it on.
+A desktop workspace for the coding agents you already use. Claude Code, Codex and the other coding-agent CLIs run in real terminal panes side by side (Code mode), their sessions read as conversations (Thread mode), and teammates keep their notes between chats (Agent mode). Each engine signs in by itself, in its own folder on your disk: Vibezeo never reads, copies or proxies an AI vendor's tokens, and nothing leaves your computer unless you turn it on.
 
-Tandem is a clean-room product. It does not use another product's names, copy, artwork or code.
+- **Free.** Vibezeo is free, with no paid plans. Download it from [vibezeo.com/download](https://vibezeo.com/download/). Linux builds are out; macOS and Windows builds aren't published yet.
+- **Docs:** [vibezeo.com/docs](https://vibezeo.com/docs/). **Changes:** [CHANGELOG.md](CHANGELOG.md).
+- **Security issues:** report them privately, as [SECURITY.md](SECURITY.md) explains.
+- **Anything else:** contact@vibezeo.com.
+
+Vibezeo is a clean-room product. It doesn't use another product's names, copy, artwork or code.
+
+The code still uses the product's working name, Tandem: the crates are `tandem-*`, the app keeps its data in `~/.tandem/`, and the specs say Tandem.
+
+## Licence
+
+The source is public so that anyone can read it and see what the app does. No open-source licence has been granted, so the code is all rights reserved (© 2026 Naman Jain). The app itself is free to download and use.
+
+## How it's built
+
+Coding agents build Vibezeo from the specs, and the repository keeps their working record:
 
 - What and why: [`docs/PLAN.md`](docs/PLAN.md) (analysis, architecture, milestone plan)
 - Binding specs: [`build-kit/`](build-kit/) (DECISIONS, PRODUCT_SPEC, ARCHITECTURE, UI_SPEC, MILESTONES)
-- Progress: [`BUILD_LOG.md`](BUILD_LOG.md). Human-only steps: [`HUMAN_TODO.md`](HUMAN_TODO.md)
+- Rules for the agents: [`CLAUDE.md`](CLAUDE.md). Machine setup, commands and releasing: [`docs/OPERATING.md`](docs/OPERATING.md)
+- Progress and decisions: [`BUILD_LOG.md`](BUILD_LOG.md). Steps only a person can do: [`HUMAN_TODO.md`](HUMAN_TODO.md)
 
 ## Repository layout
 
@@ -51,11 +67,11 @@ With `pnpm dev` running (API on :8787, web on :3000):
 
 1. Create an account at http://localhost:3000/signup (or use a seeded one, e.g. `free@tandem.test` / `Tandem-dev-pass-1`). The verification email lands in Mailpit at http://localhost:8025.
 2. In the desktop app, click **Continue with email**. Your browser opens `http://localhost:3000/desktop-login`; sign in there.
-3. The browser tab says "You can return to Tandem." and the app shows your plan in the rail footer ("FREE", or "PRO · 10,000 credits").
+3. The browser tab says "You can return to Tandem." and Settings › Account shows who's signed in.
 
-The app listens for the callback on an ephemeral `127.0.0.1` port and also accepts `tandem-dev://auth/callback` (dev builds use the `tandem-dev` scheme). Point the app elsewhere with `TANDEM_API_URL` and `TANDEM_WEB_URL`. **Use Tandem offline** skips the account: Free limits, sign-in needed within 14 days. Tokens are stored AES-GCM encrypted in `$TANDEM_HOME/auth/credentials.enc`, with the key in the OS keychain (`app.tandem.dev.auth` in dev builds).
+The app listens for the callback on an ephemeral `127.0.0.1` port and also accepts `tandem-dev://auth/callback` (dev builds use the `tandem-dev` scheme). Point the app elsewhere with `TANDEM_API_URL` and `TANDEM_WEB_URL`. **Use Tandem offline** skips the account: everything local, unlimited (D-2900); sign-in needed within 14 days. Tokens are stored AES-GCM encrypted in `$TANDEM_HOME/auth/credentials.enc`, with the key in the OS keychain (`app.tandem.dev.auth` in dev builds).
 
-To try the paid path, click **See plans** (account menu) and start the Pro trial: the mock checkout opens in your browser, and the app switches to Pro within a few seconds of completing it.
+Vibezeo is free (D-869): the app sells nothing, so there's no checkout to try. Hosted features follow the seeded account's entitlement (`pro@tandem.test` carries them).
 
 ## Tests
 

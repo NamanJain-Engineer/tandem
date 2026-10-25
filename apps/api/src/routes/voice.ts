@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Deps } from "../deps";
 import { ApiError } from "../lib/problem";
+import { callerCountry } from "../lib/region";
 import { parseJson } from "../lib/validate";
 import { requireUser } from "../middleware/auth";
 import type { AppEnv } from "../middleware/context";
@@ -96,7 +97,10 @@ export function voiceRoutes(deps: Deps) {
     const body = await parseJson(c, voiceSessionBody);
     await allowed(userId);
     await limit(userId, "voice_session", c);
-    return c.json(await mintSession(deps, userId, body.voice, body.providers));
+    // Read only the header the edge is configured to set (D-1018); without one, no country.
+    const header = deps.env.CLIENT_COUNTRY_HEADER;
+    const country = header ? callerCountry(c.req.header(header)) : undefined;
+    return c.json(await mintSession(deps, userId, body.voice, body.providers, country));
   });
 
   // Never gated by plan or policy: a call that loses either still settles, and its hold comes back.

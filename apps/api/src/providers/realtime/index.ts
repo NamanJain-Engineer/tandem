@@ -32,6 +32,12 @@ function provider(env: Env, name: RealtimeProviderName): RealtimeProvider {
       });
     case "gemini":
       if (!env.GEMINI_API_KEY) throw new Error("the gemini realtime provider needs GEMINI_API_KEY");
+      // Without the caller's country, the free tier's region rule can't hold (D-1018).
+      if (env.NODE_ENV === "production" && env.GEMINI_TIER === "free" && !env.CLIENT_COUNTRY_HEADER) {
+        throw new Error(
+          "GEMINI_TIER=free needs CLIENT_COUNTRY_HEADER: Google's free tier can't serve the EEA, Switzerland or the UK",
+        );
+      }
       return new GeminiLive({
         apiKey: env.GEMINI_API_KEY,
         baseUrl: env.GEMINI_API_BASE,

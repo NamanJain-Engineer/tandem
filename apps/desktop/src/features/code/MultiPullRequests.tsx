@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import type { PrStep, PrsRun, WorkspaceSummary } from "@tandem/protocol";
-import { Button, Dialog, Spinner } from "@tandem/ui";
+import { Banner, Button, Dialog, Spinner } from "@tandem/ui";
 import { t } from "../../i18n";
+import { invoke } from "../../ipc/invoke";
 import { PRS_POLL_MS, pullRequestsRun } from "../../stores/worktrees";
+
+/** Pull request pages open in the system browser, through the core. */
+const openExternal = (url: string) => void invoke("app_open_external", { url }).catch(() => undefined);
 
 function stepText(s: PrStep): string {
   switch (s.state) {
@@ -29,11 +33,21 @@ const BUSY = new Set(["waiting", "pushing", "creating", "linking"]);
  * polled while the run lasts. */
 export function PullRequestsDialog({ wt, onClose }: { wt: WorkspaceSummary; onClose: () => void }) {
   const [run, setRun] = useState<PrsRun | null>(null);
+  /** The run was read and there's none (the app restarted), or reading failed. */
+  const [gone, setGone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     const read = () =>
       void pullRequestsRun(wt.id).then((out) => {
-        if (live && out.ok) setRun(out.value);
+        if (!live) return;
+        if (!out.ok) {
+          setError(out.error.message);
+          return;
+        }
+        setError(null);
+        setRun(out.value);
+        setGone(out.value === null);
       });
     read();
     const timer = setInterval(read, PRS_POLL_MS);
@@ -57,6 +71,16 @@ export function PullRequestsDialog({ wt, onClose }: { wt: WorkspaceSummary; onCl
         </Button>
       }
     >
+      {error && (
+        <Banner tone="error">
+          <span data-testid="prs-error">{t("prs.error", { reason: error })}</span>
+        </Banner>
+      )}
+      {gone && !error && (
+        <p className="text-sm text-fg-muted" data-testid="prs-gone">
+          {t("prs.gone")}
+        </p>
+      )}
       <ul data-testid="prs" data-running={run?.running ? "true" : "false"} className="flex flex-col gap-2">
         {steps.map((s) => (
           <li
@@ -66,19 +90,18 @@ export function PullRequestsDialog({ wt, onClose }: { wt: WorkspaceSummary; onCl
             data-state={s.state}
             className="flex items-center gap-2 rounded-sm border border-border px-2 py-1.5 text-sm"
           >
-            {BUSY.has(s.state) && run?.running !== false ? <Spinner size={12} /> : null}
+            {BUSY.has(s.state) && run?.running === true && !error ? <Spinner size={12} /> : null}
             <span className="font-mono text-fg">{s.repo}</span>
             <span className="ml-auto truncate text-fg-muted">{stepText(s)}</span>
             {s.url ? (
-              <a
-                href={s.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent underline"
+              <Button
+                size="sm"
+                variant="ghost"
                 data-testid="prs-link"
+                onClick={() => openExternal(s.url ?? "")}
               >
                 {t("prs.link")}
-              </a>
+              </Button>
             ) : null}
           </li>
         ))}
