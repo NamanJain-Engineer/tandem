@@ -350,9 +350,8 @@ pub fn prefix_patch(patch: &str, name: &str) -> String {
     let mut out = String::with_capacity(patch.len() + 64);
     let mut in_hunk = false;
     for line in patch.split_inclusive('\n') {
-        if line.starts_with("diff --git ") {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
             in_hunk = false;
-            let rest = &line["diff --git ".len()..];
             out.push_str("diff --git ");
             out.push_str(&rest.replacen("a/", &format!("a/{name}/"), 1).replacen(
                 " b/",
