@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tandem_core::DataDir;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Notify};
 use ts_rs::TS;
@@ -115,6 +116,8 @@ pub enum LspState {
     Ready,
     /// It failed to start or stopped; `message` says why.
     Failed,
+    /// It's installed but waits for the repository's trust (D-2580).
+    Untrusted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -748,6 +751,11 @@ impl Lsp {
         }
     }
 
+    /// The server is on the login PATH.
+    pub fn available(&self, spec: &ServerSpec, login: &LoginEnv) -> bool {
+        self.spawner.available(spec, login)
+    }
+
     /// How many run now.
     pub async fn count(&self) -> usize {
         self.running.lock().await.len()
@@ -766,6 +774,66 @@ pub async fn run_reaper() {
                 "idle language servers stopped"
             );
         }
+    }
+}
+
+// ---- Trust (D-2580) ---------------------------------------------------------
+//
+// Loading a folder can run the repository's own code (build scripts and proc
+// macros, tsserver plugins and the repository's TypeScript, toolchain
+// switches, the interpreter a Python config names), so every server waits
+// for the repository's trust.
+
+/// The repositories whose language servers may run, in `$DATA`.
+pub const TRUST_FILE: &str = "lsp-trust.json";
+
+static TRUST_LOCK: Mutex<()> = Mutex::new(());
+
+fn trust_key(main: &Path) -> String {
+    std::fs::canonicalize(main)
+        .unwrap_or_else(|_| main.to_path_buf())
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn read_trust(data: &DataDir) -> Vec<String> {
+    std::fs::read(data.root().join(TRUST_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// The repository at `main` (its main checkout) is trusted for language
+/// servers.
+pub fn is_trusted(data: &DataDir, main: &Path) -> bool {
+    read_trust(data).contains(&trust_key(main))
+}
+
+/// Records the repository at `main` as trusted for language servers.
+pub fn trust(data: &DataDir, main: &Path) -> Result<(), IpcError> {
+    let _guard = lock(&TRUST_LOCK);
+    let mut all = read_trust(data);
+    let key = trust_key(main);
+    if !all.contains(&key) {
+        all.push(key);
+    }
+    let bytes =
+        serde_json::to_vec_pretty(&all).map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()))?;
+    tandem_core::atomic::atomic_write(&data.root().join(TRUST_FILE), &bytes, Some(0o600))
+        .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("lsp"))
+}
+
+/// What `lsp_sync` says for an installed server that waits for trust.
+pub fn untrusted_doc(spec: &ServerSpec) -> LspDocument {
+    LspDocument {
+        language: Some(spec.language.to_string()),
+        server: Some(spec.server.to_string()),
+        state: LspState::Untrusted,
+        message: Some(format!(
+            "{} is off until you trust this repository",
+            spec.server
+        )),
+        diagnostics: Vec::new(),
     }
 }
 

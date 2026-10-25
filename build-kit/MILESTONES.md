@@ -2097,7 +2097,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 ```
 
 **E2E**
-- **E2E-M18-CD23-1 Code intelligence.** A Python folder with the fake language server on PATH as `pyright-langserver`. Expected: F12 on a call opens the definition in the other file; Shift+F12 lists the references; the status line counts a diagnostic; a Rust file says "No language server for Rust".
+- **E2E-M18-CD23-1 Code intelligence.** A Python folder with the fake language server on PATH as `pyright-langserver`. Expected: the status line says pyright is off until the repository is trusted, and Trust repository… (native confirm: yes) starts it; F12 on a call opens the definition in the other file; Shift+F12 lists the references; the status line counts a diagnostic; a Rust file says "No language server for Rust"; with the fake server also as `typescript-language-server`, a TypeScript file's server starts without asking again.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 

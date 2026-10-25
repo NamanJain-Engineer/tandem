@@ -931,7 +931,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 **Story:** I'm reviewing what an agent changed. I want to jump from a changed function to its definition and its callers, and see type errors, without leaving Vibezeo for an IDE.
 
 **Behavior:**
-- **Language servers you already have.** Vibezeo uses the language server for a file's language when it's on the login PATH: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TypeScript, TSX, JavaScript), `pyright-langserver --stdio` (Python) and `gopls` (Go). It never installs one. A server starts on first use for a folder and language (the workspace or worktree the file is in), with the login environment, and stops after 10 minutes without a request, or when the folder is removed or the app quits. At most 4 run at once; the one used longest ago stops first. Local folders only: on SSH hosts and in WSL the editor works as today.
+- **Language servers you already have.** Vibezeo uses the language server for a file's language when it's on the login PATH: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TypeScript, TSX, JavaScript), `pyright-langserver --stdio` (Python) and `gopls` (Go). It never installs one. A server starts on first use for a folder and language (the workspace or worktree the file is in), with the login environment, and stops after 10 minutes without a request, or when the folder is removed or the app quits. At most 4 run at once; the one used longest ago stops first. Local folders only: on SSH hosts and in WSL the editor works as today, and nothing is downloaded or installed.
+- **Trust first.** Language servers can run the repository's own code when they load it (build scripts and proc macros, tsserver plugins and the repository's own TypeScript, toolchain switches, the Python interpreter a config names), so every server starts only for a repository the person trusted for language servers. Until then the status line says "rust-analyzer is off until you trust this repository" with **Trust repository…**, which asks with the native confirm from the main window; the trust covers the repository's worktrees and is kept on this computer. Go to definition uses the same-file fallback meanwhile.
 - **In the Files editor (F-CD-19):**
   - **Go to definition:** F12, or Mod+click on a name, opens the definition (in a new tab when it's another file in the folder).
   - **Find references:** Shift+F12 lists every reference with its file, line and text; choosing one opens it.
@@ -948,6 +949,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Hover shows the server's text; the server's diagnostics underline their ranges and the status line counts them.
 4. Without a server for the language, the editor works as today with "No language server for Rust" in its status line, and go to definition still finds a definition of the same name in the file.
 5. A server unused for 10 minutes is stopped; the next request starts it again.
+6. In a repository not yet trusted, no language server starts and the status line says so; after Trust repository… (and the native confirm) servers start for it and its worktrees.
 
 ### 4.3 TH: Thread mode
 

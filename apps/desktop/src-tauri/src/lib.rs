@@ -210,6 +210,7 @@ macro_rules! app_commands {
             commands::lsp::lsp_definition,
             commands::lsp::lsp_references,
             commands::lsp::lsp_hover,
+            commands::lsp::lsp_trust,
             commands::checkpoints::checkpoints_list,
             commands::checkpoints::checkpoint_create,
             commands::checkpoints::checkpoint_diff,

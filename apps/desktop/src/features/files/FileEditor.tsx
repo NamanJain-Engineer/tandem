@@ -284,6 +284,21 @@ function IntelStatus({ context, path }: { context: FileContext; path: string }) 
     >
       {pending && !doc && <Spinner size={10} />}
       {status.text}
+      {!notice && doc?.state === "untrusted" && (
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="intel-trust"
+          onClick={() => {
+            const text =
+              useFiles.getState().byKey[useFiles.getState().key ?? ""]?.tabs.find((f) => f.path === path)
+                ?.text ?? "";
+            void useIntel.getState().trust(context, path, text);
+          }}
+        >
+          {t("intel.trust")}
+        </Button>
+      )}
     </span>
   );
 }
