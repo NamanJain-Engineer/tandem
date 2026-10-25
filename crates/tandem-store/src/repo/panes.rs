@@ -29,10 +29,15 @@ pub struct PaneRecord {
     pub created_at: i64,
     /// A browser pane's page: the URL it last committed (F-CD-17).
     pub browser_url: Option<String>,
+    /// "{model} · {kind}" for a Codex pane started on a model server on
+    /// this computer (F-EN-11): its header says "On this computer".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub local_model: Option<String>,
 }
 
 const COLUMNS: &str =
-    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id, restore_state, browser_url";
+    "id, tab_id, workspace_id, kind, cwd, engine_id, human_name, title, created_at, account_id, restore_state, browser_url, local_model";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
     Ok(PaneRecord {
@@ -48,6 +53,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<PaneRecord> {
         account_id: r.get::<_, Option<String>>(9)?.map(AccountId::from_db),
         restore_state: r.get(10)?,
         browser_url: r.get(11)?,
+        local_model: r.get(12)?,
     })
 }
 
@@ -91,6 +97,7 @@ pub async fn create_with(
                 restore_state: "none".into(),
                 created_at: now_ms(),
                 browser_url: None,
+                local_model: None,
             };
             t.execute(
                 "INSERT INTO panes (id, tab_id, workspace_id, kind, cwd, engine_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -305,6 +312,20 @@ pub async fn set_cwd(store: &Store, id: &PaneId, cwd: String) -> Result<(), Stor
         .await
 }
 
+/// Marks an agent pane as started on a local model (F-EN-11).
+pub async fn set_local_model(store: &Store, id: &PaneId, label: &str) -> Result<(), StoreError> {
+    let (id, label) = (id.as_str().to_string(), label.to_string());
+    store
+        .write(move |t| {
+            t.execute(
+                "UPDATE panes SET local_model = ?2 WHERE id = ?1 AND kind = 'agent' AND closed_at IS NULL",
+                params![id, label],
+            )?;
+            Ok(())
+        })
+        .await
+}
+
 /// A browser pane's page (F-CD-17): what a relaunch opens again.
 pub async fn set_browser_url(
     store: &Store,
@@ -443,6 +464,57 @@ mod tests {
             .await
             .expect("remove");
         assert_eq!(ids(list_all_open(&store).await.expect("all")), [a.id]);
+    }
+
+    /// F-EN-11: an agent pane keeps the local model it was started on;
+    /// other panes never get one.
+    #[tokio::test]
+    async fn f_en_11_2_an_agent_pane_keeps_its_local_model() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().to_path_buf()).expect("data");
+        let store = Store::open(&data).expect("store");
+        let (ws, _) = workspaces::add(
+            &store,
+            workspaces::NewWorkspace {
+                kind: "local".into(),
+                host_id: "local".into(),
+                root: "/p".into(),
+                name: "p".into(),
+                wsl_distro: None,
+            },
+            None,
+        )
+        .await
+        .expect("ws");
+        let tab = tabs::create(&store, &ws.id, None).await.expect("tab");
+        let agent = create_with(&store, &tab.id, "agent", None, Some("codex".into()))
+            .await
+            .expect("agent");
+        let shell = create(&store, &tab.id, "terminal", None)
+            .await
+            .expect("terminal");
+        assert_eq!(agent.local_model, None);
+        set_local_model(&store, &agent.id, "qwen3-coder:30b · Ollama")
+            .await
+            .expect("set");
+        set_local_model(&store, &shell.id, "x")
+            .await
+            .expect("ignored");
+        let listed = list_open(&store, &tab.id).await.expect("list");
+        let model = |id: &PaneId| {
+            listed
+                .iter()
+                .find(|p| &p.id == id)
+                .and_then(|p| p.local_model.clone())
+        };
+        assert_eq!(
+            model(&agent.id).as_deref(),
+            Some("qwen3-coder:30b · Ollama")
+        );
+        assert_eq!(model(&shell.id), None);
+        // Not serialized when unset, so older payloads stay the same.
+        let json = serde_json::to_value(&shell).expect("json");
+        assert!(json.get("localModel").is_none());
     }
 
     #[tokio::test]

@@ -19,6 +19,7 @@ pub mod hook;
 pub mod launch;
 pub mod learn;
 pub mod library;
+pub mod local_models;
 pub mod registry;
 pub mod sandbox;
 pub mod status_server;

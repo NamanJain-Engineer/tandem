@@ -21,6 +21,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0005_secrets",
         include_str!("../migrations/0005_secrets.sql"),
     ),
+    (
+        "0006_local_models",
+        include_str!("../migrations/0006_local_models.sql"),
+    ),
 ];
 
 pub const KEEP_BACKUPS: usize = 3;

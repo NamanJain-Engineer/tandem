@@ -486,6 +486,7 @@ mod tests {
             restore_state: "none".into(),
             created_at: 1,
             browser_url: None,
+            local_model: None,
         }
     }
 

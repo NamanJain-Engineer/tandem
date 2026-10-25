@@ -25,6 +25,7 @@ pub mod lanes;
 pub mod launch;
 pub mod library;
 pub mod limits;
+pub mod local_models;
 pub mod night_shift;
 pub mod onboarding;
 pub mod phone;

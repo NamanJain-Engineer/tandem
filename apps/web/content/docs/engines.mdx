@@ -23,6 +23,15 @@ Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent,
 
 Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent. When an agent asks for approval without offering a one-time allow, **Allow once** declines the request rather than allowing it for good.
 
+## Local models
+
+If you run models on your own computer with Ollama or LM Studio, Codex can use one of them, so prompts and code stay on this computer. Open **Settings › Engines › Local models**:
+
+- Vibezeo asks `127.0.0.1` for model servers when you open the page or choose **Check again**: Ollama at port 11434, LM Studio at 1234 and llama.cpp's `llama-server` at 8080. It never asks another computer, and never on a timer. **Add a port…** adds another port on this computer.
+- Each running server lists its models with the size and parameter count the server reports. Vibezeo doesn't download or install anything, and doesn't vouch for how well a model handles an agent's tools.
+- **Start in Codex** opens a Codex pane in the open local folder. Codex runs in a provider home of its own, `providers/codex/local-<server>-<port>`, whose `config.toml` points it at `http://127.0.0.1:<port>/v1`. Your own `~/.codex` and your Codex accounts aren't touched, and no sign-in is needed. The pane says **On this computer**.
+- llama.cpp servers are listed, but Codex can't start on them yet.
+
 ## One instructions file for every engine
 
 Each engine reads its own instructions file, so a repository's rules can drift apart or reach only one engine. **Instructions…** in a local folder's menu in the rail shows which file each installed engine reads, whether git tracks or ignores each file, and how each one differs from `AGENTS.md`.

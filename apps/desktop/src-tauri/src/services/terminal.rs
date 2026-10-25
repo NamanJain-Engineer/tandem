@@ -124,6 +124,9 @@ pub struct TerminalService {
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Run with secrets: a pane's first spawn runs this (F-TL-12).
     runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
+    /// Agent panes whose first start runs fresh in a given configuration
+    /// (a local model's provider home, F-EN-11).
+    launch_first: std::sync::Mutex<std::collections::HashMap<String, LaunchConfig>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -303,6 +306,7 @@ impl TerminalService {
             agent_panes: Default::default(),
             resume_first: Default::default(),
             runs: Default::default(),
+            launch_first: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -935,6 +939,14 @@ impl TerminalService {
 
     /// The pane's first start resumes its saved session instead of starting
     /// a new one (F-TH-17).
+    /// The pane's first start runs its engine fresh with `config` (its home
+    /// and arguments) and no account: a Codex pane on a local model.
+    pub fn launch_on_first_start(&self, pane: &PaneId, config: LaunchConfig) {
+        if let Ok(mut map) = self.launch_first.lock() {
+            map.insert(pane.as_str().to_string(), config);
+        }
+    }
+
     pub fn resume_on_first_start(&self, pane: &PaneId) {
         if let Ok(mut set) = self.resume_first.lock() {
             set.insert(pane.as_str().to_string());
@@ -1018,6 +1030,14 @@ impl TerminalService {
             LaunchMode::Resume
         } else {
             mode
+        };
+        let launch_first = if mode == LaunchMode::Normal {
+            self.launch_first
+                .lock()
+                .ok()
+                .and_then(|mut map| map.remove(pane.as_str()))
+        } else {
+            None
         };
         if record.kind == "agent" {
             if let Ok(mut agents) = self.agent_panes.lock() {
@@ -1127,10 +1147,17 @@ impl TerminalService {
                     record.account_id.as_ref().map(|a| a.as_str()),
                 )
                 .map(|(url, secret)| StatusEnv { url, secret });
-            let relaunch = plan.as_ref().map(|p| Relaunch {
-                resume: Some(p.engine_session_id.as_str()),
-                config: &p.config,
-            });
+            let relaunch = match (&plan, &launch_first) {
+                (Some(p), _) => Some(Relaunch {
+                    resume: Some(p.engine_session_id.as_str()),
+                    config: &p.config,
+                }),
+                (None, Some(config)) => Some(Relaunch {
+                    resume: None,
+                    config,
+                }),
+                (None, None) => None,
+            };
             // A resumed session keeps its account; a new one takes the pane's
             // explicit pick, then the workspace's override, then the
             // engine's default (F-AC-03; teammates arrive with M11).
@@ -1151,9 +1178,11 @@ impl TerminalService {
                 workspace_pick.as_ref(),
                 None,
             );
-            let account = match &plan {
-                Some(p) => p.session.account_id.as_ref(),
-                None => chosen.as_ref(),
+            let account = match (&plan, &launch_first) {
+                (Some(p), _) => p.session.account_id.as_ref(),
+                // Its own home, no account (F-EN-11).
+                (None, Some(_)) => None,
+                (None, None) => chosen.as_ref(),
             };
             let launch = self
                 .engines
