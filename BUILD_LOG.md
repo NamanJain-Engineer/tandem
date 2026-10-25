@@ -2252,6 +2252,13 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E: `m18-tk07-follow-plan.e2e.ts`: a thread in a worktree that writes `notes.md` claims it; a plan's runs reach Approve and Land 2 approved… chooses both worktrees in plan order; after a restart the plan is listed with its runs, and Remove plan leaves its tasks.
   - **Docs.** ARCHITECTURE §6.9 (`Tool.paths`), the data folder (`plans.json`), §9.4 (the run's briefing), §9.5 (chat threads' edits) and §9.6; tasks.mdx (claims from chat threads, following a plan, Land approved, kept plans); MILESTONES (F-TK-07, E2E-M18-TK-07).
   - **Not in this slice:** the supervisor loop (Lead answering agents' questions), marking landed tasks Done, running a task again from the plan after Changes requested, and showing a thread's claims in it (threads see overlaps in `list_claims`).
+  - **Gate:** passed on 39a6dbd7:
+    - 2,241 Rust tests (6 ignored) and 1,598 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 185, and protocol drift with 566 types: `ThreadEvent`'s tool event gains `paths`.
+    - E2E on 8e6bc235 (the same code; 39a6dbd7 changes one UI test's mock): m18-tk07 3 of 3, m18-tk06 1 of 1, m18-wt07 2 of 2 and m18-tk05 3 of 3.
+    - The first gate run, on 8e6bc235, stopped at the TypeScript tests: "a run's row opens its task" mocked `task_get` with no issue, so the task view it opened threw (an unhandled error). Its mock now returns the task, and the test checks the task opens.
+    - Merging the fix line, the run briefing's invariant test needed the claims sentence at the end, and a test type got a name (clippy).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
