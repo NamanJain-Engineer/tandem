@@ -1130,6 +1130,13 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
     - The AppImage passed the offline smoke test, and Start opens setup with all 13 engines.
     - The commits after 2cb11440 are docs, the downloads, the regenerated protocol type and the site's figures. No product code changed.
+  - **The site**, from a fresh clone of ea888e6e:
+    - `build:site` with `strip-runtime` and `check-routes`: 52 pages, no redirects;
+    - web vitest 115/115 and site Playwright 25/25;
+    - Lighthouse CI on seven URLs (median of 3), every assertion passing with no warnings:
+      - performance 0.99 to 1.00, and 1.00 for accessibility, best practices and SEO;
+      - LCP at most 1.81 s, CLS at most 0.001, TBT 0 ms;
+    - the demo walkthrough.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
