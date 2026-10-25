@@ -297,18 +297,18 @@ export function ThemeCards({ label }: { label: string }) {
     {
       id: "dark",
       label: t("settings.theme.dark"),
-      swatch: <span className="block h-10 rounded-xs border border-border bg-[#09090b]" />,
+      swatch: <span className="block h-10 rounded-xs border border-border bg-[var(--ink-950)]" />,
     },
     {
       id: "light",
       label: t("settings.theme.light"),
-      swatch: <span className="block h-10 rounded-xs border border-border bg-[#f1f5f9]" />,
+      swatch: <span className="block h-10 rounded-xs border border-border bg-[var(--ink-50)]" />,
     },
     {
       id: "system",
       label: t("settings.theme.system"),
       swatch: (
-        <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,#09090b_50%,#f4f4f5_50%)]" />
+        <span className="block h-10 rounded-xs border border-border bg-[linear-gradient(135deg,var(--ink-950)_50%,var(--ink-50)_50%)]" />
       ),
     },
   ];

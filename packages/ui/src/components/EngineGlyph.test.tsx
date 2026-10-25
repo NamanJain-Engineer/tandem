@@ -1,4 +1,4 @@
-// D-1895 / D-2602 (M18 · Developer-first UI): engines are told apart by our
+// UI_SPEC §1.6 / §2.28: engines are told apart by our
 // own letters on a quiet tint per engine, set only in brand.css, with the
 // letters in `fg` at AA on every tile in both themes.
 import { readFileSync } from "node:fs";
@@ -62,7 +62,7 @@ const THEMES = {
   light: { tints: blockOf(brand, '[data-theme="light"]'), fg: value(blockOf(tokens, '[data-theme="light"]'), "--tn-text") },
 };
 
-describe("D-1895 engine marks", () => {
+describe("§1.6 engine marks", () => {
   for (const [name, theme] of Object.entries(THEMES)) {
     it(`${name}: fg is at least 4.5:1 on every engine's tile`, () => {
       const pairs = ENGINE_MARKS.map((id) => [id, ratio(hex(theme.fg), oklch(value(theme.tints, `--tn-engine-${id}`)))] as const);
@@ -71,12 +71,26 @@ describe("D-1895 engine marks", () => {
     });
   }
 
-  it("the tints stay quiet: chroma at most 0.05, hues at least 15° apart", () => {
-    const parts = ENGINE_MARKS.map((id) => /^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/.exec(value(THEMES.dark.tints, `--tn-engine-${id}`)));
-    for (const p of parts) expect(Number(p?.[2])).toBeLessThanOrEqual(0.05);
-    const hues = parts.map((p) => Number(p?.[3])).sort((a, b) => a - b);
-    const gaps = hues.map((h, i) => ((hues[(i + 1) % hues.length] as number) - h + 360) % 360);
-    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(15);
+  const parts = (block: string) =>
+    ENGINE_MARKS.map((id) => {
+      const m = /^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/.exec(value(block, `--tn-engine-${id}`));
+      return { id, c: Number(m?.[2]), h: Number(m?.[3]) };
+    });
+
+  for (const [name, theme] of Object.entries(THEMES)) {
+    it(`${name}: the tints stay quiet: chroma at most 0.05, hues at least 15° apart`, () => {
+      const p = parts(theme.tints);
+      for (const { c } of p) expect(c).toBeLessThanOrEqual(0.05);
+      const hues = p.map(({ h }) => h).sort((a, b) => a - b);
+      const gaps = hues.map((h, i) => ((hues[(i + 1) % hues.length] as number) - h + 360) % 360);
+      expect(Math.min(...gaps)).toBeGreaterThanOrEqual(15);
+    });
+  }
+
+  it("each engine keeps its hue in both themes", () => {
+    const dark = parts(THEMES.dark.tints);
+    const light = parts(THEMES.light.tints);
+    expect(light.map(({ id, h }) => [id, h])).toEqual(dark.map(({ id, h }) => [id, h]));
   });
 
   it("known engines use their tint; Shell and anything else sit on the neutral surface", () => {
@@ -89,7 +103,7 @@ describe("D-1895 engine marks", () => {
     const { container } = render(<EngineGlyph letters="X" engine="codex" />);
     const tile = container.firstElementChild as HTMLElement;
     expect(tile.getAttribute("aria-hidden")).toBe("true");
-    expect(tile.className).toMatch(/text-fg\b/);
+    expect(tile.classList.contains("text-fg")).toBe(true);
     expect(tile.className).toMatch(/opacity-80/);
     render(<EngineGlyph letters="C" engine="claude" label="Claude Code" active />);
     const img = screen.getByRole("img", { name: "Claude Code" });

@@ -1,4 +1,4 @@
-// D-2600/D-2601 (M18 · Developer-first UI): the quiet status primitives.
+// UI_SPEC §1.2a, §2.13, §2.15: the quiet status primitives.
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Badge, Count } from "./Badge";
@@ -7,7 +7,7 @@ import { AGO_LABELS, TimeAgo, compactAgo } from "./TimeAgo";
 
 const MIN = 60_000;
 
-describe("D-2601 StatusDot", () => {
+describe("§2.15 StatusDot", () => {
   it("pairs every status with its own shape and an accessible name", () => {
     const statuses: Status[] = ["working", "waiting", "done", "idle", "error", "offline"];
     const shapes = statuses.map((s) => {
@@ -29,7 +29,7 @@ describe("D-2601 StatusDot", () => {
   });
 });
 
-describe("D-2601 quiet Badge and Count", () => {
+describe("§2.13 quiet Badge and Count", () => {
   it("a quiet badge is sentence case without a box", () => {
     render(
       <Badge variant="waiting" quiet dot>
@@ -54,7 +54,7 @@ describe("D-2601 quiet Badge and Count", () => {
   });
 });
 
-describe("D-2601 relative time", () => {
+describe("§1.2a relative time", () => {
   const now = Date.UTC(2026, 9, 20, 12);
   it.each([
     [10_000, "now"],
@@ -67,10 +67,16 @@ describe("D-2601 relative time", () => {
     expect(compactAgo(now - ago, now, AGO_LABELS)).toBe(text);
   });
 
-  it("TimeAgo carries a machine-readable date", () => {
-    render(<TimeAgo at={now - 3 * 60 * MIN} now={now} />);
-    const t = screen.getByText("3h");
-    expect(t.tagName).toBe("TIME");
-    expect(t.getAttribute("datetime")).toBe(new Date(now - 3 * 60 * MIN).toISOString());
+  it("TimeAgo carries a machine-readable date, and the full date for screen readers", () => {
+    render(<TimeAgo at={now - 3 * 60 * MIN} now={now} formatFull={(d) => d.toISOString()} />);
+    const t = screen.getByText("3h").closest("time") as HTMLElement;
+    const iso = new Date(now - 3 * 60 * MIN).toISOString();
+    expect(t.getAttribute("datetime")).toBe(iso);
+    expect(screen.getByText(iso).className).toBe("sr-only");
+  });
+
+  it("TimeAgo renders nothing for a time that isn't a number", () => {
+    const { container } = render(<TimeAgo at={Number.NaN} now={now} />);
+    expect(container.innerHTML).toBe("");
   });
 });

@@ -46,7 +46,7 @@ export function StatusDot({ status, size = 8, label, className }: { status: Stat
       {status === "waiting" && <path d="M5 0.6 9.4 5 5 9.4 0.6 5Z" fill="currentColor" />}
       {status === "done" && <path d="M1.5 5.2 4 7.7 8.6 2.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />}
       {status === "idle" && <circle cx="5" cy="5" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.5" />}
-      {status === "error" && <path d="M5 0.9 9.3 8.9H0.7Z" fill="currentColor" strokeLinejoin="round" />}
+      {status === "error" && <path d="M5 0.9 9.3 8.9H0.7Z" fill="currentColor" />}
       {status === "offline" && <circle cx="5" cy="5" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="2 1.6" />}
     </svg>
   );

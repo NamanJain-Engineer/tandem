@@ -126,7 +126,7 @@ export function PluginDetailView({
     <div className="flex flex-col gap-3" data-testid="plugin-detail">
       {back}
       <div className="flex items-center gap-2">
-        <EngineGlyph letters={card.logo} engine={card.pluginId} size={20} />
+        <EngineGlyph letters={card.logo} size={20} />
         <h2 className="text-lg font-medium text-fg">{card.label}</h2>
         {card.state === "connected" ? (
           <Badge variant="done" dot>

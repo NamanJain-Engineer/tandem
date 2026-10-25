@@ -386,7 +386,7 @@ These replace the slate-on-navy look the app shipped with up to 0.8.0. The direc
 - **Terminal palette:** Night's background is the pane surface `#121214` with neutral blacks and whites, so a terminal sits flush in its pane; Day's greys are the ink scale (§1.9). The window's first paint and the PTY's OSC 11 answer use the same values.
 - **Quiet status primitives (D-2601):**
   - `StatusDot`: working is a filled dot whose halo breathes (still under reduced motion); waiting a diamond, done a check, idle a hollow ring, error a triangle, offline a dashed ring. Every status still has its own shape (§1.3).
-  - `Badge quiet`: a dot and sentence-case coloured text with no box ("● Needs you" in `waiting-text`), for rows that must stay calm. The boxed, upper-case badge stays for plan labels and rare flags.
+  - `Badge quiet`: a dot and sentence-case coloured text with no box ("● Needs you" in `waiting-text`), for rows that must stay calm. The boxed badge stays for rare flags.
   - `Count`: a 16px tabular pill for unread and queued counts, "99+" above 99, tones neutral, accent and strong.
   - `TimeAgo` / `compactAgo`: "now", "4m", "2h", "3d" in a `<time>` whose tooltip is the full date; labels come from the caller's `en.json`.
 - **Contrast:** every text token passes 4.5:1 and every status mark and the focus ring 3:1 on all five surfaces in both themes (`contrast.test.ts`). Light `status-done` moved to green-700 for that.

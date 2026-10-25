@@ -29,8 +29,8 @@ export function engineTint(id: string | undefined): string {
 const SIZE = {
   14: "size-[14px] text-[7px]",
   16: "size-4 text-[8px]",
-  20: "size-5 text-[10px]",
-  24: "size-6 text-[11px]",
+  20: "size-5 text-2xs",
+  24: "size-6 text-xs",
   32: "size-8 text-sm",
 } as const;
 

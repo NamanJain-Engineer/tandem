@@ -46,17 +46,24 @@ export type AvatarProps = {
   className?: string;
 };
 
+/** The rounded square's radius grows with its size, so small avatars stay
+ * squares (DECISIONS; §1.7): 4px up to 24, 6px at 32, 10px from 48. */
+export function avatarRadius(size: number): string {
+  return size <= 24 ? "rounded-xs" : size < 48 ? "rounded-sm" : "rounded-md";
+}
+
 export function Avatar({ name, id, size = 24, status, imageUrl, hue, className }: AvatarProps) {
   const h = avatarHue(id, hue);
+  const radius = avatarRadius(size);
   return (
     <span className={cx("relative inline-flex shrink-0", className)} style={{ width: size, height: size }}>
       {imageUrl ? (
-        <img src={imageUrl} alt={name} className="size-full rounded-md object-cover" />
+        <img src={imageUrl} alt={name} className={cx("size-full object-cover", radius)} />
       ) : (
         <span
           role="img"
           aria-label={name}
-          className="inline-flex size-full items-center justify-center rounded-md font-semibold text-white"
+          className={cx("inline-flex size-full items-center justify-center font-semibold text-white", radius)}
           style={{
             background: `linear-gradient(135deg, hsl(${h} 65% 48%), hsl(${(h + 40) % 360} 70% 38%))`,
             fontSize: Math.round(size * 0.42),
@@ -80,7 +87,7 @@ export function AvatarStack({ people, size = 24 }: { people: Array<{ name: strin
   return (
     <span className="inline-flex items-center">
       {shown.map((p, i) => (
-        <Avatar key={p.id} name={p.name} id={p.id} size={size} className={cx(i > 0 && "-ml-1.5 rounded-md ring-2 ring-surface-2")} />
+        <Avatar key={p.id} name={p.name} id={p.id} size={size} className={cx(i > 0 && cx("-ml-1.5 ring-2 ring-surface-2", avatarRadius(size)))} />
       ))}
       {more > 0 && <span className="ml-1 text-sm text-fg-muted">+{more}</span>}
     </span>

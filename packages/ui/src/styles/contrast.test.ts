@@ -111,7 +111,7 @@ describe("§5.4 WCAG 2.2 AA contrast over the tokens", () => {
     });
   }
 
-  it("D-2600 dark: surfaces rise in lightness with elevation, all of them neutral", () => {
+  it("§1.2a dark: surfaces rise in lightness with elevation, all of them neutral", () => {
     const t = themes.dark;
     const lum = SURFACES.map((name) => luminance(parse(t.get(name) as string, t)));
     for (let i = 1; i < lum.length; i++) expect(lum[i]).toBeGreaterThan(lum[i - 1] as number);

@@ -122,7 +122,6 @@
   --tn-scrollbar:     rgb(255 255 255 / 0.16);
   --tn-selection:     rgb(45 212 191 / 0.28);
   --tn-kbd-bg:        var(--ink-775);
-  --tn-shadow-color:  0 0 0;
 }
 
 /* ---------- Semantic tokens: LIGHT ---------- */
@@ -183,7 +182,6 @@
   --tn-scrollbar:     rgb(9 9 11 / 0.20);
   --tn-selection:     rgb(15 118 110 / 0.20);
   --tn-kbd-bg:        var(--ink-50);
-  --tn-shadow-color:  9 9 11;
 }
 
 /* ---------- Theme mapping for Tailwind 4 ---------- */
