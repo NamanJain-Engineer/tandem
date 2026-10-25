@@ -2229,6 +2229,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Plans don't survive a restart, and a planning chat whose plan is gone gets its tasks server back after one (F-TK-07 keeps plans and withholds their chats again).
     - The check names the review's engine, not its account: the review takes its engine's roomiest account when it starts.
     - A plan's runs aren't followed in the plan yet (F-TK-07).
+  - **Gate:** passed on 4f2843de:
+    - 2,232 Rust tests (6 ignored) and 1,592 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 184, and protocol drift with 566 types: `PlanLaunch`, `PlanRun`, `PlanSkip` and `TaskRunBlock` added; `PlanState` gains `starting`, and `PlanView` gains `waiting`, `queued` and `skipped`.
+    - E2E: m18-tk06 1 of 1, m11-2-execute 4 of 4 (F-TK-04's runs and review), m18-rt06 2 of 2 (the Night Shift starts runs) and m18-tk05 3 of 3 (the tasks service). After the gate, E2E-M18-TK-06 finds the check's rows by their task rather than by the tracker's order (the spec only).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).

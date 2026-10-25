@@ -135,7 +135,9 @@ describe("E2E-M18-TK-06 plan with Lead", function () {
       shown.push(String(await r.getProperty("textContent")));
       skips.push((await r.getAttribute("data-skip")) ?? "");
     }
-    const at = (id: string) => made.findIndex((i) => i.id === id);
+    // The rows follow the plan's order: find each task's by its id.
+    const at = (id: string) => shown.findIndex((row) => row.startsWith(`${id} · `));
+    expect([at(routes.id), at(page2.id)].sort()).toEqual([0, 1]);
     expect(skips[at(routes.id)]).toBe("running");
     expect(shown[at(routes.id)]).toContain("Left alone: already running");
     expect(shown[at(page2.id)]).toContain(`${page2.id} · Write the sign-in page`);
