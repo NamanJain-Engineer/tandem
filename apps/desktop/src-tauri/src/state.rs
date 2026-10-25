@@ -174,6 +174,8 @@ pub struct AppState {
     pub second_opinions: crate::services::second_opinion::Running,
     /// F-DB-04: set once the app has a handle.
     pub review: std::sync::OnceLock<Arc<crate::services::review_queue::ReviewQueue>>,
+    /// Plans with Lead (F-TK-06).
+    pub plan: std::sync::OnceLock<Arc<crate::services::plan::PlanService>>,
     /// The Ports panel (F-EX-03).
     pub ports: Arc<crate::services::ports::PortsService>,
     /// SSH hosts and their connections (F-RM-01).
@@ -637,7 +639,17 @@ impl AppState {
             crate::services::tasks::tasks_bin(),
         );
         launcher.bind_tasks(&tasks);
+        crate::services::lanes::set_tasks(&tasks);
         let _ = handback_tasks.set(tasks.clone());
+        // An agent's edit claims its file (F-TK-05 AC2).
+        let edit_tasks = Arc::downgrade(&tasks);
+        terminals.status.set_edit_sink(Arc::new(move |pane, paths| {
+            let Some(tasks) = edit_tasks.upgrade() else {
+                return;
+            };
+            let (pane, paths) = (pane.to_string(), paths.to_vec());
+            tauri::async_runtime::spawn_blocking(move || tasks.claim_edits(&pane, &paths));
+        }));
         let routines = crate::services::routines::RoutinesService::new(
             store.clone(),
             bus.clone(),
@@ -660,6 +672,7 @@ impl AppState {
             clock.clone(),
             tasks.tracker.clone(),
         );
+        let usage: Arc<crate::services::usage::UsageBoard> = Arc::default();
         task_exec.set_host(exec_host.unwrap_or_else(|| {
             Arc::new(crate::services::task_host::AppExecHost {
                 store: store.clone(),
@@ -670,6 +683,7 @@ impl AppState {
                 threads: threads.clone(),
                 notifications: notifications.clone(),
                 gateway: gateway.clone(),
+                usage: usage.clone(),
             })
         }));
         // Teammate mail (F-AG-12) lands in teammate chats.
@@ -861,7 +875,7 @@ impl AppState {
             deeplinks: DeepLinkQueue::default(),
             orphans,
             logins: Arc::default(),
-            usage: Arc::default(),
+            usage,
             runaway,
             night_shift,
             threads,
@@ -883,6 +897,7 @@ impl AppState {
             bestof_checks: Default::default(),
             second_opinions: Default::default(),
             review: std::sync::OnceLock::new(),
+            plan: std::sync::OnceLock::new(),
             remote,
             wsl,
             simulator: crate::services::simulator::host()

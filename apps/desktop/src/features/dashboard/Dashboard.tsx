@@ -8,7 +8,8 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import type { AgentStatus, DashboardItem } from "@tandem/protocol";
+import type { AgentStatus, DashboardItem, PaneUsage } from "@tandem/protocol";
+import { formatBytes, formatCpu, usePaneUsage } from "../../stores/resources";
 import {
   Badge,
   Button,
@@ -106,7 +107,17 @@ function useNow(): number {
   return now;
 }
 
-function AgentCard({ item, title, now }: { item: DashboardItem; title: string; now: number }) {
+function AgentCard({
+  item,
+  title,
+  now,
+  usage,
+}: {
+  item: DashboardItem;
+  title: string;
+  now: number;
+  usage?: PaneUsage;
+}) {
   const showPreview = useSetting("show_status_previews", true);
   const logo =
     useEngines((s) => s.list.find((e) => e.spec.id === item.engineId)?.spec.logo) ?? item.engineLogo;
@@ -202,6 +213,15 @@ function AgentCard({ item, title, now }: { item: DashboardItem; title: string; n
         </span>
       </div>
       {cardMeta(item) && <p className="truncate text-sm text-fg-muted">{cardMeta(item)}</p>}
+      {usage && (
+        // F-EX-06: the pane's CPU and memory, while it's live here.
+        <p className="truncate text-sm tabular-nums text-fg-muted" data-testid="agent-card-usage">
+          {t("resources.usage", {
+            cpu: formatCpu(usage.cpuPercent),
+            memory: usage.memoryBytes === null ? "—" : formatBytes(usage.memoryBytes),
+          })}
+        </p>
+      )}
       {showPreview && (approval?.summary ?? item.preview) && (
         <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
           {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
@@ -262,8 +282,14 @@ function FilterChip({ id, label, active }: { id: Filter; label: string; active: 
 }
 
 /** UI-42 / UI-43, F-DB-01: every running agent across modes. */
-export function Dashboard() {
+export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   const { items, loaded, query, filter, groupBy, collapsed } = useDashboard();
+  const { load: usageLoad } = usePaneUsage(onScreen);
+  const usage = useMemo(
+    () =>
+      usageLoad.at === "ready" ? Object.fromEntries(usageLoad.panes.map((u) => [u.paneId, u])) : {},
+    [usageLoad],
+  );
   const engines = useEngines((s) => s.list);
   const workspaces = useWorkspaces((s) => s.list);
   const order = useMemo(() => workspaces.map((w) => w.id), [workspaces]);
@@ -370,7 +396,13 @@ export function Dashboard() {
             )}
           >
             {g.items.map((i) => (
-              <AgentCard key={i.key} item={i} title={titles[i.key] ?? ""} now={now} />
+              <AgentCard
+                key={i.key}
+                item={i}
+                title={titles[i.key] ?? ""}
+                now={now}
+                usage={i.source.type === "pane" ? usage[i.source.paneId] : undefined}
+              />
             ))}
           </ul>
         )}

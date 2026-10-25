@@ -382,3 +382,45 @@ fn f_tk_01_filters_and_text_search() {
     let counts = s.counts_by_status().expect("counts");
     assert_eq!((counts["todo"], counts["done"]), (1, 1));
 }
+
+#[test]
+fn f_tk_06_3_a_task_keeps_its_suggested_engine() {
+    let (_d, s) = store();
+    let created = s
+        .save_issue(
+            SaveIssue {
+                title: Some("Add OAuth".into()),
+                suggested_engine: Some(Some("codex".into())),
+                ..Default::default()
+            },
+            &Writer::human(),
+        )
+        .expect("create");
+    assert_eq!(created.suggested_engine.as_deref(), Some("codex"));
+    // Files written before it read back without one.
+    let plain = new_issue(&s, "Plain");
+    assert_eq!(plain.suggested_engine, None);
+    let text = std::fs::read_to_string(s.dir().join("issues/ISSUE-2.json")).expect("file");
+    assert!(!text.contains("suggested_engine"), "left out when unset");
+    let cleared = s
+        .save_issue(
+            SaveIssue {
+                id: Some(created.id.clone()),
+                suggested_engine: Some(None),
+                expected_revision: Some(created.revision),
+                ..Default::default()
+            },
+            &Writer::human(),
+        )
+        .expect("clear");
+    assert_eq!(cleared.suggested_engine, None);
+    let bad = s.save_issue(
+        SaveIssue {
+            title: Some("Bad".into()),
+            suggested_engine: Some(Some("Not An Id".into())),
+            ..Default::default()
+        },
+        &Writer::human(),
+    );
+    assert!(matches!(bad, Err(TaskError::Invalid(_))));
+}

@@ -32,6 +32,7 @@ import { useSetting, useSettings } from "../../stores/settings";
 import { paneKey, statusView, useStatus } from "../../stores/status";
 import { useUi } from "../../stores/ui";
 import { useWorkspaces } from "../../stores/workspaces";
+import { isMultiRepo } from "../../stores/launch";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
@@ -364,8 +365,12 @@ export function CodeRail() {
       // Only a repository can have worktrees; the label says why it's off.
       id: "new-worktree",
       label:
-        ws.kind === "wsl" ? t("worktree.remote") : ws.branch ? t("worktree.new") : t("worktree.needsRepo"),
-      disabled: ws.kind === "wsl" || !ws.branch || ws.missing,
+        ws.kind === "wsl"
+          ? t("worktree.remote")
+          : ws.branch || isMultiRepo(ws)
+            ? t("worktree.new")
+            : t("worktree.needsRepo"),
+      disabled: ws.kind === "wsl" || (!ws.branch && !isMultiRepo(ws)) || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "new", workspaceId: ws.id }),
     },
     {
@@ -449,7 +454,9 @@ export function CodeRail() {
             ? t("rail.missing")
             : ws.kind !== "local"
               ? `${placeBadge(ws)} · ${ws.root}`
-              : ws.root,
+              : ws.reposNote
+                ? `${ws.root} · ${ws.reposNote}`
+                : ws.root,
           warning: ws.missing,
           icon: ws.missing ? (
             <AlertTriangle size={14} aria-label={t("rail.missing")} className="text-warning" />
@@ -460,6 +467,18 @@ export function CodeRail() {
           ),
           trailing: (
             <>
+              {isMultiRepo(ws) && (
+                <span
+                  data-testid="workspace-repos"
+                  className={cx(
+                    "inline-flex min-w-0 shrink items-center gap-0.5 truncate text-xs",
+                    ws.id === activeId ? "text-fg-muted" : "text-fg-subtle",
+                  )}
+                >
+                  <GitBranch size={12} aria-hidden="true" />
+                  <span className="truncate">{t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}</span>
+                </span>
+              )}
               {ws.branch && <BranchChip ws={ws} selected={ws.id === activeId} />}
               <WorkspaceSlot ws={ws} />
               {ws.liveCount > 0 && (

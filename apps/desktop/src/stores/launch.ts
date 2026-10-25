@@ -44,7 +44,16 @@ export function shellSeat(command: string | null = null): Seat {
 
 /** A browser seat (F-CD-14): its page opens tiled with the terminals. */
 export function browserSeat(url: string | null = null): Seat {
-  return { kind: "browser", engineId: null, accountId: null, role: null, task: null, command: null, url, count: 1 };
+  return {
+    kind: "browser",
+    engineId: null,
+    accountId: null,
+    role: null,
+    task: null,
+    command: null,
+    url,
+    count: 1,
+  };
 }
 
 /** A preset's rows, with "the default engine" resolved. */
@@ -96,7 +105,12 @@ export function branchPreview(task: string, seats: Seat[]): string[] {
 }
 
 export function isRepo(ws: WorkspaceSummary | undefined): boolean {
-  return Boolean(ws?.branch) || Boolean(ws?.parentId);
+  return Boolean(ws?.branch) || Boolean(ws?.parentId) || isMultiRepo(ws);
+}
+
+/** F-CD-22: a folder holding several repositories (not one of its worktrees). */
+export function isMultiRepo(ws: WorkspaceSummary | undefined): boolean {
+  return !ws?.parentId && (ws?.repos?.length ?? 0) >= 2;
 }
 
 export type LaunchState = {

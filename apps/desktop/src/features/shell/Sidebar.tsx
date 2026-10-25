@@ -222,7 +222,7 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
 }
 
 function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
-  if (tab.kind === "dashboard") return <DashboardPanel />;
+  if (tab.kind === "dashboard") return <DashboardPanel visible={shown} />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;
@@ -340,7 +340,7 @@ export function Sidebar() {
           fullscreen
             ? "absolute inset-0"
             : floating
-              ? "absolute inset-y-0 right-0 border-l border-border shadow-3"
+              ? "absolute inset-y-0 right-0 border-l border-border shadow-e3"
               : "relative shrink-0 border-l border-border",
         )}
       >

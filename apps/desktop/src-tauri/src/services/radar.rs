@@ -54,7 +54,8 @@ fn covered(ws: &Workspace) -> bool {
     ws.kind == "local"
         && ws.parent_id.is_some()
         && ws.lane_branch.is_some()
-        && ws.lane_base.is_some()
+        // A multi-repo worktree (F-CD-22) has no single base: not covered yet.
+        && ws.lane_base.as_deref().is_some_and(|b| !b.is_empty())
         && Path::new(&ws.root).is_dir()
 }
 
@@ -153,6 +154,13 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
     let Some(lane) = all.iter().find(|w| covered(w) && same(w)) else {
         return;
     };
+    // F-CD-22: no radar for multi-repo worktrees yet.
+    if crate::services::lanes::is_multi(store, lane)
+        .await
+        .unwrap_or(false)
+    {
+        return;
+    }
     let Ok(mine) = refresh(git, lane).await else {
         tracing::warn!(code = "radar.parse_failed", "radar index skipped");
         return;

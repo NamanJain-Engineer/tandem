@@ -168,7 +168,6 @@ describe("UI-71 teammate page", () => {
         takesKey: false,
         keyHint: null,
         teammates: 0,
-        limitReached: false,
       },
       {
         pluginId: "test_down",
@@ -186,7 +185,6 @@ describe("UI-71 teammate page", () => {
         takesKey: false,
         keyHint: null,
         teammates: 0,
-        limitReached: false,
       },
     ];
     calls = fakeBackend({

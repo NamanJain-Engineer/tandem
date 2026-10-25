@@ -384,7 +384,7 @@ export const galleryEntries: GalleryEntry[] = [
         name: `banner ${tone}`,
         render: () => <Banner tone={tone} action={{ label: "Retry", onClick: noop }} onDismiss={noop}>You're offline. Local features keep working.</Banner>,
       })),
-      { name: "callout", render: () => <Callout tone="accent" title="Free includes 3 workspaces" actions={<Button size="sm" variant="primary">See plans</Button>}>Remove one from the rail (nothing on disk is deleted) or upgrade.</Callout> },
+      { name: "callout", render: () => <Callout tone="accent" title="Folder not found" actions={<Button size="sm" variant="primary">Locate…</Button>}>It was moved or deleted. Locate it, or remove it from the rail (nothing on disk is deleted).</Callout> },
       { name: "key value", render: () => <KeyValue items={[{ key: "Credits", value: "8,420 of 10,000" }]} /> },
       { name: "stepper", render: () => <Stepper steps={["Theme", "Engines", "Dictate", "Workspace"]} current={1} /> },
     ],

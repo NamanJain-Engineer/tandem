@@ -72,15 +72,17 @@ function ErrorAction({ view }: { view: CallView }) {
   const action =
     code === "mic_not_delivering"
       ? { label: t("conductor.error.switchMic"), run: () => ui.openSettings("dictate") }
-      : code === "out_of_credits"
-        ? { label: t("conductor.error.buyCredits"), run: () => ui.openSettings("account") }
-        : code === "signed_out"
-          ? { label: t("conductor.error.signIn"), run: () => ui.openSettings("account") }
-          : code === "time_cap"
-            ? { label: t("conductor.error.newCall"), run: () => void startCall() }
-            : code === "turned_off" || code === "not_in_region" || code === "needs_pro"
-              ? null
-              : { label: t("conductor.error.tryAgain"), run: () => void startCall() };
+      : code === "signed_out"
+        ? { label: t("conductor.error.signIn"), run: () => ui.openSettings("account") }
+        : code === "time_cap"
+          ? { label: t("conductor.error.newCall"), run: () => void startCall() }
+          : // Nothing to buy, so running out has no action (D-2914).
+            code === "turned_off" ||
+              code === "not_in_region" ||
+              code === "needs_pro" ||
+              code === "out_of_credits"
+            ? null
+            : { label: t("conductor.error.tryAgain"), run: () => void startCall() };
   if (!action) return null;
   return (
     <Button size="sm" variant="secondary" onClick={action.run} data-testid="conductor-error-action">
@@ -129,7 +131,7 @@ export function Hud() {
   if (view.phase === "idle") return null;
 
   const card =
-    "fixed left-1/2 top-[calc(var(--titlebar-h)+12px)] z-[var(--z-hud)] w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded-lg border border-border bg-surface-3 shadow-3";
+    "fixed left-1/2 top-[calc(var(--titlebar-h)+12px)] z-[var(--z-hud)] w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded-lg border border-border bg-surface-3 shadow-e3";
 
   if (view.phase === "ended" && view.receipt) {
     const r = view.receipt;

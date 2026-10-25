@@ -49,7 +49,7 @@ const titles = () => screen.getAllByTestId("review-item-title").map((e) => e.tex
 
 beforeEach(() => {
   resetStores();
-  useReview.setState({ items: [], loaded: false, error: null, view: "agents", sort: "risk" });
+  useReview.setState({ items: [], overlaps: [], loaded: false, error: null, view: "agents", sort: "risk" });
   useWorktrees.setState({ ask: null });
 });
 afterEach(() => setInvokeBackend(null));
@@ -89,6 +89,27 @@ describe("Review queue (F-DB-04)", () => {
     act(() => useReview.getState().setSort("time"));
     expect(titles()).toEqual(["Ada", "Grace"]);
     expect(sortItems([risky, item({})], "time").map((i) => i.title)).toEqual(["Ada", "Grace"]);
+  });
+
+  it("F-TK-05.1 a claim overlap shows above the queue, naming both worktrees and the paths", async () => {
+    const overlap = {
+      repo: "/r",
+      folders: ["/r/.tandem/worktrees/add-oauth", "/r/.tandem/worktrees/fix-auth"],
+      agents: ["add-oauth", "fix-auth"],
+      paths: ["src/auth/session.ts", "a", "b", "c", "d", "e"],
+    };
+    fakeBackend({ review_queue: () => ({ items: [], overlaps: [overlap] }) });
+    const stop = followReview();
+    wrap(<ReviewQueue />);
+    await waitFor(() => expect(screen.getByTestId("review-overlaps")).toBeTruthy());
+    const box = screen.getByTestId("review-overlaps").textContent ?? "";
+    expect(box).toContain("add-oauth and fix-auth both claim");
+    expect(box).toContain("src/auth/session.ts");
+    expect(box).toContain("and 1 more");
+    expect(screen.getByTestId("review-empty").textContent).toContain("Nothing to review");
+    act(() => emitLocal("review:queue", { items: [item({})], overlaps: [] }));
+    expect(screen.queryByTestId("review-overlaps")).toBeNull();
+    stop();
   });
 
   it("F-DB-04.3 approve sends the hash the user saw; a changed item says so", async () => {

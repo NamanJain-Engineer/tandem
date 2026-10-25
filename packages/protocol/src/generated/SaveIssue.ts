@@ -5,4 +5,4 @@ import type { IssueStatus } from "./IssueStatus";
  * `save_issue`: create (no `id`) or patch. Absent fields stay as they are;
  * `assignee`/`project: null` clears them.
  */
-export type SaveIssue = { id?: string, title?: string, description?: string, status?: IssueStatus, priority?: number, labels?: Array<string>, project?: string | null, assignee?: string | null, result?: string, expected_revision?: number, idempotency_key?: string, };
+export type SaveIssue = { id?: string, title?: string, description?: string, status?: IssueStatus, priority?: number, labels?: Array<string>, project?: string | null, assignee?: string | null, suggested_engine?: string | null, result?: string, expected_revision?: number, idempotency_key?: string, };

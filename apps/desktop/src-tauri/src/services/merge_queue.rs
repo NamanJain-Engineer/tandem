@@ -230,6 +230,8 @@ pub async fn repo_of(store: &Store, id: &WorkspaceId) -> Result<Workspace, IpcEr
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws,
     };
+    // F-CD-22: one repository only, refused before anything runs.
+    crate::services::lanes::single_repo(store, &repo).await?;
     if repo.kind != "local" {
         return Err(IpcError::new(ErrorCode::Invalid, LOCAL_ONLY).with_stage("landing"));
     }
@@ -633,6 +635,13 @@ fn done_merging(data: &DataDir, key: &str) {
     });
 }
 
+/// A worktree is in the base now: its claims go, as a merged one's do
+/// (F-TK-05 AC3). Its folder is resolved as its sessions' claims name it.
+fn release_landed(root: &Path) {
+    let folder = tandem_core::contain::canonical(root).unwrap_or_else(|_| root.to_path_buf());
+    crate::services::lanes::release_claims(&folder);
+}
+
 /// Ends the run at step `i` with `state`, and why when it's not the step's.
 fn halt(key: &str, i: usize, state: LandingStepState, error: Option<String>) {
     step(key, i, |s| s.state = state);
@@ -719,6 +728,12 @@ async fn drive(
         // 2. The check, in the worktree.
         if let Some(command) = &check {
             step(key, i, |s| s.state = LandingStepState::Checking);
+            // One check at a time, with Best of N's and the review queue's
+            // (F-EX-06).
+            let _turn = crate::services::check_queue::turn().await;
+            if stopping() {
+                return halt(key, i, LandingStepState::Stopped, None);
+            }
             let (exit, out) = run_check(
                 command,
                 &lane.root,
@@ -792,9 +807,11 @@ async fn drive(
             // "Already up to date": the base has it, and nothing was landed,
             // so nothing goes into the undo record.
             Ok(Merged::Done { head: merge }) if merge == expected => {
+                release_landed(&lane.root);
                 step(key, i, |s| s.state = LandingStepState::Landed);
             }
             Ok(Merged::Done { head: merge }) => {
+                release_landed(&lane.root);
                 landed.push(merge.clone());
                 expected = merge.clone();
                 // The first landing of a run replaces the undo record.
@@ -1716,5 +1733,68 @@ mod tests {
             .await
             .expect("plan");
         assert!(p.undo.is_none(), "an empty landing isn't undoable");
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_landing_releases_the_landed_worktrees_claims() {
+        let fx = fixture(&["alpha", "beta", "bad"]).await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let tasks = crate::services::tasks::TasksService::new(
+            &DataDir::at(tasks_dir.path().to_path_buf()).expect("data"),
+            fx.store.clone(),
+            None,
+        );
+        crate::services::lanes::set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        for name in ["alpha", "beta", "bad"] {
+            let root = fx.main.join(".tandem/worktrees").join(name);
+            let scope = crate::services::tasks::claim_scope(&root).expect("scope");
+            tracker
+                .claim_inferred(&scope, &["README.md".into()])
+                .expect("claim");
+        }
+        // beta is in main already, so landing it is "already up to date".
+        git(
+            &fx.main,
+            &["merge", "-q", "--no-ff", "--no-edit", "tandem/beta"],
+        );
+        let ids = [
+            fx.lanes[1].clone(),
+            fx.lanes[0].clone(),
+            fx.lanes[2].clone(),
+        ];
+        start(
+            &fx.store,
+            &fx.data,
+            &fx.git,
+            &env(),
+            &fx.repo,
+            &ids,
+            Some("test ! -f fail.txt".into()),
+        )
+        .await
+        .expect("start");
+        let run = finished(&fx).await;
+        assert_eq!(
+            states(&run),
+            [
+                LandingStepState::Landed,
+                LandingStepState::Landed,
+                LandingStepState::Failed
+            ]
+        );
+        assert_eq!(run.steps[0].commit, None, "beta was already there");
+        assert!(run.steps[1].commit.is_some(), "alpha landed a merge");
+        let left: Vec<String> = tracker
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.agent)
+            .collect();
+        assert_eq!(
+            left,
+            ["bad"],
+            "the landed worktrees' claims went, the failed one's stayed"
+        );
     }
 }
