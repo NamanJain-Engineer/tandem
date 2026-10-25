@@ -87,6 +87,12 @@ test("F-WB-01 AC9 the Land scene plays on 0.9.0's changelog page (D-1885)", asyn
   await page.goto("/changelog/0.9.0/");
   await page.locator('[data-scene="land"]').scrollIntoViewIfNeeded();
   await expect.poll(() => states(page, "land"), { timeout: 10_000 }).toContain("running");
+  // At the container's full width, as on the home page, not the notes' column (D-1886).
+  const [scene, container] = await page.evaluate(() => [
+    document.querySelector('[data-scene="land"]')?.getBoundingClientRect().width ?? 0,
+    document.querySelector("article .container-site")?.getBoundingClientRect().width ?? 1,
+  ]);
+  expect(scene / container).toBeGreaterThan(0.9);
 });
 
 // The Land scene on its own page, without its player and under reduced
