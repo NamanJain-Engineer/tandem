@@ -20,7 +20,7 @@ last five (F-CN-01 to F-CN-04 and F-CN-08) pass every acceptance criterion
 against the dev mock, and the vendor's realtime client is built against its
 published events (D-1120, on `m16a-conductor`); checking it against a recorded
 session waits on the key (`HUMAN_TODO.md`). F-CN-06 and F-CN-07 (persona,
-memory and wake phrase) are done too (D-1119). vibezeo.com serves 0.9.0 (24 October), the second M18 release, and Vibezeo is free: there are no paid plans and no pricing page (D-869), and the next release unlocks every local feature (`free-for-everyone`). M18 (below) is the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions: sixteen are done, eight shipped in 0.8.0, six in 0.9.0, and F-CN-09 and F-RT-06 wait for accounts or the unlock. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
+memory and wake phrase) are done too (D-1119). Vibezeo is free: there are no paid plans and no pricing page (D-869, live since 0.9.0), and vibezeo.com serves 0.10.0 (since 25 October), which makes everything that runs on the computer free and unlimited with no account (`free-for-everyone`, D-2900 to D-2913); features that need Vibezeo's servers come with Vibezeo accounts. M18 (below) is the top picks of the 15 October research, `docs/NEXT_FEATURES.md`, built by four sessions: sixteen are done, eight shipped in 0.8.0, six in 0.9.0, F-RT-06's Night Shift is free since 0.10.0, and F-CN-09 waits for accounts. The website's elite pass (D-1819, D-1830 to D-1844) and its blog (F-WB-06) are live on vibezeo.com (`chain22`). Routines and running
 tasks are built and switch on with Pro; WSL workspaces wait for the Windows
 download.
 
