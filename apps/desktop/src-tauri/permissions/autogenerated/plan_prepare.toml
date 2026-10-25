@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plan-prepare"
+description = "Enables the plan_prepare command without any pre-configured scope."
+commands.allow = ["plan_prepare"]
+
+[[permission]]
+identifier = "deny-plan-prepare"
+description = "Denies the plan_prepare command without any pre-configured scope."
+commands.deny = ["plan_prepare"]

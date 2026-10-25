@@ -90,6 +90,7 @@ export class DemoTasks {
         archived: false,
         result: input.result ?? null,
         attempts: [],
+        ...(input.suggested_engine ? { suggested_engine: input.suggested_engine } : {}),
       };
       this.issues.set(issue.id, issue);
       return issue;

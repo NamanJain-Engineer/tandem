@@ -47,6 +47,10 @@ pub struct ReportPayload {
     pub reason: Option<WaitingReason>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript_path: Option<String>,
+    /// The file an edit tool is about to change (`PreToolUse`), for
+    /// inferred claims (F-TK-05). Paths only, never the edit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 fn v1() -> u32 {

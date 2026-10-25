@@ -2699,7 +2699,20 @@ impl AppLauncher {
                 thread.id.as_str().to_string(),
             ),
         };
-        tasks.chat_server(&session_key(&thread.id), &label, &actor)
+        // A thread in a local folder claims files in its working tree
+        // (F-TK-05); an SSH host's or a WSL distro's folder isn't one here.
+        let kind = match &thread.workspace_id {
+            Some(ws) => tandem_store::repo::workspaces::get(self.terminals.store(), ws)
+                .await
+                .ok()
+                .map(|w| w.kind),
+            None => None,
+        };
+        let folder = match kind.as_deref() {
+            Some("ssh" | "wsl") => None,
+            _ => Some(std::path::PathBuf::from(&thread.cwd)),
+        };
+        tasks.chat_server(&session_key(&thread.id), &label, &actor, folder.as_deref())
     }
 
     /// The teammates whose chats this launcher starts.

@@ -54,6 +54,13 @@ macro_rules! app_commands {
             commands::tasks::task_connections_list,
             commands::tasks::task_connection_revoke,
             commands::task_exec::task_execute,
+            commands::plan::plan_start,
+            commands::plan::plan_list,
+            commands::plan::plan_get,
+            commands::plan::plan_create_tasks,
+            commands::plan::plan_prepare,
+            commands::plan::plan_execute,
+            commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
             commands::task_exec::task_attempt_stop,
             commands::task_exec::task_attempt_resume,
@@ -1212,6 +1219,45 @@ pub fn run() {
                 let _ = state
                     .review
                     .set(services::review_queue::start(handle.clone()));
+                // F-TK-06: Plan with Lead.
+                let _ = state.plan.set(services::plan::PlanService::new(
+                    std::sync::Arc::new(services::plan::AppHost { app: handle.clone() }),
+                    state.bus.clone(),
+                ));
+                // F-TK-05: a new claim overlap is a notice in both agents'
+                // panes, and the queue shows every overlap there is. A pane
+                // whose process hasn't started yet gets it when it does.
+                {
+                    let app = handle.clone();
+                    state
+                        .tasks
+                        .set_overlap_sink(std::sync::Arc::new(move |new, all| {
+                            let state = app.state::<AppState>();
+                            for o in new {
+                                let msg = services::tasks::overlap_notice(o);
+                                for folder in &o.folders {
+                                    for pane in state.tasks.panes_in(folder) {
+                                        state.terminals.notice(&pane, &msg);
+                                    }
+                                }
+                            }
+                            if let Some(q) = state.review.get() {
+                                q.set_overlaps(all.to_vec());
+                            }
+                        }));
+                    // A pane's session begins with the overlaps announced
+                    // before it (AC1): at startup, or when it joins later.
+                    let app = handle.clone();
+                    state
+                        .tasks
+                        .set_notice_sink(std::sync::Arc::new(move |pane, notices| {
+                            app.state::<AppState>()
+                                .terminals
+                                .session_notices(pane, notices);
+                        }));
+                    let tasks = state.tasks.clone();
+                    tauri::async_runtime::spawn_blocking(move || tasks.check_overlaps());
+                }
             }
             // The status server, then engines: the cached report at once, the
             // remote registry and a fresh detection in the background (F-EN-01).

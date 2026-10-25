@@ -85,6 +85,70 @@ pub struct AttemptView {
     pub queue_position: Option<u32>,
 }
 
+/// Why a task can't start a run now (F-TK-04; F-TK-06's Execute all).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, rename = "TaskRunBlock")]
+pub enum RunBlock {
+    /// A run of it is queued or under way.
+    Running,
+    Archived,
+    /// Done or Canceled.
+    Finished,
+    /// Execute all runs only To do tasks.
+    NotToDo,
+    /// The task is gone.
+    Missing,
+}
+
+impl RunBlock {
+    /// Execute…'s refusal.
+    pub fn error(self, id: &str) -> IpcError {
+        let (code, message) = match self {
+            RunBlock::Running => (
+                ErrorCode::Conflict,
+                format!("{id} is already running. Stop that run to start another."),
+            ),
+            RunBlock::Archived => (
+                ErrorCode::Invalid,
+                format!("{id} is archived. Bring it back to run it."),
+            ),
+            RunBlock::Finished => (
+                ErrorCode::Invalid,
+                format!("{id} is finished. Move it back to To do to run it again."),
+            ),
+            RunBlock::NotToDo => (ErrorCode::Invalid, format!("{id} isn't To do.")),
+            RunBlock::Missing => (ErrorCode::NotFound, format!("{id} is gone.")),
+        };
+        IpcError::new(code, message)
+    }
+}
+
+/// What a planned run did (F-TK-06's Execute all).
+#[derive(Debug)]
+pub enum Started {
+    Queued(Box<AttemptView>),
+    /// Left alone, and why.
+    Blocked(RunBlock),
+}
+
+/// Why `issue` can't start a run, if it can't. Execute all (`todo_only`)
+/// runs only To do tasks; Execute… also runs one in progress or in review
+/// again (F-TK-04).
+fn block_of(issue: &Issue, todo_only: bool, running: bool) -> Option<RunBlock> {
+    if running {
+        Some(RunBlock::Running)
+    } else if issue.archived {
+        Some(RunBlock::Archived)
+    } else if todo_only && issue.status != IssueStatus::Todo {
+        Some(RunBlock::NotToDo)
+    } else if matches!(issue.status, IssueStatus::Done | IssueStatus::Canceled) {
+        Some(RunBlock::Finished)
+    } else {
+        None
+    }
+}
+
 /// What a session gets started with.
 #[derive(Debug, Clone)]
 pub struct SessionStart {
@@ -130,6 +194,9 @@ pub trait ExecHost: Send + Sync {
     async fn stop(&self, thread: &ThreadId);
     /// An installed chat engine other than `not`, for the review.
     fn other_chat_engine(&self, not: &str) -> Option<String>;
+    /// The engine's account with the most room (`plan::roomiest`), for the
+    /// review; none: the engine's own sign-in.
+    async fn review_account(&self, engine: &str) -> Option<AccountId>;
     async fn notify(&self, title: String, body: String, issue_id: &str);
 }
 
@@ -221,6 +288,9 @@ pub struct TaskExecService {
     test_lane_delay_ms: std::sync::atomic::AtomicU64,
     /// Serializes queue changes (start, finish, stop).
     queue: tokio::sync::Mutex<()>,
+    /// Holds a task's check for a run under way together with its new
+    /// attempt, so a task never gets two runs at once.
+    starting: tokio::sync::Mutex<()>,
     /// Each attempt's isolation and extra instructions (kept for Retry;
     /// an attempt the app doesn't know any more ran in a lane, the default).
     setup: StdMutex<HashMap<String, (Isolation, Option<String>)>>,
@@ -243,6 +313,7 @@ impl TaskExecService {
             cancelled: StdMutex::default(),
             test_lane_delay_ms: std::sync::atomic::AtomicU64::new(0),
             queue: tokio::sync::Mutex::new(()),
+            starting: tokio::sync::Mutex::new(()),
             setup: StdMutex::default(),
         })
     }
@@ -337,9 +408,9 @@ impl TaskExecService {
         Ok(a)
     }
 
-    /// Execute… (F-TK-04): runs with no account (D-2902) unless the limits
-    /// turn execution off; Full only when chosen.
-    pub async fn execute(self: &Arc<Self>, input: ExecuteInput) -> Result<AttemptView, IpcError> {
+    /// What every run needs: execution on in the limits, with no account
+    /// (D-2902). F-TK-06's Execute all asks before it starts any.
+    pub fn can_execute(&self) -> Result<(), IpcError> {
         let host = self.host()?;
         if !host.limits().task_execution {
             return Err(IpcError::new(
@@ -347,6 +418,70 @@ impl TaskExecService {
                 "Running tasks is turned off for this account. You can still track tasks.",
             ));
         }
+        Ok(())
+    }
+
+    /// The engine an independent review of a run on `engine` uses: another
+    /// installed chat engine, else the same one (F-TK-04).
+    pub fn review_engine(&self, engine: &str) -> String {
+        self.host()
+            .ok()
+            .and_then(|h| h.other_chat_engine(engine))
+            .unwrap_or_else(|| engine.to_string())
+    }
+
+    /// Whether a run of the issue is queued or under way.
+    async fn has_run(&self, issue_id: &str) -> Result<bool, IpcError> {
+        Ok(repo::list(&self.store)
+            .await
+            .map_err(store_err)?
+            .iter()
+            .any(|a| {
+                a.issue_id == issue_id && (a.state == AttemptState::Queued || a.state.active())
+            }))
+    }
+
+    /// Why the issue can't start a run now, if it can't (`block_of`).
+    pub async fn run_block(
+        &self,
+        issue_id: &str,
+        todo_only: bool,
+    ) -> Result<Option<RunBlock>, IpcError> {
+        let issue = match self.tracker()?.get(issue_id) {
+            Ok(i) => i,
+            Err(tandem_tasks::TaskError::NotFound(_)) => return Ok(Some(RunBlock::Missing)),
+            Err(e) => return Err(task_err(e)),
+        };
+        Ok(block_of(&issue, todo_only, self.has_run(issue_id).await?))
+    }
+
+    /// Execute… (F-TK-04): runs with no account (D-2902) unless the limits
+    /// turn execution off; Full only when chosen. A task with a run under
+    /// way, or an archived or finished one, doesn't run.
+    pub async fn execute(self: &Arc<Self>, input: ExecuteInput) -> Result<AttemptView, IpcError> {
+        let id = input.issue_id.clone();
+        match self.start(input, false).await? {
+            Started::Queued(view) => Ok(*view),
+            Started::Blocked(block) => Err(block.error(&id)),
+        }
+    }
+
+    /// Execute all's run of one task (F-TK-06): only a To do task with no
+    /// run under way starts; anything else is left alone, saying why.
+    pub async fn execute_planned(
+        self: &Arc<Self>,
+        input: ExecuteInput,
+    ) -> Result<Started, IpcError> {
+        self.start(input, true).await
+    }
+
+    async fn start(
+        self: &Arc<Self>,
+        input: ExecuteInput,
+        todo_only: bool,
+    ) -> Result<Started, IpcError> {
+        self.can_execute()?;
+        let host = self.host()?;
         if input.access == Access::Full && !input.full_confirmed {
             return Err(IpcError::new(
                 ErrorCode::Invalid,
@@ -362,7 +497,19 @@ impl TaskExecService {
                 "Tasks run in folders on this computer for now. Pick a workspace that isn't on an SSH host or in WSL.",
             ));
         }
-        let issue = self.tracker()?.get(&input.issue_id).map_err(task_err)?;
+        // The check for a run under way and the new attempt happen under
+        // one lock, so two starts of one task make one run.
+        let starting = self.starting.lock().await;
+        let issue = match self.tracker()?.get(&input.issue_id) {
+            Ok(i) => i,
+            Err(tandem_tasks::TaskError::NotFound(_)) if todo_only => {
+                return Ok(Started::Blocked(RunBlock::Missing))
+            }
+            Err(e) => return Err(task_err(e)),
+        };
+        if let Some(block) = block_of(&issue, todo_only, self.has_run(&issue.id).await?) {
+            return Ok(Started::Blocked(block));
+        }
         let (engine_id, account_id) = match (&input.engine_id, &input.teammate_id) {
             (Some(e), _) => (e.clone(), input.account_id.clone()),
             (None, Some(t)) => host
@@ -392,6 +539,7 @@ impl TaskExecService {
         )
         .await
         .map_err(store_err)?;
+        drop(starting);
         if let Ok(mut n) = self.setup.lock() {
             n.insert(
                 a.id.as_str().to_string(),
@@ -402,7 +550,7 @@ impl TaskExecService {
         self.pump().await;
         let a = repo::get(&self.store, &a.id).await.map_err(store_err)?;
         self.emit(&a).await;
-        Ok(self.view(a).await)
+        Ok(Started::Queued(Box::new(self.view(a).await)))
     }
 
     /// (shares the workspace's folder, extra instructions).
@@ -697,9 +845,10 @@ impl TaskExecService {
             Some(l) => host.lane_diff(l).await,
             None => String::new(),
         };
-        let engine = host
-            .other_chat_engine(&a.engine_id)
-            .unwrap_or_else(|| a.engine_id.clone());
+        let engine = self.review_engine(&a.engine_id);
+        // Like a plan's runs, the review takes the account with the most
+        // room, not the default.
+        let account = host.review_account(&engine).await;
         let cwd = match &a.lane_workspace_id {
             Some(l) => host.workspace_root(l).await.ok()?,
             None => host.workspace_root(&a.workspace_id).await.ok()?,
@@ -716,7 +865,7 @@ impl TaskExecService {
                     .unwrap_or(a.workspace_id.clone()),
                 teammate_id: None,
                 engine_id: engine,
-                account_id: None,
+                account_id: account,
                 access: Access::Read,
                 text: review_briefing(&issue, &diff),
                 review: true,
@@ -724,10 +873,13 @@ impl TaskExecService {
             .await
             .ok()?;
         self.wait_turn(host, &thread).await;
-        // The reviewer's own verdict comment, else its reply as one.
+        // The reviewer's own verdict comment, else its reply as one. Its
+        // tasks server writes as its thread, so another run's verdict on
+        // the same task doesn't count.
         let comments = self.tracker().ok()?.comments(&a.issue_id).ok()?;
         if let Some(v) = comments[before.min(comments.len())..]
             .iter()
+            .filter(|c| c.actor == thread.as_str())
             .find_map(|c| verdict_of(&c.body))
         {
             return Some(v.into());
@@ -911,6 +1063,11 @@ pub(crate) mod tests {
         pub(crate) spawns: AtomicUsize,
         /// The workspace's kind (`local` when unset).
         pub(crate) kind: Option<&'static str>,
+        /// The review engine's account with the most room.
+        pub(crate) review_account: Option<&'static str>,
+        /// The reviewer asks for changes, after another run's Approve on
+        /// the same task.
+        pub(crate) foreign_verdict: bool,
     }
 
     #[async_trait]
@@ -949,24 +1106,31 @@ pub(crate) mod tests {
         }
         async fn start_session(&self, s: SessionStart) -> Result<ThreadId, IpcError> {
             self.spawns.fetch_add(1, Ordering::SeqCst);
-            // The agent reports progress, or the reviewer its verdict.
+            let thread = ThreadId::new();
+            // The agent reports progress, or the reviewer its verdict. A
+            // thread's tasks server writes as the thread.
             if let Some(t) = self.tracker.get() {
-                let body = if s.review {
-                    "Verdict: Approve. The fix matches the task."
-                } else {
-                    "Started: reproducing the loop."
+                let comment = |body: &str, actor: &str| {
+                    t.add_comment(&s.issue_id, body, None, None, &Writer::agent(actor, "tc_1"))
+                        .expect("comment");
                 };
-                t.add_comment(
-                    &s.issue_id,
-                    body,
-                    None,
-                    None,
-                    &Writer::agent("tm_1", "tc_1"),
-                )
-                .expect("comment");
+                if !s.review {
+                    comment("Started: reproducing the loop.", "tm_1");
+                } else if self.foreign_verdict {
+                    comment("Verdict: Approve. Another run's review.", "th_other");
+                    comment(
+                        "Verdict: Changes requested. The tests fail.",
+                        thread.as_str(),
+                    );
+                } else {
+                    comment(
+                        "Verdict: Approve. The fix matches the task.",
+                        thread.as_str(),
+                    );
+                }
             }
             self.sessions.lock().expect("lock").push(s);
-            Ok(ThreadId::new())
+            Ok(thread)
         }
         async fn send(&self, _t: &ThreadId, _text: String) -> Result<(), IpcError> {
             Ok(())
@@ -989,6 +1153,10 @@ pub(crate) mod tests {
         }
         fn other_chat_engine(&self, not: &str) -> Option<String> {
             (not != "codex").then(|| "codex".into())
+        }
+        async fn review_account(&self, _engine: &str) -> Option<AccountId> {
+            self.review_account
+                .map(|a| AccountId::from_db(a.to_string()))
         }
         async fn notify(&self, _title: String, _body: String, _issue: &str) {}
     }
@@ -1207,6 +1375,138 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_04_4_the_review_runs_on_its_engines_roomiest_account_and_reads_its_own_verdict() {
+        // F-TK-06's review: another run's verdict on the same task doesn't
+        // count, and the review doesn't fall back to the default account.
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                review_account: Some("cx_home"),
+                foreign_verdict: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        let id = f
+            .svc
+            .execute(input("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        until(|| {
+            f.host
+                .sessions
+                .lock()
+                .map(|s| s.len() == 2)
+                .unwrap_or(false)
+        })
+        .await;
+        for _ in 0..200 {
+            if state(&f, &id).await == AttemptState::InReview {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let review = f.host.sessions.lock().expect("lock")[1].clone();
+        assert!(review.review);
+        assert_eq!(review.engine_id, f.svc.review_engine("claude"));
+        assert_eq!(
+            review.account_id.as_ref().map(|a| a.as_str()),
+            Some("cx_home")
+        );
+        let a = repo::get(&f.svc.store, &id).await.expect("get");
+        assert_eq!(a.review_verdict.as_deref(), Some("changes_requested"));
+    }
+
+    #[tokio::test]
+    async fn f_tk_04_a_task_runs_once_at_a_time_and_only_while_it_can_run() {
+        // F-TK-06's review: Execute… on a task with a run under way, or on
+        // an archived, Done or Canceled one, starts nothing.
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                ..Default::default()
+            },
+            5,
+        )
+        .await;
+        f.svc.execute(input("TAN-1")).await.expect("first");
+        let again = f.svc.execute(input("TAN-1")).await.expect_err("again");
+        assert_eq!(again.code, ErrorCode::Conflict);
+        assert_eq!(
+            again.message,
+            "TAN-1 is already running. Stop that run to start another."
+        );
+        f.tracker
+            .set_archived("TAN-2", true, None, &Writer::human())
+            .expect("archive");
+        let archived = f.svc.execute(input("TAN-2")).await.expect_err("archived");
+        assert_eq!(
+            (archived.code, archived.message.as_str()),
+            (
+                ErrorCode::Invalid,
+                "TAN-2 is archived. Bring it back to run it."
+            )
+        );
+        for (id, status) in [
+            ("TAN-3", IssueStatus::Done),
+            ("TAN-4", IssueStatus::Canceled),
+        ] {
+            f.tracker
+                .force_update(id, Some(status), None, &Writer::human())
+                .expect("status");
+            let finished = f.svc.execute(input(id)).await.expect_err("finished");
+            assert_eq!(
+                finished.message,
+                format!("{id} is finished. Move it back to To do to run it again.")
+            );
+        }
+        // Execute all's runs take only To do tasks, and say why they leave
+        // one alone.
+        f.tracker
+            .force_update(
+                "TAN-5",
+                Some(IssueStatus::InProgress),
+                None,
+                &Writer::human(),
+            )
+            .expect("status");
+        for (id, block) in [
+            ("TAN-1", RunBlock::Running),
+            ("TAN-2", RunBlock::Archived),
+            ("TAN-3", RunBlock::NotToDo),
+            ("TAN-5", RunBlock::NotToDo),
+            ("TAN-9", RunBlock::Missing),
+        ] {
+            assert_eq!(
+                f.svc.run_block(id, true).await.expect("block"),
+                Some(block),
+                "{id}"
+            );
+            assert!(
+                matches!(
+                    f.svc.execute_planned(input(id)).await.expect("planned"),
+                    Started::Blocked(b) if b == block
+                ),
+                "{id}"
+            );
+        }
+        // In progress is still Execute…'s to run.
+        assert_eq!(f.svc.run_block("TAN-5", false).await.expect("block"), None);
+        // Two at once on one task: one run.
+        let (a, b) = tokio::join!(f.svc.execute(input("TAN-5")), f.svc.execute(input("TAN-5")));
+        assert!(a.is_ok() != b.is_ok(), "exactly one starts");
+        let runs = repo::list(&f.svc.store).await.expect("list");
+        assert_eq!(
+            runs.iter().map(|r| r.issue_id.as_str()).collect::<Vec<_>>(),
+            vec!["TAN-1", "TAN-5"]
+        );
+    }
+
+    #[tokio::test]
     async fn f_tk_04_2_a_fifth_attempt_queues_and_starts_when_one_finishes() {
         let f = fixture(
             FakeHost {
@@ -1319,6 +1619,7 @@ pub(crate) mod tests {
             archived: false,
             result: None,
             attempts: vec![],
+            suggested_engine: None,
         };
         let b = briefing(&issue, &[], None);
         let label = untrusted::label("the task tracker");

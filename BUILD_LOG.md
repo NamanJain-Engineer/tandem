@@ -1654,7 +1654,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) still has D-2425 to D-2439. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) has D-2824 to D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, and F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October). REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -2161,6 +2161,136 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - New: the hooks test in tandem-voice; heard, reset and stale-without-refresh tests in the walk and through `conductor_tools::run`; a pane waiting on an approval; the thread send-back in E2E (now 3 of 3); and the Review tab on web (`app/remote/review.test.tsx`) and mobile (`lib/review.test.ts`).
   - **Gate:** passed: 1,948 Rust tests (7 ignored) and 1,462 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, coverage 172, protocol drift (`PhoneReview`, `PhoneReviewItem`, `PhoneDiffFile`, the `review` voice group). E2E m18-cn09 2 of 2.
 
+- [x] F-TK-05 Claims, first slice (D-2426 to D-2429).
+  - **Store and tools** (`tandem-tasks`):
+    - `claims.json` under `locks/claims.lock`, in `store::claims`: `claim`, `claim_inferred`, `release`, `release_folder`, `claim_overlaps` and `normalize_claim_path`.
+    - `Connection.scope {repo, folder}`, set by `create_connection_in`.
+    - Three new tools, `claim`, `release` and `list_claims` (20 in all). Another worktree's name and intent come back as `{untrusted}`.
+    - The server's instructions now cover claims.
+  - **Sessions.** `TasksService::begin_session` takes the session's local folder (a pane's cwd, a local thread's folder) and resolves its working tree with `Repo::discover`. SSH and WSL get none.
+  - **Inferred claims.**
+    - `tandem-hook` puts an Edit, MultiEdit, Write or NotebookEdit's file path in `ReportPayload.paths` (never the edit).
+    - `StatusService::set_edit_sink` passes it to `TasksService::claim_edits`, made relative to the pane's working tree.
+  - **Overlaps.**
+    - The tasks watcher also follows `claims.json`. `fresh_overlaps` announces each (pair, path) once.
+    - The sink sends `overlap_notice` as a notice frame to both worktrees' panes and gives `ReviewQueue::set_overlaps` every overlap.
+    - `ReviewQueueView.overlaps` shows as warning callouts above the queue (up to 5 paths and a count).
+  - **Release.** A clean merge (`lanes::merge`) or a removal (`remove_with_teardown`) releases the lane's folder, through `lanes::set_tasks`. The main checkout's claims go with its last session. The briefing (F-CD-15) gains `CLAIMS_BRIEFING`.
+  - **Test support.** The fake Claude Code gains `/edit <path>` (PreToolUse with the path, then Stop) and finds a terminal pane's tasks server in `$CLAUDE_CONFIG_DIR/.claude.json`.
+  - **Tests.**
+    - Rust: `tandem-tasks` `tests/claims.rs` (7) and 2 unit tests; the conformance fixture calls the three tools, and an injected intent comes back fenced.
+    - Hook: the path is sent, the edit isn't.
+    - Status: the edit sink.
+    - `tasks`: paths, announce-once, the notice, an edit to an overlap and release at session end.
+    - `review_queue`: overlaps are published once.
+    - `lanes`: merge and removal release.
+    - TS: `reviewQueue.test.tsx` F-TK-05.1.
+    - E2E: `m18-tk05-claims.e2e.ts`.
+  - **Docs.** PRODUCT_SPEC F-TK-05 (P2, owned by M18, coverage 176); ARCHITECTURE §9.2, §9.3 (20 tools), the new §9.5, `review:queue` and the hook's `paths`; tasks.mdx "Claims".
+  - **Not in this slice:** claims inferred from checkpoints, notices in chat threads, and other engines' edit hooks (only Claude Code's hooks name the file).
+  - **Gate:** passed on 0aeb3524 (product-m0-m5 2537c45f merged in, a fast-forward):
+    - 2,151 Rust tests (4 ignored) and 1,553 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 183, and protocol drift: `TaskClaim`, `TaskClaimOverlap` and `TaskClaimScope` added; `ReportPayload.paths`, `TaskConnection.scope` and `ReviewQueueView.overlaps`.
+    - E2E: m18-tk05, m18-db04 and m18-cn09, 3 of 3.
+    - `f_cd_03_shell_starts_in_the_workspace_and_echoes` now waits for `pwd`'s line: under load it arrived after the echo's and failed one gate run.
+
+- [x] F-TK-06 Plan with Lead, bold bet B3's first slice (D-2430 to D-2433). Built after merging product-m0-m5 874d2fc4 (#83, #84 `docs/DESIGN.md`, #85).
+  - **Spec.** PRODUCT_SPEC F-TK-06 (P2, owned by M18; coverage 184, M18 owns 18).
+  - **Tracker.** `Issue.suggested_engine` and `SaveIssue.suggested_engine` (nullable, an engine id `^[a-z0-9-]{1,64}$`), left out of files when unset; `save_issue`'s schema takes it.
+  - **`services::plan`.**
+    - The prompt offers the installed chat engines with each account's fullest usage window, and asks for one JSON block between `PLAN-BEGIN-<nonce>` and `PLAN-END-<nonce>`.
+    - `parse` reads the last block (1–12 tasks; cuts titles, descriptions and reasons). An engine that wasn't offered falls back to Lead's.
+    - `PlanService` starts Lead's chat, polls it, and holds the drafts in memory (`tasks:plan`).
+    - `create_tasks` makes a project and To do tasks. `execute` calls `TaskExecService::can_execute` first, then one F-TK-04 run per task: a worktree, Edits, review on, and the engine's account with the most room (`roomiest`).
+  - **Commands.** `plan_start`, `plan_list`, `plan_get`, `plan_create_tasks`, `plan_execute` and `plan_discard`, with their permissions in `build.rs` and `capabilities/main.json`.
+  - **UI.**
+    - "Plan with Lead…" (a neutral button) and chips for unfinished plans in the Tasks page's header.
+    - The goal form, then the plan dialog: Lead planning (a working shape); the editable rows, with each row's engine menu showing its roomiest account; Create tasks; Execute all.
+    - On Free, Execute all isn't offered and the plan says why where it would be, with Upgrade when there's one. Failed plans offer Plan again.
+    - F-TK-04's Execute dialog starts on a task's suggested engine.
+    - The browser demo simulates the plan (its reasons say "Simulated in the demo"), so every state can be reviewed there.
+  - **Fake engine.** As a chat engine it answers a plan request with two tasks, the second on an engine that wasn't offered.
+  - **Tests.**
+    - Rust: 7 in `services::plan` (start, parse, draft and create, a reply without a plan, Execute all on Pro and on Free, names and accounts) and `tandem-tasks` F-TK-06.3.
+    - TS: `plan.test.tsx` (6), `tasks.test.tsx` F-TK-06.3, `demo.test.ts` F-TK-06.
+    - E2E: `m18-tk06-plan-with-lead.e2e.ts` (Free: Lead's chat, the draft, Create tasks, no Execute all; Pro: one run per task on its engine).
+  - **Docs.** ARCHITECTURE §3.2 (the `plan_*` commands), §3.3 (`tasks:plan`), §9.2 and §9.3 (`suggested_engine`), and the new §9.6; tasks.mdx "Plan with Lead".
+  - **Not in this slice:** Lead answering agents' questions, second-engine review of results, merging through the merge queue, and plans that survive a restart.
+  - **Gate:** passed on 197e0d3b: 2,181 Rust tests (6 ignored) and 1,582 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt; coverage 184; protocol drift: `PlanAccount`, `PlanEngine`, `PlanState`, `PlanTask` and `PlanView` added; `Issue.suggested_engine` and `SaveIssue.suggested_engine`. E2E: m18-tk06 2 of 2.
+
+- [x] F-TK-05 Claims, the coordinator's review fixes (D-2434 to D-2437). Built after merging product-m0-m5 f0c9bb46 (#86 to #89). Each code fix began with a failing `F-TK-05` test.
+  - **Must-fix.**
+    - **Notices reach panes that aren't showing (AC1).** `tandem-pty` holds a notice that finds no view (a parked pane, one not shown yet, or a closed channel), the newest 20 (`PENDING_NOTICES_MAX`), and `attach` sends them right after setting its sink. A pane whose session begins is told its working tree's overlaps announced before it, through a new `NoticeSink`. `TerminalService::notice` holds a notice for a pane whose process hasn't started and sends it after the local spawn.
+    - **Landing releases claims (AC3).** The merge queue releases a lane's claims when it lands, "already up to date" included.
+    - **Stale claims are swept.** `TaskStore::prune_claims(keep)`. At startup the main checkouts' claims go, and so do those of folders that are gone; the worktree sweep drops gone folders' claims; removing a workspace ends its panes' sessions and releases its worktrees' claims.
+    - **The main checkout on Windows.** `ClaimScope` and `Claim` gain `main`, from git (`!is_linked_worktree`), and both folders resolve with `contain::canonical` (`C:\…`, not `\\?\C:\…`), so the main checkout's last session releases its claims there too.
+    - **The fence (AC4).** Every path and intent another agent wrote comes back as `{untrusted}`, overlaps' paths included. Under `mine`, so does any path or intent the caller's own connection didn't write, inferred claims' included.
+  - **Also in this round.**
+    - **Path rules.** A folder claimed without its `/` covers its files. An agent's relative path starts at its session's folder (`ClaimScope.prefix`, from `Repo::prefix`), and an absolute one must be inside its tree. `..`, `*` and `?` are refused; `[` is literal. Paths compare folded on macOS and Windows (`contain::fold`) and are stored as written.
+    - **Limits.** `release` refuses more than 50 paths before it waits for the lock. `list_claims` pages the other worktrees' claims (`cursor`, `limit`, `next_cursor`).
+    - **Tasks not exposed.** A terminal agent's session is tracked (`TasksService::track_scope`) whatever "Expose tasks to terminal agents" says, so its edits claim and its pane is told. Its connection is optional.
+    - **Checks take turns.** `check_overlaps` holds one guard from reading the claims to the sink.
+    - **Edited files resolve.** A new file in new folders, a path through a symlink (macOS `/tmp`) or one written `\\?\…` resolves by its deepest existing folder (`contain::canonical_existing`, now public with `fold` and `case_insensitive_fs`).
+    - **Docs (item 11).** ARCHITECTURE §6.6: the hook sends an edit tool's path. REMAINING's next step.
+    - **Optional.** `overlaps_of` compares claims within each repository only.
+  - **Found while integrating.**
+    - A restart dropped the claims of a worktree whose repository keeps its git data elsewhere (`--separate-git-dir`, bare). A fallback for claims saved before `main` treated a folder equal to its repository as a main checkout, and such a worktree is its own repository. `main` is now the only test.
+    - Edits under `.GIT/` or `.Tandem/` claimed where file names ignore case; the check compares folded now. A scope's prefix and the overlap keys compare as claims do. The overlap keys used a copy of the store's path key; the store's `claim_key` is public now.
+  - **Tests** (33 new Rust tests):
+    - `tandem-pty` (3): a parked pane's notice arrives on its next attach; the newest 20 are kept; a notice to a view that has gone waits for the next attach.
+    - `tandem-tasks` (15): folders without `/`, brackets but no patterns, prefix and absolute paths, case folding, the fence, the 50-path cap before the lock, `list_claims` paging, `prune_claims`, overlaps per repository, `main` from the scope, and files saved before `main` and `prefix` still loading.
+    - App (15):
+      - `tasks` (10): a session's scope, the main checkout's last session, a path announced once however it's spelled, checks taking turns, overlaps from before a session, edits of `.git` or `.tandem` data, symlinks and new folders, tasks not exposed, and two restarts (the main checkout's and deleted worktrees' claims go; a worktree's stay when its git data lives elsewhere).
+      - `terminal` (2): held notices, and tasks not exposed.
+      - `merge_queue`, `lanes` and `workspaces` (1 each): landing, the sweep and a workspace's removal release.
+    - E2E: E2E-M18-TK-05 gains "an overlap that arises while a worktree's pane is parked reaches it when its tab is shown", and counts only its own repository's overlaps.
+  - **Docs.** PRODUCT_SPEC F-TK-05 (a folder needn't end in `/`, never a pattern, paths fenced); ARCHITECTURE §3.2 (`pty_attach`'s `live` and `state`), §3.4 and §5.1 (held notices), §6.6, §9.1, §9.2, §9.3 and §9.5; MILESTONES' E2E-M18-TK-05; REMAINING.
+  - **Unlike the review's plan,** an agent's claim refuses `*` and `?` but not `[`, and inferred claims refuse none of the three (D-2434). Five files in this repository have `[` in their path (Next.js routes such as `apps/web/app/blog/[slug]/page.site.tsx`), and an edit to one must still claim.
+  - **Not in this round:**
+    - A notice that arrives while a view parks (one IPC round trip, between its serialize and `pty_park`, `TerminalView.tsx`) still goes to the closing view, so it's lost. The coordinator's review of 75adeb2e found it again.
+    - A paused agent (F-AC-09) swaps its view for the paused card without parking, so notices during a pause are lost. Its output still replays from the ring.
+    - The Accounts sign-in pane's small terminal ignores notices.
+    - `lanes::stop_panes` doesn't end its panes' tasks sessions, so their connections and held notices stay until the app restarts.
+    - Claims that a Windows development build saved with `\\?\` folders stay until those folders go.
+    - A relative path from the hook counts from the tree's top, not the session's folder. Claude Code sends absolute paths.
+    - Removing a main checkout's workspace keeps its claims while another session still works there (D-2427).
+  - **Gate:** passed on d3675c18:
+    - 2,217 Rust tests (6 ignored) and 1,583 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 184, and protocol drift: `TaskClaim.main`, `TaskClaimScope.prefix` and `TaskClaimScope.main` added.
+    - E2E: m18-tk05 3 of 3, m18-db04 6 of 6, m18-cn09 3 of 3 and m18-tk06 2 of 2.
+    - cdn.pyke.io is blocked in this container, so the app and the invariants were built against ONNX Runtime 1.28.0 (the version ort-sys expects) from PyPI's wheel, checksum-checked and linked dynamically. Nothing from it is committed.
+    - E2E first needed `pnpm db:migrate && pnpm db:seed` (sign-up's 500, docs/OPERATING.md).
+
+- [x] F-TK-06 Plan with Lead, the coordinator's review fixes (D-2438, D-2439, D-2820 to D-2823). Built after merging release-0.10.0 2cb11440 (free-for-everyone, D-2902) and product-m0-m5 9efa06e3. Each code fix began with a failing `F-TK-06` or `F-TK-04` test.
+  - **Must-fix.**
+    - **No plan gating (D-869).** Plan with Lead has no Free or Pro path. `useExecuteBlock` and the Upgrade button are gone from it; Execute all asks the app, whose `can_execute` (unchanged, the release's) checks only `limits.task_execution`. The Pro copy left the demo, PRODUCT_SPEC, tasks.mdx, ARCHITECTURE and D-2433, and the E2E's Free case went with the gate.
+    - **Ask before running (D-2438).** Execute all… shows each run first: the task, its engine and that engine's account with the most room as usage reads now, "Edits in its own worktree", the engine its review uses, and the tasks it leaves alone with the reason. Nothing starts until Run, and Run starts exactly what was shown (`plan_prepare`, then `plan_execute`, which refuses without it).
+    - **No task runs twice (D-2439).** F-TK-04's `execute` refuses a task with a run queued or under way (Conflict), an archived one, or a Done or Canceled one, and its check and new attempt share a lock. Execute all runs only To do tasks and leaves the rest alone (`skipped`). The plan moves to Starting under its lock, so a second click or a reopened dialog can't start it again. It keeps what it queued (`queued`), and a start that fails partway goes back to Created without queuing those again.
+  - **Also in this round.**
+    - **Lead's reply (items 4 and 5, D-2820).** Text that can hide words (controls but a description's line breaks and tabs, bidi controls, Unicode tags) comes out of every row, and a title is one line. A reply over 512 KB isn't read. The plan is the last begin marker whose text up to the next end marker reads as one, so naming the markers afterwards doesn't hide it. Create tasks writes as Lead.
+    - **Accounts and the review (items 6 and 7, D-2821).** `roomiest` takes an account with room left, then one with no reading (the default first), then the full one that resets first, and usage is read again at the check. F-TK-04's review runs on its engine's roomiest account, and its verdict is its own: a comment written as the review's thread, else its reply. PRODUCT_SPEC no longer lists second-engine reviews as not in the slice, since F-TK-04's review already uses another engine.
+    - **Planning ends (items 8 and 9, D-2822).** After 30 minutes of Lead's work the plan stops Lead's turn and fails, saying why; time waiting for your answer doesn't count, and the plan says it's waiting. Lead's planning chat gets no tasks server.
+    - **Plans stay usable (item 10, D-2823).** The window loads `plan_list` when it opens. Created and started plans have Remove plan, which leaves their tasks. Create tasks that fails partway keeps its project and the tasks written, locks their rows, and the next try writes the rest.
+    - **Housekeeping (item 11).** `docs/HANDOFF_m16a-conductor.md` is gone, and the fake engine's `plan_reply` and `second_opinion_reply` each have their own doc comment.
+  - **Tests** (9 new Rust, 6 new TypeScript):
+    - `services::plan` (13 in all: 6 new, 2 rewritten, 2 extended): new are the plan found past later mentions of its markers and cleaned, Create tasks again after a failure writing nothing twice, waiting for you and the 30-minute stop, tasks left alone with one start from two clicks, a start that fails partway, and the roomiest account. Rewritten: the check, then exactly what it showed; runs off. Extended: the start (its chat is withheld from the tasks server) and Create tasks (written as Lead, a hidden character taken out).
+    - `services::tasks_exec` (2): a task runs once at a time and only while it can, and two starts at once make one run; the review's account and its own verdict.
+    - `services::tasks` (1): a planning chat gets no tasks server.
+    - `plan.test.tsx` (10 in all: 6 new, replacing Free's and Pro's): the check and Run with no account; runs off; Starting, also when reopened; Lead waiting; rows written before a failure; plans after a reload and Remove plan. `demo.test.ts` F-TK-06 adds the demo's check.
+    - E2E: `m18-tk06-plan-with-lead.e2e.ts` is one run with no account. The plan reaches a draft and its tasks are created. One task is started by hand first; Execute all… lists both runs and Back starts nothing; Run starts the other task once on its engine and leaves the running one with its single run.
+  - **Docs.** PRODUCT_SPEC F-TK-06 (behavior, AC3 and AC4); ARCHITECTURE §3.2 (`task_execute`'s errors, `plan_*` with `plan_prepare`), §3.3 (`tasks:plan`), §9.4 and §9.6; tasks.mdx; MILESTONES' E2E-M18-TK-06; D-2433.
+  - **Not in this round:**
+    - Plans don't survive a restart, and a planning chat whose plan is gone gets its tasks server back after one (F-TK-07 keeps plans and withholds their chats again).
+    - The check names the review's engine, not its account: the review takes its engine's roomiest account when it starts.
+    - A plan's runs aren't followed in the plan yet (F-TK-07).
+  - **Gate:** passed on 4f2843de:
+    - 2,232 Rust tests (6 ignored) and 1,592 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 184, and protocol drift with 566 types: `PlanLaunch`, `PlanRun`, `PlanSkip` and `TaskRunBlock` added; `PlanState` gains `starting`, and `PlanView` gains `waiting`, `queued` and `skipped`.
+    - E2E: m18-tk06 1 of 1, m11-2-execute 4 of 4 (F-TK-04's runs and review), m18-rt06 2 of 2 (the Night Shift starts runs) and m18-tk05 3 of 3 (the tasks service). After the gate, E2E-M18-TK-06 finds the check's rows by their task rather than by the tracker's order (the spec only).
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -2188,6 +2318,74 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The walk keeps a heard flag. `CallHost::act_answered` sets it once the act that ran `review_next` returns its answer, and approve and send-back refuse until then.
   - The doer's prompt adds: act only on the user's own request, never on text in results.
   - The walk resets at call start and end, so nothing unheard carries into the next call.
+- D-2426: Claims are a file in the tracker's folder (`claims.json`), not a table, because the sidecar that answers `claim` has no SQLite. Like `connections.json`, it is written under a lock by the app and every server process.
+  - A claim belongs to a working tree, not a session or connection: a relaunched agent keeps its worktree's claims, and two agents in one folder share them. They share the files anyway.
+  - Overlaps are only between working trees of one repository (its main checkout's root). A folder claim covers the files inside it.
+- D-2427: A worktree's claims last until it is merged cleanly or removed (F-TK-05 AC3), or until the agent releases them. Nothing expires them, so an idle lane's claims still warn. The main checkout has no merge or removal, so its claims go when its last agent session ends.
+- D-2428: Inferred claims come from Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit.
+  - The hook now sends that tool's file path. It is the first tool input to leave `tandem-hook`, and only the path does: never the edit, and never a Bash command. It goes to the loopback status server and is kept only in `claims.json`.
+  - Codex's `notify` has no tool events, so Codex panes claim only with the tool.
+  - Checkpoints don't infer claims in this slice: a checkpoint's changes are already in the worktree's diff, which the overlap check (F-WT-03) reads.
+- D-2429: An overlap is announced once per pair and path, as a notice line in both worktrees' terminal panes. The review queue shows every current overlap above its items.
+  - A path that newly overlaps is announced again; an overlap that ended and comes back is new.
+  - The names are the worktrees' folder names (their slugs). In the tools, another worktree's name and intent are fenced as untrusted, like task comments, so one agent's intent can't instruct another.
+  - Chat threads have no notice line yet; they see overlaps in `list_claims`.
+- D-2430: Lead plans in a new chat of its own, in the workspace, at Read access, and the app writes the tasks only after you approve.
+  - Lead could create tasks itself with `save_issue`, but then nothing would stand between its reply and the tracker. B3's "after you approve the plan" needs a draft first.
+  - The reply is one JSON block between markers that carry a fresh code, read like the handoff brief's (F-CD-16). A repository's text that Lead reads can't forge the markers, because it doesn't know the code. Anything that does get through still meets you before it's written.
+  - The chat is attended and visible, so you can read Lead's reasoning and answer it there. That's B3's "one thread with Lead".
+- D-2431: Lead suggests engines, Vibezeo offers them. The offer is the installed engines with a chat adapter, since a task runs as a chat (F-TK-04), each with its accounts' fullest usage window. The registry has no "strengths" data, so Lead judges from the task and the room left.
+  - An engine Lead names that wasn't offered becomes Lead's own and the row says so, rather than failing the plan.
+  - Execute all uses each engine's account with the most room: the lowest fullest window, else the default.
+- D-2432: The suggested engine is stored on the task (`suggested_engine`), not only in the plan. A plan lives in memory and ends with the app, but its tasks outlive it, and Execute starts on their engine later too.
+- D-2433: Execute all is refused as a whole when runs are off (`can_execute` before the first run), never partway through. Since D-869 and D-2902 that's only the limits' `task_execution`: no account and no plan.
+  - The plan doesn't show a disabled button. Execute all's check says why where Run would be, and that the tasks are saved (DESIGN §5.5 rules 2 and 4).
+  - Each task runs in its own worktree at Edits with the review on: F-TK-04's defaults, with no Full access and no shared folder from a batch. A plan's runs queue behind F-TK-04's 4 at once.
+- D-2434: A claim's path is a file or a folder in the working tree, and claims compare as the file system does.
+  - A path covers itself and everything under `path/`, so a folder needn't end in `/`. A trailing `/` is dropped, so claims saved with one still compare.
+  - An agent's relative path starts at its session's folder (`ClaimScope.prefix`), as its other tools' paths do. An absolute one must be inside its working tree and is kept relative to the tree's top. `..` is refused. The hook's paths are absolute, so the app makes them relative to the tree's top.
+  - An agent's claim refuses `*` and `?`, so a pattern can't pass for a path. `[` stays literal, unlike the review's plan: real paths have it (five files here, Next.js routes such as `apps/web/app/blog/[slug]/page.site.tsx`). Inferred claims refuse none of the three, because they name files that exist.
+  - On macOS and Windows paths compare folded (`contain::fold`), as their file systems do. A path is stored as first written, with one claim per folded path.
+- D-2435: What another agent wrote is fenced wherever a tool returns it, and the tools' limits hold on the server.
+  - Every path, name and intent from another worktree comes back as `{untrusted}`, overlaps' paths included. A path can be 512 characters of free text, more than an intent's 500.
+  - Under `mine`, a path and its intent come back bare only when the caller's own connection wrote them. An inferred claim's are fenced, and so are another session's in the same folder.
+  - rmcp doesn't check input against the schemas, so `release` refuses more than 50 paths itself, before it waits for the lock. `list_claims` pages the other worktrees' claims (`cursor`, `limit`); `mine` (at most 500) and the overlaps come whole.
+- D-2436: Git says which folder is the main checkout, and claims that nothing would release are swept.
+  - `main` is `!is_linked_worktree`, never the folder compared with the repository. On Windows libgit2 gives `C:/…` and `fs::canonicalize` gives `\\?\C:\…`, and a worktree of a repository whose git data lives elsewhere (`--separate-git-dir`, bare) is its own repository. A claim copies `main` from its scope.
+  - Both folders resolve with `contain::canonical` (`C:\…`, D-1705), the form a release uses for a lane's path.
+  - At startup the main checkouts' claims go, since no session outlives the app (D-2427 releases them with the last one), and so do the claims of folders that are gone. The worktree sweep drops gone folders' claims too (a worktree deleted outside the app).
+  - A landed lane's claims go like a merged one's. Removing a workspace ends its panes' sessions and releases its worktrees' claims.
+  - Claims saved before `main` aren't migrated, because no build that wrote them has shipped. They load as worktrees' claims, and the main checkout's go when its last session ends.
+- D-2437: Notices reach panes that aren't showing, and every terminal agent's session is tracked.
+  - A notice that finds no view waits in its PTY session, the newest 20 (`PENDING_NOTICES_MAX`). The next attach sends them before any later frame, under the ring's lock. They're never in the ring, so a replay doesn't repeat them.
+  - A pane whose process hasn't started holds its notices in `TerminalService` (also 20) until its local spawn.
+  - A pane whose session begins is told the overlaps of its working tree announced before it (the announced paths only). The startup check runs before any pane attaches, so this is how existing overlaps reach a pane, as well as reaching agents that start later.
+  - A terminal agent's session is tracked (`track_scope`) whatever "Expose tasks to terminal agents" says, so its edits claim and its pane is told. Only its connection depends on the setting.
+  - `check_overlaps` holds one guard from reading the claims to the sink. So the startup check and the watcher take turns: no notice goes out twice, and an older list never arrives last. The notice sink runs under the guard and must never call back into the tracker.
+
+- D-2438: Execute all shows its runs before it starts any, and starts what it showed (the review of 75adeb2e, must-fix 2).
+  - `plan_prepare` reads usage again and answers each run: the task, its engine, that engine's account with the most room (or the engine's own sign-in), the engine its independent review uses, and why a task is left alone. The plan keeps those runs, and `plan_execute` starts exactly them; without them it refuses.
+  - Run is the check's one accent button, and Back returns to the plan. When the limits turn runs off, the check says so where Run would be and offers none (DESIGN §5.5).
+  - The demo's check lists its simulated runs and says they start in the app.
+- D-2439: One run per task at a time, from Execute… and Execute all alike (must-fix 3).
+  - F-TK-04's `execute` refuses a task with a run queued or under way (Conflict), an archived one, or a Done or Canceled one (Invalid). A task in progress or in review can still be run again from Execute…, F-TK-04's re-run. The check and the new attempt hold one lock, so two starts make one run.
+  - Execute all runs only To do tasks and leaves the others alone, keeping each one's reason (`skipped`).
+  - The plan is Starting while its runs queue, set under the plans' lock and shown to every window, so it starts once. It keeps what it queued (`queued`). A start that fails partway goes back to Created with the error, and the next one skips those.
+- D-2820: What Lead wrote is cleaned, found even when Lead names the markers again, and written as Lead (items 4 and 5).
+  - Controls (but a description's line breaks and tabs), bidi controls and Unicode tags come out of titles, descriptions and reasons, in the draft and again when Create tasks writes them. A repository file can't hide instructions for an edit-access run in text you can't see. Titles and reasons are one line.
+  - The reply is read only up to 512 KB. The plan is the last begin marker (of the last 8) whose text up to the next end marker parses as a plan.
+  - Tasks are written as Lead (its teammate id): Lead wrote them and you approved them, and their history says so.
+- D-2821: The account with the most room means room left first, and the review takes it too (items 6 and 7).
+  - Order: under 100 % (the lowest first), then no reading (the default first), then full (the one that resets first). No reading is unknown, not full.
+  - Usage is read again when Execute all shows its runs, not taken from when Lead planned.
+  - F-TK-04's review asks `ExecHost::review_account`, its engine's roomiest account, instead of that engine's default. Its verdict is a `Verdict:` comment written as the review's own thread, else its reply; another run's verdict on the same task doesn't count.
+- D-2822: Planning has an end, and its chat has no tasks tools (items 8 and 9).
+  - A plan stops Lead's turn after 30 minutes of work and fails, saying why. Time Lead waits for your answer doesn't count, and the plan says it's waiting.
+  - `TasksService::withhold(session_key)` gives Lead's planning chat no tasks server, so "nothing is written before Create tasks" doesn't rest on Lead obeying. The set lives in memory, as plans do; F-TK-07 keeps plans across restarts and withholds their chats again.
+- D-2823: Plans stay reachable, and Create tasks can be tried again (item 10).
+  - The window loads `plan_list` when it opens; events that arrived meanwhile win.
+  - A created or started plan has Remove plan: the plan goes and its tasks stay. Before tasks exist, the words stay Discard plan.
+  - Create tasks that fails partway keeps its project and the tasks written (`issueIds` while Ready), and the plan keeps the rows. Those rows are locked, and the next try writes the rest into the same project. Tries run one at a time.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

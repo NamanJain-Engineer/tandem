@@ -800,7 +800,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Base = the current HEAD of the parent workspace.
 - `.tandem/` is appended to `.git/info/exclude` if absent. Tandem never edits `.gitignore`.
 - Each lane is registered as a **child workspace** of the parent repo. It is listed under the parent in the rail and the Dashboard, and each lane opens its pane in its own tab.
-- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees."
+- **Briefing:** before its task, each lane's agent receives: "You are working in the git worktree `<path>` on branch `tandem/<slug>`. Sibling branches: …. Don't modify other worktrees." It then asks the agent to claim files before editing them (F-TK-05).
 - **Lane menu:**
   - Open in Files.
   - Diff vs base.
@@ -1981,6 +1981,63 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 2. Starting a 5th attempt queues it, and it starts when one of the 4 finishes.
 3. Stop during lane creation leaves no running process and no half-created lane (the lane is rolled back if empty).
 4. With review on, a review comment with a verdict is posted after the attempt.
+
+#### F-TK-05 Claims (P2)
+**Story:** Three agents work in worktrees of one repository. Before one edits `src/auth/session.ts`, it claims the file and sees that another worktree's agent already said it's changing the auth folder. I see the overlap in both panes and in the review queue, before git ever reports a conflict.
+
+**Behavior:**
+- **Three task tools** (F-TK-02's server): `claim(paths, intent)`, `release(paths?)` and `list_claims()`.
+  - A claim is a file or a folder (covering everything in it) in the session's working tree, named relative to the session's folder or by an absolute path inside the tree, never by a pattern (`*` or `?`), with what the agent says it's changing (at most 50 paths a call, 500 characters of intent).
+  - Claims belong to the working tree: a relaunched agent in the same worktree keeps them. A session outside a git working tree can't claim.
+  - `claim` answers with the overlaps its working tree now has; `list_claims` with this worktree's claims, the other worktrees' claims in the same repository and the overlaps.
+  - What another agent wrote (its worktree's name, its paths and its intent) is returned wrapped as untrusted, like task comments: data, never instructions.
+- **Briefing:** a worktree's briefing (F-CD-15) asks the agent to claim before editing and to check `list_claims`.
+- **Inferred claims:** when an agent with status hooks is about to edit a file (Claude Code's `PreToolUse` for Edit, MultiEdit, Write and NotebookEdit), its working tree claims that file. The hook sends the file's path only, never the edit.
+- **Overlaps:** two working trees of one repository overlap when they claim the same file, or one claims a folder holding a file the other claims.
+  - A new overlap shows once as a notice in both worktrees' terminal panes: "add-oauth and fix-auth both claim src/auth/session.ts". A path that newly overlaps is announced again; an overlap that ended and comes back is new.
+  - The review queue (F-DB-04) shows every current overlap above its items, naming both worktrees and up to 5 paths.
+- **Release:** a worktree's claims go when it's merged cleanly or removed. The main checkout's claims go when its last agent session ends. `release` gives up paths (and what's inside a released folder), or every claim without paths.
+
+**Acceptance:**
+1. Two agents claiming overlapping paths produce one overlap notice naming both worktrees and the paths.
+2. An agent that edits `a.ts` without claiming gets an inferred claim from its `PreToolUse` event.
+3. Claims are released when the worktree is merged or removed.
+4. `list_claims` returns other agents' intents inside untrusted fences.
+
+#### F-TK-06 Plan with Lead (P2)
+**Story:** I have a goal bigger than one agent's task. I give it to Lead, the built-in teammate. Lead reads the repository and splits the goal into tasks, each with the engine it suggests. I adjust the plan, approve it, and every task runs in its own worktree. The review queue (F-DB-04) fills as they finish.
+
+**Behavior (first slice; bold bet B3, "The Foreman"):**
+- **Plan with Lead…** on the Tasks page asks for a goal (up to 4,000 characters) and a local workspace.
+- **Lead plans in its own thread.** Vibezeo opens a new Lead chat in that workspace, titled "Plan: <goal>", at Read access. Its first message has:
+  - the goal;
+  - the engines that can run tasks here, each with its accounts' fullest usage window (for example "claude: 62 % of the 5-hour window used, resets 14:10");
+  - the reply format: one JSON block between markers that carry a fresh code.
+
+  You can read Lead's reasoning in that thread, and answer it there. Lead gets no tasks tools in that thread, so nothing reaches the tracker before you approve.
+  - When Lead waits for your answer, the plan says so: "Lead is waiting for your answer in its thread".
+  - After 30 minutes of work (time waiting for you doesn't count), Vibezeo stops Lead's turn and the plan fails, saying why.
+- **The draft.** When Lead's turn ends, Vibezeo reads the block and shows the plan as editable rows: title, description and engine (a menu of the engines offered). It holds 1–12 tasks.
+  - An engine Lead names that wasn't offered becomes Lead's own engine, and the row says so.
+  - A reply without a readable block fails the plan with "Lead's reply had no plan", and offers Plan again. Lead naming the markers after its plan doesn't hide the plan. A reply over 512 KB isn't read.
+  - Characters that can hide text (controls, bidi controls and Unicode tags) are taken out of every row, and a title is one line.
+  - Nothing is written until you choose **Create tasks**.
+- **Create tasks** puts the rows into the tracker (F-TK-01) as To do tasks in a new project named after the goal, written as Lead. Each task remembers its suggested engine, and F-TK-04's Execute dialog starts on that engine. If writing stops partway, the project and the tasks written so far stay, their rows can't be changed, and Create tasks writes the rest.
+- **Execute all…** first shows what it starts. Nothing runs until you choose **Run**:
+  - each task, with its engine and that engine's account with the most room as usage reads now (or the engine's own sign-in);
+  - that each one edits in its own worktree, and the engine its independent review uses (F-TK-04's: a different engine when one is installed);
+  - the tasks it leaves alone, and why. Only To do tasks with no run under way start.
+
+  Then it runs those tasks through F-TK-04's queue, at Edits, at most 4 at once. It starts once: while its runs are queuing the plan says "Starting the runs…", and the plan keeps what it queued. If a run fails to start, the plan says why and Execute all can go again without queuing anything twice.
+  It needs no account (D-869). When the limits turn runs off, the check says so where Run would be, and the tasks stay usable.
+- **Not in this slice:** Lead answering agents' questions, and merging. Review and merge stay yours.
+- A plan lives until you remove it or the app quits, and a reloaded window lists it again. **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
+
+**Acceptance:**
+1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
+2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
+3. Create tasks writes one To do task per row in a new project, each with its suggested engine, as Lead. Nothing is written before it, and trying again after a failure writes no task twice.
+4. Execute all lists each run (engine, account, its own worktree, the review's engine) and starts none until you confirm. Then it starts one attempt per To do task on its suggested engine, in a worktree, and none for a task that's already running. When the limits turn runs off, it starts none and says why.
 
 ### 4.9 RT: Routines
 

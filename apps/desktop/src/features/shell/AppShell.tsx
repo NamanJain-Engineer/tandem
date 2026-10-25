@@ -57,6 +57,7 @@ import { followBrowser } from "../../stores/browser";
 import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
+import { followPlans } from "../../stores/plan";
 import { followReview } from "../../stores/review";
 import { followNotifications } from "../../stores/notifications";
 import { followRestore, startAutoResume } from "../../stores/restore";
@@ -105,6 +106,7 @@ export function AppShell() {
   useEffect(followFocus, []);
   useEffect(followDashboard, []);
   useEffect(followReview, []);
+  useEffect(followPlans, []);
   useEffect(followNotifications, []);
   useEffect(followRestore, []);
   useEffect(startAutoResume, []);

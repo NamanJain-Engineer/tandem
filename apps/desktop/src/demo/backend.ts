@@ -26,6 +26,7 @@ import type {
   ThreadEventEnvelope,
   ThreadEventPage,
   ThreadsChanged,
+  PlanTask,
   SaveIssue,
   Turn,
   WorkspaceSummary,
@@ -46,6 +47,7 @@ import {
 } from "./agent";
 import { DemoFiles, NO_GIT } from "./files";
 import { DemoNotes } from "./notes";
+import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen } from "./shell";
@@ -387,6 +389,8 @@ export class DemoCore {
   readonly notes = new DemoNotes();
   /** The Tasks tab, kept in the page (F-TK-03). */
   readonly tasks = new DemoTasks();
+  /** Plan with Lead (F-TK-06), simulated. */
+  readonly plans = new DemoPlans(this.tasks, (ms, fn) => this.later(ms, fn));
   /** The review queue (F-DB-04): Claude Code's finished fix in `shop`. */
   private readonly review = new DemoReview(WORKSPACE, "pn_claude");
   private ids = 0;
@@ -1213,6 +1217,18 @@ export class DemoCore {
           String(args?.body ?? ""),
           typeof args?.parentId === "string" ? args.parentId : null,
         );
+      case "plan_start":
+        return this.plans.start(String(args?.workspaceId ?? ""), String(args?.goal ?? ""));
+      case "plan_list":
+        return this.plans.list();
+      case "plan_create_tasks":
+        return this.plans.createTasks(String(args?.id ?? ""), (args?.tasks ?? []) as PlanTask[]);
+      case "plan_prepare":
+        return this.plans.prepare(String(args?.id ?? ""));
+      case "plan_execute":
+        return this.plans.execute();
+      case "plan_discard":
+        return this.plans.discard(String(args?.id ?? ""));
       case "task_archive":
       case "task_restore":
         return this.tasks.setArchived(
@@ -1292,10 +1308,7 @@ export class DemoCore {
         };
       case "task_execute":
       case "night_schedule":
-        throw {
-          code: "unavailable",
-          message: "Running a task starts an agent in a worktree on your computer, so it works in the app, not in this demo.",
-        };
+        throw { code: "unavailable", message: RUNS_IN_THE_APP };
       case "night_accounts":
         return [];
       case "scratchpad_list":

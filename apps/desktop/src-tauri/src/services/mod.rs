@@ -51,6 +51,7 @@ pub mod notifier;
 pub mod opener;
 pub mod phone;
 pub mod phone_lan;
+pub mod plan;
 pub mod plugins;
 pub mod ports;
 pub mod pr_checks;

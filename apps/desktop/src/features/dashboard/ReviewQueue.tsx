@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
-import type { FileDiff, IpcError, RepoReview, ReviewItem, ReviewRiskRule } from "@tandem/protocol";
+import type {
+  FileDiff,
+  IpcError,
+  RepoReview,
+  ReviewItem,
+  ReviewRiskRule,
+  TaskClaimOverlap,
+} from "@tandem/protocol";
 import {
   Badge,
   Button,
+  Callout,
   Dialog,
   DiffView,
   EmptyState,
@@ -357,9 +365,39 @@ function Section({ title, items, now }: { title: string; items: ReviewItem[]; no
   );
 }
 
+const OVERLAP_PATHS = 5;
+
+/** F-TK-05: worktrees whose agents claim the same files. */
+function Overlaps({ overlaps }: { overlaps: TaskClaimOverlap[] }) {
+  if (overlaps.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2" aria-label={t("review.overlap.section")} data-testid="review-overlaps">
+      {overlaps.map((o) => {
+        const more = o.paths.length - OVERLAP_PATHS;
+        return (
+          <Callout
+            key={o.folders.join("|")}
+            tone="warning"
+            title={t("review.overlap.title", { a: o.agents[0], b: o.agents[1] })}
+          >
+            <ul className="flex flex-col gap-0.5 font-mono text-sm">
+              {o.paths.slice(0, OVERLAP_PATHS).map((p) => (
+                <li key={p} className="truncate">
+                  {p}
+                </li>
+              ))}
+              {more > 0 && <li>{t("review.overlap.more", { n: more })}</li>}
+            </ul>
+          </Callout>
+        );
+      })}
+    </section>
+  );
+}
+
 /** F-DB-04, the Review view: what's ready to review, across engines. */
 export function ReviewQueue() {
-  const { items, loaded, error, sort } = useReview();
+  const { items, overlaps, loaded, error, sort } = useReview();
   const slow = useDelayedFlag(!loaded, 150);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -389,7 +427,8 @@ export function ReviewQueue() {
     ) : null;
   if (items.length === 0)
     return (
-      <div className="p-3" data-testid="review-empty">
+      <div className="flex flex-col gap-3 p-3" data-testid="review-empty">
+        <Overlaps overlaps={overlaps} />
         <EmptyState
           icon={<ClipboardCheck size={20} />}
           title={t("review.emptyTitle")}
@@ -420,6 +459,7 @@ export function ReviewQueue() {
           {t("review.refresh")}
         </Button>
       </div>
+      <Overlaps overlaps={overlaps} />
       <Section title={t("review.toReview")} items={toReview(sorted)} now={now} />
       <Section title={t("review.snoozed")} items={sorted.filter((i) => i.state === "snoozed")} now={now} />
       <Section title={t("review.approved")} items={sorted.filter((i) => i.state === "approved")} now={now} />
