@@ -222,7 +222,7 @@ function BrowserTab({ tab }: { tab: SidebarTab }) {
 }
 
 function Panel({ tab, shown }: { tab: SidebarTab; shown: boolean }) {
-  if (tab.kind === "dashboard") return <DashboardPanel />;
+  if (tab.kind === "dashboard") return <DashboardPanel visible={shown} />;
   if (tab.kind === "files") return <FilesPanel />;
   if (tab.kind === "browser") return <BrowserTab tab={tab} />;
   if (tab.kind === "checkpoints") return <CheckpointsPanel />;

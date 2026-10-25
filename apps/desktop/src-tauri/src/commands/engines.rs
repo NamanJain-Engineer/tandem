@@ -31,6 +31,9 @@ pub struct EngineView {
     pub unsupported_reason: Option<String>,
     /// The user's extra launch args (Settings › Engines).
     pub extra_args: Vec<String>,
+    /// An ACP agent the user added (F-EN-10): shown "via ACP".
+    #[serde(default)]
+    pub added: bool,
 }
 
 /// The install command for this OS, shown verbatim and typed into a visible
@@ -61,10 +64,14 @@ fn views(
                 .get(&s.id)
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
+            added: s.vendor == ACP_VENDOR,
             spec: s.clone(),
         })
         .collect()
 }
+
+/// The vendor an added ACP agent's registry entry carries.
+const ACP_VENDOR: &str = tandem_engines::acp_agents::VENDOR;
 
 /// Installed engines first, in registry order otherwise (UI-10).
 #[tauri::command]
@@ -84,7 +91,7 @@ pub async fn engines_list(
         )
         .await
         .unwrap_or_default();
-        let mut list = views(engines.registry().all(), report.as_ref(), &extra);
+        let mut list = views(engines.base_registry().all(), report.as_ref(), &extra);
         list.sort_by_key(|v| v.install.is_none());
         return Ok(list);
     }
@@ -112,7 +119,7 @@ pub async fn engines_detect(
 ) -> Result<DetectionReport, tandem_core::IpcError> {
     if let Some(host) = host_id.filter(|h| h != "local") {
         let host = tandem_core::ids::HostId::from_db(host);
-        let engines = state.terminals.engines.registry().all().to_vec();
+        let engines = state.terminals.engines.base_registry().all().to_vec();
         let row = tandem_store::repo::hosts::get(&state.store, &host).await?;
         if row.kind == "wsl" {
             // Inside the distro's login shell (F-RM-02 "Detection runs
@@ -225,15 +232,26 @@ mod chat_tests {
             .all(|v| !v.chat_capable));
     }
 
+    /// F-EN-09 AC3 as F-EN-10 left it (D-2510): Antigravity is never a
+    /// Thread or teammate engine; Kiro is one through its ACP mode; neither
+    /// ever runs headless.
     #[test]
-    fn f_en_09_3_antigravity_and_kiro_are_never_thread_or_teammate_engines() {
+    fn f_en_09_3_antigravity_is_never_a_thread_engine_and_kiro_is_one_through_acp() {
         let registry = tandem_engines::registry::EngineRegistry::bundled();
         let list = views(registry.all(), None, &serde_json::json!({}));
-        for id in ["antigravity", "kiro"] {
-            let v = list.iter().find(|v| v.spec.id == id).expect(id);
-            assert!(!v.chat_capable, "{id}");
-            assert!(!crate::services::threads::has_chat_adapter(&v.spec), "{id}");
-            assert!(v.spec.headless_cmd.is_none(), "{id} never runs headless");
+        let get = |id: &str| list.iter().find(|v| v.spec.id == id).expect("engine");
+        let agy = get("antigravity");
+        assert!(!agy.chat_capable);
+        assert!(!crate::services::threads::has_chat_adapter(&agy.spec));
+        let kiro = get("kiro");
+        assert!(kiro.chat_capable);
+        assert_eq!(kiro.spec.chat_adapter.as_deref(), Some("acp"));
+        for v in [agy, kiro] {
+            assert!(
+                v.spec.headless_cmd.is_none(),
+                "{} never runs headless",
+                v.spec.id
+            );
         }
     }
 }

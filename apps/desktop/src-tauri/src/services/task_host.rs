@@ -74,7 +74,7 @@ impl ExecHost for AppExecHost {
     async fn remove_lane(&self, lane: &WorkspaceId) -> Result<(), IpcError> {
         let git = self.git().await?;
         // Without force: a lane with anything in it stays (never deleted).
-        crate::services::lanes::remove(&self.store, &self.terminals.pty, &git, lane, None).await
+        crate::services::lanes::remove(&self.store, &self.terminals, &git, lane, None).await
     }
 
     async fn lane_diff(&self, lane: &WorkspaceId) -> String {

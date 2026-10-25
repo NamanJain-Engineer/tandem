@@ -6315,6 +6315,7 @@ dependencies = [
 name = "tandem-pty"
 version = "0.10.0"
 dependencies = [
+ "aho-corasick",
  "dashmap",
  "libc",
  "parking_lot",
@@ -6331,6 +6332,7 @@ dependencies = [
  "vt100",
  "vte",
  "windows-sys 0.59.0",
+ "zeroize",
 ]
 
 [[package]]

@@ -45,7 +45,6 @@ export const SIGNED_IN: AuthState = {
   signedIn: true,
   email: "ana@tandem.test",
   offline: false,
-  offlineDaysLeft: null,
   hosted: true,
   pending: null,
   error: null,

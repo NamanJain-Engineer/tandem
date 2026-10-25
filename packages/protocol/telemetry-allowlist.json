@@ -20,8 +20,6 @@
     "signed_in": { "props": { "method": ["loopback", "deep_link"] } },
     "signed_out": { "props": {} },
     "workspace_added": { "props": { "kind": ["local", "ssh", "wsl"], "count": "number" } },
-    "limit_hit": { "props": { "limit": ["panes", "workspaces", "threadGrid", "teammates", "pluginConnections", "accountsPerEngine"] } },
-    "upgrade_sheet_opened": { "props": { "source": ["gate", "account_menu", "settings", "palette"] } },
     "terminal_opened": { "props": { "kind": ["terminal", "agent"] } },
     "startup_timing": { "props": { "ms": "number" } }
   }

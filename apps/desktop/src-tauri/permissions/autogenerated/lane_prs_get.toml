@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-prs-get"
+description = "Enables the lane_prs_get command without any pre-configured scope."
+commands.allow = ["lane_prs_get"]
+
+[[permission]]
+identifier = "deny-lane-prs-get"
+description = "Denies the lane_prs_get command without any pre-configured scope."
+commands.deny = ["lane_prs_get"]

@@ -28,7 +28,6 @@ function card(id: string, label: string, extra: Partial<PluginCard> = {}): Plugi
     takesKey: false,
     keyHint: null,
     teammates: 0,
-    limitReached: false,
     ...extra,
   };
 }
@@ -53,10 +52,9 @@ const STRIPE = card("stripe", "Stripe", { state: "blocked_by_org", category: "bu
 const ui = (node: React.ReactNode) => render(<UiProvider>{node}</UiProvider>);
 
 describe("F-PL-03 UI-90 catalog", () => {
-  let calls: Call[];
   beforeEach(() => {
     resetStores();
-    calls = fakeBackend({
+    fakeBackend({
       plugins_catalog: () => [GITHUB, LINEAR, FIGMA, STRIPE],
       held_drafts_list: () => [],
       grants_list: () => [],
@@ -120,21 +118,6 @@ describe("F-PL-03 UI-90 catalog", () => {
     expect(screen.queryByTestId("plugin-card-github")).toBeNull();
   });
 
-  it("F-PL-03 a card the core marks at a limit shows no plan, badge or limit line: the core's reason comes on Connect (DESIGN §9.5)", async () => {
-    calls = fakeBackend({
-      plugins_catalog: () => [GITHUB, { ...LINEAR, limitReached: true }],
-      held_drafts_list: () => [],
-      grants_list: () => [],
-    });
-    ui(<PluginsPage />);
-    const btn = await screen.findByTestId("plugin-connect-linear");
-    expect(btn.textContent).toBe("Connect");
-    expect(btn.hasAttribute("disabled")).toBe(false);
-    expect(screen.queryByTestId("plugin-why-linear")).toBeNull();
-    expect(document.body.textContent).not.toMatch(/\bPro\b|At limit/);
-    expect(calls.some((c) => c.cmd === "plugin_connect_oauth")).toBe(false);
-  });
-
   it("F-PL-03 the model sorts connected then ready before preview", () => {
     const { connected, browse } = splitCards([FIGMA, LINEAR, GITHUB]);
     expect(connected.map((c) => c.pluginId)).toEqual(["github"]);
@@ -168,6 +151,21 @@ describe("F-PL-03 UI-91 connect sheet", () => {
       teammate_list: () => [],
       grants_set: () => null,
     });
+  });
+
+  it("F-PL-03 Connect past a connection limit a token carries shows the core's reason and sells nothing (D-2914)", async () => {
+    calls = fakeBackend({
+      plugin_connect_oauth: () => {
+        throw { code: "forbidden_plan", message: "This account's plugin connections are used up." };
+      },
+      teammate_list: () => [],
+    });
+    ui(<ConnectSheet card={card("linear", "Linear")} open onOpenChange={() => undefined} />);
+    fireEvent.click(screen.getByTestId("connect-start"));
+    const err = await screen.findByTestId("connect-error");
+    expect(err.textContent).toContain("This account's plugin connections are used up.");
+    expect(document.body.textContent).not.toMatch(/\bPro\b|upgrade|See plans/i);
+    expect(calls.filter((c) => c.cmd === "plugin_connect_oauth")).toHaveLength(1);
   });
 
   it("F-PL-03 a failed step is named and the provider's text is shown untruncated", async () => {

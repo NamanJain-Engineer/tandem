@@ -468,7 +468,7 @@ export function ReviewQueue() {
 }
 
 /** The Dashboard panel: Agents (F-DB-01) or Review (F-DB-04). */
-export function DashboardPanel() {
+export function DashboardPanel({ visible = true }: { visible?: boolean }) {
   const view = useReview((s) => s.view);
   const pending = useReview((s) => toReview(s.items).length);
   const agents = useDashboard((s) => Object.keys(s.items).length);
@@ -491,7 +491,7 @@ export function DashboardPanel() {
           ]}
         />
       </div>
-      {view === "review" ? <ReviewQueue /> : <Dashboard />}
+      {view === "review" ? <ReviewQueue /> : <Dashboard onScreen={visible} />}
     </div>
   );
 }

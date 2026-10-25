@@ -414,7 +414,6 @@ pub trait ApiClient: Send + Sync {
     async fn refresh(&self, refresh_token: &str) -> Result<TokenPair, ApiError>;
     async fn logout(&self, access: &str, refresh_token: &str) -> Result<(), ApiError>;
     async fn me(&self, access: &str) -> Result<MeResponse, ApiError>;
-    async fn portal(&self, access: &str) -> Result<String, ApiError>;
     async fn config(&self) -> Result<SignedConfig, ApiError>;
     /// `POST /v1/ai/title` (F-TH-15): a thread title of at most 60 characters.
     async fn ai_title(&self, access: &str, text: &str) -> Result<String, ApiError>;
@@ -590,9 +589,6 @@ impl ApiClient for NoHostedApi {
     async fn me(&self, _: &str) -> Result<MeResponse, ApiError> {
         Err(no_hosted_service())
     }
-    async fn portal(&self, _: &str) -> Result<String, ApiError> {
-        Err(no_hosted_service())
-    }
     async fn config(&self) -> Result<SignedConfig, ApiError> {
         Err(no_hosted_service())
     }
@@ -710,11 +706,6 @@ pub fn platform() -> &'static str {
     }
 }
 
-#[derive(Deserialize)]
-struct UrlBody {
-    url: String,
-}
-
 #[async_trait]
 impl ApiClient for HttpApi {
     async fn exchange(
@@ -763,16 +754,6 @@ impl ApiClient for HttpApi {
                 .bearer_auth(access),
         )
         .await
-    }
-
-    async fn portal(&self, access: &str) -> Result<String, ApiError> {
-        let req = self
-            .net
-            .client()
-            .post(self.url("/v1/billing/portal"))
-            .bearer_auth(access)
-            .json(&json!({}));
-        self.call::<UrlBody>(req).await.map(|b| b.url)
     }
 
     async fn config(&self) -> Result<SignedConfig, ApiError> {

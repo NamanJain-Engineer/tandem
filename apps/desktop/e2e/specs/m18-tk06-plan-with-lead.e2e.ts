@@ -77,6 +77,10 @@ describe("E2E-M18-TK-06 plan with Lead", function () {
     const dir = repo("tk06");
     await addFolder(dir);
     const ws = (await invoke<Ws[]>("workspace_list")).find((w) => w.root === dir)!;
+    // Tasks outlive specs (resetState leaves the tracker alone): only the
+    // ones made after this point are the plan's.
+    const before = new Set((await issues()).map((i) => i.id));
+    const added = async () => (await issues()).filter((i) => !before.has(i.id));
     await planToDraft();
 
     // Lead's chat is in the workspace, and its first message has the goal
@@ -97,14 +101,14 @@ describe("E2E-M18-TK-06 plan with Lead", function () {
     // is in the tracker yet.
     expect(await $$('[data-testid="plan-row"]').length).toBe(2);
     expect(await $('[data-testid="plan-row-fell-back"]').isExisting()).toBe(true);
-    expect(await issues()).toEqual([]);
+    expect(await added()).toEqual([]);
     const title = $$('[data-testid="plan-row-title"]')[0]!;
     await title.clearValue();
     await title.setValue("OAuth routes");
     await $('[data-testid="plan-create"]').click();
     await $('[data-testid="plan-created"]').waitForExist({ timeout: 10_000 });
 
-    const made = await issues();
+    const made = await added();
     expect(made.map((i) => i.title).sort()).toEqual(["OAuth routes", "Write the sign-in page"]);
     expect(made.every((i) => i.status === "todo" && i.project && i.suggested_engine)).toBe(true);
     expect(new Set(made.map((i) => i.project)).size).toBe(1);

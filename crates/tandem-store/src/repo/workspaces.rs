@@ -184,80 +184,90 @@ pub async fn add(
 /// removed row for the same folder (an earlier worktree at that path) is
 /// reused.
 pub async fn add_lane(store: &Store, lane: NewLane) -> Result<Workspace, StoreError> {
-    store
-        .write(move |t| {
-            let parent = t
-                .query_row(
-                    &format!("SELECT {COLUMNS} FROM workspaces WHERE id = ?1 AND removed_at IS NULL"),
-                    [lane.parent_id.as_str()],
-                    from_row,
-                )
-                .optional()?
-                .ok_or_else(|| StoreError::NotFound("No workspace with that id".into()))?;
-            if parent.parent_id.is_some() {
-                return Err(StoreError::Invalid(
-                    "A worktree belongs to its repository's workspace".into(),
-                ));
-            }
-            let found: Option<(String, Option<i64>)> = t
-                .query_row(
-                    "SELECT id, removed_at FROM workspaces WHERE host_id = ?1 AND root = ?2",
-                    params![parent.host_id, lane.root],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-            let last: Option<String> = t
-                .query_row(
-                    "SELECT MAX(sort_key) FROM workspaces WHERE removed_at IS NULL AND parent_id = ?1",
-                    [parent.id.as_str()],
-                    |r| r.get(0),
-                )
-                .optional()?
-                .flatten();
-            let key = sort_key::between(last.as_deref(), None);
-            let ws = Workspace {
-                id: WorkspaceId::new(),
-                kind: parent.kind.clone(),
-                host_id: parent.host_id.clone(),
-                root: lane.root,
-                wsl_distro: parent.wsl_distro.clone(),
-                name: lane.name,
-                parent_id: Some(parent.id.clone()),
-                lane_branch: Some(lane.branch),
-                lane_base: Some(lane.base),
-                sort_key: key,
-                pinned: false,
-                collapsed: false,
-                sessions_collapsed: false,
-                created_at: now_ms(),
-            };
-            match found {
-                Some((_, None)) => Err(StoreError::Conflict(
-                    "Another workspace already uses that folder".into(),
-                )),
-                Some((id, Some(_))) => {
-                    t.execute(
-                        "UPDATE workspaces SET removed_at = NULL, name = ?2, parent_id = ?3, lane_branch = ?4,
-                         lane_base = ?5, sort_key = ?6, kind = ?7, wsl_distro = ?8, pinned = 0, collapsed = 0
-                         WHERE id = ?1",
-                        params![id, ws.name, parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.kind, ws.wsl_distro],
-                    )?;
-                    Ok(Workspace { id: WorkspaceId::from_db(id), ..ws })
-                }
-                None => {
-                    t.execute(
-                        "INSERT INTO workspaces (id, kind, host_id, root, wsl_distro, name, parent_id, lane_branch, lane_base, sort_key, created_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                        params![
-                            ws.id.as_str(), ws.kind, ws.host_id, ws.root, ws.wsl_distro, ws.name,
-                            parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.created_at
-                        ],
-                    )?;
-                    Ok(ws)
-                }
-            }
-        })
-        .await
+    store.write(move |t| add_lane_in(t, lane)).await
+}
+
+/// [`add_lane`] inside a write transaction, so other rows can go with it
+/// (F-CD-22's `lane_repos`). A removed row at the same folder comes back,
+/// without the repositories it had.
+pub(crate) fn add_lane_in(
+    t: &rusqlite::Transaction<'_>,
+    lane: NewLane,
+) -> Result<Workspace, StoreError> {
+    let parent = t
+        .query_row(
+            &format!("SELECT {COLUMNS} FROM workspaces WHERE id = ?1 AND removed_at IS NULL"),
+            [lane.parent_id.as_str()],
+            from_row,
+        )
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound("No workspace with that id".into()))?;
+    if parent.parent_id.is_some() {
+        return Err(StoreError::Invalid(
+            "A worktree belongs to its repository's workspace".into(),
+        ));
+    }
+    let found: Option<(String, Option<i64>)> = t
+        .query_row(
+            "SELECT id, removed_at FROM workspaces WHERE host_id = ?1 AND root = ?2",
+            params![parent.host_id, lane.root],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let last: Option<String> = t
+        .query_row(
+            "SELECT MAX(sort_key) FROM workspaces WHERE removed_at IS NULL AND parent_id = ?1",
+            [parent.id.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let key = sort_key::between(last.as_deref(), None);
+    let ws = Workspace {
+        id: WorkspaceId::new(),
+        kind: parent.kind.clone(),
+        host_id: parent.host_id.clone(),
+        root: lane.root,
+        wsl_distro: parent.wsl_distro.clone(),
+        name: lane.name,
+        parent_id: Some(parent.id.clone()),
+        lane_branch: Some(lane.branch),
+        lane_base: Some(lane.base),
+        sort_key: key,
+        pinned: false,
+        collapsed: false,
+        sessions_collapsed: false,
+        created_at: now_ms(),
+    };
+    match found {
+        Some((_, None)) => Err(StoreError::Conflict(
+            "Another workspace already uses that folder".into(),
+        )),
+        Some((id, Some(_))) => {
+            t.execute(
+                "UPDATE workspaces SET removed_at = NULL, name = ?2, parent_id = ?3, lane_branch = ?4,
+                 lane_base = ?5, sort_key = ?6, kind = ?7, wsl_distro = ?8, pinned = 0, collapsed = 0
+                 WHERE id = ?1",
+                params![id, ws.name, parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.kind, ws.wsl_distro],
+            )?;
+            t.execute("DELETE FROM lane_repos WHERE lane_id = ?1", [id.as_str()])?;
+            Ok(Workspace {
+                id: WorkspaceId::from_db(id),
+                ..ws
+            })
+        }
+        None => {
+            t.execute(
+                "INSERT INTO workspaces (id, kind, host_id, root, wsl_distro, name, parent_id, lane_branch, lane_base, sort_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    ws.id.as_str(), ws.kind, ws.host_id, ws.root, ws.wsl_distro, ws.name,
+                    parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.created_at
+                ],
+            )?;
+            Ok(ws)
+        }
+    }
 }
 
 /// A workspace's worktrees that aren't removed, oldest first.

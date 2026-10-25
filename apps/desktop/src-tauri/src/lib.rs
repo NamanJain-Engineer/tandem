@@ -195,6 +195,8 @@ macro_rules! app_commands {
             commands::lanes::lane_review_comments,
             commands::lanes::lane_radar,
             commands::lanes::lane_radar_note,
+            commands::lanes::lane_create_prs,
+            commands::lanes::lane_prs_get,
             commands::lanes::worktree_env_check,
             commands::lanes::lane_create_pr,
             commands::lanes::lane_remove,
@@ -304,6 +306,16 @@ macro_rules! app_commands {
             commands::night_shift::night_cancel,
             commands::sandbox::sandbox_status,
             commands::sandbox::sandbox_panes,
+            commands::resources::resources_status,
+            commands::resources::resources_list,
+            commands::resources::resources_notes,
+            commands::resources::resources_freeze,
+            commands::resources::resources_thaw,
+            commands::secrets::secrets_list,
+            commands::secrets::secrets_set,
+            commands::secrets::secrets_delete,
+            commands::secrets::secrets_run_plan,
+            commands::secrets::secrets_run,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -323,6 +335,10 @@ macro_rules! app_commands {
             commands::engine_versions::engine_rollback_command,
             commands::engine_versions::engine_background,
             commands::engine_versions::engine_background_stop,
+            commands::acp_agents::acp_agents_list,
+            commands::acp_agents::acp_agent_test,
+            commands::acp_agents::acp_agent_add,
+            commands::acp_agents::acp_agent_remove,
             commands::library::library_list,
             commands::library::library_transcript,
             commands::library::library_resume,
@@ -1174,6 +1190,31 @@ pub fn run() {
                             }
                         }
                         state.clock.sleep(crate::services::night_shift::TICK).await;
+                    }
+                });
+                // F-EX-06: checks take turns if the setting says so, and
+                // capped panes are watched for processes ended at the cap.
+                let governed = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let on = tandem_store::repo::settings::get(
+                        &governed.state::<AppState>().store,
+                        tandem_core::settings::SettingKey::ChecksOneAtATime,
+                    )
+                    .await
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                    crate::services::check_queue::set(on);
+                    governed
+                        .state::<AppState>()
+                        .terminals
+                        .resources
+                        .thaw_leftovers()
+                        .await;
+                    loop {
+                        let state = governed.state::<AppState>();
+                        state.terminals.resources.watch(&state.terminals.pty).await;
+                        state.clock.sleep(std::time::Duration::from_secs(2)).await;
                     }
                 });
                 // F-DB-04: the review queue follows the status bus.

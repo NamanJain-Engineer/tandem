@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Banner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
-import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
 import { copyDiagnostics } from "./actions";
 import { useHealth } from "../../stores/health";
@@ -63,14 +62,6 @@ export function Banners() {
       minute: "2-digit",
     });
     banner = { id: "offline", tone: "info", text: t("banner.offlineValid", { time }), dismissable: true };
-  } else if (auth.offline && auth.offlineDaysLeft !== null && Number(auth.offlineDaysLeft) <= 3) {
-    banner = {
-      id: "offline-mode",
-      tone: "warning",
-      text: t("banner.offlineMode", { n: Number(auth.offlineDaysLeft) }),
-      action: { label: t("banner.signIn"), onClick: () => invoke("auth_sign_in").catch(() => undefined) },
-      dismissable: true,
-    };
   }
   if (!banner || dismissed.has(banner.id)) return null;
   const id = banner.id;

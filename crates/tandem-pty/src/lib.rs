@@ -5,10 +5,12 @@
 
 pub mod env;
 pub mod frame;
+pub mod governor;
 pub mod integration;
 #[cfg(windows)]
 mod job;
 pub mod marks;
+pub mod mask;
 pub mod orphans;
 pub mod ports;
 pub mod quote;
@@ -197,6 +199,16 @@ struct Session {
     /// Windows: the kill-on-close Job Object holding the tree.
     #[cfg(windows)]
     job: Option<job::Job>,
+    /// Secret values masked in this pane's output (F-TL-12).
+    mask: Option<Arc<MaskSlot>>,
+}
+
+/// A pane's masker; `done` stops its flusher, and `wake` tells it a tail
+/// is held (or the reader ended).
+struct MaskSlot {
+    masker: Mutex<mask::LiteralMasker>,
+    done: AtomicBool,
+    wake: std::sync::Condvar,
 }
 
 /// All live PTYs. Cheap to clone.
@@ -210,6 +222,8 @@ pub struct PtyManager {
     on_mark: Option<MarkSink>,
     on_activity: Option<ActivitySink>,
     on_reader_failure: Option<ReaderFailureSink>,
+    /// Values the pane's next spawn masks (F-TL-12).
+    masks: Arc<DashMap<String, Vec<zeroize::Zeroizing<Vec<u8>>>>>,
 }
 
 enum Msg {
@@ -361,6 +375,7 @@ impl PtyManager {
             )),
             state_dirty: AtomicBool::new(false),
             spawn_ms: AtomicU64::new(0),
+            mask: self.take_mask(&spec.pane_id),
             #[cfg(windows)]
             job: job::Job::for_process(pid),
         });
@@ -434,6 +449,7 @@ impl PtyManager {
             )),
             state_dirty: AtomicBool::new(false),
             spawn_ms: AtomicU64::new(spawn_ms),
+            mask: self.take_mask(&spec.pane_id),
             #[cfg(windows)]
             job: None,
         });
@@ -460,6 +476,76 @@ impl PtyManager {
             .unwrap_or(false)
     }
 
+    /// The pane's next spawn masks these values in its output (F-TL-12).
+    pub fn mask_next_spawn(&self, pane: &str, values: Vec<zeroize::Zeroizing<Vec<u8>>>) {
+        self.masks.insert(pane.to_string(), values);
+    }
+
+    fn take_mask(&self, pane: &str) -> Option<Arc<MaskSlot>> {
+        let (_, values) = self.masks.remove(pane)?;
+        let masker = mask::LiteralMasker::new(values.iter().map(|v| v.as_slice()))?;
+        Some(Arc::new(MaskSlot {
+            masker: Mutex::new(masker),
+            done: AtomicBool::new(false),
+            wake: std::sync::Condvar::new(),
+        }))
+    }
+
+    /// Releases a masked pane's held tail after [`mask::HOLD`] of quiet,
+    /// through the screen parser like any read, until the reader ends.
+    fn start_flusher(
+        pane: &str,
+        session: Arc<Session>,
+        slot: Arc<MaskSlot>,
+        colors: Arc<RwLock<TermColors>>,
+        tx: mpsc::SyncSender<Msg>,
+    ) {
+        let spawned = std::thread::Builder::new()
+            .name(format!("pty-mask-{pane}"))
+            .spawn(move || {
+                let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
+                loop {
+                    if slot.done.load(Ordering::Acquire) {
+                        return;
+                    }
+                    // Sleeps until a read holds a tail, then until it's due;
+                    // a read in between restarts the wait.
+                    match masker.due_in() {
+                        None => {
+                            masker = slot.wake.wait(masker).unwrap_or_else(|e| e.into_inner());
+                            continue;
+                        }
+                        Some(left) if !left.is_zero() => {
+                            masker = slot
+                                .wake
+                                .wait_timeout(masker, left)
+                                .unwrap_or_else(|e| e.into_inner())
+                                .0;
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
+                    let held = masker.flush();
+                    let output = match session.side.lock() {
+                        Ok(mut side) => {
+                            let fed = side.feed_raw(&held, &colors.read());
+                            if side.state() != side_published(&side) {
+                                session.state_dirty.store(true, Ordering::Release);
+                            }
+                            fed.output
+                        }
+                        Err(_) => held,
+                    };
+                    if !output.is_empty() && tx.send(Msg::Data(output)).is_err() {
+                        return;
+                    }
+                }
+            });
+        if let Err(err) = spawned {
+            tracing::error!(error = %err, "couldn't start the pty masker");
+        }
+    }
+
     fn start_reader(
         &self,
         pane: &str,
@@ -473,6 +559,15 @@ impl PtyManager {
         let on_activity = self.on_activity.clone();
         let on_failure = self.on_reader_failure.clone();
         let pane_id = pane.to_string();
+        if let Some(slot) = &session.mask {
+            Self::start_flusher(
+                pane,
+                session.clone(),
+                slot.clone(),
+                colors.clone(),
+                tx.clone(),
+            );
+        }
         let name = format!("pty-read-{pane}");
         let spawned = std::thread::Builder::new().name(name).spawn(move || {
             let mut buf = vec![0u8; READ_BUF];
@@ -493,15 +588,41 @@ impl PtyManager {
                 }
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
+                        if let Some(slot) = &session.mask {
+                            // A held tail wasn't a whole value.
+                            let mut masker = slot.masker.lock().unwrap_or_else(|e| e.into_inner());
+                            let held = masker.flush();
+                            slot.done.store(true, Ordering::Release);
+                            slot.wake.notify_one();
+                            if !held.is_empty() {
+                                let _ = tx.send(Msg::Data(held));
+                            }
+                        }
                         let _ = tx.send(Msg::Eof);
                         return;
                     }
                     Ok(n) => {
+                        // Secret values go before anything reads the output:
+                        // the screen, the ring and every reader of the pane
+                        // see the mask (F-TL-12). The lock keeps the flusher's
+                        // releases in order with the reads.
+                        let mut masker = session
+                            .mask
+                            .as_ref()
+                            .map(|m| m.masker.lock().unwrap_or_else(|e| e.into_inner()));
+                        let masked = masker.as_mut().map(|m| m.push(&buf[..n]));
+                        if let Some(slot) = &session.mask {
+                            slot.wake.notify_one();
+                        }
+                        let input: &[u8] = masked.as_deref().unwrap_or(&buf[..n]);
+                        if input.is_empty() {
+                            continue;
+                        }
                         // Marks come out of the stream first; queries are
                         // answered here, for visible and hidden panes alike,
                         // within the same read (§5.7, §5.8).
                         let raw = || Fed {
-                            output: buf[..n].to_vec(),
+                            output: input.to_vec(),
                             ..Fed::default()
                         };
                         let fed = if gave_up {
@@ -519,7 +640,7 @@ impl PtyManager {
                                         {
                                             panic!("test: a feed panicked");
                                         }
-                                        let fed = side.feed_raw(&buf[..n], &colors.read());
+                                        let fed = side.feed_raw(input, &colors.read());
                                         if side.state() != side_published(&side) {
                                             session.state_dirty.store(true, Ordering::Release);
                                         }
