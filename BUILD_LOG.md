@@ -1932,6 +1932,10 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - design-shots on seven pages, 56 captures (4 theme states × 1440 and 390): no sideways scroll; teal 0–2 per first viewport;
   - Lighthouse CI on 0.10.0's seven URLs, every assertion passing in both themes. Medians (perf / LCP, light then dark): `/` 0.99 / 1.89 s both; `/about/` 1.00 / 1.36 s and 1.00 / 1.51 s; `/download/` 1.00 / 1.73 s and 1.00 / 1.66 s; `/changelog/`, `/docs/` and `/blog/` 1.00 / 1.51 s; the intro post 0.99 / 1.81 s. Blocking time 0 ms, CLS at most 0.001.
   - These ran with stand-in 0.10.0 packages in `public/downloads` (copies of 0.9.0's, never committed): `release-0.10.0` names `Vibezeo_0.10.0_amd64.deb` while its `public/downloads` still holds 0.9.0's, so its own web tests fail 30 of 114 until the release's files land.
+- Merged `product-m0-m5` 9efa06e3 (0.10.0 live, with its packages and the deploy record): clean. On the merged tree:
+  - `build:site` (52 pages) and site Playwright 40/40, with the real 0.10.0 packages;
+  - the gate passed: TypeScript 1,603 tests (web 134, ui 417, desktop 750, api 234, remote 33, mobile 21, protocol 14), Rust 2,150, desktop build, clippy on Linux, Windows and both Macs, fmt, no protocol drift.
+  - The first gate attempt on the release merge stopped at "No space left on device" while compiling the app's tests; `prune-target.py 1` and removing the cross targets' builds freed 17 GB.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
