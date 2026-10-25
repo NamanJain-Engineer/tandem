@@ -119,7 +119,9 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     plan = (await invoke<Plan[]>("plan_list")).find((p) => p.state === "started")!;
     const runs = await invoke<AttemptView[]>("task_attempts_list");
     const workspaces = await invoke<Ws[]>("workspace_list");
-    const lanes = plan.issueIds.map((id) => runs.find((r) => r.attempt.issueId === id)!.attempt.laneWorkspaceId!);
+    const lanes = plan.issueIds.map(
+      (id) => runs.find((r) => r.attempt.issueId === id)!.attempt.laneWorkspaceId!,
+    );
     for (const [i, lane] of lanes.entries()) {
       const root = workspaces.find((w) => w.id === lane)!.root;
       writeFileSync(join(root, `part-${i}.txt`), `${plan.issueIds[i]}\n`);
@@ -133,10 +135,12 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     const chosen = await browser.waitUntil(
       async () => {
         const listed = await browser.execute(() =>
-          Array.from(document.querySelectorAll<HTMLElement>('[data-testid="landing-candidate"]')).map((r) => ({
-            lane: r.dataset.lane ?? "",
-            ticked: r.querySelector('[role="checkbox"]')?.getAttribute("aria-checked") === "true",
-          })),
+          Array.from(document.querySelectorAll<HTMLElement>('[data-testid="landing-candidate"]')).map(
+            (r) => ({
+              lane: r.dataset.lane ?? "",
+              ticked: r.querySelector('[role="checkbox"]')?.getAttribute("aria-checked") === "true",
+            }),
+          ),
         );
         const ticked = listed.filter((r) => r.ticked).map((r) => r.lane);
         return ticked.length === 2 ? ticked : false;
@@ -162,6 +166,7 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     await $('[data-testid="plan-remove"]').click();
     await $('[data-testid="plan-reopen"]').waitForExist({ reverse: true, timeout: 10_000 });
     expect(await invoke<Plan[]>("plan_list")).toEqual([]);
-    for (const id of plan.issueIds) expect((await invoke<{ issue: { id: string } }>("task_get", { id })).issue.id).toBe(id);
+    for (const id of plan.issueIds)
+      expect((await invoke<{ issue: { id: string } }>("task_get", { id })).issue.id).toBe(id);
   });
 });

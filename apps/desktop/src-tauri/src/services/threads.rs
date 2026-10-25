@@ -3733,7 +3733,9 @@ mod tests {
             )
         });
         let f = fixture(OnStop::Ack, script).await;
-        let seen: Arc<StdMutex<Vec<(String, Vec<String>)>>> = Arc::default();
+        // (thread, paths) per call of the sink.
+        type Seen = Vec<(String, Vec<String>)>;
+        let seen: Arc<StdMutex<Seen>> = Arc::default();
         let sink = seen.clone();
         f.svc.set_edit_sink(Arc::new(move |thread, paths| {
             if let Ok(mut s) = sink.lock() {

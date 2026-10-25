@@ -6,14 +6,7 @@
 // through Land worktrees (F-WT-07).
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type {
-  AttemptView,
-  PlanEngine,
-  PlanLaunch,
-  PlanTask,
-  PlanView,
-  TaskRunBlock,
-} from "@tandem/protocol";
+import type { AttemptView, PlanEngine, PlanLaunch, PlanTask, PlanView, TaskRunBlock } from "@tandem/protocol";
 import {
   Button,
   Callout,

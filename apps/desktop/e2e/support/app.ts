@@ -288,7 +288,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("history_clear");
   // Plans outlive specs too since they're kept (F-TK-07); their tasks are
   // the tracker's, which specs share.
-  for (const p of await invoke<Array<{ id: string }>>("plan_list")) await invoke("plan_discard", { id: p.id });
+  for (const p of await invoke<Array<{ id: string }>>("plan_list"))
+    await invoke("plan_discard", { id: p.id });
   // Routines outlive specs too (M11): they go, with the background runner
   // and the global pause.
   for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {

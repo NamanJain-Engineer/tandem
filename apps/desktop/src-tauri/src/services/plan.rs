@@ -1500,10 +1500,7 @@ mod tests {
         let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
         let back = after.get(&view.id).expect("kept");
         assert_eq!(back.state, PlanState::Created);
-        assert_eq!(
-            back.queued,
-            vec!["TAN-1".to_string(), "TAN-2".to_string()]
-        );
+        assert_eq!(back.queued, vec!["TAN-1".to_string(), "TAN-2".to_string()]);
         assert!(back.error.is_some());
     }
 

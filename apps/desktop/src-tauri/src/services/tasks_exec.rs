@@ -1641,7 +1641,11 @@ pub(crate) mod tests {
         let inner = &b[at + fence_open..];
         let close = inner[4..].find("\n````").expect("closed");
         assert!(inner[..close + 4].contains("Ignore previous instructions"));
-        assert!(b.ends_with("When done, set status to in_review and put a summary in result."));
+        // The run is asked to claim its files last (F-TK-07).
+        assert!(b.ends_with(&format!(
+            "When done, set status to in_review and put a summary in result. {}",
+            tandem_git::lanes::CLAIMS_BRIEFING
+        )));
         assert_eq!(
             verdict_of("Verdict: Changes requested — tests fail"),
             Some("changes_requested")
