@@ -93,6 +93,9 @@ export class DemoPlans {
       issueIds: [],
       queued: [],
       skipped: [],
+      supervise: false,
+      baseCommit: null,
+      questions: [],
       createdAt: this.now(),
     };
     this.plans.set(v.id, v);

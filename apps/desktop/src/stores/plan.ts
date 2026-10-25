@@ -19,8 +19,13 @@ type PlanState = {
   createTasks: (id: string, tasks: PlanTask[]) => Promise<PlanView | IpcError>;
   /** What Execute all starts, for you to confirm. */
   prepare: (id: string) => Promise<PlanLaunch | IpcError>;
-  /** Starts what `prepare` showed. */
-  execute: (id: string) => Promise<PlanView | IpcError>;
+  /** Starts what `prepare` showed; with `supervise`, Lead answers the
+   * runs' routine questions (F-TK-08). */
+  execute: (id: string, supervise: boolean) => Promise<PlanView | IpcError>;
+  /** Lead's answers on or off (F-TK-08). */
+  supervise: (id: string, on: boolean) => Promise<PlanView | IpcError>;
+  /** Your answer to a run's question that came to you (F-TK-08). */
+  answer: (id: string, questionId: string, text: string) => Promise<PlanView | IpcError>;
   discard: (id: string) => Promise<void>;
 };
 
@@ -56,8 +61,18 @@ export const usePlans = create<PlanState>((set, get) => ({
     return r;
   },
   prepare: (id) => call<PlanLaunch>("plan_prepare", { id }),
-  execute: async (id) => {
-    const r = await call<PlanView>("plan_execute", { id });
+  execute: async (id, supervise) => {
+    const r = await call<PlanView>("plan_execute", { id, supervise });
+    if (!isIpcError(r)) get().apply(r);
+    return r;
+  },
+  supervise: async (id, on) => {
+    const r = await call<PlanView>("plan_supervise", { id, on });
+    if (!isIpcError(r)) get().apply(r);
+    return r;
+  },
+  answer: async (id, questionId, text) => {
+    const r = await call<PlanView>("plan_answer", { id, questionId, text });
     if (!isIpcError(r)) get().apply(r);
     return r;
   },

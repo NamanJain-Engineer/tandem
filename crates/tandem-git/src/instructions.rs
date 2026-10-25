@@ -10,6 +10,7 @@
 //! that resolves outside the checkout are listed and never read or written.
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use ignore::gitignore::GitignoreBuilder;
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
+use crate::cli::{Git, Mode};
 use crate::error::GitError;
 use crate::types::FileDiff;
 
@@ -665,6 +667,51 @@ pub fn copy_to_worktrees(
         .map_err(|e| GitError::Invalid(e.to_string()))?;
     crate::setup::write(root, &setup).map_err(|e| GitError::Invalid(e.to_string()))?;
     Ok(setup)
+}
+
+/// The instructions files `names` as committed at `commit` in the checkout
+/// at `root` (F-TK-08). Lead answers a plan run's question from the plan's
+/// base commit in the main checkout, so nothing an agent writes in its
+/// worktree, and nothing left uncommitted, reaches Lead. Folders, missing
+/// files and files over `max` bytes are left out, and `commit` must be a
+/// commit id.
+pub async fn at_commit(
+    git: &Git,
+    root: &Path,
+    commit: &str,
+    names: &[String],
+    max: usize,
+) -> Result<Vec<(String, String)>, GitError> {
+    let is_id = (7..=64).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_id {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for name in names {
+        let plain = !name.is_empty()
+            && !name.starts_with('/')
+            && !name.ends_with('/')
+            && !name.split('/').any(|part| part == "..");
+        if !plain {
+            continue;
+        }
+        let spec = format!("{commit}:{name}");
+        let blob = git
+            .run(
+                Mode::Read,
+                root,
+                &[
+                    OsStr::new("cat-file"),
+                    OsStr::new("blob"),
+                    OsStr::new(&spec),
+                ],
+            )
+            .await?;
+        if blob.success() && blob.stdout.len() <= max {
+            out.push((name.clone(), blob.text()));
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

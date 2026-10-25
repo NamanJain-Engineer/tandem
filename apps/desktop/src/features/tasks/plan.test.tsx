@@ -1,6 +1,13 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AttemptState, AttemptView, PlanLaunch, PlanView, TasksMeta } from "@tandem/protocol";
+import type {
+  AttemptState,
+  AttemptView,
+  PlanLaunch,
+  PlanQuestion,
+  PlanView,
+  TasksMeta,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
@@ -59,6 +66,9 @@ function plan(over: Partial<PlanView> = {}): PlanView {
     issueIds: [],
     queued: [],
     skipped: [],
+    supervise: false,
+    baseCommit: null,
+    questions: [],
     createdAt: 1,
     ...over,
   };
@@ -256,7 +266,9 @@ describe("Plan with Lead (F-TK-06)", () => {
     const run = await screen.findByTestId("plan-confirm-run");
     expect(run.textContent).toBe("Run 1 task");
     fireEvent.click(run);
-    await waitFor(() => expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: true }),
+    );
     await waitFor(() =>
       expect(screen.getByTestId("plan-created").textContent).toBe(
         "Queued 1 task. Each runs in its own worktree; finished work shows in the review queue.",
@@ -383,6 +395,7 @@ function run(
       ...over,
     },
     queuePosition: state === "queued" ? 1 : null,
+    waiting: false,
   };
 }
 
@@ -510,5 +523,170 @@ describe("Follow a plan through (F-TK-07)", () => {
     await waitFor(() => expect(calls.find((c) => c.cmd === "plan_discard")?.args).toEqual({ id: "pl_1" }));
     await waitFor(() => expect(screen.queryByTestId("plan-reopen")).toBeNull());
     stop();
+  });
+});
+
+/** A run's question in the plan (F-TK-08). */
+function asked(issue: string, attempt: string, over: Partial<PlanQuestion> = {}): PlanQuestion {
+  return {
+    id: `pq_${issue}_${attempt}`,
+    issueId: issue,
+    attemptId: attempt,
+    question: "Vitest or Jest?",
+    state: "answered",
+    reason: null,
+    answer: "Vitest.",
+    askedAt: 1,
+    ...over,
+  };
+}
+
+const STARTED = plan({
+  state: "started",
+  tasks: THREE,
+  issueIds: ["TAN-1", "TAN-2", "TAN-3"],
+  queued: ["TAN-1", "TAN-2", "TAN-3"],
+  supervise: true,
+  baseCommit: "c0ffee12",
+});
+
+const row = (i: number) => screen.getAllByTestId("plan-run")[i]!;
+
+describe("Lead keeps a plan moving (F-TK-08)", () => {
+  it("F-TK-08 Execute all's check has Lead's answers on, says whose engine they use, and sends your choice", async () => {
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    const option = await screen.findByTestId("plan-supervise-option");
+    expect(option.textContent).toContain(
+      "Lead answers routine questions from the repository's instructions, using your engine and subscription",
+    );
+    expect(option.textContent).toContain("always come to you");
+    const box = screen.getByRole("checkbox");
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(box);
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+    );
+  });
+
+  it("F-TK-08 a check with nothing to run doesn't offer Lead's answers", async () => {
+    backend({
+      plan_prepare: () => ({ ...LAUNCH, blocked: "Running tasks is turned off for this account." }),
+    });
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    await screen.findByTestId("plan-execute-blocked");
+    expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
+  });
+
+  it("F-TK-08.2 each row counts Lead's answers and shows Lead answering", async () => {
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "running", 3)],
+    });
+    usePlans.setState({
+      plans: {
+        pl_1: {
+          ...STARTED,
+          questions: [
+            asked("TAN-1", "atm_TAN-1_1"),
+            asked("TAN-1", "atm_TAN-1_2", { id: "pq_2" }),
+            asked("TAN-2", "atm_TAN-2_3", { state: "answering", answer: null }),
+          ],
+        },
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(states()).toEqual(["running", "running", "none"]));
+    expect(within(row(0)).getByTestId("plan-run-answered").textContent).toBe("Lead answered 2");
+    expect(within(row(1)).queryByTestId("plan-run-answered")).toBeNull();
+    expect(within(row(1)).getByTestId("plan-run-answering").textContent).toBe(
+      "Lead is answering its question",
+    );
+    expect(row(1).dataset.question).toBe("answering");
+    expect(screen.queryByTestId("plan-run-needs-you")).toBeNull();
+  });
+
+  it("F-TK-08.3 a question that came to you says why, and Answer… sends your answer to the run", async () => {
+    const pushing = asked("TAN-2", "atm_TAN-2_3", {
+      id: "pq_7",
+      question: "Should I push the branch?",
+      state: "escalated",
+      reason: "It's about pushing, which always comes to you.",
+      answer: null,
+    });
+    const withQuestion: PlanView = {
+      ...STARTED,
+      // An older run's question isn't the latest run's.
+      questions: [asked("TAN-1", "atm_TAN-1_1", { state: "escalated", answer: null }), pushing],
+    };
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "running", 3)],
+      plan_answer: () => ({
+        ...withQuestion,
+        questions: [
+          withQuestion.questions[0]!,
+          { ...pushing, state: "answered_by_you", answer: "No, I'll push." },
+        ],
+      }),
+    });
+    usePlans.setState({ plans: { pl_1: withQuestion }, openId: "pl_1" });
+    wrap();
+    const box = await screen.findByTestId("plan-run-needs-you");
+    expect(screen.getAllByTestId("plan-run-needs-you")).toHaveLength(1);
+    expect(within(row(1)).getByTestId("plan-run-needs-you")).toBe(box);
+    expect(within(box).getByTestId("plan-question").textContent).toBe("Should I push the branch?");
+    expect(within(box).getByTestId("plan-question-why").textContent).toBe(
+      "It's about pushing, which always comes to you.",
+    );
+    fireEvent.click(within(box).getByTestId("plan-answer-open"));
+    const send = within(box).getByTestId("plan-answer-send") as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(within(box).getByTestId("plan-answer-text"), { target: { value: "No, I'll push." } });
+    fireEvent.click(send);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_answer")?.args).toEqual({
+        id: "pl_1",
+        questionId: "pq_7",
+        text: "No, I'll push.",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("plan-run-needs-you")).toBeNull());
+  });
+
+  it("F-TK-08.4 a run waiting for an approval says so, and Lead doesn't answer it", async () => {
+    backend({ task_attempts_list: () => [run("TAN-1", "running", 2)] });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    await waitFor(() => expect(states()).toEqual(["running", "none", "none"]));
+    expect(within(row(0)).queryByTestId("plan-run-approval")).toBeNull();
+    act(() => emitLocal("tasks:attempt", { ...run("TAN-1", "running", 2), waiting: true }));
+    expect((await within(row(0)).findByTestId("plan-run-approval")).textContent).toBe(
+      "Waiting for your approval",
+    );
+    expect(calls.some((c) => c.cmd === "plan_answer")).toBe(false);
+  });
+
+  it("F-TK-08.5 the started plan's switch turns Lead's answers off at once", async () => {
+    backend({
+      task_attempts_list: () => [],
+      plan_supervise: (a) => ({ ...STARTED, supervise: a?.on as boolean }),
+    });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    const panel = await screen.findByTestId("plan-supervise");
+    expect(panel.textContent).toContain("Lead answers routine questions");
+    expect(panel.textContent).toContain("using your engine and subscription");
+    const toggle = within(panel).getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_supervise")?.args).toEqual({ id: "pl_1", on: false }),
+    );
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
   });
 });

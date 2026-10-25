@@ -2024,6 +2024,45 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Plans are listed again after a restart with their tasks. A plan whose Lead was interrupted fails with its reason and offers Plan again.
 4. Land approved opens Land worktrees with only the approved tasks' worktrees chosen, in plan order.
 
+#### F-TK-08 Lead keeps a plan moving (P2)
+**Story:** My plan's tasks are running. When an agent needs a decision, I don't want to be asked every small thing: Lead answers routine questions from the repository's instructions, and anything that matters comes to me. I see every answer, and I can switch Lead's answers off at any time.
+
+**Behavior (bold bet B3's third slice: the supervisor loop):**
+- **Questions are explicit.** A plan run's first message (F-TK-04) tells its agent: when it needs a decision that the task and the repository don't settle, end the reply with one line `QUESTION-<code>: <the question>` and stop.
+  - The code is fresh for each run, so text the agent reads can't pass for a question.
+  - A run that ends its turn that way is asking. It waits for an answer instead of going to review, and keeps its place among the 4 runs at once, as a run waiting for an approval does.
+- **Lead answers routine questions** in its plan thread, so you follow one thread with Lead.
+  - Lead's message has the task, the question, and the repository's instructions files (the ones the engine registry names, such as `AGENTS.md` and `CLAUDE.md`). They're read as they are at the plan's base commit in the main checkout, never from the run's worktree, so an agent can't steer Lead by writing an instructions file there.
+  - The question and the task are fenced as untrusted text, and the files as repository content.
+  - Lead replies with an answer, or sends the question to you. Its chat stays read-only, with no tasks tools, and its turn ends after 30 minutes.
+  - An answer goes to the run's thread as its next message, labelled "Lead (automatic answer)", and onto the task as Lead's comment. Then the run goes on.
+  - An answer has no more authority than the plan's text, and the run's first message says so. It can't approve anything, change access or start a tool; the agent's own approvals and sandbox still apply.
+- **These always come to you.** Lead never answers a question about:
+  - approvals or permissions, access, or the sandbox;
+  - secrets or credentials;
+  - network calls;
+  - deploys or publishing;
+  - pushing, force-push included;
+  - deleting files or branches outside the worktree;
+  - changing the plan's scope.
+
+  Lead's message and the run's first message both say so, and a question that names one of these comes to you before it reaches Lead.
+- **A question that comes to you.** The task's row in the plan says "Needs you", with the question and why it came to you, and a notification tells you. **Answer…** sends your answer to the run as its next message.
+- **Approvals are never answered by Lead** (F-AU-01's rule). A run waiting for an approval shows "Waiting for your approval" in the plan and notifies you, and Lead does nothing.
+- **Limits.** Lead answers at most 3 questions per run and 10 per plan; after that every question comes to you. Nothing is answered while Vibezeo is closed: a question still waiting for Lead when Vibezeo closed comes to you after the restart.
+- **On by default, and stoppable.**
+  - Execute all's check has "Lead answers routine questions from the repository's instructions, using your engine and subscription", on by default.
+  - A started plan has the same switch. Turning it off stops Lead's answers at once: an answer Lead is still writing is dropped, not sent, and every later question comes to you.
+- **Shown.** Each task's row in the plan counts "Lead answered N", and each answer is on the task and in the run's thread.
+- **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
+
+**Acceptance:**
+1. A plan run whose reply ends with its `QUESTION-<code>` line asks Lead. Lead's message has the question fenced as untrusted and the instructions files from the plan's base commit in the main checkout, and a `CLAUDE.md` written in the run's worktree has no effect. Lead's chat has no tasks server.
+2. Lead's answer reaches the run's thread labelled "Lead (automatic answer)" and the task as a comment, and the run goes on to review. Each plan row counts Lead's answers.
+3. These come to you without being answered: a question about any of the topics above (before it reaches Lead), a question Lead sends on, the 4th question of a run, and the 11th answer of a plan. The plan shows the question and why, and Answer… sends your answer to the run.
+4. A run waiting for an approval is never answered by Lead, and the plan shows "Waiting for your approval".
+5. Turning the switch off stops Lead's answers at once: an answer Lead is writing isn't sent. A question waiting for Lead when Vibezeo closed comes to you after the restart.
+
 ### 4.9 RT: Routines
 
 #### F-RT-01 Routine model (P1)

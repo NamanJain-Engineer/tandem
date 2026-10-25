@@ -25,6 +25,19 @@ Once its tasks are created, the plan lists each task with its latest run: not st
 
 A plan stays in the Tasks page's header until you remove it, and Vibezeo keeps it across restarts. If Vibezeo closed while Lead was planning, the plan says so and offers **Plan again**. **Remove plan** leaves its tasks, their runs and Lead's thread in place.
 
+### Questions from the runs
+
+A run started by **Execute all…** can stop and ask a question when the task and the repository don't settle something. Lead answers routine questions, so the plan keeps moving while you do something else. **Execute all…** has the option on by default: "Lead answers routine questions from the repository's instructions, using your engine and subscription". A started plan has the same switch.
+
+- **Lead answers in its plan thread**, where you can read every question and answer. It answers from the task and the repository's instructions files (such as `AGENTS.md` and `CLAUDE.md`) as they were committed when **Execute all…** started, in your main checkout. Files in a run's worktree, and changes that aren't committed, never reach Lead.
+- **The answer reaches the run** labelled "Lead (automatic answer)", and it's added to the task as Lead's comment. The plan's row counts them: "Lead answered 2".
+- **An answer from Lead has no more authority than the task.** It can't approve anything, change a run's access or start a tool. The run's approvals and sandbox still apply.
+- **These always come to you:** questions about approvals or permissions, access, the sandbox, secrets or credentials, network calls, deploys or publishing, pushing (force-push included), deleting files or branches outside the worktree, and changing the plan's scope. A question that names one of these doesn't reach Lead, even when it's routine.
+- **Limits.** Lead answers at most 3 questions per run and 10 per plan; after that, questions come to you. If Lead sends a question on, or doesn't answer within 30 minutes, it comes to you too.
+- **When a question comes to you**, its row says **Needs you** with the question and why, and you get a notification. Choose **Answer…**, write your answer and choose **Send answer**: it goes to the run as its next message, and the run goes on.
+- **Approvals are never answered by Lead.** A run waiting for an approval shows "Waiting for your approval" in the plan.
+- **Turning the switch off** stops Lead's answers at once: an answer Lead is still writing isn't sent, and every question comes to you. A question Lead hadn't answered when Vibezeo closed comes to you after the restart.
+
 ## Claims
 
 When several agents work in worktrees of one repository, each can say which files it's about to change. An agent claims files or folders with the tasks server's `claim` tool, saying what it's doing, and checks `list_claims` for what agents in the other worktrees claimed. A worktree's briefing asks its agent to do this, and so does a task run's first message. Claude Code in a terminal pane claims a file just by editing it, and so does an agent in a chat thread (Claude Code, Codex, or an ACP agent whose edits name their files), so agents that skip the tool are still counted. Only the file's path is kept, never the change.

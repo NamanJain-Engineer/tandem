@@ -1626,7 +1626,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) has D-2828 to D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October), and F-TK-07 took D-2824 to D-2827. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) has D-2836 to D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October), F-TK-07 took D-2824 to D-2827, and F-TK-08 D-2828 to D-2835. REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -2260,6 +2260,32 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - The first gate run, on 8e6bc235, stopped at the TypeScript tests: "a run's row opens its task" mocked `task_get` with no issue, so the task view it opened threw (an unhandled error). Its mock now returns the task, and the test checks the task opens.
     - Merging the fix line, the run briefing's invariant test needed the claims sentence at the end, and a test type got a name (clippy).
 
+- [x] F-TK-08 Lead keeps a plan moving, bold bet B3's third slice: the supervisor loop (D-2828 to D-2835). Built on F-TK-07 (99cf21e3), from the coordinator's approval with its seven constraints.
+  - **Spec.** PRODUCT_SPEC F-TK-08 (P2, owned by M18; coverage 186, M18 owns 20).
+  - **Runs ask (`tasks_exec`).**
+    - Execute all gives each run its own code (`Supervision`, never from the UI). The run's first message says how to ask (`QUESTION-<code>: …` as the reply's last line), which topics always go to you, and that Lead's answer has no more authority than the task's text.
+    - A turn that ends asking hands the question to the plan and waits, still Running and keeping its place among the 4. The answer is its next message, then it goes on to review as before. No answer stops it.
+    - After a restart, your answer resumes the run's session. Lead's answers only reach a run still waiting.
+    - `AttemptView.waiting`: a run whose session waits for an approval; the attempt is published when that changes.
+  - **Lead answers or it comes to you (`plan::supervisor`).**
+    - Before Lead: off, a question naming a topic that always comes to you (`sensitive`), a run's 4th question and a plan's 11th answer come to you.
+    - Lead's turn, in the plan's own thread (no tasks server): the task and the question fenced as untrusted, and the instructions files read with `git cat-file` at the commit Execute all recorded in the main checkout (`tandem_git::instructions::at_commit`). A worktree's files and uncommitted text never reach it.
+    - Its answer goes to the run labelled "Lead (automatic answer)" with what it's worth, and onto the task as Lead's comment. `ESCALATE-<code>:`, no answer, a stopped run or 30 minutes send the question to you.
+    - Off stops at once: waiting questions come to you, Lead's turn is stopped and what it wrote isn't sent. A question Lead hadn't answered when Vibezeo closed comes to you at launch.
+    - Each question that comes to you notifies "TAN-n needs you" with the reason.
+    - `plan_supervise` and `plan_answer`; `plan_execute` takes `supervise`. `plans.json` keeps the runs' codes.
+  - **UI.** Execute all's check has the option, on, saying Lead uses your engine and subscription; a started plan has the switch. Rows show "Lead answered N", "Lead is answering its question", "Waiting for your approval", or Needs you with the question, why and Answer….
+  - **Fake engine.** A run whose task says `[ask]` or `[ask push]` asks a routine or a pushing question and finishes after the answer; Lead's question message gets the first line of the first instructions file, or is sent on.
+  - **Tests** (17 new Rust, 6 new TypeScript):
+    - `tandem-git` (1): the files come from the base commit: a hostile `CLAUDE.md` committed in a run's worktree and an uncommitted edit in the main checkout have no effect; an option-like commit reads nothing; the size cap.
+    - `tasks_exec` (4): the briefing and `question_of`; a question waits for its answer, then review, and a late answer reaches nothing; a run waiting for an approval shows it and is never asked about; after a restart an answer resumes the session.
+    - `plan` (7): Lead answers from the base commit with the question fenced (its chat withheld), labelled to the run and as Lead's comment; each topic comes to you without reaching Lead; the 4th question and the 11th answer; Lead sending it on, a reply with no answer, your answer and removing the plan; an answer for a run that stopped waiting; the switch drops the answer being written; a restart escalates.
+    - `plan::supervisor` (4) and `instructions` (1): every topic's words and look-alikes that aren't; `read_reply`; Lead's message; the files' sizes; the registry's file names.
+    - `plan.test.tsx` (6): the option and its wording; no option when nothing can run; the counts and Lead answering; Needs you, why and Answer…; Waiting for your approval; the switch. `demo.test.ts`: the new commands aren't in the demo.
+    - E2E: `m18-tk08-lead-keeps-moving.e2e.ts`.
+  - **Docs.** ARCHITECTURE §3.2 (`plan_execute`, `plan_supervise`, `plan_answer`, `AttemptView.waiting`, `PlanView`), §3.3, the data folder, §9.4 (a plan run's questions) and §9.6 (supervised runs, Lead's turn, delivery, the switch and restarts, the UI); tasks.mdx "Questions from the runs"; MILESTONES (F-TK-08, E2E-M18-TK-08); REMAINING.
+  - **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -2370,6 +2396,33 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
 - D-2827: Land approved hands the approved worktrees to F-WT-07's Land worktrees (F-TK-07 AC4).
   - The plan's ask carries `laneIds`; the dialog chooses only those that can land, listed first in the plan's order. Its forecast, check and confirm are F-WT-07's, so landing stays a local action (F-TL-06 rule 5) and a plan can't land work by itself.
   - The button is the dialog's accent only when Execute all isn't offered (DESIGN §5.1): next to Execute all it's secondary.
+- D-2828: A plan run asks with its own code, and keeps its place while it waits (F-TK-08 AC1, AC2).
+  - The question is the reply's last line, `QUESTION-<code>: …`, with a code made for each run, so text the agent reads can't pass for one.
+  - An asking run stays Running and holds its slot among the 4, like one waiting for an approval. There's no new attempt state: `task_attempts`' check lists eight, and a migration would collide with the other sessions' numbering.
+  - The answer is the run's next message. After a restart (which settles the run Stopped) your answer resumes its session.
+- D-2829: Lead answers from the committed instructions files of the main checkout (F-TK-08 AC1, the coordinator's constraint 1).
+  - Execute all records HEAD of the main checkout. Lead reads every instructions file the registry names (not folders) with `git cat-file blob <commit>:<name>` there: never a run's worktree, never uncommitted text. At most 64 KB each and 192 KB in all.
+  - The task and the question are fenced as untrusted (rule 8), the files as repository content at that commit.
+  - Lead answers in the plan's own thread, which has Read access and no tasks server, one answer at a time per plan.
+- D-2830: Some questions always come to you, whatever Lead would say (F-TK-08 AC3, constraint 2).
+  - Approvals or permissions, access, the sandbox, secrets or credentials, network calls, deploys or publishing, pushing, deleting files or branches outside the worktree, and the plan's scope: listed in the run's first message and in Lead's.
+  - A cheap word check, `sensitive`, sends a question naming one to you before Lead sees it: whole words ("access", not "accessibility"), stems ("push", "deploy", "install") and word pairs ("api key"). It's on the safe side by design: "push the item onto the array" comes to you too.
+- D-2831: Limits keep Lead's answers few, and none happen while Vibezeo is closed (F-TK-08 AC3, AC5, constraint 5).
+  - A run's 4th question comes to you, and so does every question once the plan has 10 answers, counting answers on their way.
+  - Lead's turn stops after 30 minutes of work, and the question comes to you.
+  - A question still waiting for Lead at launch comes to you. Removing a plan stops the runs still waiting on it.
+- D-2832: Lead's answers are on by default and stop at once (F-TK-08 AC5, constraints 4 and 6).
+  - Execute all's check has the option, on, worded "Lead answers routine questions from the repository's instructions, using your engine and subscription"; a started plan has the switch.
+  - Off moves every waiting question to you under the plans' lock. An answer is taken only while its question still waits with the switch on, so one Lead finishes after Off is dropped, and Lead's turn is stopped.
+- D-2833: An answer from Lead reaches only a run still waiting (F-TK-08 AC2).
+  - It never resumes a run you stopped: that question comes to you instead. Your answer does resume a run that ended.
+- D-2834: Lead's answer is labelled, limited and on the record (F-TK-08 AC2, constraint 3).
+  - The run gets "Lead (automatic answer):", the answer, and that it has no more authority than the task: it can't approve anything, change access or start a tool. The run's approvals and sandbox still apply.
+  - The task gets the same as Lead's comment, and the row counts "Lead answered N". Lead's whole exchange stays in its thread.
+  - Lead's reply is read as the last `ANSWER-<code>` … `END-<code>` block on lines of their own. An `ESCALATE-<code>:` line anywhere wins, on the safe side.
+- D-2835: What comes to you says why, and approvals stay yours (F-TK-08 AC3, AC4).
+  - The row says Needs you with the question and the reason, with Answer…. A notification says "TAN-n needs you" with the reason, never the agent's words, on the approval toggles.
+  - Approvals are F-AU-01's: a run waiting for one shows "Waiting for your approval" from `AttemptView.waiting`, and Lead never sees it.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

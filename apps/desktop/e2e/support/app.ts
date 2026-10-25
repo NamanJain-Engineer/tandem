@@ -267,6 +267,27 @@ export function mod(): string {
   return process.platform === "darwin" ? "Meta" : "Control";
 }
 
+/** Stops the runs still going and archives every task (F-TK-04, F-TK-06):
+ * tasks one spec made never show on the next one's board. */
+async function clearTasks(): Promise<void> {
+  const going = new Set(["queued", "setup", "running", "reviewing"]);
+  for (const a of await invoke<Array<{ attempt: { id: string; state: string } }>>("task_attempts_list")) {
+    if (going.has(a.attempt.state))
+      await invoke("task_attempt_stop", { attemptId: a.attempt.id }).catch(() => undefined);
+  }
+  // A page at a time, until none is left; a task that can't be archived
+  // fails the reset with its reason.
+  for (let page = 0; page < 40; page++) {
+    const { items } = await invoke<{ items: Array<{ id: string; revision: number }> }>("tasks_list", {
+      filter: {},
+      cursor: null,
+    });
+    if (items.length === 0) return;
+    for (const i of items) await invoke("task_archive", { id: i.id, expectedRevision: i.revision });
+  }
+  throw new Error("resetState: tasks kept coming back after archiving 40 pages");
+}
+
 /** Clears the shared TANDEM_HOME's account and workspaces, whichever screen
  * is showing. The E2E keychain lives in memory, so a relaunch always comes
  * back signed out; specs that relaunch use offline mode instead. */
@@ -290,6 +311,10 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   // the tracker's, which specs share.
   for (const p of await invoke<Array<{ id: string }>>("plan_list"))
     await invoke("plan_discard", { id: p.id });
+  // So is the tracker: a run left going stops, and every task is archived,
+  // so a spec starts with no tasks in sight (archived ones keep their
+  // numbers). Every spec that uses tasks resets once, before its own.
+  await clearTasks();
   // Routines outlive specs too (M11): they go, with the background runner
   // and the global pause.
   for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {

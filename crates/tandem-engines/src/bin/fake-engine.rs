@@ -211,6 +211,32 @@ fn plan_reply(text: &str) -> Option<String> {
     ))
 }
 
+/// Lead answering a plan run's question (F-TK-08): the first line of the
+/// first instructions file its message quotes, or the question sent on to
+/// the user when there's none.
+fn lead_answer(text: &str) -> Option<String> {
+    if !text.contains("A run in this plan asks a question.") {
+        return None;
+    }
+    let code = text
+        .rsplit("ESCALATE-")
+        .next()?
+        .split(':')
+        .next()?
+        .to_string();
+    let rule = text
+        .split("in its main checkout.")
+        .nth(1)
+        .and_then(|r| r.split("```markdown\n").nth(1))
+        .and_then(|r| r.lines().next())
+        .map(str::trim)
+        .filter(|l| !l.is_empty());
+    Some(match rule {
+        Some(rule) => format!("The instructions settle it.\nANSWER-{code}\n{rule}\nEND-{code}"),
+        None => format!("ESCALATE-{code}: The repository's instructions don't settle it."),
+    })
+}
+
 /// A second opinion (F-WT-05): findings on the first added line of the
 /// first two files in the prompt's diff (the second by its file name only),
 /// one on a line the diff doesn't show, and a free line.

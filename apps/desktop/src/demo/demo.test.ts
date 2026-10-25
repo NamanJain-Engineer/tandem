@@ -383,7 +383,11 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
       ["TAN-1", "Claude Code", "Codex"],
       ["TAN-2", "Codex", "Claude Code"],
     ]);
-    expect(() => core?.handle("plan_execute", { id: ready.id })).toThrow();
+    expect(() => core?.handle("plan_execute", { id: ready.id, supervise: true })).toThrow();
+    // Lead's answers come with runs (F-TK-08): not in the demo either.
+    expect(created.questions).toEqual([]);
+    expect(() => core?.handle("plan_supervise", { id: ready.id, on: false })).toThrow();
+    expect(() => core?.handle("plan_answer", { id: ready.id, questionId: "pq_1", text: "Yes" })).toThrow();
   });
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {

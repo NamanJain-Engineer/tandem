@@ -54,10 +54,36 @@ pub async fn plan_prepare(state: State<'_, AppState>, id: String) -> Result<Plan
     plans(&state)?.prepare(&id).await
 }
 
-/// The runs `plan_prepare` showed, through F-TK-04's queue.
+/// The runs `plan_prepare` showed, through F-TK-04's queue. With
+/// `supervise`, Lead answers their routine questions (F-TK-08).
 #[tauri::command]
-pub async fn plan_execute(state: State<'_, AppState>, id: String) -> Result<PlanView, IpcError> {
-    plans(&state)?.execute(&id).await
+pub async fn plan_execute(
+    state: State<'_, AppState>,
+    id: String,
+    supervise: bool,
+) -> Result<PlanView, IpcError> {
+    plans(&state)?.execute(&id, supervise).await
+}
+
+/// Lead's answers to a plan's runs, on or off (F-TK-08).
+#[tauri::command]
+pub async fn plan_supervise(
+    state: State<'_, AppState>,
+    id: String,
+    on: bool,
+) -> Result<PlanView, IpcError> {
+    plans(&state)?.supervise(&id, on).await
+}
+
+/// Your answer to a plan run's question that came to you (F-TK-08).
+#[tauri::command]
+pub async fn plan_answer(
+    state: State<'_, AppState>,
+    id: String,
+    question_id: String,
+    text: String,
+) -> Result<PlanView, IpcError> {
+    plans(&state)?.answer(&id, &question_id, text).await
 }
 
 #[tauri::command]

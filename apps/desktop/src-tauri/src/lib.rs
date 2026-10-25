@@ -60,6 +60,8 @@ macro_rules! app_commands {
             commands::plan::plan_create_tasks,
             commands::plan::plan_prepare,
             commands::plan::plan_execute,
+            commands::plan::plan_supervise,
+            commands::plan::plan_answer,
             commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
             commands::task_exec::task_attempt_stop,
@@ -1187,6 +1189,17 @@ pub fn run() {
                     Some(state.data.plans()),
                 );
                 let _ = state.plan.set(plans.clone());
+                // F-TK-08: a plan run's question goes to its plan.
+                {
+                    let plans = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_question_sink(std::sync::Arc::new(move |q| {
+                            if let Some(plans) = plans.upgrade() {
+                                plans.on_question(q);
+                            }
+                        }));
+                }
                 tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
