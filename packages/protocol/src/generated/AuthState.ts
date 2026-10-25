@@ -15,7 +15,7 @@ offline: boolean,
  */
 offlineDaysLeft: number | null, 
 /**
- * False in early-access builds: no accounts yet, the Free plan runs
- * locally with no deadline (D-105).
+ * False in early-access builds: no accounts yet, everything local runs
+ * with no deadline (D-105, D-2900).
  */
 hosted: boolean, pending: PendingSignIn | null, error: AuthFailure | null, };
