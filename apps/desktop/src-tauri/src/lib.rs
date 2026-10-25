@@ -1187,6 +1187,9 @@ pub fn run() {
                     Some(state.data.plans()),
                 );
                 let _ = state.plan.set(plans.clone());
+                // Before anything can start their chats (resume does it
+                // again, with the waits).
+                plans.withhold_kept();
                 tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
