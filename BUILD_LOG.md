@@ -1894,6 +1894,20 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **The 0.10.0 scenes:** with `release.ts` at 0.10.0, `LANDS` turns on: the Land row and the intent radar render for the first time.
   - **Found on the way:** `t()` dropped a value nested inside a plural form, so "Landed 3 worktrees in main" (`landing.done`, whose forms hold `{base}`) rendered empty, and the scene's test passed only because both sides were empty. The plural forms are now read brace by brace, and scenes.test checks both forms.
 
+- D-1883: the design lead's approval of 081ae122 came with one round of fixes (through the coordinating session).
+  - **Must-fixes (design lead):**
+    - **No half-ink state:** T8 put the stage and bezel on ink while the page, cards and text still came from tokens.css's slate semantics, so ink sat on a blue-black page. Until app-ui's ink semantics land, site.css's own section sets app-ui's dark values (the page, bands and cards, `--tn-bg`, surfaces 1–4, borders, divider and the three text tones) wherever the dark theme applies: the OS's dark under System, `:root[data-theme="dark"]`, and the scenes' dark window (`.site [data-theme="dark"]`). A comment says the block goes when app-ui's semantics land. site.test runs the dark contrast checks on these values and fails if the two blocks differ. The browser bar's dark colour is ink-950 too.
+    - **tokens.css** no longer says slate stays for the site.
+  - **Should-fixes (code review):**
+    - **Scenes without their player:** the effects were gated on `data-theme-choice`, which the head script always sets, so with `/demo/embed.js` blocked every scene held its empty first frame. Now the head script marks `<html>` `data-fx`, `embed.js` marks it `data-scenes`, and at `load` the head script takes `data-fx` off unless `data-scenes` is there; the effects need `data-fx`. A blocked player shows each scene's final frame (new scenes.spec test; theme.test covers the mark).
+    - **The hero on laptops:** the player waited for 30 % of a scene, and the hero's window starts low in a laptop's first screen, so at 1366×768, 1280×800 and 1536×864 it sat on its first frame until the visitor scrolled. A scene now plays once 30 % or 120 px of it shows (several thresholds, `intersectionRect.height`). The hero is about 60 px tighter (top padding, gaps, the scene's margin): the window now starts at 642 px, so 126 px of it shows at 768 px tall. scenes.spec checks it plays without scrolling at 1366×768, 1280×800 and 1536×864, and that 15 % or more is in the first screen at 1366×768 too.
+  - **Nits:**
+    - **Pulsing dots:** a working agent's dots pause while their scene isn't live, with or without the player.
+    - **The theme control's selected cell** has a 1 px ring in `fg-muted`, at 3:1 or more against the well in both themes (WCAG 1.4.11; a site.test check). The review suggested teal, but the header is in every first viewport and teal there made three pages show four teal things (accent.spec), so the ring stays neutral; `--tn-border-strong` would be under 2:1 on ink.
+    - **`planLimit()`** is gone from the capability index (D-869).
+    - **`data-theme-turn`**, which nothing read, is gone.
+    - **`Changes`** with one step now renders it.
+
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -1936,6 +1950,11 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - `build:site` (52 pages) and site Playwright 40/40, with the real 0.10.0 packages;
   - the gate passed: TypeScript 1,603 tests (web 134, ui 417, desktop 750, api 234, remote 33, mobile 21, protocol 14), Rust 2,150, desktop build, clippy on Linux, Windows and both Macs, fmt, no protocol drift.
   - The first gate attempt on the release merge stopped at "No space left on device" while compiling the app's tests; `prune-target.py 1` and removing the cross targets' builds freed 17 GB.
+- The approval round's fixes (D-1883). Tests first: scenes.spec (the hero playing in a 1366×768, 1280×800 and 1536×864 first screen; the final frames with `embed.js` blocked; 15 % in the first screen at 1366×768), theme.test (the `data-fx` mark), scenes.test (the gate, the player's mark, the 120 px rule, the paused dots), site.test (dark ink and its contrast, the selected cell at 3:1).
+  - Checks: web vitest 135/135, ui styles 26/26, `build:site` (52 pages, no redirects), site Playwright 45/45.
+  - design-shots on seven pages: 56 captures, all ok; teal per first viewport 0–2.
+  - Lighthouse CI on seven URLs, every assertion passing in both themes. Medians (perf / LCP, light then dark): `/` 0.99 / 1.89 s both; `/about/` and `/blog/` 1.00 / 1.51 s; `/changelog/` 1.00 / 1.36 s; `/docs/` 1.00 / 1.51 s and 1.00 / 1.66 s; `/download/` 1.00 / 1.73 s; the intro post 0.99 / 1.81 s. Blocking time 0 ms, CLS at most 0.001.
+  - The gate: passed (TypeScript 1,606 tests: web 135, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

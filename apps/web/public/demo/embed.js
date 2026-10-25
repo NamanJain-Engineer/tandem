@@ -31,10 +31,12 @@
     near.observe(video);
   }
 
-  // The product scenes (D-1880): each plays while a third of it is on
-  // screen and the tab is visible, and waits where it is otherwise. A
+  // The product scenes (D-1880): each plays while a third of it (or 120 px)
+  // is on screen and the tab is visible, and waits where it is otherwise. A
   // browser without IntersectionObserver just plays them.
   const scenes = document.querySelectorAll("[data-scene]");
+  // Tells the theme script the player runs, so it keeps the effects on.
+  document.documentElement.setAttribute("data-scenes", "");
   if (scenes.length) {
     const seen = new Set();
     const sync = () => {
@@ -43,13 +45,15 @@
     if ("IntersectionObserver" in window) {
       const watch = new IntersectionObserver(
         (entries) => {
+          // A third of the scene, or 120 px of it: the hero's window starts
+          // low in a laptop's first screen and must play there.
           for (const x of entries) {
-            if (x.isIntersecting) seen.add(x.target);
-            else seen.delete(x.target);
+            if (x.isIntersecting && (x.intersectionRatio >= 0.3 || x.intersectionRect.height >= 120)) seen.add(x.target);
+            else if (!x.isIntersecting) seen.delete(x.target);
           }
           sync();
         },
-        { threshold: 0.3 },
+        { threshold: [0, 0.05, 0.1, 0.2, 0.3] },
       );
       for (const scene of scenes) watch.observe(scene);
     } else for (const scene of scenes) seen.add(scene);

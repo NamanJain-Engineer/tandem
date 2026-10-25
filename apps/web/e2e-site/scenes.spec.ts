@@ -20,7 +20,7 @@ const states = (page: Page, id: string) =>
 const opacity = (page: Page, selector: string) =>
   page.evaluate((s) => Number(getComputedStyle(document.querySelector(s) as Element).opacity), selector);
 
-for (const [w, h] of [[1440, 900], [1280, 800]] as const) {
+for (const [w, h] of [[1440, 900], [1366, 768], [1280, 800]] as const) {
   test(`F-WB-01 AC9 the product is in the first viewport at ${w}×${h} (DESIGN §5.1)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     await page.goto("/");
@@ -31,6 +31,32 @@ for (const [w, h] of [[1440, 900], [1280, 800]] as const) {
     expect(visible / box.height, `${visible}px of ${box.height}px`).toBeGreaterThanOrEqual(0.15);
   });
 }
+
+for (const [w, h] of [[1366, 768], [1280, 800], [1536, 864]] as const) {
+  test(`F-WB-01 AC9 the hero's scene plays in a ${w}×${h} first screen, without scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto("/");
+    await expect.poll(() => states(page, "workspace"), { timeout: 10_000 }).not.toEqual(["paused"]);
+  });
+}
+
+test("F-WB-01 AC9 with the scene player blocked, every scene shows its final frame, not its first (D-1880)", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.route(/\/demo\/embed\.js$/, (route) => route.abort());
+  await context.route(/\/demo\/app\//, (route) => route.fulfill({ status: 204, body: "" }));
+  const page = await context.newPage();
+  await page.goto("/");
+  await page.waitForLoadState("load");
+  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(false);
+  for (const id of ["workspace", "dashboard", "review"]) {
+    await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
+    expect(await states(page, id), id).toEqual([]);
+  }
+  expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
+  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(0);
+  expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
+  await context.close();
+});
 
 test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidden tab", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

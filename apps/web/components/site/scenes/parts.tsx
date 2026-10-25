@@ -144,6 +144,7 @@ export function Changes({ steps, className }: { steps: ReadonlyArray<readonly [n
     <span className={cx("sc-swap", className)}>
       {steps.map(([seconds, node], i) => {
         const next = steps[i + 1]?.[0];
+        if (next === undefined && i === 0) return <span key={i}>{node}</span>;
         if (i === 0) return <span key={i} {...fx("out", next ?? 0)}>{node}</span>;
         if (next === undefined) return <span key={i} {...fx("pop", seconds)}>{node}</span>;
         return (

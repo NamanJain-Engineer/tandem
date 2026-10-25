@@ -74,7 +74,11 @@ describe("F-WB-01 AC9 product scenes", () => {
     const [before, rest] = css.split("@media (prefers-reduced-motion: no-preference) {");
     expect(rest).toBeDefined();
     expect(before).not.toMatch(/animation\s*:/);
-    expect(rest).toContain(":root[data-theme-choice] [data-scene] {");
+    // data-fx is the theme script's mark, kept only while the scene player
+    // runs (it drops it at load otherwise), so a blocked player shows the
+    // final frame rather than frame 0.
+    expect(rest).toContain(":root[data-fx] [data-scene] {");
+    expect(css).toMatch(/\[data-scene\]:not\(\[data-live\]\) :is\(\.tn-dot, \.tn-attention\) \{ animation-play-state: paused; \}/);
     for (const m of (rest ?? "").matchAll(/& \[data-fx-[\w]+\]\s*\{ animation: ([^;]+);/g)) expect(m[1], m[0]).toMatch(/ paused$/);
     expect(rest).toMatch(/&\[data-live\] :is\([^)]*\) \{\s*animation-play-state: running;/);
   });
@@ -91,6 +95,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(js).toContain('document.querySelectorAll("[data-scene]")');
     expect(js).toContain('toggleAttribute("data-live", seen.has(scene) && !document.hidden)');
     expect(js).toContain('addEventListener("visibilitychange", sync)');
+    expect(js).toContain('document.documentElement.setAttribute("data-scenes", "")');
+    // The hero's window starts low on a laptop: 120 px of it is enough.
+    expect(js).toContain("x.intersectionRect.height >= 120");
   });
 
   it("F-WB-01 AC9 every scene renders, always in the app's dark theme", () => {

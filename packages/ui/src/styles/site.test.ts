@@ -32,8 +32,12 @@ const brandDark = vars(brand, ':root, [data-theme="dark"]');
 const brandLight = vars(brand, '[data-theme="light"]');
 const siteLightBrand = vars(site, LIGHT_SELECTOR, site.indexOf("/* ---------- 1b."));
 
+// The interim dark ink (T8, D-1883) until app-ui's ink semantics land.
+const inkDark = vars(site, ':root[data-theme="dark"], .site [data-theme="dark"] {');
+const inkDarkOs = vars(site, ':root:not([data-theme="light"]) {');
+
 const themes = {
-  dark: new Map([...appDark, ...brandDark, ...siteRoot]),
+  dark: new Map([...appDark, ...brandDark, ...siteRoot, ...inkDark]),
   light: new Map([...appLight, ...brandLight, ...siteRoot, ...siteLightSemantic]),
 };
 
@@ -223,5 +227,18 @@ describe("F-WB-01 site.css (D-1801)", () => {
     }
     expect(siteRoot.get("--site-stage")).toBe("var(--ink-900)");
     expect(siteLightSemantic.get("--site-page")).toBe("var(--ink-25)");
+  });
+
+  it("F-WB-01 dark is ink everywhere the dark theme applies, until app-ui's semantics land (T8, D-1883)", () => {
+    expect(Object.fromEntries(inkDarkOs)).toEqual(Object.fromEntries(inkDark));
+    expect(inkDark.get("--site-page")).toBe("var(--ink-950)");
+    expect(inkDark.get("--tn-text")).toBe("#ededef");
+    for (const v of inkDark.values()) expect(v).not.toMatch(/slate|148 163 184/);
+  });
+
+  it("F-WB-01 AC4 the theme control's selected cell is told apart at 3:1 or more, in both themes (WCAG 1.4.11)", () => {
+    expect(site).toContain("0 0 0 1px var(--tn-text-muted), 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);");
+    for (const [name, theme] of Object.entries(themes))
+      for (const bg of ["--site-glass", "--site-card"]) expect(ratio(theme, "--tn-text-muted", bg), `${name} ${bg}`).toBeGreaterThanOrEqual(3);
   });
 });

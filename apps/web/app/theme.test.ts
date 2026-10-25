@@ -102,6 +102,17 @@ describe("F-WB-01 AC4 the theme script", () => {
     expect(themeColors()).toEqual(["#060a12", "#f8fafc"]);
   });
 
+  it("F-WB-01 AC9 marks the scenes' effects on, and takes the mark off at load unless the scene player said it runs (D-1880)", () => {
+    boot();
+    expect(root.hasAttribute("data-fx")).toBe(true);
+    window.dispatchEvent(new Event("load"));
+    expect(root.hasAttribute("data-fx")).toBe(false);
+    boot();
+    root.setAttribute("data-scenes", "");
+    window.dispatchEvent(new Event("load"));
+    expect(root.hasAttribute("data-fx")).toBe(true);
+  });
+
   it("F-WB-01 AC4 follows a choice made in another tab", () => {
     boot();
     localStorage.setItem(THEME_KEY, "light");

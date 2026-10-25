@@ -13,7 +13,7 @@ const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/404.html", 
 // The test server answers a missing page with its own 404, so the site's is
 // opened by its file.
 // The page backgrounds (--site-page) of each theme.
-const BG = { dark: "rgb(6, 10, 18)", light: "rgb(250, 250, 250)" }; // ink-25 in light (T8, D-1878)
+const BG = { dark: "rgb(9, 9, 11)", light: "rgb(250, 250, 250)" }; // ink-950 and ink-25 (T8, D-1878, D-1883)
 
 async function context(browser: Browser, os: "dark" | "light", stored?: "dark" | "light", javaScriptEnabled = true) {
   const ctx = await browser.newContext({ colorScheme: os, reducedMotion: "reduce", javaScriptEnabled });

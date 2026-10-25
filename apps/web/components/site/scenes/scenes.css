@@ -193,10 +193,12 @@
 /* The sweep has passed in the final frame (it rests off the window's edge). */
 
 /* ---------- The effects ----------
-   Only with motion allowed and the scene script present (it marks <html>
-   via the theme script and each scene with data-live while it's on
-   screen); paused otherwise, so a scene off screen or in a hidden tab
-   waits where it is. */
+   Only with motion allowed and the scene player running: the theme script
+   marks <html> with data-fx and drops it at load unless /demo/embed.js
+   has marked it data-scenes, so a page whose player is blocked or fails
+   shows each scene's final frame. The player marks a scene data-live while
+   it's on screen; paused otherwise, so a scene off screen or in a hidden
+   tab waits where it is. */
 @keyframes sc-in    { from { opacity: 0; translate: 0 0.5em; } }
 @keyframes sc-line  { from { opacity: 0; translate: -0.25em 0; } }
 @keyframes sc-pop   { 0% { opacity: 0; scale: 0.6; } 60% { opacity: 1; scale: 1.08; } 100% { opacity: 1; scale: 1; } }
@@ -209,7 +211,7 @@
 @keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
 
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-theme-choice] [data-scene] {
+  :root[data-fx] [data-scene] {
     & :is([data-fx-in], [data-fx-line], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count]),
     & .tn-dot, & .tn-attention { animation-play-state: paused; }
     & [data-fx-in]    { animation: sc-in var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
@@ -229,6 +231,9 @@
     }
   }
 }
+/* A working agent's dots pulse only while their scene is on screen, with or
+   without the player (without it, never). */
+[data-scene]:not([data-live]) :is(.tn-dot, .tn-attention) { animation-play-state: paused; }
 /* Under reduced motion the working dots hold still too. */
 @media (prefers-reduced-motion: reduce) {
   [data-scene] :is(.tn-dot, .tn-attention) { animation: none; }

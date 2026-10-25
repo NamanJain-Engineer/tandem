@@ -5,13 +5,6 @@ import { iconFor } from "../icons";
 import { Section } from "../Section";
 import { stagger } from "../../../lib/motion";
 
-/** The sentence that states a feature's plan limit ("Free includes one
- * connection."), so the short line keeps it (plan limits stated where they
- * apply, OPERATING §9). */
-function planLimit(body: string): string | undefined {
-  return body.split(/(?<=\.) /).find((x) => /^Free /.test(x));
-}
-
 /** #capabilities (§6.9, D-1881): the eight capabilities people use most,
  * one line each, then everything else as a line of links; the full copy is
  * in the docs. */
@@ -39,7 +32,6 @@ export function Capabilities() {
                 </span>
                 <span className="text-copy-sm text-fg-muted">
                   {firstSentence(feature(c.title).body)}
-                  {planLimit(feature(c.title).body) && <span className="text-fg-subtle"> {planLimit(feature(c.title).body)}</span>}
                 </span>
               </span>
             </a>

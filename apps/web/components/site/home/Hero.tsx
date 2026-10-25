@@ -30,7 +30,7 @@ export function Hero() {
       />
       {/* The rings' centre: 380 of 760 viewBox units at 1.28 scale, less the 14 rem lift. */}
       <EngineOrbit top={262} radius={560} />
-      <div className="container-site flex flex-col items-center gap-6 pb-16 pt-12 text-center lg:pb-20 lg:pt-16">
+      <div className="container-site flex flex-col items-center gap-5 pb-16 pt-10 text-center lg:pb-20 lg:pt-10">
         <a
           href={versionPath(RELEASE.version)}
           className="group inline-flex h-8 items-center gap-2.5 rounded-full bg-(--site-glass) pl-3 pr-2.5 text-caption text-fg shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] transition-colors duration-(--dur-base) hover:bg-(--site-glass-hover)"
@@ -92,7 +92,7 @@ export function Hero() {
             Watch it run (1 min)
           </a>
         </p>
-        <Scene id="workspace" text={workspaceSceneText()} caption={WORKSPACE_CAPTION} className="enter enter-4 mt-6 w-full max-w-stage">
+        <Scene id="workspace" text={workspaceSceneText()} caption={WORKSPACE_CAPTION} className="enter enter-4 mt-2 w-full max-w-stage">
           <WorkspaceScene />
         </Scene>
         <ul aria-label="What you keep" className="grid w-full max-w-[66rem] grid-cols-1 gap-2 pt-3 sm:grid-cols-2 lg:grid-cols-4 lg:whitespace-nowrap">
