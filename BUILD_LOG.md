@@ -1781,6 +1781,26 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - **Why:** `PRAGMA user_version` counts positions in `MIGRATIONS`, so a migration's number is its position. Two branches that each add one can both take the next number, and a database that ran one branch's migration would skip the other's.
   - **`chain25`'s order:** `0003_bestof_queued` (F-EX-06), `0004_lane_repos` (F-CD-22) and `0005_secrets` (F-TL-12, renumbered on its branch in ba720f49).
   - **The test:** `migrations_are_numbered_by_position_and_all_listed` checks that each name's number is its position and that every file in `migrations/` is listed once.
+- D-873: 0.11.0 ships what's merged now (`chain25`), and the next batch, `chain26`, becomes 0.12.0.
+  - **Why now:** `chain25`'s six features passed their reviews, the gate and 152 of 152 E2E spec files on 25 October. The seven pieces meant for `chain26` were still in fix rounds and reviews, some hours away: F-CD-23, F-TK-07, F-EN-11, B5's second slice, F-EX-07 and `app-ui`'s redesign. Waiting would hold verified work back for nothing.
+  - **D-829 still holds:** one release is one deployment. 0.11.0 also carries `site-motion`'s polish (D-1886, approved by the design lead) and D-2917. D-829 wouldn't let either go to `main` alone.
+  - **The demo (D-128):** no new surfaces, for the same reasons as D-868.
+    - The governor needs systemd scopes and real processes.
+    - Secrets need the keychain and a real shell.
+    - Multi-repo worktrees need real repositories, and ACP agents their own binaries.
+    - Claims and Plan with Lead need running agents.
+    - They join D-868's list for the demo, with `site-motion`'s scenes.
+- D-874: F-CD-24 jj (Jujutsu) workspaces goes to `competitive-gaps` (P2, Free, M18), after F-CD-23's last fix round. It's built on top of F-CD-23's head.
+  - **Decisions:** D-2594 to D-2599 first, then D-2660 to D-2679. Both ranges were unused on every branch. `app-ui` holds D-2600 on and the design lead D-2700 on.
+  - **Scope of the first slice:**
+    - **Co-located repositories only:** `.jj` beside `.git`, with a `jj` that Vibezeo finds and never installs.
+    - **New worktree** offers "jj workspace", preselected in such a repository. The choice is remembered per repository, and the lane sits at the usual path.
+    - **Diff vs base and the overlap check** go through jj and match a git lane on the same changes (NEXT_FEATURES' AC2).
+    - **Everything else that needs git in the lane** says so up front, with one guard, as F-CD-22's `single_repo` does.
+    - **Agents** are told in the lane's briefing to use `jj`.
+    - **Discard** runs `jj workspace forget` and keeps the workspace's commits. Nothing ever abandons, rebases or pushes.
+    - **Not in this slice:** SSH and WSL hosts.
+  - **Tests** run against a real `jj` in the session's container, plus unit tests with fakes behind a `Vcs` seam, and an E2E-M18-CD24 spec.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
