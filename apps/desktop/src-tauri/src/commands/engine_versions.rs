@@ -63,7 +63,7 @@ pub async fn engine_versions(
     let pins = pins(&state).await;
     let home = home(&state).await;
     Ok(svc::views(
-        engines.registry().all(),
+        engines.base_registry().all(),
         report.as_ref(),
         &book,
         &home,
@@ -202,7 +202,7 @@ pub async fn engine_rollback_command(
 fn engine_paths(state: &AppState) -> Vec<EnginePaths> {
     let engines = &state.terminals.engines;
     engines
-        .registry()
+        .base_registry()
         .all()
         .iter()
         .filter_map(|spec| {

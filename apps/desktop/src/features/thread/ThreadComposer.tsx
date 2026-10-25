@@ -58,7 +58,8 @@ export function engineOptionsFor(engines: EngineView[], chatEngines: string[] | 
       const onPlan = chatEngines === null || chatEngines.includes(e.spec.id);
       return {
         value: e.spec.id,
-        label: e.spec.label,
+        // An agent the user added runs through ACP and says so (F-EN-10).
+        label: e.added ? `${e.spec.label} · ${t("acp.via")}` : e.spec.label,
         icon: <EngineGlyph letters={e.spec.logo} size={14} />,
         disabled: !e.chatCapable || !onPlan,
         disabledReason: !e.chatCapable

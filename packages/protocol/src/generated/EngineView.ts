@@ -10,4 +10,8 @@ install: EngineInstall | null, chatCapable: boolean, unsupportedReason: string |
 /**
  * The user's extra launch args (Settings › Engines).
  */
-extraArgs: Array<string>, };
+extraArgs: Array<string>, 
+/**
+ * An ACP agent the user added (F-EN-10): shown "via ACP".
+ */
+added: boolean, };

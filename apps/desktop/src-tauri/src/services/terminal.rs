@@ -1699,6 +1699,13 @@ impl TerminalService {
     /// The engine's executable from the login PATH only, never the workspace
     /// folder (F-CD-03 AC6).
     pub async fn resolve_engine(&self, engine: &EngineSpec) -> Option<PathBuf> {
+        // An added ACP agent is its saved path or nothing: never a program of
+        // the same name found on a PATH (D-2512).
+        if tandem_engines::acp_agents::is_added_id(&engine.id) {
+            let agent = self.engines.acp_agent(&engine.id)?;
+            let path = PathBuf::from(agent.program);
+            return path.is_file().then_some(path);
+        }
         // Where detection found it (known install folders included).
         if let Some(p) = self.engines.installed(&engine.id).filter(|p| p.is_file()) {
             return Some(p);
@@ -2071,6 +2078,48 @@ mod tests {
             .expect_err("missing");
         assert_eq!(err.code, ErrorCode::EngineMissing);
         assert_eq!(svc.pty.live_count(), 0);
+    }
+
+    /// F-EN-10 review: an added agent whose saved program is gone isn't
+    /// replaced by a program of the same name on the PATH (D-2512).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_en_10_1_an_added_agent_runs_its_saved_path_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = TerminalService::new(PtyManager::new(), store);
+        let (saved, other) = (dir.path().join("saved"), dir.path().join("other"));
+        for d in [&saved, &other] {
+            std::fs::create_dir_all(d).expect("mkdir");
+            let p = d.join("goose");
+            std::fs::write(&p, "#!/bin/sh\n").expect("write");
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert("PATH".to_string(), other.display().to_string());
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let agent = svc
+            .engines
+            .add_acp_agent(
+                tandem_engines::acp_agents::AcpAgent {
+                    id: String::new(),
+                    label: "Goose".into(),
+                    program: saved.join("goose").display().to_string(),
+                    args: vec!["acp".into()],
+                    env: std::collections::BTreeMap::new(),
+                },
+                9,
+            )
+            .expect("add");
+        let spec = svc.engines.get(&agent.id).expect("spec");
+        assert_eq!(svc.resolve_engine(&spec).await, Some(saved.join("goose")));
+        std::fs::remove_file(saved.join("goose")).expect("rm");
+        assert_eq!(svc.resolve_engine(&spec).await, None);
     }
 
     #[test]

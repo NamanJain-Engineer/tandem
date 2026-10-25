@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-acp-agent-test"
+description = "Enables the acp_agent_test command without any pre-configured scope."
+commands.allow = ["acp_agent_test"]
+
+[[permission]]
+identifier = "deny-acp-agent-test"
+description = "Denies the acp_agent_test command without any pre-configured scope."
+commands.deny = ["acp_agent_test"]

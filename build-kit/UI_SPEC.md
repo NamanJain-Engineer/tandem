@@ -1069,6 +1069,17 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   The rail badge: a `Spinner` with "Checks running", "{n} checks failed: {names}" in the error tone, or a check mark "Checks passed". Nothing shows without a pull request, before the repository is allowed, or on GitLab.
 
 - **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
+- **UI-163 ACP agents** (a section of Settings › Engines, under the engine list; F-EN-10). Heading "ACP agents" with **Add an ACP agent…** (secondary, `Plus`).
+  - Rows: the label, then the program and arguments in `font-mono` `fg-muted` (truncated, full as the tooltip), and **Remove** (ghost). Remove confirms (`ConfirmDialog`, danger): "Remove {name}?" / "Its threads stay readable but won't run again. An agent you add later is a new engine."
+  - States: loading (`Spinner`), error (`Banner` with Try again), empty ("Add any agent that speaks the Agent Client Protocol to use it in Thread mode.").
+  - **Add an ACP agent** (dialog, `md`): description "Vibezeo starts the command and asks it to introduce itself. The agent signs in its own way; Vibezeo never sees its keys."
+    - "Fill in:" then **Goose** (ghost).
+    - Fields: Name, Command (hint "A command on your PATH, or its full path"), Arguments (the extra-arguments parser; an open quote is an error), and Environment variables: rows of name and value with a remove button, **Add a variable**, and the hint "Settings the agent reads, not keys: keep keys in the agent's own sign-in."
+    - Footer: Cancel, **Test** (secondary), **Add** (primary). Both are disabled until Name and Command are filled and the arguments parse.
+  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
+  - The launch sheet never lists added agents: they run in threads only (D-2513).
+    - A passed test shows a success `Banner`: "{name} answered, version {version}." plus "It signs in with: {methods}." A failure or a refused value shows an error `Banner` with the core's message ("Not an ACP agent: …"). Any change clears both.
+  - In the Thread engine picker, an added agent reads "{label} · via ACP".
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2674,6 +2685,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-160 | Instructions | §4.2 | EN |
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |
+| UI-163 | ACP agents | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

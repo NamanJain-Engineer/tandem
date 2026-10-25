@@ -9,7 +9,19 @@ Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows h
 
 <EnginesTable />
 
-Antigravity CLI and Kiro CLI run in terminal panes only, as their vendors ship them. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+Antigravity CLI runs in terminal panes only, as Google ships it. Kiro CLI runs in terminal panes and, through its Agent Client Protocol mode, in Thread mode. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+
+## Any ACP agent in Thread mode
+
+Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok, Kiro CLI and OpenCode do out of the box. Gemini CLI runs as `gemini --acp`, or `gemini --experimental-acp` on older releases. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
+
+- **Name**, **Command** (a command on your `PATH`, or its full path), **Arguments** and **Environment variables**. **Goose** fills in `goose acp`.
+- **Test** starts the command, asks it to introduce itself, waits up to 10 seconds and stops it. You see its name, version and how it signs in. If it doesn't answer as an ACP agent, it says "Not an ACP agent" and why, and nothing is saved. **Add** runs the same test before saving.
+- The agent then appears in the Thread engine picker as "via ACP". Threads run the command at the path saved when you added it, never another program of the same name. Agents you add run on this computer only, not in SSH or WSL folders, and only in Thread mode.
+- **Remove** stops the agent's threads. They stay readable but won't run again: an agent you add later, even with the same name, is a new engine.
+- The agent signs in its own way. Vibezeo never sees or keeps its keys: a variable whose value looks like a key or token is refused, and so are variables that change which home an engine uses or what a program loads. When it asks for a sign-in, the thread names the methods it offers: sign in with the agent's own command in a terminal, then try again.
+
+Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent. When an agent asks for approval without offering a one-time allow, **Allow once** declines the request rather than allowing it for good.
 
 ## One instructions file for every engine
 
