@@ -52,7 +52,7 @@ Ideas, not quotations. Each ends in a rule we apply.
 
 **Refactoring UI (Wathan, Schoger)**
 - *Hierarchy is not size alone:* de-emphasise secondary text with colour and weight before making the primary bigger. → Three text tones only (`fg`, `fg-muted`, `fg-subtle`); labels get muted, values get ink.
-- *Start with too much white space, then remove it.* → Site sections keep 80–144 px; the app keeps its 4 px grid and compact density, but empty states and first run get room.
+- *Start with too much white space, then remove it.* → Site sections keep 64–96 px (D-1897); the app keeps its 4 px grid and compact density, but empty states and first run get room.
 - *Define systems in advance:* a constrained spacing and type scale beats picking values. → §4; no arbitrary Tailwind values in new code.
 - *Depth from light:* a light top edge and a dark bottom shadow make a surface sit up; two shadows (tight contact + soft ambient) beat one. → §4.5's e1–e3.
 - *Don't use grey on colour; fewer borders* — use spacing, background shifts and shadows to separate. → The rail loses boxed pills (§5.4).
@@ -237,7 +237,7 @@ Rules for both:
 
 - **Base unit 4 px** in both. Spacing values come from the scale (4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128, 144); no arbitrary values.
 - **App:** compact density (32 px controls, 28 px dense), fixed chrome heights (title bar 40, pane header 30, status bar 22), pane gutters 6 px. Empty states and first run step out of density: 24–32 px between groups, 20 px titles.
-- **Site:** a 1200 px container (`container-site`) with a 16 → 32 px gutter, 12 columns with 24 px gaps; sections 80 → 144 px apart (`--site-section-y`); a 38–44 rem measure for text; the stage at 1280 px for the product drawn 1:1.
+- **Site:** a 1200 px container (`container-site`) with a 16 → 32 px gutter, 12 columns with 24 px gaps; sections 64 → 96 px apart (`--site-section-y`; D-1897: 96 at desktop since the product scenes, with section headers 48 px above their content); a 38–44 rem measure for text; the stage at 1280 px for the product drawn 1:1.
 - **Rhythm:** related things sit closer than unrelated ones (label → control 6 px, field → field 16 px, group → group 24 px; site: eyebrow → h2 16 px, h2 → lead 20 px, lead → content 48–64 px).
 
 ### 4.5 Radii, elevation, borders and light
