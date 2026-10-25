@@ -332,6 +332,230 @@ pub(crate) fn resolve(
     Ok(resolved)
 }
 
+/// The paragraph "Tell agents in this folder" adds to `AGENTS.md`, between
+/// its markers (F-TL-12 slice 2). No secret names.
+pub const AGENTS_START: &str = "<!-- vibezeo:run -->";
+pub const AGENTS_END: &str = "<!-- /vibezeo:run -->";
+pub const AGENTS_PARAGRAPH: &str = "Commands that need secrets: run them as `vibezeo run -- <command>`; the values stay out of your context.";
+
+/// The instructions file the paragraph goes in.
+pub const AGENTS_FILE: &str = "AGENTS.md";
+
+/// What "Tell agents in this folder" would change: shown as a diff first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentsMdPlan {
+    pub path: String,
+    /// The file as it is (empty when there's none).
+    pub before: String,
+    pub after: String,
+    /// `before` → `after` as a unified diff, one hunk (for DiffView).
+    pub patch: String,
+    /// The paragraph is there already, as it would be written.
+    pub unchanged: bool,
+}
+
+/// A unified diff of `before` → `after` as one hunk, with up to 3 lines of
+/// context: what changes between their common first and last lines.
+pub fn one_hunk(name: &str, before: &str, after: &str) -> String {
+    let a: Vec<&str> = before.lines().collect();
+    let b: Vec<&str> = after.lines().collect();
+    if a == b {
+        return String::new();
+    }
+    let head = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let tail = a[head..]
+        .iter()
+        .rev()
+        .zip(b[head..].iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
+    let start = head.saturating_sub(3);
+    let (a_end, b_end) = (a.len() - tail, b.len() - tail);
+    let after_ctx = tail.min(3);
+    let mut out = format!(
+        "diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n@@ -{},{} +{},{} @@\n",
+        start + 1,
+        a_end + after_ctx - start,
+        start + 1,
+        b_end + after_ctx - start
+    );
+    for l in &a[start..head] {
+        out.push_str(&format!(" {l}\n"));
+    }
+    for l in &a[head..a_end] {
+        out.push_str(&format!("-{l}\n"));
+    }
+    for l in &b[head..b_end] {
+        out.push_str(&format!("+{l}\n"));
+    }
+    for l in &a[a_end..a_end + after_ctx] {
+        out.push_str(&format!(" {l}\n"));
+    }
+    out
+}
+
+/// `text` with the paragraph in it: the marked block replaced where it is,
+/// or added at the end.
+pub fn with_paragraph(text: &str) -> String {
+    let block = format!("{AGENTS_START}\n{AGENTS_PARAGRAPH}\n{AGENTS_END}");
+    if let (Some(a), Some(b)) = (text.find(AGENTS_START), text.find(AGENTS_END)) {
+        if a < b {
+            return format!("{}{block}{}", &text[..a], &text[b + AGENTS_END.len()..]);
+        }
+    }
+    if text.trim().is_empty() {
+        return format!("{block}\n");
+    }
+    let sep = if text.ends_with("\n\n") {
+        ""
+    } else if text.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    format!("{text}{sep}{block}\n")
+}
+
+/// The pane's folder's `AGENTS.md`, read the way `.env` is (a link must
+/// stay inside the folder, 256 KB at most).
+fn read_agents(folder: &Path) -> Result<(PathBuf, String), IpcError> {
+    let path = folder.join(AGENTS_FILE);
+    match std::fs::symlink_metadata(&path) {
+        Err(_) => return Ok((path, String::new())),
+        Ok(m) if m.file_type().is_symlink() => {
+            let inside = matches!(
+                (std::fs::canonicalize(&path), std::fs::canonicalize(folder)),
+                (Ok(t), Ok(r)) if t.starts_with(&r)
+            );
+            if !inside {
+                return Err(IpcError::new(
+                    ErrorCode::Invalid,
+                    "This folder's AGENTS.md links to a file outside the folder",
+                ));
+            }
+        }
+        Ok(_) => {}
+    }
+    use std::io::Read;
+    let file = std::fs::File::open(&path).map_err(read_failed)?;
+    let mut bytes = Vec::new();
+    file.take(MAX_ENV_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(read_failed)?;
+    if bytes.len() as u64 > MAX_ENV_BYTES {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "This folder's AGENTS.md is larger than 256 KB",
+        ));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|_| IpcError::new(ErrorCode::Invalid, "AGENTS.md isn't UTF-8 text"))?;
+    Ok((path, text))
+}
+
+/// `secrets_agents_plan`.
+pub async fn agents_plan(
+    store: &Store,
+    pane: &tandem_core::ids::PaneId,
+) -> Result<AgentsMdPlan, IpcError> {
+    let folder = folder_of(store, pane).await?;
+    let (path, before) = read_agents(&folder)?;
+    let after = with_paragraph(&before);
+    Ok(AgentsMdPlan {
+        path: path.to_string_lossy().into_owned(),
+        patch: one_hunk(AGENTS_FILE, &before, &after),
+        unchanged: after == before,
+        before,
+        after,
+    })
+}
+
+/// `secrets_agents_apply`: writes the plan's `after`, if the file is still
+/// what the person saw.
+pub async fn agents_apply(
+    store: &Store,
+    pane: &tandem_core::ids::PaneId,
+    before: &str,
+) -> Result<AgentsMdPlan, IpcError> {
+    let plan = agents_plan(store, pane).await?;
+    if plan.before != before {
+        return Err(IpcError::new(
+            ErrorCode::Conflict,
+            "AGENTS.md changed since you looked. Review it again",
+        ));
+    }
+    if !plan.unchanged {
+        tandem_core::atomic::atomic_write(Path::new(&plan.path), plan.after.as_bytes(), None)
+            .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't write AGENTS.md: {e}")))?;
+        tracing::info!(
+            code = "secrets.agents_md",
+            "AGENTS.md tells agents about vibezeo run"
+        );
+    }
+    Ok(AgentsMdPlan {
+        before: plan.after.clone(),
+        patch: String::new(),
+        unchanged: true,
+        ..plan
+    })
+}
+
+/// One repository's rules for `vibezeo run` (`run_rules_list`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RunRuleRepo {
+    /// The main checkout's folder.
+    pub repo: String,
+    pub name: String,
+    pub commands: Vec<String>,
+}
+
+/// Every folder on this computer that isn't a worktree, with its rules.
+pub async fn rules_list(store: &Store, data: &Path) -> Result<Vec<RunRuleRepo>, IpcError> {
+    let rules = tandem_core::run_rules::RunRules::load(data);
+    let mut out: Vec<RunRuleRepo> = workspaces::list(store)
+        .await?
+        .into_iter()
+        .filter(|w| w.kind == "local" && w.parent_id.is_none())
+        .map(|w| RunRuleRepo {
+            commands: rules.repos.get(&w.root).cloned().unwrap_or_default(),
+            repo: w.root,
+            name: w.name,
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(out)
+}
+
+/// Replaces `repo`'s rules: `repo` must be a folder on this computer.
+pub async fn rules_set(
+    store: &Store,
+    data: &Path,
+    repo: &str,
+    commands: &[String],
+) -> Result<RunRuleRepo, IpcError> {
+    let ws = workspaces::list(store)
+        .await?
+        .into_iter()
+        .find(|w| w.kind == "local" && w.parent_id.is_none() && w.root == repo)
+        .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "That folder isn't in Vibezeo"))?;
+    let mut rules = tandem_core::run_rules::RunRules::load(data);
+    rules
+        .set(repo, commands)
+        .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
+    rules
+        .save(data)
+        .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't save the rules: {e}")))?;
+    Ok(RunRuleRepo {
+        commands: rules.repos.get(repo).cloned().unwrap_or_default(),
+        repo: ws.root,
+        name: ws.name,
+    })
+}
+
 /// The run pane's name: the command, shortened.
 pub fn pane_name(command: &str) -> String {
     let command = command.trim();
@@ -492,6 +716,95 @@ mod tests {
             .await
             .expect("pane");
         (root, pane)
+    }
+
+    #[test]
+    fn f_tl_12_agents_md_gets_one_marked_paragraph() {
+        let block = format!("{AGENTS_START}\n{AGENTS_PARAGRAPH}\n{AGENTS_END}");
+        assert_eq!(with_paragraph(""), format!("{block}\n"));
+        assert_eq!(with_paragraph("# Rules"), format!("# Rules\n\n{block}\n"));
+        assert_eq!(with_paragraph("# Rules\n"), format!("# Rules\n\n{block}\n"));
+        let once = with_paragraph("# Rules\n");
+        assert_eq!(with_paragraph(&once), once);
+        let old = format!("a\n{AGENTS_START}\nold words\n{AGENTS_END}\nb\n");
+        assert_eq!(with_paragraph(&old), format!("a\n{block}\nb\n"));
+        assert!(!AGENTS_PARAGRAPH.contains("vibezeo-secret://"));
+    }
+
+    #[test]
+    fn f_tl_12_the_agents_md_change_is_one_hunk() {
+        assert_eq!(one_hunk("A", "x\n", "x\n"), "");
+        assert_eq!(
+            one_hunk("AGENTS.md", "", "a\nb\n"),
+            "diff --git a/AGENTS.md b/AGENTS.md\n--- a/AGENTS.md\n+++ b/AGENTS.md\n@@ -1,0 +1,2 @@\n+a\n+b\n"
+        );
+        let before = "1\n2\n3\n4\nold\n5\n6\n7\n8\n";
+        let after = "1\n2\n3\n4\nnew\nmore\n5\n6\n7\n8\n";
+        assert_eq!(
+            one_hunk("f", before, after),
+            "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -2,7 +2,8 @@\n 2\n 3\n 4\n-old\n+new\n+more\n 5\n 6\n 7\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_tell_agents_shows_the_change_first_and_writes_only_what_was_seen() {
+        let (dir, store) = store().await;
+        let (root, pane) = folder(&store, dir.path(), "A=1\n").await;
+        let plan = agents_plan(&store, &pane.id).await.expect("plan");
+        assert_eq!(plan.before, "");
+        assert!(!plan.unchanged);
+        assert!(
+            !root.join(AGENTS_FILE).exists(),
+            "nothing written by a plan"
+        );
+        std::fs::write(root.join(AGENTS_FILE), "# Mine\n").expect("edit");
+        assert_eq!(
+            agents_apply(&store, &pane.id, &plan.before)
+                .await
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::Conflict)
+        );
+        let plan = agents_plan(&store, &pane.id).await.expect("plan");
+        agents_apply(&store, &pane.id, &plan.before)
+            .await
+            .expect("apply");
+        let text = std::fs::read_to_string(root.join(AGENTS_FILE)).expect("read");
+        assert!(text.starts_with("# Mine\n\n<!-- vibezeo:run -->"), "{text}");
+        assert!(agents_plan(&store, &pane.id).await.expect("plan").unchanged);
+    }
+
+    #[tokio::test]
+    async fn f_tl_12_9_rules_are_set_per_folder_on_this_computer() {
+        let (dir, store) = store().await;
+        let (root, _) = folder(&store, dir.path(), "A=1\n").await;
+        let data = dir.path().join("data");
+        let list = rules_list(&store, &data).await.expect("list");
+        assert_eq!(list.len(), 1);
+        assert!(list[0].commands.is_empty());
+        let set = rules_set(&store, &data, &list[0].repo, &["pnpm deploy".into()])
+            .await
+            .expect("set");
+        assert_eq!(set.commands, vec!["pnpm deploy"]);
+        assert_eq!(
+            rules_list(&store, &data).await.expect("list")[0].commands,
+            vec!["pnpm deploy"]
+        );
+        assert_eq!(
+            rules_set(&store, &data, &list[0].repo, &["make; ls".into()])
+                .await
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::Invalid)
+        );
+        assert_eq!(
+            rules_set(&store, &data, "/elsewhere", &["make".into()])
+                .await
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::NotFound)
+        );
+        assert!(root.is_dir());
     }
 
     #[tokio::test]

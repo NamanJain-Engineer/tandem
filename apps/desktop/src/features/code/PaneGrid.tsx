@@ -67,6 +67,7 @@ import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
 import { ResourceChip } from "./ResourceChip";
+import { ApprovalBanner } from "./ApprovalBanner";
 import { RunDialog } from "../secrets/RunDialog";
 import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
@@ -464,6 +465,7 @@ const PaneView = memo(function PaneView({
       {runnable && <RunDialog paneId={pane.id} tabId={tabId} open={running} onOpenChange={setRunning} />}
       <LimitBanner pane={pane} />
       <GuardBanner paneId={pane.id} />
+      {pane.kind === "agent" && <ApprovalBanner paneId={pane.id} />}
       {note && (
         // F-CD-16: where the work went, until dismissed.
         <div

@@ -130,9 +130,11 @@ function AgentCard({
     busy
       ? setConfirm(true)
       : void closeAgent(item).then(() => show({ title: t("dashboard.closed", { title }) }));
-  const decide = (allow: boolean) =>
+  const decide = (allow: boolean, scope: "once" | "conversation" = "once") =>
     approval &&
-    void answer(approval.id, allow).then((err) => err && show({ tone: "error", title: err.message }));
+    void answer(approval.id, allow, "dashboard", scope).then(
+      (err) => err && show({ tone: "error", title: err.message }),
+    );
   const menu: MenuEntry[] = [
     { id: "open", label: t("dashboard.open"), onSelect: () => void jumpTo(item) },
     ...(item.status === "done"
@@ -242,6 +244,16 @@ function AgentCard({
           <Button size="sm" variant="primary" data-testid="card-allow" onClick={() => decide(true)}>
             {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
           </Button>
+          {!plugin && item.source.type === "pane" && approval.options.includes("conversation") && (
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="card-allow-agent"
+              onClick={() => decide(true, "conversation")}
+            >
+              {t("dashboard.allowAgent")}
+            </Button>
+          )}
           <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
             {t("dashboard.deny")}
           </Button>
@@ -286,8 +298,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   const { items, loaded, query, filter, groupBy, collapsed } = useDashboard();
   const { load: usageLoad } = usePaneUsage(onScreen);
   const usage = useMemo(
-    () =>
-      usageLoad.at === "ready" ? Object.fromEntries(usageLoad.panes.map((u) => [u.paneId, u])) : {},
+    () => (usageLoad.at === "ready" ? Object.fromEntries(usageLoad.panes.map((u) => [u.paneId, u])) : {}),
     [usageLoad],
   );
   const engines = useEngines((s) => s.list);
