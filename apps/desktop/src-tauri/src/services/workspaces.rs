@@ -446,16 +446,6 @@ mod tests {
         (dir, store)
     }
 
-    fn git(cwd: &Path, args: &[&str]) {
-        let ok = std::process::Command::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .status()
-            .expect("git")
-            .success();
-        assert!(ok, "git {args:?}");
-    }
-
     #[tokio::test(flavor = "multi_thread")]
     async fn f_tk_05_3_removing_a_workspace_ends_its_panes_sessions_and_releases_its_claims() {
         let dir = tempfile::tempdir().expect("tempdir");

@@ -1190,7 +1190,8 @@ mod tests {
         let claims = tracker.claims().expect("claims");
         assert_eq!(claims.len(), 1, "the merged lane's claim went");
         assert_eq!(claims[0].agent, "fix-auth");
-        remove(&fx.store, &PtyManager::new(), &fx.git, &removed.id, None)
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        remove(&fx.store, &terms, &fx.git, &removed.id, None)
             .await
             .expect("remove");
         assert!(tracker.claims().expect("claims").is_empty());
