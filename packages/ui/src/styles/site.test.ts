@@ -32,8 +32,12 @@ const brandDark = vars(brand, ':root, [data-theme="dark"]');
 const brandLight = vars(brand, '[data-theme="light"]');
 const siteLightBrand = vars(site, LIGHT_SELECTOR, site.indexOf("/* ---------- 1b."));
 
+// The interim dark ink (T8, D-1883) until app-ui's ink semantics land.
+const inkDark = vars(site, ':root[data-theme="dark"], .site [data-theme="dark"] {');
+const inkDarkOs = vars(site, ':root:not([data-theme="light"]) {');
+
 const themes = {
-  dark: new Map([...appDark, ...brandDark, ...siteRoot]),
+  dark: new Map([...appDark, ...brandDark, ...siteRoot, ...inkDark]),
   light: new Map([...appLight, ...brandLight, ...siteRoot, ...siteLightSemantic]),
 };
 
@@ -90,6 +94,28 @@ describe("F-WB-01 site.css (D-1801)", () => {
     expect(Object.fromEntries(siteLightTn)).toEqual(
       Object.fromEntries([...appLight].map(([k, v]) => [k, v.replace(/\/\*[\s\S]*?\*\//g, "").trim()])),
     );
+  });
+
+  it("F-WB-01 AC6 a visitor's Light sets exactly the site tokens the OS's light does (D-1870)", () => {
+    const forced = vars(site, ':root[data-theme="light"] {');
+    expect(forced.size).toBeGreaterThan(12);
+    expect(Object.fromEntries(forced)).toEqual(Object.fromEntries(siteLightSemantic));
+    // The brand tokens the site aliases (D-1891) get a visitor's Light from
+    // brand.css's own [data-theme="light"] block.
+    const brand = readFileSync(join(import.meta.dirname, "brand.css"), "utf8");
+    const brandLight = vars(brand, '[data-theme="light"] {');
+    const aliases = [...siteRoot].filter(([, v]) => /^var\(--tn-/.test(v)).map(([, v]) => v.slice(4, -1));
+    const brandAliases = aliases.filter((t) => /^--tn-(edge|fill|glow|ring|spot|ink|elev)/.test(t));
+    expect(brandAliases.length).toBeGreaterThan(10);
+    for (const t of brandAliases) expect(brandLight.has(t), t).toBe(true);
+    // The app's own tokens come from tokens.css's [data-theme="light"],
+    // which the OS block above mirrors.
+    expect(appLight.get("--tn-bg")).toBe("var(--slate-50)");
+  });
+
+  it("F-WB-01 AC6 the OS's light never overrides a visitor's Dark (D-1870)", () => {
+    for (const m of site.matchAll(/@media \(prefers-color-scheme: light\) \{\s*([^{]+)\{/g))
+      expect(m[1]?.trim()).toMatch(/^:root:not\(\[data-theme="dark"\]\)( &)?$/);
   });
 
   for (const [name, theme] of Object.entries(themes)) {
@@ -165,5 +191,54 @@ describe("F-WB-01 site.css (D-1801)", () => {
     expect(rest).not.toMatch(/animation-timeline/);
     expect(rest).not.toMatch(/@view-transition/);
   });
-});
 
+  it("F-WB-01 AC8 motion has its tokens, and scroll reveals only where the browser can run them (D-1874)", () => {
+    const root = vars(site, "/* ---------- 5. Motion");
+    for (const t of ["--ease-io-site", "--ease-spring-site", "--dur-pop", "--dur-panel", "--dur-spring", "--dur-reveal", "--stagger"])
+      expect(root.has(t), t).toBe(true);
+    expect(root.get("--ease-spring-site")).toBe("cubic-bezier(0.3, 1.35, 0.5, 1)");
+    // Every view()-timeline rule sits inside @supports, so where the browser
+    // lacks scroll timelines the content is simply there.
+    const css = site.replace(/\/\*[\s\S]*?\*\//g, "");
+    const supports = [...css.matchAll(/@supports \(animation-timeline: view\(\)\) \{/g)].map((m) => m.index ?? 0);
+    for (const m of css.matchAll(/animation-timeline: view\(\);/g)) {
+      const at = m.index ?? 0;
+      expect(supports.some((s) => s < at && css.slice(s, at).split("{").length - css.slice(s, at).split("}").length > 0), `view() at ${at}`).toBe(true);
+    }
+    // Stagger never runs past five steps (DESIGN §4.7).
+    expect(css).toContain(".reveal.stagger-5");
+    expect(css).not.toContain(".reveal.stagger-6");
+  });
+
+  it("F-WB-01 AC8 motion moves only transform and opacity: no filter in any keyframe (D-1874)", () => {
+    const css = site.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of css.matchAll(/@keyframes ([\w-]+) \{([\s\S]*?)\}\s*\}?/g)) expect(m[2], m[1]).not.toMatch(/filter|width|height|top|left|margin/);
+  });
+
+  it("F-WB-01 the site's own tokens are ink, never slate (T8, D-1894)", () => {
+    // Sections 1 and 1b mirror tokens.css and brand.css and follow them; the
+    // site's own semantics (section 2 on) and the scenes carry no slate.
+    const own = site.slice(site.indexOf("/* ---------- 2.")).replace(/\/\*[\s\S]*?\*\//g, "");
+    const scenes = readFileSync(join(import.meta.dirname, "../../../../apps/web/components/site/scenes/scenes.css"), "utf8");
+    for (const [name, css] of [["site.css", own], ["scenes.css", scenes]] as const) {
+      expect(css, name).not.toMatch(/--slate-/);
+      expect(css, name).not.toContain("148 163 184");
+      expect(css, name).not.toContain("15 23 42");
+    }
+    expect(siteRoot.get("--site-stage")).toBe("var(--ink-900)");
+    expect(siteLightSemantic.get("--site-page")).toBe("var(--ink-25)");
+  });
+
+  it("F-WB-01 dark is ink everywhere the dark theme applies, until app-ui's semantics land (T8, D-1883)", () => {
+    expect(Object.fromEntries(inkDarkOs)).toEqual(Object.fromEntries(inkDark));
+    expect(inkDark.get("--site-page")).toBe("var(--ink-950)");
+    expect(inkDark.get("--tn-text")).toBe("#ededef");
+    for (const v of inkDark.values()) expect(v).not.toMatch(/slate|148 163 184/);
+  });
+
+  it("F-WB-01 AC4 the theme control's selected cell is told apart at 3:1 or more, in both themes (WCAG 1.4.11)", () => {
+    expect(site).toContain("0 0 0 1px var(--tn-text-muted), 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);");
+    for (const [name, theme] of Object.entries(themes))
+      for (const bg of ["--site-glass", "--site-card"]) expect(ratio(theme, "--tn-text-muted", bg), `${name} ${bg}`).toBeGreaterThanOrEqual(3);
+  });
+});

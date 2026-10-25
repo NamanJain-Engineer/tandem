@@ -107,9 +107,10 @@ export const CLAUDE = [
     body: "Vibezeo is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
   },
   {
-    tag: "Built, live when accounts open",
+    tag: "Comes with Vibezeo accounts",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude and stores no prompts or responses. They go live when accounts open.",
+    // DESIGN §9.5: the one phrase for hosted features, word for word.
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend, which calls Claude and stores no prompts or responses. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
   },
 ] as const;
 
@@ -211,61 +212,69 @@ export function firstSentence(text: string): string {
   return cut < 0 ? text : text.slice(0, cut + 1);
 }
 
-/** The four mode rows (#features), each built from FEATURES. Every feature
- * is shown in exactly one place on the home page: a mode row, the "New in"
- * tiles or the capability index (a test checks). */
-export const MODE_ROWS = [
-  {
-    id: "code",
-    eyebrow: "Code mode",
-    title: "Real terminals, side by side",
-    features: ["Real terminals, side by side"],
-    facts: ["Full-screen TUIs, colours and mouse input", "Layouts you split, maximize and rearrange", "Your own folders, your own shell"],
-    docs: docsPath("code-mode"),
-  },
-  {
-    id: "thread",
-    eyebrow: "Thread mode",
-    title: "Agents as conversations, with approvals inline",
-    features: ["Thread mode", "Switch engines mid-thread"],
-    facts: ["Plan mode writes numbered plans", "The Changes panel shows every file a thread touched", "Move a thread to another engine with a summary"],
-    docs: docsPath("thread-mode"),
-  },
-  {
-    id: "agent",
-    eyebrow: "Agent mode",
-    title: "Teammates that remember",
-    features: ["Teammates"],
-    facts: ["A brief, notes and skills for each teammate", "Search past chats; send each other mail", "Runs on the engines you already use"],
-    docs: docsPath("agent-mode"),
-  },
+/** The feature the hero's scene shows: Code mode's real terminals (D-1881). */
+export const HERO_FEATURES = ["Real terminals, side by side"] as const satisfies readonly FeatureTitle[];
+
+/** #features: what it's like, as scenes of the app (DESIGN §5.1, D-1881).
+ * Each row's features are shown by its scene; every feature appears in
+ * exactly one place on the home page: the hero, a scene row, the capability
+ * index or its "Everything else" list (a test checks). `release` gates a
+ * row on the release that ships what it shows (D-128). */
+export const SCENE_ROWS = [
   {
     id: "dashboard",
     eyebrow: "Dashboard",
-    title: "Every agent, and which ones need you",
-    features: ["One Dashboard", "Live status for every agent", "A review queue across engines"],
-    facts: ["Across all your workspaces", "One click to the pane that needs you", "A review queue for finished work, with a second opinion"],
+    title: "See who needs you",
+    body: "Working, waiting, done or failed: every pane, the rail and the Dashboard show it, from each engine's own signals.",
+    features: ["One Dashboard", "Live status for every agent"],
     docs: docsPath("code-mode"),
+    release: "0.5.0",
+  },
+  {
+    id: "review",
+    eyebrow: "Review",
+    title: "Review before you merge",
+    body: "Finished work waits in one queue with its diff. Ask another engine for a second opinion before you approve.",
+    features: ["A review queue across engines"],
+    docs: docsPath("code-mode"),
+    release: "0.8.0",
   },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
 
-/** The capability index (#capabilities): one line each, the full copy is in the docs. */
+/** The capability index (#capabilities): eight, one line each, as DESIGN
+ * §9.1 lists them; the full copy is in the docs (progressive disclosure). */
 export const CAPABILITIES = [
   { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
-  { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
-  { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
-  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
+  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
-  { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
-  { title: "Your accounts, untouched", icon: "key", docs: docsPath("privacy") },
-  { title: "Notifications that matter", icon: "bell", docs: docsPath("settings") },
+  { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
   { title: "Crash-safe restore", icon: "restore", docs: docsPath("troubleshooting") },
-  { title: "Signed updates", icon: "shield", docs: docsPath("troubleshooting") },
-  { title: "Private by default", icon: "lock", docs: docsPath("privacy") },
 ] as const satisfies ReadonlyArray<{ title: FeatureTitle; [key: string]: unknown }>;
+
+/** "Everything else in the docs": the rest, as one line of links. */
+export const MORE = [
+  { title: "Thread mode", docs: docsPath("thread-mode") },
+  { title: "Switch engines mid-thread", docs: docsPath("thread-mode") },
+  { title: "Teammates", docs: docsPath("agent-mode") },
+  { title: "Tasks", docs: docsPath("tasks") },
+  { title: "Several accounts per engine", docs: docsPath("accounts-and-limits") },
+  { title: "Your accounts, untouched", docs: docsPath("privacy") },
+  { title: "Notifications that matter", docs: docsPath("settings") },
+  { title: "Signed updates", docs: docsPath("troubleshooting") },
+  { title: "Private by default", docs: docsPath("privacy") },
+] as const satisfies ReadonlyArray<{ title: FeatureTitle; docs: string }>;
+
+/** The four questions on the home page (DESIGN §5.1); the rest of FAQ is
+ * answered on /about/ and /download/. */
+export const HOME_FAQ = [
+  "Can I use Vibezeo today?",
+  "Do I need a new AI subscription?",
+  "Does Vibezeo see my API keys or subscription tokens?",
+  "Is Vibezeo free?",
+] as const;
 
 /** Release-note tiles: icon and docs page for each lead phrase in a
  * release's Added section. A release whose Added title isn't listed here

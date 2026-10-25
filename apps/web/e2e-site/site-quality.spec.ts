@@ -9,7 +9,7 @@ import { SITE_PAGES } from "../lib/site";
 // for visitors who ask for reduced motion.
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
+const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
 
 test.beforeEach(async ({ context }) => {
   // The test server streams the product video in full (no Range support), and
@@ -121,4 +121,11 @@ test("F-WB-01 a section anchor lands with its heading just under the sticky head
     }, id);
     expect(gap, id).toBeLessThanOrEqual(120);
   }
+});
+
+test("F-WB-01 the home page is at most 8,000 px long at 1440 (DESIGN §5.1.4, D-1897, D-1885)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(8000);
 });

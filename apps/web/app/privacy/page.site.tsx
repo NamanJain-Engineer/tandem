@@ -38,7 +38,7 @@ export default function PrivacyPage() {
       <p>
         {OPERATOR} is responsible for your data. This page covers this website and the {SITE.product} desktop
         app. Questions go to{" "}
-        <a href={`mailto:${SITE.contactEmail}`} className="text-accent hover:underline">
+        <a href={`mailto:${SITE.contactEmail}`} className="text-fg underline">
           {SITE.contactEmail}
         </a>
         .
@@ -49,6 +49,10 @@ export default function PrivacyPage() {
         <li>
           The site is a set of static pages. It sets no cookies and loads no analytics, ads or tracking
           scripts.
+        </li>
+        <li>
+          Picking Light or Dark in the header makes your browser remember it under one key,{" "}
+          <code>vibezeo-theme</code>. It never leaves your browser, and choosing System removes it.
         </li>
         <li>
           There are no forms or accounts here. If you email us, we use your message and address only to reply.

@@ -1,9 +1,10 @@
 import { Plus } from "lucide-react";
-import { FAQ } from "../../../lib/home";
+import { FAQ, HOME_FAQ } from "../../../lib/home";
 import { SITE } from "../../../lib/site";
 import { Icon } from "../Icon";
 
-/** #faq (§6.20): native <details> in one exclusive group; no script. */
+/** #faq (§6.20): native <details> in one exclusive group; no script. The
+ * home page asks four (HOME_FAQ, DESIGN §5.1). */
 export function Faq() {
   return (
     <section id="faq" aria-labelledby="faq-title" className="relative scroll-mt-section bg-page py-(--site-section-y)">
@@ -14,18 +15,18 @@ export function Faq() {
             Questions
           </h2>
           <p className="text-copy text-fg-muted">
-            Not answered here? Write to <a href={`mailto:${SITE.contactEmail}`} className="text-accent">{SITE.contactEmail}</a>.
+            Not answered here? Write to <a href={`mailto:${SITE.contactEmail}`} className="text-fg">{SITE.contactEmail}</a>.
           </p>
         </header>
         <div className="flex flex-col border-t border-line lg:col-span-8">
-          {FAQ.map((f, i) => (
+          {HOME_FAQ.map((q) => FAQ.find((f) => f.q === q)).filter((f) => f !== undefined).map((f, i) => (
             <details key={f.q} name="faq" open={i === 0} className="group border-b border-line">
-              <summary className="flex min-h-18 cursor-pointer list-none items-center justify-between gap-6 py-5 text-title text-fg transition-colors duration-(--dur-base) hover:text-accent [&::-webkit-details-marker]:hidden">
+              <summary className="flex min-h-18 cursor-pointer list-none items-center justify-between gap-6 py-5 text-title text-fg transition-colors duration-(--dur-base) hover:text-fg-muted [&::-webkit-details-marker]:hidden">
                 {f.q}
                 <Icon
                   icon={Plus}
                   size={20}
-                  className="shrink-0 text-fg-muted transition-transform duration-(--dur-base) group-open:rotate-45"
+                  className="shrink-0 text-fg-muted transition-transform duration-(--dur-panel) ease-(--ease-spring-site) group-open:rotate-45"
                 />
               </summary>
               <p className="max-w-[44rem] pb-6 text-copy text-pretty text-fg-muted">{f.a}</p>
