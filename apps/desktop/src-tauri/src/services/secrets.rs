@@ -309,7 +309,7 @@ pub(crate) fn resolve(
     vars: &[EnvVar],
 ) -> Result<refs::Resolved, IpcError> {
     let mut failed: Option<KeychainError> = None;
-    let resolved = refs::resolve(&vars, |name| match keychain.get(&service(), name) {
+    let resolved = refs::resolve(vars, |name| match keychain.get(&service(), name) {
         Ok(Some(v)) => String::from_utf8(v.to_vec()).ok(),
         Ok(None) => None,
         Err(e) => {

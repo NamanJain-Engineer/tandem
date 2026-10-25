@@ -124,7 +124,8 @@ mod tests {
         .expect("v2 rows");
         run(&mut conn, &db, &dir.path().join("backups")).expect("migrate");
         assert_eq!(current_version(&conn).expect("v"), MIGRATIONS.len());
-        let rows: Vec<(i64, Option<String>, String, String, Option<i64>)> = conn
+        type Lane = (i64, Option<String>, String, String, Option<i64>);
+        let rows: Vec<Lane> = conn
             .prepare(
                 "SELECT seat, branch, engine_id, check_state, check_exit FROM bestof_lanes \
                  WHERE run_id = 'bo_1' ORDER BY seat",
