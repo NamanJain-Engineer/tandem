@@ -5,7 +5,6 @@ import type { EngineView, IpcError, Teammate, TeammateDraft, TeammateTemplate } 
 import {
   AVATAR_HUES,
   Avatar,
-  Banner,
   Button,
   Callout,
   EngineGlyph,
@@ -26,7 +25,6 @@ import { invoke } from "../../ipc/invoke";
 import { useEngines } from "../../stores/engines";
 import { useSession } from "../../stores/session";
 import { useTeammates } from "../../stores/teammates";
-import { useUi } from "../../stores/ui";
 import { useBoot } from "../shell/useBoot";
 import { useInstall } from "../code/InstallSheet";
 import { useComposerDictation } from "../dictate/useComposerDictation";
@@ -50,7 +48,8 @@ export function engineGroups(list: EngineView[]): { chat: EngineView[]; terminal
   return { chat: list.filter((e) => e.chatCapable), terminal: list.filter((e) => !e.chatCapable) };
 }
 
-/** F-AG-04: whether Create with AI is offered (Pro or Team, signed in, online). */
+/** F-AG-04: whether Create with AI is offered: it is hosted, so it needs a
+ * Vibezeo account that carries it, signed in and online (D-2903). */
 export function canDraft(): boolean {
   const { auth, entitlement } = useSession.getState();
   return (
@@ -121,7 +120,6 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   const detecting = useEngines((s) => s.detecting);
   const detect = useEngines((s) => s.detect);
   const teammates = useTeammates((s) => s.list);
-  const limit = useSession((s) => s.entitlement?.limits.teammates ?? null);
   const dataDir = useBoot((s) => s.boot?.dataDirDisplay ?? "~/.vibezeo");
   const { show } = useToast();
   const drafting = canDraft();
@@ -158,13 +156,10 @@ function SheetBody({ onClose }: { onClose: () => void }) {
   }, [drafting]);
 
   const engine = engines.find((e) => e.spec.id === engineId) ?? null;
-  const besidesLead = teammates.filter((s) => !s.teammate.isLead).length;
-  const atLimit = limit !== null && besidesLead >= limit;
   const trimmed = name.trim();
   const taken = teammates.some((s) => s.teammate.name.trim().toLowerCase() === trimmed.toLowerCase());
   const nameMessage = taken ? t("agent.new.nameTaken", { name: trimmed }) : nameError;
-  const ready =
-    !!trimmed && trimmed.length <= NAME_MAX && !taken && !!engine?.install && !atLimit && !creating;
+  const ready = !!trimmed && trimmed.length <= NAME_MAX && !taken && !!engine?.install && !creating;
   const dirty = !!(name || brief || description || places.length);
 
   const draft = async () => {
@@ -242,17 +237,6 @@ function SheetBody({ onClose }: { onClose: () => void }) {
           }
         }}
       >
-        {atLimit && (
-          <Banner
-            tone="info"
-            action={{
-              label: t("agent.new.upgrade"),
-              onClick: () => useUi.getState().openUpgrade({ kind: "teammates", limit: limit ?? 1 }),
-            }}
-          >
-            {t("agent.new.limit")}
-          </Banner>
-        )}
         {drafting ? (
           <section
             className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"

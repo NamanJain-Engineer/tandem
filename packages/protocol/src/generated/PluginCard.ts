@@ -33,6 +33,7 @@ takesKey: boolean, keyHint: string | null,
  */
 teammates: number, 
 /**
- * Free's one connection is used up (Connect shows "Pro").
+ * The limits' connections are used up (none are with no account,
+ * D-2900).
  */
 limitReached: boolean, };

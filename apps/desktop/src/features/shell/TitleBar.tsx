@@ -47,7 +47,7 @@ export function TitleBar() {
   const keys = useShortcutKeys();
   const [usageOpen, setUsageOpen] = useState(false);
   const boot = useBoot((s) => s.boot);
-  const { mode, railCollapsed, settingsOpen, toggleRail, setPalette, openSettings, openUpgrade } = useUi();
+  const { mode, railCollapsed, settingsOpen, toggleRail, setPalette, openSettings } = useUi();
   const sidebarOpen = useSidebar((s) => s.open);
   const auth = useSession((s) => s.auth);
   const entitlement = useSession((s) => s.entitlement);
@@ -80,17 +80,22 @@ export function TitleBar() {
       onSelect: () => invoke("app_open_logs_folder").catch(() => undefined),
     },
     { id: "sep2", type: "separator" },
-    auth?.signedIn
-      ? {
-          id: "signout",
-          label: t("menu.signOut"),
-          onSelect: () => invoke("auth_sign_out").catch(() => undefined),
-        }
-      : {
-          id: "signin",
-          label: t("menu.signIn"),
-          onSelect: () => invoke("auth_sign_in").catch(() => undefined),
-        },
+    // A build without Vibezeo accounts has nothing to sign in to (D-2913).
+    ...(auth && !auth.hosted
+      ? []
+      : [
+          auth?.signedIn
+            ? {
+                id: "signout",
+                label: t("menu.signOut"),
+                onSelect: () => invoke("auth_sign_out").catch(() => undefined),
+              }
+            : {
+                id: "signin",
+                label: t("menu.signIn"),
+                onSelect: () => invoke("auth_sign_in").catch(() => undefined),
+              },
+        ]),
     {
       id: "quit",
       label: t("menu.quit"),
@@ -102,12 +107,6 @@ export function TitleBar() {
     },
   ];
 
-  const planBadge =
-    entitlement?.plan === "pro"
-      ? t("plan.pro")
-      : entitlement?.plan === "team"
-        ? t("plan.team")
-        : t("plan.free");
   const accountAction: MenuEntry[] = [
     { id: "sep", type: "separator" },
     auth?.signedIn
@@ -130,7 +129,6 @@ export function TitleBar() {
     },
     { id: "billing", label: t("menu.accountBilling"), onSelect: () => openSettings("account") },
     { id: "settings", label: t("menu.settings"), kbd: keys("settings.open"), onSelect: () => openSettings() },
-    { id: "plans", label: t("menu.seePlans"), onSelect: () => openUpgrade() },
     ...(auth && !auth.hosted ? [] : accountAction),
   ];
 
@@ -284,7 +282,7 @@ export function TitleBar() {
       <ConductorButton />
       <Menu
         align="end"
-        entries={[{ id: "plan", type: "label", label: planBadge }, ...accountMenu]}
+        entries={accountMenu}
         trigger={
           <button
             type="button"

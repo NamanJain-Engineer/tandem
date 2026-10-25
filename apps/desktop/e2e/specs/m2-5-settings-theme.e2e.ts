@@ -87,7 +87,7 @@ describe("E2E-M2-5 settings and theme", () => {
       "Appearance",
       "Terminal",
       "Privacy & Telemetry",
-      "Account & Plan",
+      "Account",
       "Advanced",
     ]) {
       await $(`button=${page}`).click();

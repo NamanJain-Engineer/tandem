@@ -24,7 +24,6 @@ import { useAgentPage } from "../../stores/agentPage";
 import { useRoutines } from "../../stores/routines";
 import { useSession } from "../../stores/session";
 import { useTeammates } from "../../stores/teammates";
-import { useUi } from "../../stores/ui";
 import { switchMode } from "../shell/actions";
 import { RoutineEditor, type EditorSeed } from "./RoutineEditor";
 import { RunHistory } from "./RunHistory";
@@ -228,7 +227,7 @@ function BackgroundChip() {
           {t("routines.background.turnOn")}
         </Button>
       ) : (
-        <Badge variant="accent">{t("routines.pro")}</Badge>
+        <span data-testid="routines-background-unavailable">{t("routines.background.unavailable")}</span>
       )}
     </span>
   );
@@ -404,9 +403,6 @@ const SUGGESTIONS = ["summary", "update", "deps"] as const;
 export function RoutinesPage() {
   const { list, status, error } = useRoutines();
   const limits = useSession((s) => s.entitlement?.limits);
-  const signedIn = useSession((s) => s.auth?.signedIn ?? false);
-  // Builds without Vibezeo accounts can't sign in or buy Pro (D-909).
-  const hosted = useSession((s) => s.auth?.hosted ?? true);
   const now = useNow();
   const { show: toast } = useToast();
   const [editing, setEditing] = useState<EditorSeed | null>(null);
@@ -420,13 +416,14 @@ export function RoutinesPage() {
     () => [...list].sort((a, b) => (a.routine.nextRunAt ?? Infinity) - (b.routine.nextRunAt ?? Infinity)),
     [list],
   );
-  const pro = !!limits?.routines;
-  const lapsed = !pro && list.some((v) => v.routine.pausedByPlan);
+  // On with no account (D-869, D-2900); only limits that turn them off stop them.
+  const on = limits?.routines ?? true;
+  const lapsed = !on && list.some((v) => v.routine.pausedByPlan);
   const historyOf = list.find((v) => v.routine.id === history) ?? null;
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const tag = (e.target as HTMLElement).tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
-    if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey && pro) {
+    if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey && on) {
       e.preventDefault();
       setEditing({});
     }
@@ -442,8 +439,8 @@ export function RoutinesPage() {
           <h1 className="text-md font-semibold text-fg">{t("routines.title")}</h1>
           <p className="text-sm text-fg-muted">{t("routines.subtitle")}</p>
         </div>
-        {pro && <BackgroundChip />}
-        {pro && (
+        {on && <BackgroundChip />}
+        {on && (
           <Button
             size="sm"
             variant="primary"
@@ -456,30 +453,13 @@ export function RoutinesPage() {
         )}
       </div>
       {lapsed && <Banner tone="warning">{t("routines.lapsed")}</Banner>}
-      {pro && list.length > 0 && <TodayStrip list={list} now={now} />}
+      {on && list.length > 0 && <TodayStrip list={list} now={now} />}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {!pro && !lapsed ? (
+        {!on && !lapsed ? (
           <EmptyState
             icon={<CalendarClock size={20} />}
-            title={t("routines.upsell.title")}
-            body={
-              !hosted
-                ? t("routines.upsell.earlyAccess")
-                : signedIn
-                  ? t("routines.upsell.body")
-                  : t("routines.upsell.signIn")
-            }
-            primary={
-              signedIn && hosted ? (
-                <Button
-                  variant="primary"
-                  onClick={() => useUi.getState().openUpgrade()}
-                  data-testid="routines-upgrade"
-                >
-                  {t("routines.upsell.upgrade")}
-                </Button>
-              ) : undefined
-            }
+            title={t("routines.off.title")}
+            body={t("routines.off.body")}
             className="[&]:max-w-[480px]"
           />
         ) : status === "loading" || status === "idle" ? (

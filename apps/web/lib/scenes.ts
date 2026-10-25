@@ -48,7 +48,7 @@ function format(s: string, vars: Record<string, string | number>): string {
     const [name, kind] = body.split(",").map((x) => x.trim());
     if (kind === "plural") {
       const n = Number(vars[name ?? ""] ?? 0);
-      const forms = Object.fromEntries([...body.matchAll(/(=\d+|one|other)\s*\{([^{}]*)\}/g)].map((m) => [m[1], m[2]]));
+      const forms = pluralForms(body.slice(body.indexOf("plural") + "plural".length));
       const form = forms[`=${n}`] ?? (n === 1 ? forms.one : undefined) ?? forms.other ?? "";
       out += format(form.replace(/#/g, String(n)), vars);
     } else if (kind === "number") out += String(vars[name ?? ""] ?? "");
@@ -56,6 +56,25 @@ function format(s: string, vars: Record<string, string | number>): string {
     i = j;
   }
   return out;
+}
+
+/** A plural's forms (`one {# file} other {# files in {base}}`), braces
+ * inside a form included. */
+function pluralForms(rest: string): Record<string, string> {
+  const forms: Record<string, string> = {};
+  const re = /(=\d+|zero|one|two|few|many|other)\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest))) {
+    let depth = 1;
+    let j = re.lastIndex;
+    for (; j < rest.length && depth > 0; j++) {
+      if (rest[j] === "{") depth++;
+      else if (rest[j] === "}") depth--;
+    }
+    forms[m[1] as string] = rest.slice(re.lastIndex, j - 1);
+    re.lastIndex = j;
+  }
+  return forms;
 }
 
 /** The sample work the scenes show: one repository and its worktrees. */

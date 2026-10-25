@@ -423,15 +423,6 @@
     "enabledWhen": "pane_focused"
   },
   {
-    "id": "billing.plans",
-    "category": "app",
-    "mac": null,
-    "pc": null,
-    "pcTerminal": null,
-    "inText": false,
-    "enabledWhen": "always"
-  },
-  {
     "id": "conductor.call",
     "category": "app",
     "mac": "Mod+Shift+Space",

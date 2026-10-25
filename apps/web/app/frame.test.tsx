@@ -43,8 +43,8 @@ describe("site frame", () => {
   });
 
   it("F-WB-01 the header marks the page being shown", () => {
-    const h = renderToStaticMarkup(<SiteHeader current="/pricing/" />);
-    expect(h).toMatch(/<a href="\/pricing\/" aria-current="page"/);
+    const h = renderToStaticMarkup(<SiteHeader current="/docs/" />);
+    expect(h).toMatch(/<a href="\/docs\/" aria-current="page"/);
     expect(h.match(/aria-current="page"/g)?.length).toBe(2); // the bar and the menu
   });
 

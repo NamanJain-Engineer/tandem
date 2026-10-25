@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // icons are neutral. Product media (captures, scenes, the demo) are the app,
 // drawn as it is, so they don't count.
 
-const PAGES = ["/", "/pricing/", "/download/", "/changelog/", "/docs/", "/blog/", "/about/", "/demo/"];
+const PAGES = ["/", "/download/", "/changelog/", "/docs/", "/blog/", "/about/", "/demo/"];
 
 /** Elements in the viewport that paint teal themselves (text, fill, border,
  * gradient or SVG stroke), counting a teal element once with whatever teal

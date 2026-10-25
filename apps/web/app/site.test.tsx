@@ -7,7 +7,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HERO, OWNERSHIP } from "../lib/home";
 import { VIDEO } from "../lib/media";
-import { PLANS } from "../lib/pricing";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
 import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
@@ -30,13 +29,11 @@ import DemoPage, { DEMO_APP } from "./demo/page.site";
 import * as download from "./download/page.site";
 import { metadata as rootMetadata } from "./layout.site";
 import * as home from "./page.site";
-import * as pricing from "./pricing/page.site";
 import * as privacy from "./privacy/page.site";
 import * as security from "./security/page.site";
 import * as terms from "./terms/page.site";
 import ChangelogPage from "./changelog/page.site";
 import DownloadPage from "./download/page.site";
-import PricingPage from "./pricing/page.site";
 import HomePage from "./page.site";
 import NotFound from "./not-found.site";
 import PrivacyPage from "./privacy/page.site";
@@ -50,7 +47,6 @@ const PAGES = {
   changelog: ChangelogPage,
   download: DownloadPage,
   demo: DemoPage,
-  pricing: PricingPage,
   privacy: PrivacyPage,
   terms: TermsPage,
   security: SecurityPage,
@@ -65,7 +61,7 @@ describe("public site", () => {
     expect(h).toContain(`Released · ${RELEASE.version} for Linux`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
-    for (const id of ["try", "principles", "engines", "features", "capabilities", "pricing", "faq"])
+    for (const id of ["try", "principles", "engines", "features", "capabilities", "faq"])
       expect(h).toContain(`id="${id}"`);
     // Built with Claude and the figures are about us: they moved to /about/
     // with the founder's note (DESIGN §5.1, D-1881).
@@ -118,8 +114,10 @@ describe("public site", () => {
     const h = html(<AboutPage />);
     expect(h).toContain("Built with Claude");
     expect(h).toContain("--resume");
-    expect(h).toContain("Built, live when accounts open");
-    expect(h).toContain("go live when accounts open");
+    // Hosted features take DESIGN §9.5's phrase, word for word (D-869).
+    expect(h).toContain("Comes with Vibezeo accounts");
+    expect(h).toContain("It uses Vibezeo&#x27;s servers and switches on when Vibezeo accounts open.");
+    expect(h).not.toMatch(/\bcredits?\b|\bPro\b|premium|upgrade/i);
     expect(h).not.toContain("not built yet");
     // Dashboard approvals have no real source until Thread mode: never claim them.
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
@@ -179,7 +177,7 @@ describe("public site", () => {
   });
 
   it("F-WB-01 says the product is released for Linux and never claims a build that isn't out", () => {
-    const pages = [HomePage, DownloadPage, PricingPage].map((P) => html(<P />)).join("\n");
+    const pages = [HomePage, DownloadPage].map((P) => html(<P />)).join("\n");
     expect(pages).not.toMatch(/early.access/i);
     expect(pages).not.toMatch(/at launch|before launch|with launch/i);
     // macOS and Windows are only ever "next" or "coming soon", never available.
@@ -222,7 +220,7 @@ describe("public site", () => {
   });
 
   it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {
-    const canon = { "/": home, "/about/": about, "/changelog/": changelog, "/download/": download, "/demo/": demo, "/pricing/": pricing, "/privacy/": privacy, "/security/": security, "/terms/": terms };
+    const canon = { "/": home, "/about/": about, "/changelog/": changelog, "/download/": download, "/demo/": demo, "/privacy/": privacy, "/security/": security, "/terms/": terms };
     expect(Object.keys(canon).sort()).toEqual([...SITE_PAGES].sort());
     for (const [path, mod] of Object.entries(canon)) expect(mod.metadata.alternates?.canonical, path).toBe(path);
     expect(JSON.stringify(rootMetadata.openGraph)).toContain("/og.png");
@@ -236,33 +234,36 @@ describe("public site", () => {
       expect(html(<Page />), name).not.toMatch(/\b(19|20)\d{2}\b/);
   });
 
-  it("F-WB-01 pricing shows the launch plans from the spec and says Free is available now, Pro and Team not yet", () => {
-    const h = html(<PricingPage />);
-    expect(PLANS.map((p) => [p.name, p.price])).toEqual([
-      ["Free", "$0"],
-      ["Pro", "$29"],
-      ["Team", "$49"],
-    ]);
-    for (const p of PLANS) expect(h).toContain(`id="${p.id}"`);
-    expect(h).toContain("download Vibezeo");
-    expect(h).toContain("start with");
-    expect(h).toContain("Free is available now");
-    expect(h).toContain("$290 a year");
-    expect(h).not.toContain("Planned");
-    expect(html(<HomePage />)).toContain(`href="/pricing/"`);
+  it("F-WB-01 Vibezeo is free: no pricing page, no prices on any page, and /pricing/ goes to the download page (D-869)", () => {
+    expect(existsSync(join(import.meta.dirname, "pricing"))).toBe(false);
+    expect(SITE_PAGES).not.toContain("/pricing/");
+    const vercel = JSON.parse(readFileSync(join(import.meta.dirname, "../vercel.json"), "utf8")) as {
+      redirects: { source: string; destination: string; permanent: boolean }[];
+    };
+    for (const source of ["/pricing", "/pricing/:rest(.*)"])
+      expect(vercel.redirects).toContainEqual({ source, destination: "/download/", permanent: true });
+    for (const [name, Page] of Object.entries(PAGES)) {
+      const h = html(<Page />);
+      expect(h, name).not.toMatch(/\$\d/);
+      expect(h, name).not.toContain('href="/pricing/"');
+      expect(h, name).not.toMatch(/\bPro and Team\b|per seat|money-back/);
+    }
+    const home = html(<HomePage />);
+    expect(home).toContain("Yes. Vibezeo is free, with no paid plans and no limits on what runs on your computer.");
+    expect(html(<DownloadPage />)).toContain("Free, with no paid plans.");
   });
 
-  it("F-TH-06 the plan copy says Free threads run Claude Code and Codex, and Pro every chat engine", () => {
-    const free = PLANS.find((p) => p.id === "free")?.features.map((f) => f.text) ?? [];
-    const pro = PLANS.find((p) => p.id === "pro")?.features.map((f) => f.text) ?? [];
-    expect(free).toContain("Thread mode with Claude Code and Codex, one thread at a time");
-    expect(free.join(" ")).not.toMatch(/Cursor|Grok|OpenCode|Every supported engine, on/);
-    expect(pro).toContain("Thread mode with every chat engine: Cursor Agent, Grok and OpenCode too");
-    // The home page names Thread mode only as a link to its docs (D-1881), so
-    // it makes no claim there; the feature's own text keeps the limit.
+  it("F-TH-06 threads run every chat engine, six side by side, with no plan (D-2900); the home page links Thread mode (D-1881)", () => {
     const home = html(<HomePage />);
+    // The home page names Thread mode only as a link to its docs, so the
+    // sentence lives in the feature's own text, which the docs carry.
     expect(home).toMatch(/<a href="\/docs\/thread-mode\/"[^>]*>Thread mode<\/a>/);
-    expect(FEATURES.find((f) => f.title === "Thread mode")?.body).toContain("Free threads run Claude Code and Codex; Cursor Agent, Grok and OpenCode threads need Pro.");
+    expect(FEATURES.find((f) => f.title === "Thread mode")?.body).toContain(
+      "Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
+    );
+    expect(home).not.toMatch(
+      /need Pro|next release|in the next\b|the next (shows|has|runs|adds|lifts)|this release (has|includes|keeps|shows|runs)/i,
+    );
   });
 
   it("F-WB-01 the changelog lists every closed milestone", () => {

@@ -41,6 +41,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(t("review.stat", { n: 1, adds: 1, dels: 0 })).toBe("1 file · +1 −0");
     expect(t("dashboard.chip.waiting", { n: 1 })).toBe("Waiting 1");
     expect(t("rail.live", { n: 4 })).toBe("4 running sessions");
+    // A value inside a plural's form (landing.done's {base}).
+    expect(t("landing.done", { n: 3, base: "main" })).toBe("Landed 3 worktrees in main");
+    expect(t("landing.done", { n: 1, base: "main" })).toBe("Landed 1 worktree in main");
     expect(() => t("no.such.key")).toThrow(/no "no.such.key"/);
     const w = renderToStaticMarkup(<WorkspaceScene />);
     for (const s of [t("titlebar.mode.code"), t("pane.engine", { engine: "Claude Code", n: 1 }), t("dashboard.allowOnce"), t("review.diffTitle", { name: "Claude Code" })])

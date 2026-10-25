@@ -3,7 +3,6 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useUi, type Mode } from "../../stores/ui";
 import { useSettings } from "../../stores/settings";
-import { useSession } from "../../stores/session";
 import { useWorkspaces } from "../../stores/workspaces";
 
 type Toast = (t: { tone?: "info" | "success" | "warning" | "error"; title: string; body?: string }) => void;
@@ -15,21 +14,14 @@ export function switchMode(mode: Mode): void {
   invoke("telemetry_capture", { event: "mode_switched", props: { mode } }).catch(() => undefined);
 }
 
-/** Adds a folder; a plan limit opens the upgrade sheet (F-BL-04). */
+/** Adds a folder. There's no workspace limit with no account (D-2900); one
+ * that limits still carry shows as the error it is. */
 export async function addWorkspace(root: string, toast: Toast): Promise<boolean> {
   const result = await useWorkspaces.getState().add(root);
   if (result.ok) {
     switchMode("code");
     if (!result.added.created) toast({ title: t("deeplink.opened", { name: result.added.workspace.name }) });
     return true;
-  }
-  if (result.limit) {
-    const limit = useSession.getState().entitlement?.limits.workspaces ?? 3;
-    invoke("telemetry_capture", { event: "limit_hit", props: { limit: "workspaces" } }).catch(
-      () => undefined,
-    );
-    useUi.getState().openUpgrade({ kind: "workspaces", limit }, () => void addWorkspace(root, toast));
-    return false;
   }
   toast({ tone: "error", title: t("code.addFailed"), body: (result.error as IpcError).message });
   return false;
@@ -52,7 +44,7 @@ export async function copyDiagnostics(toast: Toast): Promise<void> {
 }
 
 export async function openBilling(
-  target: { type: "upgrade"; plan: string; interval: string } | { type: "portal" } | { type: "credits" } | { type: "account" },
+  target: { type: "portal" } | { type: "credits" } | { type: "account" },
   toast: Toast,
 ): Promise<boolean> {
   try {

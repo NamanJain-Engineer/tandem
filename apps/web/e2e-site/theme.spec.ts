@@ -50,7 +50,7 @@ test("F-WB-01 AC4 a stored choice is on <html> before the first frame, so nothin
       });
     });
     const page = await ctx.newPage();
-    for (const path of ["/", "/pricing/", "/docs/", "/blog/"]) {
+    for (const path of ["/", "/download/", "/docs/", "/blog/"]) {
       await page.goto(path);
       const first = await page.evaluate(() => (window as unknown as { firstFrame: unknown }).firstFrame);
       expect(first, `${path} OS ${os}, stored ${stored}`).toEqual({ choice: stored, bg: BG[stored], scheme: stored });
@@ -72,7 +72,7 @@ test("F-WB-01 AC4 F-WB-01 AC7 the header's control switches the page at once and
   await expect(header.locator('input[value="light"]')).toBeChecked();
   expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({ [THEME_KEY]: "light" });
   // Another page and a reload keep it.
-  await page.goto("/pricing/");
+  await page.goto("/about/");
   expect(await bodyBg(page)).toBe(BG.light);
   await page.reload();
   expect(await bodyBg(page)).toBe(BG.light);

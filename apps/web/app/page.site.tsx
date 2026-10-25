@@ -9,7 +9,6 @@ import { Engines } from "../components/site/home/Engines";
 import { Faq } from "../components/site/home/Faq";
 import { Features } from "../components/site/home/Features";
 import { Hero } from "../components/site/home/Hero";
-import { PlanTeaser } from "../components/site/home/PlanTeaser";
 import { TrustFlow } from "../components/site/home/TrustFlow";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -29,7 +28,6 @@ export default function HomePage() {
       <TrustFlow />
       <Engines />
       <Capabilities />
-      <PlanTeaser />
       <Faq />
       <CtaBand />
     </SiteFrame>

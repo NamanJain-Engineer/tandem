@@ -55,7 +55,7 @@ pub async fn library_continue(
     library::continue_with(&state, &key, &engine_id, account_id, &brief).await
 }
 
-/// Full-text search (Pro, opt-in).
+/// Full-text search (opt-in).
 #[tauri::command]
 pub async fn library_search(
     state: State<'_, AppState>,
@@ -64,7 +64,7 @@ pub async fn library_search(
     library::search(&state, &query).await
 }
 
-/// Turns search on (Pro) or off, which deletes the index.
+/// Turns search on or off, which deletes the index.
 #[tauri::command]
 pub async fn library_search_set(
     window: WebviewWindow,

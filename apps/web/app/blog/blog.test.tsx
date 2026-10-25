@@ -308,7 +308,7 @@ describe("blog (F-WB-06)", () => {
     expect(allowedScripts("index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
     expect(allowedScripts("download/index.html")).toEqual([THEME_BOOT, '<script src="/download/detect.js" defer="">']);
     expect(allowedScripts("blog/introducing-vibezeo/index.html")).toEqual([THEME_BOOT, ld, '<script src="/blog/blog.js" defer="">']);
-    for (const page of ["blog/index.html", "blog/tags/release/index.html", "pricing/index.html", "changelog/0.7.2/index.html"])
+    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html", "changelog/0.7.2/index.html"])
       expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
     // JSON-LD is data: a BlogPosting whose dates are the post's.
     const p = POSTS[0];

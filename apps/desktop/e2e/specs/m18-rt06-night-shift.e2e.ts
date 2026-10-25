@@ -2,17 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  addFolder,
-  checkAgain,
-  fakeEngine,
-  freshUser,
-  home,
-  invoke,
-  mod,
-  planFooter,
-  setPlan,
-} from "../support/app";
+import { addFolder, checkAgain, fakeEngine, freshUser, home, invoke, mod } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -42,7 +32,7 @@ async function openTask(id: string): Promise<void> {
   await $('[data-testid="task-night"]').waitForDisplayed({ timeout: 10_000 });
 }
 
-// E2E-M18-RT06 Night Shift (F-RT-06, Pro): "Run at reset" on a task shows
+// E2E-M18-RT06 Night Shift (F-RT-06; free, D-2902): "Run at reset" on a task shows
 // the plan and saves it; a due run waits while its account is still full,
 // then starts task execution on that account only; Cancel removes a run; the
 // summary counts the runs that ended.
@@ -55,9 +45,7 @@ describe("E2E-M18-RT06 night shift", function () {
   before(async () => {
     fakeEngine("codex", join(home(), "fakebin"));
     usage("97");
-    const { email } = await freshUser("m18-rt06");
-    await setPlan(email, "pro");
-    await browser.waitUntil(async () => (await planFooter()).startsWith("PRO"), { timeout: 20_000 });
+    await freshUser("m18-rt06");
     await checkAgain();
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");

@@ -6,7 +6,7 @@ import { stagger } from "../../../lib/motion";
 const TAG: Record<string, BadgeVariant> = {
   Shipped: "done",
   "How we build": "outline",
-  "Built, live when accounts open": "waiting",
+  "Comes with Vibezeo accounts": "waiting",
 };
 
 /** #claude (§6.11): what's shipped, how it's built, and what's built but not live. */

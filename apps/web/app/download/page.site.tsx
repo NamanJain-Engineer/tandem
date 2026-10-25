@@ -1,9 +1,7 @@
 import { siteButton } from "@tandem/ui/components/SiteButton";
-import { LIMITS } from "@tandem/protocol/plans";
 import { Download, Info, ShieldCheck, Terminal } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import registry from "../../../../crates/tandem-engines/registry.json";
 import en from "../../../desktop/src/i18n/en.json";
 import { CommandLine } from "../../components/site/CommandLine";
 import { Icon } from "../../components/site/Icon";
@@ -27,9 +25,9 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
     body: "Have at least one coding agent CLI installed and signed in, the way you use it today: Claude Code, Codex, Gemini CLI or another. Vibezeo finds it and never touches its sign-in.",
   },
   {
-    title: "Start on the Free plan",
-    // The welcome screen's own button, from the app's catalog (DESIGN §5.2).
-    body: `Open the app and choose ${en["signin.earlyAccess.start"]}. The Free plan runs on your computer, no account needed.`,
+    // The welcome screen's own button, from the app's catalog (DESIGN §5.2, §9.2).
+    title: en["signin.earlyAccess.start"],
+    body: `Open the app and choose ${en["signin.earlyAccess.start"]} on the welcome screen. It runs on your computer, no account needed.`,
   },
   {
     title: "Add a project folder",
@@ -47,11 +45,9 @@ const START: ReadonlyArray<{ title: string; body: ReactNode }> = [
   },
 ];
 
-const engineList = (ids: readonly string[] | null) =>
-  (ids ?? []).map((id) => registry.find((e) => e.id === id)?.label ?? id).join(" and ");
-
 const INCLUDES = [
-  `The Free plan: up to ${LIMITS.free.panes} panes and ${LIMITS.free.workspaces} workspaces, and threads with ${engineList(LIMITS.free.chatEngines)}.`,
+  "Free, with no paid plans.",
+  "No limits on what runs on your computer: as many panes, workspaces and engine accounts as you need.",
   "New versions appear on this page.",
   "This build doesn't contact our servers and carries no analytics.",
 ];
@@ -85,8 +81,8 @@ export default function DownloadPage() {
             </a>
           </p>
           <p className="max-w-measure text-lead text-pretty text-fg-muted">
-            {SITE.product} {RELEASE.version} for Linux. The Free plan runs on your own computer, with the coding
-            agents you already use.
+            {SITE.product} {RELEASE.version} for Linux. Free, and it runs on your own computer, with the coding agents
+            you already use.
           </p>
         </div>
       </section>
