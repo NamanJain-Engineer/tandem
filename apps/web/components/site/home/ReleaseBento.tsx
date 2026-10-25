@@ -45,7 +45,7 @@ export function ReleaseBento() {
           >
             {i === 0 && <div aria-hidden="true" className="bg-lens absolute inset-0 -z-10" />}
             <div className="flex items-center justify-between gap-3">
-              <span className="inline-flex size-10 items-center justify-center rounded-[10px] text-accent shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] [background:linear-gradient(180deg,var(--tn-accent-soft),transparent)]">
+              <span className="inline-flex size-10 items-center justify-center rounded-[10px] text-fg-muted shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)] [background:linear-gradient(180deg,var(--tn-accent-soft),transparent)]">
                 <Icon icon={iconFor(t.icon)} size={20} />
               </span>
               <span className="font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-fg-subtle">

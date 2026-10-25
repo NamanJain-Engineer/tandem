@@ -3141,11 +3141,21 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 - **Interactive demo:** a browser-only replica of the Code, Thread and Dashboard surfaces built from `packages/ui` components with sample data and **no network or mic access**. It is labelled "Interactive demo · sample data".
 - **Performance:** Lighthouse ≥90 for performance and accessibility on `/` and `/pricing`.
 - **Legal:** a cookie-consent banner **before** any non-essential cookies or analytics load. The site ships no analytics by default.
+- **Theme (D-1870):** System, Light or Dark, chosen in the header (the phone menu below 640 px) on every page: marketing pages, the blog, the docs, the 404 and the account portal. System, which follows the OS live, is the default. An inline script in `<head>` applies the choice before the first paint as `data-theme-choice` on `<html>` (and `data-theme` when it isn't System), so no page paints in the wrong theme, and `color-scheme` follows. The choice is kept in `localStorage` under one key, `vibezeo-theme`, written only when the visitor picks Light or Dark (System removes it); every read and write is wrapped so a blocked storage still leaves a working page. Without JavaScript the pages follow the OS and the control is not shown. Every site colour token has a value for each theme. Product media keep the app's dark screen in both themes, inside a bezel that follows the theme; share images don't change.
+- **Motion (D-1874):** motion tokens (easings and named durations) in `site.css`; scroll-driven reveals in CSS (`animation-timeline: view()`) inside `@supports`, so content is simply there where the browser lacks it; staggered entrances; and hover and focus micro-interactions. Nothing moves under `prefers-reduced-motion: reduce`, and nothing that moves changes layout.
+- **Product scenes (D-1880):** animated scenes of the product in HTML, CSS and SVG, built from `packages/ui` tokens and the app's own words, showing only what the shipped build does. They are decorative (`aria-hidden`) with a text alternative beside them, pause when off screen or in a hidden tab, and under reduced motion show a still, complete frame.
 
 **Acceptance:**
 1. Lighthouse CI thresholds pass.
 2. No analytics or ads script loads before consent (Playwright network assertion).
 3. The pricing page values match `GET /config` prices (a build-time check).
+4. Every exported page carries the theme script inline in `<head>`, before the body. It sets `data-theme-choice` from storage before the body is parsed (unset or unreadable storage gives `system`), and the header's control (System, Light, Dark) switches the page at once, marks the choice, and keeps it across pages and reloads.
+5. Every site colour pair the site draws meets WCAG 2.2 AA in both themes, and axe finds nothing serious on any page in either theme, whether it comes from the OS or the control.
+6. Choosing Light while the OS is dark (and Dark while it's light) applies every site and app token of that theme and the matching `color-scheme`, docs and blog code blocks included.
+7. Nothing is stored until the visitor picks a theme, and then only `vibezeo-theme`.
+8. With reduced motion nothing on any page animates, and every product scene shows its complete final frame; elsewhere the reveals sit inside `@supports (animation-timeline: view())`.
+9. Each product scene is `aria-hidden` with a text alternative, uses only words from the app's catalog (`en.json`) or the site's own copy, pauses its animations off screen and in a hidden tab, and the home page keeps its Lighthouse budgets (performance ≥ 0.99, LCP ≤ 2.0 s, CLS ≤ 0.02).
+10. No first viewport at 1440×900, in either theme, shows more than three teal things (the primary action, the one highlighted phrase, the mark; DESIGN §4.2): eyebrows, inline links, ticks and list icons are neutral.
 
 #### F-WB-02 Docs (P1)
 **Behavior:**
@@ -3191,7 +3201,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
   - `/blog/tags/<tag>/`: the posts with that tag, newest first.
   - `/blog/feed.xml`: an Atom feed of every published post.
 - Drafts are built by `next dev` only, never exported, listed or fed.
-- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. A post page may carry two scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
+- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2) beyond the site's theme script (F-WB-01 AC4), no cookies, no storage beyond the visitor's theme choice, no third-party resources or embeds. A post page may carry two more scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
 - Subscribing is the Atom feed or an email to the contact address. No newsletter form.
 - Dates appear on blog pages only inside `<time datetime>` elements and as JSON-LD date fields; the site's no-year rule holds for everything else.
 - Linked from the header, the footer, the sitemap and `/llms.txt`.
@@ -3202,7 +3212,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 3. Each post page has one `h1`, the author, a `<time datetime>` for its date, a reading time, its tags linking to their tag pages, and links to its neighbours; a post without a cover renders without an image.
 4. Each tag page lists exactly the posts with that tag.
 5. `/blog/feed.xml` is valid Atom with one entry per published post, and every blog page links it with `<link rel="alternate" type="application/atom+xml">`.
-6. After `build:site`, the blog's index and tag pages carry no script, a post page carries only its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
+6. After `build:site`, the blog's index and tag pages carry no script but the theme script, a post page only that, its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
 7. The sitemap, `/llms.txt`, the header and the footer link the blog, and every blog URL answers at its trailing-slash form with no redirect.
 8. Lighthouse CI on `/blog/` and one post meets the site's budgets (each category ≥ 0.95, CLS ≤ 0.02).
 

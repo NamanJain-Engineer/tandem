@@ -45,7 +45,7 @@ export function Section({
       )}
     >
       {divider && <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />}
-      <div className={cx("container-site flex flex-col gap-14 lg:gap-16", width === "narrow" && "max-w-narrow")}>
+      <div className={cx("container-site flex flex-col gap-12", width === "narrow" && "max-w-narrow")}>
         <SectionHeader id={id} eyebrow={eyebrow} title={title} lead={lead} aside={aside} align={align} />
         {children}
       </div>
@@ -63,36 +63,36 @@ export function SectionHeader({
   align = "left",
 }: Pick<SectionProps, "id" | "eyebrow" | "title" | "lead" | "aside" | "align">) {
   const h2 = (
-    <h2 id={`${id}-title`} className="text-sheen max-w-[20em] text-display-lg text-fg">
+    <h2 id={`${id}-title`} className="reveal stagger-1 text-sheen max-w-[20em] text-display-lg text-fg">
       {title}
     </h2>
   );
   if (align === "split")
     return (
-      <header className="reveal grid gap-6 lg:grid-cols-12 lg:items-end lg:gap-6">
+      <header className="grid gap-6 lg:grid-cols-12 lg:items-end lg:gap-6">
         <div className="flex flex-col gap-5 lg:col-span-6">
-          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+          {eyebrow && <p className="reveal eyebrow">{eyebrow}</p>}
           {h2}
         </div>
         <div className="flex flex-col gap-5 lg:col-span-5 lg:col-start-8">
-          {lead && <p className="text-lead text-pretty text-fg-muted">{lead}</p>}
-          {aside && <div className="flex flex-wrap gap-x-6 gap-y-2">{aside}</div>}
+          {lead && <p className="reveal stagger-2 text-lead text-pretty text-fg-muted">{lead}</p>}
+          {aside && <div className="reveal stagger-3 flex flex-wrap gap-x-6 gap-y-2">{aside}</div>}
         </div>
       </header>
     );
   return (
     <header
       className={cx(
-        "reveal flex flex-col gap-5",
+        "flex flex-col gap-5",
         align === "center" ? "items-center text-center" : "lg:flex-row lg:items-end lg:justify-between lg:gap-12",
       )}
     >
       <div className={cx("flex flex-col gap-5", align === "center" && "items-center")}>
-        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+        {eyebrow && <p className="reveal eyebrow">{eyebrow}</p>}
         {h2}
-        {lead && <p className="max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
+        {lead && <p className="reveal stagger-2 max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
       </div>
-      {aside && <div className="flex shrink-0 flex-wrap gap-x-6 gap-y-2">{aside}</div>}
+      {aside && <div className="reveal stagger-3 flex shrink-0 flex-wrap gap-x-6 gap-y-2">{aside}</div>}
     </header>
   );
 }

@@ -34,11 +34,11 @@ export default function ChangelogPage() {
             {SITE.product} is built in milestones. Each one closes with its features tested end to end on the real
             app. The code this release is built from has {PROGRESS.automatedTests.toLocaleString("en-US")} automated
             tests and {PROGRESS.endToEndSuites.toLocaleString("en-US")} end-to-end suites. The latest release,{" "}
-            <a href={versionPath(RELEASE.version)} className="text-accent">
+            <a href={versionPath(RELEASE.version)} className="text-fg">
               {SITE.product} {RELEASE.version} for Linux
             </a>
             , is out:{" "}
-            <a href="/download/" className="text-accent">
+            <a href="/download/" className="text-fg">
               download it
             </a>
             .
@@ -68,7 +68,7 @@ export default function ChangelogPage() {
                     )}
                   />
                   <div className="flex flex-col items-start gap-2 lg:col-span-3 lg:sticky lg:top-24 lg:self-start">
-                    <a href={versionPath(r.version)} className="font-mono text-display-md tracking-[-0.04em] text-fg transition-colors duration-(--dur-base) hover:text-accent">
+                    <a href={versionPath(r.version)} className="font-mono text-display-md tracking-[-0.04em] text-fg transition-colors duration-(--dur-base) hover:text-fg-muted">
                       {SITE.product} {r.version}
                     </a>
                     <div className="flex flex-wrap gap-1.5">
@@ -117,7 +117,7 @@ export default function ChangelogPage() {
               className="reveal surface-raised flex scroll-mt-(--site-header-h) flex-col gap-4 p-6 lg:p-7"
             >
               <div className="flex flex-col gap-1">
-                <span className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-accent">{m.id}</span>
+                <span className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-fg-muted">{m.id}</span>
                 <h3 className="text-title text-fg">{m.title}</h3>
               </div>
               <ul className="flex flex-col gap-2 text-copy-sm text-fg-muted">

@@ -3,6 +3,7 @@ import { linuxFacts } from "../../../lib/home";
 import { PROGRESS } from "../../../lib/progress";
 import { RELEASE } from "../../../lib/release";
 import { Icon } from "../Icon";
+import { stagger } from "../../../lib/motion";
 
 /** The proof band (§6.4): figures from PROGRESS, never typed in. */
 export function StatsBand() {
@@ -21,7 +22,7 @@ export function StatsBand() {
           {stats.map((s, i) => (
             <div
               key={s.label}
-              className={`reveal flex flex-col gap-3 px-1 lg:px-8 ${i % 2 === 1 ? "border-l border-line pl-6" : ""} ${i > 0 ? "lg:border-l lg:border-line" : "lg:pl-0"}`}
+              className={`reveal ${stagger(i)} flex flex-col gap-3 px-1 lg:px-8 ${i % 2 === 1 ? "border-l border-line pl-6" : ""} ${i > 0 ? "lg:border-l lg:border-line" : "lg:pl-0"}`}
             >
               <dt className="order-2 max-w-[14rem] text-caption text-fg-muted">{s.label}</dt>
               <dd className="text-sheen order-1 font-mono text-stat font-medium tabular-nums text-fg">{s.value}</dd>
@@ -35,7 +36,7 @@ export function StatsBand() {
           </p>
           <p className="text-fg-muted">
             Built so far.{" "}
-            <a href="/changelog/" className="link-arrow inline-flex items-center gap-1 font-medium text-accent no-underline">
+            <a href="/changelog/" className="link-arrow inline-flex items-center gap-1 font-medium text-fg no-underline">
               See the changelog
               <Icon icon={ArrowRight} size={14} />
             </a>
