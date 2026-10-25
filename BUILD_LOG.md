@@ -2229,6 +2229,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Plans don't survive a restart, and a planning chat whose plan is gone gets its tasks server back after one (F-TK-07 keeps plans and withholds their chats again).
     - The check names the review's engine, not its account: the review takes its engine's roomiest account when it starts.
     - A plan's runs aren't followed in the plan yet (F-TK-07).
+  - **Gate:** passed on 4f2843de:
+    - 2,232 Rust tests (6 ignored) and 1,592 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 184, and protocol drift with 566 types: `PlanLaunch`, `PlanRun`, `PlanSkip` and `TaskRunBlock` added; `PlanState` gains `starting`, and `PlanView` gains `waiting`, `queued` and `skipped`.
+    - E2E: m18-tk06 1 of 1, m11-2-execute 4 of 4 (F-TK-04's runs and review), m18-rt06 2 of 2 (the Night Shift starts runs) and m18-tk05 3 of 3 (the tasks service). After the gate, E2E-M18-TK-06 finds the check's rows by their task rather than by the tracker's order (the spec only).
 
 - [x] F-TK-07 Follow a plan through, bold bet B3's second slice (D-2824 to D-2827). Built on the F-TK-06 review fixes, after merging release-0.10.0 and product-m0-m5 9efa06e3.
   - **Spec.** PRODUCT_SPEC F-TK-07 (P2, owned by M18; coverage 185, M18 owns 19).
