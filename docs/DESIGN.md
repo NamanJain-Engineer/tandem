@@ -237,7 +237,7 @@ Rules for both:
 
 - **Base unit 4 px** in both. Spacing values come from the scale (4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128, 144); no arbitrary values.
 - **App:** compact density (32 px controls, 28 px dense), fixed chrome heights (title bar 40, pane header 30, status bar 22), pane gutters 6 px. Empty states and first run step out of density: 24–32 px between groups, 20 px titles.
-- **Site:** a 1200 px container (`container-site`) with a 16 → 32 px gutter, 12 columns with 24 px gaps; sections 80 → 144 px apart (`--site-section-y`); a 38–44 rem measure for text; the stage at 1280 px for the product drawn 1:1.
+- **Site:** a 1200 px container (`container-site`) with a 16 → 32 px gutter, 12 columns with 24 px gaps; sections 64 → 96 px apart (`--site-section-y`; D-1897: 96 at desktop since the product scenes, with section headers 48 px above their content); a 38–44 rem measure for text; the stage at 1280 px for the product drawn 1:1.
 - **Rhythm:** related things sit closer than unrelated ones (label → control 6 px, field → field 16 px, group → group 24 px; site: eyebrow → h2 16 px, h2 → lead 20 px, lead → content 48–64 px).
 
 ### 4.5 Radii, elevation, borders and light
