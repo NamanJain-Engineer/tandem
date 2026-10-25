@@ -709,6 +709,7 @@ fn spawn_background(state: &AppState) {
     // F-CD-23: language servers stop after ten idle minutes.
     // Servers run in $DATA/lsp, not in the repository (D-2580).
     crate::services::lsp::set_work_dir(state.data.root().join("lsp"));
+    crate::services::lsp::set_data_dir(state.data.clone());
     tauri::async_runtime::spawn(crate::services::lsp::run_reaper());
     // F-WT-10: the intent radar follows checkpoints.
     tauri::async_runtime::spawn(crate::services::radar::run(
@@ -1413,10 +1414,11 @@ pub fn run() {
                 state.remote.shutdown();
                 // F-WT-07: a landing's check doesn't outlive the app.
                 services::merge_queue::shutdown();
-                // F-CD-23: language servers get shutdown and exit.
+                // F-CD-23: language servers get shutdown and exit, all at
+                // once, and their trees are killed if they hang.
                 tauri::async_runtime::block_on(async {
                     let stop = services::lsp::global().shutdown();
-                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), stop).await;
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(7), stop).await;
                 });
             }
         }),

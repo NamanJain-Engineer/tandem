@@ -288,14 +288,17 @@ async fn read_frame<R: AsyncRead + Unpin>(r: &mut BufReader<R>) -> Frame {
             Ok(_) => {}
         }
         // A header line that long, or that many, isn't LSP: give up.
-        headers += 1;
-        if !line.ends_with(b"\n") || headers > MAX_HEADERS {
+        if !line.ends_with(b"\n") {
             return Frame::End;
         }
         let text = String::from_utf8_lossy(&line);
         let text = text.trim_end();
         if text.is_empty() {
             break;
+        }
+        headers += 1;
+        if headers > MAX_HEADERS {
+            return Frame::End;
         }
         if let Some((name, value)) = text.split_once(':') {
             if name.trim().eq_ignore_ascii_case("content-length") {
@@ -400,6 +403,11 @@ async fn kill_tree(id: u32) {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW: no console flashes up on every stop.
+        cmd.creation_flags(0x0800_0000);
+    }
     if let Ok(mut child) = cmd.spawn() {
         let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
     }
@@ -579,9 +587,10 @@ impl Client {
         self.send(&json!({ "jsonrpc": "2.0", "method": method, "params": params }))
     }
 
-    async fn initialize(&self, root: &Path) -> Result<(), ClientError> {
+    async fn initialize(&self, root: &Path, options: Value) -> Result<(), ClientError> {
         let uri = file_uri(root);
         let params = json!({
+            "initializationOptions": options,
             "processId": std::process::id(),
             "rootUri": uri,
             "workspaceFolders": [{ "uri": uri, "name": root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() }],
@@ -678,18 +687,34 @@ impl Client {
                     .await;
                 let _ = self.notify("exit", Value::Null);
             }
-            let child = lock(&self.child).take();
-            if let Some(mut child) = child {
-                let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
-                let _ = child.start_kill();
-            }
         };
         let _ = tokio::time::timeout(STOP_LIMIT, polite).await;
-        if let Some(id) = self.tree {
-            kill_tree(id).await;
-        }
-        if let Some(mut child) = lock(&self.child).take() {
-            let _ = child.start_kill();
+        let child = lock(&self.child).take();
+        let exited = match child {
+            Some(mut child) => {
+                let gone = tokio::time::timeout(Duration::from_secs(1), child.wait())
+                    .await
+                    .is_ok();
+                if !gone {
+                    // The tree goes while the server still holds its pid, so
+                    // `taskkill /T` can't hit a process that reused it.
+                    if let Some(id) = self.tree {
+                        kill_tree(id).await;
+                    }
+                    let _ = child.start_kill();
+                    let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+                }
+                gone
+            }
+            None => true,
+        };
+        // On Unix the group outlives its leader while a child (cargo check,
+        // tsserver) runs; on Windows a pid that exited may be reused, so
+        // only the group kill above is safe.
+        if exited && cfg!(unix) {
+            if let Some(id) = self.tree {
+                kill_tree(id).await;
+            }
         }
         self.end("stopped".into());
     }
@@ -699,8 +724,15 @@ impl Client {
 pub fn file_uri(p: &Path) -> String {
     #[cfg(windows)]
     let s = {
-        // `C:\x` is `file:///C:/x`.
-        let s = p.to_string_lossy().replace('\\', "/");
+        // `C:\x` is `file:///C:/x`; a verbatim `\\?\C:\x` (canonicalize's)
+        // is the same file, and `\\?\UNC\host\share` is `\\host\share`.
+        let raw = p.to_string_lossy();
+        let plain = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{unc}")
+        } else {
+            raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
+        };
+        let s = plain.replace('\\', "/");
         if s.starts_with('/') {
             s
         } else {
@@ -964,6 +996,9 @@ pub struct Lsp {
     /// One start at a time per folder and server; others don't wait.
     gates: Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
     failures: Mutex<HashMap<Key, (Vec<Instant>, String)>>,
+    /// Folders being removed: no server starts there for a while (a hover
+    /// during a worktree's teardown would restart one).
+    closing: Mutex<HashMap<PathBuf, Instant>>,
     /// Starts so far (tests watch it).
     pub starts: AtomicU64,
 }
@@ -989,6 +1024,7 @@ impl Lsp {
             running: tokio::sync::Mutex::default(),
             gates: Mutex::default(),
             failures: Mutex::default(),
+            closing: Mutex::default(),
             starts: AtomicU64::new(0),
         }
     }
@@ -1012,17 +1048,30 @@ impl Lsp {
         let key: Key = (root.to_path_buf(), spec.program);
         let gate = lock(&self.gates).entry(key.clone()).or_default().clone();
         let _starting = gate.lock().await;
-        {
+        // A server that stopped working is taken out, and stopped (its tree
+        // killed) outside the lock, so it never runs on uncounted.
+        let dead = {
             let mut running = self.running.lock().await;
-            if let Some(r) = running.get(&key) {
-                if r.client.alive() {
+            match running.get(&key) {
+                Some(r) if r.client.alive() => {
                     *lock(&r.last) = Instant::now();
                     return Ok(r.client.clone());
                 }
-                let why = r.client.ended().unwrap_or_else(|| "it exited".into());
-                running.remove(&key);
-                self.failed(&key, why);
+                Some(_) => running.remove(&key),
+                None => None,
             }
+        };
+        if let Some(r) = dead {
+            let why = r.client.ended().unwrap_or_else(|| "it exited".into());
+            r.client.stop().await;
+            self.failed(&key, why);
+        }
+        // A folder being removed (or gone) gets no new server.
+        if !root.is_dir() || self.closing(root) {
+            return Err(NoServer {
+                state: LspState::None,
+                message: "This folder is going away".into(),
+            });
         }
         if !self.spawner.available(spec, login) {
             return Err(NoServer {
@@ -1057,7 +1106,7 @@ impl Lsp {
         };
         self.starts.fetch_add(1, Ordering::SeqCst);
         let client = Client::start(spawned);
-        if let Err(why) = client.initialize(root).await {
+        if let Err(why) = client.initialize(root, init_options(spec)).await {
             let why = client.ended().unwrap_or_else(|| why.to_string());
             client.stop().await;
             self.failed(&key, why.clone());
@@ -1103,6 +1152,11 @@ impl Lsp {
     /// Stops the servers for `root` and the folders inside it (the folder
     /// was removed).
     pub async fn forget(&self, root: &Path) -> usize {
+        {
+            let mut closing = lock(&self.closing);
+            closing.retain(|_, at| at.elapsed() < CLOSING);
+            closing.insert(root.to_path_buf(), Instant::now());
+        }
         let gone: Vec<Arc<Running>> = {
             let mut running = self.running.lock().await;
             let keys: Vec<Key> = running
@@ -1112,10 +1166,15 @@ impl Lsp {
                 .collect();
             keys.iter().filter_map(|k| running.remove(k)).collect()
         };
-        for r in &gone {
-            r.client.stop().await;
-        }
+        stop_all(gone.clone()).await;
         gone.len()
+    }
+
+    /// `root` is (inside) a folder being removed.
+    fn closing(&self, root: &Path) -> bool {
+        lock(&self.closing)
+            .iter()
+            .any(|(gone, at)| at.elapsed() < CLOSING && root.starts_with(gone))
     }
 
     /// Stops servers idle for `idle` or longer, and drops dead ones, which
@@ -1144,12 +1203,10 @@ impl Lsp {
         gone.len()
     }
 
-    /// Every server stops (the app quits).
+    /// Every server stops (the app quits), all at once.
     pub async fn shutdown(&self) {
         let all: Vec<Arc<Running>> = self.running.lock().await.drain().map(|(_, r)| r).collect();
-        for r in all {
-            r.client.stop().await;
-        }
+        stop_all(all).await;
     }
 
     /// The editor closed `rel`: its server reads the file from disk again.
@@ -1195,6 +1252,18 @@ impl Lsp {
     pub async fn count(&self) -> usize {
         self.running.lock().await.len()
     }
+}
+
+/// A removed folder gets no new server for this long.
+const CLOSING: Duration = Duration::from_secs(30);
+
+/// Stops servers concurrently, so one slow stop doesn't hold up the rest.
+async fn stop_all(servers: Vec<Arc<Running>>) {
+    let mut set = tokio::task::JoinSet::new();
+    for r in servers {
+        set.spawn(async move { r.client.stop().await });
+    }
+    while set.join_next().await.is_some() {}
 }
 
 /// Stops idle servers every minute, for as long as the app runs.
@@ -1258,7 +1327,60 @@ pub fn trust(data: &DataDir, main: &Path) -> Result<(), IpcError> {
         .map_err(|e| IpcError::new(ErrorCode::Io, e.to_string()).with_stage("lsp"))
 }
 
+/// Forgets the trust of `root` and the folders inside it: a removed
+/// worktree's (slugs are reused, so the next one at that path asks again).
+pub fn untrust(data: &DataDir, root: &Path) {
+    let _guard = lock(&TRUST_LOCK);
+    let key = trust_key(root);
+    let mut all = read_trust(data);
+    let before = all.len();
+    all.retain(|k| !Path::new(k).starts_with(&key));
+    if all.len() == before {
+        return;
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(&all) {
+        if let Err(e) =
+            tandem_core::atomic::atomic_write(&data.root().join(TRUST_FILE), &bytes, Some(0o600))
+        {
+            tracing::warn!(code = "lsp.untrust_failed", error = %e, "trust not forgotten");
+        }
+    }
+}
+
+/// The app's data folder, for [`untrust_removed`].
+static DATA: std::sync::OnceLock<DataDir> = std::sync::OnceLock::new();
+
+/// Sets the data folder, once at startup.
+pub fn set_data_dir(data: DataDir) {
+    let _ = DATA.set(data);
+}
+
+/// A removed worktree: its servers stop, and its own trust goes.
+pub async fn forget_worktree(root: &Path) {
+    global().forget(root).await;
+    if let Some(data) = DATA.get() {
+        untrust(data, root);
+    }
+}
+
 /// What `lsp_sync` says for an installed server that waits for trust.
+/// What a server is told at `initialize`. typescript-language-server's
+/// automatic type acquisition would npm-install `types-registry` and
+/// `@types/*` the project never declared: off (nothing leaves the machine
+/// without an opt-in).
+pub fn init_options(spec: &ServerSpec) -> Value {
+    if spec.program == "typescript-language-server" {
+        json!({ "disableAutomaticTypingAcquisition": true })
+    } else {
+        Value::Null
+    }
+}
+
+/// What `lsp_sync` says for a server that isn't installed.
+pub fn missing_doc(spec: &ServerSpec) -> LspDocument {
+    no_server_doc(Some(spec), None)
+}
+
 /// A sandboxed worktree is trusted on its own (D-2580).
 pub fn untrusted_doc(spec: &ServerSpec, sandboxed: bool) -> LspDocument {
     let what = if sandboxed {
@@ -1341,8 +1463,16 @@ impl Lsp {
         // The server's diagnostics for new text, if they come quickly.
         if sent {
             let wait = async {
-                while client.publishes(&uri) == before && client.alive() {
-                    client.published.notified().await;
+                loop {
+                    // Registered before the check, so a publish between the
+                    // two isn't missed.
+                    let notified = client.published.notified();
+                    tokio::pin!(notified);
+                    notified.as_mut().enable();
+                    if client.publishes(&uri) != before || !client.alive() {
+                        break;
+                    }
+                    notified.await;
                 }
             };
             let _ = tokio::time::timeout(DIAGNOSTICS_WAIT, wait).await;
@@ -1737,6 +1867,71 @@ mod tests {
         client.stop().await;
         assert!(started.elapsed() <= STOP_LIMIT + Duration::from_secs(1));
         assert!(!client.alive());
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_typescript_never_downloads_types_on_its_own() {
+        let ts = spec_for("a.ts").expect("ts");
+        assert_eq!(
+            init_options(ts),
+            json!({ "disableAutomaticTypingAcquisition": true })
+        );
+        assert_eq!(init_options(spec_for("a.py").expect("py")), Value::Null);
+        // initialize carries it.
+        let (client, server) = raw_client();
+        let (sr, mut sw) = tokio::io::split(server);
+        let asked = tokio::spawn(async move {
+            let mut r = BufReader::new(sr);
+            let Frame::Message(m) = read_frame(&mut r).await else {
+                panic!("no initialize");
+            };
+            let reply =
+                json!({ "jsonrpc": "2.0", "id": m["id"], "result": { "capabilities": {} } });
+            sw.write_all(&frame(&reply)).await.expect("reply");
+            m
+        });
+        client
+            .initialize(Path::new("/w"), init_options(ts))
+            .await
+            .expect("initialized");
+        let m = asked.await.expect("asked");
+        assert_eq!(
+            m["params"]["initializationOptions"]["disableAutomaticTypingAcquisition"],
+            json!(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_dead_server_is_stopped_and_counted_and_a_folder_going_away_gets_none() {
+        let (_t, root) = folder();
+        let lsp = Lsp::new(Box::new(CrashingSpawner));
+        let spec = spec_for("main.py").expect("spec");
+        let first = lsp.client(&root, spec, &login()).await.expect("starts");
+        let wait = async {
+            while first.alive() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(5), wait)
+            .await
+            .expect("it exits");
+        // The next request finds it dead: it's stopped, counted, replaced.
+        let second = lsp.client(&root, spec, &login()).await.expect("again");
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(first.ended().as_deref(), Some("it exited"));
+        assert_eq!(lsp.starts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            lock(&lsp.failures).values().next().map(|f| f.0.len()),
+            Some(1)
+        );
+        // A folder being removed gets no new server.
+        assert_eq!(lsp.forget(&root).await, 1);
+        let why = lsp
+            .client(&root, spec, &login())
+            .await
+            .err()
+            .expect("closing");
+        assert_eq!(why.state, LspState::None);
     }
 
     /// Servers that exit as soon as they start.

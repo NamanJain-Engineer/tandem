@@ -737,12 +737,11 @@ pub async fn remove_with_teardown(
         }
     }
     stop_panes(store, terms, &lane.id).await?;
-    // F-CD-23: its language servers stop before the folder goes (open
+    // F-CD-23: its language servers stop, and its own trust goes, before
+    // the folder does (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
-    crate::services::lsp::global()
-        .forget(&crate::services::files::local_root(&lane))
-        .await;
+    crate::services::lsp::forget_worktree(&crate::services::files::local_root(&lane)).await;
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
         // F-WT-06: the teardown sees the worktree's variables.
@@ -808,12 +807,11 @@ async fn remove_multi(
         }
     }
     stop_panes(store, terms, &lane.id).await?;
-    // F-CD-23: its language servers stop before the folder goes (open
+    // F-CD-23: its language servers stop, and its own trust goes, before
+    // the folder does (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
-    crate::services::lsp::global()
-        .forget(&crate::services::files::local_root(lane))
-        .await;
+    crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
     let forced = force.is_some();
     let mut each = Vec::new();
     for r in repos {

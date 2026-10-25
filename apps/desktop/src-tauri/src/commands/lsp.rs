@@ -42,15 +42,23 @@ struct Target {
 }
 
 fn target(root: PathBuf, path: String) -> Result<Target, IpcError> {
-    // Checked whole first, so the worktree's name is a plain name.
+    // Checked whole first, so every component is a plain name.
     lsp::inside(&root, &path)?;
-    let parts: Vec<&str> = path.splitn(4, '/').collect();
-    if let [".tandem", "worktrees", slug, rest] = parts.as_slice() {
-        if !slug.is_empty() && !rest.is_empty() {
+    let parts: Vec<&std::ffi::OsStr> = Path::new(&path)
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(n) => Some(n),
+            _ => None,
+        })
+        .collect();
+    if let [tandem, worktrees, slug, rest @ ..] = parts.as_slice() {
+        if *tandem == ".tandem" && *worktrees == "worktrees" && !rest.is_empty() {
+            let slug = slug.to_string_lossy();
+            let rest: PathBuf = rest.iter().collect();
             return Ok(Target {
-                root: root.join(".tandem").join("worktrees").join(slug),
+                root: root.join(".tandem").join("worktrees").join(slug.as_ref()),
                 prefix: format!(".tandem/worktrees/{slug}/"),
-                path: (*rest).to_string(),
+                path: rest.to_string_lossy().replace('\\', "/"),
             });
         }
     }
@@ -73,31 +81,64 @@ fn back(t: &Target, mut found: Vec<LspLocation>) -> Vec<LspLocation> {
 /// Whose trust a folder's servers need (D-2580).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TrustScope {
-    /// The repository's main checkout, or the worktree itself.
+    /// The repository's main checkout (or a multi-repo folder), or the
+    /// worktree itself.
     key: PathBuf,
     /// A worktree whose agents run in the F-TL-11 sandbox: it doesn't
     /// inherit its repository's trust, since what the agent wrote there
     /// would run outside the sandbox.
     sandboxed: bool,
+    /// The sandbox is on: the repository's trust doesn't reach its
+    /// worktrees.
+    sandbox_on: bool,
 }
 
-/// The scope for a folder: its repository's (a worktree shares it), or its
-/// own when agents run sandboxed and it's a worktree.
-fn scope_for(root: &Path, sandbox_on: bool) -> TrustScope {
-    let main = crate::services::worktree_setup::main_root(&root.to_string_lossy())
-        .unwrap_or_else(|_| root.to_path_buf());
-    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    let is_worktree = canon(&main) != canon(root);
-    if sandbox_on && is_worktree {
-        TrustScope {
-            key: root.to_path_buf(),
-            sandboxed: true,
+/// The worktree folder `root` is or is inside, by Vibezeo's layout
+/// (`<owner>/.tandem/worktrees/<slug>`), with its owner folder.
+fn worktree_of(root: &Path) -> Option<(PathBuf, PathBuf)> {
+    let comps: Vec<std::path::Component> = root.components().collect();
+    for i in 0..comps.len().saturating_sub(2) {
+        let is =
+            |j: usize, name: &str| matches!(comps[j], std::path::Component::Normal(n) if n == name);
+        if is(i, ".tandem") && is(i + 1, "worktrees") {
+            let owner: PathBuf = comps[..i].iter().collect();
+            let lane: PathBuf = comps[..i + 3].iter().collect();
+            return Some((owner, lane));
         }
-    } else {
-        TrustScope {
+    }
+    None
+}
+
+/// The scope for a folder: its repository's (a worktree shares it, a
+/// multi-repo worktree its folder's), or its own when agents run sandboxed
+/// and it's a worktree.
+fn scope_for(root: &Path, sandbox_on: bool) -> TrustScope {
+    let main_of = |p: &Path| {
+        crate::services::worktree_setup::main_root(&p.to_string_lossy())
+            .unwrap_or_else(|_| p.to_path_buf())
+    };
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let (main, lane) = match worktree_of(root) {
+        // Vibezeo's worktree, single- or multi-repo: its owner's trust.
+        Some((owner, lane)) => (main_of(&owner), Some(lane)),
+        None => {
+            let main = main_of(root);
+            // A git worktree elsewhere.
+            let lane = (canon(&main) != canon(root)).then(|| root.to_path_buf());
+            (main, lane)
+        }
+    };
+    match lane {
+        Some(lane) if sandbox_on => TrustScope {
+            key: lane,
+            sandboxed: true,
+            sandbox_on,
+        },
+        _ => TrustScope {
             key: main,
             sandboxed: false,
-        }
+            sandbox_on,
+        },
     }
 }
 
@@ -113,16 +154,29 @@ async fn scope(app: &AppState, root: &Path) -> TrustScope {
     scope_for(root, sandbox_on)
 }
 
-/// The installed server that waits for trust, or `None` when the request
-/// may go ahead. A server that isn't installed says so instead.
-fn waits_for_trust(
-    data: &DataDir,
-    scope: &TrustScope,
-    path: &str,
-    available: impl Fn(&ServerSpec) -> bool,
-) -> Option<&'static ServerSpec> {
-    let spec = lsp::spec_for(path)?;
-    (available(spec) && !lsp::is_trusted(data, &scope.key)).then_some(spec)
+/// Whether a file's server may start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gate {
+    /// No server for the file, or trusted: ask.
+    Go,
+    /// Not trusted (whether or not the server is installed, so a server
+    /// installed meanwhile never starts untrusted).
+    Untrusted(&'static ServerSpec),
+    /// Not trusted and not installed: say what to install.
+    Missing(&'static ServerSpec),
+}
+
+fn gate(data: &DataDir, scope: &TrustScope, path: &str, installed: bool) -> Gate {
+    let Some(spec) = lsp::spec_for(path) else {
+        return Gate::Go;
+    };
+    if lsp::is_trusted(data, &scope.key) {
+        Gate::Go
+    } else if installed {
+        Gate::Untrusted(spec)
+    } else {
+        Gate::Missing(spec)
+    }
 }
 
 /// Where a request goes.
@@ -161,6 +215,7 @@ fn quiet_doc(message: &str) -> LspDocument {
 enum Ready {
     Go(Target, std::sync::Arc<tandem_pty::env::LoginEnv>),
     Untrusted(&'static ServerSpec, bool),
+    Missing(&'static ServerSpec),
     Elsewhere(Where),
 }
 
@@ -171,12 +226,22 @@ async fn ready(app: &AppState, context: &FileContext, path: String) -> Result<Re
     };
     let login = app.terminals.login_env().await;
     let scope = scope(app, &t.root).await;
-    if let Some(spec) = waits_for_trust(&app.data, &scope, &t.path, |s| {
-        lsp::global().available(s, &login)
-    }) {
-        return Ok(Ready::Untrusted(spec, scope.sandboxed));
-    }
-    Ok(Ready::Go(t, login))
+    // The probe (`rust-analyzer --version`) blocks: off the runtime. It's
+    // cached, so the server's own start finds the answer.
+    let installed = match lsp::spec_for(&t.path) {
+        Some(spec) => {
+            let login = login.clone();
+            tokio::task::spawn_blocking(move || lsp::global().available(spec, &login))
+                .await
+                .unwrap_or(false)
+        }
+        None => false,
+    };
+    Ok(match gate(&app.data, &scope, &t.path, installed) {
+        Gate::Go => Ready::Go(t, login),
+        Gate::Untrusted(spec) => Ready::Untrusted(spec, scope.sandboxed),
+        Gate::Missing(spec) => Ready::Missing(spec),
+    })
 }
 
 #[tauri::command]
@@ -189,6 +254,7 @@ pub async fn lsp_sync(
     match ready(&app, &context, path).await? {
         Ready::Go(t, login) => lsp::global().sync(&t.root, &t.path, &text, &login).await,
         Ready::Untrusted(spec, sandboxed) => Ok(lsp::untrusted_doc(spec, sandboxed)),
+        Ready::Missing(spec) => Ok(lsp::missing_doc(spec)),
         Ready::Elsewhere(Where::Outside) => Ok(quiet_doc(OUTSIDE)),
         Ready::Elsewhere(_) => Ok(quiet_doc(REMOTE)),
     }
@@ -335,8 +401,13 @@ pub async fn lsp_trust(
             format!("Trust {name} for language servers?"),
             format!(
                 "rust-analyzer, typescript-language-server, pyright and gopls can run {name}'s \
-                 build scripts, macros, plugins or Python interpreter when they load it, and its \
-                 worktrees' too. Trust it only if you trust its code."
+                 build scripts, macros, plugins or Python interpreter when they load it, {}. \
+                 Trust it only if you trust its code.",
+                if scope.sandbox_on {
+                    "but not its worktrees': with agents sandboxed, each worktree asks on its own"
+                } else {
+                    "and its worktrees' too"
+                }
             ),
         )
     };
@@ -419,19 +490,23 @@ mod tests {
             "tandem/tidy",
             ".tandem/worktrees/tidy",
         ]);
-        let installed = |_: &ServerSpec| true;
-        let waits = |p: &str, sandbox: bool, avail: &dyn Fn(&ServerSpec) -> bool| {
-            let t = target(repo.clone(), p.into()).expect("target");
-            waits_for_trust(&data, &scope_for(&t.root, sandbox), &t.path, avail).is_some()
+        let gate_at = |root: &Path, p: &str, sandbox: bool, installed: bool| {
+            let t = target(root.to_path_buf(), p.into()).expect("target");
+            gate(&data, &scope_for(&t.root, sandbox), &t.path, installed)
         };
+        let waits =
+            |p: &str, sandbox: bool| matches!(gate_at(&repo, p, sandbox, true), Gate::Untrusted(_));
         // Every server waits, pyright too.
         for p in ["src/main.rs", "web/app.ts", "cmd/main.go", "main.py"] {
-            assert!(waits(p, false, &installed), "{p}");
+            assert!(waits(p, false), "{p}");
         }
-        // An uninstalled server says it's missing instead; other files have
-        // no server.
-        assert!(!waits("src/main.rs", false, &|_| false));
-        assert!(!waits("notes.md", false, &installed));
+        // Untrusted and not installed: it says what to install, and never
+        // starts (even if it's installed by the next request).
+        assert!(matches!(
+            gate_at(&repo, "src/main.rs", false, false),
+            Gate::Missing(_)
+        ));
+        assert_eq!(gate_at(&repo, "notes.md", false, true), Gate::Go);
         let doc = lsp::untrusted_doc(lsp::spec_for("a.rs").expect("spec"), false);
         assert_eq!(doc.state, LspState::Untrusted);
         assert_eq!(
@@ -440,34 +515,72 @@ mod tests {
         );
         // Trusting the repository lets its servers start, its worktrees' too.
         lsp::trust(&data, &repo).expect("trust");
-        assert!(!waits("src/main.rs", false, &installed));
-        assert!(!waits(
-            ".tandem/worktrees/tidy/src/main.rs",
-            false,
-            &installed
-        ));
+        assert!(!waits("src/main.rs", false));
+        assert!(!waits(".tandem/worktrees/tidy/src/main.rs", false));
         let lane = repo.join(".tandem/worktrees/tidy");
-        assert!(
-            waits_for_trust(&data, &scope_for(&lane, false), "src/main.rs", installed).is_none()
-        );
+        assert_eq!(gate_at(&lane, "src/main.rs", false, true), Gate::Go);
         // Another repository isn't covered.
         let other = tmp.path().join("other");
         std::fs::create_dir_all(&other).expect("mkdir");
-        assert!(
-            waits_for_trust(&data, &scope_for(&other, false), "src/main.rs", installed).is_some()
-        );
+        assert!(matches!(
+            gate_at(&other, "src/main.rs", false, true),
+            Gate::Untrusted(_)
+        ));
         // With sandboxed agents, a worktree needs its own trust, and says
         // so; the repository itself keeps its trust.
         let sandboxed = scope_for(&lane, true);
         assert!(sandboxed.sandboxed);
-        assert!(waits_for_trust(&data, &sandboxed, "src/main.rs", installed).is_some());
-        assert!(!waits("src/main.rs", true, &installed));
+        assert!(matches!(
+            gate_at(&lane, "src/main.rs", true, true),
+            Gate::Untrusted(_)
+        ));
+        assert!(!waits("src/main.rs", true));
         let doc = lsp::untrusted_doc(lsp::spec_for("a.rs").expect("spec"), true);
         assert_eq!(
             doc.message.as_deref(),
             Some("rust-analyzer is off until you trust this worktree")
         );
         lsp::trust(&data, &lane).expect("trust the worktree");
-        assert!(waits_for_trust(&data, &sandboxed, "src/main.rs", installed).is_none());
+        assert_eq!(gate_at(&lane, "src/main.rs", true, true), Gate::Go);
+        // Discarding the worktree forgets its trust: the next worktree at
+        // that path asks again.
+        lsp::untrust(&data, &lane);
+        assert!(matches!(
+            gate_at(&lane, "src/main.rs", true, true),
+            Gate::Untrusted(_)
+        ));
+        assert_eq!(
+            gate_at(&repo, "src/main.rs", true, true),
+            Gate::Go,
+            "the repository keeps its own"
+        );
+    }
+
+    #[test]
+    fn f_cd_23_a_multi_repo_worktree_is_a_worktree_for_trust() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().join("data")).expect("data dir");
+        // A folder of repositories (not itself one), and its worktree.
+        let folder = std::fs::canonicalize(tmp.path())
+            .expect("canonical")
+            .join("shop");
+        let lane = folder.join(".tandem/worktrees/tidy");
+        std::fs::create_dir_all(lane.join("api")).expect("mkdir");
+        // Without the sandbox, the folder's trust covers it.
+        let plain = scope_for(&lane, false);
+        assert_eq!(plain.key, folder);
+        assert!(!plain.sandboxed);
+        lsp::trust(&data, &folder).expect("trust");
+        assert_eq!(gate(&data, &plain, "api/main.rs", true), Gate::Go);
+        // With it, the worktree asks on its own, with the warning.
+        let sandboxed = scope_for(&lane, true);
+        assert_eq!(sandboxed.key, lane);
+        assert!(sandboxed.sandboxed);
+        assert!(matches!(
+            gate(&data, &sandboxed, "api/main.rs", true),
+            Gate::Untrusted(_)
+        ));
+        // A repository's folder inside it counts as the same worktree.
+        assert_eq!(scope_for(&lane.join("api"), true).key, lane);
     }
 }
