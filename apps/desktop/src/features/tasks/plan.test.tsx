@@ -427,7 +427,27 @@ describe("Follow a plan through (F-TK-07)", () => {
   it("F-TK-07.2 a run's row opens its task", async () => {
     backend({
       task_attempts_list: () => [run("TAN-2", "running", 3)],
-      task_get: () => ({ issue: null, comments: [], history: [] }),
+      task_get: () => ({
+        issue: {
+          id: "TAN-2",
+          number: 2,
+          revision: 1,
+          title: "Page",
+          description: "",
+          status: "in_progress",
+          priority: 0,
+          labels: [],
+          project: "prj_1",
+          assignee: null,
+          created_at: 1,
+          updated_at: 1,
+          archived: false,
+          result: null,
+          attempts: [],
+        },
+        comments: [],
+        history: [],
+      }),
     });
     usePlans.setState({
       plans: { pl_1: plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] }) },
@@ -438,6 +458,8 @@ describe("Follow a plan through (F-TK-07)", () => {
     fireEvent.click(screen.getAllByTestId("plan-run-open")[1]!);
     await waitFor(() => expect(useTasks.getState().selectedId).toBe("TAN-2"));
     expect(usePlans.getState().openId).toBeNull();
+    // The task opens.
+    expect(((await screen.findByTestId("task-title")) as HTMLInputElement).value).toBe("Page");
   });
 
   it("F-TK-07.4 Land N approved opens Land worktrees with the approved worktrees in plan order", async () => {
