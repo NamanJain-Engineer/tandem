@@ -2009,6 +2009,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - The plan stays in the Tasks page's header until you remove it.
 - **Plans are kept.** Vibezeo keeps plans in its data folder, so they survive a restart.
   - A plan whose Lead was still planning when Vibezeo closed is read again if Lead's turn had finished. Otherwise it fails with "Vibezeo closed while Lead was planning", and Plan again offers the same goal.
+  - A plan that was starting its runs when Vibezeo closed offers Execute all again, keeping the runs it had queued.
+  - Lead's planning thread still gets no tasks tools after a restart.
   - **Remove plan** forgets a plan. Its tasks, their runs and Lead's thread stay.
 - **Land approved.** When at least one task's latest run is in review with Approve, the plan offers **Land N approved…**.
   - It opens Land worktrees (F-WT-07) for the plan's repository with exactly those worktrees chosen, in the plan's order.
