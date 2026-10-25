@@ -1917,6 +1917,19 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - **scenes.spec** checks that the hero's effects are `running`, not just "not only paused" (which an empty list also passed).
   - **Nits:** in the interim dark block, `--tn-text-disabled`, `--tn-status-idle` (and its soft fill), `--tn-scrollbar`, `--tn-kbd-bg` and `--tn-ring` move to ink, and so do `--site-stage-fg` and `--site-stage-muted`. Scene effects run on `screen` only, not in print. Under reduced motion the header's current page keeps a still bar, so it isn't marked by colour alone. Other tidying: WorkspaceScene's comment no longer mentions a plan, Hero's duplicate `lg:pt-10` is gone, `jsdom` is in alphabetical order in package.json, and the theme.test fixtures use the ink theme colours.
 
+- D-1885: the home page's cut to ≤ 8,000 px at 1440 (D-1897, DESIGN §5.1.4). It was 10,089 px on this branch.
+  - **The Land scene** plays on /changelog/0.9.0/, the release that shipped Land worktrees. That page loads `/demo/embed.js` (allowlisted there) and the scenes' styles. With the player blocked it shows the final frame, as on the home page.
+  - **The four principles** move to /about/ ("What Vibezeo holds to"). "How we work" drops its own "Your machine, your accounts", which the principles now cover.
+  - **The engines section** loses the 0.7.2 launch-grid capture and runs the grid full width, seven to a row with the plain terminal as the fourteenth cell (two rows). The capture stays in `public/screens` because the app's capture script still makes it, but no page shows it and `SCREENS` drops it.
+  - **Spacing:** the design lead's "144 → 112" was already in place (`--site-section-y` peaked at 112 px since D-1881), so that step saved nothing. The three moves left 8,680 px. The rest:
+    - `--site-section-y` peaks at 96 px, inside DESIGN §4.4's 96–144 px.
+    - A section's header sits 48 px above its content (was 64).
+    - The scene rows are 96 px apart (was 128).
+    - The closing band uses the section padding (was × 1.15).
+    - The capability index is one line per capability: its name and icon, linking to its docs. The first sentences repeated the docs and stood eight lines tall in four columns.
+  - **Result:** 7,986 px at 1440. A Playwright test holds it at or under 8,000.
+  - **The demo still** is retaken from the 0.10.0 demo at 2×. It differs from the 0.7.2 still only in its version label: the coach card is what 0.10.0's demo still shows, and it changes when app-ui's first-run work reaches the demo.
+
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -1968,6 +1981,10 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
 - The review fixes (D-1884), on 61818a15. Tests first: theme.test (the mark checked at `DOMContentLoaded`, or at once once the page is parsed), scenes.spec (the hero `running` at 1366×768, 1280×800, 1536×864, 1100×768, 1366×650, 1536×740 and 1280×700), scenes.test (no literal colours; effects under `screen`).
   - Checks: web vitest 136/136, ui styles 26/26, `build:site` (52 pages), site Playwright 49/49, design-shots 56 captures all ok (teal 0–2).
   - Lighthouse CI, every assertion passing in both themes. Medians (perf / LCP, light then dark): `/` 0.99 / 1.83 s and 0.99 / 1.89 s; `/about/`, `/blog/` and `/docs/` 1.00 / 1.36–1.52 s; `/changelog/` 1.00 / 1.36 s and 1.51 s; `/download/` 1.00 / 1.73 s; the intro post 0.99 / 1.81 s and 1.00 / 1.66 s. Blocking time 0 ms, CLS at most 0.001.
+- The home cut (D-1885). Tests first: site-quality.spec (home ≤ 8,000 px at 1440; the Land scene live on /changelog/0.9.0/), scenes.test (no Land scene on home; on 0.9.0's page with its player; nothing on 0.8.0's), site.test (the principles on /about/ and not on home; no launch-grid capture; the player allowlisted on 0.9.0's page only), home.test (the capability index is names that link to the docs).
+  - Checks: web vitest 136/136, `build:site` (52 pages), site Playwright 51/51, design-shots on eight pages (64 captures, all ok, teal 0–2).
+  - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.89 s; the other six URLs 1.00 / 1.36–1.73 s; blocking time 0 ms, CLS at most 0.001.
+  - The gate: passed (TypeScript 1,607 tests: web 136, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

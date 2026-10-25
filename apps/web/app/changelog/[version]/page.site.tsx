@@ -3,11 +3,16 @@ import { Badge } from "@tandem/ui/components/Badge";
 import { CATEGORIES } from "@tandem/protocol/changelog";
 import { ArrowLeft, ArrowRight, Download } from "lucide-react";
 import type { Metadata } from "next";
+// The Land scene's styles (D-1880, D-1885).
+import "../../../components/site/scenes/scenes.css";
+import { Scene } from "../../../components/site/scenes/Scene";
+import { LAND_CAPTION, LandScene, landSceneText } from "../../../components/site/scenes/LandScene";
 import { Icon } from "../../../components/site/Icon";
 import { InlineMarkdown } from "../../../components/site/InlineMarkdown";
 import { SiteFrame } from "../../../components/site/SiteFrame";
 import { PLATFORM_LABEL, RELEASES, versionPath } from "../../../lib/changelog";
 import { RELEASE } from "../../../lib/release";
+import { LANDS } from "../../../lib/scenes";
 import { SITE } from "../../../lib/site";
 
 type Params = { params: Promise<{ version: string }> };
@@ -33,6 +38,9 @@ export default async function VersionPage({ params }: Params) {
   const older = RELEASES[at + 1];
   const platforms = [...new Set(release.entries.flatMap((e) => e.platforms))];
   const latest = release.version === RELEASE.version;
+  // 0.9.0 brought Land worktrees: its page plays the scene the home page
+  // gave up for length (D-1897, D-1885).
+  const scene = release.version === "0.9.0" && LANDS;
   return (
     <SiteFrame current="/changelog/">
       <article className="relative isolate">
@@ -85,6 +93,11 @@ export default async function VersionPage({ params }: Params) {
               {p}
             </p>
           ))}
+          {scene && (
+            <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} className="rise mt-4">
+              <LandScene />
+            </Scene>
+          )}
           {CATEGORIES.map((c) => {
             const entries = release.entries.filter((e) => e.category === c);
             if (!entries.length) return null;
@@ -117,6 +130,7 @@ export default async function VersionPage({ params }: Params) {
         </div>
       </div>
       </article>
+      {scene && <script src="/demo/embed.js" defer />}
     </SiteFrame>
   );
 }

@@ -1,13 +1,13 @@
 import { ArrowRight } from "lucide-react";
-import { CAPABILITIES, MORE, feature, firstSentence } from "../../../lib/home";
+import { CAPABILITIES, MORE } from "../../../lib/home";
 import { Icon } from "../Icon";
 import { iconFor } from "../icons";
 import { Section } from "../Section";
 import { stagger } from "../../../lib/motion";
 
-/** #capabilities (§6.9, D-1881): the eight capabilities people use most,
- * one line each, then everything else as a line of links; the full copy is
- * in the docs. */
+/** #capabilities (§6.9, D-1881, D-1885): the eight capabilities people use
+ * most, one line each (the name, linking to its docs), then everything else
+ * as a line of links; what each does is in the docs. */
 export function Capabilities() {
   return (
     <Section id="capabilities" eyebrow="Everything in the app" title="Built in, working today" divider>
@@ -16,23 +16,18 @@ export function Capabilities() {
           <li key={c.title} className={`reveal ${stagger(i)}`}>
             <a
               href={c.docs}
-              className="group -mx-3 flex h-full gap-4 rounded-[10px] p-3 transition-colors duration-(--dur-base) hover:bg-(--site-glass)"
+              className="group -mx-3 flex h-full items-center gap-4 rounded-[10px] p-3 transition-colors duration-(--dur-base) hover:bg-(--site-glass)"
             >
-              <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] text-fg-muted shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] text-fg-muted shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
                 <Icon icon={iconFor(c.icon)} size={18} />
               </span>
-              <span className="flex flex-col gap-1">
-                <span className="flex items-center gap-1.5 text-copy font-semibold text-fg">
-                  {c.title}
-                  <Icon
-                    icon={ArrowRight}
-                    size={14}
-                    className="text-fg-subtle opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 group-focus-visible:opacity-100"
-                  />
-                </span>
-                <span className="text-copy-sm text-fg-muted">
-                  {firstSentence(feature(c.title).body)}
-                </span>
+              <span className="flex items-center gap-1.5 text-copy font-semibold text-fg">
+                {c.title}
+                <Icon
+                  icon={ArrowRight}
+                  size={14}
+                  className="text-fg-subtle opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 group-focus-visible:opacity-100"
+                />
               </span>
             </a>
           </li>

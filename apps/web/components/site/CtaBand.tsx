@@ -28,7 +28,7 @@ export function CtaBand({
         turn
         className="absolute left-1/2 top-1/2 -z-10 h-[52rem] w-[82rem] max-w-none -translate-x-1/2 -translate-y-[38%] opacity-90 [mask-image:radial-gradient(closest-side,black_45%,transparent)]"
       />
-      <div className="container-site flex flex-col items-center gap-7 py-[calc(var(--site-section-y)*1.15)] text-center">
+      <div className="container-site flex flex-col items-center gap-7 py-(--site-section-y) text-center">
         <span className="reveal inline-flex size-16 items-center justify-center rounded-2xl surface">
           <Mark size={34} />
         </span>

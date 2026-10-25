@@ -11,6 +11,8 @@ import { SCENE_ROWS } from "../lib/home";
 import { RELEASE } from "../lib/release";
 import { LANDS, SAMPLE, SCENE_BUILD, atLeast, t } from "../lib/scenes";
 import HomePage from "./page.site";
+import VersionPage from "./changelog/[version]/page.site";
+import { allowedScripts } from "../scripts/script-allowlist.mjs";
 
 // The animated product scenes (F-WB-01 AC9, D-1880, D-1881).
 
@@ -50,10 +52,19 @@ describe("F-WB-01 AC9 product scenes", () => {
       expect(w, s).toContain(s);
   });
 
-  it("F-WB-01 AC9 D-128 the 0.9.0 scenes and the intent radar show only once that release is out", () => {
+  it("F-WB-01 AC9 D-128 the 0.9.0 scenes and the intent radar show only once that release is out", async () => {
     expect(LANDS).toBe(atLeast(RELEASE.version, "0.9.0"));
-    expect(home.includes('data-scene="land"')).toBe(LANDS);
     expect(home.includes(t("radar.notice.warn"))).toBe(LANDS);
+    // The Land scene plays on 0.9.0's changelog page, not the home page
+    // (D-1897, D-1885), with the scene player allowed there.
+    expect(home).not.toContain('data-scene="land"');
+    const v090 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.9.0" }) }));
+    expect(v090.includes('data-scene="land"')).toBe(LANDS);
+    expect(v090.includes('<script src="/demo/embed.js" defer=""')).toBe(LANDS);
+    expect(allowedScripts("changelog/0.9.0/index.html")).toContain('<script src="/demo/embed.js" defer="">');
+    const v080 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.8.0" }) }));
+    expect(v080).not.toContain("data-scene");
+    expect(v080).not.toContain("embed.js");
     // The scene itself renders, ready for the release.
     expect(renderToStaticMarkup(<LandScene />)).toContain(t("landing.done", { n: 3, base: "main" }));
     expect(atLeast("0.10.0", "0.9.0")).toBe(true);

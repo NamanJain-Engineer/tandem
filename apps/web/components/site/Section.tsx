@@ -45,7 +45,7 @@ export function Section({
       )}
     >
       {divider && <div aria-hidden="true" className="horizon absolute inset-x-0 top-0" />}
-      <div className={cx("container-site flex flex-col gap-14 lg:gap-16", width === "narrow" && "max-w-narrow")}>
+      <div className={cx("container-site flex flex-col gap-12", width === "narrow" && "max-w-narrow")}>
         <SectionHeader id={id} eyebrow={eyebrow} title={title} lead={lead} aside={aside} align={align} />
         {children}
       </div>

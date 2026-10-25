@@ -122,3 +122,18 @@ test("F-WB-01 a section anchor lands with its heading just under the sticky head
     expect(gap, id).toBeLessThanOrEqual(120);
   }
 });
+
+test("F-WB-01 the home page is at most 8,000 px long at 1440 (DESIGN §5.1.4, D-1897, D-1885)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(8000);
+});
+
+test("F-WB-01 AC9 the Land scene plays on 0.9.0's changelog page (D-1885)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/changelog/0.9.0/");
+  const scene = page.locator('[data-scene="land"]');
+  await scene.scrollIntoViewIfNeeded();
+  await expect(scene).toHaveAttribute("data-live", "");
+  await expect(page.locator("html")).toHaveAttribute("data-fx", "");
+});

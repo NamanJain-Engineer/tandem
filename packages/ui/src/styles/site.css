@@ -106,7 +106,7 @@
   --site-ink-b:       var(--tn-ink-b);
   --site-header:      color-mix(in oklab, var(--site-page) 90%, transparent);   /* text under it stays unreadable */
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
-  --site-section-y:   clamp(5rem, 3.4rem + 4vw, 7rem);      /* 80 → 112 px: tighter, so the home page says less (D-1881) */
+  --site-section-y:   clamp(5rem, 3.4rem + 4vw, 6rem);      /* 80 → 96 px, so the home page fits 8,000 px (D-1881, D-1885) */
   --site-header-h:    4rem;
 
   /* Hairlines */

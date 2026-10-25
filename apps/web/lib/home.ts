@@ -239,15 +239,6 @@ export const SCENE_ROWS = [
     docs: docsPath("code-mode"),
     release: "0.8.0",
   },
-  {
-    id: "land",
-    eyebrow: "Merge queue",
-    title: "Land them one at a time",
-    body: "Worktrees merge into main one by one, each with main merged in and your check run first. A failure stops the queue, and Undo puts main back.",
-    features: [],
-    docs: docsPath("code-mode"),
-    release: "0.9.0",
-  },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
 
 /** The capability index (#capabilities): eight, one line each, as DESIGN

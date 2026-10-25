@@ -2,7 +2,6 @@ import { SCENE_ROWS } from "../../../lib/home";
 import { SCENE_BUILD, atLeast } from "../../../lib/scenes";
 import { Scene } from "../scenes/Scene";
 import { DASHBOARD_CAPTION, DashboardScene, dashboardSceneText } from "../scenes/DashboardScene";
-import { LAND_CAPTION, LandScene, landSceneText } from "../scenes/LandScene";
 import { REVIEW_CAPTION, ReviewScene, reviewSceneText } from "../scenes/ReviewScene";
 import { Section } from "../Section";
 import { TextLink } from "../TextLink";
@@ -10,7 +9,6 @@ import { TextLink } from "../TextLink";
 const SCENES = {
   dashboard: { scene: <DashboardScene />, caption: DASHBOARD_CAPTION, text: dashboardSceneText },
   review: { scene: <ReviewScene />, caption: REVIEW_CAPTION, text: reviewSceneText },
-  land: { scene: <LandScene />, caption: LAND_CAPTION, text: landSceneText },
 } as const;
 
 /** #features (DESIGN §5.1, D-1881): what it's like, as scenes of the app
@@ -27,7 +25,7 @@ export function Features() {
       title="Many agents, one screen"
       lead="Each agent runs in a real terminal over your own folder. Split, arrange and keep going."
     >
-      <div className="flex flex-col gap-24 lg:gap-32">
+      <div className="flex flex-col gap-24">
         {rows.map((r) => {
           const s = SCENES[r.id];
           return (

@@ -1,12 +1,10 @@
 import { ArrowLeftRight, ArrowRight, Ban, HardDrive, KeyRound, Plug, Server, Terminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { PRINCIPLES } from "../../../lib/home";
 import { RELEASE } from "../../../lib/release";
 import { cx } from "../../../lib/cx";
 import { docsPath } from "../../../lib/docs/pages";
 import { Icon } from "../Icon";
 import { TextLink } from "../TextLink";
-import { stagger } from "../../../lib/motion";
 
 type Node = { icon: LucideIcon; title: string; body: string };
 
@@ -22,7 +20,8 @@ const FLOWS: Array<{ icon: LucideIcon; to: string; via: string; line: "solid" | 
   { icon: Plug, to: "Services you connect", from: "Plugins", via: "Only what you allow; writes ask you first", line: "dashed" },
 ];
 
-/** #principles (§6.10): how data moves, then the four principles. The
+/** #principles (§6.10): how data moves. The four principles that followed
+ * repeated the ownership chips and live on /about/ (D-1897, D-1885). The
  * diagram is HTML, so it reflows on a phone; its text is the description. */
 export function TrustFlow() {
   return (
@@ -109,15 +108,6 @@ export function TrustFlow() {
             <TextLink href={docsPath("privacy")}>Privacy and data flows</TextLink>
           </figcaption>
         </figure>
-
-        <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
-          {PRINCIPLES.map((p, i) => (
-            <li key={p.title} className={`reveal ${stagger(i)} flex flex-col gap-2 border-l border-line-strong pl-5 [border-image:linear-gradient(180deg,var(--tn-text-muted),transparent)_1]`}>
-              <h3 className="text-title text-fg">{p.title}</h3>
-              <p className="text-copy-sm text-fg-muted">{p.body}</p>
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HERO, OWNERSHIP } from "../lib/home";
+import { HERO, OWNERSHIP, PRINCIPLES } from "../lib/home";
 import { VIDEO } from "../lib/media";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
@@ -66,7 +66,15 @@ describe("public site", () => {
     // Built with Claude and the figures are about us: they moved to /about/
     // with the founder's note (DESIGN §5.1, D-1881).
     for (const id of ["claude", "team"]) expect(h).not.toContain(`id="${id}"`);
-    expect(html(<AboutPage />)).toContain('id="claude"');
+    const about = html(<AboutPage />);
+    expect(about).toContain('id="claude"');
+    // The four principles repeat the ownership chips on the home page; they
+    // live on /about/ (D-1897, D-1885).
+    for (const p of PRINCIPLES) {
+      const body = p.body.replace(/'/g, "&#x27;");
+      expect(h).not.toContain(body);
+      expect(about).toContain(body);
+    }
     // The roadmap and the release tiles live on /changelog/, the video on /demo/.
     for (const id of ["roadmap", "new", "demo"]) expect(h).not.toContain(`id="${id}"`);
     const log = html(<ChangelogPage />);
@@ -101,10 +109,11 @@ describe("public site", () => {
   it("F-WB-01 the screenshots are of the real app and ship with the site", () => {
     // Code mode's capture is on /demo/; the home page shows it as a scene (D-1881).
     const h = html(<HomePage />) + html(<DemoPage />);
-    for (const name of ["code-mode", "launch-grid"]) {
-      expect(h).toContain(`src="/screens/${name}.png"`);
-      expect(existsSync(join(import.meta.dirname, `../public/screens/${name}.png`)), name).toBe(true);
-    }
+    expect(h).toContain(`src="/screens/code-mode.png"`);
+    expect(existsSync(join(import.meta.dirname, "../public/screens/code-mode.png"))).toBe(true);
+    // The engines section runs its grid full width without the old launch
+    // grid capture (D-1897, D-1885).
+    expect(html(<HomePage />)).not.toContain("/screens/launch-grid");
     // Only the labelled interactive demo (D-128) runs on sample data.
     const outsideDemo = html(<HomePage />).replace(/<section id="try"[\s\S]*?<\/section>/, "");
     expect(outsideDemo).not.toContain("sample data");
@@ -213,8 +222,8 @@ describe("public site", () => {
   it("F-WB-01 every build is named Vibezeo, and same-day platforms are a goal, not a claim", () => {
     // Each package keeps its format's naming: Name_version_arch.deb, Name-version-release.arch.rpm (D-832).
     for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo[_-]\d/);
-    const h = html(<HomePage />);
-    expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
+    // A principle, on /about/ with the others (D-1885).
+    expect(html(<AboutPage />)).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
     // The figures moved to /about/ (D-1881).
     expect(html(<AboutPage />)).toContain(`milestones in the ${RELEASE.version} release`);
   });
@@ -312,7 +321,7 @@ describe("public site", () => {
       '<script type="application/ld+json">',
       '<script src="/blog/blog.js" defer="">',
     ]);
-    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html"])
+    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html", "changelog/0.8.0/index.html"])
       expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
     // The loader names no other origin and frames only /demo/app/.
     const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");

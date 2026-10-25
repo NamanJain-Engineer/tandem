@@ -4,6 +4,7 @@ import { ClaudeBand } from "../../components/site/home/ClaudeBand";
 import { StatsBand } from "../../components/site/home/StatsBand";
 import { PageHero } from "../../components/site/PageHero";
 import { SiteFrame } from "../../components/site/SiteFrame";
+import { PRINCIPLES } from "../../lib/home";
 import { SITE } from "../../lib/site";
 import { stagger } from "../../lib/motion";
 
@@ -13,10 +14,6 @@ const WAYS = [
   {
     title: "Honest about where it is",
     body: "This site lists what works today and calls the rest a roadmap. No invented customers, quotes or usage numbers.",
-  },
-  {
-    title: "Your machine, your accounts",
-    body: `${SITE.product} runs the agents you already pay for, signed in by themselves. Your code, prompts and tokens stay on your computer.`,
   },
   {
     title: "Built with the agents we support",
@@ -108,8 +105,19 @@ export default function AboutPage() {
       <StatsBand />
       <ClaudeBand />
 
+      <Block id="principles" title="What Vibezeo holds to">
+        <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+          {PRINCIPLES.map((p, i) => (
+            <li key={p.title} className={`reveal ${stagger(i)} flex flex-col gap-2 border-l border-line-strong pl-5`}>
+              <h3 className="text-title text-fg">{p.title}</h3>
+              <p className="text-copy-sm text-fg-muted">{p.body}</p>
+            </li>
+          ))}
+        </ul>
+      </Block>
+
       <Block id="how-we-work" title="How we work">
-        <ul className="grid gap-4 sm:grid-cols-3">
+        <ul className="grid gap-4 sm:grid-cols-2">
           {WAYS.map((w, i) => (
             <li key={w.title} className={`reveal ${stagger(i)} surface flex flex-col gap-2 p-6`}>
               <h3 className="text-title text-fg">{w.title}</h3>

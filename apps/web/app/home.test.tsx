@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { engineLetters } from "../components/site/home/Engines";
 import { RELEASES } from "../lib/changelog";
-import { CAPABILITIES, FEATURES, HERO, HERO_FEATURES, MORE, RELEASE_TILE_MAP, SCENE_ROWS, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
+import { CAPABILITIES, FEATURES, HERO, feature, firstSentence, HERO_FEATURES, MORE, RELEASE_TILE_MAP, SCENE_ROWS, linuxFacts, releaseTiles, tilesRelease } from "../lib/home";
 import { SCENE_BUILD, atLeast } from "../lib/scenes";
 import AboutPage from "./about/page.site";
 import { formatSize, releaseAssets } from "../lib/manifest";
@@ -71,6 +71,12 @@ describe("home page", () => {
     for (const r of shown) expect(home, r.id).toContain(`data-scene="${r.id}"`);
     for (const m of MORE) expect(home, m.title).toContain(`href="${m.docs}"`);
     expect(CAPABILITIES.length).toBe(8);
+    // The index is one line each: the capability's name, linking to its docs;
+    // what it does is in the docs (DESIGN §9.1, D-1885).
+    for (const c of CAPABILITIES) {
+      expect(home, c.title).toContain(`href="${c.docs}"`);
+      expect(home, c.title).not.toContain(firstSentence(feature(c.title).body).replace(/'/g, "&#x27;"));
+    }
   });
 
   it("F-WB-01 engine monograms come from the registry", () => {
@@ -115,8 +121,9 @@ describe("home page", () => {
     // the page shares it with the stylesheet the h1 waits on, and a video's
     // `poster` is always fetched with the page.
     const imgs = home.match(/<img[^>]*>/g) ?? [];
-    // The demo still and the launch grid (Code mode's capture is on /demo/ now, D-1881).
-    expect(imgs.length).toBeGreaterThanOrEqual(2);
+    // The demo still (Code mode's capture is on /demo/ now, D-1881; the
+    // launch grid's is gone, D-1885).
+    expect(imgs.length).toBeGreaterThanOrEqual(1);
     for (const img of imgs) {
       expect(img).toContain('loading="lazy"');
       expect(img).not.toContain("fetchpriority");
@@ -140,8 +147,8 @@ describe("home page", () => {
 
   it("F-WB-01 every capture of the app names a released build, and its 1x and 2x files ship (D-1838)", () => {
     const versions = RELEASES.map((r) => r.version);
-    // The launch grid stays on the home page; Code mode's capture moved to
-    // /demo/, where the scenes don't already show it (D-1881).
+    // Code mode's capture is on /demo/, where the scenes don't already show
+    // it (D-1881); the home page has none (D-1885).
     const pages = home + renderToStaticMarkup(<DemoPage />);
     const figures = pages.match(/<figure[^>]*data-capture=""[^>]*>/g) ?? [];
     expect(figures.length).toBe(Object.keys(SCREENS).length);
