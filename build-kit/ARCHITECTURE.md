@@ -213,7 +213,8 @@ pub enum SettingKey { Theme, TerminalsMatchTheme, Language, AutoSaveFiles, Launc
     ConductorSpeed, ConductorAboutYou, ConductorMemory, ConductorReflection, ConductorWake,
     ConductorWakeSensitivity, ConductorWakePauseVideos,
     ConductorFloatingRing, TelemetryUsage, TelemetryCrash, AutoConsent, AutoDontAsk, SendKey,
-    ReduceMotion, LastMode, SettingsLastPage, OnboardingStep, OfflineStartedAt, RailWidth }
+    ReduceMotion, LastMode, SettingsLastPage, OnboardingStep, OfflineStartedAt, RailWidth,
+    LocalModelPorts /* string list "kind:port", F-EN-11 */ }
 pub struct SettingsSchema;                     // table-driven: key → (default JSON, validator, page, anchor)
 pub fn validate(key: SettingKey, v: &serde_json::Value) -> Result<(), CoreError>;
 
@@ -619,6 +620,10 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `acp_agent_test` | `{input: AcpAgentInput {label, command, args, env}}` (window `main` only; up to 10 s) | `AgentInfo {name?, version?, protocolVersion, authMethods}` (the command, resolved on the login PATH unless absolute, runs in the user's home with the login env plus `env`; `initialize` only, then it's stopped; nothing saved) | Invalid (a label, argument or variable the rules refuse: a secret-shaped value, a reserved name), NotFound (no such command), Unavailable (stage `acp_test`: "Not an ACP agent: …") | F-EN-10 |
 | `acp_agent_add` | `{input: AcpAgentInput}` (window `main` only) | `AcpAgent` (the same test, then saved 0600 with the command's absolute path under a new id, `acp-<label>-<8 hex>`, never one given before (D-2511); Add and Remove hold one lock across read, change and write; it's in `engines_list` with `added: true`) | as `acp_agent_test`, LimitReached (16 agents) | F-EN-10 |
 | `acp_agent_remove` | `{id}` (window `main` only) | — (the agent's live thread sessions end, a running turn stopped first; its threads stay and say the agent was removed) | NotFound | F-EN-10 |
+| `local_models_list` | — | `[LocalServer {kind:"ollama"\|"lm_studio"\|"llama_cpp", port, added, running, models: [LocalModel {id, size?, parameters?}], startable}]` (each kind's documented port and the `local_model_ports` entries, asked once each at `http://127.0.0.1:<port>` with a 1 s limit, no proxy; nothing on a timer) | — | F-EN-11 |
+| `local_models_add_port` | `{host, port, kind}` (window `main` only) | — (saved in `local_model_ports` as `kind:port`, up to 16) | Invalid (a host other than `127.0.0.1` or `localhost`, port 0), LimitReached | F-EN-11 |
+| `local_models_remove_port` | `{port}` (window `main` only) | — | — | F-EN-11 |
+| `local_model_start` | `{tabId, kind, port, model}` (window `main` only) | `PaneRecord` (a Codex agent pane; `$PROVIDERS/codex/local-<kind>-<port>/config.toml` names the model and a `vibezeo-local` provider at `http://127.0.0.1:<port>/v1`, `wire_api = "responses"`; the pane's first start runs Codex in that home with no account; `localModel`: "{model} · {kind}") | EngineUnsupported (llama.cpp), EngineMissing (no Codex), NotFound (the server doesn't offer the model now), Invalid (a model name that can't be written) | F-EN-11 |
 | `models_list` | `{engineId, accountId?}` | `[ModelEntry {id, label, description, isDefault, effortLevels, contextWindow, source}]` (Automatic first) | — | F-TH-08 |
 | `accounts_list` | — | `[Account]` | — | F-AC-02 |
 | `accounts_begin_add` | `{engineId, label}` | `LoginSession {opId, paneId, accountId, action, reports}` (mini PTY in a fresh home; the sheet `pty_attach`es `paneId`; `reports` false = the engine can't say when it's signed in, so the user clicks Done); the end arrives as `accounts:login-finished` | LimitReached (Free: 1/engine), Unavailable (mac Keychain single-account), Conflict (name taken), EngineMissing | F-AC-01, F-AC-02 |
@@ -1277,6 +1282,7 @@ CREATE TABLE panes (
   title         TEXT,                          -- live title (engine/OSC)
   user_title    TEXT,
   browser_url   TEXT,
+  local_model   TEXT,                          -- "{model} · {kind}" for a pane started on a local model (F-EN-11, migration 0006)
   role          TEXT,                          -- preset seat role
   launch_config TEXT,                          -- JSON LaunchConfig (engine args, extra args, one-off home path, custom flags)
   restore_state TEXT NOT NULL DEFAULT 'none' CHECK (restore_state IN ('none','live','paused','cancelled')),

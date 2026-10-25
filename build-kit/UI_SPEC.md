@@ -1076,10 +1076,18 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
     - "Fill in:" then **Goose** (ghost).
     - Fields: Name, Command (hint "A command on your PATH, or its full path"), Arguments (the extra-arguments parser; an open quote is an error), and Environment variables: rows of name and value with a remove button, **Add a variable**, and the hint "Settings the agent reads, not keys: keep keys in the agent's own sign-in."
     - Footer: Cancel, **Test** (secondary), **Add** (primary). Both are disabled until Name and Command are filled and the arguments parse.
-  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
-  - The launch sheet never lists added agents: they run in threads only (D-2513).
     - A passed test shows a success `Banner`: "{name} answered, version {version}." plus "It signs in with: {methods}." A failure or a refused value shows an error `Banner` with the core's message ("Not an ACP agent: …"). Any change clears both.
   - In the Thread engine picker, an added agent reads "{label} · via ACP".
+  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
+  - The launch sheet never lists added agents: they run in threads only (D-2513).
+- **UI-164 Local models** (a section of Settings › Engines, under ACP agents; F-EN-11). Heading "Local models" with **Add a port…** (ghost, `Plus`) and **Check again** (secondary, `RefreshCw`; a `Spinner` while asking).
+  - Body line: "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only, when you open this page or check again."
+  - Rows, one per server that's running or added: the kind ("Ollama", "LM Studio", "llama.cpp"), `127.0.0.1:{port}` in `font-mono` `fg-muted`, the state ("Running · {n} models" or "Not running") and, for an added port, **Remove** (ghost). Under a running server, its models: "{name} · {size} · {parameters}" in `font-mono` `fg-muted` (only what the server reports) and **Start in Codex** (secondary).
+  - Start in Codex is disabled with its reason as the tooltip: "Codex can't use {kind} servers yet." (llama.cpp), "Install Codex to use a local model." or "Open a local folder first." A start shows a success toast "Started {model} in Codex." and switches to Code mode.
+  - States: loading (`Spinner`), error (`Banner` with Try again), empty ("No model servers are running on this computer. Start Ollama or LM Studio, then check again.").
+  - **Add a port** (dialog, `sm`): description "Another port on this computer to ask for models." Fields: Kind (`Select`), Host (`Input`, `127.0.0.1`; only `127.0.0.1` and `localhost` are accepted), Port (`Input`, numeric; "Ports run from 1 to 65535"). Footer: Cancel, **Add** (primary). A refused host shows the error in a `Banner`.
+  - A pane started from a local model shows the chip "On this computer" (`Cpu` icon, `surface-3`) in its header where an account chip would be; its tooltip is "{model} · {kind}".
+  - Settings › Privacy, under "What leaves this machine": "Local models: nothing leaves this computer. Prompts and code go to the model server at 127.0.0.1."
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2682,6 +2690,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |
 | UI-163 | ACP agents | §4.4 | EN |
+| UI-164 | Local models | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

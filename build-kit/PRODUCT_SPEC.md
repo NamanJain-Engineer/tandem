@@ -1432,6 +1432,28 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. With no account, a thread with the added agent runs a turn (D-869). Removing the agent and adding another with the same label gives a new id, and the old thread says the engine was removed.
 4. An environment value matching a secret pattern, or a reserved variable, is refused before anything runs.
 
+#### F-EN-11 Local models as engines (P2)
+**Story:** I run models on my own computer with Ollama or LM Studio. I want an agent to use one of them, so my code and prompts never leave the machine and my subscription's limits don't apply.
+
+**Behavior:**
+- **Finding servers** (Settings › Engines › Local models, UI-164): Vibezeo asks only `127.0.0.1` for model servers the user already runs, when the section opens and on **Check again**. It never asks on a timer.
+  - It asks Ollama at port 11434 (`GET /api/tags`), LM Studio at 1234 and llama.cpp's `llama-server` at 8080 (`GET /v1/models`), each with a 1 s limit.
+  - **Add a port…** takes another port (1–65535) and a kind. Only loopback addresses are ever asked; a typed host other than `127.0.0.1` or `localhost` is refused.
+  - Nothing is downloaded or installed, and no model is pulled. A server that isn't running is listed as "Not running".
+- **Models:** each server's models, with the name and, where the server reports them, the size on disk and the parameter count ("qwen3-coder:30b · 18.6 GB · 30.5B"). Vibezeo promises nothing about a model's skill with tools.
+- **Start with a local model:** on an Ollama or LM Studio model, **Start in Codex** opens a Codex agent pane in the active local folder, configured for that server. This needs Codex installed. Both servers document Codex support through the Responses API (D-2518).
+  - **Where it's configured:** only in a dedicated provider home, `$PROVIDERS/codex/local-<kind>-<port>/`. Its `config.toml` names the model and a `vibezeo-local` provider (`base_url = "http://127.0.0.1:<port>/v1"`, `wire_api = "responses"`). The user's own `~/.codex` and their Codex accounts are never touched.
+  - **The pane** shows the badge "On this computer" in its header, with the model and server ("qwen3-coder:30b · Ollama") as its tooltip. It runs on no Codex account, and restores and resumes in the same home (D-2519).
+  - **No sign-in** is needed or asked for.
+- **llama.cpp servers** are found and their models listed, but have no Start until Codex's support for them is confirmed (D-2518).
+- **Added ports** are kept in the `local_model_ports` setting, one `kind:port` entry each, up to 16 (D-2517).
+- **Privacy:** under Settings › Privacy's "What leaves this machine" table, a line says: "Local models: nothing leaves this computer. Prompts and code go to the model server at 127.0.0.1." The table itself lists hosted features only. The sandbox (F-TL-11) applies to these panes as to any other.
+
+**Acceptance:**
+1. A fake server answering Ollama's `/api/tags` on 127.0.0.1 is detected, and its models are listed with their size and parameter count.
+2. Start in Codex writes the local-provider configuration only inside a dedicated provider home under `$PROVIDERS/codex/`, runs Codex with that home, and the pane shows "On this computer".
+3. No probe targets a non-loopback address: an added host other than 127.0.0.1 or localhost is refused, and every request the finder makes goes to 127.0.0.1.
+
 ### 4.5 AC: Accounts and usage
 
 #### F-AC-01 Provider homes (P0)
