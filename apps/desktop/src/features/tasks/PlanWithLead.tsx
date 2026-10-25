@@ -24,10 +24,13 @@ import {
   IconButton,
   Input,
   Select,
+  Skeleton,
+  SkeletonGate,
   StatusDot,
   Switch,
   Textarea,
   useToast,
+  type Status,
 } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
 import { switchMode } from "../shell/actions";
@@ -128,6 +131,21 @@ export function runSummary(runs: Array<AttemptView | null>): string {
   return KINDS.filter((k) => counts.has(k))
     .map((k) => t(`plan.count.${k}` as MessageKey, { n: counts.get(k) ?? 0 }))
     .join(" · ");
+}
+
+/** A started plan's shape in the Tasks page's header: waiting while a run
+ * waits on you (F-TK-08), working while one is under way, an error when one
+ * failed, waiting while one is in review or stopped, else done (F-TK-07). */
+export function startedStatus(plan: PlanView, attempts: AttemptView[]): Status {
+  const runs = plan.issueIds.map((id) => latestRun(attempts, id));
+  // A run waiting on you, for an approval or an answer (F-TK-08), first.
+  if (runs.some((r) => r?.waiting || openQuestion(plan, r)?.state === "escalated")) return "waiting";
+  const kinds = runs.map(kindOf);
+  if (kinds.some((k) => k === "queued" || k === "running")) return "working";
+  if (kinds.includes("failed")) return "error";
+  if (kinds.some((k) => k === "approved" || k === "changes" || k === "review" || k === "stopped"))
+    return "waiting";
+  return "done";
 }
 
 /** The worktrees of the plan's tasks whose latest run was approved, in
@@ -234,12 +252,51 @@ function QuestionRow({ plan, question }: { plan: PlanView; question: PlanQuestio
 }
 
 function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] }) {
+  const status = useTasks((s) => s.attemptsStatus);
+  const loadError = useTasks((s) => s.attemptsError);
   const runs = plan.issueIds.map((id) => latestRun(attempts, id));
   const engine = (id: string) => plan.engines.find((e) => e.engineId === id)?.label ?? id;
   const openTask = (id: string) => {
     usePlans.getState().open(null);
     void useTasks.getState().select(id);
   };
+  // Not "Not started" while the runs are unknown.
+  if (status === "error")
+    return (
+      <Callout
+        tone="error"
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void useTasks.getState().loadAttempts()}
+            data-testid="plan-runs-retry"
+          >
+            {t("common.retry")}
+          </Button>
+        }
+      >
+        <span data-testid="plan-runs-error">{t("plan.runs.error", { message: loadError ?? "" })}</span>
+      </Callout>
+    );
+  if (status !== "ready")
+    return (
+      <div data-testid="plan-runs-loading">
+        <SkeletonGate
+          loading
+          label={t("plan.runs.loading")}
+          skeleton={
+            <div className="flex flex-col gap-2">
+              {plan.issueIds.map((id) => (
+                <Skeleton key={id} height={20} />
+              ))}
+            </div>
+          }
+        >
+          {null}
+        </SkeletonGate>
+      </div>
+    );
   return (
     <>
       {runs.some(Boolean) && (

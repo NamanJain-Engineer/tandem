@@ -2024,18 +2024,18 @@ impl ThreadService {
                         {
                             run.blocked += 1;
                         }
-                        // An edit's files claim once, from its first row
-                        // that wasn't refused (F-TK-07).
+                        // An edit's files claim once, when it succeeded: a
+                        // tool's first row comes before its outcome, and an
+                        // edit that was refused or failed changed nothing
+                        // (F-TK-07).
                         if let ThreadEvent::Tool {
                             id: tool,
                             paths: Some(paths),
-                            status,
+                            status: ToolStatus::Ok,
                             ..
                         } = &other
                         {
-                            if !matches!(status, ToolStatus::Denied | ToolStatus::Error)
-                                && run.claimed.insert(tool.clone())
-                            {
+                            if run.claimed.insert(tool.clone()) {
                                 if let Some(sink) = self.edit_sink.get() {
                                     sink(thread, paths);
                                 }
@@ -3707,34 +3707,29 @@ mod tests {
             .collect()
     }
 
-    /// An edit of `/w/src/a.ts` (F-TK-07).
-    fn edit_of_a(status: ToolStatus) -> ThreadEvent {
-        let mut e = ThreadEvent::tool("e1", ToolVerb::Edit, "src/a.ts", status);
+    /// An edit `id` of `/w/src/<file>` (F-TK-07).
+    fn edit(id: &str, file: &str, status: ToolStatus) -> ThreadEvent {
+        let mut e = ThreadEvent::tool(id, ToolVerb::Edit, &format!("src/{file}"), status);
         if let ThreadEvent::Tool { paths, .. } = &mut e {
-            *paths = Some(vec!["/w/src/a.ts".into()]);
+            *paths = Some(vec![format!("/w/src/{file}")]);
         }
         e
     }
 
-    #[tokio::test]
-    async fn f_tk_07_1_an_edit_reaches_the_edit_sink_once_per_tool() {
-        let script: Script = Arc::new(|turn, tx| {
-            play(
-                tx,
-                vec![
-                    ev(&turn, edit_of_a(ToolStatus::Running)),
-                    ev(&turn, edit_of_a(ToolStatus::Ok)),
-                    ev(
-                        &turn,
-                        ThreadEvent::tool("b1", ToolVerb::Bash, "npm test", ToolStatus::Running),
-                    ),
-                    ev(&turn, end(TurnEndReason::Completed)),
-                ],
-            )
+    fn edit_of_a(status: ToolStatus) -> ThreadEvent {
+        edit("e1", "a.ts", status)
+    }
+
+    /// (thread, paths) per call of the edit sink, for a turn of `events`.
+    type Seen = Vec<(String, Vec<String>)>;
+
+    async fn claimed_by(events: Vec<ThreadEvent>) -> (Fixture, Seen) {
+        let script: Script = Arc::new(move |turn, tx| {
+            let mut rows: Vec<_> = events.iter().map(|e| ev(&turn, e.clone())).collect();
+            rows.push(ev(&turn, end(TurnEndReason::Completed)));
+            play(tx, rows)
         });
         let f = fixture(OnStop::Ack, script).await;
-        // (thread, paths) per call of the sink.
-        type Seen = Vec<(String, Vec<String>)>;
         let seen: Arc<StdMutex<Seen>> = Arc::default();
         let sink = seen.clone();
         f.svc.set_edit_sink(Arc::new(move |thread, paths| {
@@ -3743,12 +3738,26 @@ mod tests {
             }
         }));
         f.svc
-            .send(&f.thread.id, "edit a".into(), Vec::new(), false)
+            .send(&f.thread.id, "edit".into(), Vec::new(), false)
             .await
             .expect("send");
         ended(&f, 1).await;
+        let seen = seen.lock().expect("seen").clone();
+        (f, seen)
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_an_edit_reaches_the_edit_sink_once_per_tool() {
+        let (f, seen) = claimed_by(vec![
+            edit_of_a(ToolStatus::Running),
+            edit_of_a(ToolStatus::Ok),
+            // A second report of the same edit doesn't claim again.
+            edit_of_a(ToolStatus::Ok),
+            ThreadEvent::tool("b1", ToolVerb::Bash, "npm test", ToolStatus::Running),
+        ])
+        .await;
         assert_eq!(
-            *seen.lock().expect("seen"),
+            seen,
             vec![(
                 f.thread.id.as_str().to_string(),
                 vec!["/w/src/a.ts".to_string()]
@@ -3756,6 +3765,39 @@ mod tests {
         );
         // The rows keep their files.
         assert!(stored(&f).await.contains(&edit_of_a(ToolStatus::Ok)));
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_a_denied_edit_claims_nothing() {
+        // Every adapter's first row of a tool comes before its outcome:
+        // Claude's tool_use, Codex's item/started, ACP's pending tool_call.
+        for first in [ToolStatus::Running, ToolStatus::Pending] {
+            let (_f, seen) = claimed_by(vec![
+                edit("e1", "a.ts", first),
+                edit("e1", "a.ts", ToolStatus::Denied),
+            ])
+            .await;
+            assert!(seen.is_empty(), "{first:?}: {seen:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_a_failed_edit_claims_nothing() {
+        let (f, seen) = claimed_by(vec![
+            edit("e1", "a.ts", ToolStatus::Running),
+            edit("e1", "a.ts", ToolStatus::Error),
+            // The edit tried again, and it worked.
+            edit("e2", "a.ts", ToolStatus::Running),
+            edit("e2", "a.ts", ToolStatus::Ok),
+        ])
+        .await;
+        assert_eq!(
+            seen,
+            vec![(
+                f.thread.id.as_str().to_string(),
+                vec!["/w/src/a.ts".to_string()]
+            )]
+        );
     }
 
     #[tokio::test]

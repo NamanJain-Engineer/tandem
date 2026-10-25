@@ -1189,6 +1189,9 @@ pub fn run() {
                     Some(state.data.plans()),
                 );
                 let _ = state.plan.set(plans.clone());
+                // Before anything can start their chats (resume does it
+                // again, with the waits).
+                plans.withhold_kept();
                 // F-TK-08: a plan run's question goes to its plan.
                 {
                     let plans = std::sync::Arc::downgrade(&plans);

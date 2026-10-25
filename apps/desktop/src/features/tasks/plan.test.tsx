@@ -511,6 +511,56 @@ describe("Follow a plan through (F-TK-07)", () => {
     expect(screen.getByTestId("plan-summary").textContent).toBe("1 ready to review · 2 not started");
   });
 
+  it("F-TK-07.2 while the runs load the plan says so, and a failed read says why with Retry", async () => {
+    let mode: "hold" | "fail" | "ok" = "hold";
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({
+      task_attempts_list: () => {
+        if (mode === "hold") return new Promise<AttemptView[]>((r) => held.push(r));
+        if (mode === "fail")
+          throw { code: "io", message: "The disk is busy", stage: null, hint: null, retryable: true };
+        return [run("TAN-1", "running", 1)];
+      },
+    });
+    usePlans.setState({
+      plans: { pl_1: plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] }) },
+      openId: "pl_1",
+    });
+    wrap();
+    // Unknown runs aren't "Not started".
+    await screen.findByTestId("plan-runs-loading");
+    expect(screen.queryByTestId("plan-run")).toBeNull();
+    act(() => held.forEach((r) => r([])));
+    await waitFor(() => expect(states()).toEqual(["none", "none", "none"]));
+    // A read that fails says why, and Retry reads again.
+    mode = "fail";
+    await act(() => useTasks.getState().loadAttempts());
+    expect((await screen.findByTestId("plan-runs-error")).textContent).toBe(
+      "The runs couldn't be read: The disk is busy",
+    );
+    expect(screen.queryByTestId("plan-run")).toBeNull();
+    mode = "ok";
+    fireEvent.click(screen.getByTestId("plan-runs-retry"));
+    await waitFor(() => expect(states()).toEqual(["running", "none", "none"]));
+  });
+
+  it("F-TK-07.2 a started plan's chip follows its runs: working, waiting on you, then done", async () => {
+    backend({ task_attempts_list: () => [run("TAN-1", "running", 1)] });
+    usePlans.setState({
+      plans: { pl_1: plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] }) },
+      openId: null,
+    });
+    wrap();
+    const shape = () =>
+      screen.getByTestId("plan-reopen").querySelector('[role="img"]')?.getAttribute("aria-label");
+    await waitFor(() => expect(useTasks.getState().attemptsStatus).toBe("ready"));
+    expect(shape()).toBe("Working");
+    act(() => emitLocal("tasks:attempt", run("TAN-1", "in_review", 1, { reviewVerdict: "approve" })));
+    await waitFor(() => expect(shape()).toBe("Waiting for you"));
+    act(() => emitLocal("tasks:attempt", run("TAN-1", "done", 1)));
+    await waitFor(() => expect(shape()).toBe("Done"));
+  });
+
   it("F-TK-07.3 plans kept from before a restart are listed again, and Remove plan forgets one", async () => {
     const kept = plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] });
     backend({ plan_list: () => [kept], task_attempts_list: () => [] });
@@ -669,6 +719,27 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
       "Waiting for your approval",
     );
     expect(calls.some((c) => c.cmd === "plan_answer")).toBe(false);
+  });
+
+  it("F-TK-08.3 F-TK-08.4 a started plan's chip says it waits on you for an answer or an approval", async () => {
+    backend({ task_attempts_list: () => [run("TAN-1", "running", 2)] });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: null });
+    wrap();
+    const shape = () => screen.getByTestId("plan-reopen").querySelector('[role="img"]')?.getAttribute("aria-label");
+    await waitFor(() => expect(useTasks.getState().attemptsStatus).toBe("ready"));
+    expect(shape()).toBe("Working");
+    // Its question came to you.
+    act(() =>
+      usePlans
+        .getState()
+        .apply({ ...STARTED, questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })] }),
+    );
+    await waitFor(() => expect(shape()).toBe("Waiting for you"));
+    // Answered, it works on; then it waits for an approval.
+    act(() => usePlans.getState().apply({ ...STARTED, questions: [asked("TAN-1", "atm_TAN-1_2")] }));
+    await waitFor(() => expect(shape()).toBe("Working"));
+    act(() => emitLocal("tasks:attempt", { ...run("TAN-1", "running", 2), waiting: true }));
+    await waitFor(() => expect(shape()).toBe("Waiting for you"));
   });
 
   it("F-TK-08.5 the started plan's switch turns Lead's answers off at once", async () => {

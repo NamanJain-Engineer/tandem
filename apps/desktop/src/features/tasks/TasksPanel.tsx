@@ -23,7 +23,7 @@ import { t } from "../../i18n";
 import { usePlans } from "../../stores/plan";
 import { STATUS_ORDER, useTasks } from "../../stores/tasks";
 import { useExecuteBlock } from "./Execute";
-import { PlanWithLead } from "./PlanWithLead";
+import { PlanWithLead, startedStatus } from "./PlanWithLead";
 import { TaskDetailView, actorName, priorityLabel, statusLabel } from "./TaskDetail";
 
 /** Wide enough for the list beside the open task. */
@@ -249,8 +249,15 @@ export function TasksPanel({ header }: { header?: ReactNode }) {
 /** Every plan until it's removed, newest first (F-TK-06, F-TK-07). */
 function OpenPlans() {
   const plans = usePlans((s) => s.plans);
+  const attempts = useTasks((s) => s.attempts);
+  const read = useTasks((s) => s.attemptsStatus === "ready");
   // Every plan until it's removed (F-TK-07), newest first.
   const live = Object.values(plans).sort((a, b) => b.createdAt - a.createdAt);
+  // A started plan's chip follows its runs, which `tasks:attempt` keeps fresh.
+  const started = live.some((p) => p.state === "started");
+  useEffect(() => {
+    if (started) void useTasks.getState().loadAttempts();
+  }, [started]);
   const STATUS = {
     planning: "working",
     failed: "error",
@@ -269,7 +276,13 @@ function OpenPlans() {
           onClick={() => usePlans.getState().open(p.id)}
           data-testid="plan-reopen"
         >
-          <StatusDot status={STATUS[p.state as keyof typeof STATUS]} />
+          <StatusDot
+            status={
+              p.state === "started" && read
+                ? startedStatus(p, attempts)
+                : STATUS[p.state as keyof typeof STATUS]
+            }
+          />
           <span className="max-w-48 truncate">{t("plan.chip", { goal: p.goal.split("\n")[0] ?? "" })}</span>
         </Button>
       ))}

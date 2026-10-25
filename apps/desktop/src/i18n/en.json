@@ -2502,6 +2502,8 @@
   "plan.count.failed": "{n} failed",
   "plan.count.done": "{n} done",
   "plan.count.none": "{n} not started",
+  "plan.runs.loading": "Loading the runs",
+  "plan.runs.error": "The runs couldn't be read: {message}",
   "plan.supervise.option": "Lead answers routine questions from the repository's instructions, using your engine and subscription",
   "plan.supervise.optionHint": "Questions about approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope always come to you. You can turn this off at any time.",
   "plan.supervise.switch": "Lead answers routine questions",

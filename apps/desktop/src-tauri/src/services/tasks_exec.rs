@@ -1627,7 +1627,34 @@ pub(crate) mod tests {
         assert!(sessions[0]
             .text
             .contains("Report progress with save_comment on TAN-1."));
-        // F-TK-07 AC1: the run's agent is asked to claim before it edits.
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_a_run_is_asked_to_claim_before_it_edits_and_its_review_is_not() {
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        let id = f
+            .svc
+            .execute(input("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        for _ in 0..200 {
+            if state(&f, &id).await == AttemptState::InReview {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let sessions = f.host.sessions.lock().expect("lock").clone();
+        assert_eq!(sessions.len(), 2, "the run and its review");
         assert!(
             sessions[0]
                 .text

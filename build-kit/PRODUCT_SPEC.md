@@ -2002,14 +2002,15 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
     - Codex's file changes;
     - an ACP agent's edits that name their files.
 
-    Only the files' paths are kept, never the edit. This holds for every chat thread in a git folder on this computer, not only task runs.
+    Only the files' paths are kept, never the edit. An edit that was refused or failed claims nothing. This holds for every chat thread in a git folder on this computer, not only task runs.
 - **The plan follows its runs.** Once its tasks are created, the plan lists each task with its latest run (F-TK-04), as a status shape and a word: not started, queued (with its place), setting up, running, reviewing, in review with the review's verdict (Approve or Changes requested), stopped, failed or done.
   - A line above the list counts them ("2 running · 1 approved · 1 changes requested").
   - Each row opens its task, where its runs are.
-  - The plan stays in the Tasks page's header until you remove it.
+  - While the runs are being read the list says it's loading, and if they can't be read it says why, with Retry.
+  - The plan stays in the Tasks page's header until you remove it. A started plan's shape there follows its runs: working while one runs, waiting while one waits on you, done when they've all ended.
 - **Plans are kept.** Vibezeo keeps plans in its data folder, so they survive a restart.
   - A plan whose Lead was still planning when Vibezeo closed is read again if Lead's turn had finished. Otherwise it fails with "Vibezeo closed while Lead was planning", and Plan again offers the same goal.
-  - A plan that was starting its runs when Vibezeo closed offers Execute all again, keeping the runs it had queued.
+  - A plan that was starting its runs when Vibezeo closed offers Execute all again, keeping the runs it had queued. Create tasks that Vibezeo closed partway keeps its project and the tasks it wrote, and the next try writes the rest.
   - Lead's planning thread still gets no tasks tools after a restart.
   - **Remove plan** forgets a plan. Its tasks, their runs and Lead's thread stay.
 - **Land approved.** When at least one task's latest run is in review with Approve, the plan offers **Land N approved…**.
