@@ -94,14 +94,23 @@ describe("E2E-M18-EN11 local models", function () {
     await openEngines();
     const row = $(`[data-testid="local-server"][data-port="${ollama.port}"]`);
     await row.waitForDisplayed({ timeout: 10_000 });
-    expect(await row.$('[data-testid="local-model"]').getText()).toContain("qwen3-coder:30b · 18.6 GB · 30.5B");
+    // Read from the DOM: inside the Settings dialog, WebDriver's text can come back empty.
+    const line = await browser.execute(
+      (p: number) =>
+        document.querySelector(`[data-testid="local-server"][data-port="${p}"] [data-testid="local-model"]`)
+          ?.textContent ?? "",
+      ollama.port,
+    );
+    expect(line).toContain("qwen3-coder:30b · 18.6 GB · 30.5B");
   });
 
   it("F-EN-11.2 Start in Codex runs Codex in its own home, configured for 127.0.0.1, and says On this computer", async () => {
     const before = (await invoke<Spawn[]>("test_spawn_log")).length;
-    const panes = (await paneIds()).length;
+    // Settings covers the panes, so count them in the DOM, not as visible.
+    const count = () => browser.execute(() => document.querySelectorAll('[data-testid="pane"]').length);
+    const panes = await count();
     await press(`[data-testid="local-server"][data-port="${ollama.port}"] [data-testid="local-start"]`);
-    await browser.waitUntil(async () => (await paneIds()).length === panes + 1, { timeout: 20_000 });
+    await browser.waitUntil(async () => (await count()) === panes + 1, { timeout: 20_000 });
     const homeDir = join(home(), "providers", "codex", `local-ollama-${ollama.port}`);
     await browser.waitUntil(
       async () => (await invoke<Spawn[]>("test_spawn_log")).slice(before).some((s) => s.providerHome === homeDir),
