@@ -16,6 +16,8 @@ export const RELAY_MAX_FRAME = 64 * 1024;
 export const RELAY_FRAMES_PER_SECOND = 50;
 const PATH = /^\/v1\/relay\/(pr_[A-Za-z0-9_-]{4,64})$/;
 const PING_MS = 30_000;
+/** How long a pairing's drops are remembered: far longer than any check. */
+const DROP_MEMORY_MS = 10 * 60_000;
 
 export type RelayRole = "desktop" | "phone";
 export type RelayPeer = { role: RelayRole; protocol?: string };
@@ -39,6 +41,8 @@ export class Relay {
   private readonly pairs = new Map<string, Pair>();
   private readonly chosen = new WeakMap<IncomingMessage, string | false>();
   private readonly alive = new WeakSet<WebSocket>();
+  /** Each pairing's drops, so a socket checked before a drop can't join after it. */
+  private readonly drops = new Map<string, { count: number; at: number }>();
   private readonly stopDrop: () => void;
   private readonly ping: NodeJS.Timeout;
 
@@ -51,7 +55,10 @@ export class Relay {
       perMessageDeflate: false,
       handleProtocols: (_offered, req) => this.chosen.get(req) ?? false,
     });
-    this.stopDrop = opts.control.onDrop((pairingId) => this.drop(pairingId, 1008, "revoked"));
+    this.stopDrop = opts.control.onDrop((pairingId) => {
+      this.noteDrop(pairingId);
+      this.drop(pairingId, 1008, "revoked");
+    });
     this.ping = setInterval(() => this.heartbeat(), PING_MS);
     this.ping.unref();
   }
@@ -78,6 +85,9 @@ export class Relay {
       return;
     }
     const pairingId = match[1];
+    // A pairing deleted while its token is checked drops no socket, since
+    // this one hasn't joined yet; it must not join after the drop either.
+    const drops = this.dropsOf(pairingId);
     const header = req.headers.authorization;
     const bearer = header?.startsWith("Bearer ") ? header.slice(7).trim() : undefined;
     const protocols = (req.headers["sec-websocket-protocol"] ?? "")
@@ -99,8 +109,23 @@ export class Relay {
         ws.close(1008, "unauthorized");
         return;
       }
+      if (this.dropsOf(pairingId) !== drops) {
+        logger.info({ pairingId }, "relay refused");
+        ws.close(1008, "revoked");
+        return;
+      }
       this.join(pairingId, peer.role, ws);
     });
+  }
+
+  private noteDrop(pairingId: string): void {
+    const now = this.opts.now();
+    for (const [id, drop] of this.drops) if (now - drop.at > DROP_MEMORY_MS) this.drops.delete(id);
+    this.drops.set(pairingId, { count: this.dropsOf(pairingId) + 1, at: now });
+  }
+
+  private dropsOf(pairingId: string): number {
+    return this.drops.get(pairingId)?.count ?? 0;
   }
 
   private join(pairingId: string, role: RelayRole, ws: WebSocket): void {
