@@ -234,6 +234,8 @@ pub async fn create(
     )
     .await
     .map_err(jj_err)?;
+    // F-CD-23: no trust left at a reused path reaches it.
+    crate::services::lsp::untrust_new_worktree(&lane.path).await;
     let Some(path) = lane.path.to_str().map(str::to_string) else {
         undo(runner, &root, &lane).await;
         return Err(IpcError::new(

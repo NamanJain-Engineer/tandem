@@ -16,6 +16,7 @@ use crate::services::lsp::{self, LspDocument, LspLocation, LspState, ServerSpec}
 use crate::state::AppState;
 
 const REMOTE: &str = "Code intelligence works on folders on this computer";
+pub const REMOVED: &str = "That workspace was removed";
 const OUTSIDE: &str = "Outside this folder: read only, without code intelligence";
 
 /// A folder on this computer: not on an SSH host or in WSL.
@@ -27,7 +28,14 @@ async fn on_this_computer(app: &AppState, context: &FileContext) -> Result<bool,
             .and_then(|t| t.workspace_id),
     };
     match ws_id {
-        Some(id) => Ok(workspaces::get(&app.store, &id).await?.kind == "local"),
+        Some(id) => {
+            // A removed workspace's row stays (soft-removed): no server
+            // starts for it.
+            if workspaces::is_removed(&app.store, &id).await? {
+                return Err(IpcError::new(ErrorCode::NotFound, REMOVED).with_stage("lsp"));
+            }
+            Ok(workspaces::get(&app.store, &id).await?.kind == "local")
+        }
         None => Ok(true),
     }
 }
@@ -147,12 +155,21 @@ fn scope_for(root: &Path, sandbox_on: bool) -> TrustScope {
     }
 }
 
+/// Whether agents run sandboxed. A setting that can't be read counts as
+/// on: worktrees then need their own trust (fail closed).
 async fn sandbox_on(app: &AppState) -> bool {
-    tandem_store::repo::settings::get(&app.store, tandem_core::settings::SettingKey::AgentSandbox)
-        .await
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .is_some_and(|v| v == "workspace")
+    match tandem_store::repo::settings::get(
+        &app.store,
+        tandem_core::settings::SettingKey::AgentSandbox,
+    )
+    .await
+    {
+        Ok(v) => v.as_str() == Some("workspace"),
+        Err(e) => {
+            tracing::warn!(code = "lsp.sandbox_unread", error = %e, "the sandbox setting couldn't be read; treated as on");
+            true
+        }
+    }
 }
 
 async fn scope(app: &AppState, root: &Path) -> TrustScope {
@@ -623,34 +640,6 @@ mod tests {
         assert!(wt.starts_with("The agent's code will run outside its sandbox."));
     }
 
-    /// Serves the fake language server in-process.
-    struct FakeSpawner;
-
-    impl lsp::Spawner for FakeSpawner {
-        fn available(&self, _: &ServerSpec, _: &tandem_pty::env::LoginEnv) -> bool {
-            true
-        }
-        fn spawn(
-            &self,
-            _: &ServerSpec,
-            _: &Path,
-            _: &tandem_pty::env::LoginEnv,
-        ) -> Result<lsp::Spawned, String> {
-            let (client_side, server_side) = tokio::io::duplex(1 << 20);
-            let (sr, sw) = tokio::io::split(server_side);
-            tokio::spawn(tandem_engines::fake_lsp::serve(sr, sw));
-            let (cr, cw) = tokio::io::split(client_side);
-            Ok(lsp::Spawned {
-                reader: Box::new(cr),
-                writer: Box::new(cw),
-                stderr: None,
-                child: None,
-                tree: None,
-                on_stop: None,
-            })
-        }
-    }
-
     #[tokio::test]
     async fn f_cd_23_changed_files_reach_only_trusted_folders_with_a_server() {
         let tmp = tempfile::tempdir().expect("tmp");
@@ -662,7 +651,7 @@ mod tests {
         }
         lsp::trust(&data, &trusted).expect("trust");
         lsp::trust(&data, &idle).expect("trust");
-        let lsp = lsp::Lsp::new(Box::new(FakeSpawner));
+        let lsp = lsp::Lsp::new(Box::new(lsp::tests::FakeSpawner { installed: true }));
         let login = tandem_pty::env::LoginEnv {
             vars: Default::default(),
             shell: "/bin/sh".into(),
@@ -681,6 +670,60 @@ mod tests {
             vec![trusted.clone()]
         );
         lsp.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_removing_a_workspace_clears_its_worktrees_trust_and_refuses_its_requests() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let base = std::fs::canonicalize(tmp.path()).expect("canonical");
+        let data = DataDir::at(base.join("data")).expect("data dir");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let state = AppState::for_tests(data.clone(), store);
+        let root = base.join("app");
+        let lane = root.join(".tandem/worktrees/fix");
+        std::fs::create_dir_all(&lane).expect("mkdir");
+        let ws =
+            crate::services::workspaces::add(&state.store, root.to_str().expect("utf8"), Some(3))
+                .await
+                .expect("add")
+                .workspace;
+        lsp::trust(&data, &root).expect("trust the repository");
+        lsp::trust(&data, &lane).expect("trust its worktree");
+        crate::commands::workspaces::remove_workspace(&state, &ws.id)
+            .await
+            .expect("remove");
+        assert!(!lsp::is_trusted(&data, &lane), "its worktree's trust went");
+        assert!(
+            lsp::is_trusted(&data, &root),
+            "the repository keeps its own"
+        );
+        // A request for the removed workspace starts nothing.
+        let context = FileContext::Workspace {
+            workspace_id: ws.id.clone(),
+        };
+        match ready(&state, &context, "main.py".into()).await {
+            Err(e) => assert_eq!(e.message, REMOVED),
+            Ok(_) => panic!("a removed workspace's request was let through"),
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_an_unreadable_sandbox_setting_counts_as_on() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().join("data")).expect("data dir");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let state = AppState::for_tests(data, store);
+        assert!(!sandbox_on(&state).await, "unset is off");
+        state
+            .store
+            .write(|t| {
+                // A store that can't read its settings any more.
+                t.execute("DROP TABLE settings", [])?;
+                Ok(())
+            })
+            .await
+            .expect("write");
+        assert!(sandbox_on(&state).await, "unreadable is on");
     }
 
     #[test]

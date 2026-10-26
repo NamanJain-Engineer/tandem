@@ -1138,6 +1138,12 @@ impl Lsp {
                 });
             }
         }
+        // Once more right before spawning: stopping a dead server and the
+        // probe above can take seconds, and a sandbox switch or removal in
+        // them must not let a server start on the old decision.
+        if let Some(why) = self.superseded(root, epoch) {
+            return Err(why);
+        }
         // Spawning and initializing run without the map's lock, so another
         // folder or language isn't held up by a slow start.
         let spawned = match self.spawner.spawn(spec, root, login) {
@@ -1273,9 +1279,16 @@ impl Lsp {
                 message: RESTARTED.into(),
             });
         }
-        let forgotten = lock(&self.forgotten)
-            .iter()
-            .any(|(n, gone)| *n > epoch.forgets && root.starts_with(gone));
+        let forgotten = {
+            let list = lock(&self.forgotten);
+            // Forgets the list no longer holds (it keeps the last
+            // FORGOTTEN_KEPT) can't be checked: fail closed.
+            let evicted = list.front().is_some_and(|(n, _)| *n > epoch.forgets + 1);
+            evicted
+                || list
+                    .iter()
+                    .any(|(n, gone)| *n > epoch.forgets && root.starts_with(gone))
+        };
         (forgotten || self.closing(root)).then(|| NoServer {
             state: LspState::None,
             message: "This folder is going away".into(),
@@ -1537,10 +1550,18 @@ pub async fn forget_worktree(root: &Path) -> Closing<'static> {
 /// A new worktree: no trust is left at its path from an earlier one (its
 /// row went with its workspace, or its folder was deleted outside the
 /// app), so it asks again.
-pub fn untrust_new_worktree(root: &Path) {
+pub async fn untrust_new_worktree(root: &Path) {
     if let Some(data) = data_dir() {
         untrust(data, root);
     }
+    // A request that read the leftover trust before it went is superseded,
+    // as after a sandbox switch: trust first, then the bump.
+    global().forget(root).await;
+}
+
+/// Whether no server may start in `root` now (a removal is under way).
+pub fn is_closing(root: &Path) -> bool {
+    global().closing(&norm(root))
 }
 
 /// What a server is told at `initialize`. typescript-language-server's
@@ -1963,7 +1984,7 @@ pub fn fallback_definition(rel: &str, text: &str, line: u32, character: u32) -> 
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A client wired to `server`, whose side the test drives byte by byte.
@@ -2407,8 +2428,8 @@ mod tests {
     }
 
     /// Serves `tandem_engines::fake_lsp` in-process for every spec.
-    struct FakeSpawner {
-        installed: bool,
+    pub(crate) struct FakeSpawner {
+        pub(crate) installed: bool,
     }
 
     impl Spawner for FakeSpawner {

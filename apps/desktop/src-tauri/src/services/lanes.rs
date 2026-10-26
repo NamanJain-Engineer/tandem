@@ -193,7 +193,7 @@ pub async fn create_kind(
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
     // F-CD-23: a worktree at a path used before (its row removed with its
     // workspace, or its folder deleted outside the app) starts untrusted.
-    crate::services::lsp::untrust_new_worktree(&lane.path);
+    crate::services::lsp::untrust_new_worktree(&lane.path).await;
     let root = lane.path.to_str().map(str::to_string).ok_or_else(|| {
         IpcError::new(
             ErrorCode::Invalid,
@@ -287,7 +287,7 @@ async fn create_multi(
         repos.push((name.clone(), repo));
     }
     let lane = LaneManager::create_multi(git, folder, &repos, slug_source, &HashSet::new()).await?;
-    crate::services::lsp::untrust_new_worktree(&lane.path);
+    crate::services::lsp::untrust_new_worktree(&lane.path).await;
     let utf8 = |p: &Path| {
         p.to_str().map(str::to_string).ok_or_else(|| {
             IpcError::new(
@@ -788,6 +788,8 @@ pub async fn remove_with_teardown(
     let repo = discover(&parent.root, "Folder not found")?;
     let claimed_in =
         tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
+    #[cfg(test)]
+    discard_probe::ask(lane_path).await;
     LaneManager::remove(git, &repo, lane_path, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
@@ -1044,6 +1046,60 @@ pub fn cleanup_title(n: usize) -> String {
     }
 }
 
+/// Tests ask for a language server in a worktree while its Discard runs,
+/// just before the folder goes, and keep the answer.
+#[cfg(test)]
+mod discard_probe {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static ANSWERS: Mutex<Option<HashMap<PathBuf, String>>> = Mutex::new(None);
+
+    pub fn watch(path: &Path) {
+        ANSWERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_or_insert_with(HashMap::new)
+            .insert(path.to_path_buf(), String::new());
+    }
+
+    pub async fn ask(path: &Path) {
+        let watched = ANSWERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|m| m.contains_key(path));
+        if !watched {
+            return;
+        }
+        let login = tandem_pty::env::LoginEnv {
+            vars: Default::default(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        };
+        let spec = crate::services::lsp::spec_for("main.py").expect("spec");
+        let answer = match crate::services::lsp::global()
+            .client(path, spec, &login)
+            .await
+        {
+            Ok(_) => "started".to_string(),
+            Err(why) => why.message,
+        };
+        if let Some(m) = ANSWERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            m.insert(path.to_path_buf(), answer);
+        }
+    }
+
+    pub fn answer(path: &Path) -> Option<String> {
+        ANSWERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(path).cloned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1230,9 +1286,17 @@ mod tests {
         crate::services::lsp::trust(data, &path).expect("trust");
         assert!(crate::services::lsp::is_trusted(data, &path));
         let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        // While the Discard runs, a request for a server there gets none.
+        discard_probe::watch(&path);
         remove(&fx.store, &terms, &fx.git, &lane.id, None)
             .await
             .expect("discard");
+        assert_eq!(
+            discard_probe::answer(&path).as_deref(),
+            Some("This folder is going away"),
+            "the removal guard holds until the folder is gone"
+        );
+        assert!(!crate::services::lsp::is_closing(&path), "and then lets go");
         git_cmd(
             Path::new(&fx.repo.root),
             &["branch", "-D", "tandem/fix-login"],
@@ -1262,7 +1326,7 @@ mod tests {
             .expect("remove the workspace");
         assert!(
             crate::services::lsp::is_trusted(data, &path),
-            "removing the workspace leaves the folder (and its trust)"
+            "the store's removal alone leaves it (the command clears it first, tested in commands::lsp); the next create clears it here"
         );
         // The leftover folder and branch go outside the app.
         let root = Path::new(&fx.repo.root);
