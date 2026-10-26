@@ -2485,7 +2485,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `plan.test.tsx` (1): Execute all again after a partial start keeps the switch as you left it.
     - E2E-M18-TK-08: the fake Claude Code says 2.1.310, and the answer session's argv has `--tools ""`, safe mode, no commands, no saved session, `dontAsk` and nobody to ask.
   - **Docs.** PRODUCT_SPEC F-TK-08 (the session, briefings, AC1, AC5); ARCHITECTURE §3.1, §6.8.1 (every tool off, as checked), §9.4 (briefings) and §9.6; tasks.mdx; the CHANGELOG bullet (2.1.310); HUMAN_TODO (what was checked, and what's left for each new version).
-  - **Gate:** pending.
+  - **Gate:** passed on ecfd28c4:
+    - 2,409 Rust tests (6 ignored) and 1,645 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 190, and protocol drift with 581 types (none added).
+    - The first run stopped at `tandem-voice`'s `f_di_01_toggle_deep_link_starts_and_stops`: no paste within its 10 s wait, under the gate's load. That crate is untouched here, and the test passed 3 times of 3 alone. It counts on 500 ms of wall time giving the fake microphone enough audio. The gate was resumed from `tandem-voice` on the same tree and passed. Reported to the coordinator for its owner.
+    - E2E on ecfd28c4: m11-2-execute 4 of 4, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-tk08 1 of 1.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
