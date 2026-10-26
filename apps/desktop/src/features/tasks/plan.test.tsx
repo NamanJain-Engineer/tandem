@@ -11,7 +11,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { TasksPage } from "./TasksPanel";
-import { engineOption } from "./PlanWithLead";
+import { engineOption, startedStatus } from "./PlanWithLead";
 
 const META: TasksMeta = {
   version: 1,
@@ -462,6 +462,16 @@ describe("Follow a plan through (F-TK-07)", () => {
     held[0]!([run("TAN-1", "failed", 1)]);
     await before;
     expect(useTasks.getState().attempts.map((a) => a.attempt.id)).toEqual(["atm_TAN-2_2"]);
+  });
+
+  it("F-TK-07.2 a started plan's shape: working, failed, waiting on a review or a stop, then done", () => {
+    const p = plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] });
+    expect(startedStatus(p, [run("TAN-1", "queued", 1)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "running", 1), run("TAN-2", "failed", 2)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "failed", 1), run("TAN-2", "in_review", 2)])).toBe("error");
+    expect(startedStatus(p, [run("TAN-1", "stopped", 1)])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "in_review", 1, { reviewVerdict: "approve" })])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "done", 1), run("TAN-2", "done", 2)])).toBe("done");
   });
 
   it("F-TK-07.2 each task shows its latest run, its verdict and a count, and follows the runs", async () => {

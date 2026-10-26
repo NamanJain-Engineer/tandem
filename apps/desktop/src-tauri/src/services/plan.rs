@@ -560,8 +560,23 @@ impl PlanService {
         }
     }
 
-    /// Writes every plan to the file. Small, so it's written whole.
+    /// Writes every plan to the file. Small, so it's written whole, and
+    /// fsync'd: on a runtime worker the write steps aside from the worker's
+    /// other tasks (`block_in_place`) rather than stalling them (D-2837).
     fn save(&self) {
+        if self.file.is_none() {
+            return;
+        }
+        let worker = tokio::runtime::Handle::try_current()
+            .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+        if worker {
+            tokio::task::block_in_place(|| self.write());
+        } else {
+            self.write();
+        }
+    }
+
+    fn write(&self) {
         let Some(path) = &self.file else {
             return;
         };
@@ -1836,6 +1851,51 @@ mod tests {
             1,
             "one project"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn f_tk_07_3_execute_all_saves_each_run_from_a_runtime_worker() {
+        // On the app's multi-threaded runtime each save steps aside from
+        // the worker (block_in_place, which a current-thread runtime would
+        // refuse), and the plan is kept as it goes.
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = created(&fake, &plans).await;
+        plans.prepare(&view.id).await.expect("prepare");
+        plans.execute(&view.id).await.expect("execute");
+        let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        let kept = after.get(&view.id).expect("kept");
+        assert_eq!(kept.state, PlanState::Started);
+        assert_eq!(kept.queued, vec!["TAN-1".to_string(), "TAN-2".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_create_tasks_after_a_restart_partway_writes_only_the_rest() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let draft = drafted(&fake, &plans).await;
+        // Vibezeo closes while the second task is being written.
+        let blocker = dir.path().join("tasks").join("issues").join("ISSUE-2.json");
+        std::fs::create_dir_all(&blocker).expect("blocker");
+        plans
+            .create_tasks(&draft.id, draft.tasks.clone())
+            .expect_err("partway");
+        std::fs::remove_dir(&blocker).expect("unblock");
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        let kept = after.get(&draft.id).expect("kept");
+        assert_eq!(kept.state, PlanState::Ready);
+        assert_eq!(kept.issue_ids, vec!["TAN-1".to_string()]);
+        assert!(kept.project_id.is_some());
+        // The next try writes only the rest, into the same project.
+        let created = after
+            .create_tasks(&draft.id, kept.tasks.clone())
+            .expect("again");
+        assert_eq!(created.state, PlanState::Created);
+        // The failed write used up its number.
+        assert_eq!(created.issue_ids.len(), 2);
+        assert_eq!(created.issue_ids[0], "TAN-1");
+        assert_eq!(created.project_id, kept.project_id);
+        let tracker = fake2.tracker.clone().expect("tracker");
+        assert_eq!(tracker.all().expect("all").len(), 2, "no task twice");
+        assert_eq!(tracker.meta().expect("meta").projects.len(), 1);
     }
 
     #[tokio::test]

@@ -2675,10 +2675,17 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - a run `tasks:attempt` moved while it was being read keeps its newer state;
     - `resetTasks` doesn't put the counter back to 0.
   - **Not the backend:** the task runner logs nothing as a run ends, so the quiet app log wasn't a stall. Two reviewed runs whose sessions and reviews end at the same moment reach In review with their verdicts.
-  - **Tests** (3 new TypeScript, 1 new Rust):
+  - **Not the review queue either:** the plan's runs change nothing in their worktrees. The spec commits a file into each one only after the rows reach Approve, so the queue rightly listed neither run. Several Done records landing together all join (`f_db_04_1`).
+  - **The rest of F-TK-07's approved low findings,** from 07d8114f, without F-TK-08:
+    - a plan's save on a multi-threaded runtime worker runs in `block_in_place`, so Execute all's fsync'd writes don't hold up the worker;
+    - Codex's `item/completed` without `changes` keeps the paths its start named, and an unfinished change is dropped when its turn ends;
+    - tests for `startedStatus`'s branches, Create tasks after a restart partway, and Claude's MultiEdit result row.
+    - `resetState`'s archive retry doesn't apply: chain26's E2E reset doesn't archive tasks (that came with F-TK-08).
+  - **Tests** (4 new TypeScript, 4 new Rust, and one Rust test with a new case):
     - `plan.test.tsx`: two runs that finish while a read is under way keep their verdicts (on chain26's store it fails with `['setup', 'running']`, the E2E's own rows); overlapping reads, where only the latest writes and a run that moved keeps its state; and a read still under way when the view resets never writes.
     - `tasks_exec`: two runs that finish together, and their reviews, both reach In review with Approve, on two workers.
-  - **Docs.** ARCHITECTURE §9.6 (following the runs).
+    - Ported: `startedStatus`'s branches; Execute all saving from a runtime worker; Create tasks after a restart partway; Codex keeping its start's paths and dropping an unfinished change; Claude's MultiEdit result row.
+  - **Docs.** ARCHITECTURE §9.5 (Codex's paths) and §9.6 (the saves, following the runs).
   - **Gate:** pending.
 
 ### M18 · Review loop decisions
