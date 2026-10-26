@@ -87,10 +87,11 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
       args: { kind: "thread", workspaceId: lane.id, engineId: "claude", access: "edits" },
     });
     await invoke("thread_send", { threadId: thread.id, text: "write notes.md=hello" });
-    const claim = await browser.waitUntil(() => claims().find((c) => c.path === "notes.md") ?? false, {
-      timeout: 30_000,
-      timeoutMsg: `notes.md wasn't claimed: ${JSON.stringify(claims())}`,
-    });
+    const claim = await browser
+      .waitUntil(() => claims().find((c) => c.path === "notes.md") ?? false, { timeout: 30_000 })
+      .catch(() => {
+        throw new Error(`notes.md wasn't claimed: ${JSON.stringify(claims())}`);
+      });
     expect(claim.inferred).toBe(true);
     expect(claim.folder.endsWith("/.tandem/worktrees/notes")).toBe(true);
   });
@@ -108,11 +109,20 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     await $('[data-testid="plan-confirm-run"]').click();
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
 
-    // The plan follows each run to in review, approved by the review.
-    await browser.waitUntil(
-      async () => (await rows()).every((r) => r.state === "in_review" && r.verdict === "approve"),
-      { timeout: 180_000, timeoutMsg: `the runs didn't reach Approve: ${JSON.stringify(await rows())}` },
-    );
+    // The plan follows each run to in review, approved by the review. The
+    // message names the rows the last check saw, not the first.
+    let seen: Array<{ state: string; verdict: string }> = [];
+    await browser
+      .waitUntil(
+        async () => {
+          seen = await rows();
+          return seen.every((r) => r.state === "in_review" && r.verdict === "approve");
+        },
+        { timeout: 180_000 },
+      )
+      .catch(() => {
+        throw new Error(`the runs didn't reach Approve: ${JSON.stringify(seen)}`);
+      });
     expect(await text('[data-testid="plan-summary"]')).toBe("2 approved");
 
     // Each run's worktree gets a commit, so it can land.
