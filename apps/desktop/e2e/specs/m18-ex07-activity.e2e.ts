@@ -37,7 +37,9 @@ describe("E2E-M18-EX07 activity ledger", function () {
   this.timeout(180_000);
   const folder = `/tmp/tandem-e2e-m18-ex07-${Date.now()}`;
   let agent = "";
-  const list = () => invoke<Event[]>("activity_list", { source: "pane", id: agent });
+  // One page (the newest 500) holds everything this spec records.
+  const list = async () =>
+    (await invoke<{ events: Event[]; more: boolean }>("activity_list", { source: "pane", id: agent })).events;
 
   before(async function () {
     this.timeout(90_000);
