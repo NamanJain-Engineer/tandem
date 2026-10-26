@@ -1704,6 +1704,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_cd_24_the_sweep_forgets_a_jj_workspace_whose_row_never_came() {
+        let Some((fx, jj)) = jj_fixture().await else {
+            return;
+        };
+        let root = Path::new(&fx.repo.root);
+        let repo = Repo::discover(root).expect("discover").expect("repo");
+        // Made, then the app stopped before its row (the record stays).
+        let lane = tandem_git::jj::add_workspace(
+            jj.clone(),
+            &repo,
+            "cut short",
+            &HashSet::new(),
+            None,
+            jj_lanes::pending_dir(),
+        )
+        .await
+        .expect("jj workspace");
+        let record = lane.pending.clone().expect("a record in $DATA");
+        assert!(!record.starts_with(root), "never in the repository");
+        let old = std::time::SystemTime::now() - jj_lanes::ORPHAN_AGE - Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(&record)
+            .and_then(|f| f.set_modified(old))
+            .expect("age it");
+        // While a create runs in this repository, the sweep waits.
+        {
+            let _making = jj_lanes::making(root);
+            sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
+            assert!(lane.path.exists());
+        }
+        sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
+        assert!(!lane.path.exists());
+        assert!(!record.exists());
+        let names = tandem_git::jj::workspace_names(jj.as_ref(), root).expect("names");
+        assert!(!names.contains("cut-short") && names.contains("default"));
+    }
+
+    #[tokio::test]
     async fn f_cd_24_5_jj_without_git_says_why() {
         let tmp = tempfile::tempdir().expect("tmp");
         let data = DataDir::at(tmp.path().join("data")).expect("data");

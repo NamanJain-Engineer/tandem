@@ -104,7 +104,7 @@ async fn f_cd_24_1_2_a_jj_workspace_diffs_and_overlaps_like_a_git_worktree() {
     let gl = LaneManager::create(&git_cli, &repo, "git lane", &HashSet::new())
         .await
         .expect("git lane");
-    let jl = jj::add_workspace(jj.clone(), &repo, "jj lane", &HashSet::new(), None)
+    let jl = jj::add_workspace(jj.clone(), &repo, "jj lane", &HashSet::new(), None, None)
         .await
         .expect("jj workspace");
     assert_eq!(jl.path, fx.repo.join(".tandem/worktrees/jj-lane"));
@@ -150,7 +150,7 @@ async fn f_cd_24_4_discard_forgets_the_workspace_and_keeps_its_commit() {
     };
     colocated(&fx, jj.as_ref());
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
-    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None)
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
         .await
         .expect("jj workspace");
     // Uncommitted work: the snapshot keeps it in the workspace's commit.
@@ -197,7 +197,7 @@ async fn f_cd_24_1_a_workspace_made_from_another_starts_at_its_working_copy() {
     };
     colocated(&fx, jj.as_ref());
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
-    let first = jj::add_workspace(jj.clone(), &repo, "first", &HashSet::new(), None)
+    let first = jj::add_workspace(jj.clone(), &repo, "first", &HashSet::new(), None, None)
         .await
         .expect("first");
     std::fs::write(first.path.join("work.txt"), "w\n").expect("write");
@@ -208,6 +208,7 @@ async fn f_cd_24_1_a_workspace_made_from_another_starts_at_its_working_copy() {
         "next",
         &HashSet::new(),
         Some(first.slug.clone()),
+        None,
     )
     .await
     .expect("from the first");
@@ -216,7 +217,7 @@ async fn f_cd_24_1_a_workspace_made_from_another_starts_at_its_working_copy() {
         "it starts from that work"
     );
     // And a second workspace of one name gets the next slug.
-    let again = jj::add_workspace(jj.clone(), &repo, "first", &HashSet::new(), None)
+    let again = jj::add_workspace(jj.clone(), &repo, "first", &HashSet::new(), None, None)
         .await
         .expect("again");
     assert_eq!(again.slug, "first-2");
@@ -266,7 +267,7 @@ async fn f_cd_24_a_repositorys_own_config_runs_no_program() {
     ));
     std::fs::write(&config, text).expect("config");
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
-    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None)
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
         .await
         .expect("jj workspace");
     change(&lane.path);
@@ -304,7 +305,7 @@ async fn f_cd_24_a_committed_or_foreign_jj_folder_is_refused() {
     assert!(e.to_string().contains(jj::COMMITTED_JJ), "{e}");
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
     assert!(
-        jj::add_workspace(jj.clone(), &repo, "x", &HashSet::new(), None)
+        jj::add_workspace(jj.clone(), &repo, "x", &HashSet::new(), None, None)
             .await
             .is_err()
     );
@@ -318,24 +319,160 @@ async fn f_cd_24_a_workspace_whose_making_was_cut_short_is_forgotten_by_the_swee
     };
     colocated(&fx, jj.as_ref());
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
-    // Made, but its row never written (the marker stays).
-    let lane = jj::add_workspace(jj.clone(), &repo, "cut", &HashSet::new(), None)
-        .await
-        .expect("jj workspace");
-    let dir = fx.repo.join(".tandem/worktrees");
-    assert!(jj::adding_marker(&dir, "cut").exists());
+    // Vibezeo's own folder, outside the repository.
+    let pending = fx.dir.path().join("data/jj-pending");
+    // Made, but its row never written (the record stays).
+    let lane = jj::add_workspace(
+        jj.clone(),
+        &repo,
+        "cut",
+        &HashSet::new(),
+        None,
+        Some(pending.clone()),
+    )
+    .await
+    .expect("jj workspace");
+    assert!(lane
+        .pending
+        .as_ref()
+        .is_some_and(|p| p.starts_with(&pending)));
     // A finished one isn't touched.
-    let kept = jj::add_workspace(jj.clone(), &repo, "kept", &HashSet::new(), None)
-        .await
-        .expect("jj workspace");
+    let kept = jj::add_workspace(
+        jj.clone(),
+        &repo,
+        "kept",
+        &HashSet::new(),
+        None,
+        Some(pending.clone()),
+    )
+    .await
+    .expect("jj workspace");
     jj::done_adding(&kept);
-    let n = jj::forget_orphans(jj.clone(), &fx.repo, std::time::Duration::ZERO)
-        .await
-        .expect("sweep");
+    // One being made now isn't either.
+    let busy_one = jj::add_workspace(
+        jj.clone(),
+        &repo,
+        "busy",
+        &HashSet::new(),
+        None,
+        Some(pending.clone()),
+    )
+    .await
+    .expect("jj workspace");
+    let busy = HashSet::from(["busy".to_string()]);
+    let n = jj::forget_orphans(
+        jj.clone(),
+        &pending,
+        &fx.repo,
+        std::time::Duration::ZERO,
+        &busy,
+    )
+    .await
+    .expect("sweep");
     assert_eq!(n, 1);
     assert!(!lane.path.exists());
-    assert!(!jj::adding_marker(&dir, "cut").exists());
     let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
     assert!(!names.contains("cut"));
     assert!(names.contains("kept") && kept.path.exists());
+    assert!(names.contains("busy") && busy_one.path.exists());
+}
+
+#[tokio::test]
+async fn f_cd_24_what_a_repository_commits_never_names_what_the_sweep_forgets() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let pending = fx.dir.path().join("data/jj-pending");
+    std::fs::create_dir_all(&pending).expect("mkdir");
+    // Markers a repository could commit, in its own worktrees folder,
+    // under the old scheme's name and the new one's.
+    let dir = fx.repo.join(".tandem/worktrees");
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    for name in [".default.jj-adding", "default-1.pending", ".x.jj-adding"] {
+        std::fs::write(dir.join(name), format!("{}\ndefault\n", fx.repo.display())).expect("write");
+    }
+    git(&fx.repo, &["add", "-f", ".tandem/worktrees"]);
+    git(&fx.repo, &["commit", "-qm", "ship markers"]);
+    // A record naming `default`, even in Vibezeo's own folder.
+    std::fs::write(
+        pending.join("default-1.pending"),
+        format!(
+            "{}\ndefault\n",
+            std::fs::canonicalize(&fx.repo)
+                .expect("canonical")
+                .display()
+        ),
+    )
+    .expect("write");
+    let n = jj::forget_orphans(
+        jj.clone(),
+        &pending,
+        &fx.repo,
+        std::time::Duration::ZERO,
+        &HashSet::new(),
+    )
+    .await
+    .expect("sweep");
+    assert_eq!(n, 0);
+    let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
+    assert!(
+        names.contains("default"),
+        "the main workspace is still there"
+    );
+    // And Discard itself never forgets `default`.
+    assert!(
+        jj::forget_workspace(jj.clone(), &fx.repo, &dir.join("default"), "default")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn f_cd_24_a_repositorys_aliases_cant_change_the_base_or_the_diff() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let head = git(&fx.repo, &["rev-parse", "HEAD"]);
+    // Aliases that would shadow the template keywords and the base's id.
+    let config = fx.repo.join(".jj/repo/config.toml");
+    let mut text = std::fs::read_to_string(&config).unwrap_or_default();
+    text.push_str(&format!(
+        "\n[revset-aliases]\n'{head}' = 'root()'\n'commit_id(x)' = 'root()'\n[template-aliases]\n'commit_id' = '\"{zero}\"'\n'name' = '\"evil\"'\n",
+        zero = "0".repeat(40)
+    ));
+    std::fs::write(&config, text).expect("config");
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    assert_eq!(lane.base, head, "the base is the real parent");
+    let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
+    assert!(names.contains("tidy") && !names.contains("evil"));
+    change(&lane.path);
+    let files = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+        .await
+        .expect("files");
+    assert_eq!(
+        files,
+        vec!["a.txt".to_string(), "new.txt".to_string()],
+        "not the whole tree from root"
+    );
+    let next = jj::add_workspace(
+        jj.clone(),
+        &repo,
+        "next",
+        &HashSet::new(),
+        Some("tidy".into()),
+        None,
+    )
+    .await
+    .expect("from tidy");
+    assert!(
+        next.path.join("new.txt").exists(),
+        "it starts from tidy's working copy"
+    );
 }

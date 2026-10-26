@@ -288,6 +288,39 @@ pub struct JjLane {
     pub path: PathBuf,
     /// The commit it started from (its working copy's parent).
     pub base: String,
+    /// Its record in the pending folder until its row exists.
+    pub pending: Option<PathBuf>,
+}
+
+/// jj's default workspace: never one of Vibezeo's (a lane's slug is made
+/// unique against jj's names, so it's never `default`).
+pub const DEFAULT_WORKSPACE: &str = "default";
+
+/// A name Vibezeo could have given a jj workspace: a slug, never `default`.
+pub fn is_lane_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != DEFAULT_WORKSPACE
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// A full commit id as jj prints it for a git-backed repository.
+fn is_commit_id(id: &str) -> bool {
+    id.len() == 40
+        && id
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
+/// A commit id as a revset that no alias can shadow: aliases expand
+/// identifiers, never string literals.
+fn commit_revset(id: &str) -> Result<String, GitError> {
+    if is_commit_id(id) {
+        Ok(format!("\"{id}\""))
+    } else {
+        Err(GitError::Invalid("jj gave an unexpected commit id".into()))
+    }
 }
 
 fn ok_or(out: JjOutput, op: &str) -> Result<JjOutput, GitError> {
@@ -310,7 +343,7 @@ fn ok_or(out: JjOutput, op: &str) -> Result<JjOutput, GitError> {
 /// The workspace names jj knows in the repository at `root`.
 pub fn workspace_names(jj: &dyn JjRunner, root: &Path) -> Result<HashSet<String>, GitError> {
     let out = ok_or(
-        jj.run(root, &["workspace", "list", "-T", "name ++ \"\\n\""])?,
+        jj.run(root, &["workspace", "list", "-T", "self.name() ++ \"\\n\""])?,
         "workspace list",
     )?;
     Ok(out
@@ -334,32 +367,50 @@ pub fn base_of(jj: &dyn JjRunner, ws_root: &Path) -> Result<String, GitError> {
                 "@-",
                 "--no-graph",
                 "-T",
-                "commit_id ++ \"\\n\"",
+                "self.commit_id() ++ \"\\n\"",
             ],
         )?,
         "log",
     )?;
-    out.stdout
+    let id = out
+        .stdout
         .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| GitError::Invalid("The new jj workspace has no parent commit".into()))
+        .ok_or_else(|| GitError::Invalid("The new jj workspace has no parent commit".into()))?;
+    commit_revset(&id)?;
+    Ok(id)
 }
 
 /// `jj workspace add <repo>/.tandem/worktrees/<slug> --name <slug>` in the
 /// co-located repository `repo`. `from`: another workspace's name, whose
 /// working-copy commit it starts from (a handoff); otherwise jj starts it
 /// beside the default workspace's.
+///
+/// `pending`: a folder of Vibezeo's own (never in the repository) where a
+/// record of the workspace being made stays until its row exists
+/// ([`done_adding`]), so a crash in between is found by the sweep
+/// ([`forget_orphans`]).
 pub async fn add_workspace(
     jj: Arc<dyn JjRunner>,
     repo: &Repo,
     slug_source: &str,
     also_taken: &HashSet<String>,
     from: Option<String>,
+    pending: Option<PathBuf>,
 ) -> Result<JjLane, GitError> {
     let main = repo.main_root();
     check_repo(&main)?;
+    if from.as_deref().is_some_and(|f| !is_lane_name(f)) {
+        return Err(GitError::Invalid(
+            "That isn't a jj workspace Vibezeo made".into(),
+        ));
+    }
+    if let Some(dir) = &pending {
+        std::fs::create_dir_all(dir)?;
+    }
+    let repo_key = std::fs::canonicalize(&main).unwrap_or_else(|_| main.clone());
     let mut taken = LaneManager::taken_slugs(repo).await?;
     taken.extend(also_taken.iter().cloned());
     ensure_tandem_excluded(repo.common_dir())?;
@@ -377,12 +428,18 @@ pub async fn add_workspace(
                 continue;
             }
             let path_s = path.to_string_lossy().into_owned();
-            // Marked before jj makes it, until its row exists
-            // ([`done_adding`]): a crash in between leaves a marker the
-            // sweep finds ([`forget_orphans`]).
-            let marker = adding_marker(&dir, &slug);
-            std::fs::write(&marker, b"")?;
-            let rev = from.as_ref().map(|w| format!("{w}@"));
+            // Recorded before jj makes it, outside the repository.
+            let marker = match &pending {
+                Some(p) => Some(write_pending(p, &repo_key, &slug)?),
+                None => None,
+            };
+            let unmark = || {
+                if let Some(m) = &marker {
+                    let _ = std::fs::remove_file(m);
+                }
+            };
+            // The workspace's name quoted: no alias can shadow it.
+            let rev = from.as_ref().map(|w| format!("\"{w}\"@"));
             let mut args = vec!["workspace", "add", path_s.as_str(), "--name", slug.as_str()];
             if let Some(r) = &rev {
                 args.push("--revision");
@@ -391,17 +448,17 @@ pub async fn add_workspace(
             let out = match jj.run(&main, &args) {
                 Ok(out) => out,
                 Err(e) => {
-                    let _ = std::fs::remove_file(&marker);
+                    unmark();
                     return Err(e);
                 }
             };
             if !out.success() && out.stderr.contains("already exists") {
-                let _ = std::fs::remove_file(&marker);
+                unmark();
                 taken.insert(slug);
                 continue;
             }
             if let Err(e) = ok_or(out, "workspace add") {
-                let _ = std::fs::remove_file(&marker);
+                unmark();
                 return Err(e);
             }
             let base = match base_of(jj.as_ref(), &path) {
@@ -410,7 +467,7 @@ pub async fn add_workspace(
                     // Nothing half-made stays behind.
                     let _ = jj.run(&main, &["workspace", "forget", slug.as_str()]);
                     let _ = std::fs::remove_dir_all(&path);
-                    let _ = std::fs::remove_file(&marker);
+                    unmark();
                     return Err(e);
                 }
             };
@@ -418,6 +475,7 @@ pub async fn add_workspace(
                 path: std::fs::canonicalize(&path).unwrap_or(path),
                 slug,
                 base,
+                pending: marker,
             });
         }
         Err(GitError::Conflict(
@@ -428,42 +486,59 @@ pub async fn add_workspace(
     .map_err(|e| GitError::Invalid(e.to_string()))?
 }
 
-/// The marker a jj workspace being made has beside it.
-pub fn adding_marker(dir: &Path, slug: &str) -> PathBuf {
-    dir.join(format!(".{slug}{ADDING}"))
+/// A pending record: the repository's canonical folder, then the slug.
+fn write_pending(dir: &Path, repo: &Path, slug: &str) -> Result<PathBuf, GitError> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("{slug}-{nanos}{PENDING}"));
+    std::fs::write(&path, format!("{}\n{slug}\n", repo.to_string_lossy()))?;
+    Ok(path)
 }
 
-const ADDING: &str = ".jj-adding";
+const PENDING: &str = ".pending";
 
-/// The workspace's row exists: its marker goes.
+/// The workspace's row exists: its pending record goes.
 pub fn done_adding(lane: &JjLane) {
-    if let Some(dir) = lane.path.parent() {
-        let _ = std::fs::remove_file(adding_marker(dir, &lane.slug));
+    if let Some(p) = &lane.pending {
+        let _ = std::fs::remove_file(p);
     }
 }
 
-/// jj workspaces whose making was cut short (a marker older than `age`
-/// left in `<repo>/.tandem/worktrees`): each is forgotten and its folder
-/// removed, as Discard would, and its commits stay. Returns how many.
+/// jj workspaces whose making was cut short: records in `pending` (a
+/// folder of Vibezeo's own, which the repository can't write) for the
+/// repository at `repo_root`, older than `age` and not in `busy` (slugs
+/// being made now). Each is forgotten and its folder removed, as Discard
+/// would; its commits stay. Only names Vibezeo makes are ever forgotten:
+/// never `default`. Returns how many.
 pub async fn forget_orphans(
     jj: Arc<dyn JjRunner>,
+    pending: &Path,
     repo_root: &Path,
     age: Duration,
+    busy: &HashSet<String>,
 ) -> Result<usize, GitError> {
-    let dir = repo_root.join(WORKTREES_DIR);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+    let Ok(entries) = std::fs::read_dir(pending) else {
         return Ok(0);
     };
+    let repo_key = std::fs::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
+    let dir = repo_root.join(WORKTREES_DIR);
     let mut found = Vec::new();
     for e in entries.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
-        let Some(slug) = name
-            .strip_prefix('.')
-            .and_then(|n| n.strip_suffix(ADDING))
-            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
-        else {
+        if !e.file_name().to_string_lossy().ends_with(PENDING) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(e.path()) else {
             continue;
         };
+        let mut lines = text.lines();
+        let (Some(repo), Some(slug)) = (lines.next(), lines.next()) else {
+            continue;
+        };
+        if Path::new(repo) != repo_key || !is_lane_name(slug) || busy.contains(slug) {
+            continue;
+        }
         let old = e
             .metadata()
             .and_then(|m| m.modified())
@@ -475,9 +550,9 @@ pub async fn forget_orphans(
         }
     }
     let mut n = 0;
-    for (slug, marker) in found {
+    for (slug, record) in found {
         forget_workspace(jj.clone(), repo_root, &dir.join(&slug), &slug).await?;
-        let _ = std::fs::remove_file(marker);
+        let _ = std::fs::remove_file(record);
         n += 1;
     }
     Ok(n)
@@ -491,7 +566,7 @@ pub async fn diff(
     base: &str,
 ) -> Result<Vec<FileDiff>, GitError> {
     let root = ws_root.to_path_buf();
-    let base = base.to_string();
+    let base = commit_revset(base)?;
     tokio::task::spawn_blocking(move || {
         let out = ok_or(
             jj.run(&root, &["diff", "--git", "--from", &base, "--to", "@"])?,
@@ -520,7 +595,7 @@ pub async fn changed_files(
     base: &str,
 ) -> Result<Vec<String>, GitError> {
     let root = ws_root.to_path_buf();
-    let base = base.to_string();
+    let base = commit_revset(base)?;
     tokio::task::spawn_blocking(move || {
         let out = ok_or(
             jj.run(
@@ -555,7 +630,13 @@ pub async fn forget_workspace(
     let repo_root = repo_root.to_path_buf();
     let ws_root = ws_root.to_path_buf();
     let name = name.to_string();
-    // Only a folder of Vibezeo's own goes: `<repo>/.tandem/worktrees/<name>`.
+    // Only a workspace Vibezeo made (never `default`), and only a folder of
+    // its own: `<repo>/.tandem/worktrees/<name>`.
+    if !is_lane_name(&name) {
+        return Err(GitError::Invalid(
+            "That isn't a jj workspace Vibezeo made".into(),
+        ));
+    }
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let dir = canon(&repo_root.join(WORKTREES_DIR));
     let parent = ws_root.parent().map(canon);

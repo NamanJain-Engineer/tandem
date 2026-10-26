@@ -275,12 +275,15 @@ pub async fn create(
     };
     // F-CD-23: no trust is left at a path the new workspace may take.
     crate::services::lsp::untrust_missing_under(&root.join(tandem_git::lanes::WORKTREES_DIR));
+    // The sweep leaves this repository alone while it's made.
+    let _making = Making::start(&root);
     let lane = jj::add_workspace(
         runner.clone(),
         &repo,
         slug_source,
         &Default::default(),
         start,
+        pending_dir(),
     )
     .await
     .map_err(jj_err)?;
@@ -378,17 +381,76 @@ pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError
 /// cut short (no row was written) are forgotten, their commits kept. Only
 /// in a repository jj may run in.
 pub async fn forget_orphans(root: &Path) -> usize {
-    if !root.join(tandem_git::lanes::WORKTREES_DIR).is_dir() || gate(root).is_err() {
+    let Some(pending) = pending_dir() else {
+        return 0;
+    };
+    // Only records Vibezeo wrote, in its own data folder; never while a
+    // workspace is being made in this repository.
+    if !pending.is_dir() || Making::busy(root) || gate(root).is_err() {
         return 0;
     }
     let Some(runner) = runner().await else {
         return 0;
     };
-    match jj::forget_orphans(runner, root, ORPHAN_AGE).await {
+    match jj::forget_orphans(runner, &pending, root, ORPHAN_AGE, &Default::default()).await {
         Ok(n) => n,
         Err(e) => {
             tracing::warn!(code = "jj.orphans_failed", error = %e, "unfinished jj workspaces weren't forgotten");
             0
+        }
+    }
+}
+
+/// Where records of jj workspaces being made are kept: `$DATA/jj-pending`,
+/// a folder of Vibezeo's own (a repository's content can't name one).
+pub fn pending_dir() -> Option<PathBuf> {
+    crate::services::lsp::data_dir().map(|d| d.root().join("jj-pending"))
+}
+
+/// Repositories with a jj workspace being made in this process, by count.
+static MAKING: std::sync::Mutex<BTreeMap<PathBuf, usize>> = std::sync::Mutex::new(BTreeMap::new());
+
+/// A jj workspace being made in a repository (the sweep waits).
+pub(crate) struct Making(PathBuf);
+
+/// Marks a jj workspace being made in `root` until the guard drops (tests).
+#[cfg(test)]
+pub(crate) fn making(root: &Path) -> Making {
+    Making::start(root)
+}
+
+impl Making {
+    fn key(root: &Path) -> PathBuf {
+        std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+    }
+
+    fn start(root: &Path) -> Self {
+        let key = Self::key(root);
+        *MAKING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(key.clone())
+            .or_default() += 1;
+        Making(key)
+    }
+
+    fn busy(root: &Path) -> bool {
+        MAKING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&Self::key(root))
+            .is_some_and(|n| *n > 0)
+    }
+}
+
+impl Drop for Making {
+    fn drop(&mut self) {
+        let mut all = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = all.get_mut(&self.0) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                all.remove(&self.0);
+            }
         }
     }
 }
