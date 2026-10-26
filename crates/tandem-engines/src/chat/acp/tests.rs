@@ -578,6 +578,49 @@ async fn f_ag_06_the_briefing_opens_the_first_acp_prompt_only() {
     s.shutdown().await.expect("shutdown");
 }
 
+#[test]
+fn f_tk_07_1_an_acp_edit_names_its_files_and_its_updates_keep_them() {
+    let mut parser = AcpParser::new(PathBuf::from("/work/shop"));
+    let update = |u: Value| json!({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s", "update": u}});
+    let paths = |out: Vec<Acp>| -> Vec<Option<Vec<String>>> {
+        out.into_iter()
+            .filter_map(|a| match a {
+                Acp::Event(ThreadEvent::Tool { paths, .. }) => Some(paths),
+                _ => None,
+            })
+            .collect()
+    };
+    let call = update(
+        json!({"sessionUpdate": "tool_call", "toolCallId": "c1", "title": "Edit two files",
+        "kind": "edit", "status": "pending",
+        "locations": [{"path": "/work/shop/src/a.rs"}, {"path": "src/b.rs"}]}),
+    );
+    let both = Some(vec![
+        "/work/shop/src/a.rs".to_string(),
+        "/work/shop/src/b.rs".to_string(),
+    ]);
+    assert_eq!(paths(parser.message(&call)), vec![both.clone()]);
+    // An update that says only its status keeps the files; a diff adds its own.
+    let done = update(
+        json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1", "status": "completed",
+        "content": [{"type": "diff", "path": "/work/shop/src/c.rs", "oldText": "a", "newText": "b"}]}),
+    );
+    assert_eq!(
+        paths(parser.message(&done)),
+        vec![Some(vec![
+            "/work/shop/src/a.rs".to_string(),
+            "/work/shop/src/b.rs".to_string(),
+            "/work/shop/src/c.rs".to_string(),
+        ])]
+    );
+    // Reading a file names nothing to claim.
+    let read = update(
+        json!({"sessionUpdate": "tool_call", "toolCallId": "c2", "title": "Read a.rs",
+        "kind": "read", "status": "pending", "locations": [{"path": "/work/shop/src/a.rs"}]}),
+    );
+    assert_eq!(paths(parser.message(&read)), vec![None]);
+}
+
 /// F-EN-10 review: the sign-in an agent wants is named as it named it, so
 /// the person can sign in with the agent's own command (D-2514).
 #[test]

@@ -133,6 +133,18 @@ impl CodexParser {
             .unwrap_or_else(|_| path.to_string())
     }
 
+    /// A file change's files, absolute (F-TK-07).
+    fn edited(&self, changes: &Value) -> Option<Vec<String>> {
+        let paths: Vec<String> = changes
+            .as_array()?
+            .iter()
+            .filter_map(|ch| ch.get("path").and_then(Value::as_str))
+            .filter(|p| !p.is_empty())
+            .map(|p| crate::events::absolute(&self.cwd, p))
+            .collect();
+        (!paths.is_empty()).then_some(paths)
+    }
+
     fn paths(&self, changes: &Value) -> String {
         changes
             .as_array()
@@ -194,9 +206,19 @@ impl CodexParser {
         };
         self.items
             .insert(id.clone(), (verb, summary.clone(), detail.clone()));
+        let edited = match item.get("type").and_then(Value::as_str) {
+            Some("fileChange") => self.edited(&item["changes"]),
+            _ => None,
+        };
         let mut ev = ThreadEvent::tool(&id, verb, &summary, ToolStatus::Running);
-        if let ThreadEvent::Tool { detail: d, .. } = &mut ev {
+        if let ThreadEvent::Tool {
+            detail: d,
+            paths: p,
+            ..
+        } = &mut ev
+        {
             *d = detail;
+            *p = edited;
         }
         Some(ev)
     }
@@ -270,6 +292,9 @@ impl CodexParser {
                     .then(|| item["changes"].as_array().map(|c| self.diffs(c)))
                     .flatten()
                     .filter(|d| !d.is_empty());
+                let paths = (kind == "fileChange")
+                    .then(|| self.edited(&item["changes"]))
+                    .flatten();
                 Some(ThreadEvent::Tool {
                     id,
                     verb,
@@ -280,6 +305,7 @@ impl CodexParser {
                     output_file: None,
                     diff,
                     detail,
+                    paths,
                 })
             }
             _ => None,

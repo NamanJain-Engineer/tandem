@@ -1771,7 +1771,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) has D-2824 to D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, and F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October). REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) has D-2838 and D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October), F-TK-07 took D-2824 to D-2827 and its review fixes D-2836 and D-2837, and F-TK-08, built alongside, holds D-2828 to D-2835. REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -2605,6 +2605,55 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 184, and protocol drift with 566 types: `PlanLaunch`, `PlanRun`, `PlanSkip` and `TaskRunBlock` added; `PlanState` gains `starting`, and `PlanView` gains `waiting`, `queued` and `skipped`.
     - E2E: m18-tk06 1 of 1, m11-2-execute 4 of 4 (F-TK-04's runs and review), m18-rt06 2 of 2 (the Night Shift starts runs) and m18-tk05 3 of 3 (the tasks service). After the gate, E2E-M18-TK-06 finds the check's rows by their task rather than by the tracker's order (the spec only).
 
+- [x] F-TK-07 Follow a plan through, bold bet B3's second slice (D-2824 to D-2827). Built on the F-TK-06 review fixes, after merging release-0.10.0 and product-m0-m5 9efa06e3.
+  - **Spec.** PRODUCT_SPEC F-TK-07 (P2, owned by M18; coverage 185, M18 owns 19).
+  - **Task runs claim their files.**
+    - A run's first message ends with `lanes::CLAIMS_BRIEFING`, as a worktree's briefing does; the review's doesn't.
+    - `ThreadEvent::Tool` gains `paths`: the files an edit names, absolute. Claude Code's Edit, Write, MultiEdit and NotebookEdit, Codex's file changes, and ACP edits naming files fill it; other tools leave it out (goldens updated).
+    - `ThreadService::set_edit_sink` gets each tool's paths once per turn, unless it was denied or failed; `TasksService::claim_thread_edits` claims them for `th:<thread>` like a pane's edits. A chat session's scope is tracked even without the tasks binary.
+  - **The plan follows its runs.** The dialog lists each task with its latest run (a status shape and words, the review's verdict), counts them in a line, and each row opens its task. The Tasks page's header keeps every plan until it's removed.
+  - **Plans are kept.** `$DATA/plans.json` (0600, written whole on every change). At launch `resume()` withholds the kept plans' chats from the tasks server again, reads plans whose Lead finished while Vibezeo was closed, and fails interrupted ones with "Vibezeo closed while Lead was planning". A plan caught Starting goes back to Created, keeping what it queued.
+  - **Land approved.** "Land N approved…" opens Land worktrees (F-WT-07) with only the approved tasks' worktrees chosen, listed first in plan order (`laneIds`, `plannedOrder`). The landing is F-WT-07's, local confirm included.
+  - **E2E support.** `resetState` removes the kept plans, which now outlive specs.
+  - **Tests** (9 new Rust, 6 new TypeScript):
+    - `tandem-engines` (3): Claude Code's, Codex's and ACP's edits name their files, absolute.
+    - App (6): an edit reaches the edit sink once per tool; a thread's edits claim in its working tree with or without the tasks binary; plans kept across a restart until removed (their chats withheld again); a plan interrupted by a restart fails with its reason; a plan whose Lead finished while closed is read; a plan closed while Starting goes back keeping what it queued. F-TK-04.4 checks the run's briefing asks to claim and the review's doesn't.
+    - `plan.test.tsx` (5): runs, verdicts and the count follow `tasks:attempt`; a row opens its task; Land 2 approved in plan order; nothing to land; kept plans listed after a restart and removed. `landWorktrees.test.tsx` (1): opened from a plan, only its worktrees are chosen and landed, in its order.
+    - E2E: `m18-tk07-follow-plan.e2e.ts`: a thread in a worktree that writes `notes.md` claims it; a plan's runs reach Approve and Land 2 approved… chooses both worktrees in plan order; after a restart the plan is listed with its runs, and Remove plan leaves its tasks.
+  - **Docs.** ARCHITECTURE §6.9 (`Tool.paths`), the data folder (`plans.json`), §9.4 (the run's briefing), §9.5 (chat threads' edits) and §9.6; tasks.mdx (claims from chat threads, following a plan, Land approved, kept plans); MILESTONES (F-TK-07, E2E-M18-TK-07).
+  - **Not in this slice:** the supervisor loop (Lead answering agents' questions), marking landed tasks Done, running a task again from the plan after Changes requested, and showing a thread's claims in it (threads see overlaps in `list_claims`).
+  - **Gate:** passed on 39a6dbd7:
+    - 2,241 Rust tests (6 ignored) and 1,598 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 185, and protocol drift with 566 types: `ThreadEvent`'s tool event gains `paths`.
+    - E2E on 8e6bc235 (the same code; 39a6dbd7 changes one UI test's mock): m18-tk07 3 of 3, m18-tk06 1 of 1, m18-wt07 2 of 2 and m18-tk05 3 of 3.
+    - The first gate run, on 8e6bc235, stopped at the TypeScript tests: "a run's row opens its task" mocked `task_get` with no issue, so the task view it opened threw (an unhandled error). Its mock now returns the task, and the test checks the task opens.
+    - Merging the fix line, the run briefing's invariant test needed the claims sentence at the end, and a test type got a name (clippy).
+
+- [x] F-TK-07, the coordinator's review fixes (D-2836, D-2837). On a line from 99cf21e3, with product-m0-m5 d2ae3155 (chain25, #99) merged in: the conflicts were MILESTONES' coverage (189 features, M18 23 with F-TK-07) and two ACP tests added at the same place (both kept); E2E-M18-TK-06 keeps the coordinator's id-based check (f4d1ca9d). Each code fix began with a failing test.
+  - **Refused edits claim nothing** (must-fix 1). A chat thread's edit claims only from its tool's `Ok` row. Every adapter's first row of a tool comes before its outcome (Claude's tool_use, Codex's `item/started`, ACP's pending `tool_call`), so the old rule claimed edits that were then denied or failed. Read-only threads (second opinions, reviews) claimed files they never changed, which gave false overlap notices.
+  - **A plan caught Starting keeps what it queued** (must-fix 2). Execute all saves `queued` after each run it queues. Before, the list was saved only at the end, so a plan Vibezeo closed mid-loop came back with the list from before, and Execute all queued those tasks again.
+  - **Create tasks keeps each step** (should-fix): the project as soon as it's made, and each task as it's written. A try after a quit writes only the rest, into the same project.
+  - **The plan's runs have loading and error states** (should-fix). A skeleton shows until they're read, and a failed read says why with Retry (`attemptsStatus`, `attemptsError`); "Not started" only once the runs are known.
+  - **The header chip follows a started plan's runs** (should-fix): working while one goes, an error when one failed, waiting while one is in review or stopped, else done.
+  - **Nits.**
+    - The setup withholds the kept plans' chats synchronously (`withhold_kept`); `resume` then follows them.
+    - `plan_create_tasks` and `plan_discard` write `plans.json` off the main thread (`spawn_blocking`).
+    - AC1's briefing check is its own test.
+    - Left as they are: a removed plan's chat gets the tasks server back at the next launch (it's an ordinary Lead chat then, which no plan uses), and a Planning plan whose relaunch waits more than 30 minutes behind a headless pass's lock fails with the timeout message.
+  - **Tests** (5 new Rust, 2 new TypeScript):
+    - `threads` (2): a denied edit (after a Running or a Pending row) and a failed one claim nothing; a retried edit that works claims once. The once-per-tool test also checks a second Ok row.
+    - `plan` (2): the Starting test now stops the host mid-loop (the second start never returns), reloads, and Execute all starts only the rest. The old test rewrote a file that already held the full list, so it couldn't fail. Create tasks publishes, and so saves, the project, each task and then Created.
+    - `tasks_exec` (1): AC1's briefing check, moved from F-TK-04.4.
+    - The four new Rust tests failed with the old rule and save points put back, and pass now.
+    - `plan.test.tsx` (2): loading, a failed read with its reason, and Retry; the chip from working to waiting to done.
+  - **Docs.** PRODUCT_SPEC F-TK-07 (refused edits, loading and errors, the chip, Create tasks after a quit); ARCHITECTURE §9.5 and §9.6; tasks.mdx.
+  - **Gate:** passed on 22d7c7c4:
+    - 2,357 Rust tests (6 ignored) and 1,631 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 189, and protocol drift with 579 types (this line adds none).
+    - E2E: m18-db04 6 of 6, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-wt07 2 of 2.
+
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
   - Only engines with a chat adapter can review. They are the ones whose read-only access is enforced by the adapter (Claude's disallowed tools, Codex's read-only sandbox, ACP's refused writes). The registry has no read-only flag for terminal engines, so they're listed and disabled.
@@ -2700,6 +2749,27 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The window loads `plan_list` when it opens; events that arrived meanwhile win.
   - A created or started plan has Remove plan: the plan goes and its tasks stay. Before tasks exist, the words stay Discard plan.
   - Create tasks that fails partway keeps its project and the tasks written (`issueIds` while Ready), and the plan keeps the rows. Those rows are locked, and the next try writes the rest into the same project. Tries run one at a time.
+
+- D-2824: Chat threads claim what they edit from the engine's own report, and a task run is asked to claim (F-TK-07 AC1).
+  - The adapters name an edit's files in `ThreadEvent::Tool.paths`, absolute, rather than the app parsing `arg_summary`: Codex joins its paths with ", ", so the display text can't be read back reliably. Only paths, never the edit, as with the hook (D-2428).
+  - A tool claims once per turn, when it's reported, unless it was denied or failed. ACP's edit, delete and move kinds count, with every path they name.
+  - A run's briefing ends with the worktree briefing's sentence (`CLAIMS_BRIEFING`). The review reads and doesn't claim.
+- D-2825: Plans are kept in `$DATA/plans.json`, and a launch picks them up (F-TK-07 AC3).
+  - One small file, written whole and atomically on every change, 0600. A missing or damaged file starts with no plans rather than failing the app.
+  - At launch the kept plans' chats get no tasks server again (D-2822), a plan whose Lead finished while Vibezeo was closed is read, and one whose chat the launch marked interrupted fails, saying so, with Plan again.
+  - A plan caught Starting goes back to Created with what it queued, so Execute all can't queue those twice (D-2439). Execute all's check isn't kept: after a restart it shows its runs again.
+- D-2826: The plan follows its runs from what the window already has (F-TK-07 AC2).
+  - `task_attempts_list` and `tasks:attempt`, which the task page uses, give each task's latest run: the one queued last. No new command or event.
+  - A run shows as a status shape and words (DESIGN §4), its review's verdict included, and a line counts the kinds in a fixed order. A row opens its task, where all its runs are.
+- D-2827: Land approved hands the approved worktrees to F-WT-07's Land worktrees (F-TK-07 AC4).
+  - The plan's ask carries `laneIds`; the dialog chooses only those that can land, listed first in the plan's order. Its forecast, check and confirm are F-WT-07's, so landing stays a local action (F-TL-06 rule 5) and a plan can't land work by itself.
+  - The button is the dialog's accent only when Execute all isn't offered (DESIGN §5.1): next to Execute all it's secondary.
+- D-2836: A chat thread's edit claims when its tool succeeded, not before (F-TK-07 AC1, the coordinator's review of F-TK-07).
+  - Every adapter reports a tool before its outcome, and all three carry the edit's paths on the result row too. So the claim waits for `Ok`: a refused or failed edit changed nothing and claims nothing, and a read-only thread never claims.
+  - Still once per tool per turn.
+- D-2837: A plan keeps its progress as it happens (F-TK-07 AC3, the review).
+  - Execute all saves each run it queues, and Create tasks the project and each task as they're written. A quit at any point leaves the plan holding exactly what was done, and the next try does only the rest.
+  - The writes stay whole-file and atomic. Commands that write from the main thread run them on `spawn_blocking`.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

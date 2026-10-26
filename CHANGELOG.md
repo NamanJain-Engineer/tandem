@@ -9,6 +9,28 @@ release fails when its version has no section.
 
 ## Unreleased
 
+### Added
+
+- [lin] **Follow a plan through.** Once a plan's tasks are created, Plan with
+  Lead lists each task with its latest run: queued, running, in review with
+  the review's verdict (Approve or Changes requested), stopped, failed or
+  done. A line counts them, and each row opens its task. While the runs load
+  the list says so, and if they can't be read it says why, with Retry.
+- [lin] **Land approved work in the plan's order.** "Land N approved…" opens
+  Land worktrees with exactly the approved tasks' worktrees chosen, in the
+  plan's order. You check the forecast and confirm the landing there.
+- [lin] **Plans are kept.** A plan stays in the Tasks page's header until you
+  remove it, and comes back after a restart. Its chip there shows whether its
+  runs are going, wait on you, or are done. If Vibezeo closed while Lead was
+  planning, the plan says so and offers Plan again. If it closed while
+  Execute all was starting the runs, or while Create tasks was writing, the
+  plan keeps what was done and the next try does only the rest.
+- [lin] **Chat threads claim the files they edit.** A Claude Code, Codex or
+  ACP agent's edits in a thread claim their files, as a terminal agent's do,
+  so agents in other worktrees of the repository see the overlap. An edit you
+  refused, or one that failed, claims nothing. A task run is asked to claim
+  its files before it edits them.
+
 ### Changed
 
 - [lin] **A quieter, sharper look.** Neutral ink greys, tighter corners and

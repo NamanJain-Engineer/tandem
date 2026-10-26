@@ -626,7 +626,7 @@ export function WorktreeDialogs() {
   }
   if (ask.kind === "land") {
     const ws = list.find((w) => w.id === ask.workspaceId);
-    return ws ? <LandWorktreesDialog ws={ws} onClose={close} /> : null;
+    return ws ? <LandWorktreesDialog ws={ws} laneIds={ask.laneIds} onClose={close} /> : null;
   }
   if (ask.kind === "comparePreviews")
     return (

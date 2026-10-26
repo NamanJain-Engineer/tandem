@@ -1,6 +1,6 @@
-// Plan with Lead (F-TK-06): the plans the app holds, loaded when the
-// window opens and kept fresh from `tasks:plan` as Lead finishes, tasks are
-// created and runs are queued.
+// Plan with Lead (F-TK-06): the plans, kept across restarts (F-TK-07),
+// loaded when the window opens and kept fresh from `tasks:plan` as Lead
+// finishes, tasks are created and runs are queued.
 import { create } from "zustand";
 import type { IpcError, PlanLaunch, PlanTask, PlanView } from "@tandem/protocol";
 import { listen } from "../ipc/events";
@@ -13,7 +13,7 @@ type PlanState = {
   openId: string | null;
   open: (id: string | null) => void;
   apply: (v: PlanView) => void;
-  /** The plans the app holds (a reloaded window starts empty). */
+  /** Every plan, from the core (kept across restarts since F-TK-07). */
   load: () => Promise<void>;
   start: (workspaceId: string, goal: string) => Promise<PlanView | IpcError>;
   createTasks: (id: string, tasks: PlanTask[]) => Promise<PlanView | IpcError>;
@@ -40,8 +40,8 @@ export const usePlans = create<PlanState>((set, get) => ({
   open: (id) => set({ openId: id }),
   apply: (v) => set((s) => ({ plans: { ...s.plans, [v.id]: v } })),
   load: async () => {
-    const r = await call<PlanView[]>("plan_list", {});
-    if (isIpcError(r)) return;
+    const r = await call<PlanView[] | null>("plan_list", {});
+    if (isIpcError(r) || !r) return;
     // What arrived on `tasks:plan` meanwhile is newer.
     set((s) => ({ plans: { ...Object.fromEntries(r.map((v) => [v.id, v])), ...s.plans } }));
   },
@@ -71,7 +71,7 @@ export const usePlans = create<PlanState>((set, get) => ({
   },
 }));
 
-/** Keeps plans current: the app's plans, then `tasks:plan`. */
+/** Reads the kept plans, then keeps them current: `tasks:plan`. */
 export function followPlans(): () => void {
   const stop = listen<PlanView>("tasks:plan", (v) => usePlans.getState().apply(v));
   void stop.then(() => usePlans.getState().load());
