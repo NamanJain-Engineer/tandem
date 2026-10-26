@@ -1425,6 +1425,9 @@ pub fn run() {
         // scrollback snapshot and every process tree is stopped.
         Ok(app) => app.run(|handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // F-TL-12: an agent's running `vibezeo run` ends with the app
+                // (its group killed, its row written), never left holding values.
+                tauri::async_runtime::block_on(services::agent_run::shutdown_all());
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();

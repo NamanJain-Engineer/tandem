@@ -6,6 +6,7 @@
 export type ActivityEvent = { 
 /**
  * `turn` | `files` | `command` | `tool` | `subagent` | `approval` | `run`
+ * | `note` (events of a flood weren't kept)
  */
 kind: string, at: number, 
 /**

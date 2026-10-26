@@ -308,40 +308,46 @@ describe("Dashboard model", () => {
 describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
   beforeEach(resetStores);
 
-  it("every Allow waits a moment after the cards change place", async () => {
-    const run = JSON.stringify({
-      vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+  for (const groupBy of ["status", "project"] as const)
+    it(`every Allow waits after the cards change place, also after A → B → A (${groupBy})`, async () => {
+      const run = JSON.stringify({
+        vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+      });
+      const a = item("waiting", "alpha", {
+        since: 1_000,
+        pendingApproval: {
+          id: "ap_a",
+          source: { type: "pane", paneId: "pn_x" },
+          kind: "command",
+          summary: "run",
+          detail: run,
+          options: ["once"],
+          createdAt: 1,
+          expiresAt: 2,
+        },
+      });
+      const b = item("waiting", "beta", { since: 2_000 });
+      setup([a, b]);
+      useDashboard.setState({ groupBy });
+      render(
+        <UiProvider>
+          <Dashboard />
+        </UiProvider>,
+      );
+      const allow = () => screen.getByTestId("card-allow") as HTMLButtonElement;
+      await screen.findByTestId("card-allow");
+      await waitFor(() => expect(allow().disabled).toBe(false));
+      // Another agent's reports move its card below, then back above, quickly.
+      const move = (since: number) =>
+        act(() => useDashboard.setState((st) => ({ items: { ...st.items, [b.key]: { ...b, since } } })));
+      move(0);
+      expect(allow().disabled).toBe(true);
+      await new Promise((r) => setTimeout(r, 200));
+      move(2_000);
+      // Back where it was settled before, yet not live at once.
+      expect(allow().disabled).toBe(true);
+      await new Promise((r) => setTimeout(r, 350));
+      expect(allow().disabled).toBe(true);
+      await waitFor(() => expect(allow().disabled).toBe(false));
     });
-    const a = item("waiting", "alpha", {
-      since: 1_000,
-      pendingApproval: {
-        id: "ap_a",
-        source: { type: "pane", paneId: "pn_x" },
-        kind: "command",
-        summary: "run",
-        detail: run,
-        options: ["once"],
-        createdAt: 1,
-        expiresAt: 2,
-      },
-    });
-    const b = item("waiting", "beta", { since: 2_000 });
-    setup([a, b]);
-    render(
-      <UiProvider>
-        <Dashboard />
-      </UiProvider>,
-    );
-    const allow = () => screen.getByTestId("card-allow") as HTMLButtonElement;
-    await screen.findByTestId("card-allow");
-    await waitFor(() => expect(allow().disabled).toBe(false));
-    // Another agent's report moves the cards.
-    act(() =>
-      useDashboard.setState((st) => ({
-        items: { ...st.items, [b.key]: { ...b, since: 0 } },
-      })),
-    );
-    expect(allow().disabled).toBe(true);
-    await waitFor(() => expect(allow().disabled).toBe(false));
-  });
 });

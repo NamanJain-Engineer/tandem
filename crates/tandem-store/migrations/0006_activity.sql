@@ -7,11 +7,14 @@ CREATE TABLE activity (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   source_kind   TEXT NOT NULL CHECK (source_kind IN ('pane','thread')),
   source_id     TEXT NOT NULL,
-  kind          TEXT NOT NULL CHECK (kind IN ('turn','tool','subagent','approval','run')),
+  kind          TEXT NOT NULL CHECK (kind IN ('turn','tool','subagent','approval','run','note')),
   at            INTEGER NOT NULL,
   summary       TEXT NOT NULL,
   detail_json   TEXT NOT NULL DEFAULT '{}',
-  checkpoint_id TEXT
+  checkpoint_id TEXT,
+  -- 1: pruned by age only (a decided run, an allowed approval, a note that
+  -- events weren't kept), never by the per-session or total counts.
+  kept          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);
 CREATE INDEX activity_at ON activity(at);

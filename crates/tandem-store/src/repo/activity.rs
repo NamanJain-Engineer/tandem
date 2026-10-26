@@ -35,6 +35,9 @@ pub struct NewActivity {
     pub summary: String,
     pub detail: serde_json::Value,
     pub checkpoint_id: Option<String>,
+    /// Pruned by age only, never by count: a decided run, an allowed
+    /// approval, a note that events weren't kept.
+    pub kept: bool,
 }
 
 pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> {
@@ -42,8 +45,8 @@ pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> 
     store
         .write(move |t| {
             t.execute(
-                "INSERT INTO activity (source_kind, source_id, kind, at, summary, detail_json, checkpoint_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO activity (source_kind, source_id, kind, at, summary, detail_json, checkpoint_id, kept)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     row.source_kind,
                     row.source_id,
@@ -51,7 +54,8 @@ pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> 
                     row.at,
                     row.summary,
                     detail,
-                    row.checkpoint_id
+                    row.checkpoint_id,
+                    row.kept
                 ],
             )?;
             Ok(t.last_insert_rowid())
@@ -259,9 +263,10 @@ pub async fn approvals(
 pub const KEEP_PER_SOURCE: i64 = 10_000;
 
 /// Drops events older than [`KEEP_DAYS`], then each source's oldest past
-/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`]. Runs and
-/// approvals go by age only: the agent can sign tool reports, so a flood of
-/// them must not push its own runs out.
+/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`]. Rows marked
+/// `kept` (decided runs, allowed approvals, notes) go by age only: the agent
+/// can sign tool reports and trigger refusals, so a flood of those must not
+/// push its real runs out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
     prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS).await
 }
@@ -281,12 +286,12 @@ async fn prune_to(
                    SELECT id FROM (
                      SELECT id, ROW_NUMBER() OVER (
                        PARTITION BY source_kind, source_id ORDER BY at DESC, id DESC) AS n
-                     FROM activity WHERE kind NOT IN ('run', 'approval'))
+                     FROM activity WHERE kept = 0)
                    WHERE n > ?1)",
                 [per_source],
             )?;
             let over = t.execute(
-                "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kind NOT IN ('run', 'approval') ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
+                "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kept = 0 ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
                 [total],
             )?;
             Ok(old + crowded + over)
@@ -313,6 +318,7 @@ mod tests {
             summary: format!("{kind} at {at}"),
             detail: serde_json::json!({ "n": at }),
             checkpoint_id: None,
+            kept: false,
         }
     }
 
@@ -407,13 +413,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_ex_07_a_flood_of_tool_rows_never_prunes_runs_or_approvals() {
+    async fn f_ex_07_a_flood_of_tool_rows_never_prunes_kept_runs_or_approvals() {
         let (_d, store) = store();
         let now = 1_000_000;
-        insert(&store, event("pn_1", "run", now - 500))
-            .await
-            .expect("insert");
-        insert(&store, event("pn_1", "approval", now - 499))
+        let kept = |kind| NewActivity {
+            kept: true,
+            ..event("pn_1", kind, now - 500)
+        };
+        insert(&store, kept("run")).await.expect("insert");
+        insert(&store, kept("approval")).await.expect("insert");
+        // A refused run isn't kept: it goes with the count like a tool row.
+        insert(&store, event("pn_1", "run", now - 400))
             .await
             .expect("insert");
         for at in 0..20 {
@@ -421,8 +431,9 @@ mod tests {
                 .await
                 .expect("insert");
         }
-        // Per session 4, 6 in all: the tool rows go down to 4; the run and
-        // the approval stay, however many tool rows came after them.
+        // Per session 4, 6 in all: the other rows go down to 4 (the refused
+        // run among the first out); the kept run and approval stay, however
+        // many rows came after them.
         prune_to(&store, now, 4, 6).await.expect("prune");
         let kinds: Vec<String> = list(&store, "pane", "pn_1", Page::ALL)
             .await

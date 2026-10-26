@@ -21,6 +21,7 @@ use tandem_store::Store;
 #[ts(export)]
 pub struct ActivityEvent {
     /// `turn` | `files` | `command` | `tool` | `subagent` | `approval` | `run`
+    /// | `note` (events of a flood weren't kept)
     pub kind: String,
     pub at: i64,
     /// One line, redacted.
@@ -124,42 +125,132 @@ fn kind_of(source: &str) -> Result<&'static str, IpcError> {
 pub struct ActivityService {
     store: Store,
     clock: Arc<dyn Clock>,
-    /// Per pane: the minute's start (app clock), tool rows kept, dropped.
-    tool_rate: std::sync::Mutex<std::collections::HashMap<String, (i64, u32, u32)>>,
+    /// Per pane and kind of flood: this minute's window.
+    rates: std::sync::Mutex<std::collections::HashMap<(String, Flood), Window>>,
 }
 
-/// Tool and subagent rows kept per pane per minute. Any process in the pane
-/// can sign tool reports, so a flood is cut here (and noted in one row).
-pub const TOOL_ROWS_PER_MINUTE: u32 = 240;
+/// What an agent can make the ledger write as often as it likes: tool
+/// reports and prompt reports are signed with the pane's secret, which the
+/// agent holds, and it can ask for runs that are refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Flood {
+    Tool,
+    Turn,
+    Refusal,
+}
+
+impl Flood {
+    /// Rows kept per pane per minute.
+    pub const fn limit(self) -> u32 {
+        match self {
+            Flood::Tool => 240,
+            Flood::Turn => 60,
+            Flood::Refusal => 30,
+        }
+    }
+
+    fn what(self) -> &'static str {
+        match self {
+            Flood::Tool => "tool events",
+            Flood::Turn => "turns",
+            Flood::Refusal => "runs that didn't start",
+        }
+    }
+}
+
+/// Tool and subagent rows kept per pane per minute.
+pub const TOOL_ROWS_PER_MINUTE: u32 = Flood::Tool.limit();
+
+/// A minute of one pane's rows of one [`Flood`], by the app's clock.
+#[derive(Debug, Clone, Copy)]
+struct Window {
+    start: i64,
+    kept: u32,
+    dropped: u32,
+}
+
+/// Whether a row is written, and the notes that come with it.
+struct Admit {
+    keep: bool,
+    notes: Vec<String>,
+}
 
 impl ActivityService {
     pub fn new(store: Store, clock: Arc<dyn Clock>) -> Arc<Self> {
         Arc::new(Self {
             store,
             clock,
-            tool_rate: Default::default(),
+            rates: Default::default(),
         })
     }
 
-    /// Whether this pane may record another tool row now, and how many were
-    /// dropped in the minute that just ended (to note).
-    fn tool_allowed(&self, pane: &str) -> (bool, u32) {
+    /// Whether this pane may write another row of `flood` this minute. The
+    /// first one over the limit brings a note at once (a flood followed by
+    /// silence, or a quit, still leaves it); the next minute's first row
+    /// brings one with the number dropped.
+    fn admit(&self, pane: &str, flood: Flood) -> Admit {
         let now = self.clock.now_ms();
-        let Ok(mut rates) = self.tool_rate.lock() else {
-            return (false, 0);
+        let Ok(mut rates) = self.rates.lock() else {
+            return Admit {
+                keep: false,
+                notes: Vec::new(),
+            };
         };
-        let rate = rates.entry(pane.to_string()).or_insert((now, 0, 0));
-        let mut ended = 0;
-        if now - rate.0 >= 60_000 {
-            ended = rate.2;
-            *rate = (now, 0, 0);
+        let w = rates.entry((pane.to_string(), flood)).or_insert(Window {
+            start: now,
+            kept: 0,
+            dropped: 0,
+        });
+        let mut notes = Vec::new();
+        if now - w.start >= 60_000 {
+            if w.dropped > 0 {
+                notes.push(format!(
+                    "{} more {} in that minute weren't kept",
+                    w.dropped,
+                    flood.what()
+                ));
+            }
+            *w = Window {
+                start: now,
+                kept: 0,
+                dropped: 0,
+            };
         }
-        if rate.1 >= TOOL_ROWS_PER_MINUTE {
-            rate.2 += 1;
-            return (false, ended);
+        if w.kept < flood.limit() {
+            w.kept += 1;
+            return Admit { keep: true, notes };
         }
-        rate.1 += 1;
-        (true, ended)
+        w.dropped += 1;
+        if w.dropped == 1 {
+            notes.push(format!(
+                "Over {} {} in a minute: the rest of the minute's aren't kept",
+                flood.limit(),
+                flood.what()
+            ));
+        }
+        Admit { keep: false, notes }
+    }
+
+    /// `row` if `flood` allows it, and its notes: kept by age only, so a
+    /// later flood can't prune them.
+    async fn record_limited(&self, flood: Flood, row: NewActivity) {
+        let admit = self.admit(&row.source_id, flood);
+        for note in admit.notes {
+            self.record(NewActivity {
+                source_kind: row.source_kind,
+                source_id: row.source_id.clone(),
+                kind: "note",
+                at: self.clock.now_ms(),
+                summary: note,
+                detail: serde_json::json!({}),
+                checkpoint_id: None,
+                kept: true,
+            })
+            .await;
+        }
+        if admit.keep {
+            self.record(row).await;
+        }
     }
 
     async fn record(&self, row: NewActivity) {
@@ -178,7 +269,7 @@ impl ActivityService {
         checkpoint: Option<String>,
         at: i64,
     ) {
-        self.record(NewActivity {
+        let row = NewActivity {
             source_kind,
             source_id: id.to_string(),
             kind: "turn",
@@ -186,8 +277,14 @@ impl ActivityService {
             summary: "Turn sent".into(),
             detail: serde_json::json!({ "engine": engine.and_then(tool_name) }),
             checkpoint_id: checkpoint,
-        })
-        .await;
+            kept: false,
+        };
+        // A pane's turns come from reports the agent can sign.
+        if source_kind == "pane" {
+            self.record_limited(Flood::Turn, row).await;
+        } else {
+            self.record(row).await;
+        }
     }
 
     /// The clock the ledger dates events by.
@@ -201,45 +298,35 @@ impl ActivityService {
         let Some(tool) = tool_name(tool) else {
             return;
         };
-        let (allowed, dropped) = self.tool_allowed(pane);
-        if dropped > 0 {
-            self.record(NewActivity {
+        self.record_limited(
+            Flood::Tool,
+            NewActivity {
                 source_kind: "pane",
                 source_id: pane.to_string(),
-                kind: "tool",
-                at: self.clock.now_ms(),
-                summary: format!(
-                    "{dropped} more tool events in one minute weren't kept (over {TOOL_ROWS_PER_MINUTE})"
-                ),
-                detail: serde_json::json!({ "dropped": dropped }),
+                kind: if subagent { "subagent" } else { "tool" },
+                at,
+                summary: if subagent {
+                    format!("Subagent started ({tool})")
+                } else {
+                    tool.to_string()
+                },
+                detail: serde_json::json!({ "tool": tool }),
                 checkpoint_id: None,
-            })
-            .await;
-        }
-        if !allowed {
-            return;
-        }
-        self.record(NewActivity {
-            source_kind: "pane",
-            source_id: pane.to_string(),
-            kind: if subagent { "subagent" } else { "tool" },
-            at,
-            summary: if subagent {
-                format!("Subagent started ({tool})")
-            } else {
-                tool.to_string()
+                kept: false,
             },
-            detail: serde_json::json!({ "tool": tool }),
-            checkpoint_id: None,
-        })
+        )
         .await;
     }
 
     /// The person answered a pane's approval (`decided` as in
     /// [`ActivityEvent::decided`]). A fixed summary: the question's text
     /// could carry what the agent typed before the redactor knew the values.
+    ///
+    /// An Allow is kept for the full retention; any other answer (the agent
+    /// can open questions and go away) is a [`Flood::Refusal`].
     pub async fn approval(&self, pane: &str, decided: &str) {
-        self.record(NewActivity {
+        let allowed = decided.starts_with("allowed");
+        let row = NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
             kind: "approval",
@@ -247,13 +334,21 @@ impl ActivityService {
             summary: APPROVAL_SUMMARY.into(),
             detail: serde_json::json!({ "decided": decided }),
             checkpoint_id: None,
-        })
-        .await;
+            kept: allowed,
+        };
+        if allowed {
+            self.record(row).await;
+        } else {
+            self.record_limited(Flood::Refusal, row).await;
+        }
     }
 
-    /// A `vibezeo run` ended, or was refused after its decision.
+    /// A `vibezeo run` ended, or was refused after its decision. A run that
+    /// was allowed (by the person, a rule or an earlier allowance) is kept
+    /// for the full retention; a refusal is a [`Flood::Refusal`].
     pub async fn run(&self, pane: &str, run: RunRecord) {
-        self.record(NewActivity {
+        let decided = matches!(run.decided, "once" | "agent" | "rule" | "allowed_before");
+        let row = NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
             kind: "run",
@@ -267,8 +362,13 @@ impl ActivityService {
                 "ended": run.ended,
             }),
             checkpoint_id: None,
-        })
-        .await;
+            kept: decided,
+        };
+        if decided {
+            self.record(row).await;
+        } else {
+            self.record_limited(Flood::Refusal, row).await;
+        }
     }
 
     /// Drops old events (at startup and hourly).
@@ -705,6 +805,7 @@ mod tests {
                     summary: format!("T{n}"),
                     detail: serde_json::json!({}),
                     checkpoint_id: None,
+                    kept: false,
                 },
             )
             .await
@@ -732,13 +833,31 @@ mod tests {
 
     #[tokio::test]
     async fn f_ex_07_tool_rows_are_rate_limited_per_pane_and_the_drop_is_noted() {
-        let (_d, _store, clock, svc) = fixture();
+        let (_d, store, clock, svc) = fixture();
         for n in 0..(TOOL_ROWS_PER_MINUTE + 50) {
             svc.tool("pn_flood", &format!("T{n}"), false, clock.now_ms())
                 .await;
         }
         // Another pane isn't held back by it.
         svc.tool("pn_quiet", "Read", false, clock.now_ms()).await;
+        // The flood's note is there at once, even if nothing else comes.
+        let notes = |events: &[ActivityEvent]| {
+            events
+                .iter()
+                .filter(|e| e.kind == "note")
+                .map(|e| e.summary.clone())
+                .collect::<Vec<_>>()
+        };
+        let now = svc
+            .list("pane", "pn_flood", None, 0)
+            .await
+            .expect("list")
+            .events;
+        assert_eq!(now.len() as u32, TOOL_ROWS_PER_MINUTE + 1);
+        assert_eq!(
+            notes(&now),
+            [format!("Over {TOOL_ROWS_PER_MINUTE} tool events in a minute: the rest of the minute's aren't kept")]
+        );
         clock.advance(Duration::from_secs(61));
         svc.tool("pn_flood", "Read", false, clock.now_ms()).await;
         let events = svc
@@ -748,12 +867,12 @@ mod tests {
             .events;
         assert_eq!(
             events.len() as u32,
-            TOOL_ROWS_PER_MINUTE + 2,
-            "kept, the note, the next"
+            TOOL_ROWS_PER_MINUTE + 3,
+            "kept, two notes, the next"
         );
         assert_eq!(
-            events[TOOL_ROWS_PER_MINUTE as usize].summary,
-            format!("50 more tool events in one minute weren't kept (over {TOOL_ROWS_PER_MINUTE})")
+            notes(&events)[1],
+            "50 more tool events in that minute weren't kept"
         );
         assert_eq!(
             svc.list("pane", "pn_quiet", None, 0)
@@ -762,6 +881,80 @@ mod tests {
                 .events
                 .len(),
             1
+        );
+        // Notes are kept by age only: a later flood can't prune them.
+        let pinned: i64 = store
+            .read(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM activity WHERE kind = 'note' AND kept = 1",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .expect("count");
+        assert_eq!(pinned, 2);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_refused_runs_and_pane_turns_are_capped_but_allowed_runs_are_not() {
+        let (_d, store, clock, svc) = fixture();
+        let record = |decided: &'static str| RunRecord {
+            command: "x".into(),
+            secrets: Vec::new(),
+            decided,
+            exit_code: None,
+            duration_ms: None,
+            ended: None,
+        };
+        for _ in 0..(Flood::Refusal.limit() + 20) {
+            svc.run("pn_1", record("busy")).await;
+            svc.approval("pn_1", "client_gone").await;
+        }
+        for _ in 0..(Flood::Refusal.limit() + 20) {
+            svc.run("pn_1", record("rule")).await;
+            svc.approval("pn_1", "allowed:inline").await;
+        }
+        for _ in 0..(Flood::Turn.limit() + 5) {
+            svc.turn("pane", "pn_1", None, None, clock.now_ms()).await;
+        }
+        let count = |sql: &'static str| {
+            let store = store.clone();
+            async move {
+                store
+                    .read(move |c| Ok(c.query_row(sql, [], |r| r.get::<_, i64>(0))?))
+                    .await
+                    .expect("count")
+            }
+        };
+        let refusal = i64::from(Flood::Refusal.limit());
+        // Refused runs and other answers share one cap; allowed ones have none.
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kept = 0 AND kind IN ('run', 'approval')")
+                .await,
+            refusal
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kept = 1 AND kind IN ('run', 'approval')")
+                .await,
+            2 * (refusal + 20)
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kind = 'turn'").await,
+            i64::from(Flood::Turn.limit())
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kind = 'note'").await,
+            2
+        );
+        // A thread's turns aren't the agent's to flood.
+        for _ in 0..(Flood::Turn.limit() + 5) {
+            svc.turn("thread", "th_1", None, None, clock.now_ms()).await;
+        }
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kind = 'turn' AND source_kind = 'thread'")
+                .await,
+            i64::from(Flood::Turn.limit() + 5)
         );
     }
 }

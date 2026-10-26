@@ -216,6 +216,8 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     );
     const cls = screen.getByTestId("run-line-command").className;
     expect(cls).not.toMatch(/max-h|overflow/);
+    // The variables wrap too: a long name can't push the others aside.
+    expect(screen.getByTestId("run-line-vars").className).toContain("break-all");
   });
 
   it("F-TL-12.13 only a pane's approval is read as a run, and a malformed one doesn't break the window", () => {

@@ -1,42 +1,51 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@tandem/ui";
 import { t } from "../../i18n";
 
 /** How long Allow ignores clicks after what it would allow changed. */
 export const SETTLE_MS = 500;
 
-/** False for {@link SETTLE_MS} after `key` changes, so a click meant for
- * one approval can't land on the one that replaced it. */
+/** A new token on every change of `key`, even back to an earlier value
+ * (A → B → A), so nothing settled or seen for the first A carries over. */
+function useChange(key: string | null): object {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new token per change is the point
+  return useMemo(() => ({}), [key]);
+}
+
+/** False for {@link SETTLE_MS} after every change of `key`, so a click meant
+ * for one approval (or one card's place) can't land on what replaced it. */
 export function useSettled(key: string | null): boolean {
-  const [settled, setSettled] = useState<string | null>(null);
+  const change = useChange(key);
+  const [settled, setSettled] = useState<object | null>(null);
   useEffect(() => {
     if (key === null) return;
-    const timer = setTimeout(() => setSettled(key), SETTLE_MS);
+    const timer = setTimeout(() => setSettled(change), SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [key]);
-  return key !== null && settled === key;
+  }, [key, change]);
+  return key !== null && settled === change;
 }
 
 /** A ref for a marker after the run's line, and whether that marker has
  * been in view (not clipped by the pane or scrolled away) since `key`
  * changed: Allow waits for the person to have seen the line's end. */
 export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => void, boolean] {
+  const change = useChange(key);
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const [seen, setSeen] = useState<string | null>(null);
+  const [seen, setSeen] = useState<object | null>(null);
   useEffect(() => {
     if (key === null || el === null) return;
     // Every webview Vibezeo ships in has it; a test without one sees all.
     if (typeof IntersectionObserver === "undefined") {
-      setSeen(key);
+      setSeen(change);
       return;
     }
     const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setSeen(key);
+      if (entries.some((e) => e.isIntersecting)) setSeen(change);
     });
     io.observe(el);
     return () => io.disconnect();
-  }, [key, el]);
-  return [setEl, key !== null && seen === key];
+  }, [key, el, change]);
+  return [setEl, key !== null && seen === change];
 }
 
 type BoundaryProps = { children: ReactNode; onDeny?: () => void };

@@ -37,7 +37,7 @@ export function RunLine({ run }: { run: RunApproval }) {
           cwd: folder.map((p) => p.text).join(""),
         })}
       </p>
-      <p className="text-xs text-fg-muted" data-testid="run-line-vars">
+      <p dir="ltr" className="break-all text-xs text-fg-muted" data-testid="run-line-vars">
         {run.vars.length === 0
           ? t("runLine.noVars")
           : t("runLine.vars", {

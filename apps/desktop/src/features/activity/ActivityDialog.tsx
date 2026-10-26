@@ -84,6 +84,10 @@ export function decidedLabel(decided: string | null): string | null {
       return t("activity.decided.folderMoved");
     case "client_gone":
       return t("activity.decided.clientGone");
+    case "app_quit":
+      return t("activity.decided.appQuit");
+    case "too_many":
+      return t("activity.decided.tooMany");
     default:
       return state ?? null;
   }
@@ -114,6 +118,8 @@ function facts(e: ActivityEvent): string[] {
   if (e.exitCode !== null) out.push(t("activity.exit", { code: e.exitCode }));
   if (e.ended === "client_gone") out.push(t("activity.ended.clientGone"));
   if (e.ended === "time_limit") out.push(t("activity.ended.timeLimit"));
+  if (e.ended === "app_quit") out.push(t("activity.ended.appQuit"));
+  if (e.ended === "secrets_unreadable") out.push(t("activity.ended.secretsUnreadable"));
   if (e.durationMs !== null) out.push(t("activity.took", { ms: e.durationMs }));
   if (e.secrets.length > 0) out.push(t("activity.uses", { names: e.secrets.join(", ") }));
   if (e.engine) out.push(t("activity.engine", { engine: e.engine }));
@@ -138,6 +144,8 @@ function kindLabel(kind: string): string {
       return t("activity.kind.approval");
     case "run":
       return t("activity.kind.run");
+    case "note":
+      return t("activity.kind.note");
     default:
       return kind;
   }
@@ -231,11 +239,7 @@ function SessionActivity({ open }: { open: ActivitySource }) {
     const n = request.current;
     setEarlier(true);
     try {
-      const p = await activityList(
-        open,
-        first.at,
-        events.filter((e) => e.at === first.at).length,
-      );
+      const p = await activityList(open, first.at, events.filter((e) => e.at === first.at).length);
       if (n === request.current) setLoad({ at: "ready", events: [...p.events, ...events], more: p.more });
     } catch (e) {
       show({ tone: "error", title: (e as IpcError).message ?? t("activity.error") });

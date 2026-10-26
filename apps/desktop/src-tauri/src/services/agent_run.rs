@@ -48,6 +48,12 @@ pub const ONE_AT_A_TIME: &str =
     "Not run: this pane already has a vibezeo run waiting for an answer. Ask again after it's answered";
 pub const FOLDER_MOVED: &str = "Not run: the folder changed after it was checked";
 pub const CLIENT_GONE: &str = "Ended: vibezeo run stopped waiting";
+pub const APP_QUIT: &str = "Ended: Vibezeo quit";
+/// Questions a pane may open per minute: each one is a card, a banner and a
+/// notification, and an agent can open and drop them in a loop.
+pub const QUESTIONS_PER_MINUTE: u32 = 10;
+pub const TOO_MANY_QUESTIONS: &str =
+    "Not asked: this pane asked 10 times in the last minute. Try again shortly";
 /// A refused run's ledger line: its line isn't kept, since its values were
 /// never read and so aren't known to the redactor.
 pub const NOT_STARTED: &str = "A run that didn't start (its line isn't kept)";
@@ -132,6 +138,39 @@ pub struct AgentRuns {
     data: PathBuf,
     /// Panes with a run's question open (one at a time).
     asking: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Per pane: when this minute of questions started, and how many.
+    asked: std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, u32)>>,
+    /// Set when the app quits: open questions and running commands end.
+    quit: tokio::sync::watch::Sender<bool>,
+    /// Requests being served, so quitting can wait for their rows.
+    serving: std::sync::atomic::AtomicUsize,
+}
+
+/// Every `AgentRuns`, for [`shutdown_all`] at exit.
+static LIVE: std::sync::Mutex<Vec<std::sync::Weak<AgentRuns>>> = std::sync::Mutex::new(Vec::new());
+
+/// At exit: every open question is cancelled and every running command's
+/// group killed, each with its row ("Ended: Vibezeo quit"), waiting up to
+/// 3 s for the rows.
+pub async fn shutdown_all() {
+    let live: Vec<Arc<AgentRuns>> = LIVE
+        .lock()
+        .map(|l| l.iter().filter_map(std::sync::Weak::upgrade).collect())
+        .unwrap_or_default();
+    for runs in live {
+        runs.shutdown(Duration::from_secs(3)).await;
+    }
+}
+
+/// One request being served.
+struct Serving<'a>(&'a AgentRuns);
+
+impl Drop for Serving<'_> {
+    fn drop(&mut self) {
+        self.0
+            .serving
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// A pane's open question; dropping it lets the pane ask again.
@@ -221,6 +260,10 @@ pub fn run_env(
             }
         })
         .collect();
+    // A login environment without PATH gets the same safe default.
+    if !env.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH")) {
+        env.push(("PATH".into(), absolute_path_entries("")));
+    }
     if cfg!(windows) {
         env.push((NO_CWD_LOOKUP.into(), "1".into()));
     }
@@ -267,14 +310,64 @@ impl AgentRuns {
         terminals: Arc<TerminalService>,
         data: PathBuf,
     ) -> Arc<Self> {
-        Arc::new(Self {
+        let runs = Arc::new(Self {
             store,
             keychain,
             broker,
             terminals,
             data,
             asking: Default::default(),
-        })
+            asked: Default::default(),
+            quit: tokio::sync::watch::channel(false).0,
+            serving: Default::default(),
+        });
+        if let Ok(mut live) = LIVE.lock() {
+            live.retain(|w| w.strong_count() > 0);
+            live.push(Arc::downgrade(&runs));
+        }
+        runs
+    }
+
+    /// Ends what's open (see [`shutdown_all`]), waiting up to `wait`.
+    pub async fn shutdown(&self, wait: Duration) {
+        self.quit.send_replace(true);
+        let until = tokio::time::Instant::now() + wait;
+        while self.serving.load(std::sync::atomic::Ordering::SeqCst) > 0
+            && tokio::time::Instant::now() < until
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// Resolves with why, when the client is gone or the app quits.
+    fn ended(
+        &self,
+        waiting: tokio::sync::watch::Receiver<()>,
+    ) -> impl Future<Output = &'static str> {
+        let mut quit = self.quit.subscribe();
+        async move {
+            tokio::select! {
+                _ = client_gone(waiting) => CLIENT_GONE,
+                _ = quit.wait_for(|q| *q) => APP_QUIT,
+            }
+        }
+    }
+
+    /// Whether the pane may open another question this minute.
+    fn may_ask(&self, pane: &str) -> bool {
+        let Ok(mut asked) = self.asked.lock() else {
+            return false;
+        };
+        let now = std::time::Instant::now();
+        let entry = asked.entry(pane.to_string()).or_insert((now, 0));
+        if now.duration_since(entry.0) >= Duration::from_secs(60) {
+            *entry = (now, 0);
+        }
+        if entry.1 >= QUESTIONS_PER_MINUTE {
+            return false;
+        }
+        entry.1 += 1;
+        true
     }
 
     /// Serves a request in its own task, so the client going away (killed,
@@ -292,25 +385,53 @@ impl AgentRuns {
     }
 
     async fn serve(&self, req: RunRequest, waiting: tokio::sync::watch::Receiver<()>) -> RunReply {
+        self.serving
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _serving = Serving(self);
+        if *self.quit.borrow() {
+            return RunReply::refused(APP_QUIT);
+        }
         let checked = match self.check(&req).await {
             Ok(c) => c,
             Err(why) => return RunReply::refused(why),
         };
-        let decided = match self.decide(&checked, client_gone(waiting.clone())).await {
+        let decided = match self.decide(&checked, self.ended(waiting.clone())).await {
             Ok(d) => d,
             Err((d, why)) => {
-                self.ledger(&checked, d, false, None, None).await;
+                self.ledger(&checked, d, false, None, None, None).await;
                 return RunReply::refused(why);
             }
         };
         let resolved = match secrets::resolve(self.keychain.as_ref(), &checked.vars) {
             Ok(r) => r,
-            Err(e) => return RunReply::refused(e.message),
+            Err(e) => {
+                self.ledger(
+                    &checked,
+                    decided,
+                    false,
+                    None,
+                    None,
+                    Some("secrets_unreadable"),
+                )
+                .await;
+                return RunReply::refused(e.message);
+            }
         };
         if !checked.folder_holds() {
-            self.ledger(&checked, "folder_moved", false, None, None)
+            self.ledger(&checked, "folder_moved", false, None, None, None)
                 .await;
             return RunReply::refused(FOLDER_MOVED);
+        }
+        // Gone between the answer and the start: nothing starts.
+        if waiting.has_changed().is_err() || *self.quit.borrow() {
+            let why = if *self.quit.borrow() {
+                APP_QUIT
+            } else {
+                CLIENT_GONE
+            };
+            self.ledger(&checked, decided, false, None, None, ended_code(why))
+                .await;
+            return RunReply::refused(why);
         }
         let login = self.terminals.login_env().await;
         let from_env: Vec<&str> = resolved.env.keys().map(String::as_str).collect();
@@ -333,11 +454,12 @@ impl AgentRuns {
             &resolved.secrets,
             RUN_LIMIT,
             &|pid| self.terminals.resources.adopt(checked.pane.as_str(), pid),
-            client_gone(waiting),
+            self.ended(waiting),
         )
         .await;
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        self.ledger(&checked, decided, true, Some(&reply), Some(took))
+        let ended = reply.error.as_deref().and_then(ended_code);
+        self.ledger(&checked, decided, true, Some(&reply), Some(took), ended)
             .await;
         reply
     }
@@ -352,12 +474,8 @@ impl AgentRuns {
         ran: bool,
         reply: Option<&RunReply>,
         duration_ms: Option<i64>,
+        ended: Option<&'static str>,
     ) {
-        let ended = reply.and_then(|r| match r.error.as_deref() {
-            Some(CLIENT_GONE) => Some("client_gone"),
-            Some(e) if e.starts_with("Stopped after") => Some("time_limit"),
-            _ => None,
-        });
         self.terminals
             .activity
             .run(
@@ -457,7 +575,7 @@ impl AgentRuns {
     async fn decide(
         &self,
         c: &Checked,
-        gone: impl Future<Output = ()>,
+        gone: impl Future<Output = &'static str>,
     ) -> Result<&'static str, (&'static str, String)> {
         let rules = RunRules::load(&self.data);
         if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
@@ -479,6 +597,9 @@ impl AgentRuns {
             }
             Asking(self, c.pane.as_str().to_string())
         };
+        if !self.may_ask(c.pane.as_str()) {
+            return Err(("too_many", TOO_MANY_QUESTIONS.into()));
+        }
         let with = if c.vars.is_empty() {
             "with no secrets".to_string()
         } else {
@@ -508,13 +629,11 @@ impl AgentRuns {
         // The client going away takes its question with it.
         let outcome = tokio::select! {
             outcome = ticket.outcome() => outcome,
-            _ = gone => {
+            why = gone => {
                 self.broker.cancel(&view.id);
-                self.terminals
-                    .activity
-                    .approval(c.pane.as_str(), "client_gone")
-                    .await;
-                return Err(("client_gone", CLIENT_GONE.into()));
+                let code = ended_code(why).unwrap_or("client_gone");
+                self.terminals.activity.approval(c.pane.as_str(), code).await;
+                return Err((code, why.into()));
             }
         };
         let (decided, answer) = match &outcome {
@@ -603,7 +722,7 @@ pub async fn run(
     values: &[Zeroizing<String>],
     limit: Duration,
     adopt: &(dyn Fn(u32) + Send + Sync),
-    gone: impl Future<Output = ()>,
+    gone: impl Future<Output = &'static str>,
 ) -> RunReply {
     tokio::pin!(gone);
     #[cfg(windows)]
@@ -685,7 +804,7 @@ pub async fn run(
             },
             status = child.wait() => break Ended::Exited(status),
             _ = tokio::time::sleep_until(deadline) => break Ended::TimeLimit,
-            _ = &mut gone => break Ended::ClientGone,
+            why = &mut gone => break Ended::Gone(why),
         }
     };
     let (status, error) = match ended {
@@ -695,7 +814,7 @@ pub async fn run(
             None,
             Some(format!("Stopped after {} minutes", limit.as_secs() / 60)),
         ),
-        Ended::ClientGone => (None, Some(CLIENT_GONE.to_string())),
+        Ended::Gone(why) => (None, Some(why.to_string())),
     };
     // Whatever it started and left behind goes with it.
     kill_group(pid);
@@ -718,7 +837,18 @@ pub async fn run(
 enum Ended {
     Exited(std::io::Result<std::process::ExitStatus>),
     TimeLimit,
-    ClientGone,
+    /// The client went away, or the app quit ([`CLIENT_GONE`], [`APP_QUIT`]).
+    Gone(&'static str),
+}
+
+/// How a run ended other than by exiting, as its row stores it.
+fn ended_code(error: &str) -> Option<&'static str> {
+    match error {
+        CLIENT_GONE => Some("client_gone"),
+        APP_QUIT => Some("app_quit"),
+        e if e.starts_with("Stopped after") => Some("time_limit"),
+        _ => None,
+    }
 }
 
 /// Resolves when the request's client is gone (its sender dropped).
@@ -1036,7 +1166,7 @@ mod tests {
             &[],
             Duration::from_secs(20),
             &|_| {},
-            std::future::pending(),
+            std::future::pending::<&'static str>(),
         )
         .await;
         // The background sleep holds the pipe open, yet the reply comes back
@@ -1473,10 +1603,110 @@ mod tests {
             path.split(sep).all(|p| Path::new(p).is_absolute()),
             "{path}"
         );
+        // No PATH at all: the same default.
+        let none: std::collections::BTreeMap<String, String> =
+            [("HOME".to_string(), "/home/me".to_string())]
+                .into_iter()
+                .collect();
+        let path = run_env(&none, &[])
+            .into_iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v)
+            .expect("PATH");
+        assert!(!path.is_empty() && path.split(sep).all(|p| Path::new(p).is_absolute()));
         if cfg!(windows) {
             assert_eq!(get("NoDefaultCurrentDirectoryInExePath"), vec!["1"]);
         } else {
             assert!(get("NoDefaultCurrentDirectoryInExePath").is_empty());
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_quitting_the_app_ends_a_running_command_and_records_it() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let pid_file = fx.root.join("bg.pid");
+        let line = format!("sleep 30 & echo $! > {}; sleep 30", pid_file.display());
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &[&line])).await;
+        allow(&fx, &view, ApprovalScope::Once);
+        let mut pid = String::new();
+        for _ in 0..300 {
+            pid = std::fs::read_to_string(&pid_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !pid.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!pid.is_empty(), "the run started");
+        fx.runs.shutdown(Duration::from_secs(3)).await;
+        assert!(ends(&pid), "the run's group outlived the app");
+        let reply = task.await.expect("task");
+        assert_eq!(reply.error.as_deref(), Some(APP_QUIT));
+        let run = ledger_of(&fx)
+            .await
+            .into_iter()
+            .find(|e| e.kind == "run")
+            .expect("its row is written before the app goes");
+        assert_eq!(run.ended.as_deref(), Some("app_quit"));
+        // After quitting, nothing new starts.
+        let late = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "x"]))
+            .await;
+        assert_eq!(late.error.as_deref(), Some(APP_QUIT));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_a_pane_opens_at_most_10_questions_a_minute() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        for n in 0..QUESTIONS_PER_MINUTE {
+            let (view, task) =
+                asked(&fx, req(&fx.agent, &fx.root, &["echo", &n.to_string()])).await;
+            fx.broker.cancel_source(&view.source);
+            assert_eq!(task.await.expect("task").error.as_deref(), Some(CANCELLED));
+        }
+        let reply = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "more"]))
+            .await;
+        assert_eq!(reply.error.as_deref(), Some(TOO_MANY_QUESTIONS));
+        assert!(fx.broker.pending().is_empty(), "not asked");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_secrets_that_cant_be_read_after_allow_leave_a_row() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        // The name is known, its keychain entry isn't there.
+        let runs = AgentRuns::new(
+            fx.store.clone(),
+            Arc::new(MemoryKeychain::new()),
+            fx.broker.clone(),
+            fx.terminals.clone(),
+            fx._dir.path().join("data"),
+        );
+        let r = req(&fx.agent, &fx.root, &["echo", "x"]);
+        let task = tokio::spawn({
+            let runs = runs.clone();
+            async move { runs.handle(r).await }
+        });
+        let mut view = None;
+        for _ in 0..200 {
+            view = fx.broker.pending().into_iter().next();
+            if view.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        allow(&fx, &view.expect("asked"), ApprovalScope::Once);
+        assert!(task.await.expect("task").error.is_some());
+        let run = ledger_of(&fx)
+            .await
+            .into_iter()
+            .find(|e| e.kind == "run")
+            .expect("a row");
+        assert_eq!(run.ended.as_deref(), Some("secrets_unreadable"));
+        assert_eq!(run.summary, NOT_STARTED);
     }
 }
