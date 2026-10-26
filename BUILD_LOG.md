@@ -28,18 +28,27 @@
     - the footer's "Built with Claude" links `/about/#claude`, which has its principles;
     - in a real browser at 1440, home is 7,986 px in both themes, on rgb(250, 250, 250) and rgb(9, 9, 11), with the effects on and the hero's scene live.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.10.0** (24 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on 2cb11440).
-  - **Files:** `Vibezeo_0.10.0_amd64.deb` (SHA-256 `c0085004…4ad9c2`) and `Vibezeo-0.10.0-1.x86_64.rpm` (SHA-256 `755006d1…94b35bb`), 54.2 MB each.
-  - **Vibezeo is free** (D-869; `free-for-everyone`, D-2900 to D-2913): everything that runs on the computer is unlimited with no account:
-    - panes, workspaces, teammates, plugin connections and accounts per engine;
-    - six threads side by side, and every chat engine;
-    - routines (in the background too), task runs, the Night Shift and session search, with no sign-in.
-  - **No plan UI:** the plans dialog, checkout, See plans, Upgrade, the Pro badges, the limit cards and the rail's plan footer are gone.
-  - **Hosted features** say "Comes with Vibezeo accounts" (DESIGN §9.5) and stay off.
-  - **D-871:** the Dictate widget no longer sends events to the main window.
-  - **The site:** the post "What's new in 0.10.0", and copy with no "this release" or "the next". The "New in" tiles stay 0.9.0's, because 0.10.0 only changes things.
-  - Verified: see "Release 0.10.0" in the log below.
-  Deployed by #97 (fb3fef94) on 25 October; `main` came back into `product-m0-m5` with this record.
+- Release: **0.11.0** (25 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on e50c1ee7; D-873).
+  - **Files:** `Vibezeo_0.11.0_amd64.deb` (SHA-256 `a56b8941…3481c525`) and `Vibezeo-0.11.0-1.x86_64.rpm` (SHA-256 `3e7822e3…cfa3f54b`), 54.8 MB each.
+  - **chain25's six M18 features:**
+    - the resource governor (F-EX-06);
+    - agent-proof secrets (F-TL-12);
+    - multi-repo workspaces (F-CD-22);
+    - any ACP agent in Thread mode (F-EN-10);
+    - claims (F-TK-05);
+    - Plan with Lead (F-TK-06).
+  - **Changed and fixed:**
+    - a task runs once at a time;
+    - a review counts only its own reviewer's verdict;
+    - ACP's "Allow once" never picks allow-always;
+    - notices reach panes in hidden tabs.
+  - **The site:**
+    - `site-motion`'s polish (D-1886);
+    - D-2917's /credits;
+    - "New in 0.11.0", the roadmap and the post "What's new in 0.11.0";
+    - 3,996 tests and 152 E2E spec files.
+  - Verified: see "Release 0.11.0" in the log below.
+  - Previous release: 0.10.0 (24 October; Vibezeo is free, D-869), deployed by #97 (fb3fef94).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
@@ -1236,6 +1245,35 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - Lighthouse CI on seven URLs (median of 3), every assertion passing with no warnings: `/` at 0.99 (LCP 1.90 s), the rest at 1.00 (LCP 1.37 to 1.66 s), TBT 0 ms, CLS at most 0.001;
     - the demo walkthrough.
   - **The live checks** passed (see Current state). `main` came back into `product-m0-m5` with this record.
+- Release 0.11.0 (`release-0.11.0`, 25 and 26 October; D-873): `product-m0-m5` at 7283322b (`chain25`, the site deploy record, DESIGN §5.1.4) with these added:
+  - `site-motion` 83ff6605 (D-1886, approved by the design lead) and `free-for-everyone` 79bce017 (D-2917).
+  - **Version and notes:**
+    - the version;
+    - the CHANGELOG's `## 0.11.0`: six Added entries, one Changed and three Fixed, each claim checked against the code and the labels against en.json;
+    - `release.ts`;
+    - the "New in" tiles and the roadmap;
+    - the post "What's new in 0.11.0".
+  - **Docs and spec:**
+    - Thread mode's engine list adds Gemini CLI, Kiro CLI and added ACP agents;
+    - the governor's docs give the older-systemd behaviour, and "One check at a time" covers Land worktrees;
+    - F-CD-22's ACs drop the plan wording (D-869).
+  - **Files:** the .deb and .rpm with SHA256SUMS, and the Flatpak and Snap manifests at 0.11.0's .deb.
+  - **Decisions:** D-873 and D-874.
+  - **The site's figures:** 3,996 tests and 152 E2E spec files.
+  - **The gate** passed on the release tree (a4c75d18):
+    - 2,344 Rust tests (6 ignored);
+    - 1,652 TypeScript tests: desktop 794, UI 419, API 234, web 137, remote 33, mobile 21, protocol 14;
+    - coverage (188 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (579 types).
+    - The figures commit (479e7e83) changes only `progress.ts`. Web lint and vitest (137/137) passed on it.
+  - **The packages:**
+    - `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on e50c1ee7 built the .deb, .rpm and AppImage. The later commits are the site's tiles, roadmap, post, docs, downloads and figures. No product code changed.
+    - `Vibezeo_0.11.0_amd64.deb` (SHA-256 `a56b8941…3481c525`) and `Vibezeo-0.11.0-1.x86_64.rpm` (`3e7822e3…cfa3f54b`) are 54.8 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
+    - The AppImage passed the offline smoke test, and Start opens setup with all 13 engines.
+  - **The site, with the design lead:** they checked every product scene's final frame in both themes against 0.11.0 and approved it (captions "Scene from Vibezeo 0.11.0", the status bar's v0.11.0, nothing drawn that changed in `chain25`), along with `/changelog/0.11.0/`, the six "New in 0.11.0" tiles and the roadmap.
+  - **The demo (D-128):** no new surfaces (D-873). Everything the demo shows is in the download.
+  - **Known issue, fixed for 0.12.0:** without a systemd user session, Freeze falls back to signals. If the pane is running a loop of short commands, Freeze can fail with "the program isn't running", because the foreground job exits between being read and being stopped (`suspend::pause`'s ESRCH). A second try works. `app-ui` found it by bisecting E2E-M18-EX06 across a full sequential run. The fix (keep the shell stopped when the job has already ended) goes to `product-research` for `chain26`.
+  - **E2E and the site check:** running on the release tree; their results are added here when they finish.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
