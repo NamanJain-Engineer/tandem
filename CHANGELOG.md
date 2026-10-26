@@ -7,6 +7,21 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Added
+
+- [lin] **Local models.** Settings › Engines › Local models finds Ollama,
+  LM Studio and llama.cpp servers running on this computer and lists their
+  models, with the size and parameter count each server reports. Vibezeo
+  asks only 127.0.0.1, when you open the page or choose Check again. Ollama's
+  cloud models aren't listed: they run on ollama.com.
+- [lin] **Start Codex on a local model.** On an Ollama or LM Studio model,
+  Start in Codex opens a Codex pane in your open folder that says "On this
+  computer". It runs in a provider home of its own for that model, never on
+  your Codex account and never through a proxy, every time it starts. Your
+  own Codex settings and accounts aren't touched.
+
 ## 0.12.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
