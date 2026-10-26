@@ -1285,7 +1285,7 @@
   "run.footnote": "The command can still send or print these values in other forms.",
   "run.tellAgents": "Tell agents in this folder…",
   "runRules.title": "Commands agents can run without asking",
-  "runRules.body": "Agents run commands that need secrets with vibezeo run, which asks you first. A rule here lets that command run with any arguments, never chained, piped or redirected. Worktrees use their folder's rules.",
+  "runRules.body": "Agents run commands that need secrets with vibezeo run, which asks you first. A rule here lets that command run with any arguments, never chained, piped or redirected, while the folder's .env gives it the same secrets you last allowed. Worktrees use their folder's rules. A rule on a command that runs the repository's own scripts (pnpm deploy, npm run, make) lets the agent change what runs by editing those scripts.",
   "runRules.empty": "Add a folder to Vibezeo to set rules for it.",
   "runRules.add": "Add a command for {name}",
   "runRules.addButton": "Add",

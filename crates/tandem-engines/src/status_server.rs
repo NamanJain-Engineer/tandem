@@ -284,6 +284,13 @@ async fn handle(req: Request<Incoming>, state: State) -> Result<Response<Full<By
 }
 
 /// `vibezeo run`: signed by the pane's secret, recent, never seen before.
+/// A nonce is kept as long as its request could still be accepted: until
+/// its own timestamp is too old, which for a future-dated one is later than
+/// for one sent now.
+fn nonce_kept_until(now: i64, ts: i64) -> i64 {
+    now.max(ts) + MAX_AGE_MS
+}
+
 async fn run(req: Request<Incoming>, state: State) -> Response<Full<Bytes>> {
     let sig = req
         .headers()
@@ -323,8 +330,11 @@ async fn run(req: Request<Incoming>, state: State) -> Response<Full<Bytes>> {
         let Ok(mut seen) = state.nonces.lock() else {
             return reply(StatusCode::INTERNAL_SERVER_ERROR, "");
         };
-        seen.retain(|_, at| *at >= now - MAX_AGE_MS);
-        if seen.insert(request.nonce.clone(), now).is_some() {
+        seen.retain(|_, until| *until >= now);
+        if seen
+            .insert(request.nonce.clone(), nonce_kept_until(now, request.ts))
+            .is_some()
+        {
             return reply(StatusCode::CONFLICT, "");
         }
     }
@@ -359,6 +369,16 @@ fn apply(
 
 #[cfg(all(test, unix))]
 mod tests {
+
+    #[test]
+    fn f_tl_12_10_a_future_dated_requests_nonce_outlives_its_window() {
+        let now = 1_000_000;
+        assert_eq!(super::nonce_kept_until(now, now - 5), now + MAX_AGE_MS);
+        assert_eq!(
+            super::nonce_kept_until(now, now + 30_000),
+            now + 30_000 + MAX_AGE_MS
+        );
+    }
     use super::*;
     use crate::hook;
     use std::time::Duration;

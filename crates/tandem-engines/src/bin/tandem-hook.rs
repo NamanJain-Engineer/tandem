@@ -35,7 +35,15 @@ fn invoked_as_vibezeo() -> bool {
 /// The arguments go as they are: one is a command line for the shell,
 /// several a program and its arguments, which the app quotes.
 fn vibezeo() -> i32 {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Arguments that aren't UTF-8 are refused, not a panic.
+    let Ok(mut args) = std::env::args_os()
+        .skip(1)
+        .map(|a| a.into_string())
+        .collect::<Result<Vec<String>, _>>()
+    else {
+        eprintln!("vibezeo: arguments must be UTF-8 text");
+        return 2;
+    };
     if args.first().map(String::as_str) != Some("run") {
         eprintln!("usage: vibezeo run [--] <command>");
         return 2;

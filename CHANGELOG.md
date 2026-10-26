@@ -7,6 +7,13 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Added
+
+- [all] **Agents can run commands that need secrets.** An agent in an agent pane runs `vibezeo run -- pnpm deploy`; the pane shows the whole command and every secret it would get, and asks first (Allow once, Allow for this agent, Deny). The command runs outside the agent, and the agent sees its output with each secret's value hidden. Settings › Secrets can let a command run without asking in a folder, and Run with secrets can tell agents about it in the folder's `AGENTS.md`.
+- [all] **Activity for each agent session.** **Activity…** in an agent pane's, a thread's or a Dashboard card's menu lists what that session did, in order: turns sent (never their words), files changed, commands, tools, approvals and `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer for 14 days.
+
 ## 0.10.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

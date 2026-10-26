@@ -54,10 +54,25 @@ pub fn program_name() -> &'static str {
 }
 
 /// Makes `$DATA/run/bin` hold only `vibezeo`: a link to the hook helper
-/// (a copy on Windows, where links need a privilege). Returns the folder.
+/// (a copy on Windows, where links need a privilege). The folder is the
+/// user's alone (0700), and a `bin` that's a link is refused, since what it
+/// points at would be first on every agent's PATH. Returns the folder.
 pub fn install(run_dir: &Path, hook: &Path) -> std::io::Result<PathBuf> {
     let bin = run_dir.join("bin");
-    std::fs::create_dir_all(&bin)?;
+    match std::fs::symlink_metadata(&bin) {
+        Ok(m) if m.file_type().is_symlink() || !m.is_dir() => {
+            return Err(std::io::Error::other(
+                "run/bin isn't a plain folder; vibezeo won't be put there",
+            ));
+        }
+        Ok(_) => {}
+        Err(_) => std::fs::create_dir_all(&bin)?,
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700))?;
+    }
     let name = program_name();
     for entry in std::fs::read_dir(&bin)?.flatten() {
         if entry.file_name() != name {
@@ -79,7 +94,20 @@ pub fn install(run_dir: &Path, hook: &Path) -> std::io::Result<PathBuf> {
     }
     #[cfg(not(unix))]
     {
-        std::fs::copy(hook, &target)?;
+        // A running vibezeo.exe can't be overwritten but can be renamed
+        // over; if even that fails, the one already there stays.
+        let fresh = bin.join(format!("{name}.new"));
+        std::fs::copy(hook, &fresh)?;
+        if let Err(e) = std::fs::rename(&fresh, &target) {
+            let _ = std::fs::remove_file(&fresh);
+            if !target.is_file() {
+                return Err(e);
+            }
+            tracing::warn!(
+                code = "secrets.vibezeo_in_use",
+                "an older vibezeo stays until it exits"
+            );
+        }
     }
     Ok(bin)
 }
@@ -197,6 +225,7 @@ impl AgentRuns {
             &secret_env,
             &resolved.secrets,
             RUN_LIMIT,
+            &|pid| self.terminals.resources.adopt(checked.pane.as_str(), pid),
         )
         .await;
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
@@ -424,6 +453,7 @@ pub async fn run(
     secret_env: &[(String, Zeroizing<String>)],
     values: &[Zeroizing<String>],
     limit: Duration,
+    adopt: &(dyn Fn(u32) + Send + Sync),
 ) -> RunReply {
     #[cfg(windows)]
     let mut cmd = {
@@ -457,6 +487,9 @@ pub async fn run(
         Err(e) => return RunReply::refused(format!("Couldn't start the command: {e}")),
     };
     let pid = child.id();
+    if let Some(pid) = pid {
+        adopt(pid);
+    }
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
     for pipe in [
         child
@@ -823,6 +856,46 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_what_a_run_leaves_in_the_background_is_ended_with_it() {
+        let started = std::time::Instant::now();
+        let reply = run(
+            "sleep 30 & echo $! > bg.pid; echo done",
+            &std::env::temp_dir(),
+            &[("PATH".into(), "/usr/bin:/bin".into())],
+            &[],
+            &[],
+            Duration::from_secs(20),
+            &|_| {},
+        )
+        .await;
+        // The background sleep holds the pipe open, yet the reply comes back
+        // once the command itself exits.
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(
+            (reply.exit_code, reply.output.as_str()),
+            (Some(0), "done\n")
+        );
+        let pid = std::fs::read_to_string(std::env::temp_dir().join("bg.pid"))
+            .expect("pid")
+            .trim()
+            .to_string();
+        let _ = std::fs::remove_file(std::env::temp_dir().join("bg.pid"));
+        let gone = (0..50).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            !std::process::Command::new("kill")
+                .args(["-0", &pid])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        });
+        assert!(gone, "the background child outlived the run");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn f_tl_12_7_an_env_edited_after_allow_for_this_agent_asks_again() {
         let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
         let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "ok"])).await;
@@ -975,7 +1048,22 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["vibezeo".to_string()]);
         assert_eq!(std::fs::read_link(bin.join("vibezeo")).expect("link"), hook);
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&bin).expect("meta").permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
         // Again is a no-op.
         install(&run, &hook).expect("again");
+        // A bin that's a link to somewhere else is refused.
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).expect("mkdir");
+        std::fs::remove_dir_all(&bin).expect("rm");
+        std::os::unix::fs::symlink(&elsewhere, &bin).expect("link");
+        assert!(install(&run, &hook).is_err());
+        assert!(std::fs::read_dir(&elsewhere)
+            .expect("read")
+            .next()
+            .is_none());
     }
 }
