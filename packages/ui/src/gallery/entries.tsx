@@ -3,6 +3,7 @@ import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react"
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip, Count } from "../components/Badge";
+import { Coachmark } from "../components/Coachmark";
 import { TimeAgo } from "../components/TimeAgo";
 import { ENGINE_MARKS, EngineGlyph } from "../components/EngineGlyph";
 
@@ -93,6 +94,30 @@ const TREE: Record<string, FileTreeNode[] | undefined> = {
   ],
   "src/auth": undefined,
 };
+
+/** A hint needs its anchor in the page first. */
+function CoachmarkDemo() {
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <Button ref={setAnchor}>Thread</Button>
+      <Coachmark
+        anchor={anchor}
+        label="Tip"
+        footer={
+          <>
+            <span className="tabular-nums">2 of 3</span>
+            <Button size="sm" variant="ghost">
+              Hide tips
+            </Button>
+          </>
+        }
+      >
+        <p>Your first message is ready. Switch to Thread to see it.</p>
+      </Coachmark>
+    </>
+  );
+}
 
 export const galleryEntries: GalleryEntry[] = [
   {
@@ -191,6 +216,12 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "mode switch", render: () => <SegmentedControl label="Work mode" modeSwitch value="code" items={MODES} /> },
       { name: "small", render: () => <SegmentedControl label="Text size" size="sm" value="default" items={[{ id: "small", label: "Small" }, { id: "default", label: "Default" }, { id: "large", label: "Large" }]} /> },
     ],
+  },
+  {
+    id: "coachmark",
+    title: "Coachmark",
+    spec: "DESIGN §5.2.2",
+    states: [{ name: "beside its anchor", render: () => <CoachmarkDemo /> }],
   },
   {
     id: "tooltip",
