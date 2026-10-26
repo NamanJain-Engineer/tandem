@@ -39,7 +39,7 @@ import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useLayoutChanges, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -410,7 +410,11 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
       gs.flatMap((g) => [g.id, ...g.items.map((i) => i.key), ...keys(g.children ?? [])]);
     return keys(groups).join("\n");
   }, [groups]);
-  const steady = useSettled(placement);
+  // A card growing or shrinking (an approval coming or going, a long line)
+  // moves the others without reordering them, and so does the panel being
+  // shown or resized: those restart the wait too.
+  const [layoutRef, layoutChanges] = useLayoutChanges(placement);
+  const steady = useSettled(`${placement}\n${layoutChanges}`);
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
 
@@ -506,7 +510,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   };
 
   return (
-    <div data-testid="dashboard" className="flex flex-col gap-3 p-3">
+    <div ref={layoutRef} data-testid="dashboard" className="flex flex-col gap-3 p-3">
       <header className="flex flex-col gap-1.5">
         <h2 data-testid="dashboard-count" className="text-xl font-semibold text-fg">
           {t("dashboard.count", { n: c.total })}

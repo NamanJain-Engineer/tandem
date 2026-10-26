@@ -18,6 +18,8 @@ CREATE TABLE activity (
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);
 CREATE INDEX activity_at ON activity(at);
+-- Pruning by count reads only the rows that aren't kept.
+CREATE INDEX activity_kept ON activity(kept, source_kind, source_id, at);
 
 -- The ledger reads these by pane or thread, newest first.
 CREATE INDEX IF NOT EXISTS command_history_pane ON command_history(pane_id, started_at);

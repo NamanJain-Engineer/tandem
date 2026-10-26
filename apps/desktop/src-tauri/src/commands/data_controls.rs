@@ -90,8 +90,13 @@ pub async fn data_delete_local(
     }
     let terminals = state.terminals.clone();
     let scrollback = state.data.scrollback();
-    tokio::task::spawn_blocking(move || terminals.shutdown(&scrollback))
-        .await
-        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
+    // restart() skips the exit event: agent runs end first (F-TL-12), off
+    // the runtime's workers.
+    tokio::task::spawn_blocking(move || {
+        crate::services::agent_run::shutdown_all();
+        terminals.shutdown(&scrollback)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?;
     app.restart();
 }

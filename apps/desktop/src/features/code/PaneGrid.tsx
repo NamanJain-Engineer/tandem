@@ -473,11 +473,7 @@ const PaneView = memo(function PaneView({
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
       {runnable && <RunDialog paneId={pane.id} tabId={tabId} open={running} onOpenChange={setRunning} />}
-      {/* F-TL-12: first under the chrome, so banners the agent's own output or
-          reports can raise (limits, the runaway guard) never push Allow. */}
-      {pane.kind === "agent" && <ApprovalBanner paneId={pane.id} />}
-      <LimitBanner pane={pane} />
-      <GuardBanner paneId={pane.id} />
+      <PaneBanners pane={pane} />
       {note && (
         // F-CD-16: where the work went, until dismissed.
         <div
@@ -800,5 +796,18 @@ export function PaneGrid({
         );
       })}
     </div>
+  );
+}
+
+/** The banners under a pane's chrome. F-TL-12: the approval comes first, so
+ * banners the agent's own output or reports can raise (limits, the runaway
+ * guard) never push its Allow down. */
+export function PaneBanners({ pane }: { pane: PaneRecord }) {
+  return (
+    <>
+      {pane.kind === "agent" && <ApprovalBanner paneId={pane.id} />}
+      <LimitBanner pane={pane} />
+      <GuardBanner paneId={pane.id} />
+    </>
   );
 }

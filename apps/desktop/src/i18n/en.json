@@ -1281,7 +1281,7 @@
   "activity.ended.appQuit": "ended when Vibezeo quit",
   "activity.ended.secretsUnreadable": "didn't start: the secrets couldn't be read",
   "activity.decided.appQuit": "Ended: Vibezeo quit",
-  "activity.decided.tooMany": "Not asked: too many questions in a minute",
+  "activity.decided.tooMany": "Not run: too many in a minute from this pane",
   "activity.via.inline": "in the pane",
   "activity.via.dashboard": "from the Dashboard",
   "activity.via.notification": "from a notification",

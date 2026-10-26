@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
@@ -350,4 +350,72 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
       expect(allow().disabled).toBe(true);
       await waitFor(() => expect(allow().disabled).toBe(false));
     });
+
+  it("every Allow waits after a card grows or shrinks, or the panel is shown or resized", async () => {
+    const observed: Element[] = [];
+    const fire: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          fire.push(cb);
+        }
+        observe(el: Element) {
+          observed.push(el);
+        }
+        disconnect() {}
+      },
+    );
+    const run = JSON.stringify({
+      vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+    });
+    const a = item("waiting", "alpha", {
+      since: 1_000,
+      pendingApproval: {
+        id: "ap_a",
+        source: { type: "pane", paneId: "pn_x" },
+        kind: "command",
+        summary: "run",
+        detail: run,
+        options: ["once"],
+        createdAt: 1,
+        expiresAt: 2,
+      },
+    });
+    const b = item("waiting", "beta", { since: 2_000 });
+    setup([a, b]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    const allow = () => screen.getAllByTestId("card-allow")[0] as HTMLButtonElement;
+    await screen.findByTestId("card-allow");
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // Every card is watched for its size.
+    expect(screen.getAllByTestId("agent-card").every((c) => observed.includes(c))).toBe(true);
+    const resized = () => act(() => fire.forEach((cb) => cb()));
+    // Another card's approval appears: it grows, nothing reorders.
+    act(() =>
+      useDashboard.setState((st) => ({
+        items: {
+          ...st.items,
+          [b.key]: { ...b, pendingApproval: { ...a.pendingApproval!, id: "ap_b", source: b.source } },
+        },
+      })),
+    );
+    resized();
+    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // ...and leaves again.
+    act(() => useDashboard.setState((st) => ({ items: { ...st.items, [b.key]: b } })));
+    resized();
+    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // The panel is shown again, or toggled to full view: it resizes.
+    resized();
+    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    vi.unstubAllGlobals();
+  });
 });

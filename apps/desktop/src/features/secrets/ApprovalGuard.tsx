@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { Button } from "@tandem/ui";
 import { t } from "../../i18n";
 
@@ -46,6 +46,25 @@ export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => voi
     return () => io.disconnect();
   }, [key, el, change]);
   return [setEl, key !== null && seen === change];
+}
+
+/** A ref for a list of cards, and a count that moves whenever the list,
+ * any of its direct children (the header, the groups) or any card changes
+ * size: a card growing or shrinking moves the ones below it, and a panel
+ * shown from `display: none` or a full-view toggle resizes it. Feed it into
+ * a settle key. `cards` re-observes when the set of cards changes. */
+export function useLayoutChanges(cards: string): [(el: HTMLElement | null) => void, number] {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const [changes, changed] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => changed());
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    el.querySelectorAll('[data-testid="agent-card"]').forEach((card) => ro.observe(card));
+    return () => ro.disconnect();
+  }, [el, cards]);
+  return [setEl, changes];
 }
 
 type BoundaryProps = { children: ReactNode; onDeny?: () => void };

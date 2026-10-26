@@ -79,6 +79,8 @@ pub struct RunRecord {
     pub duration_ms: Option<i64>,
     /// See [`ActivityEvent::ended`].
     pub ended: Option<&'static str>,
+    /// The command was spawned.
+    pub started: bool,
 }
 
 /// `activity_list`: a window of a session's events, oldest first.
@@ -135,7 +137,10 @@ pub struct ActivityService {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Flood {
     Tool,
+    /// A turn counted at Enter in the pane.
     Turn,
+    /// A turn from the engine's prompt report, which the agent can sign.
+    ReportedTurn,
     Refusal,
 }
 
@@ -144,7 +149,7 @@ impl Flood {
     pub const fn limit(self) -> u32 {
         match self {
             Flood::Tool => 240,
-            Flood::Turn => 60,
+            Flood::Turn | Flood::ReportedTurn => 60,
             Flood::Refusal => 30,
         }
     }
@@ -152,7 +157,7 @@ impl Flood {
     fn what(self) -> &'static str {
         match self {
             Flood::Tool => "tool events",
-            Flood::Turn => "turns",
+            Flood::Turn | Flood::ReportedTurn => "turns",
             Flood::Refusal => "runs that didn't start",
         }
     }
@@ -202,6 +207,11 @@ impl ActivityService {
             dropped: 0,
         });
         let mut notes = Vec::new();
+        // A clock that stepped back starts a new minute rather than one
+        // that never ends.
+        if now < w.start {
+            w.start = now;
+        }
         if now - w.start >= 60_000 {
             if w.dropped > 0 {
                 notes.push(format!(
@@ -261,6 +271,10 @@ impl ActivityService {
 
     /// A turn went to a thread's engine, or a prompt to an agent pane's,
     /// at `at` (taken before its checkpoint). Never its text.
+    ///
+    /// A pane's turn is `reported` when it comes from the engine's prompt
+    /// report (signed with the pane's secret, so the agent can send it),
+    /// else from Enter in the pane; each has its own [`Flood`] cap.
     pub async fn turn(
         &self,
         source_kind: &'static str,
@@ -268,6 +282,7 @@ impl ActivityService {
         engine: Option<&str>,
         checkpoint: Option<String>,
         at: i64,
+        reported: bool,
     ) {
         let row = NewActivity {
             source_kind,
@@ -281,7 +296,12 @@ impl ActivityService {
         };
         // A pane's turns come from reports the agent can sign.
         if source_kind == "pane" {
-            self.record_limited(Flood::Turn, row).await;
+            let flood = if reported {
+                Flood::ReportedTurn
+            } else {
+                Flood::Turn
+            };
+            self.record_limited(flood, row).await;
         } else {
             self.record(row).await;
         }
@@ -322,11 +342,10 @@ impl ActivityService {
     /// [`ActivityEvent::decided`]). A fixed summary: the question's text
     /// could carry what the agent typed before the redactor knew the values.
     ///
-    /// An Allow is kept for the full retention; any other answer (the agent
-    /// can open questions and go away) is a [`Flood::Refusal`].
+    /// Every answer is kept for the full retention: each one follows a
+    /// question, and a pane opens at most 10 a minute (`agent_run`).
     pub async fn approval(&self, pane: &str, decided: &str) {
-        let allowed = decided.starts_with("allowed");
-        let row = NewActivity {
+        self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
             kind: "approval",
@@ -334,20 +353,23 @@ impl ActivityService {
             summary: APPROVAL_SUMMARY.into(),
             detail: serde_json::json!({ "decided": decided }),
             checkpoint_id: None,
-            kept: allowed,
-        };
-        if allowed {
-            self.record(row).await;
-        } else {
-            self.record_limited(Flood::Refusal, row).await;
-        }
+            kept: true,
+        })
+        .await;
     }
 
-    /// A `vibezeo run` ended, or was refused after its decision. A run that
-    /// was allowed (by the person, a rule or an earlier allowance) is kept
-    /// for the full retention; a refusal is a [`Flood::Refusal`].
+    /// A `vibezeo run` ended, or was refused after its decision. Kept for
+    /// the full retention: a run that started (asked runs are bounded by the
+    /// questions a pane may open, unasked ones by their own cap in
+    /// `agent_run`), and the person's Deny or a question that expired or was
+    /// cancelled. Anything else that didn't start (busy, too many, gone, a
+    /// moved folder, unreadable secrets) is a [`Flood::Refusal`].
     pub async fn run(&self, pane: &str, run: RunRecord) {
-        let decided = matches!(run.decided, "once" | "agent" | "rule" | "allowed_before");
+        let decided = if run.started {
+            matches!(run.decided, "once" | "agent" | "rule" | "allowed_before")
+        } else {
+            matches!(run.decided, "declined" | "expired" | "cancelled")
+        };
         let row = NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
@@ -604,8 +626,15 @@ mod tests {
         cps::insert(&store, checkpoint("cp_1", "pn_1", t0))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("claude"), Some("cp_1".into()), t0)
-            .await;
+        svc.turn(
+            "pane",
+            "pn_1",
+            Some("claude"),
+            Some("cp_1".into()),
+            t0,
+            false,
+        )
+        .await;
         let first = command(&store, "pn_1", "pnpm test", tick(&clock), 0).await;
         let t = tick(&clock);
         svc.tool("pn_1", "Edit", false, t).await;
@@ -615,11 +644,19 @@ mod tests {
         cps::insert(&store, checkpoint("cp_2", "pn_1", t3))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("claude"), Some("cp_2".into()), t3)
-            .await;
+        svc.turn(
+            "pane",
+            "pn_1",
+            Some("claude"),
+            Some("cp_2".into()),
+            t3,
+            false,
+        )
+        .await;
         // A turn whose folder didn't change made no checkpoint: no link.
         let t4 = tick(&clock);
-        svc.turn("pane", "pn_1", Some("claude"), None, t4).await;
+        svc.turn("pane", "pn_1", Some("claude"), None, t4, false)
+            .await;
         tick(&clock);
         svc.approval("pn_1", "allowed:inline").await;
         // Another pane's events stay out.
@@ -741,6 +778,7 @@ mod tests {
                 exit_code: Some(3),
                 duration_ms: Some(840),
                 ended: None,
+                started: true,
             },
         )
         .await;
@@ -761,6 +799,7 @@ mod tests {
                 exit_code: Some(0),
                 duration_ms: Some(1),
                 ended: None,
+                started: true,
             },
         )
         .await;
@@ -780,7 +819,7 @@ mod tests {
     #[tokio::test]
     async fn f_ex_07_a_threads_ledger_has_its_turns_and_only_panes_and_threads_have_one() {
         let (_d, _store, clock, svc) = fixture();
-        svc.turn("thread", "th_1", Some("codex"), None, clock.now_ms())
+        svc.turn("thread", "th_1", Some("codex"), None, clock.now_ms(), false)
             .await;
         let events = all(&svc, "thread", "th_1").await;
         assert_eq!(events.len(), 1);
@@ -897,26 +936,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_ex_07_refused_runs_and_pane_turns_are_capped_but_allowed_runs_are_not() {
+    async fn f_ex_07_refused_runs_and_pane_turns_are_capped_but_decisions_are_not() {
         let (_d, store, clock, svc) = fixture();
-        let record = |decided: &'static str| RunRecord {
+        let record = |decided: &'static str, started: bool| RunRecord {
             command: "x".into(),
             secrets: Vec::new(),
             decided,
             exit_code: None,
             duration_ms: None,
             ended: None,
+            started,
         };
-        for _ in 0..(Flood::Refusal.limit() + 20) {
-            svc.run("pn_1", record("busy")).await;
+        let over = Flood::Refusal.limit() + 20;
+        // What the agent triggers at will: refused before asking, or allowed
+        // but never started (gone first, a moved folder, unreadable secrets).
+        for n in 0..over {
+            svc.run(
+                "pn_1",
+                record(if n % 2 == 0 { "busy" } else { "rule" }, false),
+            )
+            .await;
+        }
+        // The person's own decisions after that flood, and every answer
+        // (each follows a question, at most 10 a minute): all kept.
+        for _ in 0..over {
+            svc.run("pn_1", record("declined", false)).await;
+            svc.run("pn_1", record("expired", false)).await;
+            svc.approval("pn_1", "denied:inline").await;
             svc.approval("pn_1", "client_gone").await;
         }
-        for _ in 0..(Flood::Refusal.limit() + 20) {
-            svc.run("pn_1", record("rule")).await;
-            svc.approval("pn_1", "allowed:inline").await;
+        // Runs that started.
+        for _ in 0..over {
+            svc.run("pn_1", record("rule", true)).await;
+            svc.run("pn_1", record("once", true)).await;
         }
+        // Turns at Enter and reported turns have a cap each.
         for _ in 0..(Flood::Turn.limit() + 5) {
-            svc.turn("pane", "pn_1", None, None, clock.now_ms()).await;
+            svc.turn("pane", "pn_1", None, None, clock.now_ms(), false)
+                .await;
+            svc.turn("pane", "pn_1", None, None, clock.now_ms(), true)
+                .await;
         }
         let count = |sql: &'static str| {
             let store = store.clone();
@@ -927,29 +986,27 @@ mod tests {
                     .expect("count")
             }
         };
-        let refusal = i64::from(Flood::Refusal.limit());
-        // Refused runs and other answers share one cap; allowed ones have none.
         assert_eq!(
-            count("SELECT COUNT(*) FROM activity WHERE kept = 0 AND kind IN ('run', 'approval')")
-                .await,
-            refusal
+            count("SELECT COUNT(*) FROM activity WHERE kept = 0 AND kind = 'run'").await,
+            i64::from(Flood::Refusal.limit())
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kept = 1 AND kind IN ('run', 'approval')")
                 .await,
-            2 * (refusal + 20)
+            6 * i64::from(over)
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kind = 'turn'").await,
-            i64::from(Flood::Turn.limit())
+            2 * i64::from(Flood::Turn.limit())
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kind = 'note'").await,
-            2
+            3
         );
         // A thread's turns aren't the agent's to flood.
         for _ in 0..(Flood::Turn.limit() + 5) {
-            svc.turn("thread", "th_1", None, None, clock.now_ms()).await;
+            svc.turn("thread", "th_1", None, None, clock.now_ms(), false)
+                .await;
         }
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kind = 'turn' AND source_kind = 'thread'")

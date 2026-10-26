@@ -809,7 +809,7 @@ impl AppState {
                 .filter(|c| at - c.at <= 10_000)
                 .map(|c| c.id);
                 activity
-                    .turn("pane", &pane, engine.as_deref(), checkpoint, at)
+                    .turn("pane", &pane, engine.as_deref(), checkpoint, at, true)
                     .await;
             });
         }));
@@ -844,7 +844,14 @@ impl AppState {
                     let pane = pane.as_str().to_string();
                     tauri::async_runtime::spawn(async move {
                         activity
-                            .turn("pane", &pane, engine.as_deref(), made.map(|c| c.id), at)
+                            .turn(
+                                "pane",
+                                &pane,
+                                engine.as_deref(),
+                                made.map(|c| c.id),
+                                at,
+                                false,
+                            )
                             .await;
                     });
                 }

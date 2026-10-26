@@ -626,6 +626,8 @@ pub fn grant_permission(
 /// macOS: Input Monitoring takes effect on relaunch ("Quit & Reopen").
 #[tauri::command]
 pub fn dictate_relaunch(app: AppHandle) -> Result<(), IpcError> {
+    // restart() skips the exit event: end agent runs first (F-TL-12).
+    crate::services::agent_run::shutdown_all();
     app.restart();
 }
 

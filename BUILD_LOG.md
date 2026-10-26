@@ -384,6 +384,19 @@ The coordinator's review of b31c8fda (one must-fix and the should-fixes). D-2846
 - D-2848: Quitting ends every agent run like a dropped client. `shutdown_all` at `RunEvent::Exit` sets each `AgentRuns.quit`, so questions are cancelled and running groups killed, and waits up to 3 s for their rows ("Ended: Vibezeo quit"). A client gone between the answer and the start now starts nothing. Secrets that can't be read after Allow leave a row. A login environment without `PATH` gets the safe default.
 - D-2849: The approval banner renders first under the pane's chrome. The limit and runaway-guard banners, which the agent's output and reports can raise, can no longer push Allow down. The variables line wraps (`break-all`). A screen-level mobile test isn't added: the mobile vitest config keeps React Native out by design, and `approvalActions` is what the screen uses for both Allow and Deny. Possible follow-up: a react-native-web and jsdom harness for apps/mobile's screens.
 
+### M18 agent-proof secrets slice 2 and activity ledger: fifth review
+The coordinator's review of be5faba9 (one must-fix and the should-fixes). D-2850 to D-2853, after the confirmed D-2846 to D-2849 (to be confirmed).
+- D-2850: The Dashboard's Allow settles on geometry, not only order. `useLayoutChanges` watches the root, its children and every card with a ResizeObserver, and each change moves the settle key. An approval coming or going changes no status, `since` or order, but it does move the cards below; so do the panel showing from `display: none` and the full-view toggle. A double-click on Allow can no longer land on the next card's Allow.
+- D-2851: What's kept by age only is what a decision or a started process bounds:
+  - runs that started (asked ones bounded by the 10 questions a minute; unasked ones by a new `UNASKED_RUNS_PER_MINUTE` of 30, refused over it);
+  - every answer;
+  - runs the person declined, or that expired or were cancelled;
+  - notes.
+
+  Runs that didn't start without a decision (busy, too many, gone, a moved folder, unreadable secrets) are capped refusals, so a moved folder and unreadable secrets now match. Turns at Enter and reported turns have a cap each. The flood window restarts if the clock steps back. Index `activity_kept`.
+- D-2852: `shutdown_all` is synchronous. It sets quit, kills every running group at once from `AgentRuns.pids`, then waits up to 3 s by the wall clock for rows. It runs at exit and before each `restart()` (`dictate_relaunch` on the main thread, and `updates_install` and `data_delete_local` in `spawn_blocking`), since restart skips the exit event. A one-worker runtime can't stall it, and the values don't outlive a relaunch even when the row can't be written.
+- D-2853: Dev databases that ran the old in-place 0006 need resetting (OPERATING §5). The approval banner order lives in `PaneBanners`, which is tested. `useSeenEnd` has an A → B → A test. The exit wiring isn't unit-tested: `shutdown_all` reaches every live `AgentRuns` in the process, so calling it from a test would stop other tests' runs. The per-instance `shutdown` it uses is tested.
+
 ### M18 sandbox log
 - F-TL-11: spec, policy and detection (7 tests, one against the test machine's real `bwrap` 0.9.0), the worktree policy (1), the chip and setting (3 vitest cases), docs and E2E-M18-TL11 (1 case). Run on its own, the spec passes; run beside E2E-M18-AC09 in parallel workers, it once met that run's leftover pane in the "still running" dialog. The E2E found nothing in the product. Review fixes (D-2479 to D-2481): a real worktree test (commits work; no hook through a missing `.git/hooks` or `core.hooksPath`) and the builder's case (1); the E2E checks the whole `~/.ssh` and a missing hooks folder, and E2E-M18-TL11 and E2E-M18-AC09 pass in both orders (a copy of TL11 run first, then AC09, then TL11). The E2E's `$HOME` lives under `/tmp`, which the sandbox shares, so `$HOME` writes are checked by the real-bwrap Rust test only.
 

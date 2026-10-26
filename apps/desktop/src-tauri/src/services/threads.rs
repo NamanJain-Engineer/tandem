@@ -1730,6 +1730,7 @@ impl ThreadService {
                     Some(thread.engine_id.as_str()),
                     checkpoint.map(|c| c.id),
                     turn_at,
+                    false,
                 )
                 .await;
         }

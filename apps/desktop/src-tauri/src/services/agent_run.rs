@@ -144,21 +144,62 @@ pub struct AgentRuns {
     quit: tokio::sync::watch::Sender<bool>,
     /// Requests being served, so quitting can wait for their rows.
     serving: std::sync::atomic::AtomicUsize,
+    /// Per pane: this minute of runs a rule or an earlier allowance started.
+    unasked: std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, u32)>>,
+    /// The process groups of commands running now.
+    pids: std::sync::Mutex<std::collections::HashSet<u32>>,
+}
+
+/// Runs a rule or "Allow for this agent" may start per pane per minute
+/// without asking: each one is a kept row, and the agent sends as many
+/// requests as it likes.
+pub const UNASKED_RUNS_PER_MINUTE: u32 = 30;
+pub const TOO_MANY_RUNS: &str =
+    "Not run: this pane ran 30 commands without asking in the last minute. Try again shortly";
+
+/// Whether `pane` has room for one more this minute, out of `limit`.
+fn per_minute(
+    counts: &std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, u32)>>,
+    pane: &str,
+    limit: u32,
+) -> bool {
+    let Ok(mut counts) = counts.lock() else {
+        return false;
+    };
+    let now = std::time::Instant::now();
+    let entry = counts.entry(pane.to_string()).or_insert((now, 0));
+    if now.duration_since(entry.0) >= Duration::from_secs(60) {
+        *entry = (now, 0);
+    }
+    if entry.1 >= limit {
+        return false;
+    }
+    entry.1 += 1;
+    true
 }
 
 /// Every `AgentRuns`, for [`shutdown_all`] at exit.
 static LIVE: std::sync::Mutex<Vec<std::sync::Weak<AgentRuns>>> = std::sync::Mutex::new(Vec::new());
 
-/// At exit: every open question is cancelled and every running command's
-/// group killed, each with its row ("Ended: Vibezeo quit"), waiting up to
-/// 3 s for the rows.
-pub async fn shutdown_all() {
+/// Before the app exits or restarts: every open question is cancelled and
+/// every running command's group killed at once, then up to 3 s (by the
+/// wall clock, not a runtime's timer, so a caller on a busy or one-worker
+/// runtime still returns) for their rows ("Ended: Vibezeo quit").
+pub fn shutdown_all() {
     let live: Vec<Arc<AgentRuns>> = LIVE
         .lock()
         .map(|l| l.iter().filter_map(std::sync::Weak::upgrade).collect())
         .unwrap_or_default();
-    for runs in live {
-        runs.shutdown(Duration::from_secs(3)).await;
+    for runs in &live {
+        runs.stop();
+    }
+    let until = std::time::Instant::now() + Duration::from_secs(3);
+    while live
+        .iter()
+        .any(|r| r.serving.load(std::sync::atomic::Ordering::SeqCst) > 0)
+        && std::time::Instant::now() < until
+    {
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -320,6 +361,8 @@ impl AgentRuns {
             asked: Default::default(),
             quit: tokio::sync::watch::channel(false).0,
             serving: Default::default(),
+            unasked: Default::default(),
+            pids: Default::default(),
         });
         if let Ok(mut live) = LIVE.lock() {
             live.retain(|w| w.strong_count() > 0);
@@ -328,14 +371,30 @@ impl AgentRuns {
         runs
     }
 
-    /// Ends what's open (see [`shutdown_all`]), waiting up to `wait`.
-    pub async fn shutdown(&self, wait: Duration) {
-        self.quit.send_replace(true);
-        let until = tokio::time::Instant::now() + wait;
+    /// [`shutdown_all`] for this one: stops it and waits up to `wait` for
+    /// its rows.
+    pub fn shutdown(&self, wait: Duration) {
+        self.stop();
+        let until = std::time::Instant::now() + wait;
         while self.serving.load(std::sync::atomic::Ordering::SeqCst) > 0
-            && tokio::time::Instant::now() < until
+            && std::time::Instant::now() < until
         {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Sets quit, which ends open questions and running commands, and kills
+    /// every running command's group now, whether or not its task gets to
+    /// run again.
+    fn stop(&self) {
+        self.quit.send_replace(true);
+        let pids: Vec<u32> = self
+            .pids
+            .lock()
+            .map(|p| p.iter().copied().collect())
+            .unwrap_or_default();
+        for pid in pids {
+            kill_group(Some(pid));
         }
     }
 
@@ -355,19 +414,7 @@ impl AgentRuns {
 
     /// Whether the pane may open another question this minute.
     fn may_ask(&self, pane: &str) -> bool {
-        let Ok(mut asked) = self.asked.lock() else {
-            return false;
-        };
-        let now = std::time::Instant::now();
-        let entry = asked.entry(pane.to_string()).or_insert((now, 0));
-        if now.duration_since(entry.0) >= Duration::from_secs(60) {
-            *entry = (now, 0);
-        }
-        if entry.1 >= QUESTIONS_PER_MINUTE {
-            return false;
-        }
-        entry.1 += 1;
-        true
+        per_minute(&self.asked, pane, QUESTIONS_PER_MINUTE)
     }
 
     /// Serves a request in its own task, so the client going away (killed,
@@ -446,6 +493,7 @@ impl AgentRuns {
             "an agent's run with secrets started"
         );
         let started = std::time::Instant::now();
+        let pid_of_run = std::sync::Mutex::new(None::<u32>);
         let reply = run(
             &checked.command,
             &checked.cwd,
@@ -453,12 +501,29 @@ impl AgentRuns {
             &secret_env,
             &resolved.secrets,
             RUN_LIMIT,
-            &|pid| self.terminals.resources.adopt(checked.pane.as_str(), pid),
+            &|pid| {
+                if let Ok(mut pids) = self.pids.lock() {
+                    pids.insert(pid);
+                }
+                if let Ok(mut mine) = pid_of_run.lock() {
+                    *mine = Some(pid);
+                }
+                self.terminals.resources.adopt(checked.pane.as_str(), pid)
+            },
             self.ended(waiting),
         )
         .await;
+        if let (Ok(mine), Ok(mut pids)) = (pid_of_run.lock(), self.pids.lock()) {
+            if let Some(pid) = *mine {
+                pids.remove(&pid);
+            }
+        }
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        let ended = reply.error.as_deref().and_then(ended_code);
+        // Killed by the quit before its own `gone` was seen: still the quit.
+        let ended = match reply.error.as_deref().and_then(ended_code) {
+            None if *self.quit.borrow() => Some("app_quit"),
+            e => e,
+        };
         self.ledger(&checked, decided, true, Some(&reply), Some(took), ended)
             .await;
         reply
@@ -499,6 +564,7 @@ impl AgentRuns {
                     exit_code: reply.and_then(|r| r.exit_code),
                     duration_ms,
                     ended,
+                    started: ran,
                 },
             )
             .await;
@@ -578,14 +644,21 @@ impl AgentRuns {
         gone: impl Future<Output = &'static str>,
     ) -> Result<&'static str, (&'static str, String)> {
         let rules = RunRules::load(&self.data);
-        if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
-            return Ok("rule");
-        }
-        if self
+        let unasked = if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
+            Some("rule")
+        } else if self
             .terminals
             .agent_run_allowed(c.pane.as_str(), &c.allow_key(), &c.fingerprint)
         {
-            return Ok("allowed_before");
+            Some("allowed_before")
+        } else {
+            None
+        };
+        if let Some(by) = unasked {
+            if !per_minute(&self.unasked, c.pane.as_str(), UNASKED_RUNS_PER_MINUTE) {
+                return Err(("too_many", TOO_MANY_RUNS.into()));
+            }
+            return Ok(by);
         }
         let _asking = {
             let mut panes = self
@@ -1640,7 +1713,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert!(!pid.is_empty(), "the run started");
-        fx.runs.shutdown(Duration::from_secs(3)).await;
+        let runs = fx.runs.clone();
+        tokio::task::spawn_blocking(move || runs.shutdown(Duration::from_secs(3)))
+            .await
+            .expect("shutdown");
         assert!(ends(&pid), "the run's group outlived the app");
         let reply = task.await.expect("task");
         assert_eq!(reply.error.as_deref(), Some(APP_QUIT));
@@ -1708,5 +1784,20 @@ mod tests {
             .expect("a row");
         assert_eq!(run.ended.as_deref(), Some("secrets_unreadable"));
         assert_eq!(run.summary, NOT_STARTED);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_9_unasked_runs_are_capped_per_pane_per_minute() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["true"])).await;
+        allow(&fx, &view, ApprovalScope::Conversation);
+        assert_eq!(task.await.expect("task").exit_code, Some(0));
+        for _ in 0..UNASKED_RUNS_PER_MINUTE {
+            let reply = fx.runs.handle(req(&fx.agent, &fx.root, &["true"])).await;
+            assert_eq!(reply.exit_code, Some(0), "{:?}", reply.error);
+        }
+        let reply = fx.runs.handle(req(&fx.agent, &fx.root, &["true"])).await;
+        assert_eq!(reply.error.as_deref(), Some(TOO_MANY_RUNS));
+        assert!(fx.broker.pending().is_empty(), "nor asked");
     }
 }

@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApprovalView, DashboardItem } from "@tandem/protocol";
+import type { ApprovalView, DashboardItem, PaneRecord } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { ApprovalBanner } from "./ApprovalBanner";
+import { PaneBanners } from "./PaneGrid";
+import { useRunaway } from "../../stores/runaway";
 import { ApprovalBoundary } from "../secrets/ApprovalGuard";
 import { parseRunApproval } from "../secrets/runApproval";
 
@@ -319,5 +321,25 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     );
     expect(screen.getByTestId("run-line-cwd").textContent).toBe("In /w/sh\\u{43E}p");
     expect(screen.getByTestId("run-line-marked")).toBeTruthy();
+  });
+
+  it("F-TL-12.12 the approval comes first, above banners the agent can raise", () => {
+    fakeBackend();
+    withApproval(approval);
+    useRunaway.getState().set("pn_1", {
+      paneId: "pn_1",
+      trip: { kind: "working", minutes: 90 },
+      state: "tripped",
+      title: "fix-auth has been working for 90 min",
+      reason: null,
+    });
+    render(
+      <UiProvider>
+        <PaneBanners pane={{ id: "pn_1", kind: "agent" } as unknown as PaneRecord} />
+      </UiProvider>,
+    );
+    const ask = screen.getByTestId("pane-approval");
+    const guard = screen.getByTestId("guard-banner");
+    expect(ask.compareDocumentPosition(guard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
