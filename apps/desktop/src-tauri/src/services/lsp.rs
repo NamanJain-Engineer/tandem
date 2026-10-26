@@ -232,6 +232,7 @@ pub struct Client {
     /// The text last sent per URI, with its version.
     docs: Mutex<HashMap<String, (i32, String)>>,
     child: Mutex<Option<tokio::process::Child>>,
+    on_stop: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     /// The process group (Unix) or process (Windows) to kill.
     tree: Option<u32>,
     stderr: Arc<Mutex<std::collections::VecDeque<u8>>>,
@@ -389,6 +390,10 @@ fn last_line(tail: &std::collections::VecDeque<u8>) -> Option<String> {
 /// Kills a server's whole tree: its process group on Unix, `taskkill /T`
 /// on Windows (cargo check and tsserver are its children).
 async fn kill_tree(id: u32) {
+    // `kill -KILL -- -1` would signal every process the user owns.
+    if id <= 1 {
+        return;
+    }
     let argv: Vec<String> = if cfg!(windows) {
         ["taskkill", "/T", "/F", "/PID", &id.to_string()]
             .map(String::from)
@@ -427,6 +432,7 @@ impl Client {
             docs: Mutex::default(),
             tree: spawned.tree,
             child: Mutex::new(spawned.child),
+            on_stop: Mutex::new(spawned.on_stop),
             stderr: tail.clone(),
             ended: Mutex::new(None),
         });
@@ -690,31 +696,35 @@ impl Client {
         };
         let _ = tokio::time::timeout(STOP_LIMIT, polite).await;
         let child = lock(&self.child).take();
-        let exited = match child {
-            Some(mut child) => {
-                let gone = tokio::time::timeout(Duration::from_secs(1), child.wait())
-                    .await
-                    .is_ok();
-                if !gone {
-                    // The tree goes while the server still holds its pid, so
-                    // `taskkill /T` can't hit a process that reused it.
+        // Without the child there's no pid known to be ours: no kill.
+        if let Some(mut child) = child {
+            // On Unix the group goes first, while the leader is unreaped
+            // (its pid, the group's id, can't be reused yet): the group
+            // outlives a leader that exits while a child (cargo check,
+            // tsserver) runs.
+            if cfg!(unix) {
+                if let Some(id) = self.tree {
+                    kill_tree(id).await;
+                }
+            }
+            let gone = tokio::time::timeout(Duration::from_secs(1), child.wait())
+                .await
+                .is_ok();
+            if !gone {
+                // On Windows the tree goes while the server still holds
+                // its pid, so `taskkill /T` can't hit a process that
+                // reused it.
+                if cfg!(windows) {
                     if let Some(id) = self.tree {
                         kill_tree(id).await;
                     }
-                    let _ = child.start_kill();
-                    let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
                 }
-                gone
+                let _ = child.start_kill();
+                let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
             }
-            None => true,
-        };
-        // On Unix the group outlives its leader while a child (cargo check,
-        // tsserver) runs; on Windows a pid that exited may be reused, so
-        // only the group kill above is safe.
-        if exited && cfg!(unix) {
-            if let Some(id) = self.tree {
-                kill_tree(id).await;
-            }
+        }
+        if let Some(told) = lock(&self.on_stop).take() {
+            told();
         }
         self.end("stopped".into());
     }
@@ -723,22 +733,7 @@ impl Client {
 /// `file://` and the path, percent-encoded.
 pub fn file_uri(p: &Path) -> String {
     #[cfg(windows)]
-    let s = {
-        // `C:\x` is `file:///C:/x`; a verbatim `\\?\C:\x` (canonicalize's)
-        // is the same file, and `\\?\UNC\host\share` is `\\host\share`.
-        let raw = p.to_string_lossy();
-        let plain = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
-            format!(r"\\{unc}")
-        } else {
-            raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
-        };
-        let s = plain.replace('\\', "/");
-        if s.starts_with('/') {
-            s
-        } else {
-            format!("/{s}")
-        }
-    };
+    let s = windows_uri_body(&p.to_string_lossy());
     #[cfg(not(windows))]
     let s = p.to_string_lossy().into_owned();
     let mut out = String::from("file://");
@@ -751,6 +746,37 @@ pub fn file_uri(p: &Path) -> String {
         }
     }
     out
+}
+
+/// A Windows path as what follows `file://`: `C:\x` (or canonicalize's
+/// verbatim `\\?\C:\x`) is `/C:/x`, and a share, `\\host\share\x` or
+/// `\\?\UNC\host\share\x`, is `host/share/x` (the host is the URI's
+/// authority).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_uri_body(raw: &str) -> String {
+    if let Some(unc) = raw
+        .strip_prefix(r"\\?\UNC\")
+        .or_else(|| raw.strip_prefix(r"\\").filter(|r| !r.starts_with(r"?\")))
+    {
+        return unc.replace('\\', "/");
+    }
+    let s = raw.strip_prefix(r"\\?\").unwrap_or(raw).replace('\\', "/");
+    if s.starts_with('/') {
+        s
+    } else {
+        format!("/{s}")
+    }
+}
+
+/// What follows `file://` (decoded) as a Windows path: `/C:/x` is `C:/x`,
+/// `host/share/x` is `\\host\share\x`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_path_of(s: &str) -> String {
+    match s.strip_prefix('/') {
+        Some(rest) if rest.len() > 1 && rest.as_bytes()[1] == b':' => rest.to_string(),
+        Some(_) => s.to_string(),
+        None => format!(r"\\{}", s.replace('/', r"\")),
+    }
 }
 
 fn uri_path(uri: &str) -> Option<PathBuf> {
@@ -770,12 +796,9 @@ fn uri_path(uri: &str) -> Option<PathBuf> {
         i += 1;
     }
     let s = String::from_utf8(bytes).ok()?;
-    // `file:///C:/x` on Windows.
+    // `file:///C:/x` and `file://host/share/x` on Windows.
     #[cfg(windows)]
-    let s = match s.strip_prefix('/') {
-        Some(rest) if rest.len() > 1 && rest.as_bytes()[1] == b':' => rest.to_string(),
-        _ => s,
-    };
+    let s = windows_path_of(&s);
     Some(PathBuf::from(s))
 }
 
@@ -790,6 +813,8 @@ pub struct Spawned {
     pub child: Option<tokio::process::Child>,
     /// Its process group (Unix) or process (Windows), killed with it.
     pub tree: Option<u32>,
+    /// Told when the server is stopped (tests record it).
+    pub on_stop: Option<Box<dyn FnOnce() + Send>>,
 }
 
 /// Starts servers (the real one runs the program on the login PATH; tests
@@ -974,6 +999,7 @@ impl Spawner for LoginSpawner {
         let stderr = child.stderr.take().map(|e| Box::new(e) as Reader);
         Ok(Spawned {
             tree: child.id(),
+            on_stop: None,
             reader: Box::new(reader),
             writer: Box::new(writer),
             stderr,
@@ -996,9 +1022,17 @@ pub struct Lsp {
     /// One start at a time per folder and server; others don't wait.
     gates: Mutex<HashMap<Key, Arc<tokio::sync::Mutex<()>>>>,
     failures: Mutex<HashMap<Key, (Vec<Instant>, String)>>,
-    /// Folders being removed: no server starts there for a while (a hover
-    /// during a worktree's teardown would restart one).
-    closing: Mutex<HashMap<PathBuf, Instant>>,
+    /// Folders being removed, by how many removals are under way: no server
+    /// starts there until they finish (a hover during a worktree's teardown
+    /// would restart one).
+    closing: Mutex<HashMap<PathBuf, usize>>,
+    /// Bumped when every server stops (the app quits, the sandbox setting
+    /// changes): a start that began before isn't kept.
+    generation: AtomicU64,
+    /// Folders forgotten, numbered: a start that began before a folder
+    /// covering it was forgotten isn't kept.
+    forgets: AtomicU64,
+    forgotten: Mutex<std::collections::VecDeque<(u64, PathBuf)>>,
     /// Starts so far (tests watch it).
     pub starts: AtomicU64,
 }
@@ -1025,6 +1059,9 @@ impl Lsp {
             gates: Mutex::default(),
             failures: Mutex::default(),
             closing: Mutex::default(),
+            generation: AtomicU64::new(0),
+            forgets: AtomicU64::new(0),
+            forgotten: Mutex::default(),
             starts: AtomicU64::new(0),
         }
     }
@@ -1045,7 +1082,8 @@ impl Lsp {
         spec: &'static ServerSpec,
         login: &LoginEnv,
     ) -> Result<Arc<Client>, NoServer> {
-        let key: Key = (root.to_path_buf(), spec.program);
+        let root = &norm(root);
+        let key: Key = (root.clone(), spec.program);
         let gate = lock(&self.gates).entry(key.clone()).or_default().clone();
         let _starting = gate.lock().await;
         // A server that stopped working is taken out, and stopped (its tree
@@ -1066,6 +1104,10 @@ impl Lsp {
             r.client.stop().await;
             self.failed(&key, why);
         }
+        // Read before the checks below: a forget or shutdown after this
+        // point is seen when the new server would be kept.
+        let generation = self.generation.load(Ordering::SeqCst);
+        let forgets = self.forgets.load(Ordering::SeqCst);
         // A folder being removed (or gone) gets no new server.
         if !root.is_dir() || self.closing(root) {
             return Err(NoServer {
@@ -1122,6 +1164,16 @@ impl Lsp {
         );
         let evicted = {
             let mut running = self.running.lock().await;
+            // Its folder was forgotten, or every server stopped, while it
+            // started: it isn't kept.
+            if self.superseded(root, generation, forgets) {
+                drop(running);
+                client.stop().await;
+                return Err(NoServer {
+                    state: LspState::None,
+                    message: "This folder is going away".into(),
+                });
+            }
             // The one used longest ago makes room.
             let mut evicted = Vec::new();
             while running.len() >= MAX_SERVERS {
@@ -1150,12 +1202,16 @@ impl Lsp {
     }
 
     /// Stops the servers for `root` and the folders inside it (the folder
-    /// was removed).
+    /// was removed), and any starting there now.
     pub async fn forget(&self, root: &Path) -> usize {
+        let root = &norm(root);
         {
-            let mut closing = lock(&self.closing);
-            closing.retain(|_, at| at.elapsed() < CLOSING);
-            closing.insert(root.to_path_buf(), Instant::now());
+            let mut forgotten = lock(&self.forgotten);
+            let n = self.forgets.fetch_add(1, Ordering::SeqCst) + 1;
+            forgotten.push_back((n, root.clone()));
+            while forgotten.len() > FORGOTTEN_KEPT {
+                forgotten.pop_front();
+            }
         }
         let gone: Vec<Arc<Running>> = {
             let mut running = self.running.lock().await;
@@ -1170,11 +1226,31 @@ impl Lsp {
         gone.len()
     }
 
+    /// [`forget`](Self::forget), and no server starts in `root` until the
+    /// returned guard drops (when the removal has finished).
+    pub async fn begin_removal(&self, root: &Path) -> Closing<'_> {
+        let root = norm(root);
+        *lock(&self.closing).entry(root.clone()).or_default() += 1;
+        self.forget(&root).await;
+        Closing { lsp: self, root }
+    }
+
     /// `root` is (inside) a folder being removed.
     fn closing(&self, root: &Path) -> bool {
         lock(&self.closing)
-            .iter()
-            .any(|(gone, at)| at.elapsed() < CLOSING && root.starts_with(gone))
+            .keys()
+            .any(|gone| root.starts_with(gone))
+    }
+
+    /// A start that read `generation` and `forgets` before beginning isn't
+    /// kept: every server stopped since, or a folder covering `root` is
+    /// being removed or was forgotten since.
+    fn superseded(&self, root: &Path, generation: u64, forgets: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) != generation
+            || self.closing(root)
+            || lock(&self.forgotten)
+                .iter()
+                .any(|(n, gone)| *n > forgets && root.starts_with(gone))
     }
 
     /// Stops servers idle for `idle` or longer, and drops dead ones, which
@@ -1203,8 +1279,10 @@ impl Lsp {
         gone.len()
     }
 
-    /// Every server stops (the app quits), all at once.
+    /// Every server stops (the app quits, or the sandbox setting changed),
+    /// all at once, and none starting now is kept.
     pub async fn shutdown(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
         let all: Vec<Arc<Running>> = self.running.lock().await.drain().map(|(_, r)| r).collect();
         stop_all(all).await;
     }
@@ -1214,7 +1292,7 @@ impl Lsp {
         let (Ok(full), Some(spec)) = (inside(root, rel), spec_for(rel)) else {
             return;
         };
-        let key: Key = (root.to_path_buf(), spec.program);
+        let key: Key = (norm(root), spec.program);
         let running = self.running.lock().await.get(&key).cloned();
         if let Some(r) = running {
             r.client.close(&file_uri(&full));
@@ -1230,12 +1308,13 @@ impl Lsp {
             .filter_map(|r| inside(root, r).ok())
             .map(|p| file_uri(&p))
             .collect();
+        let root = norm(root);
         let clients: Vec<Arc<Running>> = self
             .running
             .lock()
             .await
             .iter()
-            .filter(|((r, _), _)| r == root)
+            .filter(|((r, _), _)| *r == root)
             .map(|(_, v)| v.clone())
             .collect();
         for r in clients {
@@ -1254,8 +1333,32 @@ impl Lsp {
     }
 }
 
-/// A removed folder gets no new server for this long.
-const CLOSING: Duration = Duration::from_secs(30);
+/// A folder being removed: no server starts in it until this drops.
+pub struct Closing<'a> {
+    lsp: &'a Lsp,
+    root: PathBuf,
+}
+
+impl Drop for Closing<'_> {
+    fn drop(&mut self) {
+        let mut closing = lock(&self.lsp.closing);
+        if let Some(n) = closing.get_mut(&self.root) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                closing.remove(&self.root);
+            }
+        }
+    }
+}
+
+/// How many forgotten folders a start in progress is checked against.
+const FORGOTTEN_KEPT: usize = 256;
+
+/// One spelling per folder: Windows' verbatim `\\?\C:\x` (canonicalize's)
+/// and `C:\x` (a workspace's root) are the same key.
+pub fn norm(p: &Path) -> PathBuf {
+    dunce::simplified(p).to_path_buf()
+}
 
 /// Stops servers concurrently, so one slow stop doesn't hold up the rest.
 async fn stop_all(servers: Vec<Arc<Running>>) {
@@ -1347,7 +1450,8 @@ pub fn untrust(data: &DataDir, root: &Path) {
     }
 }
 
-/// The app's data folder, for [`untrust_removed`].
+/// The app's data folder, for [`forget_worktree`] and
+/// [`untrust_new_worktree`].
 static DATA: std::sync::OnceLock<DataDir> = std::sync::OnceLock::new();
 
 /// Sets the data folder, once at startup.
@@ -1355,15 +1459,39 @@ pub fn set_data_dir(data: DataDir) {
     let _ = DATA.set(data);
 }
 
-/// A removed worktree: its servers stop, and its own trust goes.
-pub async fn forget_worktree(root: &Path) {
-    global().forget(root).await;
-    if let Some(data) = DATA.get() {
+/// The data folder trust is kept in: the app's, or (in tests, which share
+/// one process) one temporary folder, set on first use. Trust is keyed by
+/// path, and each test's folders are its own.
+pub fn data_dir() -> Option<&'static DataDir> {
+    #[cfg(test)]
+    if DATA.get().is_none() {
+        let dir = std::env::temp_dir().join(format!("tandem-lsp-trust-{}", std::process::id()));
+        if let Ok(data) = DataDir::at(dir) {
+            let _ = DATA.set(data);
+        }
+    }
+    DATA.get()
+}
+
+/// A worktree being removed: its servers stop (and any starting), none
+/// starts until the returned guard drops, and its own trust goes.
+pub async fn forget_worktree(root: &Path) -> Closing<'static> {
+    let closing = global().begin_removal(root).await;
+    if let Some(data) = data_dir() {
+        untrust(data, root);
+    }
+    closing
+}
+
+/// A new worktree: no trust is left at its path from an earlier one (its
+/// row went with its workspace, or its folder was deleted outside the
+/// app), so it asks again.
+pub fn untrust_new_worktree(root: &Path) {
+    if let Some(data) = data_dir() {
         untrust(data, root);
     }
 }
 
-/// What `lsp_sync` says for an installed server that waits for trust.
 /// What a server is told at `initialize`. typescript-language-server's
 /// automatic type acquisition would npm-install `types-registry` and
 /// `@types/*` the project never declared: off (nothing leaves the machine
@@ -1702,7 +1830,7 @@ async fn locations(root: &Path, v: &Value, open: Option<(&str, &str)>) -> Vec<Ls
                 .get("range")
                 .or_else(|| item.get("targetSelectionRange"))?;
             let path = uri_path(uri)?;
-            let (rel, in_folder) = match path.strip_prefix(root) {
+            let (rel, in_folder) = match norm(&path).strip_prefix(norm(root)) {
                 Ok(rel) => (rel.to_string_lossy().replace('\\', "/"), true),
                 Err(_) => (path.to_string_lossy().into_owned(), false),
             };
@@ -1797,6 +1925,7 @@ mod tests {
             stderr: None,
             child: None,
             tree: None,
+            on_stop: None,
         });
         (client, server_side)
     }
@@ -1904,7 +2033,9 @@ mod tests {
     #[tokio::test]
     async fn f_cd_23_a_dead_server_is_stopped_and_counted_and_a_folder_going_away_gets_none() {
         let (_t, root) = folder();
-        let lsp = Lsp::new(Box::new(CrashingSpawner));
+        let crashing = CrashingSpawner::default();
+        let stops = crashing.stops.clone();
+        let lsp = Lsp::new(Box::new(crashing));
         let spec = spec_for("main.py").expect("spec");
         let first = lsp.client(&root, spec, &login()).await.expect("starts");
         let wait = async {
@@ -1919,29 +2050,39 @@ mod tests {
         let second = lsp.client(&root, spec, &login()).await.expect("again");
         assert!(!Arc::ptr_eq(&first, &second));
         assert_eq!(first.ended().as_deref(), Some("it exited"));
+        assert_eq!(stops.load(Ordering::SeqCst), 1, "the dead one was stopped");
         assert_eq!(lsp.starts.load(Ordering::SeqCst), 2);
         assert_eq!(
             lock(&lsp.failures).values().next().map(|f| f.0.len()),
             Some(1)
         );
-        // A folder being removed gets no new server.
-        assert_eq!(lsp.forget(&root).await, 1);
+        // A folder being removed gets no new server until the removal ends.
+        let closing = lsp.begin_removal(&root).await;
+        assert_eq!(stops.load(Ordering::SeqCst), 2, "the running one stopped");
         let why = lsp
             .client(&root, spec, &login())
             .await
             .err()
             .expect("closing");
         assert_eq!(why.state, LspState::None);
+        drop(closing);
+        lsp.client(&root, spec, &login())
+            .await
+            .expect("after the removal, it may start");
     }
 
-    /// Servers that exit as soon as they start.
-    struct CrashingSpawner;
+    /// Servers that exit as soon as they start; stops are counted.
+    #[derive(Default)]
+    struct CrashingSpawner {
+        stops: Arc<AtomicU64>,
+    }
 
     impl Spawner for CrashingSpawner {
         fn available(&self, _: &ServerSpec, _: &LoginEnv) -> bool {
             true
         }
         fn spawn(&self, _: &ServerSpec, _: &Path, _: &LoginEnv) -> Result<Spawned, String> {
+            let stops = self.stops.clone();
             let (client_side, server_side) = tokio::io::duplex(1 << 16);
             // Answers initialize, then exits.
             tokio::spawn(async move {
@@ -1959,14 +2100,136 @@ mod tests {
                 stderr: None,
                 child: None,
                 tree: None,
+                on_stop: Some(Box::new(move || {
+                    stops.fetch_add(1, Ordering::SeqCst);
+                })),
             })
         }
+    }
+
+    /// Servers that hold `initialize` until released; stops are counted.
+    #[derive(Default)]
+    struct ParkedSpawner {
+        release: Arc<Notify>,
+        stops: Arc<AtomicU64>,
+    }
+
+    impl Spawner for ParkedSpawner {
+        fn available(&self, _: &ServerSpec, _: &LoginEnv) -> bool {
+            true
+        }
+        fn spawn(&self, _: &ServerSpec, _: &Path, _: &LoginEnv) -> Result<Spawned, String> {
+            let (client_side, server_side) = tokio::io::duplex(1 << 16);
+            let release = self.release.clone();
+            tokio::spawn(async move {
+                let (sr, mut sw) = tokio::io::split(server_side);
+                let mut r = BufReader::new(sr);
+                if let Frame::Message(m) = read_frame(&mut r).await {
+                    release.notified().await;
+                    let reply = json!({ "jsonrpc": "2.0", "id": m["id"], "result": { "capabilities": {} } });
+                    let _ = sw.write_all(&frame(&reply)).await;
+                }
+                // Then it answers nothing, and stays up.
+                while !matches!(read_frame(&mut r).await, Frame::End) {}
+            });
+            let (cr, cw) = tokio::io::split(client_side);
+            let stops = self.stops.clone();
+            Ok(Spawned {
+                reader: Box::new(cr),
+                writer: Box::new(cw),
+                stderr: None,
+                child: None,
+                tree: None,
+                on_stop: Some(Box::new(move || {
+                    stops.fetch_add(1, Ordering::SeqCst);
+                })),
+            })
+        }
+    }
+
+    /// Starts a server in `root` that parks in `initialize`, and returns
+    /// once it's parked.
+    async fn parked_start(
+        lsp: &Arc<Lsp>,
+        root: &Path,
+    ) -> tokio::task::JoinHandle<Result<Arc<Client>, NoServer>> {
+        let (l, r) = (lsp.clone(), root.to_path_buf());
+        let task = tokio::spawn(async move {
+            l.client(&r, spec_for("main.py").expect("spec"), &login())
+                .await
+        });
+        while lsp.starts.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        task
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_server_starting_while_its_folder_is_removed_isnt_kept() {
+        let (_t, root) = folder();
+        let parked = ParkedSpawner::default();
+        let (release, stops) = (parked.release.clone(), parked.stops.clone());
+        let lsp = Arc::new(Lsp::new(Box::new(parked)));
+        let task = parked_start(&lsp, &root).await;
+        // The removal starts (a hover began during the teardown) ...
+        let closing = lsp.begin_removal(&root).await;
+        release.notify_one();
+        let why = task.await.expect("join").err().expect("not kept");
+        assert_eq!(why.state, LspState::None);
+        assert_eq!(lsp.count().await, 0);
+        assert_eq!(stops.load(Ordering::SeqCst), 1, "it was stopped");
+        // ... and nothing starts until the removal has finished, however long.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(lsp
+            .client(&root, spec_for("main.py").expect("spec"), &login())
+            .await
+            .is_err());
+        drop(closing);
+        assert!(!lsp.closing(&root));
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_server_starting_across_a_shutdown_or_a_forget_isnt_kept() {
+        let (_t, root) = folder();
+        for how in ["shutdown", "forget"] {
+            let parked = ParkedSpawner::default();
+            let (release, stops) = (parked.release.clone(), parked.stops.clone());
+            let lsp = Arc::new(Lsp::new(Box::new(parked)));
+            let task = parked_start(&lsp, &root).await;
+            // The sandbox setting changed (shutdown), or the workspace was
+            // removed (forget), while it was starting.
+            if how == "shutdown" {
+                lsp.shutdown().await;
+            } else {
+                lsp.forget(&root).await;
+            }
+            release.notify_one();
+            assert!(task.await.expect("join").is_err(), "{how}");
+            assert_eq!(lsp.count().await, 0, "{how}");
+            assert_eq!(stops.load(Ordering::SeqCst), 1, "{how}");
+        }
+    }
+
+    #[test]
+    fn f_cd_23_windows_paths_as_uris_and_back() {
+        assert_eq!(windows_uri_body(r"C:\src\a.rs"), "/C:/src/a.rs");
+        assert_eq!(windows_uri_body(r"\\?\C:\src\a.rs"), "/C:/src/a.rs");
+        assert_eq!(windows_uri_body(r"\\host\share\a.rs"), "host/share/a.rs");
+        assert_eq!(
+            windows_uri_body(r"\\?\UNC\host\share\a.rs"),
+            "host/share/a.rs"
+        );
+        assert_eq!(windows_path_of("/C:/src/a.rs"), "C:/src/a.rs");
+        assert_eq!(windows_path_of("host/share/a.rs"), r"\\host\share\a.rs");
+        // One key for both spellings of a folder.
+        #[cfg(windows)]
+        assert_eq!(norm(Path::new(r"\\?\C:\w")), norm(Path::new(r"C:\w")));
     }
 
     #[tokio::test]
     async fn f_cd_23_a_crash_loop_reaches_the_retry_limit_through_the_reaper() {
         let (_t, root) = folder();
-        let lsp = Lsp::new(Box::new(CrashingSpawner));
+        let lsp = Lsp::new(Box::new(CrashingSpawner::default()));
         let spec = spec_for("main.py").expect("spec");
         for _ in 0..MAX_FAILURES {
             let client = lsp.client(&root, spec, &login()).await.expect("starts");
@@ -2040,6 +2303,7 @@ mod tests {
                 stderr: None,
                 child: None,
                 tree: None,
+                on_stop: None,
             })
         }
     }

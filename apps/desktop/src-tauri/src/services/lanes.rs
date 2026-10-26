@@ -175,6 +175,9 @@ pub async fn create(
     }
     let repo = discover(&ws.root, "Folder not found")?;
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
+    // F-CD-23: a worktree at a path used before (its row removed with its
+    // workspace, or its folder deleted outside the app) starts untrusted.
+    crate::services::lsp::untrust_new_worktree(&lane.path);
     let root = lane.path.to_str().map(str::to_string).ok_or_else(|| {
         IpcError::new(
             ErrorCode::Invalid,
@@ -267,6 +270,7 @@ async fn create_multi(
         repos.push((name.clone(), repo));
     }
     let lane = LaneManager::create_multi(git, folder, &repos, slug_source, &HashSet::new()).await?;
+    crate::services::lsp::untrust_new_worktree(&lane.path);
     let utf8 = |p: &Path| {
         p.to_str().map(str::to_string).ok_or_else(|| {
             IpcError::new(
@@ -741,7 +745,9 @@ pub async fn remove_with_teardown(
     // the folder does (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
-    crate::services::lsp::forget_worktree(&crate::services::files::local_root(&lane)).await;
+    // None starts there again until the removal has finished.
+    let _closing =
+        crate::services::lsp::forget_worktree(&crate::services::files::local_root(&lane)).await;
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
         // F-WT-06: the teardown sees the worktree's variables.
@@ -811,7 +817,8 @@ async fn remove_multi(
     // the folder does (open
     // handles block `git worktree remove` on Windows; cargo check would
     // recreate target/ in it).
-    crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
+    let _closing =
+        crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
     let forced = force.is_some();
     let mut each = Vec::new();
     for r in repos {
@@ -1160,6 +1167,67 @@ mod tests {
             .is_empty());
         let branches = git_cmd(Path::new(&fx.repo.root), &["branch", "--list", "tandem/*"]);
         assert!(branches.contains("tandem/fix-auth"), "the branch stays");
+    }
+
+    /// F-CD-23: a worktree's own trust (sandbox on) never carries over to
+    /// the next worktree at its path: Discard forgets it.
+    #[tokio::test]
+    async fn f_cd_23_a_discarded_worktrees_trust_doesnt_reach_the_next_at_its_path() {
+        let fx = fixture().await;
+        let data = crate::services::lsp::data_dir().expect("data dir");
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "fix login")
+            .await
+            .expect("lane");
+        let path = PathBuf::from(&lane.root);
+        crate::services::lsp::trust(data, &path).expect("trust");
+        assert!(crate::services::lsp::is_trusted(data, &path));
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        remove(&fx.store, &terms, &fx.git, &lane.id, None)
+            .await
+            .expect("discard");
+        git_cmd(
+            Path::new(&fx.repo.root),
+            &["branch", "-D", "tandem/fix-login"],
+        );
+        let again = create(&fx.store, &fx.git, &fx.repo.id, "fix login")
+            .await
+            .expect("again");
+        assert_eq!(PathBuf::from(&again.root), path, "the same path");
+        assert!(!crate::services::lsp::is_trusted(data, &path));
+    }
+
+    /// F-CD-23: removing the repository's workspace soft-removes its
+    /// worktrees' rows without a Discard; the next worktree at that path
+    /// still starts untrusted.
+    #[tokio::test]
+    async fn f_cd_23_a_worktree_made_again_after_its_workspace_was_removed_is_untrusted() {
+        let fx = fixture().await;
+        let data = crate::services::lsp::data_dir().expect("data dir");
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "fix login")
+            .await
+            .expect("lane");
+        let path = PathBuf::from(&lane.root);
+        crate::services::lsp::trust(data, &path).expect("trust");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        crate::services::workspaces::remove(&fx.store, &terms, &fx.repo.id)
+            .await
+            .expect("remove the workspace");
+        assert!(
+            crate::services::lsp::is_trusted(data, &path),
+            "removing the workspace leaves the folder (and its trust)"
+        );
+        // The leftover folder and branch go outside the app.
+        let root = Path::new(&fx.repo.root);
+        git_cmd(root, &["worktree", "remove", "--force", &lane.root]);
+        git_cmd(root, &["branch", "-D", "tandem/fix-login"]);
+        let added = crate::services::workspaces::add(&fx.store, &fx.repo.root, Some(3))
+            .await
+            .expect("add again");
+        let again = create(&fx.store, &fx.git, &added.workspace.id, "fix login")
+            .await
+            .expect("again");
+        assert_eq!(PathBuf::from(&again.root), path, "the same path");
+        assert!(!crate::services::lsp::is_trusted(data, &path));
     }
 
     #[tokio::test]

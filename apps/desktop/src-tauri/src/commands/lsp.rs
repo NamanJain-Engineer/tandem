@@ -101,6 +101,11 @@ fn worktree_of(root: &Path) -> Option<(PathBuf, PathBuf)> {
         let is =
             |j: usize, name: &str| matches!(comps[j], std::path::Component::Normal(n) if n == name);
         if is(i, ".tandem") && is(i + 1, "worktrees") {
+            // The slug is a plain name, and nothing after it climbs out.
+            let plain = |c: &std::path::Component| matches!(c, std::path::Component::Normal(_));
+            if !plain(&comps[i + 2]) || !comps[i + 2..].iter().all(plain) {
+                return None;
+            }
             let owner: PathBuf = comps[..i].iter().collect();
             let lane: PathBuf = comps[..i + 3].iter().collect();
             return Some((owner, lane));
@@ -352,6 +357,11 @@ pub async fn lsp_files_changed(
         }
     }
     for (r, rels) in by_root {
+        // The same trust as a request: an untrusted folder's servers hear
+        // nothing (one that started under a trust since withdrawn included).
+        if !lsp::is_trusted(&app.data, &scope(&app, &r).await.key) {
+            continue;
+        }
         lsp::global().changed(&r, &rels).await;
     }
     Ok(())
@@ -360,6 +370,37 @@ pub async fn lsp_files_changed(
 /// Trusts the file's repository for language servers (D-2580), or a
 /// sandboxed worktree on its own: from the main window, after the native
 /// confirm.
+/// The native confirm's title and body for trusting `name` (D-2580).
+fn confirm_text(name: &str, sandboxed: bool, sandbox_on: bool) -> (String, String) {
+    const RUNS: &str = "rust-analyzer, typescript-language-server, pyright and gopls can run";
+    if sandboxed {
+        return (
+            format!("Trust the worktree {name} for language servers?"),
+            format!(
+                "The agent's code will run outside its sandbox. {RUNS} {name}'s build scripts, \
+                 macros, plugins or Python interpreter when they load it. Trust it only if you've \
+                 read what the agent wrote."
+            ),
+        );
+    }
+    let body = if sandbox_on {
+        // Agents in the main checkout run sandboxed too; its servers don't.
+        format!(
+            "{RUNS} {name}'s build scripts, macros, plugins or Python interpreter when they load \
+             it. Language servers run outside the agent sandbox: code an agent writes in {name} \
+             itself can run outside it when they load it. Its worktrees aren't covered: with \
+             agents sandboxed, each worktree asks on its own. Trust it only if you trust its code \
+             and read what agents change in it."
+        )
+    } else {
+        format!(
+            "{RUNS} {name}'s build scripts, macros, plugins or Python interpreter when they load \
+             it, and its worktrees' too. Trust it only if you trust its code."
+        )
+    };
+    (format!("Trust {name} for language servers?"), body)
+}
+
 #[tauri::command]
 pub async fn lsp_trust(
     app_handle: AppHandle,
@@ -386,31 +427,7 @@ pub async fn lsp_trust(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| scope.key.to_string_lossy().into_owned());
-    let (title, body) = if scope.sandboxed {
-        (
-            format!("Trust the worktree {name} for language servers?"),
-            format!(
-                "The agent's code will run outside its sandbox. rust-analyzer, \
-                 typescript-language-server, pyright and gopls can run {name}'s build scripts, \
-                 macros, plugins or Python interpreter when they load it. Trust it only if you've \
-                 read what the agent wrote."
-            ),
-        )
-    } else {
-        (
-            format!("Trust {name} for language servers?"),
-            format!(
-                "rust-analyzer, typescript-language-server, pyright and gopls can run {name}'s \
-                 build scripts, macros, plugins or Python interpreter when they load it, {}. \
-                 Trust it only if you trust its code.",
-                if scope.sandbox_on {
-                    "but not its worktrees': with agents sandboxed, each worktree asks on its own"
-                } else {
-                    "and its worktrees' too"
-                }
-            ),
-        )
-    };
+    let (title, body) = confirm_text(&name, scope.sandboxed, scope.sandbox_on);
     if !confirm_native(&app_handle, &title, &body, "Trust").await {
         return Err(IpcError::new(ErrorCode::Cancelled, "Not trusted"));
     }
@@ -554,6 +571,40 @@ mod tests {
             Gate::Go,
             "the repository keeps its own"
         );
+    }
+
+    #[test]
+    fn f_cd_23_with_the_sandbox_on_the_main_checkouts_confirm_says_servers_run_outside_it() {
+        let (_, on) = confirm_text("app", false, true);
+        assert!(
+            on.contains("Language servers run outside the agent sandbox"),
+            "{on}"
+        );
+        assert!(
+            on.contains("code an agent writes in app itself can run outside it"),
+            "{on}"
+        );
+        let (_, off) = confirm_text("app", false, false);
+        assert!(!off.contains("sandbox"), "{off}");
+        assert!(off.contains("and its worktrees' too"));
+        let (title, wt) = confirm_text("fix", true, true);
+        assert_eq!(title, "Trust the worktree fix for language servers?");
+        assert!(wt.starts_with("The agent's code will run outside its sandbox."));
+    }
+
+    #[test]
+    fn f_cd_23_a_worktree_is_found_by_a_plain_slug_only() {
+        let w = |p: &str| worktree_of(Path::new(p));
+        assert_eq!(
+            w("/r/.tandem/worktrees/fix/src"),
+            Some((
+                PathBuf::from("/r"),
+                PathBuf::from("/r/.tandem/worktrees/fix")
+            ))
+        );
+        assert_eq!(w("/r/.tandem/worktrees/../../../other"), None);
+        assert_eq!(w("/r/.tandem/worktrees/fix/../../x"), None);
+        assert_eq!(w("/r/src"), None);
     }
 
     #[test]
