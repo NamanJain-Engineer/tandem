@@ -2810,6 +2810,21 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 190, and protocol drift with 581 types (none added).
     - The first run stopped at `tandem-voice`'s `f_di_01_toggle_deep_link_starts_and_stops`: no paste within its 10 s wait, under the gate's load. That crate is untouched here, and the test passed 3 times of 3 alone. It counts on 500 ms of wall time giving the fake microphone enough audio. The gate was resumed from `tandem-voice` on the same tree and passed. Reported to the coordinator for its owner.
     - E2E on ecfd28c4: m11-2-execute 4 of 4, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-tk08 1 of 1.
+- [x] F-TK-08, round 3 of the coordinator's review, APPROVED at ecfd28c4: the should-fix and both nits.
+  - **A pre-release of 2.1.310 can't answer (should-fix).** `parse_version` reads the first `x.y.z` and stops, so `2.1.310-rc.1` passed as 2.1.310.
+    - `tools_off_supported` now refuses a pre-release of `TOOLS_OFF_MIN` itself, which semver puts before it.
+    - A later version's pre-release (`2.1.311-rc.1`) and build metadata (`2.1.310+build.5`) still pass.
+    - `ClaudeAdapter::start` refuses it like an older version, so its questions come to you.
+  - **Owner-only from the start (nit).** `create_private_dir` made the folders, then chmod'd the last one: it was 0755 for a moment, and the folders made on the way stayed 0755.
+    - It now makes each folder with mode 0700 (`DirBuilder::mode`), and still tightens the one asked for if it was there.
+    - That changes every caller's new folders (`$DATA`'s own, briefings, journals, teammates' homes, the trash, auth), all of them owner-only data.
+  - **The folder goes however the session ends (nit).** `AnswerFolder` makes `answers/` 0700 (an older one too) and `ans_<id>` new and 0700, never one that's there already. It removes the folder when it drops: after the session, after a panic, or when the plan drops the session's future.
+  - **Tests** (3 new Rust, and one with a new case):
+    - Claude adapter: `2.1.310-rc.1`, with or without " (Claude Code)", and `claude 2.1.310-beta` can't answer, while 2.1.310, `2.1.310+build.5`, `2.1.311-rc.1` and `claude 2.1.310` can; `start` refuses `2.1.310-rc.1` before anything runs.
+    - `paths`: a private folder and the folders made for it are 0700, a folder already there is left alone unless it's the one asked for, and a file in the way is an error.
+    - `plan`: an answer folder is 0700 (and tightens an older `answers/`), two are never the same, and a panic while one is held still removes it.
+  - **Docs.** ARCHITECTURE §6.8.1 (the pre-release) and §9.6 (the folder); D-2838 amended.
+  - **Gate:** pending.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -2961,6 +2976,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The first tool row or approval request drops the session's answer, so a tool a later Claude Code adds can't be used to answer.
   - It stops after 10 minutes: an answer needs no tools, so it needs no plan's 30.
   - Amended by the re-review (N1 to N4): the session has no built-in tool at all (`--tools ""`, over the denylist), no customization (`--safe-mode`), commands, saved session, cron or auto-memory, `dontAsk` with nobody to ask, and a folder of its own that's removed after it and never trusted. It runs only on Claude Code 2.1.310 or newer, the version checked. A tool block starting kills the process before the tool can run, and a session ends after 5 minutes.
+  - Amended by round 3: a pre-release of 2.1.310 doesn't count (it comes before 2.1.310), and the session's folder is 0700 from the moment it's made and removed however the session ends.
 - D-2839: What reaches Lead is read the way an attacker would write it (F-TK-08 AC1, AC3, the review).
   - Every `@` before a word becomes `＠` in the question, the task and the files Lead reads, and in Lead's answer, so none names a file for Claude Code to attach. Only F-TK-08's paths: elsewhere `@` is real text (`@types/node`).
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.

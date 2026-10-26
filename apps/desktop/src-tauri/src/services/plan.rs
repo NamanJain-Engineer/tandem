@@ -1296,6 +1296,40 @@ pub struct AppHost {
     pub app: tauri::AppHandle,
 }
 
+/// An answer session's folder under `run/answers/` (D-2838): new, made
+/// owner-only, for that session alone, and removed when this goes, however
+/// the session ends (a panic too, or its future dropped).
+struct AnswerFolder(PathBuf);
+
+impl AnswerFolder {
+    fn create(run: &Path) -> std::io::Result<Self> {
+        let answers = run.join("answers");
+        tandem_core::paths::create_private_dir(&answers)?;
+        let path = answers.join(tandem_core::ids::new_id("ans"));
+        // Never one that's there already: both fail then.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+        }
+        #[cfg(not(unix))]
+        std::fs::create_dir(&path)?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for AnswerFolder {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_dir_all(&self.0) {
+            tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer session's folder wasn't removed");
+        }
+    }
+}
+
 /// The installed version of `engine`, as the last detection read it.
 fn engine_version(state: &crate::state::AppState, engine: &str) -> Option<String> {
     state.terminals.engines.report().and_then(|r| {
@@ -1539,21 +1573,17 @@ impl PlanHost for AppHost {
         // A fresh empty folder of Vibezeo's own for this session alone,
         // removed after it: never the repository, a run's worktree or
         // another question's folder (D-2838).
-        let cwd = state
-            .data
-            .run()
-            .join("answers")
-            .join(tandem_core::ids::new_id("ans"));
-        tandem_core::paths::create_private_dir(&cwd)
+        let folder = AnswerFolder::create(&state.data.run())
             .map_err(|e| failed("folder")(IpcError::new(ErrorCode::Internal, e.to_string())))?;
-        let answered = async {
+        let cwd = folder.path();
+        async {
             // Lead's account in its own provider home, like any of its
             // chats; the folder is never marked trusted.
             let launch = engines
                 .agent_launch_untrusted(
                     &engine,
                     program.clone(),
-                    &cwd,
+                    cwd,
                     teammate.preferred_account_id.as_ref(),
                 )
                 .await
@@ -1569,7 +1599,7 @@ impl PlanHost for AppHost {
             let start = answer::answer_start(
                 &engine.id,
                 program,
-                cwd.clone(),
+                cwd.to_path_buf(),
                 env,
                 teammate.model.clone(),
                 teammate.effort.clone(),
@@ -1577,11 +1607,7 @@ impl PlanHost for AppHost {
             );
             answer::run(adapter, start, prompt, supervisor::ANSWER_TIMEOUT, cancel).await
         }
-        .await;
-        if let Err(e) = std::fs::remove_dir_all(&cwd) {
-            tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer session's folder wasn't removed");
-        }
-        answered
+        .await
     }
 
     async fn answer(
@@ -3422,5 +3448,44 @@ mod tests {
             (done.state, done.base_commit.as_deref()),
             (PlanState::Started, Some(BASE))
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_an_answer_folder_is_owner_only_and_removed_even_after_a_panic() {
+        let run = tempfile::tempdir().expect("tempdir");
+        let answers = run.path().join("answers");
+        // An `answers` from before, made 0755, is tightened too.
+        std::fs::create_dir(&answers).expect("answers");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod");
+        }
+        let folder = AnswerFolder::create(run.path()).expect("folder");
+        let path = folder.path().to_path_buf();
+        assert_eq!(path.parent(), Some(answers.as_path()));
+        assert!(path.is_dir());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
+            assert_eq!(mode(&answers), 0o700);
+            assert_eq!(mode(&path), 0o700);
+        }
+        let other = AnswerFolder::create(run.path()).expect("another");
+        assert_ne!(other.path(), path.as_path());
+        std::fs::write(path.join("notes.md"), "left by the session").expect("write");
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _folder = folder;
+            panic!("the session panicked");
+        }));
+        assert!(panicked.is_err());
+        assert!(!path.exists());
+        let kept = other.path().to_path_buf();
+        assert!(kept.is_dir());
+        drop(other);
+        assert!(!kept.exists());
+        assert!(answers.is_dir());
     }
 }

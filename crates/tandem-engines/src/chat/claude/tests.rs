@@ -209,11 +209,31 @@ fn f_tk_08_1_an_answer_session_has_every_tool_off_and_no_mcp_server() {
     }
 }
 
+#[test]
+fn f_tk_08_1_a_pre_release_of_2_1_310_cant_answer_with_every_tool_off() {
+    let claude = ClaudeAdapter::new(Vec::new());
+    for early in [
+        "2.1.310-rc.1",
+        "2.1.310-rc.1 (Claude Code)",
+        "claude 2.1.310-beta",
+    ] {
+        assert!(!claude.answers_without_tools(Some(early)), "{early}");
+    }
+    for ok in [
+        "2.1.310 (Claude Code)",
+        "2.1.310+build.5",
+        "2.1.311-rc.1",
+        "claude 2.1.310",
+    ] {
+        assert!(claude.answers_without_tools(Some(ok)), "{ok}");
+    }
+}
+
 #[tokio::test]
 async fn f_tk_08_1_a_claude_too_old_for_every_tool_off_is_refused_before_it_starts() {
     let mut req = start(Access::Read, ThreadMode::Plan, false);
     req.tools_off = true;
-    for version in [None, Some("2.1.309")] {
+    for version in [None, Some("2.1.309"), Some("2.1.310-rc.1")] {
         req.engine_version = version.map(str::to_string);
         let (tx, _rx) = mpsc::channel(4);
         // `/bin/claude` isn't run: a spawn would fail with another error.

@@ -56,11 +56,36 @@ pub const TOOLS_OFF_ENV: &[(&str, &str)] = &[
     ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
 ];
 
-/// A Claude Code at `version` can run a session with every tool off.
+/// A Claude Code at `version` can run a session with every tool off. A
+/// pre-release of [`TOOLS_OFF_MIN`] itself (`2.1.310-rc.1`) comes before
+/// it, so it can't; one of a later version can.
 pub fn tools_off_supported(version: Option<&str>) -> bool {
-    version
-        .and_then(super::codex::protocol::parse_version)
-        .is_some_and(|v| v >= TOOLS_OFF_MIN)
+    let Some(version) = version else {
+        return false;
+    };
+    match super::codex::protocol::parse_version(version) {
+        Some(v) if v == TOOLS_OFF_MIN => !pre_release(version),
+        Some(v) => v > TOOLS_OFF_MIN,
+        None => false,
+    }
+}
+
+/// Whether the first `x.y.z` in `version` has a pre-release after it
+/// (`-rc.1`); build metadata (`+5`) isn't one.
+fn pre_release(version: &str) -> bool {
+    let mut rest = version;
+    while let Some(start) = rest.find(|c: char| c.is_ascii_digit()) {
+        let run = &rest[start..];
+        let len = run
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(run.len());
+        let (number, after) = run.split_at(len);
+        if super::codex::protocol::parse_version(number).is_some() {
+            return after.starts_with('-');
+        }
+        rest = after;
+    }
+    false
 }
 const PROMPT_TOO_LONG_HINT: &str =
     "The conversation is too long. Start a new thread with a summary?";
