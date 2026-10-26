@@ -565,16 +565,48 @@ function LaunchList({
           </li>
         ))}
       </ol>
-      {!launch.blocked && runnable > 0 && (
-        <div data-testid="plan-supervise-option">
-          <Checkbox
-            label={t("plan.supervise.option")}
-            description={t("plan.supervise.optionHint")}
-            checked={supervise}
-            onCheckedChange={onSupervise}
-          />
-        </div>
-      )}
+      {!launch.blocked &&
+        runnable > 0 &&
+        (launch.leadAnswers ? (
+          <div data-testid="plan-supervise-option">
+            <Checkbox
+              label={t("plan.supervise.option")}
+              description={t("plan.supervise.optionHint")}
+              checked={supervise}
+              onCheckedChange={onSupervise}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-fg-muted" data-testid="plan-supervise-unavailable">
+            {t("plan.supervise.cantAnswer")}
+          </p>
+        ))}
+    </div>
+  );
+}
+
+/** Lead's answers on or off, shown while any of the plan's runs can ask:
+ * starting, started, or back at Created with runs queued (F-TK-08 AC5). */
+function SuperviseSwitch({ plan, onError }: { plan: PlanView; onError: (message: string | null) => void }) {
+  const [pending, setPending] = useState(false);
+  const flip = async (on: boolean) => {
+    setPending(true);
+    onError(null);
+    const r = await usePlans.getState().supervise(plan.id, on);
+    setPending(false);
+    if (isIpcError(r)) onError(r.message);
+  };
+  return (
+    <div className="flex flex-col gap-1" data-testid="plan-supervise" aria-busy={pending}>
+      <Switch
+        label={t("plan.supervise.switch")}
+        checked={plan.supervise}
+        disabled={pending}
+        onCheckedChange={(on) => void flip(on)}
+      />
+      <p className="text-sm text-fg-muted">
+        {pending ? t("plan.supervise.switching") : t("plan.supervise.switchHint")}
+      </p>
     </div>
   );
 }
@@ -627,16 +659,12 @@ function PlanDialog({ plan }: { plan: PlanView }) {
   const run = async () => {
     setBusy(true);
     setError(null);
-    const r = await usePlans.getState().execute(plan.id, supervise);
+    // An engine that can't answer with every tool off never answers.
+    const r = await usePlans.getState().execute(plan.id, supervise && (launch?.leadAnswers ?? false));
     setBusy(false);
     setLaunch(null);
     if (isIpcError(r)) setError(r.message);
     else toast({ tone: "success", title: t("plan.queued", { n: r.queued.length }) });
-  };
-  const switchLead = async (on: boolean) => {
-    setError(null);
-    const r = await usePlans.getState().supervise(plan.id, on);
-    if (isIpcError(r)) setError(r.message);
   };
   const again = async () => {
     const goal = plan.goal;
@@ -808,6 +836,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               <StatusDot status="done" label={t("plan.createdLabel")} />
               {t("plan.created", { n: plan.issueIds.length, ids: plan.issueIds.join(", ") })}
             </p>
+            {plan.queued.length > 0 && <SuperviseSwitch plan={plan} onError={setError} />}
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -817,6 +846,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               <StatusDot status="working" label={t("plan.starting")} />
               {t("plan.starting")}
             </p>
+            <SuperviseSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -833,14 +863,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
                 })}
               </p>
             )}
-            <div className="flex flex-col gap-1" data-testid="plan-supervise">
-              <Switch
-                label={t("plan.supervise.switch")}
-                checked={plan.supervise}
-                onCheckedChange={(on) => void switchLead(on)}
-              />
-              <p className="text-sm text-fg-muted">{t("plan.supervise.switchHint")}</p>
-            </div>
+            <SuperviseSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}

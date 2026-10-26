@@ -100,7 +100,8 @@ pub struct CodexParser {
     /// Item id → its command or paths, for approval cards and results.
     items: HashMap<String, (ToolVerb, String, Option<String>)>,
     /// A file change's files from its start, for a result that doesn't
-    /// list them again (F-TK-07: it's the row a claim is made from).
+    /// list them again (F-TK-07: it's the row a claim is made from). Kept
+    /// until the turn ends, for a change that never completes.
     edits: HashMap<String, Vec<String>>,
 }
 
@@ -321,10 +322,12 @@ impl CodexParser {
     }
 
     fn turn_completed(
-        &self,
+        &mut self,
         turn: &Value,
         now: chrono::DateTime<chrono::FixedOffset>,
     ) -> Vec<Codex> {
+        // A change that never completed keeps nothing past its turn.
+        self.edits.clear();
         let end = |reason| {
             Codex::Event(ThreadEvent::TurnEnd {
                 reason,
@@ -604,6 +607,12 @@ impl ChatAdapter for CodexAdapter {
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        // Its read-only sandbox still runs commands that read the disk.
+        if req.tools_off {
+            return Err(AdapterError::Unsupported(
+                "Codex can't run with every tool off".into(),
+            ));
+        }
         if let Some(v) = &req.engine_version {
             protocol::check_version(Some(v)).map_err(AdapterError::Unsupported)?;
         }

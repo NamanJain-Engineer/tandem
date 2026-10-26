@@ -1691,7 +1691,7 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - worktrees (`competitive-gaps`): D-2520 to D-2539;
   - usage (`product-research`): D-2540 to D-2559;
   - reliability (`perf-open`): D-2560 to D-2579.
-  The review loop (`m16a-conductor`) has D-2838 and D-2839 left: F-TK-05's review fixes took D-2434 to D-2437, F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October), F-TK-07 took D-2824 to D-2827 and its review fixes D-2836 and D-2837, and F-TK-08 D-2828 to D-2835. REMAINING's M18 section names each session's next features.
+  The review loop (`m16a-conductor`) has used its ranges up: F-TK-05's review fixes took D-2434 to D-2437, F-TK-06's took D-2438, D-2439 and D-2820 to D-2823 from its second range, D-2820 to D-2839 (the coordinator, 24 October), F-TK-07 took D-2824 to D-2827 and its review fixes D-2836 and D-2837, F-TK-08 D-2828 to D-2835, and F-TK-08's security review D-2838 and D-2839. REMAINING's M18 section names each session's next features.
 - D-859: A read-only thread never joins the review queue (F-DB-04), found by chain24's review of F-CN-09.
   - **The bug:** the queue accepted any thread in a workspace. A second opinion's reviewer (F-WT-05) is a Read only thread in the worktree it reviews, so when it finished, the worktree's diff made it an item: the review showed another agent's work under the reviewer's name, and Send back (or walk-and-review's) typed "Address it…" into the reviewer while the agent that made the changes got nothing.
   - **The fix:** `reviews_thread` keeps threads that can change their folder (Edits or Full access); Read only threads and teammate chats stay out.
@@ -2417,6 +2417,42 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 190, and protocol drift with 581 types: `PlanQuestion` and `PlanQuestionState` added; `PlanView` gains `supervise`, `baseCommit` and `questions`, and `AttemptView` gains `waiting`.
     - E2E on 07d8114f: m18-tk08 1 of 1, m18-tk07 3 of 3, m18-tk06 1 of 1, m18-tk05 3 of 3 and m11-2-execute 4 of 4 (run first, so the next spec's reset stops the runs it leaves going).
     - CHANGELOG: two `[lin]` bullets under `## Unreleased` (9074b93d); `check-changelog.ts` passes.
+- [x] F-TK-08, the coordinator's security review of cea685af..36f5a66b (D-2838, D-2839), whose verdict was "merge after must-fixes".
+  - **Lead answers in a fresh session with every tool off (must-fixes 1 and 2).**
+    - Lead's turn in its plan thread is gone. Each question gets a new session of Lead's engine (`plan::answer`, `PlanHost::answer_session`), with Lead's account and model and nothing of a thread: no tools, MCP server, tasks server, plugins, briefing or session to resume, in plan mode, in `$DATA/run/answers`, an empty folder of Vibezeo's own.
+    - `ChatStart.tools_off`: Claude Code's adapter runs `-p … --strict-mcp-config --permission-mode plan --disallowedTools <every built-in tool>` with no `--mcp-config`, `--permission-prompt-tool` or `--resume`. Codex (its read-only sandbox still runs commands that read the whole disk, `CODEX_HOME`'s `auth.json` included) and ACP agents refuse it, so with either as Lead every question comes to you, and Execute all's check says so (`PlanLaunch.leadAnswers`).
+    - Its one message is the plan's own task text (not the live task, which a run can rewrite), the question, the base commit's instructions files, and "You have no tools here. Use none, and answer only from the text given below."
+    - The first tool row or approval request ends it with no answer, the switch, Stop and Remove plan cancel it, and it times out after 10 minutes. It's shut down whatever happens.
+    - So the docs' "never reach Lead" holds for a `.env` beside the main checkout and other runs' worktrees too, and no question's session sees another's.
+  - **`@` names no file (must-fix 3).** `untrusted::defang_mentions` writes `＠` for every `@` before a word in what reaches Lead (the question, the task, the instructions files) and in Lead's answer, to the run and on the task.
+    - Not checked against the real CLI: the container has no Claude Code and no account. It's treated as real because `user_message` relies on `@path` for attachments, and the check is in HUMAN_TODO with the tools-off flags.
+    - Only F-TK-08's paths are defanged. A defang in `fence()` would change `@types/node` and `@/lib/utils` in CI logs and diffs; rule 8's other users (briefings, the second opinion, PR checks) are a follow-up to propose.
+  - **The switch whenever a run can ask (must-fix 4).** Starting, Started, or back at Created with runs queued after a start that stopped partway. It's disabled, saying "Switching…", while its call is on its way.
+  - **Should-fixes.**
+    - `sensitive` folds the question first: NFKD (full-width and styled letters), combining marks and hidden characters dropped, and Cyrillic and Greek look-alikes read as Latin. Action words match inside words (forcepush, redeploy, republish), with the review's synonyms: token, ssh, creds, environment variable, release, ship, prod, removing, dropping or pruning a branch, `git branch -D`, `clean -fdx`, `reset --hard`, fetch, clone, pull, npm i, pnpm add, cargo add and "allowed". `clean` drops every Unicode format character too.
+    - `at_commit` asks `git cat-file -s` first and reads at most that many bytes, with `GIT_NO_REPLACE_OBJECTS=1`.
+    - A run reads only its latest turn's reply (`latest_reply`).
+    - Answers go to a question by its id. Stop closes the run's open question (`QuestionEvent::Closed`, state `closed`), and only a stopped run that is its task's latest resumes.
+  - **Nits.**
+    - Lead's answer is sent before the plan is saved, under a delivery lock the switch takes too.
+    - The notification for a question Lead sent on is fixed text, "Lead sent the question to you."
+    - Lead's answer is fenced in the run's message.
+    - After a restart, Resume and Retry get their supervision from the kept plans (`supervision_for`).
+    - Execute all again keeps the first base commit.
+    - `resetTasks` keeps the read counter going.
+    - Codex forgets a file change that never completed when its turn ends.
+    - Lead's comment is written on `spawn_blocking`.
+  - **Tests** (24 new Rust, 4 new TypeScript):
+    - `plan::answer` (7): the start holds nothing but the engine; the reply, then shutdown; a tool row, and an approval request (denied), give no answer; cancel ends it at once; the time limit; an engine that can't turn tools off never starts.
+    - Adapters (4): Claude's tools-off argv (every tool off, plan mode, no MCP config, prompt tool, resume or briefing); Codex and ACP refuse it; Codex drops an unfinished file change at the turn's end.
+    - `plan` (6): a fresh session per question, from the plan's own text, with `@` defanged; an engine that can't answer; a session reaching for a tool; a closed question takes no answer and its session stops; Remove plan stops the session; Execute all again keeps the first base commit. The switch test now stops a session.
+    - `plan::supervisor` (2): hidden, look-alike, full-width and styled letters don't hide a topic; Lead's answer reaches the run fenced. The topics test gains the synonyms and the negatives "crosshair" and "classHandler".
+    - `tasks_exec` (2), `task_host` (1), `tandem-core` (1) and `tandem-git` (1): Stop closes the question; Retry after a restart is still the plan's; only the latest turn's reply; `@` defanged; a replace ref can't change what Lead reads, and a 4 MB file is left out.
+    - `plan.test.tsx` (4): the note when Lead's engine can't answer; the switch while starting and back at Created; the switch's pending state; a read from before a reset never writes.
+    - E2E-M18-TK-08: Lead's plan thread gets no question, the answer session's argv has every tool off and no MCP config, a `.env` beside the main checkout doesn't reach the answer (the fake engine reports a `.env` in its folder), and the run's message is fenced.
+    - The replace-ref and reset tests failed on the old code.
+  - **Docs.** PRODUCT_SPEC F-TK-08 (the session, AC1, AC3, AC5); ARCHITECTURE §3.1 (`answers_without_tools`), §3.2 (`PlanLaunch.leadAnswers`, `closed`, `plan_supervise`, `plan_answer`), §6.8.1 (every tool off), §9.4 and §9.6; tasks.mdx; the CHANGELOG bullet; HUMAN_TODO.
+  - **Gate:** pending.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -2562,6 +2598,15 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
 - D-2837: A plan keeps its progress as it happens (F-TK-07 AC3, the review).
   - Execute all saves each run it queues, and Create tasks the project and each task as they're written. A quit at any point leaves the plan holding exactly what was done, and the next try does only the rest.
   - The writes stay whole-file and atomic. Commands that write from the main thread run them on `spawn_blocking`, and a save on a runtime worker runs in `block_in_place` (F-TK-08's round).
+- D-2838: Lead answers each question in a fresh session with every tool off, and only an engine that can do that answers (F-TK-08 AC1, the coordinator's security review). This replaces Lead's turn in its plan thread (D-2829's last line, D-2831's 30 minutes, and D-2834's "Lead's whole exchange stays in its thread").
+  - Lead's plan thread had whatever access it was given and could read the main checkout's untracked files and other runs' worktrees, and every answer shared one conversation. A new headless session per question has no tools, no MCP server and no briefing, runs in an empty folder of Vibezeo's own in plan mode, and knows only the text it's given.
+  - Claude Code can be held to that (`--disallowedTools` with every built-in tool, `--strict-mcp-config` with no config). Codex's read-only sandbox still runs commands that read the disk and ACP agents bring their own tools, so they never answer: their questions come to you, and Execute all's check says so before it starts.
+  - The first tool row or approval request drops the session's answer, so a tool a later Claude Code adds can't be used to answer.
+  - It stops after 10 minutes: an answer needs no tools, so it needs no plan's 30.
+- D-2839: What reaches Lead is read the way an attacker would write it (F-TK-08 AC1, AC3, the review).
+  - Every `@` before a word becomes `＠` in the question, the task and the files Lead reads, and in Lead's answer, so none names a file for Claude Code to attach. Only F-TK-08's paths: elsewhere `@` is real text (`@types/node`).
+  - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.
+  - The instructions files are read by size first, without replace refs, so a ref a run writes can't swap their text and a huge file is never read whole.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

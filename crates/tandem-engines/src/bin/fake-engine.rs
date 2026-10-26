@@ -213,7 +213,9 @@ fn plan_reply(text: &str) -> Option<String> {
 
 /// Lead answering a plan run's question (F-TK-08): the first line of the
 /// first instructions file its message quotes, or the question sent on to
-/// the user when there's none.
+/// the user when there's none. Like an engine that can read its working
+/// folder, it also says what a `.env` there holds: an answer session's
+/// folder is empty (E2E-M18-TK-08).
 fn lead_answer(text: &str) -> Option<String> {
     if !text.contains("A run in this plan asks a question.") {
         return None;
@@ -231,8 +233,15 @@ fn lead_answer(text: &str) -> Option<String> {
         .and_then(|r| r.lines().next())
         .map(str::trim)
         .filter(|l| !l.is_empty());
+    let seen = std::env::current_dir()
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join(".env")).ok())
+        .map(|env| format!(" (.env: {})", env.trim()))
+        .unwrap_or_default();
     Some(match rule {
-        Some(rule) => format!("The instructions settle it.\nANSWER-{code}\n{rule}\nEND-{code}"),
+        Some(rule) => {
+            format!("The instructions settle it.\nANSWER-{code}\n{rule}{seen}\nEND-{code}")
+        }
         None => format!("ESCALATE-{code}: The repository's instructions don't settle it."),
     })
 }

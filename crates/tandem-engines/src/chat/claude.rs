@@ -39,6 +39,11 @@ use crate::transcript::window_for;
 pub const PERMISSION_TOOL: &str = "mcp__tandem__tandem_approvals__request";
 /// Tools a Read-only or Plan-mode thread can't use at all.
 const NO_WRITES: &str = "Bash,Edit,Write,MultiEdit,NotebookEdit";
+/// Every built-in tool Claude Code has had, for a session with tools off
+/// (F-TK-08, D-2838). A name an older version doesn't know is ignored; a
+/// tool a newer one adds and this list misses still can't help an answer:
+/// the answer session drops its turn at the first tool row.
+pub const ALL_TOOLS: &str = "Agent,AskUserQuestion,Bash,BashOutput,Edit,EnterPlanMode,ExitPlanMode,Glob,Grep,KillBash,KillShell,LS,ListMcpResourcesTool,LSP,MultiEdit,NotebookEdit,NotebookRead,Read,ReadMcpResourceTool,SlashCommand,Skill,Task,TodoRead,TodoWrite,WebFetch,WebSearch,Write";
 const PROMPT_TOO_LONG_HINT: &str =
     "The conversation is too long. Start a new thread with a summary?";
 /// Tool input kept as the row's detail.
@@ -56,8 +61,36 @@ pub fn permissions(access: Access, mode: ThreadMode) -> (&'static str, Option<&'
 }
 
 /// The spawn arguments (F-TH-04 AC1/AC2: every spawn has
-/// `--setting-sources user` and `--strict-mcp-config`).
+/// `--setting-sources user` and `--strict-mcp-config`). With `tools_off`,
+/// plan mode with every tool disallowed and nothing else: no MCP server
+/// (strict, with no config), no briefing, no resume (F-TK-08).
 pub fn args(req: &ChatStart) -> Vec<OsString> {
+    if req.tools_off {
+        let mut a: Vec<OsString> = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--setting-sources",
+            "user",
+            "--strict-mcp-config",
+            "--permission-mode",
+            "plan",
+            "--disallowedTools",
+            ALL_TOOLS,
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        if let Some(model) = &req.model {
+            a.push("--model".into());
+            a.push(model.into());
+        }
+        return a;
+    }
     let mut a: Vec<OsString> = [
         "-p",
         "--output-format",
@@ -653,6 +686,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl ChatAdapter for ClaudeAdapter {
     fn engine_id(&self) -> &str {
         "claude"
+    }
+
+    fn answers_without_tools(&self) -> bool {
+        true
     }
 
     async fn start(

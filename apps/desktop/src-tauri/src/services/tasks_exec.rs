@@ -83,14 +83,37 @@ pub struct Supervision {
 /// A plan run asked a question (F-TK-08), for its plan to answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Question {
+    /// This question's own id: an answer to another one doesn't reach it.
+    pub id: String,
     pub plan_id: String,
     pub attempt_id: AttemptId,
     pub issue_id: String,
     pub question: String,
 }
 
-/// Where a plan run's question goes (the plan service).
-pub type QuestionSink = Arc<dyn Fn(Question) + Send + Sync>;
+/// What a plan hears about its runs' questions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuestionEvent {
+    Asked(Question),
+    /// The run stopped waiting for this answer (Stop): it's closed.
+    Closed {
+        plan_id: String,
+        question_id: String,
+    },
+}
+
+/// Where a plan run's questions go (the plan service).
+pub type QuestionSink = Arc<dyn Fn(QuestionEvent) + Send + Sync>;
+/// A plan run's question code by its task, from the kept plans: a run
+/// Resume or Retry starts after a restart is still its plan's (F-TK-08).
+pub type SupervisionLookup = Arc<dyn Fn(&str) -> Option<Supervision> + Send + Sync>;
+
+/// A plan run waiting for the answer to one question.
+struct Waiter {
+    question: String,
+    plan: String,
+    tx: tokio::sync::oneshot::Sender<String>,
+}
 
 /// A run's question is cut here (characters).
 pub const QUESTION_MAX: usize = 2_000;
@@ -358,9 +381,10 @@ pub struct TaskExecService {
     /// attempt the app doesn't know any more ran in a lane, the default)
     /// and, for a plan run, its question code.
     setup: StdMutex<HashMap<String, RunSetup>>,
-    /// Plan runs waiting for an answer to their question (F-TK-08).
-    answers: StdMutex<HashMap<String, tokio::sync::oneshot::Sender<String>>>,
+    /// Plan runs waiting for an answer, by attempt (F-TK-08).
+    answers: StdMutex<HashMap<String, Waiter>>,
     questions: OnceLock<QuestionSink>,
+    supervision: OnceLock<SupervisionLookup>,
 }
 
 /// What an attempt was started with beyond its record.
@@ -392,12 +416,19 @@ impl TaskExecService {
             setup: StdMutex::default(),
             answers: StdMutex::default(),
             questions: OnceLock::new(),
+            supervision: OnceLock::new(),
         })
     }
 
     /// Where plan runs' questions go (F-TK-08).
     pub fn set_question_sink(&self, sink: QuestionSink) {
         let _ = self.questions.set(sink);
+    }
+
+    /// Where a plan run's question code is found when this launch didn't
+    /// start the run (F-TK-08).
+    pub fn set_supervision_lookup(&self, lookup: SupervisionLookup) {
+        let _ = self.supervision.set(lookup);
     }
 
     /// The test harness's lane delay (debug builds only).
@@ -659,12 +690,22 @@ impl TaskExecService {
         }
     }
 
-    /// A plan run's question code (F-TK-08).
-    fn supervision_of(&self, id: &AttemptId) -> Option<Supervision> {
-        self.setup
+    /// A plan run's question code (F-TK-08): as this launch started it, or,
+    /// for a run started before a restart, from its task's plan.
+    async fn supervision_of(&self, id: &AttemptId) -> Option<Supervision> {
+        let set = self
+            .setup
             .lock()
             .ok()
-            .and_then(|n| n.get(id.as_str()).and_then(|s| s.supervision.clone()))
+            .and_then(|n| n.get(id.as_str()).map(|s| s.supervision.clone()));
+        match set {
+            Some(supervision) => supervision,
+            None => {
+                let lookup = self.supervision.get()?;
+                let a = repo::get(&self.store, id).await.ok()?;
+                lookup(&a.issue_id)
+            }
+        }
     }
 
     /// Starts queued attempts while slots are free, oldest first.
@@ -800,6 +841,7 @@ impl TaskExecService {
             }
             return;
         }
+        let supervision = self.supervision_of(&id).await;
         let thread = match host
             .start_session(SessionStart {
                 attempt: id.clone(),
@@ -810,12 +852,7 @@ impl TaskExecService {
                 engine_id: a.engine_id.clone(),
                 account_id: a.account_id.clone(),
                 access: a.access,
-                text: briefing(
-                    &issue,
-                    &comments,
-                    note.as_deref(),
-                    self.supervision_of(&id).as_ref(),
-                ),
+                text: briefing(&issue, &comments, note.as_deref(), supervision.as_ref()),
                 review: false,
             })
             .await
@@ -919,26 +956,37 @@ impl TaskExecService {
         let a = repo::get(&self.store, id).await.ok()?;
         let sink = self.questions.get()?;
         let (tx, rx) = tokio::sync::oneshot::channel();
+        let qid = tandem_core::ids::new_id("rq");
         if let Ok(mut w) = self.answers.lock() {
-            w.insert(id.as_str().to_string(), tx);
+            w.insert(
+                id.as_str().to_string(),
+                Waiter {
+                    question: qid.clone(),
+                    plan: supervision.plan_id.clone(),
+                    tx,
+                },
+            );
         }
         tracing::info!(code = "tasks.run_asked", "a plan run asked a question");
-        sink(Question {
+        sink(QuestionEvent::Asked(Question {
+            id: qid,
             plan_id: supervision.plan_id,
             attempt_id: id.clone(),
             issue_id: a.issue_id,
             question,
-        });
+        }));
         rx.await.ok()
     }
 
-    /// An answer to a plan run's question (F-TK-08): to its turn waiting for
-    /// it, or, with `resume`, when a restart or Stop ended the run, as the
-    /// next turn of its session. The run then goes on. Lead's answers go
-    /// only to a run still waiting: a run you stopped stays stopped.
+    /// An answer to a plan run's question `question` (F-TK-08): to its turn
+    /// waiting for that question, or, with `resume`, when a restart ended
+    /// the run, as the next turn of its session. The run then goes on. An
+    /// answer reaches only the question it answers, Lead's only a run still
+    /// waiting, and none a run that ended any other way than stopping.
     pub async fn answer(
         self: &Arc<Self>,
         id: &AttemptId,
+        question: &str,
         text: String,
         supervision: Supervision,
         resume: bool,
@@ -947,16 +995,39 @@ impl TaskExecService {
             .answers
             .lock()
             .ok()
-            .and_then(|mut w| w.remove(id.as_str()));
-        if let Some(tx) = waiter {
-            if tx.send(text.clone()).is_ok() {
+            .and_then(|mut w| match w.get(id.as_str()) {
+                Some(waiting) if waiting.question == question => w.remove(id.as_str()),
+                _ => None,
+            });
+        if let Some(waiting) = waiter {
+            if waiting.tx.send(text.clone()).is_ok() {
                 return Ok(());
             }
         }
-        if !resume {
+        let waits_on_another = self
+            .answers
+            .lock()
+            .is_ok_and(|w| w.contains_key(id.as_str()));
+        if !resume || waits_on_another {
             return Err(IpcError::new(
                 ErrorCode::Conflict,
-                "The run no longer waits for an answer.",
+                "The run no longer waits for this answer.",
+            ));
+        }
+        // Only a run a restart stopped goes on, and only its task's latest:
+        // a run in review, done or failed has ended.
+        let a = repo::get(&self.store, id).await.map_err(store_err)?;
+        let latest = repo::list(&self.store)
+            .await
+            .map_err(store_err)?
+            .into_iter()
+            .filter(|x| x.issue_id == a.issue_id)
+            .max_by_key(|x| x.queued_at)
+            .is_some_and(|x| x.id == a.id);
+        if a.state != AttemptState::Stopped || !latest {
+            return Err(IpcError::new(
+                ErrorCode::Conflict,
+                "This run already ended.",
             ));
         }
         if let Ok(mut n) = self.setup.lock() {
@@ -979,6 +1050,21 @@ impl TaskExecService {
         }
     }
 
+    /// A run stopped waiting for its answer: its plan closes the question.
+    fn close_question(&self, id: &AttemptId) {
+        let waiter = self
+            .answers
+            .lock()
+            .ok()
+            .and_then(|mut w| w.remove(id.as_str()));
+        if let (Some(w), Some(sink)) = (waiter, self.questions.get()) {
+            sink(QuestionEvent::Closed {
+                plan_id: w.plan,
+                question_id: w.question,
+            });
+        }
+    }
+
     /// The run ended: In review with its summary, then the review. A plan
     /// run that ends its turn with its question waits for the answer and
     /// goes on first (F-TK-08).
@@ -992,6 +1078,7 @@ impl TaskExecService {
             let reply = host.last_reply(thread).await.unwrap_or_default();
             let asked = self
                 .supervision_of(id)
+                .await
                 .and_then(|s| question_of(&reply, &s.nonce).map(|q| (s, q)));
             let Some((supervision, question)) = asked else {
                 break reply;
@@ -1140,10 +1227,8 @@ impl TaskExecService {
                 "This run already ended.",
             ));
         }
-        // A question it was waiting on goes unanswered (F-TK-08).
-        if let Ok(mut w) = self.answers.lock() {
-            w.remove(id.as_str());
-        }
+        // A question it was waiting on is closed (F-TK-08).
+        self.close_question(id);
         if a.state == AttemptState::Setup && a.thread_id.is_none() {
             // Setup finishes its step and rolls back (see `cancelled`).
             if let Ok(mut c) = self.cancelled.lock() {
@@ -1246,7 +1331,7 @@ impl TaskExecService {
             review: a.review,
             note,
             // A plan run's retry still asks its plan (F-TK-08).
-            supervision: self.supervision_of(id),
+            supervision: self.supervision_of(id).await,
         })
         .await
     }
@@ -1809,13 +1894,26 @@ pub(crate) mod tests {
         }
     }
 
-    /// The questions a fixture's runs ask.
-    fn asked(f: &Fixture) -> Arc<StdMutex<Vec<Question>>> {
-        let asked: Arc<StdMutex<Vec<Question>>> = Arc::default();
-        let sink = asked.clone();
+    /// What a fixture's runs tell their plan.
+    fn asked(f: &Fixture) -> Arc<StdMutex<Vec<QuestionEvent>>> {
+        let heard: Arc<StdMutex<Vec<QuestionEvent>>> = Arc::default();
+        let sink = heard.clone();
         f.svc
             .set_question_sink(Arc::new(move |q| sink.lock().expect("lock").push(q)));
-        asked
+        heard
+    }
+
+    /// The questions among them.
+    fn questions(heard: &StdMutex<Vec<QuestionEvent>>) -> Vec<Question> {
+        heard
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter_map(|e| match e {
+                QuestionEvent::Asked(q) => Some(q.clone()),
+                QuestionEvent::Closed { .. } => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -1910,7 +2008,7 @@ pub(crate) mod tests {
             .attempt
             .id;
         until(|| asked.lock().map(|a| a.len() == 1).unwrap_or(false)).await;
-        let q = asked.lock().expect("lock")[0].clone();
+        let q = questions(&asked)[0].clone();
         assert_eq!(
             (q.plan_id.as_str(), q.issue_id.as_str(), q.question.as_str()),
             ("pl_1", "TAN-1", "Vitest or Jest?")
@@ -1926,9 +2024,18 @@ pub(crate) mod tests {
             plan_id: "pl_1".into(),
             nonce: "ab12cd34".into(),
         };
+        // An answer to another question doesn't reach this one.
+        let other = f
+            .svc
+            .answer(&id, "rq_other", "Jest.".into(), sup.clone(), true)
+            .await
+            .expect_err("another question");
+        assert_eq!(other.code, ErrorCode::Conflict);
+        assert_eq!(state(&f, &id).await, AttemptState::Running);
         f.svc
             .answer(
                 &id,
+                &q.id,
                 "Lead (automatic answer):\n\nVitest.".into(),
                 sup,
                 false,
@@ -1951,22 +2058,75 @@ pub(crate) mod tests {
             f.tracker.get("TAN-1").expect("issue").result.as_deref(),
             Some("Fixed the redirect loop; tests pass.")
         );
-        // A late answer from Lead reaches nothing: the run isn't waiting.
+        // A late answer from Lead reaches nothing: the run isn't waiting,
+        // and an answer never takes a run back out of review.
+        for resume in [false, true] {
+            let late = f
+                .svc
+                .answer(
+                    &id,
+                    &q.id,
+                    "Jest.".into(),
+                    Supervision {
+                        plan_id: "pl_1".into(),
+                        nonce: "ab12cd34".into(),
+                    },
+                    resume,
+                )
+                .await
+                .expect_err("late");
+            assert_eq!(late.code, ErrorCode::Conflict);
+        }
+        assert_eq!(state(&f, &id).await, AttemptState::InReview);
+        assert_eq!(f.host.sent.lock().expect("lock").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_2_stop_closes_the_question_the_run_waited_on() {
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        f.host
+            .replies
+            .lock()
+            .expect("lock")
+            .push_back("QUESTION-ab12cd34: Vitest or Jest?".into());
+        let heard = asked(&f);
+        let id = f
+            .svc
+            .execute(supervised("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        until(|| heard.lock().map(|a| a.len() == 1).unwrap_or(false)).await;
+        let q = questions(&heard)[0].clone();
+        f.svc.stop(&id).await.expect("stop");
+        assert_eq!(
+            heard.lock().expect("lock").last(),
+            Some(&QuestionEvent::Closed {
+                plan_id: "pl_1".into(),
+                question_id: q.id.clone()
+            })
+        );
+        // Lead's answer arriving now reaches nothing.
+        let sup = Supervision {
+            plan_id: "pl_1".into(),
+            nonce: "ab12cd34".into(),
+        };
         let late = f
             .svc
-            .answer(
-                &id,
-                "Jest.".into(),
-                Supervision {
-                    plan_id: "pl_1".into(),
-                    nonce: "ab12cd34".into(),
-                },
-                false,
-            )
+            .answer(&id, &q.id, "Vitest.".into(), sup, false)
             .await
-            .expect_err("late");
+            .expect_err("closed");
         assert_eq!(late.code, ErrorCode::Conflict);
-        assert_eq!(f.host.sent.lock().expect("lock").len(), 1);
+        assert_eq!(state(&f, &id).await, AttemptState::Stopped);
     }
 
     #[tokio::test]
@@ -2010,6 +2170,73 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_08_5_after_a_restart_retry_is_still_its_plans_run() {
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        let id = f
+            .svc
+            .execute(supervised("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        until(|| {
+            f.host
+                .sessions
+                .lock()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+        })
+        .await;
+        // A new launch knows the run's code only from its plan.
+        let again = TaskExecService::new(
+            f.svc.store.clone(),
+            EventBus::new(),
+            Arc::new(SystemClock),
+            Some(f.tracker.clone()),
+        );
+        again.set_host(f.host.clone());
+        again.set_supervision_lookup(Arc::new(|issue: &str| {
+            (issue == "TAN-1").then(|| Supervision {
+                plan_id: "pl_1".into(),
+                nonce: "ab12cd34".into(),
+            })
+        }));
+        for _ in 0..200 {
+            if repo::get(&again.store, &id)
+                .await
+                .expect("get")
+                .state
+                .ended()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        again.retry(&id).await.expect("retry");
+        until(|| {
+            f.host
+                .sessions
+                .lock()
+                .map(|s| s.len() >= 2)
+                .unwrap_or(false)
+        })
+        .await;
+        let briefing = f.host.sessions.lock().expect("lock")[1].text.clone();
+        assert!(
+            briefing.contains("`QUESTION-ab12cd34: <your question>`"),
+            "{briefing}"
+        );
+    }
+
+    #[tokio::test]
     async fn f_tk_08_5_after_a_restart_an_answer_goes_on_with_the_runs_session() {
         let f = fixture(
             FakeHost {
@@ -2034,6 +2261,7 @@ pub(crate) mod tests {
             .attempt
             .id;
         until(|| asked.lock().map(|a| a.len() == 1).unwrap_or(false)).await;
+        let q = questions(&asked)[0].clone();
         // Vibezeo closes with the question waiting; the next launch settles
         // the run as stopped, and a new service knows nothing of it.
         let again = TaskExecService::new(
@@ -2053,7 +2281,7 @@ pub(crate) mod tests {
             nonce: "ab12cd34".into(),
         };
         again
-            .answer(&id, "Yes, a dev dependency.".into(), sup, true)
+            .answer(&id, &q.id, "Yes, a dev dependency.".into(), sup, true)
             .await
             .expect("answer");
         for _ in 0..200 {

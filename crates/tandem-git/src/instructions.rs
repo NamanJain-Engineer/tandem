@@ -672,9 +672,11 @@ pub fn copy_to_worktrees(
 /// The instructions files `names` as committed at `commit` in the checkout
 /// at `root` (F-TK-08). Lead answers a plan run's question from the plan's
 /// base commit in the main checkout, so nothing an agent writes in its
-/// worktree, and nothing left uncommitted, reaches Lead. Folders, missing
-/// files and files over `max` bytes are left out, and `commit` must be a
-/// commit id.
+/// worktree, and nothing left uncommitted, reaches Lead. Git's replace refs
+/// are ignored, so a ref under `refs/replace/` (which every worktree
+/// shares) can't swap other content in. Folders, missing files and files
+/// over `max` bytes are left out, a file's size is asked before it's read,
+/// and `commit` must be a commit id.
 pub async fn at_commit(
     git: &Git,
     root: &Path,
@@ -695,23 +697,65 @@ pub async fn at_commit(
         if !plain {
             continue;
         }
-        let spec = format!("{commit}:{name}");
-        let blob = git
-            .run(
-                Mode::Read,
-                root,
-                &[
-                    OsStr::new("cat-file"),
-                    OsStr::new("blob"),
-                    OsStr::new(&spec),
-                ],
-            )
-            .await?;
-        if blob.success() && blob.stdout.len() <= max {
-            out.push((name.clone(), blob.text()));
+        if let Some(text) = committed(git, root, &format!("{commit}:{name}"), max).await? {
+            out.push((name.clone(), text));
         }
     }
     Ok(out)
+}
+
+/// The blob at `spec` as text, without replace refs, when it's at most
+/// `max` bytes: its size first, then at most `max` bytes of it, so a large
+/// file is never read whole.
+async fn committed(
+    git: &Git,
+    root: &Path,
+    spec: &str,
+    max: usize,
+) -> Result<Option<String>, GitError> {
+    use std::process::Stdio;
+    use tokio::io::AsyncReadExt;
+
+    let command = |args: &[&OsStr]| {
+        let mut cmd = git.command(Mode::Read, root, args);
+        cmd.env("GIT_NO_REPLACE_OBJECTS", "1").stderr(Stdio::null());
+        cmd
+    };
+    let started = |e: std::io::Error| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            GitError::NotInstalled
+        } else {
+            GitError::Io(e)
+        }
+    };
+    let size = command(&[OsStr::new("cat-file"), OsStr::new("-s"), OsStr::new(spec)])
+        .output()
+        .await
+        .map_err(started)?;
+    let fits = size.status.success()
+        && String::from_utf8_lossy(&size.stdout)
+            .trim()
+            .parse::<usize>()
+            .is_ok_and(|n| n <= max);
+    if !fits {
+        return Ok(None);
+    }
+    let mut child = command(&[OsStr::new("cat-file"), OsStr::new("blob"), OsStr::new(spec)])
+        .spawn()
+        .map_err(started)?;
+    let Some(stdout) = child.stdout.take() else {
+        return Ok(None);
+    };
+    let mut bytes = Vec::new();
+    stdout.take(max as u64 + 1).read_to_end(&mut bytes).await?;
+    if bytes.len() > max {
+        // The child is killed as it's dropped.
+        return Ok(None);
+    }
+    let done = child.wait().await?;
+    Ok(done
+        .success()
+        .then(|| String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 #[cfg(test)]

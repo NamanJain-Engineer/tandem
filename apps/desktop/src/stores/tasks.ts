@@ -270,7 +270,7 @@ export function resetTasks(): void {
   unlistenAttempts?.();
   unlistenAttempts = null;
   listeningAttempts = null;
-  attemptsRead = 0;
+  // Not back to 0: a read still in flight from before stays stale.
   movedMeanwhile = new Map();
   useTasks.setState({
     meta: null,

@@ -32,14 +32,17 @@ release fails when its version has no section.
   its files before it edits them.
 - [lin] **Lead keeps a plan moving.** A run started by Execute all can stop
   and ask when its task and the repository don't settle something. Lead
-  answers routine questions in its plan thread, from the repository's
-  instructions files (such as AGENTS.md and CLAUDE.md) as committed when
-  Execute all started, never from a run's worktree. The answer reaches the
-  run labelled "Lead (automatic answer)" and goes on the task as Lead's
-  comment, and each row counts them. An answer has no more authority than
-  the task: it can't approve anything, change access or start a tool. The
-  option is on by default in Execute all's check, uses your engine and
-  subscription, and a started plan can turn it off at once.
+  answers routine questions, each in a session of its own with every tool
+  off, so it can't open a file or run a command: all it gets is the task as
+  the plan wrote it, the question, and the repository's instructions files
+  (such as AGENTS.md and CLAUDE.md) as committed when Execute all started,
+  never a run's worktree. Lead answers with Claude Code; with another engine
+  as Lead, every question comes to you. The answer reaches the run labelled
+  "Lead (automatic answer)" and goes on the task as Lead's comment, and each
+  row counts them. An answer has no more authority than the task: it can't
+  approve anything, change access or start a tool. The option is on by
+  default in Execute all's check, uses your engine and subscription, and the
+  plan can turn it off at once while its runs can ask.
 - [lin] **What matters comes to you.** Lead never answers questions about
   approvals or permissions, access, the sandbox, secrets or credentials,
   network calls, deploys or publishing, pushing, deleting files or branches

@@ -146,6 +146,8 @@ export class DemoPlans {
           skip: null,
         };
       }),
+      // The demo has no engine to answer with.
+      leadAnswers: false,
     };
   }
 

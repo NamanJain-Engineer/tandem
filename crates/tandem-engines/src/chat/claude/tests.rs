@@ -108,6 +108,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
 }
 
@@ -115,6 +116,62 @@ fn flag<'a>(args: &'a [OsString], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|w| w[0] == name)
         .and_then(|w| w[1].to_str())
+}
+
+#[test]
+fn f_tk_08_1_an_answer_session_has_every_tool_off_and_no_mcp_server() {
+    // Even a request that carries a gateway config, the tasks server, a
+    // briefing and a session to resume gets none of them with tools off.
+    let mut req = start(Access::Full, ThreadMode::Act, true);
+    req.tools_off = true;
+    req.mcp_config = Some("/data/mcp/s.json".into());
+    req.stdio_servers = vec![crate::chat::StdioServer {
+        name: "tandem_tasks".into(),
+        command: "/bin/tasks".into(),
+        args: Vec::new(),
+        env_vars: Vec::new(),
+    }];
+    req.briefing = Some("/data/briefings/t.md".into());
+    req.resume_session = Some("sess-1".into());
+    req.model = Some("opus".into());
+    let a = args(&req);
+    assert_eq!(flag(&a, "--permission-mode"), Some("plan"));
+    let off: Vec<&str> = flag(&a, "--disallowedTools")
+        .expect("disallowed")
+        .split(',')
+        .collect();
+    for tool in [
+        "Read",
+        "Glob",
+        "Grep",
+        "LS",
+        "WebFetch",
+        "WebSearch",
+        "Bash",
+        "Edit",
+        "Write",
+        "MultiEdit",
+        "NotebookEdit",
+        "Task",
+        "Agent",
+        "TodoWrite",
+        "Skill",
+        "SlashCommand",
+    ] {
+        assert!(off.contains(&tool), "{tool}");
+    }
+    assert!(a.iter().any(|x| x == "--strict-mcp-config"));
+    assert_eq!(flag(&a, "--setting-sources"), Some("user"));
+    for gone in [
+        "--mcp-config",
+        "--permission-prompt-tool",
+        "--append-system-prompt-file",
+        "--resume",
+    ] {
+        assert!(!a.iter().any(|x| x == gone), "{gone}");
+    }
+    assert_eq!(flag(&a, "--model"), Some("opus"));
+    assert!(ClaudeAdapter::new(Vec::new()).answers_without_tools());
 }
 
 // F-TL-06 rule 1 is tests/invariants/tests/rule_1.rs.

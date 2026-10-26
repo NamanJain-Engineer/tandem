@@ -256,7 +256,19 @@ fn start(cwd: &std::path::Path) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_an_acp_agent_refuses_a_session_with_every_tool_off() {
+    let adapter = AcpAdapter::new("grok", "Grok", &["grok".into(), "acp".into()], patterns());
+    assert!(!adapter.answers_without_tools());
+    let mut req = start(&std::env::temp_dir());
+    req.tools_off = true;
+    let (tx, _rx) = mpsc::channel(4);
+    let refused = adapter.start(req, tx).await.err().expect("refused");
+    assert!(matches!(refused, AdapterError::Unsupported(_)), "{refused}");
 }
 
 async fn session(

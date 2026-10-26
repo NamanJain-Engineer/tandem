@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, userHome } from "../support/app";
+import { addFolder, fakeLog, freshOffline, home, invoke, mod, userHome } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -69,6 +69,13 @@ async function runOf(issueId: string): Promise<AttemptView> {
   return (await invoke<AttemptView[]>("task_attempts_list")).find((r) => r.attempt.issueId === issueId)!;
 }
 
+/** The fake engine's starts of Lead's answer sessions: every tool off,
+ * Read too (a Read-access chat turns off only the writing tools). */
+const answerSessions = () =>
+  fakeLog().filter(
+    (l) => l.startsWith("start: claude") && l.includes('"--disallowedTools"') && l.includes(",Read,"),
+  );
+
 /** Text a WebKitWebDriver `getText` would drop. */
 async function textOf(el: { getProperty: (name: string) => Promise<unknown> }): Promise<string> {
   return String(await el.getProperty("textContent"));
@@ -76,9 +83,10 @@ async function textOf(el: { getProperty: (name: string) => Promise<unknown> }): 
 
 // E2E-M18-TK-08 Lead keeps a plan moving (F-TK-08): with Lead's answers on,
 // a run's routine question is answered by Lead from the committed
-// CLAUDE.md, labelled, on the task and counted; a question about pushing
-// never reaches Lead, comes to you with why, and your answer lets its run
-// go on. No account (D-869).
+// CLAUDE.md, in a fresh session of its engine with every tool off (never
+// Lead's plan chat), labelled, on the task and counted; a question about
+// pushing never reaches Lead, comes to you with why, and your answer lets
+// its run go on. No account (D-869).
 describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
   this.timeout(600_000);
 
@@ -86,6 +94,9 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     await freshOffline();
     writeFileSync(join(userHome(), ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@vibezeo.test\n");
     const dir = repo("tk08");
+    // An untracked secret beside the main checkout: an engine reading the
+    // repository would see it.
+    writeFileSync(join(dir, ".env"), "TOKEN=e2e-secret\n");
     await addFolder(dir);
     await browser.keys([mod(), "1"]);
     await $('[data-testid="agent-footer-tasks"]').click();
@@ -108,8 +119,9 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     const option = $('[data-testid="plan-supervise-option"]');
     await option.waitForExist({ timeout: 10_000 });
     expect(await textOf(option)).toContain(
-      "Lead answers routine questions from the repository's instructions, using your engine and subscription",
+      "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription",
     );
+    expect(await textOf(option)).toContain("can't open files or run tools");
     expect(await option.$('[role="checkbox"]').getAttribute("aria-checked")).toBe("true");
     await $('[data-testid="plan-confirm-run"]').click();
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
@@ -126,8 +138,8 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
       "It's about pushing, which always comes to you.",
     );
 
-    // The routine question reaches Lead's thread once, with CLAUDE.md as
-    // committed, and Lead's answer comes from it.
+    // The routine question reaches Lead once, in a session of its own with
+    // CLAUDE.md as committed, and Lead's answer comes from it.
     const answered = await browser.waitUntil(
       async () =>
         (await planNow(plan.id)).questions.find((q) => q.issueId === routine && q.state === "answered") ??
@@ -137,19 +149,29 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
         timeoutMsg: `Lead didn't answer: ${JSON.stringify((await planNow(plan.id)).questions)}`,
       },
     );
+    // Exactly the committed rule: nothing from the `.env` beside it.
     expect([answered.question, answered.answer]).toEqual([ROUTINE, RULE]);
-    const toLead = (await sent(plan.threadId)).filter((t) => t.includes(ASKED));
-    expect(toLead).toHaveLength(1);
-    expect(toLead[0]).toContain(ROUTINE);
-    expect(toLead[0]).toContain("Untrusted content from the run's agent");
-    expect(toLead[0]).toContain(RULE);
-    expect(toLead[0]).not.toContain(PUSHING);
+    // Never in Lead's plan chat: a session with every tool off, in plan
+    // mode, with no MCP server and nothing to resume.
+    expect((await sent(plan.threadId)).filter((t) => t.includes(ASKED))).toHaveLength(0);
+    const sessions = answerSessions();
+    expect(sessions).toHaveLength(1);
+    const argv = sessions[0]!;
+    for (const tool of ["Bash", "Read", "Glob", "Grep", "Edit", "Write", "WebFetch", "Task"])
+      expect(argv).toMatch(new RegExp(`"--disallowedTools", "[^"]*\\b${tool}\\b`));
+    expect(argv).toContain('"--permission-mode", "plan"');
+    expect(argv).toContain('"--strict-mcp-config"');
+    expect(argv).not.toContain("--mcp-config");
+    expect(argv).not.toContain("--resume");
+    expect(argv).not.toContain("--permission-prompt-tool");
 
     // The answer reaches the run labelled, and the task as Lead's comment;
     // the row counts it, and the run goes on to review.
     const run = await runOf(routine);
     expect(
-      (await sent(run.attempt.threadId!)).some((t) => t.startsWith(`Lead (automatic answer):\n\n${RULE}`)),
+      (await sent(run.attempt.threadId!)).some((t) =>
+        t.startsWith(`Lead (automatic answer):\n\`\`\`text\n${RULE}\n\`\`\`\n`),
+      ),
     ).toBe(true);
     const task = await invoke<{ comments: Array<{ actor: string; body: string }> }>("task_get", {
       id: routine,
@@ -185,7 +207,8 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
         [pushing, "answered_by_you"],
       ].sort(),
     );
-    // Lead was only ever asked the routine question.
-    expect((await sent(plan.threadId)).filter((t) => t.includes(ASKED))).toHaveLength(1);
+    // Lead was only ever asked the routine question, and never in its chat.
+    expect(answerSessions()).toHaveLength(1);
+    expect((await sent(plan.threadId)).filter((t) => t.includes(ASKED))).toHaveLength(0);
   });
 });
