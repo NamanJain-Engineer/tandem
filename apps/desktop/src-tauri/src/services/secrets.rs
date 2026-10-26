@@ -66,8 +66,8 @@ pub struct RunPlan {
 /// A run waiting for its pane's first spawn.
 pub struct PendingRun {
     pub command: String,
-    /// Every `.env` variable, references resolved.
-    pub env: Vec<(String, String)>,
+    /// Every `.env` variable, references resolved: wiped when dropped.
+    pub env: Vec<(String, Zeroizing<String>)>,
     /// The values masked in the pane.
     pub mask: Vec<Zeroizing<Vec<u8>>>,
 }
@@ -170,6 +170,12 @@ async fn folder_of(store: &Store, pane: &tandem_core::ids::PaneId) -> Result<Pat
     Ok(PathBuf::from(ws.root))
 }
 
+/// `O_NONBLOCK` (fcntl.h).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+const O_NONBLOCK: i32 = 0x0004;
+
 /// The folder's `.env`, parsed; `None` without one. A symlink is followed
 /// only to a file inside the folder, and the file is read through the one
 /// handle that was checked, no further than the size limit.
@@ -191,7 +197,19 @@ pub(crate) fn read_env(folder: &Path) -> Result<Option<(PathBuf, Vec<EnvVar>)>, 
             ));
         }
     }
-    let file = match std::fs::File::open(&path) {
+    // Only a regular file is read. Opened without blocking, so a named pipe
+    // put there (even after this check) can't hold the worker.
+    if !std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
+        return Ok(None);
+    }
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(O_NONBLOCK);
+    }
+    let file = match open.open(&path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(read_failed(e)),
@@ -296,11 +314,10 @@ pub async fn prepare(
         folder,
         PendingRun {
             command: command.to_string(),
-            // The PTY's environment takes plain strings.
             env: resolved
                 .env
                 .iter()
-                .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+                .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             mask,
         },
@@ -674,6 +691,27 @@ mod tests {
         assert!(read_env(dir.path()).expect("read").is_some());
         std::fs::remove_file(dir.path().join(ENV_FILE)).expect("rm");
         assert!(read_env(dir.path()).expect("read").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tl_12_2_a_dotenv_that_is_a_named_pipe_is_not_read() {
+        let dir = tempfile::tempdir().expect("dir");
+        let fifo = dir.path().join(ENV_FILE);
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo");
+        assert!(made.success());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let folder = dir.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = tx.send(read_env(&folder).map(|r| r.is_none()));
+        });
+        let read = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("read_env returns without blocking");
+        assert_eq!(read.ok(), Some(true));
     }
 
     #[tokio::test]

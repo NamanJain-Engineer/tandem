@@ -39,6 +39,7 @@ import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
+import { ApprovalBoundary, useSettled } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -129,7 +130,8 @@ function AgentCard({
   const busy = item.status === "working" || item.status === "waiting";
   const approval = item.pendingApproval;
   const plugin = approval ? parseApproval(approval.detail) : null;
-  const run = approval ? parseRunApproval(approval.detail) : null;
+  const run = approval ? parseRunApproval(approval) : null;
+  const settled = useSettled(approval ? `${approval.id}\n${approval.detail}` : null);
   const close = () =>
     busy
       ? setConfirm(true)
@@ -249,7 +251,9 @@ function AgentCard({
       {run ? (
         // F-TL-12: the whole line, whatever the previews setting, next to Allow.
         <div onClick={(e) => e.stopPropagation()}>
-          <RunLine run={run} />
+          <ApprovalBoundary key={approval?.id} onDeny={() => decide(false)}>
+            <RunLine run={run} />
+          </ApprovalBoundary>
         </div>
       ) : (
         showPreview &&
@@ -271,7 +275,13 @@ function AgentCard({
       )}
       {approval && (
         <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="primary" data-testid="card-allow" onClick={() => decide(true)}>
+          <Button
+            size="sm"
+            variant="primary"
+            data-testid="card-allow"
+            disabled={!settled}
+            onClick={() => decide(true)}
+          >
             {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
           </Button>
           {!plugin && item.source.type === "pane" && approval.options.includes("conversation") && (
@@ -279,6 +289,7 @@ function AgentCard({
               size="sm"
               variant="secondary"
               data-testid="card-allow-agent"
+              disabled={!settled}
               onClick={() => decide(true, "conversation")}
             >
               {t("dashboard.allowAgent")}

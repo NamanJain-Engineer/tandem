@@ -129,6 +129,8 @@ describe("E2E-M5-5 notifications", () => {
     )
       await $('[data-testid="sidebar-toggle"]').click();
     await $('[data-testid="sidebar-pill-dashboard"]').click();
+    // Allow takes clicks once the question has been shown 500 ms.
+    await $('[data-testid="agent-card"][data-key="fixture:ap"] [data-testid="card-allow"]').waitForEnabled();
     await $('[data-testid="agent-card"][data-key="fixture:ap"] [data-testid="card-allow"]').click();
     await browser.waitUntil(
       async () =>

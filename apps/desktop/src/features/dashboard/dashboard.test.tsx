@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
-import { followDashboard } from "../../stores/dashboard";
+import { followDashboard, useDashboard } from "../../stores/dashboard";
 import { useSettings } from "../../stores/settings";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { Dashboard } from "./Dashboard";
@@ -126,7 +126,11 @@ describe("Dashboard (F-DB-01)", () => {
         <Dashboard />
       </UiProvider>,
     );
-    fireEvent.click(await screen.findByTestId("card-allow"));
+    const allow = (await screen.findByTestId("card-allow")) as HTMLButtonElement;
+    // F-TL-12.12: Allow ignores clicks until the approval has been on screen a moment.
+    expect(allow.disabled).toBe(true);
+    await waitFor(() => expect(allow.disabled).toBe(false));
+    fireEvent.click(allow);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
         approvalId: "ap_1",
@@ -138,6 +142,44 @@ describe("Dashboard (F-DB-01)", () => {
     followDashboard();
     act(() => emitLocal("approvals:changed", { upserted: [], resolved: ["ap_1"] }));
     await waitFor(() => expect(screen.queryByTestId("card-allow")).toBeNull());
+  });
+
+  it("F-TL-12.12 a second approval from the same pane doesn't replace the one shown", async () => {
+    const first = {
+      id: "ap_1",
+      source: { type: "pane" as const, paneId: "pn_1" },
+      kind: "command" as const,
+      summary: "Run `pnpm migrate`",
+      detail: "",
+      options: ["once" as const],
+      createdAt: 1,
+      expiresAt: 2,
+    };
+    const card = item("waiting", "deploy", { pendingApproval: first });
+    first.source = card.source as typeof first.source;
+    setup([card]);
+    const shown = () => useDashboard.getState().items[card.key]?.pendingApproval;
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await screen.findByTestId("card-allow");
+    followDashboard();
+    act(() =>
+      emitLocal("approvals:changed", {
+        upserted: [{ ...first, id: "ap_2", summary: "Run `rm -rf ~`" }],
+        resolved: [],
+      }),
+    );
+    expect(shown()?.id).toBe("ap_1");
+    act(() =>
+      emitLocal("approvals:changed", {
+        upserted: [{ ...first, summary: "Run `pnpm migrate` (again)" }],
+        resolved: [],
+      }),
+    );
+    expect(shown()?.summary).toBe("Run `pnpm migrate` (again)");
   });
 
   it("F-TL-12.7 a vibezeo run card shows the whole line even with previews off", async () => {

@@ -127,7 +127,10 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default();
-    let mut args = std::env::args().skip(1);
+    // args_os: an argument that isn't UTF-8 is dropped, never a panic.
+    let mut args = std::env::args_os()
+        .skip(1)
+        .map(|a| a.into_string().unwrap_or_default());
     let report = match (args.next().as_deref(), args.next()) {
         (Some("claude"), Some(event)) => {
             let stdin = hook::read_limited(std::io::stdin().lock());

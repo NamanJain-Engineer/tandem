@@ -83,23 +83,27 @@ pub const HIDDEN_CHARACTERS: &str =
     "vibezeo run refuses invisible or look-alike characters (format controls, odd spaces, fillers)";
 
 /// Characters that show as nothing, as a plain space, or reorder the text
-/// around them: format controls (Cf, bidi overrides included), line and
-/// paragraph separators, every space but U+0020, and the Hangul and Braille
-/// fillers. The person reads the approved line as it runs.
+/// around them: every Default_Ignorable_Code_Point (Unicode 15.1,
+/// DerivedCoreProperties.txt: bidi controls, joiners, fillers, variation
+/// selectors, tags), the format controls (Cf) that aren't in it, line and
+/// paragraph separators, every space but U+0020, and the Braille blank.
+/// The person reads the approved line as it runs.
 pub fn hidden(c: char) -> bool {
     matches!(c as u32,
-        // Cf
-        0x00AD | 0x0600..=0x0605 | 0x061C | 0x06DD | 0x070F | 0x0890..=0x0891 | 0x08E2
-        | 0x180E | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F
-        | 0xFEFF | 0xFFF9..=0xFFFB | 0x110BD | 0x110CD | 0x13430..=0x1343F
-        | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A | 0xE0001 | 0xE0020..=0xE007F
+        // Default_Ignorable_Code_Point
+        0x00AD | 0x034F | 0x061C | 0x115F..=0x1160 | 0x17B4..=0x17B5 | 0x180B..=0x180F
+        | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x206F | 0x3164 | 0xFE00..=0xFE0F
+        | 0xFEFF | 0xFFA0 | 0xFFF0..=0xFFF8 | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A
+        | 0xE0000..=0xE0FFF
+        // Cf outside it
+        | 0x0600..=0x0605 | 0x06DD | 0x070F | 0x0890..=0x0891 | 0x08E2 | 0xFFF9..=0xFFFB
+        | 0x110BD | 0x110CD | 0x13430..=0x1343F
         // Zl, Zp
         | 0x2028 | 0x2029
         // Zs but U+0020
         | 0x00A0 | 0x1680 | 0x2000..=0x200A | 0x202F | 0x205F | 0x3000
-        // Fillers and blanks that render empty, variation selectors, CGJ
-        | 0x115F | 0x1160 | 0x3164 | 0xFFA0 | 0x2800 | 0x034F | 0x180B..=0x180D
-        | 0xFE00..=0xFE0F | 0xE0100..=0xE01EF
+        // Braille blank
+        | 0x2800
     )
 }
 
@@ -266,6 +270,15 @@ mod tests {
             "echo a\u{2028}b",
             "echo a\u{FEFF}",
             "echo a\u{E0041}",
+            // Default_Ignorable_Code_Point the hand list missed.
+            "echo a\u{180F}b",
+            "echo a\u{17B4}b",
+            "echo a\u{17B5}b",
+            "echo a\u{2065}b",
+            "echo a\u{FFF0}b",
+            "echo a\u{FFF8}b",
+            "echo a\u{E0000}b",
+            "echo a\u{E0FFF}b",
         ] {
             assert_eq!(line(&[bad], Posix), Err(HIDDEN_CHARACTERS), "{bad:?}");
             assert_eq!(

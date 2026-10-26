@@ -256,25 +256,8 @@ impl NotificationService {
                     .as_ref()
                     .map(display_name)
                     .unwrap_or_else(|| "An agent".into());
-                // A pane's approval is an agent's `vibezeo run` (F-TL-12): its
-                // line and secret names stay out of the stored notification
-                // and the OS one (the session's Activity keeps the redacted
-                // line, F-EX-07), and it's answered on the pane or its card,
-                // where the whole line shows (no Allow in the list).
-                let (body, dedupe) = approval_notice(
-                    &view,
-                    item.as_ref().map(|i| source_line(i, Some(&view.summary))),
-                );
-                let key = key.unwrap_or_else(|| SessionKey(dedupe.clone()));
-                self.raise(
-                    NotificationKind::Approval,
-                    format!("{name} needs approval"),
-                    body,
-                    view.source.clone(),
-                    &key,
-                    Some(dedupe),
-                )
-                .await;
+                let line = item.as_ref().map(|i| source_line(i, Some(&view.summary)));
+                self.approval_requested(&view, name, line).await;
             }
             ApprovalEvent::Resolved { view, .. } => {
                 let prefix = if matches!(view.source, SourceRef::Pane { .. }) {
@@ -437,6 +420,33 @@ impl NotificationService {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// An approval's notification, stored and raised. A pane's approval is
+    /// an agent's `vibezeo run` (F-TL-12): its line and secret names stay
+    /// out of the stored notification and the OS one (the session's
+    /// Activity keeps the redacted line, F-EX-07), and it's answered on the
+    /// pane or its card, where the whole line shows (no Allow in the list).
+    async fn approval_requested(
+        &self,
+        view: &tandem_core::approvals::ApprovalView,
+        name: String,
+        line: Option<String>,
+    ) {
+        let (body, dedupe) = approval_notice(view, line);
+        let key = view
+            .source
+            .session_key()
+            .unwrap_or_else(|| SessionKey(dedupe.clone()));
+        self.raise(
+            NotificationKind::Approval,
+            format!("{name} needs approval"),
+            body,
+            view.source.clone(),
+            &key,
+            Some(dedupe),
+        )
+        .await;
+    }
+
     async fn raise(
         &self,
         kind: NotificationKind,
@@ -622,8 +632,8 @@ fn notification_for(
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn f_tl_12_7_a_vibezeo_run_notification_carries_no_command_or_secret_names() {
+    #[tokio::test]
+    async fn f_tl_12_7_a_vibezeo_run_notification_carries_no_command_or_secret_names() {
         use tandem_core::approvals::{ApprovalKind, ApprovalScope, ApprovalView};
         let view = ApprovalView {
             id: tandem_core::ids::ApprovalId::new(),
@@ -637,10 +647,23 @@ mod tests {
             created_at: 1,
             expires_at: 2,
         };
-        let (body, key) = approval_notice(&view, Some("Claude in shop: run `pnpm deploy`".into()));
-        assert_eq!(body, PANE_APPROVAL_BODY);
-        assert!(!body.contains("pnpm") && !body.contains("stripe-test"));
-        assert!(key.starts_with("pane-approval:"));
+        // What's stored, as the app raises it.
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = NotificationService::new(store.clone(), EventBus::new());
+        svc.approval_requested(
+            &view,
+            "Claude".into(),
+            Some("Claude in shop: run `pnpm deploy`".into()),
+        )
+        .await;
+        let stored = repo::list(&store, None).await.expect("list").items;
+        assert_eq!(stored.len(), 1, "{stored:?}");
+        assert_eq!(stored[0].body, PANE_APPROVAL_BODY);
+        assert!(!stored[0].title.contains("pnpm") && !stored[0].body.contains("stripe-test"));
+        let key = stored[0].dedupe_key.clone().unwrap_or_default();
+        assert!(key.starts_with("pane-approval:"), "{key}");
         let thread = ApprovalView {
             source: SourceRef::Thread {
                 thread_id: "th_1".into(),

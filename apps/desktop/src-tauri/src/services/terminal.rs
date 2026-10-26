@@ -1261,7 +1261,13 @@ impl TerminalService {
             let args = env::run_wrapper(&shell, &run.command, &names)
                 .ok_or_else(|| IpcError::new(ErrorCode::Invalid, RUN_NEEDS_SHELL))?;
             run_mask = Some(run.mask);
-            (args, run.env, None, None)
+            // The PTY's environment takes plain strings, for the spawn only.
+            let env = run
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+                .collect();
+            (args, env, None, None)
         } else if let Some((kind, dir)) = &integration {
             let launch =
                 integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
@@ -2355,7 +2361,7 @@ mod tests {
             &pane,
             crate::services::secrets::PendingRun {
                 command: "true".into(),
-                env: vec![("A".into(), "value-1".into())],
+                env: vec![("A".into(), zeroize::Zeroizing::new("value-1".into()))],
                 mask: Vec::new(),
             },
         );

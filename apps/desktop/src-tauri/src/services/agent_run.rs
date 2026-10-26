@@ -4,7 +4,9 @@
 //! a repository rule, or this agent's "Allow for this agent"), runs it with
 //! the login environment and the resolved `.env`, and replies with the
 //! output, every secret value masked, and the exit code. The values never
-//! enter the agent's process, and nothing about the run is stored.
+//! enter the agent's process. The pane's ledger (F-EX-07) keeps the line,
+//! the variables' names, who decided, the exit code and how long it took;
+//! never the output or a value.
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -40,6 +42,11 @@ pub const FLATPAK: &str = "vibezeo run isn't available in the Flatpak build yet"
 pub const DECLINED: &str = "Not allowed: you declined";
 pub const EXPIRED: &str = "Not allowed: nobody answered in 30 minutes";
 pub const CANCELLED: &str = "Not allowed: the pane closed before an answer";
+/// A second run while the first one's question is open: one at a time, so
+/// the question the person reads can't be swapped under their cursor.
+pub const ONE_AT_A_TIME: &str =
+    "Not run: this pane already has a vibezeo run waiting for an answer. Ask again after it's answered";
+pub const FOLDER_MOVED: &str = "Not run: the folder changed after it was checked";
 
 /// A run is stopped after this long.
 pub const RUN_LIMIT: Duration = Duration::from_secs(10 * 60);
@@ -119,6 +126,19 @@ pub struct AgentRuns {
     terminals: Arc<TerminalService>,
     /// Where `run-rules.json` lives.
     data: PathBuf,
+    /// Panes with a run's question open (one at a time).
+    asking: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
+/// A pane's open question; dropping it lets the pane ask again.
+struct Asking<'a>(&'a AgentRuns, String);
+
+impl Drop for Asking<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut panes) = self.0.asking.lock() {
+            panes.remove(&self.1);
+        }
+    }
 }
 
 /// The handler the status server calls.
@@ -141,6 +161,8 @@ struct Checked {
     /// [`refs::fingerprint`] of `vars`.
     fingerprint: String,
     repo: String,
+    /// The pane's folder, canonical: `cwd` is inside it.
+    root: PathBuf,
 }
 
 impl Checked {
@@ -156,6 +178,55 @@ impl Checked {
             .collect::<Vec<_>>()
             .join(", ")
     }
+
+    /// What "Allow for this agent" allows: this line, in this folder.
+    fn allow_key(&self) -> String {
+        format!("{}\n{}", self.cwd.display(), self.command)
+    }
+
+    /// The folder is still the one checked: not replaced by a link (or
+    /// anything else) that leads outside the pane's folder.
+    fn folder_holds(&self) -> bool {
+        std::fs::canonicalize(&self.cwd)
+            .is_ok_and(|now| now == self.cwd && now.starts_with(&self.root))
+    }
+}
+
+/// The environment a run gets: the login environment without anything
+/// `.env` sets, and `PATH` without empty or relative entries (they'd find
+/// a program in the folder the agent picked). On Windows, cmd.exe is also
+/// told not to look in the current folder first for a bare command.
+pub fn run_env(
+    login: &std::collections::BTreeMap<String, String>,
+    from_env: &[&str],
+) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = login
+        .iter()
+        .filter(|(k, _)| !from_env.contains(&k.as_str()))
+        .filter(|(k, _)| !k.eq_ignore_ascii_case(NO_CWD_LOOKUP))
+        .map(|(k, v)| {
+            if k.eq_ignore_ascii_case("PATH") {
+                (k.clone(), absolute_path_entries(v))
+            } else {
+                (k.clone(), v.clone())
+            }
+        })
+        .collect();
+    if cfg!(windows) {
+        env.push((NO_CWD_LOOKUP.into(), "1".into()));
+    }
+    env
+}
+
+/// Tells cmd.exe (and `CreateProcess` searches) to skip the current folder.
+const NO_CWD_LOOKUP: &str = "NoDefaultCurrentDirectoryInExePath";
+
+fn absolute_path_entries(path: &str) -> String {
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    path.split(sep)
+        .filter(|p| !p.is_empty() && Path::new(p).is_absolute())
+        .collect::<Vec<_>>()
+        .join(&sep.to_string())
 }
 
 /// The shell a run's line goes to.
@@ -181,6 +252,7 @@ impl AgentRuns {
             broker,
             terminals,
             data,
+            asking: Default::default(),
         })
     }
 
@@ -200,14 +272,13 @@ impl AgentRuns {
             Ok(r) => r,
             Err(e) => return RunReply::refused(e.message),
         };
+        if !checked.folder_holds() {
+            self.ledger(&checked, "folder_moved", None, None).await;
+            return RunReply::refused(FOLDER_MOVED);
+        }
         let login = self.terminals.login_env().await;
-        // The login environment, without any variable `.env` sets.
-        let env: Vec<(String, String)> = login
-            .vars
-            .iter()
-            .filter(|(k, _)| !resolved.env.contains_key(k.as_str()))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let from_env: Vec<&str> = resolved.env.keys().map(String::as_str).collect();
+        let env = run_env(&login.vars, &from_env);
         let secret_env: Vec<(String, Zeroizing<String>)> = resolved
             .env
             .iter()
@@ -324,6 +395,7 @@ impl AgentRuns {
             fingerprint: refs::fingerprint(&vars),
             vars,
             repo,
+            root,
         })
     }
 
@@ -338,10 +410,20 @@ impl AgentRuns {
         }
         if self
             .terminals
-            .agent_run_allowed(c.pane.as_str(), &c.command, &c.fingerprint)
+            .agent_run_allowed(c.pane.as_str(), &c.allow_key(), &c.fingerprint)
         {
             return Ok("allowed_before");
         }
+        let _asking = {
+            let mut panes = self
+                .asking
+                .lock()
+                .map_err(|_| ("busy", ONE_AT_A_TIME.to_string()))?;
+            if !panes.insert(c.pane.as_str().to_string()) {
+                return Err(("busy", ONE_AT_A_TIME.into()));
+            }
+            Asking(self, c.pane.as_str().to_string())
+        };
         let with = if c.vars.is_empty() {
             "with no secrets".to_string()
         } else {
@@ -392,7 +474,7 @@ impl AgentRuns {
             ApprovalOutcome::Allowed { scope, .. } => {
                 if scope == ApprovalScope::Conversation {
                     self.terminals
-                        .allow_agent_run(c.pane.as_str(), &c.command, &c.fingerprint);
+                        .allow_agent_run(c.pane.as_str(), &c.allow_key(), &c.fingerprint);
                 }
                 // A rule that asked because `.env` changed holds again for it.
                 if rules.matches(&c.repo, &c.command, dialect()) {
@@ -441,8 +523,8 @@ impl Tail {
 /// was killed), before the reply goes back.
 const DRAIN: Duration = Duration::from_millis(500);
 
-/// Runs `command` under `/bin/sh -c` (`%SystemRoot%\\System32\\cmd.exe /D /S
-/// /C` on Windows, the line passed as it is) in `cwd` with exactly `env` and
+/// Runs `command` under `/bin/sh -c` (`%SystemRoot%\\System32\\cmd.exe /D
+/// /V:OFF /S /C` on Windows, the line passed as it is) in `cwd` with exactly `env` and
 /// `secret_env`, stdout and stderr together through a masker for `values`,
 /// for up to `limit`. When it exits, its process group is killed, so nothing
 /// it left running in the background keeps the values.
@@ -461,9 +543,10 @@ pub async fn run(
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
         let mut c = tokio::process::Command::new(root.join("System32").join("cmd.exe"));
-        // /D: no AutoRun. /S with the outer quotes: cmd runs the line as it
-        // is, the one the person approved.
-        c.raw_arg(format!("/D /S /C \"{command}\""));
+        // /D: no AutoRun. /V:OFF: no delayed `!VAR!` expansion, whatever
+        // the registry says. /S with the outer quotes: cmd runs the line as
+        // it is, the one the person approved.
+        c.raw_arg(format!("/D /V:OFF /S /C \"{command}\""));
         c
     };
     #[cfg(not(windows))]
@@ -711,7 +794,11 @@ mod tests {
         allow(&fx, &again, ApprovalScope::Once);
         let reply = task.await.expect("task");
         assert_eq!((reply.exit_code, reply.output.as_str()), (Some(1), ""));
-        // The pane's approvals aren't stored.
+        // The pane's approvals aren't stored: what the app's approval
+        // service does with each request writes no row for them.
+        tandem_store::repo::approvals::insert_pending(&fx.store, &view)
+            .await
+            .expect("insert");
         let stored: i64 = fx
             .store
             .read(|c| Ok(c.query_row("SELECT COUNT(*) FROM approvals", [], |r| r.get(0))?))
@@ -1070,5 +1157,88 @@ mod tests {
             .expect("read")
             .next()
             .is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_one_question_per_pane_and_the_folder_is_part_of_allow_for_this_agent() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "one"])).await;
+        // A second run while the first one's question is open isn't asked.
+        let second = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "two"]))
+            .await;
+        assert_eq!(second.error.as_deref(), Some(ONE_AT_A_TIME));
+        assert_eq!(fx.broker.pending().len(), 1, "the shown question stays");
+        allow(&fx, &view, ApprovalScope::Conversation);
+        assert_eq!(task.await.expect("task").output, "one\n");
+        // Answered: the pane may ask again. The same line in another
+        // folder isn't covered by "Allow for this agent".
+        let (other, task) =
+            asked(&fx, req(&fx.agent, &fx.root.join("sub"), &["echo", "one"])).await;
+        assert!(other.detail.contains("sub"), "{}", other.detail);
+        fx.broker.cancel_source(&other.source);
+        assert_eq!(task.await.expect("task").error.as_deref(), Some(CANCELLED));
+        let reply = fx
+            .runs
+            .handle(req(&fx.agent, &fx.root, &["echo", "one"]))
+            .await;
+        assert_eq!(reply.output, "one\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_a_folder_replaced_by_a_link_after_the_check_runs_nothing() {
+        let fx = fixture("").await;
+        let outside = fx._dir.path().join("outside");
+        std::fs::create_dir_all(&outside).expect("mkdir");
+        let checked = Checked {
+            pane: fx.agent.clone(),
+            cwd: fx.root.join("sub"),
+            command: "touch ran".into(),
+            vars: Vec::new(),
+            fingerprint: refs::fingerprint(&[]),
+            repo: fx.root.to_string_lossy().into_owned(),
+            root: fx.root.clone(),
+        };
+        assert!(checked.folder_holds());
+        std::fs::remove_dir(fx.root.join("sub")).expect("rmdir");
+        std::os::unix::fs::symlink(&outside, fx.root.join("sub")).expect("link");
+        assert!(!checked.folder_holds());
+    }
+
+    #[test]
+    fn f_tl_12_7_the_run_env_has_no_relative_path_entries_and_no_env_overrides() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let abs = if cfg!(windows) { r"C:\bin" } else { "/usr/bin" };
+        let login: std::collections::BTreeMap<String, String> = [
+            (
+                "PATH".to_string(),
+                [abs, "", ".", "bin", "./x", abs].join(sep),
+            ),
+            ("API_KEY".to_string(), "from-login".to_string()),
+            (
+                "NoDefaultCurrentDirectoryInExePath".to_string(),
+                "0".to_string(),
+            ),
+            ("HOME".to_string(), "/home/me".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let env = run_env(&login, &["API_KEY"]);
+        let get = |k: &str| {
+            env.iter()
+                .filter(|(n, _)| n == k)
+                .map(|(_, v)| v.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(get("PATH"), vec![[abs, abs].join(sep)]);
+        assert!(get("API_KEY").is_empty(), ".env sets it");
+        assert_eq!(get("HOME"), vec!["/home/me"]);
+        if cfg!(windows) {
+            assert_eq!(get("NoDefaultCurrentDirectoryInExePath"), vec!["1"]);
+        } else {
+            assert!(get("NoDefaultCurrentDirectoryInExePath").is_empty());
+        }
     }
 }

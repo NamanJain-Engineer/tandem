@@ -75,6 +75,8 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
     expect(summary).toContain("printenv API_KEY");
     expect(summary).toContain("API_KEY (stripe-test)");
     expect(summary).not.toContain(VALUE);
+    // Allow takes clicks once the question has been shown 500 ms.
+    await $(`${banner()} [data-testid="pane-approval-once"]`).waitForEnabled();
     await $(`${banner()} [data-testid="pane-approval-once"]`).click();
     expect(await exitAfter(agent, "R1")).toBe(0);
     expect(await textAfter(agent, "R1")).toContain("[REDACTED]");
@@ -96,6 +98,8 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
 
     await sendToPane(agent, "/sh echo R4; vibezeo run -- echo agent-ok\r");
     await $(banner()).waitForDisplayed({ timeout: 15_000 });
+    // Allow takes clicks once the question has been shown 500 ms.
+    await $(`${banner()} [data-testid="pane-approval-agent"]`).waitForEnabled();
     await $(`${banner()} [data-testid="pane-approval-agent"]`).click();
     expect(await exitAfter(agent, "R4")).toBe(0);
     await sendToPane(agent, "/sh echo R5; vibezeo run -- echo agent-ok\r");

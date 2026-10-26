@@ -98,6 +98,8 @@ describe("E2E-M7-2 approvals", () => {
     await openDashboard();
     const card = `[data-testid="agent-card"][data-key="thread:${threadId}"]`;
     await $(card).waitForExist({ timeout: 5_000 });
+    // Allow takes clicks once the question has been shown 500 ms.
+    await $(`${card} [data-testid="card-allow"]`).waitForEnabled();
     await $(`${card} [data-testid="card-allow"]`).click();
     await waitForAssistant("Ran npm ci.");
     expect(await pendingCount()).toBe(0);
