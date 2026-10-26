@@ -190,7 +190,15 @@ E2E lessons (each cost a debugging round):
   shares the label).
 - The fake engine (`crates/tandem-engines/src/bin/fake-engine`) plays Claude
   stream-json, Codex app-server and ACP. It echoes "You said: <input>" and supports
-  `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`.
+  `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`. All three
+  answer a task review with a verdict (`review_reply`), since a review runs on
+  whichever other chat engine is installed.
+- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`
+  and calls `checkAgain()`, or later specs run with it installed: a leftover
+  Cursor Agent reviewed E2E-M18-TK-07's runs in a full run, though it passed alone.
+- `waitUntil`'s `timeoutMsg` is built with its options, before the wait, so
+  `` `…${JSON.stringify(await rows())}` `` shows the state at the start. Keep what
+  the condition last read and throw it when the wait times out.
 - A test that hard-codes a date breaks the next day: pin the clock
   (`vi.useFakeTimers({ toFake: ["Date"] })`).
 - When an E2E fails, take a screenshot (`browser.saveScreenshot`) before guessing.

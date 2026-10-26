@@ -211,6 +211,13 @@ fn plan_reply(text: &str) -> Option<String> {
     ))
 }
 
+/// A task review's verdict (F-TK-04), the same from every fake chat engine:
+/// whichever installed engine reviews a run gives one.
+fn review_reply(text: &str) -> Option<&'static str> {
+    (text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve"))
+        .then_some("Verdict: Approve\nThe change does what the task asks.")
+}
+
 /// A second opinion (F-WT-05): findings on the first added line of the
 /// first two files in the prompt's diff (the second by its file name only),
 /// one on a line the diff doesn't show, and a free line.
@@ -266,12 +273,10 @@ fn app_turn(thread: &str, turn: &str, text: &str) {
         serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "inProgress", "items": []}}),
     );
     let item = format!("msg_{turn}");
-    // A task review (F-TK-04): a verdict instead of the echo.
-    let verdict = "Verdict: Approve\nThe change does what the task asks.";
     let opinion = second_opinion_reply(text);
     let (first, rest) = if let Some(o) = opinion.as_deref() {
         ("", o)
-    } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+    } else if let Some(verdict) = review_reply(text) {
         ("", verdict)
     } else {
         ("You said: ", text)

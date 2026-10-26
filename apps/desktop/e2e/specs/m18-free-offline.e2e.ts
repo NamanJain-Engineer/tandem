@@ -34,6 +34,10 @@ describe("E2E-M18-FREE free offline", function () {
   after(async () => {
     await invoke("library_search_set", { on: false }).catch(() => undefined);
     rmSync(join(claudeHome(), "projects", "-tmp-tandem-e2e-free"), { recursive: true, force: true });
+    // Later specs run without it: a task review runs on another installed
+    // chat engine, and this one would be it (E2E-M18-TK-07).
+    rmSync(join(home(), "fakebin", "cursor-agent"), { force: true });
+    await checkAgain().catch(() => undefined);
   });
 
   it("F-TH-06 a Cursor Agent thread streams its reply with no account", async () => {

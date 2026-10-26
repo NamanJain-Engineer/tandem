@@ -43,6 +43,29 @@ async function text(selector: string): Promise<string> {
   return String(await $(selector).getProperty("textContent"));
 }
 
+/** Waits until `ok` holds for what `read` gives. A timeout says what it
+ * last gave: a `timeoutMsg` is built before the wait starts. */
+async function until<T>(
+  read: () => T | Promise<T>,
+  ok: (v: T) => boolean,
+  what: string,
+  timeout: number,
+): Promise<T> {
+  let last: T | undefined;
+  try {
+    await browser.waitUntil(
+      async () => {
+        last = await read();
+        return ok(last);
+      },
+      { timeout },
+    );
+  } catch (e) {
+    throw new Error(`${what}: ${JSON.stringify(last)} (${String(e)})`);
+  }
+  return last as T;
+}
+
 /** Each plan row's run state and verdict. */
 async function rows(): Promise<Array<{ state: string; verdict: string }>> {
   const out: Array<{ state: string; verdict: string }> = [];
@@ -87,10 +110,13 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
       args: { kind: "thread", workspaceId: lane.id, engineId: "claude", access: "edits" },
     });
     await invoke("thread_send", { threadId: thread.id, text: "write notes.md=hello" });
-    const claim = await browser.waitUntil(() => claims().find((c) => c.path === "notes.md") ?? false, {
-      timeout: 30_000,
-      timeoutMsg: `notes.md wasn't claimed: ${JSON.stringify(claims())}`,
-    });
+    const claimed = await until(
+      claims,
+      (cs) => cs.some((c) => c.path === "notes.md"),
+      "notes.md wasn't claimed",
+      30_000,
+    );
+    const claim = claimed.find((c) => c.path === "notes.md")!;
     expect(claim.inferred).toBe(true);
     expect(claim.folder.endsWith("/.tandem/worktrees/notes")).toBe(true);
   });
@@ -105,13 +131,23 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     expect((await rows()).map((r) => r.state)).toEqual(["none", "none"]);
     await $('[data-testid="plan-execute"]').click();
     await $('[data-testid="plan-confirm-run"]').waitForClickable({ timeout: 10_000 });
+    // Claude Code reviews both runs, the one chat engine installed: a fake
+    // engine another spec left installed would review them instead.
+    const reviewers = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('[data-testid="plan-launch-run"]')).map(
+        (r) => r.dataset.reviewEngine ?? "",
+      ),
+    );
+    expect(reviewers).toEqual(["claude", "claude"]);
     await $('[data-testid="plan-confirm-run"]').click();
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
 
     // The plan follows each run to in review, approved by the review.
-    await browser.waitUntil(
-      async () => (await rows()).every((r) => r.state === "in_review" && r.verdict === "approve"),
-      { timeout: 180_000, timeoutMsg: `the runs didn't reach Approve: ${JSON.stringify(await rows())}` },
+    await until(
+      rows,
+      (rs) => rs.length === 2 && rs.every((r) => r.state === "in_review" && r.verdict === "approve"),
+      "the runs didn't reach Approve",
+      180_000,
     );
     expect(await text('[data-testid="plan-summary"]')).toBe("2 approved");
 

@@ -671,8 +671,7 @@ pub fn run(args: &[String], session: String) {
         } else if let Some(said) = crate::second_opinion_reply(&text) {
             turn.say(&[&said]);
             turn.done(&said);
-        } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
-            let said = "Verdict: Approve\nThe change does what the task asks.";
+        } else if let Some(said) = crate::review_reply(&text) {
             turn.say(&[said]);
             turn.done(said);
         } else if first == "/crash" {

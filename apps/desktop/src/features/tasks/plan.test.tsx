@@ -247,6 +247,7 @@ describe("Plan with Lead (F-TK-06)", () => {
       "TAN-2 · Sign-in pageClaude Code · its own sign-inLeft alone: already running",
     ]);
     expect(runs.map((r) => r.getAttribute("data-skip"))).toEqual(["", "running"]);
+    expect(runs.map((r) => r.getAttribute("data-review-engine"))).toEqual(["claude", "codex"]);
     expect(calls.some((c) => c.cmd === "plan_execute")).toBe(false);
     // Back: nothing started.
     fireEvent.click(screen.getByTestId("plan-confirm-back"));

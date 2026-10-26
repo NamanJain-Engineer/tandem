@@ -404,6 +404,7 @@ function LaunchList({ launch }: { launch: PlanLaunch }) {
             className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-3"
             data-testid="plan-launch-run"
             data-skip={r.skip ?? ""}
+            data-review-engine={r.reviewEngineId}
           >
             <span className="text-sm text-fg">
               {t("plan.confirm.task", { id: r.issueId, title: r.title })}
