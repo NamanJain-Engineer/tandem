@@ -654,7 +654,11 @@ function PlanDialog({ plan }: { plan: PlanView }) {
     const r = await usePlans.getState().prepare(plan.id);
     setBusy(false);
     if (isIpcError(r)) setError(r.message);
-    else setLaunch(r);
+    else {
+      // Again after a start that stopped partway: the switch as you left it.
+      setSupervise(plan.queued.length > 0 ? plan.supervise : true);
+      setLaunch(r);
+    }
   };
   const run = async () => {
     setBusy(true);

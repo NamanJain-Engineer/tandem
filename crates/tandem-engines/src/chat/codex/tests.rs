@@ -180,7 +180,7 @@ fn start(script_args: bool) -> ChatStart {
 async fn f_tk_08_1_codex_refuses_a_session_with_every_tool_off() {
     // Its read-only sandbox still runs commands that read the disk.
     let adapter = CodexAdapter::new(Vec::new());
-    assert!(!adapter.answers_without_tools());
+    assert!(!adapter.answers_without_tools(Some("99.0.0")));
     let mut req = start(false);
     req.tools_off = true;
     let (tx, _rx) = mpsc::channel(4);

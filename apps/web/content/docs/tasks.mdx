@@ -30,14 +30,15 @@ A plan stays in the Tasks page's header until you remove it, and Vibezeo keeps i
 A run started by **Execute all…** can stop and ask a question when the task and the repository don't settle something. Lead answers routine questions, so the plan keeps moving while you do something else. **Execute all…** has the option on by default: "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription". The plan has the same switch while its runs can ask.
 
 - **Lead answers each question in a session of its own, with every tool off.** It can't open a file, run a command or reach the web, and it knows nothing of other questions. All it gets is the task as the plan wrote it, the question, and the repository's instructions files (such as `AGENTS.md` and `CLAUDE.md`) as they were committed when **Execute all…** started, in your main checkout. Files in a run's worktree, changes that aren't committed, and anything else beside your checkout (a `.env`, say) never reach Lead.
-- **Lead answers with Claude Code.** Other engines can't turn every tool off, so with another engine as Lead every question comes to you, and **Execute all…** says so.
+- **Lead answers with Claude Code 2.1.310 or newer.** Other engines and older versions can't turn every tool off, so with one of them as Lead every question comes to you, and **Execute all…** says so.
 - **The answer reaches the run** labelled "Lead (automatic answer)", and it's added to the task as Lead's comment. The plan's row counts them: "Lead answered 2".
 - **An answer from Lead has no more authority than the task.** It can't approve anything, change a run's access or start a tool. The run's approvals and sandbox still apply.
 - **These always come to you:** questions about approvals or permissions, access, the sandbox, secrets or credentials, network calls, deploys or publishing, pushing (force-push included), deleting files or branches outside the worktree, and changing the plan's scope. A question that names one of these doesn't reach Lead, even when it's routine.
-- **Limits.** Lead answers at most 3 questions per run and 10 per plan; after that, questions come to you. If Lead sends a question on, reaches for a tool, or doesn't answer within 10 minutes, it comes to you too.
+- **Limits.** Lead answers at most 3 questions per run and 10 per plan; after that, questions come to you. If Lead sends a question on, reaches for a tool, or doesn't answer within 5 minutes, it comes to you too.
 - **When a question comes to you**, its row says **Needs you** with the question and why, and you get a notification. Choose **Answer…**, write your answer and choose **Send answer**: it goes to the run as its next message, and the run goes on. If you stop the run first, its question closes.
 - **Approvals are never answered by Lead.** A run waiting for an approval shows "Waiting for your approval" in the plan.
-- **Turning the switch off** stops Lead's answers at once: Lead's session stops, an answer it's still writing isn't sent, and every question comes to you. A question Lead hadn't answered when Vibezeo closed comes to you after the restart.
+- **Turning the switch off** stops Lead's answers at once: Lead's session stops, an answer it's still writing isn't sent, and every question comes to you. A question Lead hadn't answered when Vibezeo closed comes to you after the restart. If **Execute all…** stopped partway and you run it again, it starts from the switch as you left it.
+- **A run never gets a file from another run's words.** In each run's first message, and its review's, Vibezeo writes ＠ for every @ in the task's text, its comments and the diff, so a path written there can't attach a file.
 
 ## Claims
 

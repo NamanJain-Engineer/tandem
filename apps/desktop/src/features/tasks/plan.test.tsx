@@ -684,9 +684,24 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     wrap();
     fireEvent.click(await screen.findByTestId("plan-execute"));
     expect((await screen.findByTestId("plan-supervise-unavailable")).textContent).toBe(
-      "Lead's engine can't answer with every tool off, so each run's questions come to you.",
+      "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so each run's questions come to you.",
     );
     expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+    );
+  });
+
+  it("F-TK-08.5 Execute all again after a start that stopped partway keeps the switch as you left it", async () => {
+    usePlans.setState({
+      plans: { pl_1: { ...CREATED, queued: ["TAN-1"], supervise: false } },
+      openId: "pl_1",
+    });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    await screen.findByTestId("plan-supervise-option");
+    expect(screen.getByRole("checkbox").getAttribute("aria-checked")).toBe("false");
     fireEvent.click(screen.getByTestId("plan-confirm-run"));
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),

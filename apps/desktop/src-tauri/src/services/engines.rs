@@ -356,6 +356,44 @@ impl EngineService {
         account: Option<&AccountId>,
         relaunch: Option<Relaunch<'_>>,
     ) -> Result<AgentLaunch, IpcError> {
+        self.launch(
+            engine,
+            program,
+            workspace_root,
+            status,
+            account,
+            relaunch,
+            true,
+        )
+        .await
+    }
+
+    /// [`agent_launch`](Self::agent_launch) in a folder that's no workspace
+    /// (Lead's answer sessions, F-TK-08): the account's provider home and
+    /// its env, but the folder is never marked trusted, whatever "Trust
+    /// workspaces I add" says.
+    pub async fn agent_launch_untrusted(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        folder: &Path,
+        account: Option<&AccountId>,
+    ) -> Result<AgentLaunch, IpcError> {
+        self.launch(engine, program, folder, None, account, None, false)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn launch(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        workspace_root: &Path,
+        status: Option<StatusEnv>,
+        account: Option<&AccountId>,
+        relaunch: Option<Relaunch<'_>>,
+        trust_folder: bool,
+    ) -> Result<AgentLaunch, IpcError> {
         self.check_allowed(engine)?;
         if let Some(r) = relaunch {
             return self.relaunch(engine, program, status, account, r).await;
@@ -401,11 +439,12 @@ impl EngineService {
                     tracing::warn!(code = "engines.hooks_failed", error = %err, "couldn't install status hooks");
                 }
             }
-            let trust = settings::get(&self.store, SettingKey::TrustWorkspacesIAdd)
-                .await
-                .ok()
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let trust = trust_folder
+                && settings::get(&self.store, SettingKey::TrustWorkspacesIAdd)
+                    .await
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
             if trust {
                 let _ = self.homes.trust_workspace(engine, &home, workspace_root);
             }

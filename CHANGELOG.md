@@ -36,8 +36,8 @@ release fails when its version has no section.
   off, so it can't open a file or run a command: all it gets is the task as
   the plan wrote it, the question, and the repository's instructions files
   (such as AGENTS.md and CLAUDE.md) as committed when Execute all started,
-  never a run's worktree. Lead answers with Claude Code; with another engine
-  as Lead, every question comes to you. The answer reaches the run labelled
+  never a run's worktree. Lead answers with Claude Code 2.1.310 or newer;
+  with another engine as Lead, every question comes to you. The answer reaches the run labelled
   "Lead (automatic answer)" and goes on the task as Lead's comment, and each
   row counts them. An answer has no more authority than the task: it can't
   approve anything, change access or start a tool. The option is on by

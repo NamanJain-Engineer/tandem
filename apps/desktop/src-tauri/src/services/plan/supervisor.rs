@@ -35,8 +35,9 @@ pub const FILE_MAX: usize = 64 * 1024;
 pub const FILES_MAX: usize = 192 * 1024;
 /// An answer is cut here (characters), Lead's or yours.
 pub const ANSWER_MAX: usize = 4_000;
-/// Lead's answer session is stopped after this.
-pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// Lead's answer session is stopped after this: it uses no tools, and the
+/// plan's other questions wait for it.
+pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// Why a question came to you is cut here.
 const REASON_MAX: usize = 300;
 
@@ -52,8 +53,7 @@ const WHY_PLACEHOLDER: &str = "<why it needs the user>";
 pub(super) const CLOSED: &str = "Vibezeo closed before Lead answered.";
 const OFF: &str = "Lead's answers are off for this plan.";
 const TURNED_OFF: &str = "Lead's answers were turned off before it answered.";
-const CANT_ANSWER: &str =
-    "Lead's engine can't answer with every tool off, so its questions come to you.";
+const CANT_ANSWER: &str = "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so its questions come to you.";
 const RUN_STOPPED: &str = "The run stopped before it got an answer.";
 const NOT_DELIVERED: &str = "The run stopped waiting before Lead's answer reached it.";
 /// The notification for a question Lead sent on: Lead's own words stay in

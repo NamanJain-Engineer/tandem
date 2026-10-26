@@ -263,7 +263,7 @@ fn start(cwd: &std::path::Path) -> ChatStart {
 #[tokio::test]
 async fn f_tk_08_1_an_acp_agent_refuses_a_session_with_every_tool_off() {
     let adapter = AcpAdapter::new("grok", "Grok", &["grok".into(), "acp".into()], patterns());
-    assert!(!adapter.answers_without_tools());
+    assert!(!adapter.answers_without_tools(Some("99.0.0")));
     let mut req = start(&std::env::temp_dir());
     req.tools_off = true;
     let (tx, _rx) = mpsc::channel(4);

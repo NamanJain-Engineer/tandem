@@ -1131,7 +1131,6 @@ impl PlanService {
             })?;
             e.view.state = PlanState::Starting;
             e.view.error = None;
-            e.view.supervise = supervise;
             // Each run's own code for its question line.
             for run in &runs {
                 e.codes.entry(run.issue_id.clone()).or_insert_with(nonce);
@@ -1140,6 +1139,11 @@ impl PlanService {
         };
         self.save();
         self.publish(&view);
+        // Lead's answers change the way the switch changes them: off sends
+        // the questions waiting for Lead to you and stops its session.
+        if view.supervise != supervise {
+            self.supervise(id, supervise).await?;
+        }
         // The first Execute all's commit is kept: Lead answers every run
         // from the files they started from.
         if view.base_commit.is_none() {
@@ -1290,6 +1294,16 @@ pub async fn offered(
 /// The app's host.
 pub struct AppHost {
     pub app: tauri::AppHandle,
+}
+
+/// The installed version of `engine`, as the last detection read it.
+fn engine_version(state: &crate::state::AppState, engine: &str) -> Option<String> {
+    state.terminals.engines.report().and_then(|r| {
+        r.found
+            .into_iter()
+            .find(|f| f.engine_id == engine)
+            .and_then(|f| f.version)
+    })
 }
 
 impl AppHost {
@@ -1483,9 +1497,11 @@ impl PlanHost for AppHost {
     }
 
     fn can_answer(&self, engine: &str) -> bool {
-        crate::services::threads::AppLauncher::adapters(&self.state().terminals)
+        let state = self.state();
+        let version = engine_version(&state, engine);
+        crate::services::threads::AppLauncher::adapters(&state.terminals)
             .iter()
-            .any(|a| a.engine_id() == engine && a.answers_without_tools())
+            .any(|a| a.engine_id() == engine && a.answers_without_tools(version.as_deref()))
     }
 
     async fn answer_session(
@@ -1510,55 +1526,62 @@ impl PlanHost for AppHost {
         let engine = engines
             .get(&teammate.engine_id)
             .ok_or(AnswerFailed::Failed)?;
+        let version = engine_version(&state, &engine.id);
         let adapter = crate::services::threads::AppLauncher::adapters(&state.terminals)
             .into_iter()
-            .find(|a| a.engine_id() == engine.id && a.answers_without_tools())
+            .find(|a| a.engine_id() == engine.id && a.answers_without_tools(version.as_deref()))
             .ok_or(AnswerFailed::Unsupported)?;
         let program = state
             .terminals
             .resolve_engine(&engine)
             .await
             .ok_or(AnswerFailed::Failed)?;
-        // An empty folder of Vibezeo's own: never the repository or a run's
-        // worktree (D-2838).
-        let cwd = state.data.run().join("answers");
-        std::fs::create_dir_all(&cwd)
+        // A fresh empty folder of Vibezeo's own for this session alone,
+        // removed after it: never the repository, a run's worktree or
+        // another question's folder (D-2838).
+        let cwd = state
+            .data
+            .run()
+            .join("answers")
+            .join(tandem_core::ids::new_id("ans"));
+        tandem_core::paths::create_private_dir(&cwd)
             .map_err(|e| failed("folder")(IpcError::new(ErrorCode::Internal, e.to_string())))?;
-        // Lead's account in its own provider home, like any of its chats.
-        let launch = engines
-            .agent_launch(
-                &engine,
-                program.clone(),
-                &cwd,
-                None,
-                teammate.preferred_account_id.as_ref(),
-            )
-            .await
-            .map_err(failed("launch"))?;
-        let login = state.terminals.login_env().await;
-        let mut env: Vec<(String, String)> = login
-            .vars
-            .iter()
-            .chain(launch.spec.env.iter())
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        env.extend(crate::services::fake_engine_env());
-        let version = engines.report().and_then(|r| {
-            r.found
-                .into_iter()
-                .find(|f| f.engine_id == engine.id)
-                .and_then(|f| f.version)
-        });
-        let start = answer::answer_start(
-            &engine.id,
-            program,
-            cwd,
-            env,
-            teammate.model.clone(),
-            teammate.effort.clone(),
-            version,
-        );
-        answer::run(adapter, start, prompt, supervisor::ANSWER_TIMEOUT, cancel).await
+        let answered = async {
+            // Lead's account in its own provider home, like any of its
+            // chats; the folder is never marked trusted.
+            let launch = engines
+                .agent_launch_untrusted(
+                    &engine,
+                    program.clone(),
+                    &cwd,
+                    teammate.preferred_account_id.as_ref(),
+                )
+                .await
+                .map_err(failed("launch"))?;
+            let login = state.terminals.login_env().await;
+            let mut env: Vec<(String, String)> = login
+                .vars
+                .iter()
+                .chain(launch.spec.env.iter())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            env.extend(crate::services::fake_engine_env());
+            let start = answer::answer_start(
+                &engine.id,
+                program,
+                cwd.clone(),
+                env,
+                teammate.model.clone(),
+                teammate.effort.clone(),
+                version,
+            );
+            answer::run(adapter, start, prompt, supervisor::ANSWER_TIMEOUT, cancel).await
+        }
+        .await;
+        if let Err(e) = std::fs::remove_dir_all(&cwd) {
+            tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer session's folder wasn't removed");
+        }
+        answered
     }
 
     async fn answer(
@@ -2905,7 +2928,7 @@ mod tests {
             (
                 QuestionState::Escalated,
                 Some(
-                    "Lead's engine can't answer with every tool off, so its questions come to you."
+                    "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so its questions come to you."
                 )
             )
         );
@@ -3337,6 +3360,45 @@ mod tests {
             .expect("answer");
         let answered = fake2.answers.lock().expect("l")[0].clone();
         assert_eq!((answered.1.as_str(), answered.4), (q.id.as_str(), true));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn f_tk_08_5_execute_all_again_switches_answers_the_way_the_switch_does() {
+        let (_d, fake, plans) = rig_with(Vec::new(), Lead::Hold);
+        let view = created(&fake, &plans).await;
+        fake.failing.lock().expect("l").insert("TAN-2".into());
+        plans.prepare(&view.id).await.expect("prepare");
+        plans.execute(&view.id, true).await.expect_err("partway");
+        let view = plans.get(&view.id).expect("plan");
+        assert!(view.supervise);
+        // TAN-1's run asks, and Lead is answering when Execute all runs
+        // again with the answers off.
+        plans.on_question_event(QuestionEvent::Asked(asks(
+            &view,
+            "TAN-1",
+            "at_1",
+            "Tabs or spaces?",
+        )));
+        until("Lead is asked", || prompts(&fake).len() == 1).await;
+        fake.failing.lock().expect("l").clear();
+        plans.prepare(&view.id).await.expect("prepare");
+        let done = plans.execute(&view.id, false).await.expect("execute");
+        assert_eq!((done.state, done.supervise), (PlanState::Started, false));
+        let q = question(&plans, &view.id, 0);
+        assert_eq!(
+            (q.state, q.reason.as_deref()),
+            (
+                QuestionState::Escalated,
+                Some("Lead's answers were turned off before it answered.")
+            )
+        );
+        until("the session stops", || {
+            *fake.cancelled.lock().expect("l") == 1
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(fake.answers.lock().expect("l").is_empty());
+        assert_eq!(fake.notified.lock().expect("l").len(), 1);
     }
 
     #[tokio::test(start_paused = true)]

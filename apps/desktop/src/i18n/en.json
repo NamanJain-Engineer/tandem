@@ -2616,7 +2616,7 @@
   "plan.runs.error": "The runs couldn't be read: {message}",
   "plan.supervise.option": "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription",
   "plan.supervise.optionHint": "Lead answers in a session of its own that can't open files or run tools. Questions about approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope always come to you. You can turn this off at any time.",
-  "plan.supervise.cantAnswer": "Lead's engine can't answer with every tool off, so each run's questions come to you.",
+  "plan.supervise.cantAnswer": "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so each run's questions come to you.",
   "plan.supervise.switch": "Lead answers routine questions",
   "plan.supervise.switchHint": "From the plan's task and the repository's instructions, in a session that can't open files or run tools, using your engine and subscription. Off stops Lead's answers at once, and questions come to you.",
   "plan.supervise.switching": "Switching…",

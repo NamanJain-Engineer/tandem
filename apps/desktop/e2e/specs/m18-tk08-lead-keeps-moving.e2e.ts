@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, fakeLog, freshOffline, home, invoke, mod, userHome } from "../support/app";
+import { addFolder, checkAgain, fakeLog, freshOffline, home, invoke, mod, userHome } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -89,9 +89,15 @@ async function textOf(el: { getProperty: (name: string) => Promise<unknown> }): 
 // its run go on. No account (D-869).
 describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
   this.timeout(600_000);
+  // The fake Claude Code says it's 2.1.310, the first that answers with
+  // every tool off; the next spec gets the default back.
+  const versions = () => join(home(), "fake-version.txt");
+  after(() => writeFileSync(versions(), ""));
 
   it("F-TK-08.1 F-TK-08.2 F-TK-08.3 Lead answers the routine question from CLAUDE.md, and the push question comes to you", async () => {
     await freshOffline();
+    writeFileSync(versions(), "claude 2.1.310\n");
+    await checkAgain();
     writeFileSync(join(userHome(), ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@vibezeo.test\n");
     const dir = repo("tk08");
     // An untracked secret beside the main checkout: an engine reading the
@@ -151,16 +157,38 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     );
     // Exactly the committed rule: nothing from the `.env` beside it.
     expect([answered.question, answered.answer]).toEqual([ROUTINE, RULE]);
-    // Never in Lead's plan chat: a session with every tool off, in plan
-    // mode, with no MCP server and nothing to resume.
+    // Never in Lead's plan chat: a session with no tool at all (and every
+    // one denied besides), no customization, MCP server or command, nothing
+    // saved, nobody to ask, and nothing to resume.
     expect((await sent(plan.threadId)).filter((t) => t.includes(ASKED))).toHaveLength(0);
     const sessions = answerSessions();
     expect(sessions).toHaveLength(1);
     const argv = sessions[0]!;
-    for (const tool of ["Bash", "Read", "Glob", "Grep", "Edit", "Write", "WebFetch", "Task"])
+    expect(argv).toContain('"--tools", ""');
+    for (const tool of [
+      "Bash",
+      "PowerShell",
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Task",
+      "CronCreate",
+      "Monitor",
+      "ToolSearch",
+    ])
       expect(argv).toMatch(new RegExp(`"--disallowedTools", "[^"]*\\b${tool}\\b`));
-    expect(argv).toContain('"--permission-mode", "plan"');
-    expect(argv).toContain('"--strict-mcp-config"');
+    for (const flag of [
+      '"--safe-mode"',
+      '"--disable-slash-commands"',
+      '"--no-session-persistence"',
+      '"--strict-mcp-config"',
+    ])
+      expect(argv).toContain(flag);
+    expect(argv).toContain('"--permission-mode", "dontAsk"');
+    expect(argv).toContain('"--permission-prompts", "none"');
     expect(argv).not.toContain("--mcp-config");
     expect(argv).not.toContain("--resume");
     expect(argv).not.toContain("--permission-prompt-tool");

@@ -206,10 +206,12 @@ pub enum AdapterError {
 #[async_trait]
 pub trait ChatAdapter: Send + Sync {
     fn engine_id(&self) -> &str;
-    /// Whether a [`ChatStart::tools_off`] session can hold the engine to no
-    /// tool at all (F-TK-08). Codex's read-only sandbox still runs commands
-    /// that read the disk, and ACP agents bring their own tools.
-    fn answers_without_tools(&self) -> bool {
+    /// Whether a [`ChatStart::tools_off`] session can hold this engine, at
+    /// `version` (`--version`'s), to no tool at all (F-TK-08): only Claude
+    /// Code from [`claude::TOOLS_OFF_MIN`]. Codex's read-only sandbox still
+    /// runs commands that read the disk, and ACP agents bring their own
+    /// tools.
+    fn answers_without_tools(&self, _version: Option<&str>) -> bool {
         false
     }
     async fn start(

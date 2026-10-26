@@ -2458,6 +2458,34 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 190, and protocol drift with 581 types: `PlanLaunch` gains `leadAnswers`, and `PlanQuestionState` gains `closed`.
     - E2E on db132cfd: m11-2-execute 4 of 4, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-tk08 1 of 1.
     - CHANGELOG: the F-TK-08 bullet under `## Unreleased` reworded; `check-changelog.ts` passes.
+- [x] F-TK-08, the coordinator's security re-review of a0597cc3 (code db132cfd), "merge after must-fixes": N1 to fix, N2 to N6 and the nits with it. Checked against the real Claude Code 2.1.310 that's now in the container.
+  - **Tool-less for real (N1).**
+    - `--tools ""` (no built-in tool), over the denylist: `ALL_TOOLS` now has 2.1.310's tools too (PowerShell, Monitor, CronCreate, CronDelete, CronList, ToolSearch, SendMessage, Workflow, the Task and Team tools, REPL, Config and the rest).
+    - `--disable-slash-commands`, `--permission-prompts none`, and `dontAsk` instead of plan mode, whose reminder asks for a plan file and ExitPlanMode. `CLAUDE_CODE_DISABLE_CRON=1`.
+    - Only from 2.1.310 (`TOOLS_OFF_MIN`): `answers_without_tools(version)` and `ClaudeAdapter::start` refuse an older or unknown version, so its questions come to you and Execute all's check says so.
+    - A tool block starting (`content_block_start`, `Parsed::ToolStart`), an in-band permission request or a tool row kills the process tree at once, before the CLI can run the tool. The answer session kills, never interrupts.
+  - **Nothing kept or loaded (N2, N3).** `--no-session-persistence` (no transcript for the Session library to offer or the search index to read), `--safe-mode` (no CLAUDE.md, plugins, hooks, skills or output styles), and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+  - **A folder per session (N4).** `$DATA/run/answers/ans_<id>`, 0700, made for one session and removed after it, and never marked trusted (`agent_launch_untrusted`).
+  - **Execute all and the switch (N5).** Execute all changes Lead's answers through `supervise()`, so turning them off there escalates and stops a session like the switch. After a start that stopped partway, the check's box starts from the switch.
+  - **Briefings (N6).** A run's first message and its review's write ＠ for @ in the task's text, its comments and the diff, with a line saying so. The user's note stays as written.
+  - **Nits.** A question turned off before its session starts never starts the engine; a session ends after 5 minutes; `dontAsk` (above).
+  - **Not done, and why** (both proposed for after the review):
+    - After a restart, `supervision_for` still supervises a manual run of a plan's task: telling them apart needs a link from an attempt to its plan, which attempts don't keep.
+    - The instructions files are still read for each question from the base commit: a snapshot at Execute all needs a file per plan.
+  - **Checked on 2.1.310**, with four short sessions in a throwaway config folder:
+    - with these flags, `system/init` lists no tool, MCP server, slash command or skill, the mode is `dontAsk` and no memory path;
+    - the answer comes back, and no transcript or file is written;
+    - `@/path` in a message attaches the file even with every tool off, and `＠/path` doesn't;
+    - every flag parses (a wrong one is an error), and `--permission-mode default` still does, for Read threads.
+  - **Tests** (7 new Rust, 1 new TypeScript):
+    - Claude adapter (3): the tools-off argv; an older or unknown version refused before anything runs; a tool block starting becomes `ToolStart` (text and thinking don't, and a thread with tools is unchanged); a `/bin/sh` stand-in that starts a tool block and "runs" it a second later is killed first, and the mark is never written. That test fails without the kill.
+    - `plan::answer` (2): a question already turned off never starts the engine; a Claude Code too old never starts. The tool-use test now checks the session is killed, not interrupted.
+    - `tasks_exec` (1): the briefing and the review's attach no file the task's text, a comment or the diff names.
+    - `plan` (1): Execute all again with the answers off escalates the question Lead is answering and stops its session.
+    - `plan.test.tsx` (1): Execute all again after a partial start keeps the switch as you left it.
+    - E2E-M18-TK-08: the fake Claude Code says 2.1.310, and the answer session's argv has `--tools ""`, safe mode, no commands, no saved session, `dontAsk` and nobody to ask.
+  - **Docs.** PRODUCT_SPEC F-TK-08 (the session, briefings, AC1, AC5); ARCHITECTURE §3.1, §6.8.1 (every tool off, as checked), §9.4 (briefings) and §9.6; tasks.mdx; the CHANGELOG bullet (2.1.310); HUMAN_TODO (what was checked, and what's left for each new version).
+  - **Gate:** pending.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -2608,10 +2636,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Claude Code can be held to that (`--disallowedTools` with every built-in tool, `--strict-mcp-config` with no config). Codex's read-only sandbox still runs commands that read the disk and ACP agents bring their own tools, so they never answer: their questions come to you, and Execute all's check says so before it starts.
   - The first tool row or approval request drops the session's answer, so a tool a later Claude Code adds can't be used to answer.
   - It stops after 10 minutes: an answer needs no tools, so it needs no plan's 30.
+  - Amended by the re-review (N1 to N4): the session has no built-in tool at all (`--tools ""`, over the denylist), no customization (`--safe-mode`), commands, saved session, cron or auto-memory, `dontAsk` with nobody to ask, and a folder of its own that's removed after it and never trusted. It runs only on Claude Code 2.1.310 or newer, the version checked. A tool block starting kills the process before the tool can run, and a session ends after 5 minutes.
 - D-2839: What reaches Lead is read the way an attacker would write it (F-TK-08 AC1, AC3, the review).
   - Every `@` before a word becomes `＠` in the question, the task and the files Lead reads, and in Lead's answer, so none names a file for Claude Code to attach. Only F-TK-08's paths: elsewhere `@` is real text (`@types/node`).
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.
   - The instructions files are read by size first, without replace refs, so a ref a run writes can't swap their text and a huge file is never read whole.
+  - Amended by the re-review (N6): a run's first message and its review's are read the same way, with ＠ for @ in the task's text, its comments and the diff. Checked on Claude Code 2.1.310: `@/path` attaches the file even with every tool off, and `＠/path` doesn't.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

@@ -1,9 +1,10 @@
 //! Lead's answer session (F-TK-08, D-2838): one fresh session of Lead's
 //! engine for each question, with every tool off, no MCP server, no
-//! briefing and an empty folder of its own outside the repository. Its one
-//! message is all it knows: the plan's own task, the question and the
-//! instructions files from the plan's base commit. The first tool row or
-//! approval request ends it, and nothing it wrote is used.
+//! customization or briefing, nothing saved, and an empty folder of its own
+//! outside the repository. Its one message is all it knows: the plan's own
+//! task, the question and the instructions files from the plan's base
+//! commit. A tool starting kills it (the adapter does that before the tool
+//! can run), an approval request ends it, and nothing it wrote is used.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -32,8 +33,9 @@ pub enum AnswerFailed {
 }
 
 /// An answer session's start: Lead's engine, account and model, read-only
-/// in plan mode with every tool off, in `cwd`, and nothing else: no MCP
-/// server, tasks server, briefing or session to resume.
+/// with every tool off (`tools_off`: the adapter picks its most restrictive
+/// mode), in `cwd`, and nothing else: no MCP server, tasks server, briefing
+/// or session to resume.
 pub fn answer_start(
     engine_id: &str,
     program: PathBuf,
@@ -67,8 +69,8 @@ pub fn answer_start(
 
 /// Runs one answer session: `prompt` as its only turn, and the engine's
 /// reply when the turn completes. A tool row or an approval request ends
-/// it with no answer, and so do `limit` and `cancel`. The session is shut
-/// down whatever happens.
+/// it with no answer, and so do `limit` and `cancel`. The session's process
+/// is killed whatever happens, never just interrupted.
 pub async fn run(
     adapter: Arc<dyn ChatAdapter>,
     start: ChatStart,
@@ -76,8 +78,12 @@ pub async fn run(
     limit: Duration,
     cancel: CancellationToken,
 ) -> Result<String, AnswerFailed> {
-    if !start.tools_off || !adapter.answers_without_tools() {
+    if !start.tools_off || !adapter.answers_without_tools(start.engine_version.as_deref()) {
         return Err(AnswerFailed::Unsupported);
+    }
+    // Turned off while it waited: the engine never starts.
+    if cancel.is_cancelled() {
+        return Err(AnswerFailed::Cancelled);
     }
     let (tx, mut rx) = mpsc::channel(256);
     let session = match adapter.start(start, tx).await {
@@ -147,9 +153,6 @@ pub async fn run(
         }
     }
     .await;
-    if outcome.is_err() {
-        let _ = session.interrupt(&turn).await;
-    }
     let _ = session.shutdown().await;
     outcome
 }
@@ -190,8 +193,8 @@ mod tests {
         fn engine_id(&self) -> &str {
             "claude"
         }
-        fn answers_without_tools(&self) -> bool {
-            self.tool_free
+        fn answers_without_tools(&self, version: Option<&str>) -> bool {
+            self.tool_free && tandem_engines::chat::claude::tools_off_supported(version)
         }
         async fn start(
             &self,
@@ -300,7 +303,7 @@ mod tests {
             )],
             Some("opus".into()),
             None,
-            None,
+            Some("2.1.310".into()),
         )
     }
 
@@ -373,9 +376,10 @@ mod tests {
         ]);
         let got = run(e, start(), "q".into(), MINUTES_30, CancellationToken::new()).await;
         assert_eq!(got, Err(AnswerFailed::ToolUse));
+        // Killed, not interrupted: an interrupt gives a tool time to run.
         assert_eq!(
             *log.lock().expect("log"),
-            vec!["start tools_off=true", "turn", "interrupt", "shutdown"]
+            vec!["start tools_off=true", "turn", "shutdown"]
         );
     }
 
@@ -412,6 +416,28 @@ mod tests {
         let (e, _log) = engine(vec![Step::Hang]);
         let got = run(e, start(), "q".into(), MINUTES_30, CancellationToken::new()).await;
         assert_eq!(got, Err(AnswerFailed::TimedOut));
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_5_a_question_turned_off_while_it_waited_never_starts_the_engine() {
+        let (e, log) = engine(vec![end()]);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let got = run(e, start(), "q".into(), MINUTES_30, cancel).await;
+        assert_eq!(got, Err(AnswerFailed::Cancelled));
+        assert!(log.lock().expect("log").is_empty(), "never started");
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_claude_too_old_for_every_tool_off_never_starts() {
+        for version in [None, Some("2.1.309"), Some("2.0.99"), Some("unknown")] {
+            let (e, log) = engine(vec![end()]);
+            let mut old = start();
+            old.engine_version = version.map(str::to_string);
+            let got = run(e, old, "q".into(), MINUTES_30, CancellationToken::new()).await;
+            assert_eq!(got, Err(AnswerFailed::Unsupported), "{version:?}");
+            assert!(log.lock().expect("log").is_empty(), "{version:?}");
+        }
     }
 
     #[tokio::test]
