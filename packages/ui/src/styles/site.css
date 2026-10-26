@@ -13,19 +13,19 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --tn-bg: var(--slate-50);
-    --tn-surface-1: var(--slate-25);
-    --tn-surface-2: var(--slate-0);
-    --tn-surface-3: var(--slate-0);
-    --tn-surface-4: var(--slate-50);
-    --tn-overlay: rgb(15 23 42 / 0.36);
-    --tn-border: rgb(15 23 42 / 0.10);
-    --tn-border-strong: rgb(15 23 42 / 0.20);
-    --tn-divider: rgb(15 23 42 / 0.06);
-    --tn-text: #0f172a;
-    --tn-text-muted: #475569;
-    --tn-text-subtle: #5f6f84;
-    --tn-text-disabled: #94a3b8;
+    --tn-bg: var(--ink-50);
+    --tn-surface-1: var(--ink-25);
+    --tn-surface-2: var(--ink-0);
+    --tn-surface-3: var(--ink-0);
+    --tn-surface-4: var(--ink-50);
+    --tn-overlay: rgb(9 9 11 / 0.32);
+    --tn-border: rgb(9 9 11 / 0.09);
+    --tn-border-strong: rgb(9 9 11 / 0.17);
+    --tn-divider: rgb(9 9 11 / 0.06);
+    --tn-text: #18181b;
+    --tn-text-muted: #4f4f58;
+    --tn-text-subtle: #62626c;
+    --tn-text-disabled: #a1a1aa;
     --tn-text-inverse: #ffffff;
     --tn-accent: var(--teal-700);
     --tn-accent-hover: var(--teal-800);
@@ -40,14 +40,15 @@
     --tn-status-done-text: var(--green-700);
     --tn-status-waiting: var(--amber-700);
     --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
-    --tn-status-done: var(--green-600);
+    --tn-status-done: var(--green-700);
     --tn-status-done-soft: rgb(22 163 74 / 0.10);
-    --tn-status-idle: var(--slate-400);
-    --tn-status-idle-soft: rgb(100 116 139 / 0.12);
-    --tn-status-error: var(--rose-600);
+    --tn-status-idle: var(--ink-400);
+    --tn-status-idle-soft: rgb(113 113 122 / 0.12);
+    --tn-status-error: var(--rose-700);
     --tn-status-error-soft: rgb(225 29 72 / 0.10);
     --tn-success: var(--green-600);
     --tn-warning: var(--amber-600);
+    --tn-warning-text: var(--amber-700);
     --tn-danger: var(--rose-700);
     --tn-danger-hover: var(--rose-800);
     --tn-danger-fg: #ffffff;
@@ -57,10 +58,9 @@
     --tn-diff-del-bg: rgb(225 29 72 / 0.08);
     --tn-diff-del-fg: var(--rose-700);
     --tn-diff-hunk-bg: rgb(2 132 199 / 0.06);
-    --tn-scrollbar: rgb(15 23 42 / 0.20);
+    --tn-scrollbar: rgb(9 9 11 / 0.20);
     --tn-selection: rgb(15 118 110 / 0.20);
-    --tn-kbd-bg: var(--slate-50);
-    --tn-shadow-color: 15 23 42;
+    --tn-kbd-bg: var(--ink-50);
   }
 }
 
@@ -69,21 +69,34 @@
    as 1; site.test.ts fails if the two ever differ. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --tn-edge-top:    rgb(15 23 42 / 0.08);
-    --tn-edge-bottom: rgb(15 23 42 / 0.14);
+    --tn-edge-top:    rgb(9 9 11 / 0.08);
+    --tn-edge-bottom: rgb(9 9 11 / 0.14);
     --tn-edge-hi:     rgb(255 255 255 / 0.90);
     --tn-fill-top:    rgb(255 255 255 / 0.70);
-    --tn-fill-bottom: rgb(241 245 249 / 0.50);
+    --tn-fill-bottom: rgb(244 244 245 / 0.50);
     --tn-glow-a:      rgb(20 184 166 / 0.16);
     --tn-glow-b:      rgb(14 165 233 / 0.10);
-    --tn-ring:        rgb(15 23 42 / 0.08);
+    --tn-ring:        rgb(9 9 11 / 0.08);
     --tn-ring-lit:    rgb(13 148 136 / 0.45);
     --tn-spot:        rgb(15 118 110 / 0.05);
     --tn-ink-a:       var(--teal-700);
     --tn-ink-b:       var(--sky-700);
-    --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
-    --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
-    --tn-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+    --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(9 9 11 / 0.05), 0 2px 6px -2px rgb(9 9 11 / 0.05);
+    --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(9 9 11 / 0.06), 0 16px 32px -14px rgb(9 9 11 / 0.16);
+    --tn-elev-3: 0 0 0 1px rgb(9 9 11 / 0.06), 0 2px 4px rgb(9 9 11 / 0.04), 0 16px 32px -8px rgb(9 9 11 / 0.10), 0 48px 96px -24px rgb(9 9 11 / 0.22);
+    --tn-engine-claude: oklch(0.93 0.035 275);
+    --tn-engine-codex: oklch(0.93 0.035 10);
+    --tn-engine-gemini: oklch(0.93 0.035 85);
+    --tn-engine-copilot: oklch(0.93 0.035 120);
+    --tn-engine-cursor-agent: oklch(0.93 0.035 300);
+    --tn-engine-grok: oklch(0.93 0.035 235);
+    --tn-engine-opencode: oklch(0.93 0.035 55);
+    --tn-engine-droid: oklch(0.93 0.035 140);
+    --tn-engine-amp: oklch(0.93 0.035 205);
+    --tn-engine-aider: oklch(0.93 0.035 330);
+    --tn-engine-kimi: oklch(0.93 0.035 25);
+    --tn-engine-antigravity: oklch(0.93 0.035 315);
+    --tn-engine-kiro: oklch(0.93 0.035 165);
   }
 }
 

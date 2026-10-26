@@ -131,7 +131,7 @@ export function Hud() {
   if (view.phase === "idle") return null;
 
   const card =
-    "fixed left-1/2 top-[calc(var(--titlebar-h)+12px)] z-[var(--z-hud)] w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded-lg border border-border bg-surface-3 shadow-3";
+    "fixed left-1/2 top-[calc(var(--titlebar-h)+12px)] z-[var(--z-hud)] w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded-lg border border-border bg-surface-3 shadow-e3";
 
   if (view.phase === "ended" && view.receipt) {
     const r = view.receipt;

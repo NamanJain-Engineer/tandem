@@ -19,14 +19,14 @@ impl Default for TermColors {
     /// "Tandem Night" (UI_SPEC §1.9).
     fn default() -> Self {
         Self {
-            fg: "#dbe4ef".into(),
-            bg: "#0b111c".into(),
+            fg: "#e4e4e7".into(),
+            bg: "#121214".into(),
             cursor: "#2dd4bf".into(),
         }
     }
 }
 
-/// `#0b111c` → `rgb:0b0b/1111/1c1c` (xterm's 16-bit-per-channel form).
+/// `#121214` → `rgb:1212/1212/1414` (xterm's 16-bit-per-channel form).
 pub fn xparse_color(hex: &str) -> String {
     let h = hex.trim_start_matches('#');
     let channel = |i: usize| h.get(i..i + 2).unwrap_or("00").to_ascii_lowercase();
@@ -146,7 +146,7 @@ mod tests {
         let mut r = QueryResponder::new();
         let c = TermColors::default();
         assert!(r.feed(b"\x1b]11", &c).is_empty());
-        assert_eq!(r.feed(b";?\x1b\\", &c), b"\x1b]11;rgb:0b0b/1111/1c1c\x1b\\");
+        assert_eq!(r.feed(b";?\x1b\\", &c), b"\x1b]11;rgb:1212/1212/1414\x1b\\");
         assert_eq!(r.feed(b"\x1b[c", &c), b"\x1b[?62;22c");
         assert_eq!(r.feed(b"\x1b[5n", &c), b"\x1b[0n");
         assert!(

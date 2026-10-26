@@ -32,14 +32,23 @@ export function useChecksPolling(laneIds: string[], active: boolean) {
 const failedOf = (c: LaneChecks | undefined): PrCheck[] =>
   c?.state === "ready" ? c.checks.filter((x) => x.bucket === "fail") : [];
 
-/** The rail row's summary: failed, running or passed; nothing otherwise. */
+/** A pull request's checks in one word: any failure wins, then anything
+ * still running, then a cancelled run; "passed" only when none of those
+ * (skipped checks don't count against it). */
+export function checksState(checks: PrCheck[]): "failed" | "running" | "cancelled" | "passed" {
+  if (checks.some((c) => c.bucket === "fail")) return "failed";
+  if (checks.some((c) => c.bucket === "pending")) return "running";
+  if (checks.some((c) => c.bucket === "cancel")) return "cancelled";
+  return "passed";
+}
+
+/** The rail row's summary: failed, running, cancelled or passed; nothing otherwise. */
 export function ChecksBadge({ wt }: { wt: WorkspaceSummary }) {
   const checks = useWorktrees((s) => s.checks[wt.id]);
   if (checks?.state !== "ready" || !checks.pr || checks.checks.length === 0) return null;
   const failed = failedOf(checks);
-  const running = checks.checks.some((c) => c.bucket === "pending");
   const open = () => useWorktrees.getState().open({ kind: "checks", worktreeId: wt.id });
-  const state = failed.length > 0 ? "failed" : running ? "running" : "passed";
+  const state = checksState(checks.checks);
   return (
     <Button
       size="sm"
@@ -60,6 +69,8 @@ export function ChecksBadge({ wt }: { wt: WorkspaceSummary }) {
         <span className="inline-flex items-center gap-1 text-fg-subtle">
           <Spinner size={10} /> {t("checks.running")}
         </span>
+      ) : state === "cancelled" ? (
+        <span className="text-fg-muted">{t("checks.cancelled")}</span>
       ) : (
         <span className="inline-flex items-center gap-1 text-success">
           <Check size={12} aria-hidden="true" /> {t("checks.passed")}

@@ -7,6 +7,28 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Changed
+
+- [lin] **A quieter, sharper look.** Neutral ink greys, tighter corners and
+  softer shadows, in both light and dark themes. A working agent
+  shows a filled dot with a slow, breathing halo.
+- [lin] **Engines are easy to tell apart.** Each engine has its own tinted
+  letter tile in pane headers, the rail, the launch grid and threads.
+- [lin] **Pane headers say where you are.** A pane's title names its engine
+  and folder, tabs show the task in a few words, and the header's buttons
+  stay quiet until you need them.
+- [lin] **Launch faster.** The launch grid takes number keys, marks the
+  default engine, and copies an engine's command with one click.
+- [lin] **A calmer status bar.** It shows working agents, checks, usage and
+  ports only while there's something to show.
+- [lin] **Threads summarise their work.** A finished turn says which files it
+  edited, with lines added and removed, and test runs show passed and
+  failed counts.
+- [lin] **A first-run page for Agents.** With no teammates yet, the Agents
+  view helps you start one from a template.
+
 ## 0.11.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

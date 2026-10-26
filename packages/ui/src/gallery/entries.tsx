@@ -2,7 +2,26 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
-import { Badge, Chip } from "../components/Badge";
+import { Badge, Chip, Count } from "../components/Badge";
+import { TimeAgo } from "../components/TimeAgo";
+import { ENGINE_MARKS, EngineGlyph } from "../components/EngineGlyph";
+
+/** The registry's letters (crates/tandem-engines/registry.json). */
+const GALLERY_LETTERS: Record<(typeof ENGINE_MARKS)[number], string> = {
+  claude: "C",
+  codex: "X",
+  gemini: "G",
+  copilot: "Co",
+  "cursor-agent": "Cu",
+  grok: "Gk",
+  opencode: "O",
+  droid: "D",
+  amp: "A",
+  aider: "Ai",
+  kimi: "K",
+  antigravity: "Ag",
+  kiro: "Ki",
+};
 import { WaveformRing } from "../components/WaveformRing";
 import { Button } from "../components/Button";
 import { QRCode } from "../components/QRCode";
@@ -239,6 +258,9 @@ export const galleryEntries: GalleryEntry[] = [
     states: [
       { name: "badges", render: () => (<div className="flex flex-wrap gap-2">{(["neutral", "accent", "working", "waiting", "done", "idle", "error", "outline"] as const).map((v) => <Badge key={v} variant={v} dot={v !== "outline"}>{v}</Badge>)}</div>) },
       { name: "chips", render: () => (<div className="flex gap-2"><Chip label="screenshot.png" onRemove={noop} /><Chip label="src/auth.ts" icon={<Folder size={12} />} selected /></div>) },
+      { name: "quiet", render: () => (<div className="flex flex-wrap items-center gap-3"><Badge variant="waiting" quiet dot>Needs you</Badge><Badge variant="working" quiet dot>Working</Badge><Badge variant="done" quiet>Done</Badge></div>) },
+      { name: "counts", render: () => (<div className="flex items-center gap-2"><Count value={1} /><Count value={12} tone="accent" /><Count value={140} tone="strong" label="140 unread" /></div>) },
+      { name: "time ago", render: () => (<div className="flex items-center gap-3">{[0, 4, 120, 1500].map((m) => <TimeAgo key={m} at={Date.UTC(2026, 9, 20, 12) - m * 60_000} now={Date.UTC(2026, 9, 20, 12)} formatFull={(d) => d.toISOString()} />)}</div>) },
     ],
   },
   {
@@ -249,6 +271,15 @@ export const galleryEntries: GalleryEntry[] = [
       { name: "sizes", render: () => (<div className="flex items-end gap-2">{([20, 24, 32, 48, 72] as const).map((s) => <Avatar key={s} name="Release Lead" id={`tm_${s}`} size={s} />)}</div>) },
       { name: "status", render: () => <Avatar name="Ana" id="tm_ana" size={32} status="waiting" /> },
       { name: "stack", render: () => <AvatarStack people={[{ name: "Ana", id: "a" }, { name: "Bo", id: "b" }, { name: "Cy", id: "c" }, { name: "Di", id: "d" }]} /> },
+    ],
+  },
+  {
+    id: "engine-glyph",
+    title: "EngineGlyph",
+    spec: "§2.28",
+    states: [
+      { name: "engines", render: () => (<div className="flex flex-wrap items-center gap-2">{ENGINE_MARKS.map((id) => <EngineGlyph key={id} engine={id} letters={GALLERY_LETTERS[id]} size={24} label={id} />)}</div>) },
+      { name: "sizes", render: () => (<div className="flex items-end gap-2">{([14, 16, 20, 24, 32] as const).map((s) => <EngineGlyph key={s} engine="claude" letters="C" size={s} />)}<EngineGlyph engine="codex" letters="X" size={20} selected /></div>) },
     ],
   },
   {

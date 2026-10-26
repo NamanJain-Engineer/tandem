@@ -88,6 +88,14 @@ describe("home page", () => {
     }
   });
 
+  it("F-WB-01 D-1895 every engine's tile carries its own tint, as in the app", () => {
+    for (const e of ENGINES) {
+      const entry = registry.find((r) => r.label === e);
+      expect(home, e).toContain(`data-engine="${entry?.id}"`);
+      expect(home, e).toContain(`var(--tn-engine-${entry?.id})`);
+    }
+  });
+
   it("F-WB-01 the video and screenshots name the build they show (H1)", () => {
     const demo = renderToStaticMarkup(<DemoPage />);
     const caption = /<figcaption[^>]*>(Every shot of the app[^<]*)<\/figcaption>/.exec(demo)?.[1] ?? "";
