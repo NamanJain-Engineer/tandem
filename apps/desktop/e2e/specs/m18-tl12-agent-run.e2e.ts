@@ -71,11 +71,9 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
   it("F-TL-12.7 the pane asks first by name; Allow once runs it and the value comes back masked", async () => {
     await sendToPane(agent, "/sh echo R1; vibezeo run -- printenv API_KEY\r");
     await $(banner()).waitForDisplayed({ timeout: 15_000 });
-    const summary = String(
-      await $(`${banner()} [data-testid="pane-approval-summary"]`).getProperty("textContent"),
-    );
+    const summary = String(await $(`${banner()} [data-testid="run-line"]`).getProperty("textContent"));
     expect(summary).toContain("printenv API_KEY");
-    expect(summary).toContain("stripe-test");
+    expect(summary).toContain("API_KEY (stripe-test)");
     expect(summary).not.toContain(VALUE);
     await $(`${banner()} [data-testid="pane-approval-once"]`).click();
     expect(await exitAfter(agent, "R1")).toBe(0);
