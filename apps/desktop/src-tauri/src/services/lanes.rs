@@ -1426,6 +1426,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_cd_23_a_multi_repo_worktree_starts_untrusted_at_a_reused_path() {
+        let (_dir, store, git, ws, folder) = multi_fixture().await;
+        let data = crate::services::lsp::data_dir().expect("data dir");
+        let path = folder.join(".tandem/worktrees/tidy");
+        std::fs::create_dir_all(&path).expect("left behind");
+        crate::services::lsp::trust(data, &path).expect("trust");
+        std::fs::remove_dir_all(&path).expect("deleted outside the app");
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("lane");
+        assert_eq!(PathBuf::from(&lane.root), path);
+        assert!(!crate::services::lsp::is_trusted(data, &path));
+    }
+
+    #[tokio::test]
     async fn f_cd_22_1_2_a_worktree_across_both_repositories() {
         let (_d, store, git, ws, root) = multi_fixture().await;
         assert_eq!(

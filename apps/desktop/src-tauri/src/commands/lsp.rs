@@ -147,16 +147,16 @@ fn scope_for(root: &Path, sandbox_on: bool) -> TrustScope {
     }
 }
 
+async fn sandbox_on(app: &AppState) -> bool {
+    tandem_store::repo::settings::get(&app.store, tandem_core::settings::SettingKey::AgentSandbox)
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .is_some_and(|v| v == "workspace")
+}
+
 async fn scope(app: &AppState, root: &Path) -> TrustScope {
-    let sandbox_on = tandem_store::repo::settings::get(
-        &app.store,
-        tandem_core::settings::SettingKey::AgentSandbox,
-    )
-    .await
-    .ok()
-    .and_then(|v| v.as_str().map(str::to_string))
-    .is_some_and(|v| v == "workspace");
-    scope_for(root, sandbox_on)
+    scope_for(root, sandbox_on(app).await)
 }
 
 /// Whether a file's server may start.
@@ -218,7 +218,13 @@ fn quiet_doc(message: &str) -> LspDocument {
 
 /// The file's target, if its server may run now; else what to answer.
 enum Ready {
-    Go(Target, std::sync::Arc<tandem_pty::env::LoginEnv>),
+    /// With the epoch its trust was decided in: a server it starts after a
+    /// shutdown (the sandbox switch) or a forget since isn't kept.
+    Go(
+        Target,
+        std::sync::Arc<tandem_pty::env::LoginEnv>,
+        lsp::Epoch,
+    ),
     Untrusted(&'static ServerSpec, bool),
     Missing(&'static ServerSpec),
     Elsewhere(Where),
@@ -230,6 +236,8 @@ async fn ready(app: &AppState, context: &FileContext, path: String) -> Result<Re
         other => return Ok(Ready::Elsewhere(other)),
     };
     let login = app.terminals.login_env().await;
+    // Before the trust is decided: a sandbox switch after this is caught.
+    let epoch = lsp::global().epoch();
     let scope = scope(app, &t.root).await;
     // The probe (`rust-analyzer --version`) blocks: off the runtime. It's
     // cached, so the server's own start finds the answer.
@@ -243,7 +251,7 @@ async fn ready(app: &AppState, context: &FileContext, path: String) -> Result<Re
         None => false,
     };
     Ok(match gate(&app.data, &scope, &t.path, installed) {
-        Gate::Go => Ready::Go(t, login),
+        Gate::Go => Ready::Go(t, login, epoch),
         Gate::Untrusted(spec) => Ready::Untrusted(spec, scope.sandboxed),
         Gate::Missing(spec) => Ready::Missing(spec),
     })
@@ -257,7 +265,9 @@ pub async fn lsp_sync(
     text: String,
 ) -> Result<LspDocument, IpcError> {
     match ready(&app, &context, path).await? {
-        Ready::Go(t, login) => lsp::global().sync(&t.root, &t.path, &text, &login).await,
+        Ready::Go(t, login, epoch) => {
+            lsp::with_epoch(epoch, lsp::global().sync(&t.root, &t.path, &text, &login)).await
+        }
         Ready::Untrusted(spec, sandboxed) => Ok(lsp::untrusted_doc(spec, sandboxed)),
         Ready::Missing(spec) => Ok(lsp::missing_doc(spec)),
         Ready::Elsewhere(Where::Outside) => Ok(quiet_doc(OUTSIDE)),
@@ -275,10 +285,12 @@ pub async fn lsp_definition(
     character: u32,
 ) -> Result<Vec<LspLocation>, IpcError> {
     match ready(&app, &context, path.clone()).await? {
-        Ready::Go(t, login) => {
-            let found = lsp::global()
-                .definition(&t.root, &t.path, &text, line, character, &login)
-                .await?;
+        Ready::Go(t, login, epoch) => {
+            let found = lsp::with_epoch(
+                epoch,
+                lsp::global().definition(&t.root, &t.path, &text, line, character, &login),
+            )
+            .await?;
             Ok(back(&t, found))
         }
         // The same-file fallback needs no server.
@@ -296,10 +308,12 @@ pub async fn lsp_references(
     character: u32,
 ) -> Result<Vec<LspLocation>, IpcError> {
     match ready(&app, &context, path).await? {
-        Ready::Go(t, login) => {
-            let found = lsp::global()
-                .references(&t.root, &t.path, &text, line, character, &login)
-                .await?;
+        Ready::Go(t, login, epoch) => {
+            let found = lsp::with_epoch(
+                epoch,
+                lsp::global().references(&t.root, &t.path, &text, line, character, &login),
+            )
+            .await?;
             Ok(back(&t, found))
         }
         _ => Ok(Vec::new()),
@@ -316,10 +330,12 @@ pub async fn lsp_hover(
     character: u32,
 ) -> Result<Option<String>, IpcError> {
     match ready(&app, &context, path).await? {
-        Ready::Go(t, login) => {
-            lsp::global()
-                .hover(&t.root, &t.path, &text, line, character, &login)
-                .await
+        Ready::Go(t, login, epoch) => {
+            lsp::with_epoch(
+                epoch,
+                lsp::global().hover(&t.root, &t.path, &text, line, character, &login),
+            )
+            .await
         }
         _ => Ok(None),
     }
@@ -356,20 +372,32 @@ pub async fn lsp_files_changed(
             by_root.entry(t.root).or_default().push(t.path);
         }
     }
-    for (r, rels) in by_root {
-        // The same trust as a request: an untrusted folder's servers hear
-        // nothing (one that started under a trust since withdrawn included).
-        if !lsp::is_trusted(&app.data, &scope(&app, &r).await.key) {
-            continue;
-        }
-        lsp::global().changed(&r, &rels).await;
-    }
+    let sandbox_on = sandbox_on(&app).await;
+    feed_changes(lsp::global(), &app.data, sandbox_on, by_root).await;
     Ok(())
 }
 
-/// Trusts the file's repository for language servers (D-2580), or a
-/// sandboxed worktree on its own: from the main window, after the native
-/// confirm.
+/// Tells each folder's servers about its changed files: only folders with
+/// a server running (cheap), and then only trusted ones, as a request is
+/// (one started under a trust since withdrawn hears nothing). Returns the
+/// folders told.
+async fn feed_changes(
+    lsp: &lsp::Lsp,
+    data: &DataDir,
+    sandbox_on: bool,
+    by_root: std::collections::BTreeMap<PathBuf, Vec<String>>,
+) -> Vec<PathBuf> {
+    let mut told = Vec::new();
+    for (r, rels) in by_root {
+        if !lsp.runs_in(&r).await || !lsp::is_trusted(data, &scope_for(&r, sandbox_on).key) {
+            continue;
+        }
+        lsp.changed(&r, &rels).await;
+        told.push(r);
+    }
+    told
+}
+
 /// The native confirm's title and body for trusting `name` (D-2580).
 fn confirm_text(name: &str, sandboxed: bool, sandbox_on: bool) -> (String, String) {
     const RUNS: &str = "rust-analyzer, typescript-language-server, pyright and gopls can run";
@@ -401,6 +429,9 @@ fn confirm_text(name: &str, sandboxed: bool, sandbox_on: bool) -> (String, Strin
     (format!("Trust {name} for language servers?"), body)
 }
 
+/// Trusts the file's repository for language servers (D-2580), or a
+/// sandboxed worktree on its own: from the main window, after the native
+/// confirm.
 #[tauri::command]
 pub async fn lsp_trust(
     app_handle: AppHandle,
@@ -590,6 +621,66 @@ mod tests {
         let (title, wt) = confirm_text("fix", true, true);
         assert_eq!(title, "Trust the worktree fix for language servers?");
         assert!(wt.starts_with("The agent's code will run outside its sandbox."));
+    }
+
+    /// Serves the fake language server in-process.
+    struct FakeSpawner;
+
+    impl lsp::Spawner for FakeSpawner {
+        fn available(&self, _: &ServerSpec, _: &tandem_pty::env::LoginEnv) -> bool {
+            true
+        }
+        fn spawn(
+            &self,
+            _: &ServerSpec,
+            _: &Path,
+            _: &tandem_pty::env::LoginEnv,
+        ) -> Result<lsp::Spawned, String> {
+            let (client_side, server_side) = tokio::io::duplex(1 << 20);
+            let (sr, sw) = tokio::io::split(server_side);
+            tokio::spawn(tandem_engines::fake_lsp::serve(sr, sw));
+            let (cr, cw) = tokio::io::split(client_side);
+            Ok(lsp::Spawned {
+                reader: Box::new(cr),
+                writer: Box::new(cw),
+                stderr: None,
+                child: None,
+                tree: None,
+                on_stop: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_changed_files_reach_only_trusted_folders_with_a_server() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let base = std::fs::canonicalize(tmp.path()).expect("canonical");
+        let data = DataDir::at(base.join("data")).expect("data dir");
+        let (trusted, untrusted, idle) = (base.join("a"), base.join("b"), base.join("c"));
+        for d in [&trusted, &untrusted, &idle] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        lsp::trust(&data, &trusted).expect("trust");
+        lsp::trust(&data, &idle).expect("trust");
+        let lsp = lsp::Lsp::new(Box::new(FakeSpawner));
+        let login = tandem_pty::env::LoginEnv {
+            vars: Default::default(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        };
+        let spec = lsp::spec_for("main.py").expect("spec");
+        for d in [&trusted, &untrusted] {
+            lsp.client(d, spec, &login).await.expect("server");
+        }
+        let by_root = [&trusted, &untrusted, &idle]
+            .into_iter()
+            .map(|d| (d.clone(), vec!["main.py".to_string()]))
+            .collect();
+        assert_eq!(
+            feed_changes(&lsp, &data, false, by_root).await,
+            vec![trusted.clone()]
+        );
+        lsp.shutdown().await;
     }
 
     #[test]

@@ -1083,9 +1083,17 @@ impl Lsp {
         login: &LoginEnv,
     ) -> Result<Arc<Client>, NoServer> {
         let root = &norm(root);
+        // The epoch the request's trust was decided in ([`with_epoch`]), or
+        // now: a forget or shutdown after it is seen below.
+        let epoch = EPOCH.try_with(|e| *e).unwrap_or_else(|_| self.epoch());
         let key: Key = (root.clone(), spec.program);
         let gate = lock(&self.gates).entry(key.clone()).or_default().clone();
         let _starting = gate.lock().await;
+        // Waiting on the gate (another start, up to 30 s) may have outlasted
+        // the trust the request was let through with.
+        if let Some(why) = self.superseded(root, epoch) {
+            return Err(why);
+        }
         // A server that stopped working is taken out, and stopped (its tree
         // killed) outside the lock, so it never runs on uncounted.
         let dead = {
@@ -1104,10 +1112,6 @@ impl Lsp {
             r.client.stop().await;
             self.failed(&key, why);
         }
-        // Read before the checks below: a forget or shutdown after this
-        // point is seen when the new server would be kept.
-        let generation = self.generation.load(Ordering::SeqCst);
-        let forgets = self.forgets.load(Ordering::SeqCst);
         // A folder being removed (or gone) gets no new server.
         if !root.is_dir() || self.closing(root) {
             return Err(NoServer {
@@ -1166,13 +1170,10 @@ impl Lsp {
             let mut running = self.running.lock().await;
             // Its folder was forgotten, or every server stopped, while it
             // started: it isn't kept.
-            if self.superseded(root, generation, forgets) {
+            if let Some(why) = self.superseded(root, epoch) {
                 drop(running);
                 client.stop().await;
-                return Err(NoServer {
-                    state: LspState::None,
-                    message: "This folder is going away".into(),
-                });
+                return Err(why);
             }
             // The one used longest ago makes room.
             let mut evicted = Vec::new();
@@ -1230,9 +1231,29 @@ impl Lsp {
     /// returned guard drops (when the removal has finished).
     pub async fn begin_removal(&self, root: &Path) -> Closing<'_> {
         let root = norm(root);
+        // The guard exists as the count goes up, so a cancelled or failed
+        // forget never leaves the folder closed for good.
         *lock(&self.closing).entry(root.clone()).or_default() += 1;
+        let closing = Closing {
+            lsp: self,
+            root: root.clone(),
+        };
         self.forget(&root).await;
-        Closing { lsp: self, root }
+        closing
+    }
+
+    /// What a request's trust was decided in: take it before deciding.
+    pub fn epoch(&self) -> Epoch {
+        Epoch {
+            generation: self.generation.load(Ordering::SeqCst),
+            forgets: self.forgets.load(Ordering::SeqCst),
+        }
+    }
+
+    /// Whether any server runs for `root` (a cheap check before work).
+    pub async fn runs_in(&self, root: &Path) -> bool {
+        let root = norm(root);
+        self.running.lock().await.keys().any(|(r, _)| *r == root)
     }
 
     /// `root` is (inside) a folder being removed.
@@ -1242,15 +1263,23 @@ impl Lsp {
             .any(|gone| root.starts_with(gone))
     }
 
-    /// A start that read `generation` and `forgets` before beginning isn't
-    /// kept: every server stopped since, or a folder covering `root` is
-    /// being removed or was forgotten since.
-    fn superseded(&self, root: &Path, generation: u64, forgets: u64) -> bool {
-        self.generation.load(Ordering::SeqCst) != generation
-            || self.closing(root)
-            || lock(&self.forgotten)
-                .iter()
-                .any(|(n, gone)| *n > forgets && root.starts_with(gone))
+    /// Why a start in `epoch` isn't kept, if it isn't: every server
+    /// stopped since (quit, the sandbox setting changed), or a folder
+    /// covering `root` is being removed or was forgotten since.
+    fn superseded(&self, root: &Path, epoch: Epoch) -> Option<NoServer> {
+        if self.generation.load(Ordering::SeqCst) != epoch.generation {
+            return Some(NoServer {
+                state: LspState::None,
+                message: RESTARTED.into(),
+            });
+        }
+        let forgotten = lock(&self.forgotten)
+            .iter()
+            .any(|(n, gone)| *n > epoch.forgets && root.starts_with(gone));
+        (forgotten || self.closing(root)).then(|| NoServer {
+            state: LspState::None,
+            message: "This folder is going away".into(),
+        })
     }
 
     /// Stops servers idle for `idle` or longer, and drops dead ones, which
@@ -1333,7 +1362,28 @@ impl Lsp {
     }
 }
 
+/// Said to a request whose trust was decided before every server stopped.
+pub const RESTARTED: &str = "Language servers restarted: the sandbox setting changed";
+
+/// When a request's trust was decided ([`Lsp::epoch`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Epoch {
+    generation: u64,
+    forgets: u64,
+}
+
+tokio::task_local! {
+    static EPOCH: Epoch;
+}
+
+/// Runs a request with the epoch its trust was decided in, so a server it
+/// would start after a shutdown or forget since isn't kept.
+pub async fn with_epoch<F: std::future::Future>(epoch: Epoch, f: F) -> F::Output {
+    EPOCH.scope(epoch, f).await
+}
+
 /// A folder being removed: no server starts in it until this drops.
+#[must_use = "the folder reopens to servers when this drops"]
 pub struct Closing<'a> {
     lsp: &'a Lsp,
     root: PathBuf,
@@ -1475,6 +1525,7 @@ pub fn data_dir() -> Option<&'static DataDir> {
 
 /// A worktree being removed: its servers stop (and any starting), none
 /// starts until the returned guard drops, and its own trust goes.
+#[must_use = "the folder reopens to servers when this drops"]
 pub async fn forget_worktree(root: &Path) -> Closing<'static> {
     let closing = global().begin_removal(root).await;
     if let Some(data) = data_dir() {
@@ -2208,6 +2259,78 @@ mod tests {
             assert_eq!(lsp.count().await, 0, "{how}");
             assert_eq!(stops.load(Ordering::SeqCst), 1, "{how}");
         }
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_request_let_through_before_a_sandbox_switch_starts_nothing_after_it() {
+        let (_t, root) = folder();
+        let parked = ParkedSpawner::default();
+        let (release, stops) = (parked.release.clone(), parked.stops.clone());
+        let lsp = Arc::new(Lsp::new(Box::new(parked)));
+        // The first start parks in initialize, holding the folder's gate.
+        let first = parked_start(&lsp, &root).await;
+        // A hover's trust is decided now, under the old setting; it waits
+        // on the gate.
+        let epoch = lsp.epoch();
+        let (l, r) = (lsp.clone(), root.clone());
+        let second = tokio::spawn(async move {
+            with_epoch(
+                epoch,
+                l.client(&r, spec_for("main.py").expect("spec"), &login()),
+            )
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        // The sandbox is turned on: every server stops.
+        lsp.shutdown().await;
+        release.notify_one();
+        let first = first.await.expect("join").err().expect("first not kept");
+        assert_eq!(first.message, RESTARTED);
+        let second = tokio::time::timeout(Duration::from_secs(5), second)
+            .await
+            .expect("it doesn't start a server")
+            .expect("join")
+            .err()
+            .expect("second not kept");
+        assert_eq!(second.message, RESTARTED);
+        assert_eq!(lsp.count().await, 0);
+        assert_eq!(
+            lsp.starts.load(Ordering::SeqCst),
+            1,
+            "the second never spawned"
+        );
+        assert_eq!(stops.load(Ordering::SeqCst), 1);
+        // A request decided after the switch starts one as usual.
+        release.notify_one();
+        assert!(lsp
+            .client(&root, spec_for("main.py").expect("spec"), &login())
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_forgetting_a_covering_folder_stops_a_start_inside_it() {
+        let (_t, root) = folder();
+        let inner = root.join("sub");
+        std::fs::create_dir_all(&inner).expect("mkdir");
+        let parked = ParkedSpawner::default();
+        let (release, stops) = (parked.release.clone(), parked.stops.clone());
+        let lsp = Arc::new(Lsp::new(Box::new(parked)));
+        let task = parked_start(&lsp, &inner).await;
+        lsp.forget(&root).await;
+        release.notify_one();
+        assert!(task.await.expect("join").is_err());
+        assert_eq!(lsp.count().await, 0);
+        assert_eq!(stops.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_no_server_starts_in_a_worktree_while_its_discard_runs() {
+        let (_t, root) = folder();
+        let closing = forget_worktree(&root).await;
+        assert!(global().closing(&root));
+        drop(closing);
+        assert!(!global().closing(&root));
     }
 
     #[test]

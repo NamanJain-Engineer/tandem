@@ -141,6 +141,12 @@ pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Re
         .await
         .ok()
         .map(|ws| crate::services::files::local_root(&ws));
+    // F-CD-23: its language servers stop (and any starting), and none
+    // starts there until the removal has finished.
+    let _closing = match &root {
+        Some(root) => Some(crate::services::lsp::global().begin_removal(root).await),
+        None => None,
+    };
     let removed = workspaces::remove(&state.store, &state.terminals, &id).await?;
     // Its agents' sessions end and its claims go (F-TK-05): file IO.
     let (terminals, tasks) = (state.terminals.clone(), state.tasks.clone());
@@ -151,9 +157,11 @@ pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Re
     if let Err(e) = ended {
         tracing::warn!(error = %e, "a removed workspace's sessions didn't all end");
     }
-    // F-CD-23: its language servers stop with it.
-    if let Some(root) = root {
-        crate::services::lsp::global().forget(&root).await;
+    // F-CD-23: its worktrees' own trust goes with them, so a folder made
+    // again at one of their paths (by hand, or by an agent in the main
+    // checkout) asks again. The repository keeps its own.
+    if let Some(root) = &root {
+        crate::services::lsp::untrust(&state.data, &root.join(tandem_git::lanes::WORKTREES_DIR));
     }
     Ok(())
 }
