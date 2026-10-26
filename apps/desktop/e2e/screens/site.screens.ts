@@ -33,18 +33,22 @@ const repo = new URL("../../../..", import.meta.url).pathname.replace(/\/$/, "")
 const out = process.env.TANDEM_SCREENS_DIR ?? join(repo, "apps/web/public/screens");
 const enginePath = process.env.TANDEM_SCREENS_PATH ?? "/opt/node22/bin";
 
-/** The debug build's DEV badge, which release builds don't show (D-1838). */
-async function hideDevBadge(): Promise<void> {
+/** What this harness's build shows and the download never does: the debug
+ * build's DEV badge (D-1838), and the status bar's connection state, which
+ * only a hosted build has; the early-access download shows none (D-816). */
+async function hideNotInDownload(): Promise<void> {
   await browser.execute(() => {
     for (const el of Array.from(document.querySelectorAll("header span, [data-tauri-drag-region] span"))) {
       if (el.textContent === "DEV" && el.children.length === 0) (el as HTMLElement).style.display = "none";
     }
+    const connection = document.querySelector<HTMLElement>('[data-testid="connection-state"]');
+    if (connection) connection.style.display = "none";
   });
 }
 
 async function shot(name: string): Promise<void> {
   await settled();
-  await hideDevBadge();
+  await hideNotInDownload();
   await browser.pause(600);
   await browser.saveScreenshot(join(out, `${name}.png`));
 }
