@@ -62,7 +62,7 @@
   - A motion system, accent discipline and the download's real button (D-1874 to D-1876).
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
-  - The site's dark theme on ink until app-ui's ink semantics land (D-1883, D-1884).
+  - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -2113,6 +2113,14 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **Its caption** says "Scene from Vibezeo 0.10.0, simplified. New in 0.9.0." (`Scene`'s `since`), so the later build drawn on 0.9.0's page reads as intended.
   - **Left:** the scenes' styles still load on every version page. The App Router bundles a route's CSS once for all of `[version]`'s pages, and splitting 0.9.0 into its own route isn't worth the routing risk for a stylesheet this small.
 
+- D-1887: the site meets 0.12.0's new look (D-875; the design lead's 0.12.0 QA should-fix, on `chain26` b053a1cc with app-ui's tokens and `EngineGlyph`).
+  - **Engine marks:** the scenes' monograms are the app's tiles: the registry's letters in fg on a 4 px tile in the engine's tint (`engineTint`, `--tn-engine-<id>`), at 80 % until their pane has focus. The hero's orbit carries each tile alone at its own 4 px radius, without the glass circle round it.
+  - **T2 in the scenes:** the ask, the comment, the toast and the Land dialog take the brand's elevations (`--tn-elev-2`, `--tn-elev-3` with the lit top edge), and the Dashboard and review cards `--tn-elev-1`.
+  - **T3 in the scenes:** a review risk is an outlined tag, as the review queue's `Badge variant="outline"`. A check's result is text. "Warned both agents" is a status (a done StatusDot and its label), as the app's toast says it, not a filled pill. The rail's radar mark stays a waiting badge, because the app still draws it that way.
+  - **The version pages' Added cards:** each opens with its title and its one-sentence lead in fg, and the detail follows in fg-muted (`addedCard` in lib/changelog.ts).
+  - **The interim dark-ink block (D-1883) is gone:** app-ui's ink semantics are in tokens.css, and brand.css's ring is ink, so the site's dark theme is the app's own.
+  - **demo-embed.spec** follows app-ui's D-2605: the demo opens in Code mode, so the spec switches to Thread mode before it looks for the ready message, on desktop, on a phone and after a reset.
+
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2178,6 +2186,10 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 54/54, design-shots on eight pages (64 captures, all ok).
   - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.89–1.90 s; the rest 0.99–1.00 / 1.36–1.81 s; blocking time 0 ms, CLS at most 0.001.
   - The gate: passed (TypeScript 1,652 tests: web 137, ui 419, desktop 794, api 234, remote 33, mobile 21, protocol 14; Rust 2,344; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
+- The 0.12.0 look (D-1887), on `chain26` (b053a1cc; a fast-forward). Tests first: scenes.test (tinted 4 px tiles in every scene; T2 elevations; T3 tags, text and status), home.test (the orbit's tiles alone), changelog.test (`addedCard` and the 0.9.0 card's lead in fg), site.test (no interim dark block; no slate in the dark theme). The 0.12.0 packages aren't in `public/downloads` yet, so stand-ins (the 0.11.0 files under 0.12.0 names, with their sums) ran the checks, uncommitted.
+  - Checks: web vitest 142/142, ui 462, `build:site` (58 pages), site Playwright 54/54, design-shots on eight pages (64 captures, all ok, teal 0–2).
+  - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.90 s; the rest 0.99–1.00 / 1.38–1.81 s; blocking time 0 ms, CLS at most 0.001.
+  - The gate: passed (TypeScript 1,735 tests: web 142, ui 462, desktop 829, api 234, remote 33, mobile 21, protocol 14; Rust 2,358; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift). The disk filled twice on the way: `prune-target.py 1` and the cross targets' builds freed the first, and the Mac check ran again on its own after the Linux test build was removed.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
