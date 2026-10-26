@@ -28,18 +28,27 @@
     - the footer's "Built with Claude" links `/about/#claude`, which has its principles;
     - in a real browser at 1440, home is 7,986 px in both themes, on rgb(250, 250, 250) and rgb(9, 9, 11), with the effects on and the hero's scene live.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.10.0** (24 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on 2cb11440).
-  - **Files:** `Vibezeo_0.10.0_amd64.deb` (SHA-256 `c0085004…4ad9c2`) and `Vibezeo-0.10.0-1.x86_64.rpm` (SHA-256 `755006d1…94b35bb`), 54.2 MB each.
-  - **Vibezeo is free** (D-869; `free-for-everyone`, D-2900 to D-2913): everything that runs on the computer is unlimited with no account:
-    - panes, workspaces, teammates, plugin connections and accounts per engine;
-    - six threads side by side, and every chat engine;
-    - routines (in the background too), task runs, the Night Shift and session search, with no sign-in.
-  - **No plan UI:** the plans dialog, checkout, See plans, Upgrade, the Pro badges, the limit cards and the rail's plan footer are gone.
-  - **Hosted features** say "Comes with Vibezeo accounts" (DESIGN §9.5) and stay off.
-  - **D-871:** the Dictate widget no longer sends events to the main window.
-  - **The site:** the post "What's new in 0.10.0", and copy with no "this release" or "the next". The "New in" tiles stay 0.9.0's, because 0.10.0 only changes things.
-  - Verified: see "Release 0.10.0" in the log below.
-  Deployed by #97 (fb3fef94) on 25 October; `main` came back into `product-m0-m5` with this record.
+- Release: **0.11.0** (25 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on e50c1ee7; D-873).
+  - **Files:** `Vibezeo_0.11.0_amd64.deb` (SHA-256 `a56b8941…3481c525`) and `Vibezeo-0.11.0-1.x86_64.rpm` (SHA-256 `3e7822e3…cfa3f54b`), 54.8 MB each.
+  - **chain25's six M18 features:**
+    - the resource governor (F-EX-06);
+    - agent-proof secrets (F-TL-12);
+    - multi-repo workspaces (F-CD-22);
+    - any ACP agent in Thread mode (F-EN-10);
+    - claims (F-TK-05);
+    - Plan with Lead (F-TK-06).
+  - **Changed and fixed:**
+    - a task runs once at a time;
+    - a review counts only its own reviewer's verdict;
+    - ACP's "Allow once" never picks allow-always;
+    - notices reach panes in hidden tabs.
+  - **The site:**
+    - `site-motion`'s polish (D-1886);
+    - D-2917's /credits;
+    - "New in 0.11.0", the roadmap and the post "What's new in 0.11.0";
+    - 3,996 tests and 152 E2E spec files.
+  - Verified: see "Release 0.11.0" in the log below.
+  - Previous release: 0.10.0 (24 October; Vibezeo is free, D-869), deployed by #97 (fb3fef94).
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
@@ -311,7 +320,7 @@ Built on branch `product-research`, after F-EX-06: the first slice of bold bet B
 - F-TL-11: spec, policy and detection (7 tests, one against the test machine's real `bwrap` 0.9.0), the worktree policy (1), the chip and setting (3 vitest cases), docs and E2E-M18-TL11 (1 case). Run on its own, the spec passes; run beside E2E-M18-AC09 in parallel workers, it once met that run's leftover pane in the "still running" dialog. The E2E found nothing in the product. Review fixes (D-2479 to D-2481): a real worktree test (commits work; no hook through a missing `.git/hooks` or `core.hooksPath`) and the builder's case (1); the E2E checks the whole `~/.ssh` and a missing hooks folder, and E2E-M18-TL11 and E2E-M18-AC09 pass in both orders (a copy of TL11 run first, then AC09, then TL11). The E2E's `$HOME` lives under `/tmp`, which the sandbox shares, so `$HOME` writes are checked by the real-bwrap Rust test only.
 
 ## M18 · Free for everyone (`free-for-everyone`)
-Built on branch `free-for-everyone` (from `release-0.9.0`, c5b98702) for the owner's decision of 24 October 2026 (D-869): Vibezeo is free, with no paid plans, and every feature that runs on the person's computer is free and unlimited from the release after 0.9.0. Decisions D-2900 to D-2919 (D-2900 to D-2916 used).
+Built on branch `free-for-everyone` (from `release-0.9.0`, c5b98702) for the owner's decision of 24 October 2026 (D-869): Vibezeo is free, with no paid plans, and every feature that runs on the person's computer is free and unlimited from the release after 0.9.0. Decisions D-2900 to D-2919 (D-2900 to D-2917 used).
 - [x] 1. Limits. `Limits::free()` (`crates/tandem-core/src/entitlement.rs`), `LIMITS.free` (`packages/protocol/src/plans.ts`) and the shared fixture are the local-unlocked set: no limit on panes, workspaces, teammates, plugin connections or accounts per engine; six threads side by side; every chat engine; routines, background routines, task runs and session search on; the hosted features (cloud STT, Enhance, Conductor, Auto, admin, credit packs, dictionary sync, the phone relay) off. `LIMITS.pro` and `LIMITS.team` are never less than `free` (pro's 64-pane soft cap is gone). Routines, task runs and the Night Shift no longer need sign-in (D-2902), so the offline build (`TANDEM_HOSTED=0`) runs them with no account.
 - [x] 2. App UI. The plans dialog (UI-120/121), "See plans" (account menu, palette `billing.plans`, gates), Pro badges, upgrade prompts, the account menu's plan badge, the past-due banner and the Account page's plan, billing and credit-pack buttons are gone, with the checkout path (`BillingTarget::Upgrade`, `ApiClient::checkout`) and the Dictate toast's `see_plans` action. The welcome card is "Free · no account · nothing sent to Vibezeo" (DESIGN §9.3) with no callout; the rail footer reads "Free", "Offline" or "{n} credits". Hosted features say "Comes with Vibezeo accounts" (a shared `ComesWithAccounts`, tooltips, Conductor's HUD error); generic limit gates that a signed token could still trip use neutral copy ("This account runs up to {n} live panes", "… is turned off for this account").
 - [x] 3. The demo's `ENTITLEMENT` is `LIMITS.free`; routines, task runs and the Night Shift say they work in the app (D-2905).
@@ -350,6 +359,8 @@ Built on branch `free-for-everyone` (from `release-0.9.0`, c5b98702) for the own
 - D-2914: Follow-ups after 0.10.0, from the coordinating session's reviews, on `free-for-everyone` restarted from `product-m0-m5` (9efa06e3; the branch's earlier work merged in #96). The hosted build: an out-of-credits Conductor call ends with its message and no "Buy credits" (nothing to buy), and offline mode no longer counts down "Sign in within {n} days" (DESIGN §5.5 rule 4): `AuthState.offline_days_left` and `OFFLINE_DAYS` are gone (nothing ever enforced the 14 days), with the banner and Settings › Account's countdown. Dead code: `BillingTarget::Portal` and `Credits`, `ApiClient::portal` and its fakes (`billing_open` opens only the web account page), the telemetry allowlist's `upgrade_sheet_opened` and `limit_hit`, `PluginCard.limitReached` (the core's connect check stays), `hostedTooltip`, `banner.offlineMode`/`signedOut`/`signIn`, `conductor.error.buyCredits`, the gallery's "Free includes 3 workspaces" callout and four stale comments. The account portal's billing page (not deployed) sells nothing: free accounts see "There's nothing to buy…", and web E2E-M1-2's mock upgrade became a check that it sells nothing (the API's checkout route keeps its API tests). The demo opens "Tell me when accounts open"'s email (`mailto:`), and still no other scheme.
 - D-2915: Test gaps closed. E2E-M18-RT06 runs the Night Shift offline with no account; E2E-M11-6 checks the run reaches the workspace lookup (`not_found`), not just that it isn't refused for a plan; `download.test.tsx` finds Settings' free line on Advanced instead of falling back to `en.json`; the plugins test clicks Connect past a connection limit and sees the core's reason. Web E2E-M1-3 and E2E-M13-7 expected the old Free `panes: 4` after a lapse or a refund; they now expect no pane limit.
 - D-2916: Specs follow the code: UI_SPEC UI-114's mock (no plan, price or billing), the Settings rail mock (no "PRO", "Account"), Dictate's "Cloud ◈ PRO" and "ENHANCE ◈ PRO", the notification rows for routines, credits and trials, Conductor's out-of-credits error, the offline banners, and the hosted rows (absent in a build without accounts, D-2913); PRODUCT_SPEC's Conductor button, the pane limit (F-CD-03 AC7 now: offline a fifth pane starts), local Dictate, previews' "4 on Free", and F-TH-17 AC4 (search needs no account); MILESTONES and ARCHITECTURE lines that still named the Free limits.
+
+- D-2917: The account portal's /credits page (not deployed) gets /billing's treatment (D-2914): a free account sees "There's nothing to buy…", never "Credit packs come with Pro and Team" or "See plans"; web E2E-M13-3b checks it. The API's credit-pack route and its tests stay (hosted side).
 
 ### M18 · Free for everyone log
 - Limits, gates, UI, demo, docs and site in one slice. Tests found: the offline build couldn't run routines or task runs even with the limits on, because both still required sign-in (D-2902); the demo would have shown working "New routine" and Execute buttons that saved nothing (D-2905); `CHANGELOG.md` couldn't hold an Unreleased section without breaking the site (D-2906).
@@ -1234,6 +1245,40 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - Lighthouse CI on seven URLs (median of 3), every assertion passing with no warnings: `/` at 0.99 (LCP 1.90 s), the rest at 1.00 (LCP 1.37 to 1.66 s), TBT 0 ms, CLS at most 0.001;
     - the demo walkthrough.
   - **The live checks** passed (see Current state). `main` came back into `product-m0-m5` with this record.
+- Release 0.11.0 (`release-0.11.0`, 25 and 26 October; D-873): `product-m0-m5` at 7283322b (`chain25`, the site deploy record, DESIGN §5.1.4) with these added:
+  - `site-motion` 83ff6605 (D-1886, approved by the design lead) and `free-for-everyone` 79bce017 (D-2917).
+  - **Version and notes:**
+    - the version;
+    - the CHANGELOG's `## 0.11.0`: six Added entries, one Changed and three Fixed, each claim checked against the code and the labels against en.json;
+    - `release.ts`;
+    - the "New in" tiles and the roadmap;
+    - the post "What's new in 0.11.0".
+  - **Docs and spec:**
+    - Thread mode's engine list adds Gemini CLI, Kiro CLI and added ACP agents;
+    - the governor's docs give the older-systemd behaviour, and "One check at a time" covers Land worktrees;
+    - F-CD-22's ACs drop the plan wording (D-869).
+  - **Files:** the .deb and .rpm with SHA256SUMS, and the Flatpak and Snap manifests at 0.11.0's .deb.
+  - **Decisions:** D-873 and D-874.
+  - **The site's figures:** 3,996 tests and 152 E2E spec files.
+  - **The gate** passed on the release tree (a4c75d18):
+    - 2,344 Rust tests (6 ignored);
+    - 1,652 TypeScript tests: desktop 794, UI 419, API 234, web 137, remote 33, mobile 21, protocol 14;
+    - coverage (188 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (579 types).
+    - The figures commit (479e7e83) changes only `progress.ts`. Web lint and vitest (137/137) passed on it.
+  - **The packages:**
+    - `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on e50c1ee7 built the .deb, .rpm and AppImage. The later commits are the site's tiles, roadmap, post, docs, downloads and figures. No product code changed.
+    - `Vibezeo_0.11.0_amd64.deb` (SHA-256 `a56b8941…3481c525`) and `Vibezeo-0.11.0-1.x86_64.rpm` (`3e7822e3…cfa3f54b`) are 54.8 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
+    - The AppImage passed the offline smoke test, and Start opens setup with all 13 engines.
+  - **The site, with the design lead:** they checked every product scene's final frame in both themes against 0.11.0 and approved it (captions "Scene from Vibezeo 0.11.0", the status bar's v0.11.0, nothing drawn that changed in `chain25`), along with `/changelog/0.11.0/`, the six "New in 0.11.0" tiles and the roadmap.
+  - **The demo (D-128):** no new surfaces (D-873). Everything the demo shows is in the download.
+  - **Known issue, fixed for 0.12.0:** without a systemd user session, Freeze falls back to signals. If the pane is running a loop of short commands, Freeze can fail with "the program isn't running", because the foreground job exits between being read and being stopped (`suspend::pause`'s ESRCH). A second try works. `app-ui` found it by bisecting E2E-M18-EX06 across a full sequential run. The fix (keep the shell stopped when the job has already ended) goes to `product-research` for `chain26`.
+  - **E2E:** the full desktop suite passed 152 of 152 spec files on the release tree, in five chunks of 31, 31, 31, 31 and 28 (37 minutes of runs), E2E-M18-EX06 among them.
+  - **The site**, from a fresh clone of f74a3740:
+    - `build:site` with `strip-runtime` and `check-routes`: 54 pages, no redirects;
+    - web vitest 137/137 and site Playwright 54/54;
+    - Lighthouse CI on seven URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme, `/` and a blog post scored 0.99 for performance (LCP 1.89 s and 1.81 s) and the rest 1.00, with 1.00 for accessibility, best practices and SEO, CLS at most 0.001 and TBT 0 ms;
+    - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
@@ -1779,6 +1824,26 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - **Why:** `PRAGMA user_version` counts positions in `MIGRATIONS`, so a migration's number is its position. Two branches that each add one can both take the next number, and a database that ran one branch's migration would skip the other's.
   - **`chain25`'s order:** `0003_bestof_queued` (F-EX-06), `0004_lane_repos` (F-CD-22) and `0005_secrets` (F-TL-12, renumbered on its branch in ba720f49).
   - **The test:** `migrations_are_numbered_by_position_and_all_listed` checks that each name's number is its position and that every file in `migrations/` is listed once.
+- D-873: 0.11.0 ships what's merged now (`chain25`), and the next batch, `chain26`, becomes 0.12.0.
+  - **Why now:** `chain25`'s six features passed their reviews, the gate and 152 of 152 E2E spec files on 25 October. The seven pieces meant for `chain26` were still in fix rounds and reviews, some hours away: F-CD-23, F-TK-07, F-EN-11, B5's second slice, F-EX-07 and `app-ui`'s redesign. Waiting would hold verified work back for nothing.
+  - **D-829 still holds:** one release is one deployment. 0.11.0 also carries `site-motion`'s polish (D-1886, approved by the design lead) and D-2917. D-829 wouldn't let either go to `main` alone.
+  - **The demo (D-128):** no new surfaces, for the same reasons as D-868.
+    - The governor needs systemd scopes and real processes.
+    - Secrets need the keychain and a real shell.
+    - Multi-repo worktrees need real repositories, and ACP agents their own binaries.
+    - Claims and Plan with Lead need running agents.
+    - They join D-868's list for the demo, with `site-motion`'s scenes.
+- D-874: F-CD-24 jj (Jujutsu) workspaces goes to `competitive-gaps` (P2, Free, M18), after F-CD-23's last fix round. It's built on top of F-CD-23's head.
+  - **Decisions:** D-2594 to D-2599 first, then D-2660 to D-2679. Both ranges were unused on every branch. `app-ui` holds D-2600 on and the design lead D-2700 on.
+  - **Scope of the first slice:**
+    - **Co-located repositories only:** `.jj` beside `.git`, with a `jj` that Vibezeo finds and never installs.
+    - **New worktree** offers "jj workspace", preselected in such a repository. The choice is remembered per repository, and the lane sits at the usual path.
+    - **Diff vs base and the overlap check** go through jj and match a git lane on the same changes (NEXT_FEATURES' AC2).
+    - **Everything else that needs git in the lane** says so up front, with one guard, as F-CD-22's `single_repo` does.
+    - **Agents** are told in the lane's briefing to use `jj`.
+    - **Discard** runs `jj workspace forget` and keeps the workspace's commits. Nothing ever abandons, rebases or pushes.
+    - **Not in this slice:** SSH and WSL hosts.
+  - **Tests** run against a real `jj` in the session's container, plus unit tests with fakes behind a `Vcs` seam, and an E2E-M18-CD24 spec.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
@@ -2020,6 +2085,12 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **Result:** 7,986 px at 1440. A Playwright test holds it at or under 8,000.
   - **The demo still** is retaken from the 0.10.0 demo at 2×. It differs from the 0.7.2 still only in its version label: the coach card is what 0.10.0's demo still shows, and it changes when app-ui's first-run work reaches the demo.
 
+- D-1886: polish after the home cut went live (#100), from the design lead's note and the code review's "later" list.
+  - **Engine names on one line:** from 1280 px the grid is seven to a row, and each cell's name is set at 13 px with a tighter gap and padding. That fits every name ("Antigravity CLI" is the longest) on one line; `truncate` and the name as `title` cover a font that runs wider. Six columns would add a row and break the 8,000 px budget. Below 1280 the grid is three to a row, and names wrap as before.
+  - **The Land scene at full width on /changelog/0.9.0/:** it sits between the summary and the notes and spans the container, as on the home page, so the app's text is about 14 px instead of 6–7 px in the notes' column. On that page the version links in the side column stay at the top instead of following the reader.
+  - **Its caption** says "Scene from Vibezeo 0.10.0, simplified. New in 0.9.0." (`Scene`'s `since`), so the later build drawn on 0.9.0's page reads as intended.
+  - **Left:** the scenes' styles still load on every version page. The App Router bundles a route's CSS once for all of `[version]`'s pages, and splitting 0.9.0 into its own route isn't worth the routing risk for a stylesheet this small.
+
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2081,6 +2152,10 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Nits taken: the length test waits for the fonts; the allowlist test is exact; the text that called the scene player home-only (site.test, strip-runtime, embed.js, OPERATING §6); media.ts's comment; /about/'s heading takes `SITE.product`; Current state. Left for later: engine names on one line at 1440 (the design lead's polish note), the scene's width in the version page's column, and the scenes' styles loading on every version page.
   - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 53/53.
   - The gate: passed (TypeScript 1,608 tests: web 137, ui 419, desktop 750, api 234, remote 33, mobile 21, protocol 14; Rust 2,150; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
+- Merged `product-m0-m5` (59d2f620, after #100 and #101; a fast-forward). The polish slice (D-1886). Tests first: site-quality.spec (every engine name on one line at 1440 and 1280), scenes.spec (the Land scene at more than 90 % of the container on 0.9.0's page), scenes.test (the "New in 0.9.0" caption there, and none on home).
+  - Checks: web vitest 137/137, `build:site` (52 pages), site Playwright 54/54, design-shots on eight pages (64 captures, all ok).
+  - Lighthouse CI, every assertion passing in both themes: `/` 0.99 / 1.89–1.90 s; the rest 0.99–1.00 / 1.36–1.81 s; blocking time 0 ms, CLS at most 0.001.
+  - The gate: passed (TypeScript 1,652 tests: web 137, ui 419, desktop 794, api 234, remote 33, mobile 21, protocol 14; Rust 2,344; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift).
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
