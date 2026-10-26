@@ -751,6 +751,9 @@ pub mod tauri_backend {
         /// Test harness: record the install here instead of replacing the
         /// running debug binary (it isn't an AppImage).
         record_install: Option<PathBuf>,
+        /// Run before the installer exits the process (Windows), which
+        /// skips the exit event: agent runs and terminals end first.
+        before_exit: std::sync::Arc<dyn Fn() + Send + Sync>,
     }
 
     impl TauriUpdater {
@@ -759,6 +762,7 @@ pub mod tauri_backend {
             base: String,
             pubkey: String,
             record_install: Option<PathBuf>,
+            before_exit: std::sync::Arc<dyn Fn() + Send + Sync>,
         ) -> Self {
             Self {
                 app,
@@ -766,6 +770,7 @@ pub mod tauri_backend {
                 pubkey,
                 last: tokio::sync::Mutex::new(None),
                 record_install,
+                before_exit,
             }
         }
     }
@@ -802,6 +807,10 @@ pub mod tauri_backend {
                 // Anti-rollback: only ever a higher version (AC3).
                 .version_comparator(|current, release| release.version > current)
                 .timeout(Duration::from_secs(60))
+                .on_before_exit({
+                    let before_exit = self.before_exit.clone();
+                    move || before_exit()
+                })
                 .build()
                 .map_err(|e| check(e.to_string()))?;
             let found = updater

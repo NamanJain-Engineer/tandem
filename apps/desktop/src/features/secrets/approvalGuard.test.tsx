@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SETTLE_MS, useSeenEnd, useSettled } from "./ApprovalGuard";
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("useSettled (F-TL-12.12)", () => {
   it("starts over on every change, even back to a key it settled on before", () => {
@@ -51,6 +54,5 @@ describe("useSettled (F-TL-12.12)", () => {
     expect(result.current[1]).toBe(false);
     act(() => seen.at(-1)?.([{ isIntersecting: true }]));
     expect(result.current[1]).toBe(true);
-    vi.unstubAllGlobals();
   });
 });

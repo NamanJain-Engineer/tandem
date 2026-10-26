@@ -31,8 +31,9 @@ commandId: number | null, exitCode: number | null, durationMs: number | null,
 secrets: Array<string>, 
 /**
  * Who decided a run or an approval: `once`, `agent`, `rule`,
- * `allowed_before`, `declined`, `expired`, `cancelled`, or an approval's
- * state and where it was answered (`allowed:dashboard`).
+ * `allowed_before`, `declined`, `expired`, `cancelled`; or why it wasn't
+ * asked (`busy`, `too_many`); or an approval's state and where it was
+ * answered (`allowed:dashboard`), `client_gone` or `app_quit`.
  */
 decided: string | null, 
 /**
@@ -40,7 +41,8 @@ decided: string | null,
  */
 engine: string | null, 
 /**
- * How a run ended other than by exiting: `client_gone` (`vibezeo run`
- * stopped waiting, and the run was ended) or `time_limit`.
+ * How a run ended other than by exiting, or why it didn't start:
+ * `client_gone` (`vibezeo run` stopped waiting), `app_quit`,
+ * `time_limit`, `folder_moved`, `secrets_unreadable`.
  */
 ended: string | null, };

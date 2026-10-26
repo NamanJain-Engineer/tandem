@@ -41,8 +41,10 @@ pub async fn updates_install(
     }
     let terminals = state.terminals.clone();
     let scrollback = state.data.scrollback();
-    // restart() skips the exit event: agent runs end first (F-TL-12), off
-    // the runtime's workers.
+    // Agent runs end first (F-TL-12), off the runtime's workers. From an
+    // async command restart() still delivers the exit event, which ends
+    // them again: harmless, at most 3 s more. (On Windows the updater's
+    // installer exits on its own: see `TauriUpdater`'s `before_exit`.)
     tokio::task::spawn_blocking(move || {
         crate::services::agent_run::shutdown_all();
         terminals.shutdown(&scrollback)

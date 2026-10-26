@@ -946,6 +946,7 @@ pub fn run() {
         }
     };
     services::telemetry::install_panic_hook(&state.data.crashes());
+    services::agent_run::install_crash_kill();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
     let initial_links = deeplink::from_args(std::env::args().skip(1));
     let window_state_file = state.data.window_state().to_string_lossy().into_owned();
@@ -1147,6 +1148,18 @@ pub fn run() {
                         feed.clone(),
                         key,
                         record,
+                        {
+                            // Windows: the installer exits the process
+                            // without the exit event (F-TL-12).
+                            let terminals = state.terminals.clone();
+                            let scrollback = state.data.scrollback();
+                            std::sync::Arc::new(move || {
+                                services::agent_run::before_update_exit(
+                                    &terminals,
+                                    &scrollback,
+                                )
+                            })
+                        },
                     ),
                 ));
             }

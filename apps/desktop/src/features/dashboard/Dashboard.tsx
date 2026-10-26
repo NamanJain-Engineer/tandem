@@ -39,7 +39,7 @@ import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useLayoutChanges, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -116,14 +116,11 @@ function AgentCard({
   title,
   now,
   usage,
-  steady,
 }: {
   item: DashboardItem;
   title: string;
   now: number;
   usage?: PaneUsage;
-  /** The cards haven't moved in the last moment: see `Dashboard`. */
-  steady: boolean;
 }) {
   const showPreview = useSetting("show_status_previews", true);
   const logo =
@@ -139,7 +136,10 @@ function AgentCard({
   const [endRef, seenEnd] = useSeenEnd(run ? key : null);
   // A pane's approval is a run; one that can't be read offers only Deny.
   const unreadable = !!approval && approval.source.type === "pane" && !run;
-  const canAllow = settled && steady && (!run || seenEnd) && !unreadable;
+  // Cards sort and size by what agents report, so Allow can move under the
+  // pointer: it waits until its own place has held still (F-TL-12.12).
+  const box = useSteadyBox(!!approval);
+  const canAllow = settled && box.steady && (!run || seenEnd) && !unreadable;
   const close = () =>
     busy
       ? setConfirm(true)
@@ -287,14 +287,15 @@ function AgentCard({
               )}
             </p>
           )}
-          <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+          <div ref={box.ref} className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
             {!unreadable && (
               <Button
                 size="sm"
                 variant="primary"
                 data-testid="card-allow"
                 disabled={!canAllow}
-                onClick={() => decide(true)}
+                title={canAllow ? undefined : t("approval.waiting")}
+                onClick={() => box.check() && decide(true)}
               >
                 {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
               </Button>
@@ -308,7 +309,8 @@ function AgentCard({
                   variant="secondary"
                   data-testid="card-allow-agent"
                   disabled={!canAllow}
-                  onClick={() => decide(true, "conversation")}
+                  title={canAllow ? undefined : t("approval.waiting")}
+                  onClick={() => box.check() && decide(true, "conversation")}
                 >
                   {t("dashboard.allowAgent")}
                 </Button>
@@ -403,18 +405,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
     [workspaces],
   );
   const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
-  // Cards sort by what agents report, so they can move under the pointer:
-  // every Allow waits SETTLE_MS after any card changes place.
-  const placement = useMemo(() => {
-    const keys = (gs: Group[]): string[] =>
-      gs.flatMap((g) => [g.id, ...g.items.map((i) => i.key), ...keys(g.children ?? [])]);
-    return keys(groups).join("\n");
-  }, [groups]);
-  // A card growing or shrinking (an approval coming or going, a long line)
-  // moves the others without reordering them, and so does the panel being
-  // shown or resized: those restart the wait too.
-  const [layoutRef, layoutChanges] = useLayoutChanges(placement);
-  const steady = useSettled(`${placement}\n${layoutChanges}`);
+
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
 
@@ -492,7 +483,6 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
                 title={titles[i.key] ?? ""}
                 now={now}
                 usage={i.source.type === "pane" ? usage[i.source.paneId] : undefined}
-                steady={steady}
               />
             ))}
           </ul>
@@ -510,7 +500,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   };
 
   return (
-    <div ref={layoutRef} data-testid="dashboard" className="flex flex-col gap-3 p-3">
+    <div data-testid="dashboard" className="flex flex-col gap-3 p-3">
       <header className="flex flex-col gap-1.5">
         <h2 data-testid="dashboard-count" className="text-xl font-semibold text-fg">
           {t("dashboard.count", { n: c.total })}

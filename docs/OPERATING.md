@@ -200,11 +200,15 @@ E2E lessons (each cost a debugging round):
 - Sign-up or `/__test/*` answering 500 or "No user owner@tandem.test" in many
   unrelated specs means the dev database is behind: `cd apps/api && pnpm db:migrate
   && pnpm db:seed` (with the infra up) after merging a branch that adds migrations.
-- The desktop app's `0006_activity` migration changed in place before any release
-  (F-EX-07, D-2847: the `kept` column, the `note` kind and the `activity_kept`
-  index). A dev database that already ran the old 0006 logs
-  `activity.store_failed` on every ledger insert: delete it (`rm -rf ~/.tandem`, or
-  your `TANDEM_HOME`) and start the app again. Released databases never had 0006.
+- The desktop app's activity-ledger migration (`0006_activity.sql` on
+  `product-research`, F-EX-07) changed in place before any release: round 4 added
+  the `kept` column and the `note` kind (D-2847), round 5 the `activity_kept` index
+  (D-2851). A dev database that ran an older copy needs resetting: delete
+  `~/.tandem` (or your `TANDEM_HOME`) and start the app again. Symptoms: before
+  round 4, every ledger insert logs `activity.store_failed`; a round-4 copy works but
+  silently lacks `activity_kept`. Reset again after the chain27 merge too: there the
+  migration is renumbered by merge order (D-872), so a dev database that ran it as #6
+  skips main's own #6 and then fails. Released databases never had it.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.

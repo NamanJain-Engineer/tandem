@@ -6,7 +6,7 @@ import { useDashboard } from "../../stores/dashboard";
 import { answer } from "../dashboard/actions";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
 
 /** A pane's pending approval, on the pane itself: what an agent's
  * `vibezeo run` wants (F-TL-12), then Allow once, Allow for this agent
@@ -20,10 +20,12 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const key = approval ? `${approval.id}\n${approval.detail}` : null;
   const settled = useSettled(key);
   const [endRef, seenEnd] = useSeenEnd(key);
+  // The banner scrolls: Allow waits until its own place has held still.
+  const box = useSteadyBox(approval !== null);
   if (!approval) return null;
   const run = parseRunApproval(approval);
   const unreadable = approval.source.type === "pane" && !run;
-  const canAllow = settled && seenEnd && !unreadable;
+  const canAllow = settled && seenEnd && box.steady && !unreadable;
   const decide = async (allow: boolean, scope: "once" | "conversation" = "once") => {
     setBusy(true);
     const err = await answer(approval.id, allow, "inline", scope);
@@ -51,15 +53,16 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
             <span ref={endRef} aria-hidden="true" data-testid="run-line-end" />
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div ref={box.ref} className="flex flex-wrap gap-2">
           {!unreadable && (
             <Button
               size="sm"
               variant="primary"
               loading={busy}
               disabled={!canAllow}
+              title={canAllow ? undefined : t("approval.waiting")}
               data-testid="pane-approval-once"
-              onClick={() => void decide(true)}
+              onClick={() => box.check() && void decide(true)}
             >
               {t("dashboard.allowOnce")}
             </Button>
@@ -69,8 +72,9 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               size="sm"
               variant="secondary"
               disabled={busy || !canAllow}
+              title={canAllow ? undefined : t("approval.waiting")}
               data-testid="pane-approval-agent"
-              onClick={() => void decide(true, "conversation")}
+              onClick={() => box.check() && void decide(true, "conversation")}
             >
               {t("dashboard.allowAgent")}
             </Button>

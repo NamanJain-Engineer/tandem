@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@tandem/ui";
 import { t } from "../../i18n";
 
@@ -48,23 +48,54 @@ export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => voi
   return [setEl, key !== null && seen === change];
 }
 
-/** A ref for a list of cards, and a count that moves whenever the list,
- * any of its direct children (the header, the groups) or any card changes
- * size: a card growing or shrinking moves the ones below it, and a panel
- * shown from `display: none` or a full-view toggle resizes it. Feed it into
- * a settle key. `cards` re-observes when the set of cards changes. */
-export function useLayoutChanges(cards: string): [(el: HTMLElement | null) => void, number] {
+/** The box an element takes on screen, as a string to compare. */
+function boxOf(el: HTMLElement): string {
+  const r = el.getBoundingClientRect();
+  return `${r.left},${r.top},${r.width},${r.height}`;
+}
+
+/** Whether Allow's own place on screen has held still for
+ * {@link SETTLE_MS}: a ref for the element holding the buttons, `steady`
+ * for their disabled state (sampled every frame), and `check()` for the
+ * click itself, which measures again on the spot. Any move counts: a card
+ * above growing or shrinking, a reorder, a scroll, the panel being shown or
+ * resized. Each Allow waits only on its own box, so one agent's moving card
+ * can't hold every other Allow disabled. */
+export function useSteadyBox(active: boolean): {
+  ref: (el: HTMLElement | null) => void;
+  steady: boolean;
+  check: () => boolean;
+} {
   const [el, setEl] = useState<HTMLElement | null>(null);
-  const [changes, changed] = useReducer((n: number) => n + 1, 0);
+  const last = useRef<{ box: string; since: number } | null>(null);
+  const [steady, setSteady] = useState(false);
+  const sample = useCallback((): boolean => {
+    if (el === null) return false;
+    const box = boxOf(el);
+    const now = performance.now();
+    if (last.current === null || last.current.box !== box) last.current = { box, since: now };
+    return now - last.current.since >= SETTLE_MS;
+  }, [el]);
   useEffect(() => {
-    if (el === null || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => changed());
-    ro.observe(el);
-    for (const child of Array.from(el.children)) ro.observe(child);
-    el.querySelectorAll('[data-testid="agent-card"]').forEach((card) => ro.observe(card));
-    return () => ro.disconnect();
-  }, [el, cards]);
-  return [setEl, changes];
+    last.current = null;
+    setSteady(false);
+    if (!active || el === null) return;
+    const next =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (cb: () => void) => window.setTimeout(cb, 16);
+    const cancel =
+      typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (id: number) => clearTimeout(id);
+    let id = 0;
+    const tick = () => {
+      const now = sample();
+      setSteady((was) => (was === now ? was : now));
+      id = next(tick);
+    };
+    id = next(tick);
+    return () => cancel(id);
+  }, [active, el, sample]);
+  return { ref: setEl, steady, check: sample };
 }
 
 type BoundaryProps = { children: ReactNode; onDeny?: () => void };

@@ -35,8 +35,9 @@ pub struct NewActivity {
     pub summary: String,
     pub detail: serde_json::Value,
     pub checkpoint_id: Option<String>,
-    /// Pruned by age only, never by count: a decided run, an allowed
-    /// approval, a note that events weren't kept.
+    /// Out of the per-session and total counts (pruned by age, and at
+    /// [`KEEP_KEPT_PER_SOURCE`]): a run that started, an answer to a
+    /// question, a run the person answered that didn't start, a note.
     pub kept: bool,
 }
 
@@ -262,11 +263,16 @@ pub async fn approvals(
 /// push every other session's history out.
 pub const KEEP_PER_SOURCE: i64 = 10_000;
 
+/// Rows kept by age only (`kept`) still stop at this many per source, so no
+/// source grows without end within the retention.
+pub const KEEP_KEPT_PER_SOURCE: i64 = 20_000;
+
 /// Drops events older than [`KEEP_DAYS`], then each source's oldest past
-/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`]. Rows marked
-/// `kept` (decided runs, allowed approvals, notes) go by age only: the agent
-/// can sign tool reports and trigger refusals, so a flood of those must not
-/// push its real runs out.
+/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`], counting only
+/// rows that aren't `kept`. `kept` rows (runs that started, answers, runs
+/// the person answered that didn't start, notes) go by age and at
+/// [`KEEP_KEPT_PER_SOURCE`] only: the agent can sign tool reports and
+/// trigger refusals, so a flood of those must not push its real runs out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
     prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS).await
 }
@@ -290,11 +296,20 @@ async fn prune_to(
                    WHERE n > ?1)",
                 [per_source],
             )?;
+            let kept = t.execute(
+                "DELETE FROM activity WHERE id IN (
+                   SELECT id FROM (
+                     SELECT id, ROW_NUMBER() OVER (
+                       PARTITION BY source_kind, source_id ORDER BY at DESC, id DESC) AS n
+                     FROM activity WHERE kept = 1)
+                   WHERE n > ?1)",
+                [KEEP_KEPT_PER_SOURCE],
+            )?;
             let over = t.execute(
                 "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kept = 0 ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
                 [total],
             )?;
-            Ok(old + crowded + over)
+            Ok(old + crowded + kept + over)
         })
         .await
 }
@@ -449,6 +464,31 @@ mod tests {
             .await
             .expect("list")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_kept_rows_stop_at_their_own_ceiling_per_source() {
+        let (_d, store) = store();
+        let now = 1_000_000;
+        let n = KEEP_KEPT_PER_SOURCE + 5;
+        store
+            .write(move |t| {
+                for at in 0..n {
+                    t.execute(
+                        "INSERT INTO activity (source_kind, source_id, kind, at, summary, kept)
+                         VALUES ('pane', 'pn_1', 'run', ?1, 'x', 1)",
+                        [now - n + at],
+                    )?;
+                }
+                Ok(())
+            })
+            .await
+            .expect("rows");
+        prune(&store, now).await.expect("prune");
+        let left = list(&store, "pane", "pn_1", Page::ALL).await.expect("list");
+        assert_eq!(left.len() as i64, KEEP_KEPT_PER_SOURCE);
+        // The newest stay.
+        assert_eq!(left.last().map(|r| r.at), Some(now - 1));
     }
 
     #[tokio::test]

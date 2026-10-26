@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
@@ -306,116 +306,97 @@ describe("Dashboard model", () => {
 });
 
 describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
-  beforeEach(resetStores);
+  /** Each card's box on screen, by key; the test moves them. */
+  let boxes: Record<string, { top: number; height: number }> = {};
+  beforeEach(() => {
+    resetStores();
+    boxes = {};
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const key = this.closest<HTMLElement>('[data-testid="agent-card"]')?.dataset.key ?? "";
+      const b = boxes[key] ?? { top: 0, height: 0 };
+      return {
+        left: 0,
+        top: b.top,
+        width: 300,
+        height: b.height,
+        right: 300,
+        bottom: b.top + b.height,
+        x: 0,
+        y: b.top,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
 
-  for (const groupBy of ["status", "project"] as const)
-    it(`every Allow waits after the cards change place, also after A → B → A (${groupBy})`, async () => {
-      const run = JSON.stringify({
-        vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
-      });
-      const a = item("waiting", "alpha", {
-        since: 1_000,
-        pendingApproval: {
-          id: "ap_a",
-          source: { type: "pane", paneId: "pn_x" },
-          kind: "command",
-          summary: "run",
-          detail: run,
-          options: ["once"],
-          createdAt: 1,
-          expiresAt: 2,
-        },
-      });
-      const b = item("waiting", "beta", { since: 2_000 });
-      setup([a, b]);
-      useDashboard.setState({ groupBy });
-      render(
-        <UiProvider>
-          <Dashboard />
-        </UiProvider>,
-      );
-      const allow = () => screen.getByTestId("card-allow") as HTMLButtonElement;
-      await screen.findByTestId("card-allow");
-      await waitFor(() => expect(allow().disabled).toBe(false));
-      // Another agent's reports move its card below, then back above, quickly.
-      const move = (since: number) =>
-        act(() => useDashboard.setState((st) => ({ items: { ...st.items, [b.key]: { ...b, since } } })));
-      move(0);
-      expect(allow().disabled).toBe(true);
-      await new Promise((r) => setTimeout(r, 200));
-      move(2_000);
-      // Back where it was settled before, yet not live at once.
-      expect(allow().disabled).toBe(true);
-      await new Promise((r) => setTimeout(r, 350));
-      expect(allow().disabled).toBe(true);
-      await waitFor(() => expect(allow().disabled).toBe(false));
-    });
+  const run = JSON.stringify({
+    vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+  });
+  const asking = (key: string, id: string, source: DashboardItem["source"]) => ({
+    id,
+    source,
+    kind: "command" as const,
+    summary: "run",
+    detail: run,
+    options: ["once" as const],
+    createdAt: 1,
+    expiresAt: 2,
+  });
 
-  it("every Allow waits after a card grows or shrinks, or the panel is shown or resized", async () => {
-    const observed: Element[] = [];
-    const fire: Array<() => void> = [];
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        constructor(cb: () => void) {
-          fire.push(cb);
-        }
-        observe(el: Element) {
-          observed.push(el);
-        }
-        disconnect() {}
-      },
-    );
-    const run = JSON.stringify({
-      vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
-    });
-    const a = item("waiting", "alpha", {
-      since: 1_000,
-      pendingApproval: {
-        id: "ap_a",
-        source: { type: "pane", paneId: "pn_x" },
-        kind: "command",
-        summary: "run",
-        detail: run,
-        options: ["once"],
-        createdAt: 1,
-        expiresAt: 2,
-      },
-    });
+  async function twoCards() {
+    const a = item("waiting", "alpha", { since: 1_000 });
+    const withAsk = { ...a, pendingApproval: asking(a.key, "ap_a", a.source) };
     const b = item("waiting", "beta", { since: 2_000 });
-    setup([a, b]);
+    boxes[a.key] = { top: 100, height: 120 };
+    boxes[b.key] = { top: 0, height: 90 };
+    const calls = setup([withAsk, b]);
     render(
       <UiProvider>
         <Dashboard />
       </UiProvider>,
     );
-    const allow = () => screen.getAllByTestId("card-allow")[0] as HTMLButtonElement;
-    await screen.findByTestId("card-allow");
+    const card = () =>
+      screen.getAllByTestId("agent-card").find((c) => c.dataset.key === a.key) as HTMLElement;
+    const allow = () => within(card()).getByTestId("card-allow") as HTMLButtonElement;
     await waitFor(() => expect(allow().disabled).toBe(false));
-    // Every card is watched for its size.
-    expect(screen.getAllByTestId("agent-card").every((c) => observed.includes(c))).toBe(true);
-    const resized = () => act(() => fire.forEach((cb) => cb()));
-    // Another card's approval appears: it grows, nothing reorders.
-    act(() =>
-      useDashboard.setState((st) => ({
-        items: {
-          ...st.items,
-          [b.key]: { ...b, pendingApproval: { ...a.pendingApproval!, id: "ap_b", source: b.source } },
-        },
-      })),
-    );
-    resized();
+    return { a, b, allow, calls };
+  }
+
+  it("Allow waits until its own place has held still, whatever moved it", async () => {
+    const { a, allow } = await twoCards();
+    // A card above grows (an approval or a longer line), or the list
+    // scrolls, or reorders: alpha's Allow moves down.
+    boxes[a.key] = { top: 160, height: 120 };
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
+    await new Promise((r) => setTimeout(r, 300));
     expect(allow().disabled).toBe(true);
     await waitFor(() => expect(allow().disabled).toBe(false));
-    // ...and leaves again.
-    act(() => useDashboard.setState((st) => ({ items: { ...st.items, [b.key]: b } })));
-    resized();
-    expect(allow().disabled).toBe(true);
+    // Back to where it was: it moved again, so it waits again (A → B → A).
+    boxes[a.key] = { top: 100, height: 120 };
+    await waitFor(() => expect(allow().disabled).toBe(true));
     await waitFor(() => expect(allow().disabled).toBe(false));
-    // The panel is shown again, or toggled to full view: it resizes.
-    resized();
-    expect(allow().disabled).toBe(true);
-    await waitFor(() => expect(allow().disabled).toBe(false));
-    vi.unstubAllGlobals();
+  });
+
+  it("a click in the frame a card moves, before Allow looks disabled, does nothing", async () => {
+    const { a, allow, calls } = await twoCards();
+    boxes[a.key] = { top: 400, height: 120 };
+    // Still enabled: the next frame hasn't sampled the move yet.
+    expect(allow().disabled).toBe(false);
+    fireEvent.click(allow());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
+  });
+
+  it("another card that keeps changing size doesn't hold this Allow disabled", async () => {
+    const { b, allow, calls } = await twoCards();
+    // beta, below the fold of alpha's own box, flips height every 100 ms.
+    for (let n = 0; n < 8; n++) {
+      boxes[b.key] = { top: 0, height: n % 2 === 0 ? 120 : 90 };
+      await new Promise((r) => setTimeout(r, 100));
+      expect(allow().disabled).toBe(false);
+    }
+    fireEvent.click(allow());
+    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
   });
 });

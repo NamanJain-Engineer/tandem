@@ -1260,6 +1260,7 @@
   "runLine.envChanged": "A rule covers this command, but .env changed since it was allowed. Allowing it, even once, lets the rule run it with this .env from now on.",
   "runLine.marked": "Characters outside plain ASCII are marked and shown by their code point. Check them before you allow.",
   "runLine.cwd": "In {cwd}",
+  "approval.waiting": "Allow turns on once this has been still on screen for a moment.",
   "approval.unreadable": "This approval couldn't be shown, so it can't be allowed here. Deny it, or open the pane.",
   "activity.title": "Activity: {name}",
   "activity.body": "What this session did, oldest first. Prompts show as turns, never their words; commands as command recall stored them.",

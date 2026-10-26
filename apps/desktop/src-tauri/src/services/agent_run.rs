@@ -203,6 +203,46 @@ pub fn shutdown_all() {
     }
 }
 
+/// Kills every running command's group now, without waiting or writing
+/// rows: for a panic on the main thread, which aborts the app with no exit
+/// event (worker threads' panics end only their task).
+pub fn kill_all_now() {
+    let live: Vec<Arc<AgentRuns>> = LIVE
+        .lock()
+        .map(|l| l.iter().filter_map(std::sync::Weak::upgrade).collect())
+        .unwrap_or_default();
+    for runs in &live {
+        let pids: Vec<u32> = runs
+            .pids
+            .lock()
+            .map(|p| p.iter().copied().collect())
+            .unwrap_or_default();
+        for pid in pids {
+            kill_group(Some(pid));
+        }
+    }
+}
+
+/// Chains a panic hook that, on the main thread, ends agent runs first
+/// ([`kill_all_now`]).
+pub fn install_crash_kill() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().name() == Some("main") {
+            kill_all_now();
+        }
+        previous(info);
+    }));
+}
+
+/// The updater's `on_before_exit`. On Windows its installer ends the
+/// process with `exit(0)`, so neither the exit event nor `restart()`'s
+/// callers run: agent runs end here, then the terminals.
+pub fn before_update_exit(terminals: &TerminalService, scrollback: &Path) {
+    shutdown_all();
+    terminals.shutdown(scrollback);
+}
+
 /// One request being served.
 struct Serving<'a>(&'a AgentRuns);
 
@@ -465,7 +505,7 @@ impl AgentRuns {
             }
         };
         if !checked.folder_holds() {
-            self.ledger(&checked, "folder_moved", false, None, None, None)
+            self.ledger(&checked, decided, false, None, None, Some("folder_moved"))
                 .await;
             return RunReply::refused(FOLDER_MOVED);
         }
@@ -519,9 +559,10 @@ impl AgentRuns {
             }
         }
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        // Killed by the quit before its own `gone` was seen: still the quit.
+        // Killed by the quit (no exit code) before its own `gone` was seen:
+        // still the quit. One that exited on its own as the app quit isn't.
         let ended = match reply.error.as_deref().and_then(ended_code) {
-            None if *self.quit.borrow() => Some("app_quit"),
+            None if *self.quit.borrow() && reply.exit_code.is_none() => Some("app_quit"),
             e => e,
         };
         self.ledger(&checked, decided, true, Some(&reply), Some(took), ended)
@@ -870,14 +911,17 @@ pub async fn run(
     // Output and the exit, whichever comes; the command's own exit ends it.
     let mut pipes_open = true;
     let ended = loop {
+        // In this order when several are ready: a command that exited on
+        // its own keeps its exit code, even as the app quits.
         tokio::select! {
+            biased;
+            status = child.wait() => break Ended::Exited(status),
+            why = &mut gone => break Ended::Gone(why),
+            _ = tokio::time::sleep_until(deadline) => break Ended::TimeLimit,
             chunk = rx.recv(), if pipes_open => match chunk {
                 Some(chunk) => take(&chunk, &mut tail),
                 None => pipes_open = false,
             },
-            status = child.wait() => break Ended::Exited(status),
-            _ = tokio::time::sleep_until(deadline) => break Ended::TimeLimit,
-            why = &mut gone => break Ended::Gone(why),
         }
     };
     let (status, error) = match ended {
@@ -1694,8 +1738,10 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn f_tl_12_8_quitting_the_app_ends_a_running_command_and_records_it() {
+    // One thread, held by the shutdown: the run's own task can't get to kill
+    // its group, so only the kill at once from `pids` can.
+    #[tokio::test(flavor = "current_thread")]
+    async fn f_tl_12_8_quitting_the_app_kills_a_running_command_at_once_and_records_it() {
         let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
         let pid_file = fx.root.join("bg.pid");
         let line = format!("sleep 30 & echo $! > {}; sleep 30", pid_file.display());
@@ -1713,13 +1759,12 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert!(!pid.is_empty(), "the run started");
-        let runs = fx.runs.clone();
-        tokio::task::spawn_blocking(move || runs.shutdown(Duration::from_secs(3)))
-            .await
-            .expect("shutdown");
+        // Blocks the only thread: returns after the wait, with the task
+        // still serving.
+        fx.runs.shutdown(Duration::from_millis(300));
         assert!(ends(&pid), "the run's group outlived the app");
         let reply = task.await.expect("task");
-        assert_eq!(reply.error.as_deref(), Some(APP_QUIT));
+        assert_eq!(reply.exit_code, None);
         let run = ledger_of(&fx)
             .await
             .into_iter()
@@ -1798,6 +1843,9 @@ mod tests {
         }
         let reply = fx.runs.handle(req(&fx.agent, &fx.root, &["true"])).await;
         assert_eq!(reply.error.as_deref(), Some(TOO_MANY_RUNS));
+        // The message names the limit it enforces.
+        assert!(TOO_MANY_RUNS.contains(&format!(" {UNASKED_RUNS_PER_MINUTE} ")));
+        assert!(TOO_MANY_QUESTIONS.contains(&format!(" {QUESTIONS_PER_MINUTE} ")));
         assert!(fx.broker.pending().is_empty(), "nor asked");
     }
 }

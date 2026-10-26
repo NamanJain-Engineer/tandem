@@ -39,13 +39,15 @@ pub struct ActivityEvent {
     /// The secrets a run used: names only.
     pub secrets: Vec<String>,
     /// Who decided a run or an approval: `once`, `agent`, `rule`,
-    /// `allowed_before`, `declined`, `expired`, `cancelled`, or an approval's
-    /// state and where it was answered (`allowed:dashboard`).
+    /// `allowed_before`, `declined`, `expired`, `cancelled`; or why it wasn't
+    /// asked (`busy`, `too_many`); or an approval's state and where it was
+    /// answered (`allowed:dashboard`), `client_gone` or `app_quit`.
     pub decided: Option<String>,
     /// The engine a turn went to (`claude`).
     pub engine: Option<String>,
-    /// How a run ended other than by exiting: `client_gone` (`vibezeo run`
-    /// stopped waiting, and the run was ended) or `time_limit`.
+    /// How a run ended other than by exiting, or why it didn't start:
+    /// `client_gone` (`vibezeo run` stopped waiting), `app_quit`,
+    /// `time_limit`, `folder_moved`, `secrets_unreadable`.
     pub ended: Option<String>,
 }
 
@@ -122,6 +124,22 @@ fn kind_of(source: &str) -> Result<&'static str, IpcError> {
             "Activity is kept for agent panes and threads",
         )),
     }
+}
+
+/// A row's summary is at most this many bytes: a command line can be long,
+/// and a rule lets an agent write many runs.
+pub const MAX_SUMMARY_BYTES: usize = 1024;
+
+/// `summary` cut to [`MAX_SUMMARY_BYTES`] at a character boundary, with "…".
+fn clip_summary(summary: String) -> String {
+    if summary.len() <= MAX_SUMMARY_BYTES {
+        return summary;
+    }
+    let mut end = MAX_SUMMARY_BYTES - '…'.len_utf8();
+    while !summary.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &summary[..end])
 }
 
 pub struct ActivityService {
@@ -263,7 +281,8 @@ impl ActivityService {
         }
     }
 
-    async fn record(&self, row: NewActivity) {
+    async fn record(&self, mut row: NewActivity) {
+        row.summary = clip_summary(row.summary);
         if let Err(err) = repo::insert(&self.store, row).await {
             tracing::warn!(code = "activity.store_failed", error = %err, "an activity event wasn't recorded");
         }
@@ -368,7 +387,13 @@ impl ActivityService {
         let decided = if run.started {
             matches!(run.decided, "once" | "agent" | "rule" | "allowed_before")
         } else {
-            matches!(run.decided, "declined" | "expired" | "cancelled")
+            // The person's own answer, Allow included (a run allowed but
+            // stopped before it started: gone, a moved folder, unreadable
+            // secrets). Each follows a question, at most 10 a minute.
+            matches!(
+                run.decided,
+                "once" | "agent" | "declined" | "expired" | "cancelled"
+            )
         };
         let row = NewActivity {
             source_kind: "pane",
@@ -960,6 +985,9 @@ mod tests {
         // The person's own decisions after that flood, and every answer
         // (each follows a question, at most 10 a minute): all kept.
         for _ in 0..over {
+            // Allowed, then stopped before it started (gone, a moved folder,
+            // unreadable secrets): the person's decision too.
+            svc.run("pn_1", record("once", false)).await;
             svc.run("pn_1", record("declined", false)).await;
             svc.run("pn_1", record("expired", false)).await;
             svc.approval("pn_1", "denied:inline").await;
@@ -993,7 +1021,7 @@ mod tests {
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kept = 1 AND kind IN ('run', 'approval')")
                 .await,
-            6 * i64::from(over)
+            7 * i64::from(over)
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kind = 'turn'").await,
@@ -1013,5 +1041,30 @@ mod tests {
                 .await,
             i64::from(Flood::Turn.limit() + 5)
         );
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_a_long_summary_is_stored_cut_to_1_kib() {
+        let (_d, store, _clock, svc) = fixture();
+        let long = format!("echo {}é", "x".repeat(8 * 1024));
+        svc.run(
+            "pn_1",
+            RunRecord {
+                command: long,
+                secrets: Vec::new(),
+                decided: "rule",
+                exit_code: Some(0),
+                duration_ms: Some(1),
+                ended: None,
+                started: true,
+            },
+        )
+        .await;
+        let summary: String = store
+            .read(|c| Ok(c.query_row("SELECT summary FROM activity", [], |r| r.get(0))?))
+            .await
+            .expect("row");
+        assert!(summary.len() <= MAX_SUMMARY_BYTES, "{}", summary.len());
+        assert!(summary.starts_with("echo xxx") && summary.ends_with('…'));
     }
 }

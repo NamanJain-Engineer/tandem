@@ -12,8 +12,9 @@ CREATE TABLE activity (
   summary       TEXT NOT NULL,
   detail_json   TEXT NOT NULL DEFAULT '{}',
   checkpoint_id TEXT,
-  -- 1: pruned by age only (a decided run, an allowed approval, a note that
-  -- events weren't kept), never by the per-session or total counts.
+  -- 1: out of the per-session and total counts (pruned by age and a
+  -- per-source ceiling): a run that started, an answer to a question, a run
+  -- the person answered that didn't start, a note that events weren't kept.
   kept          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);
