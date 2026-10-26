@@ -2701,6 +2701,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - **Gate:** run on `m16a-conductor` after the merge (its entry below).
 - [x] E2E, after E2E-M18-TK-07's diagnosis (test code only; the coordinator accepted both for chain27).
   - **Specs put back the fakes they install.** E2E-M7-5, E2E-M7-8 and E2E-M18-WT-05 left `fakebin/codex`, and E2E-M7-12 `fakebin/opencode`. Each now removes its fake after it and detects again, as E2E-M18-RT-06 and E2E-M18-FREE do. A later spec would otherwise run with it installed, and a task review picks any other installed chat engine. E2E-M7-5 also empties `fake-version.txt`, which it left at Codex 0.31.0, too old for Thread mode. E2E-M7-12 removes `fake-models.txt`.
+  - **A wait's timeout says what it last read.** `waitUntil` builds `timeoutMsg` with its options, before the wait starts. So `${await rows()}` showed the state at the start, as E2E-M18-TK-07's `[setup, running]` did, and a variable the condition sets showed `null` or `undefined`.
+    - `waitFor(read, ok, what, { timeout, interval })` in `support/app.ts` keeps what `read` last gave and throws it with WebdriverIO's own reason.
+    - Moved onto it: the six helpers whose message used a value their condition sets (E2E-M10-5's `delivered`, E2E-M11-2's `untilState`, E2E-M11-3's `untilStatus`, E2E-M16-1's and E2E-M18-CN-09's `until`, and `ensureModel` in `support/dictate.ts`); E2E-M18-TK-07's own helper; and the shared waits that read state for their message (`addFolder`, `waitForPaneText`, `waitForStatus`, `waitForSessionStarts`, `waitForAssistant`, `waitForRow`, `waitForChanges`, the commit message box, `waitForEntitlement`).
+    - E2E-M16-7's `until` already caught the timeout and threw what it last saw.
+    - About a hundred waits written inline in some 55 specs still build their message at the start. New waits use `waitFor` (OPERATING's E2E lessons).
+  - **Checked:** e2e `tsc` and ESLint; the E2E runs are with the gate below.
 - [x] F-TK-08 Lead keeps a plan moving, bold bet B3's third slice: the supervisor loop (D-2828 to D-2835). Built on F-TK-07 and its review fixes (22d7c7c4, with product-m0-m5 d2ae3155 merged in), from the coordinator's approval with its seven constraints.
   - **Spec.** PRODUCT_SPEC F-TK-08 (P2, owned by M18; coverage 190, M18 owns 24).
   - **Runs ask (`tasks_exec`).**

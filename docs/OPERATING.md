@@ -197,8 +197,9 @@ E2E lessons (each cost a debugging round):
   and calls `checkAgain()`, or later specs run with it installed: a leftover
   Cursor Agent reviewed E2E-M18-TK-07's runs in a full run, though it passed alone.
 - `waitUntil`'s `timeoutMsg` is built with its options, before the wait, so
-  `` `…${JSON.stringify(await rows())}` `` shows the state at the start. Keep what
-  the condition last read and throw it when the wait times out.
+  `` `…${JSON.stringify(await rows())}` `` shows the state at the start, and a
+  variable the condition sets shows as `null`. Wait with `waitFor(read, ok, what,
+  { timeout })` (`e2e/support/app.ts`): its timeout says what `read` last gave.
 - A test that hard-codes a date breaks the next day: pin the clock
   (`vi.useFakeTimers({ toFake: ["Date"] })`).
 - When an E2E fails, take a screenshot (`browser.saveScreenshot`) before guessing.

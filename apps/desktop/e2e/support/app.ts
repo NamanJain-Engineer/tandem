@@ -197,6 +197,27 @@ export async function waitSignedIn(timeout = 20_000): Promise<void> {
   });
 }
 
+/** Waits until `ok` holds for what `read` gives, and returns that. A timeout
+ * says what `read` last gave: a `timeoutMsg` is built before the wait starts,
+ * so one that reads the state shows it as it was then. */
+export async function waitFor<T>(
+  read: () => T | Promise<T>,
+  ok: (value: T) => boolean,
+  what: string,
+  options: { timeout: number; interval?: number },
+): Promise<T> {
+  let last: T | undefined;
+  try {
+    await browser.waitUntil(async () => {
+      last = await read();
+      return ok(last);
+    }, options);
+  } catch (e) {
+    throw new Error(`${what}: ${JSON.stringify(last)} (${String(e)})`);
+  }
+  return last as T;
+}
+
 /** Adds a folder through the rail "+" and the fake picker. */
 export async function addFolder(path: string, { added = true }: { added?: boolean } = {}): Promise<void> {
   pickFolder(path);
@@ -205,10 +226,7 @@ export async function addFolder(path: string, { added = true }: { added?: boolea
   if (!added) return;
   // The fake picker reads its file asynchronously: wait for this folder
   // before another call can rewrite it.
-  await browser.waitUntil(async () => (await workspaceRoots()).includes(path), {
-    timeout: 15_000,
-    timeoutMsg: `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`,
-  });
+  await waitFor(workspaceRoots, (roots) => roots.includes(path), `${path} wasn't added`, { timeout: 15_000 });
 }
 
 /** Rail rows' roots, read in the page (rows re-render while a list refreshes). */
@@ -493,9 +511,8 @@ export async function waitForPaneText(
     const t = await paneText(paneId);
     return opts.commandLine ? t.replace(/\n/g, "") : t;
   };
-  await browser.waitUntil(async () => (await text()).includes(needle), {
+  await waitFor(text, (t) => t.includes(needle), `pane ${paneId} never showed ${JSON.stringify(needle)}`, {
     timeout,
-    timeoutMsg: `pane ${paneId} never showed ${JSON.stringify(needle)}: ${await paneText(paneId)}`,
   });
 }
 
@@ -829,11 +846,15 @@ export async function paneStatus(paneId: string): Promise<string> {
 
 /** Waits for a pane's header status. */
 export async function waitForStatus(paneId: string, status: string, timeout = 15_000): Promise<void> {
-  await browser.waitUntil(async () => (await paneStatus(paneId)) === status, {
-    timeout,
-    interval: 100,
-    timeoutMsg: `pane ${paneId} never showed status ${status} (now ${await paneStatus(paneId)})`,
-  });
+  await waitFor(
+    () => paneStatus(paneId),
+    (now) => now === status,
+    `pane ${paneId} never showed status ${status}`,
+    {
+      timeout,
+      interval: 100,
+    },
+  );
 }
 
 /** Lines of the fake engines' log (TANDEM_FAKE_ENGINE_LOG), and of tandem-hook's posts. */
@@ -886,19 +907,14 @@ export async function pausedCards(): Promise<Array<{ paneId: string; state: stri
 /** Waits until `n` new SessionStart hooks ran after `from` log lines, then
  * a moment for their session ids to be stored. */
 export async function waitForSessionStarts(from: number, n: number): Promise<void> {
-  await browser.waitUntil(
-    async () =>
+  await waitFor(
+    () =>
       fakeLog()
         .slice(from)
-        .filter((l) => l === "hook: SessionStart").length >= n,
-    {
-      timeout: 20_000,
-      timeoutMsg: `only ${
-        fakeLog()
-          .slice(from)
-          .filter((l) => l === "hook: SessionStart").length
-      } of ${n} agents reported a session`,
-    },
+        .filter((l) => l === "hook: SessionStart").length,
+    (started) => started >= n,
+    `agents that reported a session, of ${n}`,
+    { timeout: 20_000 },
   );
   await browser.pause(800);
 }

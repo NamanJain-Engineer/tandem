@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, relaunch, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, mod, relaunch, userHome, waitFor } from "../support/app";
 import { newWorktree } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -41,29 +41,6 @@ function claims(): Claim[] {
 /** Text a WebKitWebDriver `getText` would drop. */
 async function text(selector: string): Promise<string> {
   return String(await $(selector).getProperty("textContent"));
-}
-
-/** Waits until `ok` holds for what `read` gives. A timeout says what it
- * last gave: a `timeoutMsg` is built before the wait starts. */
-async function until<T>(
-  read: () => T | Promise<T>,
-  ok: (v: T) => boolean,
-  what: string,
-  timeout: number,
-): Promise<T> {
-  let last: T | undefined;
-  try {
-    await browser.waitUntil(
-      async () => {
-        last = await read();
-        return ok(last);
-      },
-      { timeout },
-    );
-  } catch (e) {
-    throw new Error(`${what}: ${JSON.stringify(last)} (${String(e)})`);
-  }
-  return last as T;
 }
 
 /** Each plan row's run state and verdict. */
@@ -110,11 +87,11 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
       args: { kind: "thread", workspaceId: lane.id, engineId: "claude", access: "edits" },
     });
     await invoke("thread_send", { threadId: thread.id, text: "write notes.md=hello" });
-    const claimed = await until(
+    const claimed = await waitFor(
       claims,
       (cs) => cs.some((c) => c.path === "notes.md"),
       "notes.md wasn't claimed",
-      30_000,
+      { timeout: 30_000 },
     );
     const claim = claimed.find((c) => c.path === "notes.md")!;
     expect(claim.inferred).toBe(true);
@@ -143,11 +120,11 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
 
     // The plan follows each run to in review, approved by the review.
-    await until(
+    await waitFor(
       rows,
       (rs) => rs.length === 2 && rs.every((r) => r.state === "in_review" && r.verdict === "approve"),
       "the runs didn't reach Approve",
-      180_000,
+      { timeout: 180_000 },
     );
     expect(await text('[data-testid="plan-summary"]')).toBe("2 approved");
 
