@@ -1274,7 +1274,11 @@ Built by the session that coordinates the parallel milestone sessions, while the
   - **The demo (D-128):** no new surfaces (D-873). Everything the demo shows is in the download.
   - **Known issue, fixed for 0.12.0:** without a systemd user session, Freeze falls back to signals. If the pane is running a loop of short commands, Freeze can fail with "the program isn't running", because the foreground job exits between being read and being stopped (`suspend::pause`'s ESRCH). A second try works. `app-ui` found it by bisecting E2E-M18-EX06 across a full sequential run. The fix (keep the shell stopped when the job has already ended) goes to `product-research` for `chain26`.
   - **E2E:** the full desktop suite passed 152 of 152 spec files on the release tree, in five chunks of 31, 31, 31, 31 and 28 (37 minutes of runs), E2E-M18-EX06 among them.
-  - **The site check:** running from a fresh clone of f74a3740; its results follow.
+  - **The site**, from a fresh clone of f74a3740:
+    - `build:site` with `strip-runtime` and `check-routes`: 54 pages, no redirects;
+    - web vitest 137/137 and site Playwright 54/54;
+    - Lighthouse CI on seven URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme, `/` and a blog post scored 0.99 for performance (LCP 1.89 s and 1.81 s) and the rest 1.00, with 1.00 for accessibility, best practices and SEO, CLS at most 0.001 and TBT 0 ms;
+    - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
