@@ -71,7 +71,7 @@ export type WorktreeAsk =
   /** UI-158: a multi-repo worktree's pull requests (F-CD-22). */
   | { kind: "prs"; worktreeId: string }
   /** UI-155: land the repository's worktrees (F-WT-07). */
-  | { kind: "land"; workspaceId: string }
+  | { kind: "land"; workspaceId: string; laneIds?: string[] }
   /** UI-154: two worktrees' previews side by side (F-WT-09). */
   | { kind: "comparePreviews"; candidates: string[]; chosen: string[]; onDone?: () => void }
   | null;

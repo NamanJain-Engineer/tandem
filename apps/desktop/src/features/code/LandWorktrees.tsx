@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   LandingCandidate,
   LandingPlan,
@@ -89,7 +89,27 @@ function Steps({ run }: { run: LandingRun }) {
 
 /** UI-155 "Land worktrees" (F-WT-07): merge a repository's worktrees into
  * its current branch one at a time, each after the base and the check. */
-export function LandWorktreesDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () => void }) {
+/** The candidates with `first` (a plan's worktrees, F-TK-07) leading in
+ * that order, then the rest as the plan lists them. */
+export function plannedOrder(candidates: LandingCandidate[], first?: string[]): LandingCandidate[] {
+  if (!first?.length) return candidates;
+  const at = (c: LandingCandidate) => {
+    const i = first.indexOf(c.laneId);
+    return i < 0 ? first.length : i;
+  };
+  return [...candidates].sort((a, b) => at(a) - at(b));
+}
+
+export function LandWorktreesDialog({
+  ws,
+  laneIds,
+  onClose,
+}: {
+  ws: WorkspaceSummary;
+  /** Opened from a plan (F-TK-07): only these are chosen, in this order. */
+  laneIds?: string[];
+  onClose: () => void;
+}) {
   const [load, setLoad] = useState<Load>({ at: "loading" });
   const [run, setRun] = useState<LandingRun | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
@@ -108,16 +128,23 @@ export function LandWorktreesDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
     return out.value;
   }, [ws.id]);
 
+  const wanted = laneIds?.join("\n");
   const fetchAll = useCallback(() => {
     setLoad({ at: "loading" });
+    const only = wanted?.split("\n");
     void Promise.all([readPlan(), landingRun(ws.id)]).then(([plan, current]) => {
       if (plan) {
-        setChosen(plan.candidates.filter(landable).map((c) => c.laneId));
+        setChosen(
+          plan.candidates
+            .filter(landable)
+            .filter((c) => !only || only.includes(c.laneId))
+            .map((c) => c.laneId),
+        );
         setCheck(plan.check ?? "");
       }
       if (current.ok) setRun(current.value);
     });
-  }, [readPlan, ws.id]);
+  }, [readPlan, ws.id, wanted]);
   useEffect(() => fetchAll(), [fetchAll]);
 
   // A running landing is read every second; once it ends, the plan again
@@ -138,7 +165,8 @@ export function LandWorktreesDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
 
   const plan = load.at === "ready" ? load.plan : null;
   const base = plan?.base ?? "";
-  const order = (plan?.candidates ?? []).map((c) => c.laneId).filter((id) => chosen.includes(id));
+  const candidates = useMemo(() => plannedOrder(plan?.candidates ?? [], wanted?.split("\n")), [plan, wanted]);
+  const order = candidates.map((c) => c.laneId).filter((id) => chosen.includes(id));
   const toggle = (id: string, on: boolean) => setChosen((c) => (on ? [...c, id] : c.filter((x) => x !== id)));
 
   const land = async () => {
@@ -251,7 +279,7 @@ export function LandWorktreesDialog({ ws, onClose }: { ws: WorkspaceSummary; onC
               </p>
             ) : (
               <div className="flex flex-col gap-1">
-                {plan.candidates.map((c) => (
+                {candidates.map((c) => (
                   <div
                     key={c.laneId}
                     data-testid="landing-candidate"

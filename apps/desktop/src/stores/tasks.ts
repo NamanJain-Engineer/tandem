@@ -52,6 +52,9 @@ type TasksState = {
   comment: (body: string, parentId?: string | null) => Promise<TaskComment | IpcError>;
   /** Every run, in queue order (F-TK-04). */
   attempts: AttemptView[];
+  /** Whether the runs were read: a plan shows loading and errors (F-TK-07). */
+  attemptsStatus: "idle" | "loading" | "ready" | "error";
+  attemptsError: string | null;
   loadAttempts: () => Promise<void>;
   execute: (input: ExecuteInput) => Promise<AttemptView | IpcError>;
   attemptAction: (action: "stop" | "resume" | "retry", attemptId: string) => Promise<AttemptView | IpcError>;
@@ -107,16 +110,25 @@ export const useTasks = create<TasksState>((set, get) => ({
   detailError: null,
   version: 0,
   attempts: [],
+  attemptsStatus: "idle",
+  attemptsError: null,
   loadAttempts: async () => {
     listeningAttempts ??= listen<AttemptView>("tasks:attempt", (v) => {
       set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
     }).then((u) => {
       unlistenAttempts = u;
     });
+    // A refresh keeps what's shown; a first read or a retry shows loading.
+    set((s) => ({
+      attemptsStatus: s.attemptsStatus === "ready" ? "ready" : "loading",
+      attemptsError: null,
+    }));
     try {
-      set({ attempts: (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [] });
-    } catch {
+      const attempts = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
+      set({ attempts, attemptsStatus: "ready" });
+    } catch (e) {
       // Runs stay as they were; the tracker itself still works.
+      set({ attemptsStatus: "error", attemptsError: asError(e).message });
     }
   },
   execute: async (input) => {
@@ -255,5 +267,7 @@ export function resetTasks(): void {
     detailError: null,
     version: 0,
     attempts: [],
+    attemptsStatus: "idle",
+    attemptsError: null,
   });
 }

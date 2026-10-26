@@ -921,8 +921,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Not for multi-repo worktrees yet** (their menu entries are disabled with "Not available for multi-repo worktrees yet"): Merge into…, Land worktrees, Check overlap, Check pull request, previews, worktree setup and its ports and environment, second opinion, and the intent radar. Local folders only: on SSH hosts and in WSL a folder is never multi-repo.
 
 **Acceptance:**
-1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". On Pro, launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
-2. On Free, the Worktrees option is disabled with the Pro reason, and `lane_create` for the folder is refused with ForbiddenPlan.
+1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". Launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
+2. With no account and no plan check (D-869), New worktree works for the folder, and what needs one repository (Merge into…, for one) is refused up front with "Not available for multi-repo worktrees yet".
 3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
@@ -2075,13 +2075,47 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   Then it runs those tasks through F-TK-04's queue, at Edits, at most 4 at once. It starts once: while its runs are queuing the plan says "Starting the runs…", and the plan keeps what it queued. If a run fails to start, the plan says why and Execute all can go again without queuing anything twice.
   It needs no account (D-869). When the limits turn runs off, the check says so where Run would be, and the tasks stay usable.
 - **Not in this slice:** Lead answering agents' questions, and merging. Review and merge stay yours.
-- A plan lives until you remove it or the app quits, and a reloaded window lists it again. **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
+- A plan lives until you remove it, and plans are kept across restarts (F-TK-07). **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
 
 **Acceptance:**
 1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
 2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
 3. Create tasks writes one To do task per row in a new project, each with its suggested engine, as Lead. Nothing is written before it, and trying again after a failure writes no task twice.
 4. Execute all lists each run (engine, account, its own worktree, the review's engine) and starts none until you confirm. Then it starts one attempt per To do task on its suggested engine, in a worktree, and none for a task that's already running. When the limits turn runs off, it starts none and says why.
+
+#### F-TK-07 Follow a plan through (P2)
+**Story:** Lead's plan is running, each task in its own worktree. I see how each task is doing from the plan without opening every thread, the agents claim what they change so they don't collide, and I land the work that passed review in the plan's order, in one step at my desk.
+
+**Behavior (bold bet B3's second slice):**
+- **Task runs claim their files.**
+  - A run's first message (F-TK-04) asks its agent to claim the files it's about to change and to check `list_claims`, as a worktree's briefing does (F-TK-05).
+  - A chat thread's edits claim too. When a thread's engine reports an edit, its working tree claims the files the report names, as a terminal agent's edits do (F-TK-05 AC2):
+    - Claude Code's Edit, Write, MultiEdit and NotebookEdit;
+    - Codex's file changes;
+    - an ACP agent's edits that name their files.
+
+    Only the files' paths are kept, never the edit. An edit that was refused or failed claims nothing. This holds for every chat thread in a git folder on this computer, not only task runs.
+- **The plan follows its runs.** Once its tasks are created, the plan lists each task with its latest run (F-TK-04), as a status shape and a word: not started, queued (with its place), setting up, running, reviewing, in review with the review's verdict (Approve or Changes requested), stopped, failed or done.
+  - A line above the list counts them ("2 running · 1 approved · 1 changes requested").
+  - Each row opens its task, where its runs are.
+  - While the runs are being read the list says it's loading, and if they can't be read it says why, with Retry.
+  - The plan stays in the Tasks page's header until you remove it. A started plan's shape there follows its runs: working while one runs, waiting while one waits on you, done when they've all ended.
+- **Plans are kept.** Vibezeo keeps plans in its data folder, so they survive a restart.
+  - A plan whose Lead was still planning when Vibezeo closed is read again if Lead's turn had finished. Otherwise it fails with "Vibezeo closed while Lead was planning", and Plan again offers the same goal.
+  - A plan that was starting its runs when Vibezeo closed offers Execute all again, keeping the runs it had queued. Create tasks that Vibezeo closed partway keeps its project and the tasks it wrote, and the next try writes the rest.
+  - Lead's planning thread still gets no tasks tools after a restart.
+  - **Remove plan** forgets a plan. Its tasks, their runs and Lead's thread stay.
+- **Land approved.** When at least one task's latest run is in review with Approve, the plan offers **Land N approved…**.
+  - It opens Land worktrees (F-WT-07) for the plan's repository with exactly those worktrees chosen, in the plan's order.
+  - That dialog's forecast, check command and confirm work as F-WT-07 describes, including for a worktree that can't land yet (uncommitted changes, or nothing to land).
+  - Landing is a local action (F-TL-06 rule 5), so a plan can't land work by itself.
+- **Not in this slice:** Lead answering agents' questions (the supervisor loop), marking landed tasks Done, and running a task again from the plan after Changes requested.
+
+**Acceptance:**
+1. A chat thread in a worktree that edits `a.ts` claims it from the engine's edit report, and a task run's first message asks its agent to claim.
+2. A plan with created tasks shows each task's latest run with its state and verdict, and updates as runs move on.
+3. Plans are listed again after a restart with their tasks. A plan whose Lead was interrupted fails with its reason and offers Plan again.
+4. Land approved opens Land worktrees with only the approved tasks' worktrees chosen, in plan order.
 
 ### 4.9 RT: Routines
 

@@ -52,11 +52,11 @@ async function pair(bearer: string) {
 
 type Conn = { ws: WebSocket; binary: Buffer[]; text: unknown[]; closed: Promise<{ code: number; reason: string }> };
 
-function connect(pairingId: string, auth: { bearer?: string; token?: string }): Promise<Conn> {
+function connect(pairingId: string, auth: { bearer?: string; token?: string }, at = port): Promise<Conn> {
   const headers: Record<string, string> = {};
   if (auth.bearer) headers.authorization = `Bearer ${auth.bearer}`;
   const protocols = auth.token ? [`tandem-pair.${auth.token}`] : [];
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/relay/${pairingId}`, protocols, { headers });
+  const ws = new WebSocket(`ws://127.0.0.1:${at}/v1/relay/${pairingId}`, protocols, { headers });
   open.push(ws);
   const binary: Buffer[] = [];
   const text: unknown[] = [];
@@ -225,6 +225,44 @@ describe("F-BE-11 the relay (/v1/relay/:pairing_id)", () => {
     expect((await phone.closed).code).toBe(1008);
     const again = await connect(p.pairingId, { token: p.pairing_token });
     expect((await again.closed).code).toBe(1008);
+  });
+
+  it("F-BE-11 a socket whose pairing is deleted while it authenticates is refused with 1008, not joined", async () => {
+    // E2E-M16-4: the phone's token was checked just before the pairing was
+    // deleted, and the socket joined just after the drop, so it stayed open.
+    const { bearer } = await proUser("relayrace@tandem.test");
+    const p = await pair(bearer);
+    const check = relayAuthenticator(t.deps);
+    let checked = false;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow = new Relay({
+      authenticate: async (pairingId, req) => {
+        const peer = await check(pairingId, req);
+        checked = true;
+        await gate;
+        return peer;
+      },
+      control: t.deps.relay,
+      now: () => Date.now(),
+    });
+    const other = serve({ fetch: t.app.fetch, port: 0, hostname: "127.0.0.1" });
+    slow.attach(other);
+    await new Promise<void>((resolve) => other.once("listening", () => resolve()));
+    try {
+      const phone = connect(p.pairingId, { token: p.pairing_token }, (other.address() as AddressInfo).port);
+      await until(() => checked);
+      expect((await json(t, "DELETE", `/v1/pairings/${p.pairingId}`, { bearer })).status).toBe(204);
+      release();
+      const conn = await phone;
+      let code: number | undefined;
+      void conn.closed.then((c) => (code = c.code));
+      await until(() => code !== undefined);
+      expect(code).toBe(1008);
+    } finally {
+      slow.close();
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
   });
 
   it("F-BE-11 a lapsed plan can't connect", async () => {

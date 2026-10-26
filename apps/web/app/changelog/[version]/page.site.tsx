@@ -10,7 +10,7 @@ import { LAND_CAPTION, LandScene, landSceneText } from "../../../components/site
 import { Icon } from "../../../components/site/Icon";
 import { InlineMarkdown } from "../../../components/site/InlineMarkdown";
 import { SiteFrame } from "../../../components/site/SiteFrame";
-import { PLATFORM_LABEL, RELEASES, versionPath } from "../../../lib/changelog";
+import { PLATFORM_LABEL, RELEASES, addedCard, versionPath } from "../../../lib/changelog";
 import { RELEASE } from "../../../lib/release";
 import { LANDS } from "../../../lib/scenes";
 import { SITE } from "../../../lib/site";
@@ -46,7 +46,7 @@ export default async function VersionPage({ params }: Params) {
       <article className="relative isolate">
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[32rem]" />
       <div className="container-site grid gap-10 py-16 lg:grid-cols-12 lg:gap-6 lg:py-24">
-        <aside className="flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-3 lg:self-start">
+        <aside className={`flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-3 lg:self-start ${scene ? "" : "lg:row-span-2"}`}>
           <a href="/changelog/" className="inline-flex min-h-8 items-center gap-1.5 text-copy-sm text-fg-muted">
             <Icon icon={ArrowLeft} size={14} />
             Changelog
@@ -93,11 +93,15 @@ export default async function VersionPage({ params }: Params) {
               {p}
             </p>
           ))}
-          {scene && (
-            <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} className="rise mt-4">
-              <LandScene />
-            </Scene>
-          )}
+        </div>
+        {/* The scene takes the container's full width, so the app's text
+            reads at its own size (D-1886). */}
+        {scene && (
+          <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} since="0.9.0" className="rise lg:col-span-12">
+            <LandScene />
+          </Scene>
+        )}
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-8 lg:col-start-5">
           {CATEGORIES.map((c) => {
             const entries = release.entries.filter((e) => e.category === c);
             if (!entries.length) return null;
@@ -111,13 +115,17 @@ export default async function VersionPage({ params }: Params) {
                       key={e.text}
                       className={
                         cards
-                          ? "reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&>p>strong:first-child]:mb-1 [&>p>strong:first-child]:block [&>p>strong:first-child]:text-title [&>p>strong:first-child]:text-fg [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
+                          ? "reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
                           : "ml-5 list-disc pl-1 text-copy-sm leading-7 text-fg-muted marker:text-fg-subtle [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg [&_strong]:text-fg"
                       }
                     >
-                      <p>
-                        <InlineMarkdown text={e.text} />
-                      </p>
+                      {cards ? (
+                        <AddedCard text={e.text} />
+                      ) : (
+                        <p>
+                          <InlineMarkdown text={e.text} />
+                        </p>
+                      )}
                       <span className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-subtle">
                         {e.platforms.map((p) => PLATFORM_LABEL[p]).join(", ")}
                       </span>
@@ -132,5 +140,24 @@ export default async function VersionPage({ params }: Params) {
       </article>
       {scene && <script src="/demo/embed.js" defer />}
     </SiteFrame>
+  );
+}
+
+/** An Added card's text (D-1887): its title and one-sentence lead in fg, the
+ * detail below in fg-muted. */
+function AddedCard({ text }: { text: string }) {
+  const { title, lead, rest } = addedCard(text);
+  return (
+    <>
+      <p className="text-fg">
+        {title && <strong className="mb-1 block text-title text-fg">{title}</strong>}
+        <InlineMarkdown text={lead} />
+      </p>
+      {rest && (
+        <p className="text-fg-muted">
+          <InlineMarkdown text={rest} />
+        </p>
+      )}
+    </>
   );
 }

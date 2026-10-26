@@ -5,7 +5,8 @@
 //!   lists the models this engine offers; none for it: no models reported.
 //!   The same file with `<engine> signed-out` makes `session/new` ask for a
 //!   sign-in.
-//! - A prompt is answered "You said: <text>". `run <cmd>` asks permission
+//! - A prompt is answered "You said: <text>", and a task review with a
+//!   verdict, as the other fakes answer it. `run <cmd>` asks permission
 //!   first and answers "Ran <cmd>." or "Okay, I won't run it."; `/model`
 //!   answers with the session's model; `/hang` streams "Working on it" and
 //!   waits for `session/cancel`.
@@ -142,6 +143,10 @@ impl Agent {
                 );
                 say(&session, "Okay, I won't run it.");
             }
+            return done("end_turn");
+        }
+        if let Some(said) = crate::review_reply(text) {
+            say(&session, said);
             return done("end_turn");
         }
         say(&session, &format!("You said: {text}"));

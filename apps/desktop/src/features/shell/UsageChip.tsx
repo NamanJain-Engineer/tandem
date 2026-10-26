@@ -40,7 +40,7 @@ export function usageChip(view: UsageView | undefined, engine: string) {
 
 /** The focused agent pane's account; with nothing focused, the default
  * engine's default account (UI_SPEC §3.2). */
-function useChipAccount(): string | null {
+export function useChipAccount(): string | null {
   const tabId = useWorkspaces((ws) => (ws.activeId ? (ws.activeTab[ws.activeId] ?? null) : null));
   const focused = useLayout((l) => {
     const tab = tabId ? l.tabs[tabId] : undefined;
@@ -53,10 +53,10 @@ function useChipAccount(): string | null {
 }
 
 /** "5h" and "Wk" meters beside the chip on wide windows (D-113). */
-const SHORT: Record<string, string> = { "5h": "5h", week: "Wk" };
+export const SHORT: Record<string, string> = { "5h": "5h", week: "Wk" };
 
 /** "5-hour window", "Weekly"; other windows by their kind ("3d"). */
-function windowName(kind: string): string {
+export function windowName(kind: string): string {
   if (kind === "5h") return t("usage.fiveHour");
   if (kind === "week") return t("usage.weekly");
   return kind;

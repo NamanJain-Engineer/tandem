@@ -1,14 +1,17 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthState, EntitlementView } from "@tandem/protocol";
+import type { AuthState, EntitlementView, ThreadDetail } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { TitleBar } from "../features/shell/TitleBar";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useSession } from "../stores/session";
+import { useThreads } from "../stores/threads";
+import { useUi } from "../stores/ui";
+import { useWorkspaces } from "../stores/workspaces";
 import { resetStores } from "../test/fakeBackend";
-import { DEMO_MESSAGE_LIMIT, DemoCore } from "./backend";
+import { DEMO_MESSAGE_LIMIT, DEMO_WAITING, DemoCore } from "./backend";
 import { DemoBar } from "./DemoBar";
-import { DemoHints, HINT_KEY } from "./DemoHints";
+import { DemoCoach, HINT_KEY } from "./DemoCoach";
 
 let core: DemoCore | null = null;
 beforeEach(() => {
@@ -25,17 +28,64 @@ function mount(ui: React.ReactNode) {
 }
 
 describe("the interactive demo's page furniture", () => {
-  it("demo first steps: the hint says how to send the ready message and what to try; Dismiss keeps only that flag", () => {
-    mount(<DemoHints />);
-    const hint = screen.getByTestId("demo-hints");
-    expect(hint.textContent).toContain("Press Enter to send it");
-    for (const step of ["Answer the approval", "Open Changes", "Ctrl+2", "help", "Ctrl+K"]) expect(hint.textContent).toContain(step);
-    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
-    expect(screen.queryByTestId("demo-hints")).toBeNull();
-    expect(Object.keys(localStorage)).toEqual([HINT_KEY]);
-    // A later visit doesn't show it again.
-    mount(<DemoHints />);
-    expect(screen.queryByTestId("demo-hints")).toBeNull();
+  it("DESIGN-5.2.2 demo coach: one hint at a time beside what it describes, each gone once the visitor does it", async () => {
+    core = new DemoCore(0);
+    const c = core;
+    const view = mount(
+      <>
+        <div data-testid="workspace-row" data-root={DEMO_WAITING.root} />
+        <button type="button" role="radio" aria-checked="false" value="thread" />
+        <DemoCoach core={c} />
+      </>,
+    );
+    const hint = () => screen.getAllByTestId("coachmark");
+    expect(hint()).toHaveLength(1);
+    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.engine} is waiting on you. Open it to see why.`);
+    expect(hint()[0]?.textContent).toContain("1 of 3");
+    // Beside the rail row, never over the rail.
+    expect(hint()[0]?.dataset.side).toBe("right");
+    act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
+    // In Code mode the task waits one switch away.
+    expect(hint()).toHaveLength(1);
+    expect(hint()[0]?.textContent).toContain("Your first task is ready in Thread mode.");
+    expect(hint()[0]?.textContent).toContain("2 of 3");
+    // Thread mode: the same hint, on the composer.
+    view.rerender(
+      <UiProvider theme="dark">
+        <div data-testid="composer" />
+        <button type="button" data-testid="changes-toggle" />
+        <DemoCoach core={c} />
+      </UiProvider>,
+    );
+    // The coach looks again on the next frame after the page changes.
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect(hint()[0]?.textContent).toContain("Press Enter to send this task.");
+    expect(hint()[0]?.textContent).toContain("2 of 3");
+    act(() => {
+      useThreads.setState({ list: [{ ...(c.handle("thread_get", { threadId: c.firstThread }) as ThreadDetail).thread, state: "working" }] });
+      c.handle("thread_send", { threadId: c.firstThread, text: "hi", attachments: [] });
+    });
+    // Changes waits until the agent has edited something.
+    expect(screen.queryByTestId("coachmark")).toBeNull();
+    act(() => useThreads.setState((st) => ({ list: st.list.map((x) => ({ ...x, state: "waiting" as const })) })));
+    expect(hint()[0]?.textContent).toContain("Open Changes to see what it edited.");
+    // In the header band beside the button, off the transcript.
+    expect(hint()[0]?.dataset.side).toBe("left");
+    expect(hint()[0]?.textContent).toContain("3 of 3");
+    act(() => useThreads.getState().toggleChanges(c.firstThread));
+    expect(screen.queryByTestId("coachmark")).toBeNull();
+    expect(localStorage.getItem(HINT_KEY)).toBe("1");
+  });
+
+  it("DESIGN-5.2.1 the demo opens in Code mode; Thread mode first shows the thread with its message ready", () => {
+    core = new DemoCore(0);
+    const c = core;
+    setInvokeBackend((cmd, args) => Promise.resolve(c.handle(cmd, args as Record<string, unknown>)));
+    act(() => useThreads.setState({ loaded: true, selectedId: null }));
+    mount(<DemoBar core={c} firstThread={c.firstThread} />);
+    expect(useThreads.getState().selectedId).toBeNull();
+    act(() => useUi.setState({ mode: "thread" }));
+    expect(useThreads.getState().selectedId).toBe(c.firstThread);
   });
 
   it("demo AC5 past the limit the bar says Demo limit reached with Download for Linux; Reset the demo starts over", () => {

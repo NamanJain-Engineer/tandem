@@ -180,10 +180,14 @@ function Row<T extends RailItem>({
           />
         ) : (
           <>
-            <span className="min-w-0 flex-1 truncate" data-testid="rail-row-name">
+            {/* The name keeps at least 10 characters; the trailing slot
+                gives way first (D-2603). */}
+            <span className="min-w-[min(10ch,100%)] flex-1 truncate" data-testid="rail-row-name">
               {parts.name}
             </span>
-            {parts.trailing}
+            {parts.trailing && (
+              <span className="flex min-w-0 shrink items-center justify-end gap-1.5">{parts.trailing}</span>
+            )}
           </>
         ))}
     </div>

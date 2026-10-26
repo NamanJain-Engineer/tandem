@@ -2262,7 +2262,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06, F-TK-07 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
@@ -2271,11 +2271,12 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 3. **Walk-and-review, first slice (F-CN-09).** The Review group of Conductor tools over the queue's walk, the phone's `review.current` and Review tab (web and app). Later: local voice and voice second opinions.
 4. **Claims (F-TK-05).** `claims.json` and the `claim`, `release` and `list_claims` tools in `tandem-tasks`; sessions' working trees; inferred claims from `PreToolUse` edit paths; overlap notices in panes and the review queue; release on merge, removal and the main checkout's last session; the briefing line. Later: claims inferred from checkpoints, and notices in chat threads.
 5. **Plan with Lead (F-TK-06; bold bet B3's first slice).** `services::plan` (the planning prompt with the offered engines and their usage, the nonce-marked reply parser, the draft), `plan_*` commands, `Issue.suggested_engine`, Execute all through F-TK-04, and the Tasks page's plan sheet. Later: Lead answering agents, second-engine review and merging.
+6. **Follow a plan through (F-TK-07; bold bet B3's second slice).** `ThreadEvent::Tool.paths` from each chat adapter's edits and `ThreadService`'s edit sink, so chat threads claim what they edit; the claims line in F-TK-04's briefing; plans kept in `$DATA/plans.json` and read again after a restart; the plan's runs and verdicts per task; Land approved through F-WT-07's Land worktrees. Later: Lead answering agents (the supervisor loop).
 
 **Verification**
 ```bash
 cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
-cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06
+cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06 && cargo test -p tandem-desktop --lib f_tk_07
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
@@ -2285,6 +2286,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 - **E2E-M18-CN-09 Walk-and-review.** A Pro call with a done agent in a git folder. Expected: `review_next`, `review_send_back` (the review prompt reaches the agent's pane), the agent finishes again, `review_next` and `review_approve` approve it; a paired phone's `review.current` returns the item and its migration diff, and `review.approve` is refused.
 - **E2E-M18-TK-05 Claims.** Two worktrees' fake Claude Code agents. Expected: one claims `src/auth/` with the tool, the other's edit of `src/auth/session.ts` is claimed from its hook; both panes show "… both claim src/auth/session.ts" once and the review queue lists the overlap; an overlap that arises while a worktree's tab is hidden and its pane parked reaches that pane when its tab is shown; removing one worktree clears it.
 - **E2E-M18-TK-06 Plan with Lead.** A git workspace, no account (D-869), and the fake Claude as Lead. Expected: Plan with Lead opens "Plan: …" in that workspace with the goal and the markers; the fake reply becomes a draft of two tasks, one engine falling back; an edited title is what Create tasks writes, as two To do tasks in a new project with their engines; with one task already running from its own Execute…, Execute all… lists both runs and starts nothing until Run; after Run the other task has one run on its suggested engine, the running one keeps its single run, and the plan says it left that one alone.
+- **E2E-M18-TK-07 Follow a plan through.** A git workspace, no account (D-869), and the fake Claude. Expected: a thread in a worktree that writes a file claims it; after Execute all… and Run, the plan shows its runs as they move from queued to in review with Approve; after the runs' worktrees are committed, Land 2 approved… opens Land worktrees with both chosen in plan order; after a restart of the app the plan is still listed with its tasks.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
@@ -2293,7 +2295,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **190 features** (65 P0, 67 P1, 58 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 22 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **191 features** (65 P0, 67 P1, 59 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 25 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2316,7 +2318,8 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **190 features** (6
 | F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
-| F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 |
+| F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-CD-23 | P2 | M18 |
+| F-CD-24 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2343,7 +2346,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **190 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 24 = 190 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 25 = 191 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

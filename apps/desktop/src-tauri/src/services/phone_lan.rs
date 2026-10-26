@@ -570,7 +570,7 @@ pub struct WebFiles {
     files: HashMap<String, Vec<u8>>,
 }
 
-const MISSING_APP: &str = "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>Remote</title><body style=\"font-family:system-ui;background:#060a12;color:#e2e8f0;padding:24px\"><h1>Vibezeo Remote</h1><p>This build of the desktop app doesn't include the phone web app. Open the code with the Vibezeo Remote app instead.</p>";
+const MISSING_APP: &str = "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>Remote</title><body style=\"font-family:system-ui;background:#09090b;color:#e4e4e7;padding:24px\"><h1>Vibezeo Remote</h1><p>This build of the desktop app doesn't include the phone web app. Open the code with the Vibezeo Remote app instead.</p>";
 
 fn content_type(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or_default() {

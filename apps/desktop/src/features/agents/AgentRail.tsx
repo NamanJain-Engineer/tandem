@@ -29,30 +29,31 @@ export function teammateStatus(s: TeammateSummary): Status {
   return "idle";
 }
 
-/** UI-70 trailing slot: ▲ Failed > ◆ Waiting on you > ● n working > age. */
+/** UI-70 trailing slot: Failed > Needs you > n working > age, as quiet
+ * coloured text; the avatar's status mark carries the shape (D-2603). */
 function Trailing({ s, now, selected }: { s: TeammateSummary; now: number; selected: boolean }) {
   if (s.failed)
     return (
-      <span className="shrink-0 text-sm text-danger" data-testid="teammate-trailing">
+      <span className="shrink-0 text-xs font-medium text-danger" data-testid="teammate-trailing">
         {t("agent.rail.failed")}
       </span>
     );
   if (s.waiting)
     return (
-      <span className="shrink-0 text-sm text-waiting" data-testid="teammate-trailing">
+      <span className="shrink-0 text-xs font-medium text-waiting-text" data-testid="teammate-trailing">
         {t("agent.rail.waiting")}
       </span>
     );
   if (s.working > 0)
     return (
-      <span className="shrink-0 text-sm text-working" data-testid="teammate-trailing">
+      <span className="shrink-0 text-xs tabular-nums text-working-text" data-testid="teammate-trailing">
         {t("agent.rail.working", { n: s.working })}
       </span>
     );
   return (
     // On the selected row's accent tint, subtle text falls below AA.
     <span
-      className={cx("shrink-0 text-sm", selected ? "text-fg-muted" : "text-fg-subtle")}
+      className={cx("shrink-0 text-xs tabular-nums", selected ? "text-fg-muted" : "text-fg-subtle")}
       data-testid="teammate-trailing"
     >
       {s.lastAt ? age(s.lastAt, now) : ""}
@@ -171,30 +172,32 @@ function Row({
             }}
             className={cx(
               "flex w-full select-none items-center gap-2 rounded-sm px-2 text-left text-fg outline-none hover:bg-surface-4 focus-visible:shadow-focus",
-              hero ? "py-2" : "h-[34px]",
+              hero ? "py-2" : "py-1.5",
               selected && "bg-accent-soft hover:bg-accent-soft",
             )}
           >
-            <Avatar name={tm.name} id={tm.id} hue={tm.avatarHue} size={hero ? 32 : 24} status={status} />
+            <Avatar name={tm.name} id={tm.id} hue={tm.avatarHue} size={32} status={status} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="flex items-center gap-1.5">
-                <span className="min-w-0 truncate text-base font-medium">{tm.name}</span>
+                <span className="min-w-[min(8ch,100%)] flex-1 truncate text-base font-medium">{tm.name}</span>
                 {!s.chatCapable && <span className="sr-only">{t("agent.rail.terminalOnly")}</span>}
-              </span>
-              {hero && (
-                <span className="truncate text-sm text-fg-muted" data-testid="teammate-line">
-                  {s.lastLine ?? t("agent.rail.noLine")}
+                <span className="flex shrink-0 items-center group-hover:hidden group-focus-within:hidden">
+                  <Trailing s={s} now={now} selected={selected} />
                 </span>
-              )}
-            </span>
-            <span className="flex items-center group-hover:hidden group-focus-within:hidden">
-              <Trailing s={s} now={now} selected={selected} />
+              </span>
+              {/* Every row says what it's doing (D-2603). */}
+              <span
+                className={cx("truncate text-sm", selected ? "text-fg-muted" : "text-fg-subtle")}
+                data-testid="teammate-line"
+              >
+                {s.lastLine ?? t("agent.rail.noLine")}
+              </span>
             </span>
           </button>
         </ContextMenu>
       )}
       {!renaming && (
-        <span className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+        <span className="absolute right-1 top-1 hidden items-center gap-0.5 group-hover:flex group-focus-within:flex">
           {s.chatCapable && (
             <IconButton
               size="sm"

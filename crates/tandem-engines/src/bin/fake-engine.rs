@@ -185,6 +185,13 @@ fn send_line(v: serde_json::Value) {
     let _ = std::io::stdout().flush();
 }
 
+/// A task review (F-TK-04): every fake engine gives this verdict instead of
+/// the echo, so a run's review approves whichever fake reviews it.
+fn review_reply(text: &str) -> Option<&'static str> {
+    (text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve"))
+        .then_some("Verdict: Approve\nThe change does what the task asks.")
+}
+
 /// Lead's answer to a plan request (F-TK-06): two tasks between the
 /// prompt's markers, the second on an engine Vibezeo didn't offer.
 fn plan_reply(text: &str) -> Option<String> {
@@ -266,12 +273,10 @@ fn app_turn(thread: &str, turn: &str, text: &str) {
         serde_json::json!({"threadId": thread, "turn": {"id": turn, "status": "inProgress", "items": []}}),
     );
     let item = format!("msg_{turn}");
-    // A task review (F-TK-04): a verdict instead of the echo.
-    let verdict = "Verdict: Approve\nThe change does what the task asks.";
     let opinion = second_opinion_reply(text);
     let (first, rest) = if let Some(o) = opinion.as_deref() {
         ("", o)
-    } else if text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve") {
+    } else if let Some(verdict) = review_reply(text) {
         ("", verdict)
     } else {
         ("You said: ", text)

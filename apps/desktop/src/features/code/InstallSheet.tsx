@@ -158,7 +158,7 @@ export function InstallSheet({
     >
       <div data-testid="install-sheet" className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <EngineGlyph letters={engine?.spec.logo ?? ""} size={20} />
+          <EngineGlyph letters={engine?.spec.logo ?? ""} engine={engine?.spec.id} size={20} />
           <p className="text-sm text-fg-muted">
             {rollback ? t("install.rollbackBody", { name: label, version: rollback }) : t("install.body", { name: label })}
           </p>

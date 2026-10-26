@@ -176,7 +176,7 @@ function AgentCard({
       <div className="flex items-center gap-2">
         <StatusDot status={view(item.status)} size={8} />
         {logo ? (
-          <EngineGlyph letters={logo} size={16} />
+          <EngineGlyph letters={logo} engine={item.engineId ?? undefined} size={16} />
         ) : (
           <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />
         )}

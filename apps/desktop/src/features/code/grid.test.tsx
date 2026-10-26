@@ -340,14 +340,14 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Maximize pane" })).toBeNull();
-    expect(within(paneEls()[0] as HTMLElement).getByTestId("pane-title").textContent).toBe("Shell · 1");
+    expect(within(paneEls()[0] as HTMLElement).getByTestId("pane-title").textContent).toBe("Shell · shop");
   });
 
   it("F-CD-02 split right opens the picker; Shell adds a pane to the right of the focused one", async () => {
     core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.keyDown(screen.getByRole("button", { name: "Actions for Shell · 1" }), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Actions for Shell · shop" }), { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: /Split right/ }));
     const picker = await screen.findByTestId("pane-picker");
     fireEvent.click(within(picker).getByTestId("tile-shell"));
@@ -493,9 +493,9 @@ describe("pane grid (F-CD-02)", () => {
     const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · shop" }));
     expect(await screen.findByTestId("empty-tab")).toBeTruthy();
-    expect(screen.getByText("Start in shop")).toBeTruthy();
+    expect(screen.getByText("Start an agent in shop")).toBeTruthy();
     expect(calls.filter((c) => c.cmd === "pane_create")).toHaveLength(0);
     fireEvent.click(screen.getByTestId("tile-shell"));
     await waitFor(() => expect(paneEls()).toHaveLength(1));
@@ -560,10 +560,10 @@ describe("pane grid (F-CD-02)", () => {
     await waitFor(() => expect(paneEls()).toHaveLength(1));
     const tabButton = () => within(screen.getByTestId("tab")).getAllByRole("button")[0] as HTMLElement;
     fireEvent.keyDown(tabButton(), { key: "F2" });
-    fireEvent.keyDown(screen.getByLabelText("New name for Tab 1"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("New name for shop"), { key: "Escape" });
     expect(calls.filter((c) => c.cmd === "tab_rename")).toHaveLength(0);
     fireEvent.doubleClick(tabButton());
-    const field = screen.getByLabelText("New name for Tab 1");
+    const field = screen.getByLabelText("New name for shop");
     fireEvent.change(field, { target: { value: "Server" } });
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => expect(tabButton().textContent).toBe("Server"));
@@ -613,14 +613,14 @@ describe("pane grid (F-CD-02)", () => {
       engineId: "claude",
     });
     const titles = screen.getAllByTestId("pane-title").map((el) => el.textContent);
-    expect(titles).toEqual(["Shell · 1", "Claude Code · 1"]);
+    expect(titles).toEqual(["Shell · shop", "Claude Code · shop"]);
   });
 
   it("F-CD-13.1 with only claude installed the grid shows Claude Code first and the rest under not installed", async () => {
     core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · shop" }));
     const grid = await screen.findByTestId("launch-grid");
     await waitFor(() => expect(within(grid).getByTestId("tile-claude")).toBeTruthy());
     const tiles = within(grid)
@@ -639,7 +639,7 @@ describe("pane grid (F-CD-02)", () => {
     core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · shop" }));
     const grid = await screen.findByTestId("launch-grid");
     await waitFor(() => expect(within(grid).getByTestId("more-engines")).toBeTruthy());
     fireEvent.click(within(grid).getByTestId("more-engines"));
@@ -651,7 +651,7 @@ describe("pane grid (F-CD-02)", () => {
     const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" }, noEngines: true });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · shop" }));
     const diag = await screen.findByTestId("engines-diagnostics");
     // The cached report shows at once, before any Check again (a webview reload).
     await waitFor(() =>
@@ -670,7 +670,7 @@ describe("pane grid (F-CD-02)", () => {
     const { calls } = core({ panes: ["pn_a"], tree: { type: "leaf", paneId: "pn_a" } });
     renderCode();
     await waitFor(() => expect(paneEls()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "Close Shell · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Shell · shop" }));
     const grid = await screen.findByTestId("launch-grid");
     fireEvent.click(within(grid).getByTestId("more-engines"));
     fireEvent.click(within(grid).getByTestId("install-kimi"));
