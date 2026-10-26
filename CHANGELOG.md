@@ -7,7 +7,15 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
-## Unreleased
+## 0.12.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. This release gives the app
+a new look: neutral greys, sharper corners, a tinted tile for each engine,
+and quieter pane headers and status bar. Plans from Lead also carry through
+now: follow each task's run and review, land the approved work in the plan's
+order, and find the plan again after a restart.
 
 ### Added
 
@@ -50,6 +58,15 @@ release fails when its version has no section.
   failed counts.
 - [lin] **A first-run page for Agents.** With no teammates yet, the Agents
   view helps you start one from a template.
+
+### Fixed
+
+- [lin] Freeze could fail with "Couldn't freeze this pane" on a pane running
+  one short command after another, when a command ended just as Freeze
+  stopped it. This happened only without a systemd user session, where
+  Freeze stops the pane's processes with signals. Freeze now keeps the
+  pane's shell stopped instead, so the next command waits until you choose
+  "Thaw".
 
 ## 0.11.0
 
