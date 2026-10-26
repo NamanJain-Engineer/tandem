@@ -2332,6 +2332,72 @@ mod tests {
         assert_eq!(plain_distro(&serde_json::json!("--exec")), None);
     }
 
+    #[tokio::test]
+    async fn f_ex_07_1_a_turn_is_counted_at_enter_only_when_sent_watched_and_hookless() {
+        use tandem_engines::registry::HooksSupport;
+        use tandem_store::repo::tabs;
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("shop");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let ws = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(5))
+            .await
+            .expect("ws")
+            .workspace;
+        let tab = tabs::list(&store, &ws.id).await.expect("tabs").remove(0);
+        let svc = TerminalService::new(tandem_pty::PtyManager::new(), store.clone());
+        let reg = svc.engines.registry();
+        let hookless = reg
+            .all()
+            .iter()
+            .find(|e| e.hooks_support == HooksSupport::None)
+            .expect("an engine without hooks")
+            .id
+            .clone();
+        let pane = |engine: String| {
+            let store = store.clone();
+            let tab = tab.id.clone();
+            async move {
+                panes::create_with(&store, &tab, "agent", None, Some(engine))
+                    .await
+                    .expect("pane")
+                    .id
+            }
+        };
+        let plain = pane(hookless).await;
+        let claude = pane("claude".into()).await;
+        let seen: Arc<std::sync::Mutex<Vec<Option<i64>>>> = Arc::default();
+        let got = seen.clone();
+        svc.set_prompt_hook(Arc::new(move |_, _, turn_at| {
+            if let Ok(mut s) = got.lock() {
+                s.push(turn_at);
+            }
+            Box::pin(async {})
+        }));
+        let turn = |pane: PaneId, send: bool| {
+            let svc = svc.clone();
+            let seen = seen.clone();
+            async move {
+                svc.before_prompt(&pane, send).await;
+                seen.lock()
+                    .expect("lock")
+                    .pop()
+                    .expect("the hook ran")
+                    .is_some()
+            }
+        };
+        // Not watched (its engine handed back to the shell): no turn.
+        assert!(!turn(plain.clone(), true).await);
+        svc.status.watch(plain.as_str(), &[], &[], None);
+        svc.status.watch(claude.as_str(), &[], &[], None);
+        // Watched, without hooks: Enter is a turn, typing without it isn't.
+        assert!(turn(plain.clone(), true).await);
+        assert!(!turn(plain.clone(), false).await, "send: false");
+        // Claude-style hooks report UserPromptSubmit, so Enter isn't counted.
+        assert!(!turn(claude.clone(), true).await);
+    }
+
     #[test]
     fn f_ex_07_only_a_bare_enter_outside_a_paste_submits() {
         let scan = |chunks: &[&[u8]]| {

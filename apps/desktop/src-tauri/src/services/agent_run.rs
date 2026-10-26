@@ -47,6 +47,10 @@ pub const CANCELLED: &str = "Not allowed: the pane closed before an answer";
 pub const ONE_AT_A_TIME: &str =
     "Not run: this pane already has a vibezeo run waiting for an answer. Ask again after it's answered";
 pub const FOLDER_MOVED: &str = "Not run: the folder changed after it was checked";
+pub const CLIENT_GONE: &str = "Ended: vibezeo run stopped waiting";
+/// A refused run's ledger line: its line isn't kept, since its values were
+/// never read and so aren't known to the redactor.
+pub const NOT_STARTED: &str = "A run that didn't start (its line isn't kept)";
 
 /// A run is stopped after this long.
 pub const RUN_LIMIT: Duration = Duration::from_secs(10 * 60);
@@ -181,7 +185,12 @@ impl Checked {
 
     /// What "Allow for this agent" allows: this line, in this folder.
     fn allow_key(&self) -> String {
-        format!("{}\n{}", self.cwd.display(), self.command)
+        // `check` refuses a folder that isn't UTF-8, so this is exact.
+        format!(
+            "{}\n{}",
+            self.cwd.to_str().unwrap_or_default(),
+            self.command
+        )
     }
 
     /// The folder is still the one checked: not replaced by a link (or
@@ -221,12 +230,24 @@ pub fn run_env(
 /// Tells cmd.exe (and `CreateProcess` searches) to skip the current folder.
 const NO_CWD_LOOKUP: &str = "NoDefaultCurrentDirectoryInExePath";
 
+/// `path`'s absolute entries; when none are left, a system default (an
+/// empty `PATH` would make `sh` search the current folder).
 fn absolute_path_entries(path: &str) -> String {
     let sep = if cfg!(windows) { ';' } else { ':' };
-    path.split(sep)
+    let kept = path
+        .split(sep)
         .filter(|p| !p.is_empty() && Path::new(p).is_absolute())
         .collect::<Vec<_>>()
-        .join(&sep.to_string())
+        .join(&sep.to_string());
+    if !kept.is_empty() {
+        return kept;
+    }
+    if cfg!(windows) {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        format!(r"{root}\System32;{root}")
+    } else {
+        "/usr/local/bin:/usr/bin:/bin".into()
+    }
 }
 
 /// The shell a run's line goes to.
@@ -256,15 +277,29 @@ impl AgentRuns {
         })
     }
 
-    pub async fn handle(&self, req: RunRequest) -> RunReply {
+    /// Serves a request in its own task, so the client going away (killed,
+    /// or its tool timing out) can't drop the run halfway: the question is
+    /// cancelled or the run's group is killed, and the ledger row is written.
+    pub async fn handle(self: &Arc<Self>, req: RunRequest) -> RunReply {
+        let (alive, waiting) = tokio::sync::watch::channel(());
+        let me = self.clone();
+        let task = tokio::spawn(async move { me.serve(req, waiting).await });
+        let reply = task
+            .await
+            .unwrap_or_else(|_| RunReply::refused("The run stopped unexpectedly"));
+        drop(alive);
+        reply
+    }
+
+    async fn serve(&self, req: RunRequest, waiting: tokio::sync::watch::Receiver<()>) -> RunReply {
         let checked = match self.check(&req).await {
             Ok(c) => c,
             Err(why) => return RunReply::refused(why),
         };
-        let decided = match self.decide(&checked).await {
+        let decided = match self.decide(&checked, client_gone(waiting.clone())).await {
             Ok(d) => d,
             Err((d, why)) => {
-                self.ledger(&checked, d, None, None).await;
+                self.ledger(&checked, d, false, None, None).await;
                 return RunReply::refused(why);
             }
         };
@@ -273,7 +308,8 @@ impl AgentRuns {
             Err(e) => return RunReply::refused(e.message),
         };
         if !checked.folder_holds() {
-            self.ledger(&checked, "folder_moved", None, None).await;
+            self.ledger(&checked, "folder_moved", false, None, None)
+                .await;
             return RunReply::refused(FOLDER_MOVED);
         }
         let login = self.terminals.login_env().await;
@@ -297,29 +333,41 @@ impl AgentRuns {
             &resolved.secrets,
             RUN_LIMIT,
             &|pid| self.terminals.resources.adopt(checked.pane.as_str(), pid),
+            client_gone(waiting),
         )
         .await;
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        self.ledger(&checked, decided, reply.exit_code, Some(took))
+        self.ledger(&checked, decided, true, Some(&reply), Some(took))
             .await;
         reply
     }
 
-    /// The run in the pane's ledger (F-EX-07): its line, the secrets' names,
-    /// who decided, its exit code and how long it took. Never its output.
+    /// The run in the pane's ledger (F-EX-07): its line (once it `ran`,
+    /// its values known to the redactor), the secrets' names, who decided,
+    /// its exit code, how long it took and how it ended. Never its output.
     async fn ledger(
         &self,
         c: &Checked,
         decided: &'static str,
-        exit_code: Option<i32>,
+        ran: bool,
+        reply: Option<&RunReply>,
         duration_ms: Option<i64>,
     ) {
+        let ended = reply.and_then(|r| match r.error.as_deref() {
+            Some(CLIENT_GONE) => Some("client_gone"),
+            Some(e) if e.starts_with("Stopped after") => Some("time_limit"),
+            _ => None,
+        });
         self.terminals
             .activity
             .run(
                 c.pane.as_str(),
                 crate::services::activity::RunRecord {
-                    command: c.command.clone(),
+                    command: if ran {
+                        c.command.clone()
+                    } else {
+                        NOT_STARTED.into()
+                    },
                     // Every variable the run got, by name, and its secret.
                     secrets: c
                         .vars
@@ -330,8 +378,9 @@ impl AgentRuns {
                         })
                         .collect(),
                     decided,
-                    exit_code,
+                    exit_code: reply.and_then(|r| r.exit_code),
                     duration_ms,
+                    ended,
                 },
             )
             .await;
@@ -358,9 +407,11 @@ impl AgentRuns {
         // The folder the pane is in: its worktree, for a worktree's pane.
         let root = std::fs::canonicalize(&ws.root)
             .map_err(|_| "This pane's folder is missing".to_string())?;
+        // A folder name that isn't UTF-8 is refused: the question shows it,
+        // and "Allow for this agent" keys on it, exactly.
         let cwd = std::fs::canonicalize(&req.cwd)
             .ok()
-            .filter(|c| c.starts_with(&root))
+            .filter(|c| c.starts_with(&root) && c.to_str().is_some())
             .ok_or_else(|| format!("vibezeo run works inside this pane's folder, {}", ws.root))?;
         let command = run_request::command_line(&req.argv, dialect()).map_err(str::to_string)?;
         let parsed = secrets::read_env(&root)
@@ -403,7 +454,11 @@ impl AgentRuns {
     /// each only while `.env` gives the run what it did then; else the
     /// person's answer. Who decided (as the ledger names it), or that and
     /// why not.
-    async fn decide(&self, c: &Checked) -> Result<&'static str, (&'static str, String)> {
+    async fn decide(
+        &self,
+        c: &Checked,
+        gone: impl Future<Output = ()>,
+    ) -> Result<&'static str, (&'static str, String)> {
         let rules = RunRules::load(&self.data);
         if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
             return Ok("rule");
@@ -429,7 +484,7 @@ impl AgentRuns {
         } else {
             format!("with {}", c.names())
         };
-        let (_, ticket) = self.broker.request(ApprovalRequest {
+        let (view, ticket) = self.broker.request(ApprovalRequest {
             source: SourceRef::Pane {
                 pane_id: c.pane.as_str().to_string(),
             },
@@ -450,7 +505,18 @@ impl AgentRuns {
             .to_string(),
             options: vec![ApprovalScope::Once, ApprovalScope::Conversation],
         });
-        let outcome = ticket.outcome().await;
+        // The client going away takes its question with it.
+        let outcome = tokio::select! {
+            outcome = ticket.outcome() => outcome,
+            _ = gone => {
+                self.broker.cancel(&view.id);
+                self.terminals
+                    .activity
+                    .approval(c.pane.as_str(), "client_gone")
+                    .await;
+                return Err(("client_gone", CLIENT_GONE.into()));
+            }
+        };
         let (decided, answer) = match &outcome {
             ApprovalOutcome::Allowed { scope, via } => {
                 let who = if *scope == ApprovalScope::Conversation {
@@ -536,7 +602,9 @@ pub async fn run(
     values: &[Zeroizing<String>],
     limit: Duration,
     adopt: &(dyn Fn(u32) + Send + Sync),
+    gone: impl Future<Output = ()>,
 ) -> RunReply {
+    tokio::pin!(gone);
     #[cfg(windows)]
     let mut cmd = {
         let root = std::env::var_os("SystemRoot")
@@ -614,17 +682,19 @@ pub async fn run(
                 Some(chunk) => take(&chunk, &mut tail),
                 None => pipes_open = false,
             },
-            status = child.wait() => break Some(status),
-            _ = tokio::time::sleep_until(deadline) => break None,
+            status = child.wait() => break Ended::Exited(status),
+            _ = tokio::time::sleep_until(deadline) => break Ended::TimeLimit,
+            _ = &mut gone => break Ended::ClientGone,
         }
     };
     let (status, error) = match ended {
-        Some(Ok(status)) => (Some(status), None),
-        Some(Err(e)) => (None, Some(format!("The command failed: {e}"))),
-        None => (
+        Ended::Exited(Ok(status)) => (Some(status), None),
+        Ended::Exited(Err(e)) => (None, Some(format!("The command failed: {e}"))),
+        Ended::TimeLimit => (
             None,
             Some(format!("Stopped after {} minutes", limit.as_secs() / 60)),
         ),
+        Ended::ClientGone => (None, Some(CLIENT_GONE.to_string())),
     };
     // Whatever it started and left behind goes with it.
     kill_group(pid);
@@ -642,6 +712,17 @@ pub async fn run(
         cut: tail.cut,
         error,
     }
+}
+
+enum Ended {
+    Exited(std::io::Result<std::process::ExitStatus>),
+    TimeLimit,
+    ClientGone,
+}
+
+/// Resolves when the request's client is gone (its sender dropped).
+async fn client_gone(mut waiting: tokio::sync::watch::Receiver<()>) {
+    while waiting.changed().await.is_ok() {}
 }
 
 fn kill_group(pid: Option<u32>) {
@@ -809,7 +890,7 @@ mod tests {
         let events = fx
             .terminals
             .activity
-            .list("pane", fx.agent.as_str(), None)
+            .list("pane", fx.agent.as_str(), None, 0)
             .await
             .expect("ledger")
             .events;
@@ -954,6 +1035,7 @@ mod tests {
             &[],
             Duration::from_secs(20),
             &|_| {},
+            std::future::pending(),
         )
         .await;
         // The background sleep holds the pipe open, yet the reply comes back
@@ -972,8 +1054,13 @@ mod tests {
             .trim()
             .to_string();
         let _ = std::fs::remove_file(std::env::temp_dir().join("bg.pid"));
-        // Gone, or a zombie waiting for its new parent to reap it.
-        let gone = (0..100).any(|_| {
+        assert!(ends(&pid), "the background child outlived the run");
+    }
+
+    /// The process ends within 2 s: gone, or a zombie waiting for its new
+    /// parent to reap it.
+    fn ends(pid: &str) -> bool {
+        (0..100).any(|_| {
             std::thread::sleep(Duration::from_millis(20));
             match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
                 Err(_) => true,
@@ -983,8 +1070,143 @@ mod tests {
                     .and_then(|rest| rest.split_whitespace().next())
                     .is_some_and(|state| state == "Z" || state == "X"),
             }
-        });
-        assert!(gone, "the background child outlived the run");
+        })
+    }
+
+    async fn ledger_of(fx: &Fx) -> Vec<crate::services::activity::ActivityEvent> {
+        fx.terminals
+            .activity
+            .list("pane", fx.agent.as_str(), None, 0)
+            .await
+            .expect("ledger")
+            .events
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_a_client_gone_while_asking_cancels_its_question_and_frees_the_pane() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["touch", "ran"])).await;
+        // The agent killed `vibezeo` (or its tool timed out).
+        task.abort();
+        let _ = task.await;
+        for _ in 0..200 {
+            if fx.broker.pending().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(fx.broker.pending().is_empty(), "the question was cancelled");
+        assert!(fx
+            .broker
+            .resolve(
+                &view.id,
+                ApprovalDecision::Allow {
+                    scope: ApprovalScope::Once
+                },
+                ApprovalVia::Inline,
+            )
+            .is_err());
+        assert!(!fx.root.join("ran").exists());
+        // The rows follow the cancel.
+        let mut events = Vec::new();
+        for _ in 0..300 {
+            events = ledger_of(&fx).await;
+            if events.iter().any(|e| e.kind == "run") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(events
+            .iter()
+            .any(|e| e.kind == "approval" && e.decided.as_deref() == Some("client_gone")));
+        let run = events.iter().find(|e| e.kind == "run").expect("run row");
+        assert_eq!(run.decided.as_deref(), Some("client_gone"));
+        assert_eq!(run.summary, NOT_STARTED);
+        // The pane can ask again.
+        let (_, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "again"])).await;
+        fx.broker.cancel_source(&view.source);
+        assert_eq!(task.await.expect("task").error.as_deref(), Some(CANCELLED));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_a_client_gone_mid_run_ends_its_group_and_leaves_a_run_row() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let pid_file = fx.root.join("bg.pid");
+        let line = format!("sleep 30 & echo $! > {}; sleep 30", pid_file.display());
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &[&line])).await;
+        allow(&fx, &view, ApprovalScope::Once);
+        let mut pid = String::new();
+        for _ in 0..300 {
+            pid = std::fs::read_to_string(&pid_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !pid.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!pid.is_empty(), "the run started");
+        task.abort();
+        let _ = task.await;
+        assert!(ends(&pid), "the run's group outlived its client");
+        let mut run = None;
+        for _ in 0..300 {
+            run = ledger_of(&fx).await.into_iter().find(|e| e.kind == "run");
+            if run.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let run = run.expect("a run row");
+        assert_eq!(run.decided.as_deref(), Some("once"));
+        assert_eq!(run.ended.as_deref(), Some("client_gone"));
+        assert_eq!(run.exit_code, None);
+        assert!(fx.broker.pending().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_the_pane_is_freed_after_deny_expiry_and_cancel() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        // Deny.
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "a"])).await;
+        fx.broker
+            .resolve(
+                &view.id,
+                ApprovalDecision::Deny { reason: None },
+                ApprovalVia::Inline,
+            )
+            .expect("deny");
+        assert_eq!(task.await.expect("task").error.as_deref(), Some(DECLINED));
+        // Cancel (the pane closed).
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "b"])).await;
+        fx.broker.cancel_source(&view.source);
+        assert_eq!(task.await.expect("task").error.as_deref(), Some(CANCELLED));
+        // Expiry, on a broker with a short time to answer.
+        let short = ApprovalBroker::with_ttl(
+            Arc::new(tandem_core::clock::SystemClock),
+            Duration::from_millis(100),
+        );
+        let runs = AgentRuns::new(
+            fx.store.clone(),
+            Arc::new(MemoryKeychain::new()),
+            short.clone(),
+            fx.terminals.clone(),
+            fx._dir.path().join("data"),
+        );
+        let reply = runs.handle(req(&fx.agent, &fx.root, &["echo", "c"])).await;
+        assert_eq!(reply.error.as_deref(), Some(EXPIRED));
+        // Each time, the pane may ask again at once.
+        let reply = tokio::time::timeout(
+            Duration::from_secs(5),
+            runs.handle(req(&fx.agent, &fx.root, &["echo", "d"])),
+        )
+        .await
+        .expect("asked, then expired");
+        assert_eq!(reply.error.as_deref(), Some(EXPIRED));
+        let (_, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "e"])).await;
+        fx.broker.cancel_source(&view.source);
+        let _ = task.await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1235,6 +1457,21 @@ mod tests {
         assert_eq!(get("PATH"), vec![[abs, abs].join(sep)]);
         assert!(get("API_KEY").is_empty(), ".env sets it");
         assert_eq!(get("HOME"), vec!["/home/me"]);
+        // Nothing absolute left: a system default, never an empty PATH.
+        let only_relative: std::collections::BTreeMap<String, String> =
+            [("PATH".to_string(), [".", "bin", ""].join(sep))]
+                .into_iter()
+                .collect();
+        let path = run_env(&only_relative, &[])
+            .into_iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v)
+            .expect("PATH");
+        assert!(!path.is_empty());
+        assert!(
+            path.split(sep).all(|p| Path::new(p).is_absolute()),
+            "{path}"
+        );
         if cfg!(windows) {
             assert_eq!(get("NoDefaultCurrentDirectoryInExePath"), vec!["1"]);
         } else {

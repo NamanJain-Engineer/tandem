@@ -230,16 +230,20 @@ mod tests {
             let stdin = format!(r#"{{"hook_event_name":"{event}"{extra}}}"#);
             claude_report(event, stdin.as_bytes(), "pn_1", 1)
         };
-        assert_eq!(
-            r("UserPromptSubmit", r#","prompt":"x""#).map(|r| r.event),
-            Some(ReportEvent::Working)
-        );
+        let submitted = r("UserPromptSubmit", r#","prompt":"secret words""#).expect("prompt");
+        assert_eq!(submitted.event, ReportEvent::Working);
+        // F-EX-07: one turn, flagged; the prompt's words never leave.
+        assert!(submitted.payload.prompt);
+        assert!(!serde_json::to_string(&submitted)
+            .expect("json")
+            .contains("secret words"));
         let tool = r(
             "PreToolUse",
             r#","tool_name":"Bash","tool_input":{"command":"rm -rf secret"}"#,
         )
         .expect("tool");
         assert_eq!(tool.payload.tool.as_deref(), Some("Bash"));
+        assert!(!tool.payload.prompt, "a tool isn't a turn");
         assert!(!serde_json::to_string(&tool)
             .expect("json")
             .contains("rm -rf"));

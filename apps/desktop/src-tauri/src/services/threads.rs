@@ -3869,7 +3869,7 @@ mod tests {
             .expect("send");
         ended(&f, 1).await;
         let events = activity
-            .list("thread", f.thread.id.as_str(), None)
+            .list("thread", f.thread.id.as_str(), None, 0)
             .await
             .expect("list")
             .events;

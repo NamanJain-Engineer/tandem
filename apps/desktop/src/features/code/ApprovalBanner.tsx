@@ -6,18 +6,24 @@ import { useDashboard } from "../../stores/dashboard";
 import { answer } from "../dashboard/actions";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSettled } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
 
 /** A pane's pending approval, on the pane itself: what an agent's
- * `vibezeo run` wants (F-TL-12), with Allow once, Allow for this agent
- * (that exact command, until the pane closes) and Deny. */
+ * `vibezeo run` wants (F-TL-12), then Allow once, Allow for this agent
+ * (that exact command in that folder, until the pane closes) and Deny.
+ * The banner scrolls within the pane, and Allow waits until the line's end
+ * has been in view. A pane approval that can't be read offers only Deny. */
 export function ApprovalBanner({ paneId }: { paneId: string }) {
   const approval = useDashboard((s) => s.items[`pane:${paneId}`]?.pendingApproval ?? null);
   const [busy, setBusy] = useState(false);
   const { show } = useToast();
-  const settled = useSettled(approval ? `${approval.id}\n${approval.detail}` : null);
+  const key = approval ? `${approval.id}\n${approval.detail}` : null;
+  const settled = useSettled(key);
+  const [endRef, seenEnd] = useSeenEnd(key);
   if (!approval) return null;
   const run = parseRunApproval(approval);
+  const unreadable = approval.source.type === "pane" && !run;
+  const canAllow = settled && seenEnd && !unreadable;
   const decide = async (allow: boolean, scope: "once" | "conversation" = "once") => {
     setBusy(true);
     const err = await answer(approval.id, allow, "inline", scope);
@@ -29,45 +35,56 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
       <div
         data-testid="pane-approval"
         role="status"
-        className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-divider bg-waiting-soft px-2 py-1 text-sm text-fg"
+        className="flex max-h-[60%] min-h-8 shrink-0 flex-col gap-2 overflow-y-auto border-b border-divider bg-waiting-soft px-2 py-1 text-sm text-fg"
       >
-        <KeyRound size={14} aria-hidden="true" className="shrink-0 text-warning-text" />
-        <div className="flex min-w-[220px] flex-1 flex-col gap-1">
-          <span className="break-words" data-testid="pane-approval-summary">
-            {run ? t("runLine.title") : t("dashboard.wants", { summary: approval.summary })}
-          </span>
-          {run && <RunLine run={run} />}
+        <div className="flex items-start gap-2">
+          <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning-text" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="break-words" data-testid="pane-approval-summary">
+              {unreadable
+                ? t("approval.unreadable")
+                : run
+                  ? t("runLine.title")
+                  : t("dashboard.wants", { summary: approval.summary })}
+            </span>
+            {run && <RunLine run={run} />}
+            <span ref={endRef} aria-hidden="true" data-testid="run-line-end" />
+          </div>
         </div>
-        <Button
-          size="sm"
-          variant="primary"
-          loading={busy}
-          disabled={!settled}
-          data-testid="pane-approval-once"
-          onClick={() => void decide(true)}
-        >
-          {t("dashboard.allowOnce")}
-        </Button>
-        {approval.options.includes("conversation") && (
+        <div className="flex flex-wrap gap-2">
+          {!unreadable && (
+            <Button
+              size="sm"
+              variant="primary"
+              loading={busy}
+              disabled={!canAllow}
+              data-testid="pane-approval-once"
+              onClick={() => void decide(true)}
+            >
+              {t("dashboard.allowOnce")}
+            </Button>
+          )}
+          {!unreadable && approval.options.includes("conversation") && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || !canAllow}
+              data-testid="pane-approval-agent"
+              onClick={() => void decide(true, "conversation")}
+            >
+              {t("dashboard.allowAgent")}
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="secondary"
-            disabled={busy || !settled}
-            data-testid="pane-approval-agent"
-            onClick={() => void decide(true, "conversation")}
+            variant="ghost"
+            disabled={busy}
+            data-testid="pane-approval-deny"
+            onClick={() => void decide(false)}
           >
-            {t("dashboard.allowAgent")}
+            {t("dashboard.deny")}
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          data-testid="pane-approval-deny"
-          onClick={() => void decide(false)}
-        >
-          {t("dashboard.deny")}
-        </Button>
+        </div>
       </div>
     </ApprovalBoundary>
   );

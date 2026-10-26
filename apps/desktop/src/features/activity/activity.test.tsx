@@ -28,6 +28,7 @@ const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
   secrets: [],
   decided: null,
   engine: null,
+  ended: null,
   ...over,
 });
 
@@ -87,6 +88,7 @@ describe("the activity ledger (F-EX-07)", () => {
       source: "pane",
       id: "pn_1",
       before: null,
+      skip: 0,
     });
   });
 
@@ -101,6 +103,8 @@ describe("the activity ledger (F-EX-07)", () => {
     await waitFor(() => expect(screen.getAllByTestId("activity-row")).toHaveLength(6));
     expect(calls.filter((c) => c.cmd === "activity_list").pop()?.args).toMatchObject({
       before: EVENTS[0]?.at,
+      // F-EX-07.3: how many shown events share that millisecond.
+      skip: EVENTS.filter((e) => e.at === EVENTS[0]?.at).length,
     });
     expect(screen.queryByTestId("activity-earlier")).toBeNull();
     expect(screen.getAllByTestId("activity-day").length).toBeGreaterThanOrEqual(2);
@@ -144,6 +148,9 @@ describe("the activity ledger (F-EX-07)", () => {
     expect(decidedLabel("declined")).toBe("You declined");
     expect(decidedLabel("denied:dashboard")).toBe("Denied from the Dashboard");
     expect(decidedLabel("expired")).toBe("Expired unanswered");
+    expect(decidedLabel("busy")).toBe("Not asked: another run was waiting for an answer");
+    expect(decidedLabel("folder_moved")).toBe("Not run: the folder changed after it was checked");
+    expect(decidedLabel("client_gone")).toBe("Ended: vibezeo run stopped waiting");
     expect(decidedLabel(null)).toBeNull();
   });
 });

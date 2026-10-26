@@ -419,7 +419,6 @@ impl NotificationService {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// An approval's notification, stored and raised. A pane's approval is
     /// an agent's `vibezeo run` (F-TL-12): its line and secret names stay
     /// out of the stored notification and the OS one (the session's
@@ -447,6 +446,7 @@ impl NotificationService {
         .await;
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn raise(
         &self,
         kind: NotificationKind,

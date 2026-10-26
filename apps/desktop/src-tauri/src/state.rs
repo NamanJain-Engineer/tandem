@@ -799,7 +799,7 @@ impl AppState {
                     "pane",
                     &pane,
                     ledger::Page {
-                        before: Some(at + 1),
+                        until: Some(at),
                         limit: 1,
                     },
                 )

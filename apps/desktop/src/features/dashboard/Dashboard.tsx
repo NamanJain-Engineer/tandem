@@ -39,7 +39,7 @@ import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSettled } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -116,11 +116,14 @@ function AgentCard({
   title,
   now,
   usage,
+  steady,
 }: {
   item: DashboardItem;
   title: string;
   now: number;
   usage?: PaneUsage;
+  /** The cards haven't moved in the last moment: see `Dashboard`. */
+  steady: boolean;
 }) {
   const showPreview = useSetting("show_status_previews", true);
   const logo =
@@ -131,7 +134,12 @@ function AgentCard({
   const approval = item.pendingApproval;
   const plugin = approval ? parseApproval(approval.detail) : null;
   const run = approval ? parseRunApproval(approval) : null;
-  const settled = useSettled(approval ? `${approval.id}\n${approval.detail}` : null);
+  const key = approval ? `${approval.id}\n${approval.detail}` : null;
+  const settled = useSettled(key);
+  const [endRef, seenEnd] = useSeenEnd(run ? key : null);
+  // A pane's approval is a run; one that can't be read offers only Deny.
+  const unreadable = !!approval && approval.source.type === "pane" && !run;
+  const canAllow = settled && steady && (!run || seenEnd) && !unreadable;
   const close = () =>
     busy
       ? setConfirm(true)
@@ -248,60 +256,78 @@ function AgentCard({
           })}
         </p>
       )}
-      {run ? (
-        // F-TL-12: the whole line, whatever the previews setting, next to Allow.
-        <div onClick={(e) => e.stopPropagation()}>
-          <ApprovalBoundary key={approval?.id} onDeny={() => decide(false)}>
-            <RunLine run={run} />
-          </ApprovalBoundary>
-        </div>
+      {approval ? (
+        // One boundary around the approval: if any of it fails to show,
+        // none of its Allow buttons are left behind.
+        <ApprovalBoundary key={approval.id} onDeny={() => decide(false)}>
+          {run ? (
+            // F-TL-12: the whole line, whatever the previews setting, before Allow.
+            <div onClick={(e) => e.stopPropagation()}>
+              <RunLine run={run} />
+              <span ref={endRef} aria-hidden="true" data-testid="run-line-end" />
+            </div>
+          ) : unreadable ? (
+            <p data-testid="agent-card-preview" className="text-sm text-fg-subtle">
+              {t("approval.unreadable")}
+            </p>
+          ) : (
+            showPreview && (
+              <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
+                {t("dashboard.wants", { summary: approval.summary })}
+              </p>
+            )
+          )}
+          {plugin && (
+            <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
+              <EngineGlyph letters={plugin.logo} size={14} />
+              <span className="truncate">{plugin.pluginLabel}</span>
+              <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
+              {plugin.cost && (
+                <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
+              )}
+            </p>
+          )}
+          <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+            {!unreadable && (
+              <Button
+                size="sm"
+                variant="primary"
+                data-testid="card-allow"
+                disabled={!canAllow}
+                onClick={() => decide(true)}
+              >
+                {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
+              </Button>
+            )}
+            {!unreadable &&
+              !plugin &&
+              item.source.type === "pane" &&
+              approval.options.includes("conversation") && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="card-allow-agent"
+                  disabled={!canAllow}
+                  onClick={() => decide(true, "conversation")}
+                >
+                  {t("dashboard.allowAgent")}
+                </Button>
+              )}
+            <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
+              {t("dashboard.deny")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void jumpTo(item)}>
+              {t("dashboard.open")}
+            </Button>
+          </div>
+        </ApprovalBoundary>
       ) : (
         showPreview &&
-        (approval?.summary ?? item.preview) && (
+        item.preview && (
           <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
-            {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
+            {item.preview}
           </p>
         )
-      )}
-      {plugin && (
-        <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
-          <EngineGlyph letters={plugin.logo} size={14} />
-          <span className="truncate">{plugin.pluginLabel}</span>
-          <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
-          {plugin.cost && (
-            <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
-          )}
-        </p>
-      )}
-      {approval && (
-        <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-          <Button
-            size="sm"
-            variant="primary"
-            data-testid="card-allow"
-            disabled={!settled}
-            onClick={() => decide(true)}
-          >
-            {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
-          </Button>
-          {!plugin && item.source.type === "pane" && approval.options.includes("conversation") && (
-            <Button
-              size="sm"
-              variant="secondary"
-              data-testid="card-allow-agent"
-              disabled={!settled}
-              onClick={() => decide(true, "conversation")}
-            >
-              {t("dashboard.allowAgent")}
-            </Button>
-          )}
-          <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
-            {t("dashboard.deny")}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void jumpTo(item)}>
-            {t("dashboard.open")}
-          </Button>
-        </div>
       )}
       <ConfirmDialog
         open={confirm}
@@ -377,6 +403,14 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
     [workspaces],
   );
   const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
+  // Cards sort by what agents report, so they can move under the pointer:
+  // every Allow waits SETTLE_MS after any card changes place.
+  const placement = useMemo(() => {
+    const keys = (gs: Group[]): string[] =>
+      gs.flatMap((g) => [g.id, ...g.items.map((i) => i.key), ...keys(g.children ?? [])]);
+    return keys(groups).join("\n");
+  }, [groups]);
+  const steady = useSettled(placement);
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
 
@@ -454,6 +488,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
                 title={titles[i.key] ?? ""}
                 now={now}
                 usage={i.source.type === "pane" ? usage[i.source.paneId] : undefined}
+                steady={steady}
               />
             ))}
           </ul>

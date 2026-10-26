@@ -37,4 +37,9 @@ decided: string | null,
 /**
  * The engine a turn went to (`claude`).
  */
-engine: string | null, };
+engine: string | null, 
+/**
+ * How a run ended other than by exiting: `client_gone` (`vibezeo run`
+ * stopped waiting, and the run was ended) or `time_limit`.
+ */
+ended: string | null, };

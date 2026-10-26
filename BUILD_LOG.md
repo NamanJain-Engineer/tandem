@@ -360,6 +360,23 @@ The coordinator's re-review of 7e49bc32..ec3379c7 (six must-fixes and the should
 - D-2818: The run's environment drops empty and relative `PATH` entries; on Windows it adds `NoDefaultCurrentDirectoryInExePath=1` and cmd gets `/V:OFF`, so a `gh.cmd` the agent planted in the run's folder isn't what runs. `.env` is read only when it's a regular file, opened `O_NONBLOCK` (a named pipe can't hold a tokio worker). A child that calls `setsid` leaves the killed group: documented, not handled.
 - D-2819: Allowing a rule-matched run after `.env` changed, even once, re-arms the rule for that `.env`; the question says so rather than changing it, since otherwise nothing ever re-arms a rule. The rules page also warns that arguments can name a program, file or host and that repository config changes what runs. Smaller fixes: the ledger note in `agent_run`'s header, `args_os` in `tandem-hook`, `PendingRun.env` `Zeroizing`, and the notification and approvals-row tests now check what's stored.
 
+### M18 agent-proof secrets slice 2 and activity ledger: third review
+The coordinator's review of ec3379c7..bcee3dba (five must-fixes and the should-fixes, for chain26). D-2800 to D-2819 were used up; these take D-2840 to D-2845, unassigned in this log.
+- D-2840: Allow waits for the line's end to have been in view. The banner puts its buttons after the line and scrolls within the pane (`max-h-[60%]`); `useSeenEnd` observes a marker after the line, on the banner and the Dashboard card. Without IntersectionObserver (only in tests) the end counts as seen; every shipped webview has it.
+- D-2841: Runs and approvals are pruned by age only. Tool reports are signed with the pane's secret, which the agent holds, so 10,000 forged ones used to push its own run rows out of the per-session cap. Tool and subagent rows are capped at 240 a minute per pane by the app's clock (not the report's), with one row counting the dropped.
+- D-2842: A request is served in its own task (`AgentRuns::serve`), so dropping it can't drop the run halfway. The status server dropping the request closes a `watch` channel: the open question is cancelled (`ApprovalBroker::cancel`), or the running command's group is killed, and the row is written with `ended: client_gone`.
+- D-2843: Every Allow on the Dashboard waits 500 ms after any card changes place. That is simpler than freezing the order under the pointer and also covers keyboard focus. An agent that reorders cards constantly delays Allow, but never misdirects it.
+- D-2844: Refusal rows keep `NOT_STARTED`, not the line (their values were never read, so the redactor doesn't know them). Conductor's `get_waiting` gives a pane approval as the fixed body. A pane approval that can't be parsed is Deny-only on the banner and card, inside one boundary with the buttons. The mobile app shows "Answer on your computer" for `deskOnly`.
+- D-2845: Smaller fixes:
+  - A `PATH` with no absolute entries becomes the system default.
+  - `NoDefaultCurrentDirectoryInExePath` is refused in `.env`.
+  - A folder name that isn't UTF-8 is refused, so the "Allow for this agent" key is exact.
+  - The folder's non-ASCII marking shows the warning.
+  - The ledger's cursor is `(before inclusive, skip)`, so no event sharing the boundary millisecond is lost.
+  - `busy`, `folder_moved` and `client_gone` are labelled.
+  - The clippy allow is back on `raise`.
+  - New tests: `prompt: true` from UserPromptSubmit; `send: false` and the unwatched or Claude-hooked engine aren't turns.
+
 ### M18 sandbox log
 - F-TL-11: spec, policy and detection (7 tests, one against the test machine's real `bwrap` 0.9.0), the worktree policy (1), the chip and setting (3 vitest cases), docs and E2E-M18-TL11 (1 case). Run on its own, the spec passes; run beside E2E-M18-AC09 in parallel workers, it once met that run's leftover pane in the "still running" dialog. The E2E found nothing in the product. Review fixes (D-2479 to D-2481): a real worktree test (commits work; no hook through a missing `.git/hooks` or `core.hooksPath`) and the builder's case (1); the E2E checks the whole `~/.ssh` and a missing hooks folder, and E2E-M18-TL11 and E2E-M18-AC09 pass in both orders (a copy of TL11 run first, then AC09, then TL11). The E2E's `$HOME` lives under `/tmp`, which the sandbox shares, so `$HOME` writes are checked by the real-bwrap Rust test only.
 

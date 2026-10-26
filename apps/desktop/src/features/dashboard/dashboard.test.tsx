@@ -114,7 +114,9 @@ describe("Dashboard (F-DB-01)", () => {
           source: { type: "pane", paneId: "pn_1" },
           kind: "command",
           summary: "Run `pnpm migrate`",
-          detail: "",
+          detail: JSON.stringify({
+            vibezeoRun: { command: "pnpm migrate", cwd: "/w", vars: [], envChanged: false },
+          }),
           options: ["once"],
           createdAt: 1,
           expiresAt: 2,
@@ -150,7 +152,9 @@ describe("Dashboard (F-DB-01)", () => {
       source: { type: "pane" as const, paneId: "pn_1" },
       kind: "command" as const,
       summary: "Run `pnpm migrate`",
-      detail: "",
+      detail: JSON.stringify({
+        vibezeoRun: { command: "pnpm migrate", cwd: "/w", vars: [], envChanged: false },
+      }),
       options: ["once" as const],
       createdAt: 1,
       expiresAt: 2,
@@ -298,5 +302,46 @@ describe("Dashboard model", () => {
       "No folder",
     ]);
     expect(closeIdleTargets([a, item("working", "w")])).toEqual([a.key]);
+  });
+});
+
+describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
+  beforeEach(resetStores);
+
+  it("every Allow waits a moment after the cards change place", async () => {
+    const run = JSON.stringify({
+      vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+    });
+    const a = item("waiting", "alpha", {
+      since: 1_000,
+      pendingApproval: {
+        id: "ap_a",
+        source: { type: "pane", paneId: "pn_x" },
+        kind: "command",
+        summary: "run",
+        detail: run,
+        options: ["once"],
+        createdAt: 1,
+        expiresAt: 2,
+      },
+    });
+    const b = item("waiting", "beta", { since: 2_000 });
+    setup([a, b]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    const allow = () => screen.getByTestId("card-allow") as HTMLButtonElement;
+    await screen.findByTestId("card-allow");
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // Another agent's report moves the cards.
+    act(() =>
+      useDashboard.setState((st) => ({
+        items: { ...st.items, [b.key]: { ...b, since: 0 } },
+      })),
+    );
+    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(allow().disabled).toBe(false));
   });
 });

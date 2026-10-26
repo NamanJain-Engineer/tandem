@@ -6,16 +6,21 @@ use tauri::{AppHandle, State};
 use crate::services::activity::ActivityPage;
 use crate::state::AppState;
 
-/// `source` is `pane` or `thread`; `before` (ms) pages back from the
-/// newest events.
+/// `source` is `pane` or `thread`; `before` (ms) and `skip` (how many
+/// shown events share it) page back from the newest events.
 #[tauri::command]
 pub async fn activity_list(
     state: State<'_, AppState>,
     source: String,
     id: String,
     before: Option<i64>,
+    skip: Option<u32>,
 ) -> Result<ActivityPage, IpcError> {
-    state.terminals.activity.list(&source, &id, before).await
+    state
+        .terminals
+        .activity
+        .list(&source, &id, before, skip.unwrap_or(0) as usize)
+        .await
 }
 
 /// Writes the events as JSON Lines where the person picks. `None` when they

@@ -43,6 +43,9 @@ pub struct ActivityEvent {
     pub decided: Option<String>,
     /// The engine a turn went to (`claude`).
     pub engine: Option<String>,
+    /// How a run ended other than by exiting: `client_gone` (`vibezeo run`
+    /// stopped waiting, and the run was ended) or `time_limit`.
+    pub ended: Option<String>,
 }
 
 impl ActivityEvent {
@@ -59,6 +62,7 @@ impl ActivityEvent {
             secrets: Vec::new(),
             decided: None,
             engine: None,
+            ended: None,
         }
     }
 }
@@ -72,6 +76,8 @@ pub struct RunRecord {
     pub decided: &'static str,
     pub exit_code: Option<i32>,
     pub duration_ms: Option<i64>,
+    /// See [`ActivityEvent::ended`].
+    pub ended: Option<&'static str>,
 }
 
 /// `activity_list`: a window of a session's events, oldest first.
@@ -80,7 +86,8 @@ pub struct RunRecord {
 #[ts(export)]
 pub struct ActivityPage {
     pub events: Vec<ActivityEvent>,
-    /// Earlier events exist: ask again with `before` set to the first one's `at`.
+    /// Earlier events exist: ask again with `before` set to the first one's
+    /// `at` and `skip` to how many shown events share that `at`.
     pub more: bool,
 }
 
@@ -117,11 +124,42 @@ fn kind_of(source: &str) -> Result<&'static str, IpcError> {
 pub struct ActivityService {
     store: Store,
     clock: Arc<dyn Clock>,
+    /// Per pane: the minute's start (app clock), tool rows kept, dropped.
+    tool_rate: std::sync::Mutex<std::collections::HashMap<String, (i64, u32, u32)>>,
 }
+
+/// Tool and subagent rows kept per pane per minute. Any process in the pane
+/// can sign tool reports, so a flood is cut here (and noted in one row).
+pub const TOOL_ROWS_PER_MINUTE: u32 = 240;
 
 impl ActivityService {
     pub fn new(store: Store, clock: Arc<dyn Clock>) -> Arc<Self> {
-        Arc::new(Self { store, clock })
+        Arc::new(Self {
+            store,
+            clock,
+            tool_rate: Default::default(),
+        })
+    }
+
+    /// Whether this pane may record another tool row now, and how many were
+    /// dropped in the minute that just ended (to note).
+    fn tool_allowed(&self, pane: &str) -> (bool, u32) {
+        let now = self.clock.now_ms();
+        let Ok(mut rates) = self.tool_rate.lock() else {
+            return (false, 0);
+        };
+        let rate = rates.entry(pane.to_string()).or_insert((now, 0, 0));
+        let mut ended = 0;
+        if now - rate.0 >= 60_000 {
+            ended = rate.2;
+            *rate = (now, 0, 0);
+        }
+        if rate.1 >= TOOL_ROWS_PER_MINUTE {
+            rate.2 += 1;
+            return (false, ended);
+        }
+        rate.1 += 1;
+        (true, ended)
     }
 
     async fn record(&self, row: NewActivity) {
@@ -163,6 +201,24 @@ impl ActivityService {
         let Some(tool) = tool_name(tool) else {
             return;
         };
+        let (allowed, dropped) = self.tool_allowed(pane);
+        if dropped > 0 {
+            self.record(NewActivity {
+                source_kind: "pane",
+                source_id: pane.to_string(),
+                kind: "tool",
+                at: self.clock.now_ms(),
+                summary: format!(
+                    "{dropped} more tool events in one minute weren't kept (over {TOOL_ROWS_PER_MINUTE})"
+                ),
+                detail: serde_json::json!({ "dropped": dropped }),
+                checkpoint_id: None,
+            })
+            .await;
+        }
+        if !allowed {
+            return;
+        }
         self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
@@ -208,6 +264,7 @@ impl ActivityService {
                 "decided": run.decided,
                 "exit_code": run.exit_code,
                 "duration_ms": run.duration_ms,
+                "ended": run.ended,
             }),
             checkpoint_id: None,
         })
@@ -221,19 +278,28 @@ impl ActivityService {
         }
     }
 
-    /// `activity_list`: the newest [`PAGE`] events before `before`, oldest
-    /// first, each linked to the checkpoint taken at or before it.
+    /// `activity_list`: the newest [`PAGE`] events before the cursor, oldest
+    /// first, each linked to the checkpoint taken at or before it. The
+    /// cursor is the first shown event's `at` and how many shown events
+    /// share it (`skip`), so a millisecond split across pages loses none.
     pub async fn list(
         &self,
         source: &str,
         id: &str,
         before: Option<i64>,
+        skip: usize,
     ) -> Result<ActivityPage, IpcError> {
+        let skip = if before.is_some() { skip } else { 0 };
         let page = repo::Page {
-            before,
-            limit: PAGE + 1,
+            until: before,
+            limit: PAGE + 1 + skip as i64,
         };
         let mut events = self.merged(source, id, page).await?;
+        if let Some(at) = before {
+            // Those at the boundary sort last; the newest `skip` were shown.
+            let shown = events.iter().rev().take_while(|e| e.at == at).count();
+            events.truncate(events.len() - skip.min(shown));
+        }
         let more = events.len() as i64 > PAGE;
         if more {
             events.drain(..events.len() - PAGE as usize);
@@ -281,6 +347,7 @@ impl ActivityService {
             let text = |k: &str| d.get(k).and_then(|v| v.as_str()).map(str::to_string);
             e.decided = text("decided");
             e.engine = text("engine");
+            e.ended = text("ended");
             e.exit_code = d
                 .get("exit_code")
                 .and_then(serde_json::Value::as_i64)
@@ -425,7 +492,7 @@ mod tests {
     }
 
     async fn all(svc: &ActivityService, source: &str, id: &str) -> Vec<ActivityEvent> {
-        let page = svc.list(source, id, None).await.expect("list");
+        let page = svc.list(source, id, None, 0).await.expect("list");
         assert!(!page.more);
         page.events
     }
@@ -528,13 +595,14 @@ mod tests {
     async fn f_ex_07_3_a_page_is_the_newest_events_and_export_is_all_of_them_as_json_lines() {
         let (_d, store, clock, svc) = fixture();
         for n in 0..(PAGE + 20) {
-            clock.advance(Duration::from_millis(10));
+            // Under the tool rows' rate limit.
+            clock.advance(Duration::from_millis(300));
             svc.tool("pn_1", &format!("T{n}"), n % 7 == 0, clock.now_ms())
                 .await;
         }
         let t = tick(&clock);
         command(&store, "pn_1", "make", t, 0).await;
-        let first = svc.list("pane", "pn_1", None).await.expect("list");
+        let first = svc.list("pane", "pn_1", None, 0).await.expect("list");
         assert!(first.more);
         assert_eq!(first.events.len() as i64, PAGE);
         assert_eq!(
@@ -543,7 +611,7 @@ mod tests {
         );
         let before = first.events[0].at;
         let earlier = svc
-            .list("pane", "pn_1", Some(before))
+            .list("pane", "pn_1", Some(before), 1)
             .await
             .expect("earlier");
         assert!(!earlier.more);
@@ -572,6 +640,7 @@ mod tests {
                 decided: "agent",
                 exit_code: Some(3),
                 duration_ms: Some(840),
+                ended: None,
             },
         )
         .await;
@@ -591,6 +660,7 @@ mod tests {
                 decided: "once",
                 exit_code: Some(0),
                 duration_ms: Some(1),
+                ended: None,
             },
         )
         .await;
@@ -616,7 +686,82 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "turn");
         assert_eq!(events[0].engine.as_deref(), Some("codex"));
-        assert!(svc.list("routine", "r_1", None).await.is_err());
+        assert!(svc.list("routine", "r_1", None, 0).await.is_err());
         assert!(all(&svc, "pane", "pn_none").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_3_events_sharing_the_page_boundary_millisecond_are_all_listed() {
+        let (_d, store, clock, svc) = fixture();
+        let at = clock.now_ms();
+        for n in 0..(PAGE + 10) {
+            repo::insert(
+                &store,
+                NewActivity {
+                    source_kind: "pane",
+                    source_id: "pn_1".into(),
+                    kind: "tool",
+                    at,
+                    summary: format!("T{n}"),
+                    detail: serde_json::json!({}),
+                    checkpoint_id: None,
+                },
+            )
+            .await
+            .expect("insert");
+        }
+        let first = svc.list("pane", "pn_1", None, 0).await.expect("list");
+        assert!(first.more);
+        let skip = first.events.iter().filter(|e| e.at == at).count();
+        let earlier = svc
+            .list("pane", "pn_1", Some(at), skip)
+            .await
+            .expect("earlier");
+        assert!(!earlier.more);
+        let mut all: Vec<String> = earlier
+            .events
+            .iter()
+            .chain(first.events.iter())
+            .map(|e| e.summary.clone())
+            .collect();
+        assert_eq!(all.len() as i64, PAGE + 10);
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len() as i64, PAGE + 10, "none twice, none lost");
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_tool_rows_are_rate_limited_per_pane_and_the_drop_is_noted() {
+        let (_d, _store, clock, svc) = fixture();
+        for n in 0..(TOOL_ROWS_PER_MINUTE + 50) {
+            svc.tool("pn_flood", &format!("T{n}"), false, clock.now_ms())
+                .await;
+        }
+        // Another pane isn't held back by it.
+        svc.tool("pn_quiet", "Read", false, clock.now_ms()).await;
+        clock.advance(Duration::from_secs(61));
+        svc.tool("pn_flood", "Read", false, clock.now_ms()).await;
+        let events = svc
+            .list("pane", "pn_flood", None, 0)
+            .await
+            .expect("list")
+            .events;
+        assert_eq!(
+            events.len() as u32,
+            TOOL_ROWS_PER_MINUTE + 2,
+            "kept, the note, the next"
+        );
+        assert_eq!(
+            events[TOOL_ROWS_PER_MINUTE as usize].summary,
+            format!("50 more tool events in one minute weren't kept (over {TOOL_ROWS_PER_MINUTE})")
+        );
+        assert_eq!(
+            svc.list("pane", "pn_quiet", None, 0)
+                .await
+                .expect("list")
+                .events
+                .len(),
+            1
+        );
     }
 }

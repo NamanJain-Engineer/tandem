@@ -17,11 +17,19 @@ export const useActivity = create<ActivityState>((set) => ({
   close: () => set({ open: null }),
 }));
 
-/** The newest events, or those before `before` (ms). */
-export function activityList(source: ActivitySource, before: number | null = null): Promise<ActivityPage> {
-  return invoke<ActivityPage | null>("activity_list", { source: source.source, id: source.id, before }).then(
-    (p) => p ?? { events: [], more: false },
-  );
+/** The newest events, or those before `before` (ms), leaving out the
+ * `skip` already shown at that same millisecond. */
+export function activityList(
+  source: ActivitySource,
+  before: number | null = null,
+  skip = 0,
+): Promise<ActivityPage> {
+  return invoke<ActivityPage | null>("activity_list", {
+    source: source.source,
+    id: source.id,
+    before,
+    skip,
+  }).then((p) => p ?? { events: [], more: false });
 }
 
 /** A checkpoint the Checkpoints tab should open on: its workspace's folder,

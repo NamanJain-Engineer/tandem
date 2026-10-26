@@ -179,6 +179,8 @@ const AGENT_REFUSED: &[&str] = &[
     "TMPDIR",
     "COMSPEC",
     "PATHEXT",
+    // On Windows, lets cmd.exe find a bare command in the run's folder again.
+    "NODEFAULTCURRENTDIRECTORYINEXEPATH",
     "NODE_OPTIONS",
     "NODE_PATH",
     "PYTHONSTARTUP",
@@ -446,6 +448,7 @@ mod tests {
             "LD_LIBRARY_PATH",
             "DYLD_INSERT_LIBRARIES",
             "NODE_OPTIONS",
+            "NoDefaultCurrentDirectoryInExePath",
             "PYTHONSTARTUP",
             "PYTHONPATH",
             "BASH_ENV",

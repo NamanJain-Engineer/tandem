@@ -78,6 +78,12 @@ export function decidedLabel(decided: string | null): string | null {
       return t("activity.decided.cancelled");
     case "pending":
       return t("activity.decided.pending");
+    case "busy":
+      return t("activity.decided.busy");
+    case "folder_moved":
+      return t("activity.decided.folderMoved");
+    case "client_gone":
+      return t("activity.decided.clientGone");
     default:
       return state ?? null;
   }
@@ -106,6 +112,8 @@ function viaLabel(via: string): string {
 function facts(e: ActivityEvent): string[] {
   const out: string[] = [];
   if (e.exitCode !== null) out.push(t("activity.exit", { code: e.exitCode }));
+  if (e.ended === "client_gone") out.push(t("activity.ended.clientGone"));
+  if (e.ended === "time_limit") out.push(t("activity.ended.timeLimit"));
   if (e.durationMs !== null) out.push(t("activity.took", { ms: e.durationMs }));
   if (e.secrets.length > 0) out.push(t("activity.uses", { names: e.secrets.join(", ") }));
   if (e.engine) out.push(t("activity.engine", { engine: e.engine }));
@@ -223,7 +231,11 @@ function SessionActivity({ open }: { open: ActivitySource }) {
     const n = request.current;
     setEarlier(true);
     try {
-      const p = await activityList(open, first.at);
+      const p = await activityList(
+        open,
+        first.at,
+        events.filter((e) => e.at === first.at).length,
+      );
       if (n === request.current) setLoad({ at: "ready", events: [...p.events, ...events], more: p.more });
     } catch (e) {
       show({ tone: "error", title: (e as IpcError).message ?? t("activity.error") });

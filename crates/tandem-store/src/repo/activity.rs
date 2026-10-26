@@ -59,23 +59,24 @@ pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> 
         .await
 }
 
-/// A window of a source's history: the newest `limit` before `before` (ms,
-/// exclusive; `None` for now), returned oldest first.
+/// A window of a source's history: the newest `limit` at or before `until`
+/// (ms, inclusive, so events sharing the boundary millisecond aren't
+/// skipped; `None` for now), returned oldest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Page {
-    pub before: Option<i64>,
+    pub until: Option<i64>,
     pub limit: i64,
 }
 
 impl Page {
     /// Everything (Export).
     pub const ALL: Page = Page {
-        before: None,
+        until: None,
         limit: i64::MAX,
     };
 
     fn before(&self) -> i64 {
-        self.before.unwrap_or(i64::MAX)
+        self.until.unwrap_or(i64::MAX)
     }
 }
 
@@ -91,7 +92,7 @@ pub async fn list(
         .read(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, source_kind, source_id, kind, at, summary, detail_json, checkpoint_id
-                 FROM activity WHERE source_kind = ?1 AND source_id = ?2 AND at < ?3
+                 FROM activity WHERE source_kind = ?1 AND source_id = ?2 AND at <= ?3
                  ORDER BY at DESC, id DESC LIMIT ?4",
             )?;
             let mut rows = stmt
@@ -165,7 +166,7 @@ pub async fn checkpoints(
         "SELECT c.id, c.created_at, c.reason,
                 NOT EXISTS (SELECT 1 FROM checkpoints e WHERE e.folder = c.folder AND e.created_at < c.created_at),
                 c.workspace_id
-         FROM checkpoints c WHERE c.{column} = ?1 AND c.created_at < ?2
+         FROM checkpoints c WHERE c.{column} = ?1 AND c.created_at <= ?2
          ORDER BY c.created_at DESC, c.id DESC LIMIT ?3"
     );
     let id = source_id.to_string();
@@ -201,7 +202,7 @@ pub async fn commands(
         .read(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, started_at + COALESCE(duration_ms, 0) AS ended, command, exit_code, duration_ms
-                 FROM command_history WHERE pane_id = ?1 AND started_at + COALESCE(duration_ms, 0) < ?2
+                 FROM command_history WHERE pane_id = ?1 AND started_at + COALESCE(duration_ms, 0) <= ?2
                  ORDER BY ended DESC, id DESC LIMIT ?3",
             )?;
             let mut rows = stmt
@@ -232,7 +233,7 @@ pub async fn approvals(
         .read(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, created_at, summary, state, scope, decided_via FROM approvals
-                 WHERE source_kind = 'thread' AND source_id = ?1 AND created_at < ?2
+                 WHERE source_kind = 'thread' AND source_id = ?1 AND created_at <= ?2
                  ORDER BY created_at DESC, id DESC LIMIT ?3",
             )?;
             let mut rows = stmt
@@ -258,7 +259,9 @@ pub async fn approvals(
 pub const KEEP_PER_SOURCE: i64 = 10_000;
 
 /// Drops events older than [`KEEP_DAYS`], then each source's oldest past
-/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`].
+/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`]. Runs and
+/// approvals go by age only: the agent can sign tool reports, so a flood of
+/// them must not push its own runs out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
     prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS).await
 }
@@ -278,12 +281,12 @@ async fn prune_to(
                    SELECT id FROM (
                      SELECT id, ROW_NUMBER() OVER (
                        PARTITION BY source_kind, source_id ORDER BY at DESC, id DESC) AS n
-                     FROM activity)
+                     FROM activity WHERE kind NOT IN ('run', 'approval'))
                    WHERE n > ?1)",
                 [per_source],
             )?;
             let over = t.execute(
-                "DELETE FROM activity WHERE id IN (SELECT id FROM activity ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
+                "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kind NOT IN ('run', 'approval') ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
                 [total],
             )?;
             Ok(old + crowded + over)
@@ -333,7 +336,7 @@ mod tests {
             .await
             .expect("list")
             .is_empty());
-        // A page is the newest events before its cursor, oldest first.
+        // A page is the newest events at or before its cursor, oldest first.
         for at in 30..40 {
             insert(&store, event("pn_1", "tool", at))
                 .await
@@ -344,14 +347,14 @@ mod tests {
             "pane",
             "pn_1",
             Page {
-                before: Some(38),
+                until: Some(38),
                 limit: 3,
             },
         )
         .await
         .expect("page");
         let ats: Vec<i64> = page.iter().map(|r| r.at).collect();
-        assert_eq!(ats, vec![35, 36, 37]);
+        assert_eq!(ats, vec![36, 37, 38]);
     }
 
     #[tokio::test]
@@ -401,6 +404,40 @@ mod tests {
             .await
             .expect("list");
         assert_eq!(quiet.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_a_flood_of_tool_rows_never_prunes_runs_or_approvals() {
+        let (_d, store) = store();
+        let now = 1_000_000;
+        insert(&store, event("pn_1", "run", now - 500))
+            .await
+            .expect("insert");
+        insert(&store, event("pn_1", "approval", now - 499))
+            .await
+            .expect("insert");
+        for at in 0..20 {
+            insert(&store, event("pn_1", "tool", now - 100 + at))
+                .await
+                .expect("insert");
+        }
+        // Per session 4, 6 in all: the tool rows go down to 4; the run and
+        // the approval stay, however many tool rows came after them.
+        prune_to(&store, now, 4, 6).await.expect("prune");
+        let kinds: Vec<String> = list(&store, "pane", "pn_1", Page::ALL)
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|r| r.kind)
+            .collect();
+        assert_eq!(kinds, ["run", "approval", "tool", "tool", "tool", "tool"]);
+        // Age still applies to them.
+        let later = now + 15 * 24 * 60 * 60 * 1000;
+        prune_to(&store, later, 4, 6).await.expect("prune");
+        assert!(list(&store, "pane", "pn_1", Page::ALL)
+            .await
+            .expect("list")
+            .is_empty());
     }
 
     #[tokio::test]

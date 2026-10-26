@@ -6,6 +6,7 @@ import type { ActivityEvent } from "./ActivityEvent";
  */
 export type ActivityPage = { events: Array<ActivityEvent>, 
 /**
- * Earlier events exist: ask again with `before` set to the first one's `at`.
+ * Earlier events exist: ask again with `before` set to the first one's
+ * `at` and `skip` to how many shown events share that `at`.
  */
 more: boolean, };

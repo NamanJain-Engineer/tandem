@@ -17,6 +17,28 @@ export function useSettled(key: string | null): boolean {
   return key !== null && settled === key;
 }
 
+/** A ref for a marker after the run's line, and whether that marker has
+ * been in view (not clipped by the pane or scrolled away) since `key`
+ * changed: Allow waits for the person to have seen the line's end. */
+export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => void, boolean] {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const [seen, setSeen] = useState<string | null>(null);
+  useEffect(() => {
+    if (key === null || el === null) return;
+    // Every webview Vibezeo ships in has it; a test without one sees all.
+    if (typeof IntersectionObserver === "undefined") {
+      setSeen(key);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setSeen(key);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [key, el]);
+  return [setEl, key !== null && seen === key];
+}
+
 type BoundaryProps = { children: ReactNode; onDeny?: () => void };
 
 /** An approval that can't be shown offers no Allow, and doesn't take the

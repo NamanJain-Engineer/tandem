@@ -7,6 +7,8 @@ import { markLine, type RunApproval } from "./runApproval";
  * shown wherever Allow is offered. */
 export function RunLine({ run }: { run: RunApproval }) {
   const pieces = markLine(run.command);
+  const folder = markLine(run.cwd);
+  const marked = pieces.some((p) => p.marked) || folder.some((p) => p.marked);
   return (
     <div className="flex flex-col gap-1" data-testid="run-line">
       <pre
@@ -25,16 +27,14 @@ export function RunLine({ run }: { run: RunApproval }) {
           ),
         )}
       </pre>
-      {pieces.some((p) => p.marked) && (
+      {marked && (
         <p className="text-xs text-warning-text" data-testid="run-line-marked">
           {t("runLine.marked")}
         </p>
       )}
       <p dir="ltr" className="break-all text-xs text-fg-muted" data-testid="run-line-cwd">
         {t("runLine.cwd", {
-          cwd: markLine(run.cwd)
-            .map((p) => p.text)
-            .join(""),
+          cwd: folder.map((p) => p.text).join(""),
         })}
       </p>
       <p className="text-xs text-fg-muted" data-testid="run-line-vars">
