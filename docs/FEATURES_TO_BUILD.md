@@ -49,10 +49,11 @@ here. Never copy its names, wording, visuals, effects or code (`CLAUDE.md`
 - **Phones and small screens.** Under 1024 px wide the frame shows the still
   image with "Tap to explore", which opens the full-screen demo; inside it the
   rail starts collapsed and every surface is reachable by touch.
-- **First steps.** A dismissible hint points at the ready message ("Press
-  Enter to send it"), plus a short "Try this" list: send the message, answer
-  the approval, open Changes, press Ctrl+2 for Code mode, type `help` in the
-  shell, press Ctrl+K.
+- **First steps.** The demo opens in Code mode with agents mid-task and one
+  waiting. Three hints, one at a time, each beside what it describes and gone
+  once the visitor does it: the waiting agent ("Open it to see why"), the
+  ready task in Thread mode ("Press Enter to send this task"), then Changes
+  once the agent has edited something. "Hide tips" ends them early.
 - **Sample world** (grow it with each release, only with what the released
   download does):
   - Code mode: two or three workspaces; agent panes for Claude Code, Codex and

@@ -122,6 +122,7 @@ export {
 } from "./components/markdown";
 export { CodeBlock, LARGE_PREVIEW, MarkdownView, type CodeBlockProps, type MarkdownViewProps } from "./components/MarkdownView";
 export { Popover, type PopoverProps } from "./components/Popover";
+export { Coachmark, placeCoachmark, type CoachmarkProps } from "./components/Coachmark";
 export {
   ContextMeter,
   ProgressBar,
