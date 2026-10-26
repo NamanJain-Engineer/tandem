@@ -2667,7 +2667,8 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
     - coverage 189, and protocol drift with 579 types (this line adds none).
     - E2E: m18-db04 6 of 6, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-wt07 2 of 2.
-- [x] F-TK-07, E2E-M18-TK-07's failure in 0.12.0's E2E run on chain26 6c813365. On a line from origin/chain26.
+- [x] F-TK-07, E2E-M18-TK-07's failure in 0.12.0's E2E run on chain26 6c813365. On a line from origin/chain26 (`tk07-stall`).
+  - **Where it ships:** 0.13.0 (chain27), merged into `m16a-conductor` with F-TK-08, not 0.12.0. 0.12.0's packages were already built and gated, and chain26 fixes the E2E itself with test code only (60819dad: the shared `review_reply`, free-offline's cleanup and the spec's messages). With real engines the stale read below has a window of milliseconds, and a later event corrects it.
   - **What failed:** the plan's runs never reached Approve. They ended In review with no verdict. The `[setup, running]` in the message is a red herring: its `timeoutMsg` was built with the wait's options, so it showed the rows as the wait began.
   - **The cause, a reviewer another spec left installed** (found by the coordinator in the run's TANDEM_HOME):
     - E2E-M18-FREE puts a fake Cursor Agent in `fakebin` and never removed it.
@@ -2697,7 +2698,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `tasks_exec`: two runs that finish together, and their reviews, both reach In review with Approve, on two workers.
     - Ported: `startedStatus`'s branches; Execute all saving from a runtime worker; Create tasks after a restart partway; Codex keeping its start's paths and dropping an unfinished change; Claude's MultiEdit result row.
   - **Docs.** ARCHITECTURE §9.5 (Codex's paths) and §9.6 (the saves, following the runs); OPERATING's E2E lessons (a fake left in `fakebin`, `timeoutMsg`).
-  - **Gate:** pending.
+  - **Gate:** run on `m16a-conductor` after the merge (its entry below).
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
