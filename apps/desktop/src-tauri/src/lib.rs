@@ -1220,10 +1220,18 @@ pub fn run() {
                     .review
                     .set(services::review_queue::start(handle.clone()));
                 // F-TK-06: Plan with Lead.
-                let _ = state.plan.set(services::plan::PlanService::new(
+                // F-TK-07: plans are kept in the data folder; a plan Lead was
+                // still writing is read again.
+                let plans = services::plan::PlanService::new(
                     std::sync::Arc::new(services::plan::AppHost { app: handle.clone() }),
                     state.bus.clone(),
-                ));
+                    Some(state.data.plans()),
+                );
+                let _ = state.plan.set(plans.clone());
+                // Before anything can start their chats (resume does it
+                // again, with the waits).
+                plans.withhold_kept();
+                tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
                 // whose process hasn't started yet gets it when it does.

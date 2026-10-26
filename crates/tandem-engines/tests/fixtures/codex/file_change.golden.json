@@ -7,6 +7,10 @@
     "output": null,
     "outputFile": null,
     "outputTruncated": false,
+    "paths": [
+      "/work/shop/src/cart.ts",
+      "/work/shop/src/total.ts"
+    ],
     "status": "running",
     "type": "tool",
     "verb": "edit"
@@ -30,6 +34,10 @@
     "output": null,
     "outputFile": null,
     "outputTruncated": false,
+    "paths": [
+      "/work/shop/src/cart.ts",
+      "/work/shop/src/total.ts"
+    ],
     "status": "ok",
     "type": "tool",
     "verb": "edit"

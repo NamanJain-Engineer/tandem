@@ -50,6 +50,11 @@ pub enum ThreadEvent {
         output_file: Option<AttachmentId>,
         diff: Option<String>,
         detail: Option<String>,
+        /// The files an edit names, absolute: what the thread's working
+        /// tree claims (F-TK-07). Left out for other tools.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        paths: Option<Vec<String>>,
     },
     AssistantDelta {
         text: String,
@@ -158,7 +163,18 @@ impl ThreadEvent {
             output_file: None,
             diff: None,
             detail: None,
+            paths: None,
         }
+    }
+}
+
+/// `path` as an absolute path: as given, or under `cwd` (F-TK-07).
+pub fn absolute(cwd: &std::path::Path, path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        path.to_string()
+    } else {
+        cwd.join(p).to_string_lossy().into_owned()
     }
 }
 

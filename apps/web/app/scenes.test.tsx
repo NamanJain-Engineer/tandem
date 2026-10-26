@@ -63,6 +63,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     // (D-1897, D-1885), with the scene player allowed there.
     expect(home).not.toContain('data-scene="land"');
     expect(v090.includes('data-scene="land"')).toBe(LANDS);
+    // Drawn from the current build, on the page of the release that brought it (D-1886).
+    expect(v090.includes(`Scene from Vibezeo ${SCENE_BUILD}, simplified. New in 0.9.0.`)).toBe(LANDS && (SCENE_BUILD as string) !== "0.9.0");
+    expect(home).not.toContain("New in");
     expect(v090.includes('<script src="/demo/embed.js" defer=""')).toBe(LANDS);
     expect(allowedScripts("changelog/0.9.0/index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
     const v080 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.8.0" }) }));
