@@ -26,3 +26,15 @@ export const PLATFORM_LABEL: Record<Platform, string> = {
   mac: "macOS",
   win: "Windows",
 };
+
+/** An Added entry as its card shows it (D-1887): the bold title, the first
+ * sentence after it (the lead, in fg) and the rest (the detail, muted). */
+export function addedCard(text: string): { title: string; lead: string; rest: string } {
+  const m = /^\*\*(.+?)\*\*\s*([\s\S]*)$/.exec(text);
+  const title = m ? (m[1] ?? "") : "";
+  const body = m ? (m[2] ?? "") : text;
+  const end = body.search(/[.!?]["”)]?\s/);
+  if (end < 0) return { title, lead: body.trim(), rest: "" };
+  const cut = body.slice(end).search(/\s/) + end;
+  return { title, lead: body.slice(0, cut).trim(), rest: body.slice(cut).trim() };
+}

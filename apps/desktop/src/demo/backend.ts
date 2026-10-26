@@ -372,7 +372,7 @@ const API_WS = WORKSPACES[1] ?? WORKSPACE;
 
 /** The agent waiting on the visitor when the demo opens, for the coach's
  * first hint (DESIGN §5.2.2). */
-export const DEMO_WAITING = { workspaceId: API_WS.id, root: API_WS.root, engine: "Gemini CLI" };
+export const DEMO_WAITING = { workspaceId: API_WS.id, root: API_WS.root, paneId: "pn_gemini", engine: "Gemini CLI" };
 
 /** Four live panes, as a busy morning might have. */
 const PANES: PaneRecord[] = [

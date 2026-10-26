@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RELEASES, versionPath } from "../../lib/changelog";
+import { RELEASES, addedCard, versionPath } from "../../lib/changelog";
 import { RELEASE } from "../../lib/release";
 import { sitemapXml } from "../../lib/site";
 import ChangelogPage from "./page.site";
@@ -35,7 +35,7 @@ describe("the website changelog from CHANGELOG.md (F-WB-03)", () => {
     expect(h).toContain("<h2");
     expect(h).toContain("Added");
     // Markdown in bullets is rendered, and the platform reads in words.
-    expect(h).toContain("<strong>Files.</strong>");
+    expect(h).toMatch(/<strong[^>]*>Files\.<\/strong>/);
     expect(h).toContain("<code>.gitignore</code>");
     expect(h).toContain("Linux");
     expect(h).not.toContain("[lin]");
@@ -45,4 +45,14 @@ describe("the website changelog from CHANGELOG.md (F-WB-03)", () => {
     const map = sitemapXml();
     for (const r of RELEASES) expect(map).toContain(`/changelog/${r.version}/</loc>`);
   });
+
+  it("F-WB-03 an Added card opens with its one-sentence lead in fg, the detail below in fg-muted (D-1887)", async () => {
+    expect(addedCard("**Land worktrees.** It lands them. Then more, e.g. this.")).toEqual({ title: "Land worktrees.", lead: "It lands them.", rest: "Then more, e.g. this." });
+    expect(addedCard("No title here. The rest.")).toEqual({ title: "", lead: "No title here.", rest: "The rest." });
+    expect(addedCard("**Only a title.** One sentence.")).toEqual({ title: "Only a title.", lead: "One sentence.", rest: "" });
+    const h = html(await VersionPage({ params: Promise.resolve({ version: "0.9.0" }) }));
+    const card = /<li class="reveal surface[^"]*"><p class="[^"]*text-fg[^"]*"><strong[^>]*>Land worktrees\.<\/strong>[^<]*?<\/p><p class="[^"]*text-fg-muted/.exec(h);
+    expect(card, "Land worktrees' card").not.toBeNull();
+  });
 });
+

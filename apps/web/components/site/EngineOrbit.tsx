@@ -27,7 +27,8 @@ export function EngineOrbit({ top, radius }: { top: number; radius: number }) {
               } as CSSProperties
             }
           >
-            <span className="orbit-upright -ml-[1.375rem] -mt-[1.375rem] flex size-11 items-center justify-center rounded-full bg-(--site-glass) shadow-[inset_0_1px_0_var(--site-edge-hi),inset_0_0_0_1px_var(--site-line-strong)]">
+            {/* The tile alone, at its own 4 px radius, as the app draws it (D-1887). */}
+            <span className="orbit-upright -ml-4 -mt-4 flex">
               <EngineGlyph letters={engineLetters(e)} engine={engineMark(e).id} size={32} />
             </span>
           </span>
