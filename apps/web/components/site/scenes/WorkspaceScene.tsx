@@ -104,8 +104,8 @@ export function WorkspaceScene() {
                   {t("radar.notice.warn")}
                 </span>
               </span>
-              <span className="sc-btn sc-btn-done" {...fx("pop", 4.75)}>
-                {t("radar.notice.warned")}
+              <span className="sc-status" {...fx("pop", 4.75)}>
+                <Dot status="done" /> {t("radar.notice.warned")}
               </span>
             </span>
           </div>

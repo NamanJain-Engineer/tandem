@@ -22,7 +22,14 @@ async function demoFrame(page: Page): Promise<Frame> {
   return frame;
 }
 
+/** The demo opens in Code mode (D-2605, DESIGN §5.2.1); the ready message
+ * waits in Thread mode. */
+async function toThread(frame: Frame): Promise<void> {
+  await frame.locator('[role="radio"][value="thread"]').first().click();
+}
+
 async function sendReady(frame: Frame): Promise<void> {
+  await toThread(frame);
   const box = frame.locator('[data-testid="composer"] textarea[aria-label="Message"]').first();
   await expect(box).toHaveValue(/checkout sends some people back/);
   await box.focus();
@@ -107,6 +114,7 @@ test("demo AC4 on a phone the frame says Tap to explore, which opens a usable fu
   const frame = await demoFrame(page);
   const stage = await page.locator("[data-demo-stage]").boundingBox();
   expect(stage?.width).toBe(390);
+  await toThread(frame);
   await expect(frame.locator('[data-testid="composer"]').first()).toBeVisible();
   await expect(frame.getByRole("button", { name: "Reset the demo" })).toBeVisible();
   await page.getByRole("button", { name: "Close (Esc)" }).tap();
@@ -138,6 +146,7 @@ test("demo AC5 the 13th message says Demo limit reached; Reset the demo brings t
   await page.getByRole("button", { name: "Reset the demo" }).click();
   await page.waitForSelector('[data-testid="demo-bar"]');
   await expect(page.locator('[data-testid="demo-limit"]')).toHaveCount(0);
+  await toThread(page.mainFrame());
   await expect(page.locator('[data-testid="composer"] textarea[aria-label="Message"]').first()).toHaveValue(/checkout sends some people back/);
   await expect(page.getByText("question 2", { exact: true })).toHaveCount(0);
 });

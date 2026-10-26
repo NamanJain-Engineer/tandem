@@ -2,7 +2,8 @@ import { StatusDot, type Status } from "@tandem/ui/components/StatusDot";
 import type { CSSProperties, ReactNode } from "react";
 import { cx } from "../../../lib/cx";
 import { t } from "../../../lib/scenes";
-import { engineLetters } from "../home/Engines";
+import { engineTint } from "@tandem/ui/components/EngineGlyph";
+import { engineMark } from "../home/Engines";
 
 /** When something happens in a scene, in seconds from its start. Drawn as
  * `--at`, which every scene effect reads as its delay (scenes.css). */
@@ -25,9 +26,15 @@ export function visit(seconds: number, stay: number) {
   return { "data-fx-visit": "", style: at(seconds, { "--stay": `${stay}s` }) } as const;
 }
 
-/** An engine's monogram, as the app draws it (the registry's letters). */
+/** An engine's monogram, as the app draws it (EngineGlyph, D-1895): the
+ * registry's letters in fg on a 4 px tile in the engine's tint. */
 export function Glyph({ engine, focused = false }: { engine: string; focused?: boolean }) {
-  return <span className={cx("sc-glyph", focused && "sc-glyph-on")}>{engineLetters(engine)}</span>;
+  const mark = engineMark(engine);
+  return (
+    <span className={cx("sc-glyph", focused && "sc-glyph-on")} style={{ backgroundColor: engineTint(mark.id) }}>
+      {mark.logo}
+    </span>
+  );
 }
 
 /** The app's status shapes (StatusDot), sized to the scene. */

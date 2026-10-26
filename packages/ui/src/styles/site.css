@@ -197,59 +197,6 @@
   --site-glass-hover: rgb(255 255 255 / 1);
 }
 
-/* Dark is ink, not slate (T8, D-1894), until app-ui's ink semantics land in
-   tokens.css; then this block goes. The page, bands and cards, the app
-   surfaces and the text take app-ui's dark values, so no blue-black page
-   sits behind the ink stage and bezel. It applies wherever the dark theme
-   does: the OS's dark under System, a visitor's Dark, and the app's dark
-   window in the product scenes. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --site-page:      var(--ink-950);
-    --site-raised:    var(--ink-900);
-    --site-card:      var(--ink-850);
-    --tn-bg:          var(--ink-950);
-    --tn-surface-1:   var(--ink-900);
-    --tn-surface-2:   var(--ink-850);
-    --tn-surface-3:   var(--ink-775);
-    --tn-surface-4:   var(--ink-750);
-    --tn-border:        rgb(255 255 255 / 0.08);
-    --tn-border-strong: rgb(255 255 255 / 0.15);
-    --tn-divider:       rgb(255 255 255 / 0.055);
-    --tn-text:        #ededef;
-    --tn-text-muted:  #a3a3ac;
-    --tn-text-subtle: #8b8b95;
-    --tn-text-disabled: var(--ink-500);
-    --tn-status-idle:      var(--ink-300);
-    --tn-status-idle-soft: rgb(161 161 170 / 0.16);
-    --tn-scrollbar:     rgb(255 255 255 / 0.18);
-    --tn-kbd-bg:        var(--ink-800);
-    --tn-ring:          rgb(255 255 255 / 0.09);
-  }
-}
-:root[data-theme="dark"], .site [data-theme="dark"] {
-  --site-page:      var(--ink-950);
-  --site-raised:    var(--ink-900);
-  --site-card:      var(--ink-850);
-  --tn-bg:          var(--ink-950);
-  --tn-surface-1:   var(--ink-900);
-  --tn-surface-2:   var(--ink-850);
-  --tn-surface-3:   var(--ink-775);
-  --tn-surface-4:   var(--ink-750);
-  --tn-border:        rgb(255 255 255 / 0.08);
-  --tn-border-strong: rgb(255 255 255 / 0.15);
-  --tn-divider:       rgb(255 255 255 / 0.055);
-  --tn-text:        #ededef;
-  --tn-text-muted:  #a3a3ac;
-  --tn-text-subtle: #8b8b95;
-  --tn-text-disabled: var(--ink-500);
-  --tn-status-idle:      var(--ink-300);
-  --tn-status-idle-soft: rgb(161 161 170 / 0.16);
-  --tn-scrollbar:     rgb(255 255 255 / 0.18);
-  --tn-kbd-bg:        var(--ink-800);
-  --tn-ring:          rgb(255 255 255 / 0.09);
-}
-
 /* `light:` for the odd utility that differs by theme (Shiki's colours in
    code blocks): the OS's light under System, or the visitor's Light. */
 @custom-variant light {
