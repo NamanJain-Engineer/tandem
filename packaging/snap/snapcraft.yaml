@@ -5,7 +5,7 @@
 # (HUMAN_TODO "Linux stores"). It repackages the released .deb.
 name: vibezeo
 title: Vibezeo
-version: "0.10.0"
+version: "0.11.0"
 summary: A desktop workspace for coding-agent CLIs
 description: |
   Vibezeo runs the coding-agent command-line tools you already use (such as
@@ -30,9 +30,9 @@ apps:
 parts:
   vibezeo:
     plugin: dump
-    source: https://vibezeo.com/downloads/Vibezeo_0.10.0_amd64.deb
+    source: https://vibezeo.com/downloads/Vibezeo_0.11.0_amd64.deb
     source-type: deb
-    source-checksum: sha256/c00850047c2e6f0f1da3bf90bcca01e5ff40b1726f25c668463923419f4ad9c2
+    source-checksum: sha256/a56b8941bc7d18a9391b784bc2ad34fa0e9a5c70ad804ee735b925943481c525
     build-attributes: [enable-patchelf]
     stage-packages:
       - libwebkit2gtk-4.1-0
