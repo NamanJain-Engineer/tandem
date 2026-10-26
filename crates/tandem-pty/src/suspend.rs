@@ -56,6 +56,26 @@ pub fn pause(
     agent: i32,
     shell: Option<i32>,
 ) -> Result<PausedJob, SuspendError> {
+    pause_with(control, agent, shell, false)
+}
+
+/// [`pause`] for Freeze (F-EX-06): when the foreground job ended between
+/// reading it and stopping it, its stopped shell is the whole job. It can't
+/// start the next command, so the pane is frozen, and Thaw continues it.
+pub fn pause_or_hold_shell(
+    control: &dyn ProcessControl,
+    agent: i32,
+    shell: Option<i32>,
+) -> Result<PausedJob, SuspendError> {
+    pause_with(control, agent, shell, true)
+}
+
+fn pause_with(
+    control: &dyn ProcessControl,
+    agent: i32,
+    shell: Option<i32>,
+    hold_shell: bool,
+) -> Result<PausedJob, SuspendError> {
     let shell = shell.filter(|&s| s > 1 && s != agent);
     if let Some(s) = shell {
         control.stop(s)?;
@@ -65,6 +85,12 @@ pub fn pause(
         }
     }
     if let Err(e) = control.stop(agent) {
+        if let (true, SuspendError::Gone, Some(s)) = (hold_shell, &e, shell) {
+            return Ok(PausedJob {
+                agent: s,
+                shell: None,
+            });
+        }
         if let Some(s) = shell {
             let _ = control.cont(s);
         }
@@ -245,6 +271,38 @@ mod order_tests {
         assert_eq!(
             log.calls.lock().expect("lock").as_slice(),
             &[("stop", 100), ("wait", 100), ("stop", 200), ("cont", 100)]
+        );
+    }
+
+    #[test]
+    fn f_ex_06_4_freeze_holds_the_shell_when_its_job_ended_first() {
+        let log = Log {
+            fail: Some(200),
+            ..Log::default()
+        };
+        let job = pause_or_hold_shell(&log, 200, Some(100)).expect("frozen");
+        assert_eq!(
+            job,
+            PausedJob {
+                agent: 100,
+                shell: None
+            }
+        );
+        // The shell stays stopped until Thaw.
+        assert_eq!(
+            log.calls.lock().expect("lock").as_slice(),
+            &[("stop", 100), ("wait", 100), ("stop", 200)]
+        );
+        resume(&log, &job).expect("thaw");
+        assert_eq!(log.calls.lock().expect("lock").last(), Some(&("cont", 100)));
+        // Any other failure still leaves nothing stopped.
+        let stuck = Log {
+            stuck: Some(100),
+            ..Log::default()
+        };
+        assert_eq!(
+            pause_or_hold_shell(&stuck, 200, Some(100)),
+            Err(SuspendError::NotStopped)
         );
     }
 }

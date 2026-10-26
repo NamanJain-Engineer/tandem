@@ -206,6 +206,30 @@ pub fn verb(tool: &str) -> ToolVerb {
     }
 }
 
+/// A tool call remembered for its result row.
+#[derive(Debug, Clone, Default)]
+struct ToolCall {
+    name: String,
+    summary: String,
+    detail: Option<String>,
+    paths: Option<Vec<String>>,
+}
+
+/// The files an edit tool names, absolute (F-TK-07); `None` for tools that
+/// don't edit.
+pub fn edited_paths(tool: &str, input: &Value, cwd: &Path) -> Option<Vec<String>> {
+    let key = match tool {
+        "Edit" | "Write" | "MultiEdit" => "file_path",
+        "NotebookEdit" => "notebook_path",
+        _ => return None,
+    };
+    let path = input
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty())?;
+    Some(vec![crate::events::absolute(cwd, path)])
+}
+
 /// One line for a tool row: the command, path, pattern or URL.
 pub fn arg_summary(tool: &str, input: &Value, cwd: &Path) -> String {
     let s = |k: &str| input.get(k).and_then(Value::as_str).map(str::to_string);
@@ -258,8 +282,8 @@ pub struct ClaudeParser {
     /// "Session started" is said once, and not for a resumed session.
     announce: bool,
     model: String,
-    /// Tool id → (name, summary, detail), for its result row.
-    tools: HashMap<String, (String, String, Option<String>)>,
+    /// Tool id → (name, summary, detail, edited files), for its result row.
+    tools: HashMap<String, ToolCall>,
 }
 
 impl ClaudeParser {
@@ -410,11 +434,26 @@ impl ClaudeParser {
                     let input = b.get("input").cloned().unwrap_or(Value::Null);
                     let summary = arg_summary(&name, &input, &self.cwd);
                     let detail = detail(&input);
+                    let paths = edited_paths(&name, &input, &self.cwd);
                     let mut ev = ThreadEvent::tool(&id, verb(&name), &summary, ToolStatus::Running);
-                    if let ThreadEvent::Tool { detail: d, .. } = &mut ev {
+                    if let ThreadEvent::Tool {
+                        detail: d,
+                        paths: p,
+                        ..
+                    } = &mut ev
+                    {
                         d.clone_from(&detail);
+                        p.clone_from(&paths);
                     }
-                    self.tools.insert(id, (name, summary, detail));
+                    self.tools.insert(
+                        id,
+                        ToolCall {
+                            name,
+                            summary,
+                            detail,
+                            paths,
+                        },
+                    );
                     out.push(Parsed::Event(ev));
                 }
                 _ => {}
@@ -433,11 +472,12 @@ impl ClaudeParser {
                 continue;
             }
             let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
-            let (name, summary, detail) = self
-                .tools
-                .get(id)
-                .cloned()
-                .unwrap_or_else(|| (String::new(), String::new(), None));
+            let ToolCall {
+                name,
+                summary,
+                detail,
+                paths,
+            } = self.tools.get(id).cloned().unwrap_or_default();
             let text = result_text(&b["content"]);
             let is_error = b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
             let status = if !is_error {
@@ -458,6 +498,7 @@ impl ClaudeParser {
                 output_file: None,
                 diff: None,
                 detail,
+                paths,
             }));
         }
         out

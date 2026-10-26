@@ -121,8 +121,8 @@ export const ROADMAP = [
     body: "Go to definition, find references, hover and errors in the Files editor, and the same jumps from a diff, using the language servers you already have, once you trust the repository. Built and in review now.",
   },
   {
-    title: "Follow a plan through",
-    body: "A plan from Lead shows how each task's run is going and stays after a restart, its runs claim the files they change, and you land the work that passed review in the plan's order. Built and in review now.",
+    title: "Lead keeps a plan moving",
+    body: "Once a plan's runs start, Lead can answer their routine questions for you and pass the rest on to you. Built and in review now.",
   },
   {
     title: "Secrets for agents' commands",
@@ -130,15 +130,11 @@ export const ROADMAP = [
   },
   {
     title: "Local models as engines",
-    body: "Agents that run on a model served from your own computer. Being built now.",
+    body: "Agents that run on a model served from your own computer. Built and in review now.",
   },
   {
     title: "Activity ledger",
-    body: "What an agent session did, in order: the turns it was given, the commands it ran, the files it changed, and the approvals it asked for and who answered. Being built now.",
-  },
-  {
-    title: "The app's new look",
-    body: "A visual redesign of the app: neutral colours in light and dark, our own tinted marks to tell engines apart, and a quieter status bar, rail and pane headers. Being built now.",
+    body: "What an agent session did, in order: the turns it was given, the commands it ran, the files it changed, and the approvals it asked for and who answered. Built and in review now.",
   },
   {
     title: "Your phone, from anywhere",
@@ -345,6 +341,10 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Any ACP agent in Thread mode": { icon: "plug", docs: docsPath("engines") },
   Claims: { icon: "compare", docs: docsPath("tasks") },
   "Plan with Lead": { icon: "tasks", docs: docsPath("tasks") },
+  "Follow a plan through": { icon: "tasks", docs: docsPath("tasks") },
+  "Land approved work in the plan's order": { icon: "merge", docs: docsPath("tasks") },
+  "Plans are kept": { icon: "history", docs: docsPath("tasks") },
+  "Chat threads claim the files they edit": { icon: "compare", docs: docsPath("tasks") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

@@ -20,7 +20,7 @@ export type MenuEntry =
   | { type: "separator"; id: string }
   | { type: "label"; id: string; label: string };
 
-const PANEL = "tn-pop z-[var(--z-popover)] min-w-[200px] rounded-md border border-border bg-surface-3 p-1 shadow-2";
+const PANEL = "tn-pop z-[var(--z-popover)] min-w-[200px] rounded-md border border-border bg-surface-3 p-1 shadow-e2";
 const ITEM =
   "relative flex h-7 cursor-default select-none items-center gap-2 rounded-sm px-2 text-base text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-surface-4";
 

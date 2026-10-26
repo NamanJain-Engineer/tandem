@@ -331,7 +331,7 @@ pub fn freeze_tree(
     groups: &[i32],
 ) -> Result<FrozenTree, SuspendError> {
     let agent = foreground.filter(|&g| g > 1).unwrap_or(shell);
-    let job = suspend::pause(control, agent, Some(shell))?;
+    let job = suspend::pause_or_hold_shell(control, agent, Some(shell))?;
     let mut others = Vec::new();
     for &g in groups {
         if g <= 1 || g == shell || g == agent || others.contains(&g) {

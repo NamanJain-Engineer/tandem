@@ -119,6 +119,10 @@ impl DataDir {
     pub fn tasks(&self) -> PathBuf {
         self.root.join("tasks")
     }
+    /// Plans with Lead, kept across restarts (F-TK-07).
+    pub fn plans(&self) -> PathBuf {
+        self.root.join("plans.json")
+    }
     pub fn models(&self) -> PathBuf {
         self.root.join("models")
     }

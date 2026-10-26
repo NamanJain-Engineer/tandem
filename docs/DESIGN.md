@@ -518,7 +518,7 @@ Exact words for every string §5 changes, checked on 20 October against 0.8.0's 
 | `agent.rail.empty` | No teammates. Add one with +. | No teammates yet. |
 | `dashboard.emptyTitle` / `.emptyBody` | No agents running / Start one in Code, Thread or Agent mode. | No agents running / Start one from Code, Thread or Agent mode. Agents that need you show up here. |
 | First finish toast (new) | — | {engine} finished in {workspace} · Review changes (when it changed files; otherwise · Open) |
-| `demo.hint.*`, `demo.try.*` (six-step card) | Your first message is ready… / Try this… | three hints, one at a time: (1) on the waiting agent: "{engine} is waiting on you. Open it to see why." (2) on the thread's composer: "Press Enter to send this task. The agent is simulated and runs in your browser." (3) on Changes: "Open Changes to see what it edited." |
+| `demo.hint.*`, `demo.try.*` (six-step card) | Your first message is ready… / Try this… | three hints, one at a time: (1) on the waiting agent: "{engine} is waiting on you. Open it to see why." (2) while Thread mode isn't showing, under its switch: "Your first task is ready in Thread mode." (D-2605), then on the thread's composer: "Press Enter to send this task. The agent is simulated and runs in your browser." (3) on Changes: "Open Changes to see what it edited." |
 | Demo end (new, once, in the demo bar) | — | That's the loop. Download for Linux · {size} |
 
 ### 9.5 Hosted features, and the retired plan strings (D-869, D-1896)

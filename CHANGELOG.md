@@ -7,6 +7,73 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.12.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. This release gives the app
+a new look: neutral greys, a tinted tile for each engine, quieter pane
+headers, and a status bar that shows what your agents are doing. Plans from
+Lead also carry through now: follow each task's run and review, land the
+approved work in the plan's order, and find the plan again after a restart.
+
+### Added
+
+- [lin] **Follow a plan through.** Once a plan's tasks are created, Plan with
+  Lead lists each task with its latest run: not started, queued, running,
+  ready to review with the review's verdict (Approved or Changes requested),
+  stopped, failed or done. A line counts them, and each row opens its task.
+  While the runs load the list says so, and if they can't be read it says
+  why, with Retry.
+- [lin] **Land approved work in the plan's order.** "Land N approved…" opens
+  Land worktrees with exactly the approved tasks' worktrees chosen, in the
+  plan's order. You check the forecast and confirm the landing there.
+- [lin] **Plans are kept.** A plan stays in the Tasks page's header until you
+  remove it, and comes back after a restart. Its chip there shows whether its
+  runs are going, wait on you, or are done. If Vibezeo closed while Lead was
+  planning, the plan says so and offers Plan again. If it closed while
+  Execute all was starting the runs, or while Create tasks was writing, the
+  plan keeps what was done and the next try does only the rest.
+- [lin] **Chat threads claim the files they edit.** In a thread on this
+  computer, a Claude Code or Codex agent's edits claim their files, as a
+  terminal agent's do, and so do an ACP agent's edits that name their files,
+  so agents in other worktrees of the repository see the overlap. An edit you
+  refused, or one that failed, claims nothing. A task run is asked to claim
+  its files before it edits them.
+
+### Changed
+
+- [lin] **A quieter look.** Neutral ink greys in both the light and dark
+  themes, and softer shadows in the light theme. A working agent shows a
+  filled dot with a slow, breathing halo, which holds still when you reduce
+  motion.
+- [lin] **Engines are easy to tell apart.** Each built-in engine has its own
+  tinted letter tile in pane headers, the rail, the launch grid and threads.
+- [lin] **Pane headers say where you are.** A terminal pane's title names its
+  folder, and an agent pane's names its engine and folder until the agent or
+  your first prompt names the work. Tabs show the task in a few words, and
+  the header's buttons stay dimmed until you point at the header.
+- [lin] **Launch faster.** The launch grid takes the number keys 1 to 9,
+  marks the default engine, and copies a missing engine's install command
+  with one click.
+- [lin] **More in the status bar, only when it matters.** It now shows agents
+  working and waiting, the checks on a worktree's pull request, usage and
+  listening ports, each only while there's something to show.
+- [lin] **Threads summarise their work.** In a Codex thread, and in an ACP
+  agent's thread when the agent sends its edits as diffs, a finished turn
+  counts the files it changed, with lines added and removed. Test runs from
+  Vitest, Jest, cargo test or pytest show passed and failed counts in every
+  thread.
+
+### Fixed
+
+- [lin] Freeze could fail with "Couldn't freeze this pane" on a pane running
+  one short command after another, when a command ended just as Freeze
+  stopped it. This could happen in terminal panes, and in agent panes that
+  run without a systemd user scope, where Freeze stops the pane's processes
+  with signals. Freeze now keeps the pane's shell stopped instead, so the
+  next command waits until you choose "Thaw".
+
 ## 0.11.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

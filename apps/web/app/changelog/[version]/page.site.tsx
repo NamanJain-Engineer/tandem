@@ -10,7 +10,7 @@ import { LAND_CAPTION, LandScene, landSceneText } from "../../../components/site
 import { Icon } from "../../../components/site/Icon";
 import { InlineMarkdown } from "../../../components/site/InlineMarkdown";
 import { SiteFrame } from "../../../components/site/SiteFrame";
-import { PLATFORM_LABEL, RELEASES, versionPath } from "../../../lib/changelog";
+import { PLATFORM_LABEL, RELEASES, addedCard, versionPath } from "../../../lib/changelog";
 import { RELEASE } from "../../../lib/release";
 import { LANDS } from "../../../lib/scenes";
 import { SITE } from "../../../lib/site";
@@ -115,13 +115,17 @@ export default async function VersionPage({ params }: Params) {
                       key={e.text}
                       className={
                         cards
-                          ? "reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&>p>strong:first-child]:mb-1 [&>p>strong:first-child]:block [&>p>strong:first-child]:text-title [&>p>strong:first-child]:text-fg [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
+                          ? "reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
                           : "ml-5 list-disc pl-1 text-copy-sm leading-7 text-fg-muted marker:text-fg-subtle [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg [&_strong]:text-fg"
                       }
                     >
-                      <p>
-                        <InlineMarkdown text={e.text} />
-                      </p>
+                      {cards ? (
+                        <AddedCard text={e.text} />
+                      ) : (
+                        <p>
+                          <InlineMarkdown text={e.text} />
+                        </p>
+                      )}
                       <span className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-subtle">
                         {e.platforms.map((p) => PLATFORM_LABEL[p]).join(", ")}
                       </span>
@@ -136,5 +140,24 @@ export default async function VersionPage({ params }: Params) {
       </article>
       {scene && <script src="/demo/embed.js" defer />}
     </SiteFrame>
+  );
+}
+
+/** An Added card's text (D-1887): its title and one-sentence lead in fg, the
+ * detail below in fg-muted. */
+function AddedCard({ text }: { text: string }) {
+  const { title, lead, rest } = addedCard(text);
+  return (
+    <>
+      <p className="text-fg">
+        {title && <strong className="mb-1 block text-title text-fg">{title}</strong>}
+        <InlineMarkdown text={lead} />
+      </p>
+      {rest && (
+        <p className="text-fg-muted">
+          <InlineMarkdown text={rest} />
+        </p>
+      )}
+    </>
   );
 }

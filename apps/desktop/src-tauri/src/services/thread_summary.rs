@@ -121,6 +121,7 @@ mod tests {
             output_file: None,
             diff: None,
             detail: None,
+            paths: None,
         }
     }
 

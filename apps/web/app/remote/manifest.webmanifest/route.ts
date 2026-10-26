@@ -9,8 +9,8 @@ export function GET() {
       start_url: "/remote",
       scope: "/remote",
       display: "standalone",
-      background_color: "#060a12",
-      theme_color: "#060a12",
+      background_color: "#09090b",
+      theme_color: "#09090b",
       icons: [
         { src: "/icon.png", sizes: "512x512", type: "image/png" },
         { src: "/favicon.svg", sizes: "any", type: "image/svg+xml" },

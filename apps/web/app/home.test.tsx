@@ -54,7 +54,8 @@ describe("home page", () => {
       expect(t.text.startsWith(t.body), t.title).toBe(true);
       expect(RELEASE_TILE_MAP[t.title]?.docs, t.title).toMatch(/^\/docs\//);
       expect(log).toContain(`href="${t.docs}"`);
-      expect(log).toContain(`>${t.title}<`);
+      // React writes a title's apostrophe as &#x27; ("the plan's order", 0.12.0).
+      expect(log).toContain(`>${t.title.replace(/'/g, "&#x27;")}<`);
     }
     expect(log).toContain(`id="new"`);
   });
@@ -79,12 +80,27 @@ describe("home page", () => {
     }
   });
 
+  it("F-WB-01 the hero's orbit carries each engine's tile alone, at its 4 px radius, with no ring round it (D-1887)", () => {
+    const orbit = /<div aria-hidden="true" data-orbit=""[\s\S]*?<\/div><\/div>/.exec(home)?.[0] ?? "";
+    expect(orbit.match(/data-engine="/g)?.length).toBe(ENGINES.length);
+    expect(orbit).not.toContain("rounded-full");
+    expect(orbit).not.toContain("--site-glass");
+  });
+
   it("F-WB-01 engine monograms come from the registry", () => {
     for (const e of ENGINES) {
       const entry = registry.find((r) => r.label === e);
       expect(entry, e).toBeDefined();
       expect(engineLetters(e)).toBe(entry?.logo);
       expect(home).toContain(`>${e}<`);
+    }
+  });
+
+  it("F-WB-01 D-1895 every engine's tile carries its own tint, as in the app", () => {
+    for (const e of ENGINES) {
+      const entry = registry.find((r) => r.label === e);
+      expect(home, e).toContain(`data-engine="${entry?.id}"`);
+      expect(home, e).toContain(`var(--tn-engine-${entry?.id})`);
     }
   });
 

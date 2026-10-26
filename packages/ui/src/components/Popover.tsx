@@ -14,7 +14,7 @@ export type PopoverProps = {
   className?: string;
 };
 
-/** An anchored panel (surface-3, shadow-2): the notifications popover
+/** An anchored panel (surface-3, shadow-e2): the notifications popover
  * (UI-40) and other rich anchored content. Esc and an outside click close it. */
 export function Popover({ trigger, children, label, open, onOpenChange, align = "end", side = "bottom", className }: PopoverProps) {
   return (
@@ -28,7 +28,7 @@ export function Popover({ trigger, children, label, open, onOpenChange, align = 
           sideOffset={6}
           collisionPadding={8}
           className={cx(
-            "tn-pop z-[var(--z-popover)] flex max-h-[min(560px,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-md border border-border bg-surface-3 shadow-2 outline-none",
+            "tn-pop z-[var(--z-popover)] flex max-h-[min(560px,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-md border border-border bg-surface-3 shadow-e2 outline-none",
             className,
           )}
         >

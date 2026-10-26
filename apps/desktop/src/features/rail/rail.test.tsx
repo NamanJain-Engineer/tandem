@@ -6,6 +6,7 @@ import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useSettings } from "../../stores/settings";
+import { useStatus } from "../../stores/status";
 import { reordered, useWorkspaces } from "../../stores/workspaces";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { CodeRail } from "../code/CodeRail";
@@ -75,6 +76,31 @@ beforeEach(resetStores);
 afterEach(() => setInvokeBackend(null));
 
 describe("rail (F-SH-03)", () => {
+  it("F-SH-03 D-2603 the status slot is quiet: a working count, then amber Needs you, never a box", () => {
+    setup([ws("a")]);
+    const rec = (status: "working" | "waiting") => ({
+      key: "pane:p1",
+      status,
+      reason: null,
+      since: 1,
+      ts: status === "working" ? 1 : 2,
+      tool: null,
+      title: null,
+      preview: null,
+    });
+    act(() => {
+      useLayout.setState({
+        tabs: { tb_a: { tree: null, active: null, maximized: null, panes: { p1: {} as never }, keepEmpty: false } },
+      });
+      useStatus.setState({ records: { "pane:p1": rec("working") } });
+    });
+    const slot = () => within(rows()[0] as HTMLElement).getByTestId("workspace-status");
+    expect(slot().textContent).toBe("1 working");
+    act(() => useStatus.setState({ records: { "pane:p1": rec("waiting") } }));
+    expect(slot().textContent).toBe("Needs you");
+    expect(slot().innerHTML).not.toMatch(/uppercase|border/);
+  });
+
   it("F-SH-03.1 opening a workspace that isn't first leaves the order alone", () => {
     setup([ws("a"), ws("b"), ws("c")]);
     fireEvent.click(rows()[2] as HTMLElement);
@@ -219,7 +245,7 @@ describe("rail (F-SH-03)", () => {
     );
     expect(screen.queryByTestId("rail-session")).toBeNull();
     fireEvent.keyDown(rows()[0] as HTMLElement, { key: "ArrowRight" });
-    expect((await screen.findByTestId("rail-session")).textContent).toContain("Shell · 1");
+    expect((await screen.findByTestId("rail-session")).textContent).toContain("Shell · a");
     expect(named("workspace_set_flags")[0]?.args).toEqual({ id: "a", collapsed: false });
   });
 

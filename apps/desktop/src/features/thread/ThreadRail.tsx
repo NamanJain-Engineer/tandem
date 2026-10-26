@@ -160,7 +160,7 @@ function Row({ thread, selected, now }: { thread: Thread; selected: boolean; now
             />
           )}
           <span className={"shrink-0 text-sm " + (selected ? "text-fg-muted" : "text-fg-subtle")}>{rightLabel(thread, now)}</span>
-          <EngineGlyph letters={glyph} size={14} label={engine ?? undefined} />
+          <EngineGlyph letters={glyph} engine={thread.engineId} size={14} label={engine ?? undefined} />
         </button>
       </ContextMenu>
       <ConfirmDialog

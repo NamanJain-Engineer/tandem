@@ -4,11 +4,17 @@ import { ENGINES } from "../../../lib/site";
 import { Section } from "../Section";
 import { stagger } from "../../../lib/motion";
 
+/** An engine's registry entry by its label: its id (which picks the tile's
+ * tint, D-1895) and its `logo` letters. */
+export function engineMark(label: string): { id: string; logo: string } {
+  const entry = (registry as Array<{ id: string; label: string; logo: string }>).find((e) => e.label === label);
+  if (!entry) throw new Error(`${label} is not in crates/tandem-engines/registry.json`);
+  return { id: entry.id, logo: entry.logo };
+}
+
 /** An engine's monogram, from the registry's `logo` letters. Never a vendor logo. */
 export function engineLetters(label: string): string {
-  const entry = (registry as Array<{ label: string; logo: string }>).find((e) => e.label === label);
-  if (!entry) throw new Error(`${label} is not in crates/tandem-engines/registry.json`);
-  return entry.logo;
+  return engineMark(label).logo;
 }
 
 /** #engines (§6.5): the 13 engines as chips, the grid at the section's full
@@ -32,7 +38,7 @@ export function Engines() {
               key={e}
               className={`reveal ${stagger(i)} flex min-h-20 items-center gap-3 border-b border-r border-line px-4 py-4 text-copy-sm font-medium text-fg xl:gap-2.5 xl:px-3 xl:text-[0.8125rem] [&:nth-child(2n)]:max-sm:border-r-0 sm:[&:nth-child(3n)]:border-r-0 xl:[&:nth-child(3n)]:border-r xl:[&:nth-child(7n)]:border-r-0 max-sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:[&:nth-last-child(-n+7)]:border-b-0`}
             >
-              <EngineGlyph letters={engineLetters(e)} size={32} className="shrink-0" />
+              <EngineGlyph letters={engineLetters(e)} engine={engineMark(e).id} size={32} className="shrink-0" />
               <span data-engine-name="" title={e} className="min-w-0 xl:truncate">
                 {e}
               </span>
