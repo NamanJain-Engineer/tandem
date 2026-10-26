@@ -21,7 +21,8 @@ type HintId = "waiting" | "send" | "changes";
 /** Where a hint can sit: the first of its spots that's on screen wins. */
 type Spot = {
   anchor: string;
-  side: "top" | "right" | "bottom";
+  compact?: boolean;
+  side: "top" | "right" | "bottom" | "left";
   align?: "center" | "start";
   text: () => string;
 };
@@ -31,8 +32,16 @@ type Spot = {
 const HINTS: { id: HintId; spots: Spot[] }[] = [
   {
     id: "waiting",
-    // To the row's right, beside the rail.
+    // To the agent's row's right, centred on it, beside the rail; its
+    // workspace's row while the workspace is folded.
     spots: [
+      {
+        anchor: `[data-testid="rail-session"][data-pane="${DEMO_WAITING.paneId}"]`,
+        side: "right",
+        // One line: it crosses the pane's edge, not lines of its text.
+        compact: true,
+        text: () => t("demo.coach.waiting", { engine: DEMO_WAITING.engine }),
+      },
       {
         anchor: `[data-testid="workspace-row"][data-root="${DEMO_WAITING.root}"]`,
         side: "right",
@@ -57,7 +66,14 @@ const HINTS: { id: HintId; spots: Spot[] }[] = [
   {
     id: "changes",
     spots: [
-      { anchor: '[data-testid="changes-toggle"]', side: "bottom", text: () => t("demo.coach.changes") },
+      // One line in the thread's header band, left of the button: below it
+      // would cover the transcript.
+      {
+        anchor: '[data-testid="changes-toggle"]',
+        side: "left",
+        compact: true,
+        text: () => t("demo.coach.changes"),
+      },
     ],
   },
 ];
@@ -185,6 +201,7 @@ export function DemoCoach({ core }: { core: CoachCore }) {
       anchor={at.el}
       side={at.spot.side}
       align={at.spot.align}
+      compact={at.spot.compact}
       label={t("demo.coach.label")}
       footer={
         <>
