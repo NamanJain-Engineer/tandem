@@ -38,14 +38,24 @@ pub fn plan_get(state: State<'_, AppState>, id: String) -> Result<PlanView, IpcE
     plans(&state)?.get(&id)
 }
 
+/// Runs `f` off the main thread and the async workers: it writes files.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, IpcError> + Send + 'static,
+) -> Result<T, IpcError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
+}
+
 /// The edited draft becomes To do tasks in a new project.
 #[tauri::command]
-pub fn plan_create_tasks(
+pub async fn plan_create_tasks(
     state: State<'_, AppState>,
     id: String,
     tasks: Vec<PlanTask>,
 ) -> Result<PlanView, IpcError> {
-    plans(&state)?.create_tasks(&id, tasks)
+    let plans = plans(&state)?;
+    blocking(move || plans.create_tasks(&id, tasks)).await
 }
 
 /// What Execute all starts, read now, for you to confirm.
@@ -61,6 +71,7 @@ pub async fn plan_execute(state: State<'_, AppState>, id: String) -> Result<Plan
 }
 
 #[tauri::command]
-pub fn plan_discard(state: State<'_, AppState>, id: String) -> Result<(), IpcError> {
-    plans(&state)?.discard(&id)
+pub async fn plan_discard(state: State<'_, AppState>, id: String) -> Result<(), IpcError> {
+    let plans = plans(&state)?;
+    blocking(move || plans.discard(&id)).await
 }

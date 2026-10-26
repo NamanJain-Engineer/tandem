@@ -11,7 +11,7 @@ import {
   type ImperativePanelGroupHandle,
 } from "react-resizable-panels";
 import type { IpcError, PaneRecord, WorkspaceSummary } from "@tandem/protocol";
-import { ArrowRightLeft, Play, SquareTerminal, X } from "lucide-react";
+import { ArrowRightLeft, GitBranch, Layers, Play, SquareTerminal, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -72,7 +72,7 @@ import { useActivity } from "../../stores/activity";
 import { RunDialog } from "../secrets/RunDialog";
 import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
-import { baseBranch, isWorktree } from "../../stores/worktrees";
+import { baseBranch, isWorktree, useWorktrees } from "../../stores/worktrees";
 import { useShortcutKeys } from "../commands/useShortcutKeys";
 
 const BOX_THROTTLE_MS = 50;
@@ -249,6 +249,7 @@ const PaneView = memo(function PaneView({
   // Agents report through hooks or heuristics (F-EN-05); shells through
   // their command marks. An exited or failed pane says so either way.
   const agentStatus = useStatus((st) => st.records[paneKey(pane.id)]?.status);
+  const agentSince = useStatus((st) => st.records[paneKey(pane.id)]?.since ?? null);
   const status = paused
     ? "idle"
     : pane.kind === "agent" && agentStatus && phase.kind === "live"
@@ -414,13 +415,15 @@ const PaneView = memo(function PaneView({
       <PaneChrome
         title={title}
         status={status}
+        since={pane.kind === "agent" && (status === "working" || status === "waiting") ? agentSince : null}
+        visible={visible}
         focused={focused && !solo}
         solo={solo}
         maximized={maximized}
         menuItems={menu}
         onMaximize={() => layout().toggleMaximize(tabId, pane.id)}
         onClose={() => useCloseConfirm.getState().request(tabId, pane.id)}
-        glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} size={14} /> : undefined}
+        glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} engine={pane.engineId ?? undefined} size={14} active={focused} /> : undefined}
         name={pane.humanName}
         meta={meta}
         location={
@@ -569,7 +572,7 @@ function PaneCover({
       >
         <StatusDot status={status} size={8} />
         {spec ? (
-          <EngineGlyph letters={spec.logo} size={16} />
+          <EngineGlyph letters={spec.logo} engine={spec.id} size={16} />
         ) : (
           <SquareTerminal size={14} aria-hidden="true" className="text-fg-muted" />
         )}
@@ -589,7 +592,7 @@ function PaneCover({
       </span>
       <span className="flex items-center gap-2 text-sm text-fg-muted">
         {spec ? (
-          <EngineGlyph letters={spec.logo} size={16} />
+          <EngineGlyph letters={spec.logo} engine={spec.id} size={16} />
         ) : (
           <SquareTerminal size={14} aria-hidden="true" />
         )}
@@ -626,15 +629,28 @@ function EmptyTab({ tabId, workspace }: { tabId: string; workspace: WorkspaceSum
           <p className="text-sm text-fg-muted">{t("code.startBody")}</p>
         </div>
         <LaunchGrid tabId={tabId} busy={busy} onPick={(id) => void start(id)} />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="self-start"
-          onClick={() => useLaunch.getState().open(workspace.id)}
-          data-testid="launch-several"
-        >
-          {t("launch.several")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            iconLeft={<Layers size={14} aria-hidden="true" />}
+            onClick={() => useLaunch.getState().open(workspace.id)}
+            data-testid="launch-several"
+          >
+            {t("launch.several")}
+          </Button>
+          {workspace.kind === "local" && workspace.branch && !workspace.missing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              iconLeft={<GitBranch size={14} aria-hidden="true" />}
+              onClick={() => useWorktrees.getState().open({ kind: "new", workspaceId: workspace.id })}
+              data-testid="launch-worktree"
+            >
+              {t("launch.newWorktree")}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -700,6 +716,7 @@ export function PaneGrid({
   const ptyStates = useTerminals((st) => st.states);
   const prompts = useFirstPrompts((st) => st.prompts);
   const pages = useBrowser((st) => st.pages);
+  const folder = useWorkspaces((st) => st.list.find((w) => w.tabs.some((x) => x.id === tabId))?.name ?? null);
   const names = useMemo(() => {
     const sources: Record<string, TitleSources> = {};
     for (const id of Object.keys(tab?.panes ?? {})) {
@@ -711,8 +728,8 @@ export function PaneGrid({
         page: page ? pageTitle(page) : null,
       };
     }
-    return paneTitles(tab?.panes ?? {}, engines, sources);
-  }, [tab?.panes, engines, records, ptyStates, prompts, pages]);
+    return paneTitles(tab?.panes ?? {}, engines, sources, folder);
+  }, [tab?.panes, engines, records, ptyStates, prompts, pages, folder]);
   // The pane in front never turns unread (F-SH-03).
   const active = tab?.active ?? null;
   useEffect(() => {

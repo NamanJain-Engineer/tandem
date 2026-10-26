@@ -6,6 +6,7 @@
 //! through F-TK-04's queue (D-2430).
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -433,11 +434,22 @@ pub trait PlanHost: Send + Sync {
     fn now(&self) -> i64;
 }
 
+#[derive(Serialize, Deserialize)]
 struct Entry {
     view: PlanView,
     nonce: String,
-    /// The runs `prepare` showed: what Execute all starts.
+    /// The runs `prepare` showed: what Execute all starts. Not kept: after
+    /// a restart Execute all shows its runs again.
+    #[serde(skip)]
     launch: Option<Vec<PlanRun>>,
+}
+
+/// `plans.json` (F-TK-07): every plan and its reply code, so a plan
+/// survives a restart.
+#[derive(Serialize, Deserialize)]
+struct Saved {
+    version: u32,
+    plans: Vec<Entry>,
 }
 
 pub struct PlanService {
@@ -446,6 +458,46 @@ pub struct PlanService {
     plans: Mutex<HashMap<String, Entry>>,
     /// Create tasks, one at a time: two clicks make one project.
     creating: Mutex<()>,
+    /// Where plans are kept; `None` keeps them in memory.
+    file: Option<PathBuf>,
+    /// Held from reading the plans to writing them: the last write has
+    /// the latest plans.
+    saving: Mutex<()>,
+}
+
+/// The plans in `path`; none when there's no file or it can't be read. A
+/// plan that was starting its runs when Vibezeo closed goes back to
+/// created, keeping what it queued.
+fn load(path: &Path) -> HashMap<String, Entry> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
+        Err(e) => {
+            tracing::warn!(code = "plan.unreadable", error = %e, "the saved plans couldn't be read");
+            return HashMap::new();
+        }
+    };
+    match serde_json::from_slice::<Saved>(&bytes) {
+        Ok(saved) => saved
+            .plans
+            .into_iter()
+            .map(|mut e| {
+                e.view.waiting = false;
+                if e.view.state == PlanState::Starting {
+                    e.view.state = PlanState::Created;
+                    e.view.error = Some(
+                        "Vibezeo closed while Execute all was starting. The runs it queued are kept."
+                            .to_string(),
+                    );
+                }
+                (e.view.id.clone(), e)
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!(code = "plan.unreadable", error = %e, "the saved plans couldn't be read");
+            HashMap::new()
+        }
+    }
 }
 
 fn not_found() -> IpcError {
@@ -465,13 +517,73 @@ fn not_created(state: PlanState) -> IpcError {
 }
 
 impl PlanService {
-    pub fn new(host: Arc<dyn PlanHost>, bus: EventBus) -> Arc<Self> {
+    /// The service, with the plans kept in `file` (F-TK-07).
+    pub fn new(host: Arc<dyn PlanHost>, bus: EventBus, file: Option<PathBuf>) -> Arc<Self> {
+        let plans = file.as_deref().map(load).unwrap_or_default();
         Arc::new(Self {
             host,
             bus,
-            plans: Mutex::default(),
+            plans: Mutex::new(plans),
             creating: Mutex::default(),
+            file,
+            saving: Mutex::new(()),
         })
+    }
+
+    /// At launch, before anything can start a chat: the kept plans' chats
+    /// get no tasks server again (F-TK-07 AC3).
+    pub fn withhold_kept(&self) {
+        let threads: Vec<ThreadId> = self
+            .lock()
+            .values()
+            .map(|e| e.view.thread_id.clone())
+            .collect();
+        for thread in &threads {
+            self.host.withhold_tasks(thread);
+        }
+    }
+
+    /// After a launch: the kept plans' chats get no tasks server again, and
+    /// plans whose Lead was planning when Vibezeo closed are read again
+    /// (F-TK-07 AC3).
+    pub fn resume(self: &Arc<Self>) {
+        self.withhold_kept();
+        let planning: Vec<(String, ThreadId)> = self
+            .lock()
+            .values()
+            .filter(|e| e.view.state == PlanState::Planning)
+            .map(|e| (e.view.id.clone(), e.view.thread_id.clone()))
+            .collect();
+        for (id, thread) in planning {
+            let me = self.clone();
+            tokio::spawn(async move { me.wait(&id, &thread).await });
+        }
+    }
+
+    /// Writes every plan to the file. Small, so it's written whole.
+    fn save(&self) {
+        let Some(path) = &self.file else {
+            return;
+        };
+        let _turn = self.saving.lock().unwrap_or_else(|p| p.into_inner());
+        let saved = Saved {
+            version: 1,
+            plans: self
+                .lock()
+                .values()
+                .map(|e| Entry {
+                    view: e.view.clone(),
+                    nonce: e.nonce.clone(),
+                    launch: None,
+                })
+                .collect(),
+        };
+        let written = serde_json::to_vec_pretty(&saved)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| tandem_core::atomic::atomic_write(path, &bytes, Some(0o600)));
+        if let Err(e) = written {
+            tracing::warn!(code = "plan.save_failed", error = %e, "the plans weren't saved");
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
@@ -490,6 +602,7 @@ impl PlanService {
             f(&mut e.view);
             e.view.clone()
         };
+        self.save();
         self.publish(&view);
         Some(view)
     }
@@ -587,6 +700,7 @@ impl PlanService {
             },
         );
         tracing::info!(code = "plan.started", "Lead is planning");
+        self.save();
         self.publish(&view);
         let me = self.clone();
         let id = view.id.clone();
@@ -622,6 +736,11 @@ impl PlanService {
                 }
                 Some(ThreadState::Waiting) => {}
                 Some(ThreadState::Done) => break Ok(()),
+                // Only a launch marks a chat interrupted: it was mid-turn
+                // when Vibezeo closed (F-TK-07).
+                Some(ThreadState::Interrupted) => {
+                    break Err("Vibezeo closed while Lead was planning".to_string())
+                }
                 _ => break Err("Lead stopped before it finished the plan".to_string()),
             }
         };
@@ -722,10 +841,14 @@ impl PlanService {
         let project = match project {
             Some(p) => p,
             None => {
-                tracker
+                let p = tracker
                     .save_project(None, &project_name(&goal), None)
                     .map_err(task_err)?
-                    .id
+                    .id;
+                // Kept at once, like each task below: a try after a quit
+                // reuses it rather than making a second project.
+                self.update(id, |v| v.project_id = Some(p.clone()));
+                p
             }
         };
         // Lead's tasks, written once you approved them.
@@ -748,7 +871,15 @@ impl PlanService {
                 &by,
             );
             match saved {
-                Ok(issue) => ids.push(issue.id),
+                Ok(issue) => {
+                    ids.push(issue.id);
+                    // Kept as it's written, so a try after a quit writes
+                    // only the rest (F-TK-07 AC3).
+                    self.update(id, |v| {
+                        v.tasks = tasks.clone();
+                        v.issue_ids = ids.clone();
+                    });
+                }
                 Err(e) => {
                     let err = task_err(e);
                     tracing::warn!(
@@ -848,6 +979,7 @@ impl PlanService {
             e.view.error = None;
             (e.view.clone(), runs)
         };
+        self.save();
         self.publish(&view);
         let back = |err: &IpcError, queued: Vec<String>, skipped: Vec<PlanSkip>| {
             self.update(id, |v| {
@@ -883,7 +1015,12 @@ impl PlanService {
                 })
                 .await;
             match started {
-                Ok(None) => queued.push(run.issue_id),
+                Ok(None) => {
+                    queued.push(run.issue_id);
+                    // Kept at once: a plan caught Starting by a restart
+                    // must not queue this run again (F-TK-07 AC3).
+                    self.update(id, |v| v.queued = queued.clone());
+                }
                 Ok(Some(reason)) => skipped.push(PlanSkip {
                     issue_id: run.issue_id,
                     reason,
@@ -913,9 +1050,12 @@ impl PlanService {
         .ok_or_else(not_found)
     }
 
-    /// `plan_discard`: the plan goes; Lead's thread and any tasks stay.
+    /// `plan_discard` (Discard plan, Remove plan): the plan goes; Lead's
+    /// thread, its tasks and their runs stay.
     pub fn discard(&self, id: &str) -> Result<(), IpcError> {
-        self.lock().remove(id).map(|_| ()).ok_or_else(not_found)
+        self.lock().remove(id).ok_or_else(not_found)?;
+        self.save();
+        Ok(())
     }
 }
 
@@ -1145,6 +1285,8 @@ mod tests {
         blocked: Mutex<HashMap<String, RunBlock>>,
         /// Tasks whose run fails to start.
         failing: Mutex<HashSet<String>>,
+        /// Tasks whose start never returns: Vibezeo closes meanwhile.
+        hanging: Mutex<HashSet<String>>,
         withheld: Mutex<Vec<ThreadId>>,
         stopped: Mutex<Vec<ThreadId>>,
     }
@@ -1257,6 +1399,9 @@ mod tests {
             if self.failing.lock().expect("l").contains(&input.issue_id) {
                 return Err(IpcError::new(ErrorCode::Io, "The disk is full"));
             }
+            if self.hanging.lock().expect("l").contains(&input.issue_id) {
+                std::future::pending::<()>().await;
+            }
             let mut blocked = self.blocked.lock().expect("l");
             if let Some(b) = blocked.get(&input.issue_id) {
                 return Ok(Some(*b));
@@ -1282,7 +1427,140 @@ mod tests {
             ..Fake::default()
         });
         let bus = EventBus::new();
-        (dir, fake.clone(), PlanService::new(fake, bus.clone()), bus)
+        let file = dir.path().join("plans.json");
+        (
+            dir,
+            fake.clone(),
+            PlanService::new(fake, bus.clone(), Some(file)),
+            bus,
+        )
+    }
+
+    /// The app again, after a restart: the same plans file, and a host
+    /// whose Lead chat is in `state` with `reply`.
+    fn restarted(
+        dir: &tempfile::TempDir,
+        state: ThreadState,
+        reply: String,
+    ) -> (Arc<Fake>, Arc<PlanService>) {
+        let fake = Arc::new(Fake {
+            tracker: Some(TaskStore::open(dir.path().join("tasks")).expect("tracker")),
+            ..Fake::default()
+        });
+        *fake.state.lock().expect("l") = Some(state);
+        *fake.reply.lock().expect("l") = reply;
+        let file = dir.path().join("plans.json");
+        let plans = PlanService::new(fake.clone(), EventBus::new(), Some(file));
+        (fake, plans)
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_plans_are_kept_across_a_restart_until_removed() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = created(&fake, &plans).await;
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        let kept = after.get(&view.id).expect("kept");
+        assert_eq!(kept.state, PlanState::Created);
+        assert_eq!(kept.issue_ids, view.issue_ids);
+        assert_eq!(kept.tasks, view.tasks);
+        assert_eq!(after.list().len(), 1);
+        // Its chat gets no tasks server after the restart either: at once,
+        // in the launch's setup, before anything can start it.
+        after.withhold_kept();
+        assert_eq!(*fake2.withheld.lock().expect("l"), vec![plan_thread()]);
+        after.resume();
+        assert_eq!(fake2.withheld.lock().expect("l").len(), 2);
+        // Remove plan forgets it there too; the tasks stay.
+        after.discard(&view.id).expect("remove");
+        let (_fake3, again) = restarted(&dir, ThreadState::Done, String::new());
+        assert!(again.list().is_empty());
+        let tracker = fake.tracker.clone().expect("tracker");
+        assert_eq!(tracker.all().expect("all").len(), 2);
+        // A damaged file starts with no plans rather than failing.
+        std::fs::write(dir.path().join("plans.json"), b"{not json").expect("damage");
+        let (_fake4, damaged) = restarted(&dir, ThreadState::Done, String::new());
+        assert!(damaged.list().is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_a_plan_interrupted_by_a_restart_fails_with_its_reason() {
+        let (dir, _fake, plans, _bus) = rig(false);
+        let view = plans
+            .start(WorkspaceId::from_db("ws_1".to_string()), "Add OAuth".into())
+            .await
+            .expect("start");
+        // Vibezeo closes while Lead plans; the launch marks the chat
+        // interrupted.
+        let (_fake2, after) = restarted(&dir, ThreadState::Interrupted, String::new());
+        assert_eq!(
+            after.get(&view.id).expect("kept").state,
+            PlanState::Planning
+        );
+        after.resume();
+        let failed = finished(&after, &view.id).await;
+        assert_eq!(failed.state, PlanState::Failed);
+        assert_eq!(
+            failed.error.as_deref(),
+            Some("Vibezeo closed while Lead was planning")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_a_plan_whose_lead_finished_while_closed_is_read() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = plans
+            .start(WorkspaceId::from_db("ws_1".to_string()), "Add OAuth".into())
+            .await
+            .expect("start");
+        let n = nonce_of(&fake.sent.lock().expect("l")[0]);
+        let (_fake2, after) = restarted(
+            &dir,
+            ThreadState::Done,
+            reply(&n, r#"{"tasks": [{"title": "Routes", "engine": "codex"}]}"#),
+        );
+        after.resume();
+        let ready = finished(&after, &view.id).await;
+        assert_eq!(ready.state, PlanState::Ready);
+        assert_eq!(ready.tasks[0].title, "Routes");
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_a_plan_closed_while_starting_its_runs_goes_back_keeping_what_it_queued() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = created(&fake, &plans).await;
+        plans.prepare(&view.id).await.expect("prepare");
+        // TAN-1 is queued; Vibezeo closes while TAN-2's run is starting.
+        fake.hanging.lock().expect("l").insert("TAN-2".to_string());
+        let starting = {
+            let plans = plans.clone();
+            let id = view.id.clone();
+            tokio::spawn(async move { plans.execute(&id).await })
+        };
+        for _ in 0..100 {
+            if !fake.executed.lock().expect("l").is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        starting.abort();
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        let back = after.get(&view.id).expect("kept");
+        assert_eq!(back.state, PlanState::Created);
+        assert_eq!(back.queued, vec!["TAN-1".to_string()]);
+        assert!(back.error.is_some());
+        // Execute all again starts only what it hadn't queued.
+        after.prepare(&view.id).await.expect("prepare");
+        let again = after.execute(&view.id).await.expect("execute");
+        assert_eq!(again.queued, vec!["TAN-1".to_string(), "TAN-2".to_string()]);
+        let started: Vec<String> = fake2
+            .executed
+            .lock()
+            .expect("l")
+            .iter()
+            .map(|r| r.issue_id.clone())
+            .collect();
+        assert_eq!(started, vec!["TAN-2".to_string()]);
     }
 
     fn nonce_of(prompt: &str) -> String {
@@ -1557,6 +1835,33 @@ mod tests {
             tracker.meta().expect("meta").projects.len(),
             1,
             "one project"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_3_create_tasks_keeps_the_project_and_each_task_as_it_writes_them() {
+        let (_d, fake, plans, bus) = rig(false);
+        let draft = drafted(&fake, &plans).await;
+        let mut rx = bus.subscribe(Topic::Tasks);
+        plans
+            .create_tasks(&draft.id, draft.tasks.clone())
+            .expect("create");
+        // Every change is saved before it's published, so a quit between
+        // two writes leaves the plan holding what was written.
+        let mut steps = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            let v: PlanView = serde_json::from_value(ev.payload).expect("view");
+            steps.push((v.state, v.project_id.is_some(), v.issue_ids));
+        }
+        let ids = |n: usize| -> Vec<String> { (1..=n).map(|i| format!("TAN-{i}")).collect() };
+        assert_eq!(
+            steps,
+            vec![
+                (PlanState::Ready, true, ids(0)),
+                (PlanState::Ready, true, ids(1)),
+                (PlanState::Ready, true, ids(2)),
+                (PlanState::Created, true, ids(2)),
+            ]
         );
     }
 

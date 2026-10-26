@@ -33,7 +33,7 @@
   --sky-300:   #7dd3fc;  --sky-400:   #38bdf8; --sky-500:   #0ea5e9; --sky-600:   #0284c7; --sky-700: #0369a1;
   --green-300: #86efac;  --green-400: #4ade80; --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534;
   --rose-300:  #fda4af;  --rose-400:  #fb7185; --rose-500:  #f43f5e; --rose-600:  #e11d48; --rose-700:  #be123c; --rose-800: #9f1239;
-  /* Ink: the neutral near-black scale behind the app's surfaces (D-2600). */
+  /* Ink: the neutral near-black scale behind every surface (D-1894, D-2600). */
   --ink-0:   #ffffff;
   --ink-25:  #fafafa;
   --ink-50:  #f4f4f5;
@@ -50,6 +50,7 @@
   --ink-850: #121214;
   --ink-900: #0e0e10;
   --ink-950: #09090b;
+
   --violet-400:#a78bfa;  --violet-500:#8b5cf6;
   --orange-400:#fb923c;
 }
@@ -58,25 +59,26 @@
 :root, [data-theme="dark"] {
   color-scheme: dark;
 
-  /* surfaces (elevation increases upward) */
-  --tn-bg:            var(--slate-950);  /* window background, behind panes */
-  --tn-surface-1:     var(--slate-900);  /* rails, sidebars */
-  --tn-surface-2:     var(--slate-850);  /* panes, cards */
-  --tn-surface-3:     var(--slate-800);  /* raised: menus, popovers, sheets */
-  --tn-surface-4:     var(--slate-750);  /* hover on surface-3, inputs */
-  --tn-overlay:       rgb(2 6 12 / 0.64);/* modal scrim */
+  /* surfaces (elevation increases upward): neutral near-black, each step a
+     little lighter, so panes lift off the window without hard lines (D-2600) */
+  --tn-bg:            var(--ink-950);  /* window background, behind panes */
+  --tn-surface-1:     var(--ink-900);  /* rails, sidebars */
+  --tn-surface-2:     var(--ink-850);  /* panes, cards */
+  --tn-surface-3:     var(--ink-775);  /* raised: menus, popovers, sheets */
+  --tn-surface-4:     var(--ink-750);  /* hover on surface-3, inputs */
+  --tn-overlay:       rgb(0 0 0 / 0.62);/* modal scrim */
 
-  /* borders */
-  --tn-border:        rgb(148 163 184 / 0.14);
-  --tn-border-strong: rgb(148 163 184 / 0.26);
-  --tn-divider:       rgb(148 163 184 / 0.08);
+  /* borders: soft, so elevation does the separating */
+  --tn-border:        rgb(255 255 255 / 0.08);
+  --tn-border-strong: rgb(255 255 255 / 0.15);
+  --tn-divider:       rgb(255 255 255 / 0.055);
 
   /* text */
-  --tn-text:          #e6edf5;
-  --tn-text-muted:    #9aa8bb;
-  --tn-text-subtle:   #7d8ba0;   /* §7.3 fix: was #6b7a90 (4.06–4.39:1) */
-  --tn-text-disabled: #4a5668;
-  --tn-text-inverse:  var(--slate-950);
+  --tn-text:          #ededef;
+  --tn-text-muted:    #a3a3ac;
+  --tn-text-subtle:   #8b8b95;
+  --tn-text-disabled: #55555e;
+  --tn-text-inverse:  var(--ink-950);
 
   /* accent */
   --tn-accent:        var(--teal-400);
@@ -96,14 +98,15 @@
   --tn-status-waiting-soft: rgb(251 191 36 / 0.14);
   --tn-status-done:         var(--green-400);
   --tn-status-done-soft:    rgb(74 222 128 / 0.14);
-  --tn-status-idle:         var(--slate-400);
-  --tn-status-idle-soft:    rgb(100 116 139 / 0.16);
+  --tn-status-idle:         var(--ink-400);
+  --tn-status-idle-soft:    rgb(113 113 122 / 0.16);
   --tn-status-error:        var(--rose-400);
   --tn-status-error-soft:   rgb(251 113 133 / 0.14);
 
   /* feedback */
   --tn-success: var(--green-400);
   --tn-warning: var(--amber-400);
+  --tn-warning-text: var(--amber-400); /* warning as text (meters at 80%, cautions) */
   --tn-danger:  var(--rose-400);
   --tn-danger-hover: var(--rose-300);
   --tn-danger-fg: #2b0710;
@@ -117,31 +120,30 @@
   --tn-diff-hunk-bg:  rgb(56 189 248 / 0.08);
 
   /* misc */
-  --tn-scrollbar:     rgb(148 163 184 / 0.22);
+  --tn-scrollbar:     rgb(255 255 255 / 0.16);
   --tn-selection:     rgb(45 212 191 / 0.28);
-  --tn-kbd-bg:        var(--slate-800);
-  --tn-shadow-color:  0 0 0;
+  --tn-kbd-bg:        var(--ink-775);
 }
 
 /* ---------- Semantic tokens: LIGHT ---------- */
 [data-theme="light"] {
   color-scheme: light;
 
-  --tn-bg:            var(--slate-50);
-  --tn-surface-1:     var(--slate-25);
-  --tn-surface-2:     var(--slate-0);
-  --tn-surface-3:     var(--slate-0);
-  --tn-surface-4:     var(--slate-50);
-  --tn-overlay:       rgb(15 23 42 / 0.36);
+  --tn-bg:            var(--ink-50);
+  --tn-surface-1:     var(--ink-25);
+  --tn-surface-2:     var(--ink-0);
+  --tn-surface-3:     var(--ink-0);
+  --tn-surface-4:     var(--ink-50);
+  --tn-overlay:       rgb(9 9 11 / 0.32);
 
-  --tn-border:        rgb(15 23 42 / 0.10);
-  --tn-border-strong: rgb(15 23 42 / 0.20);
-  --tn-divider:       rgb(15 23 42 / 0.06);
+  --tn-border:        rgb(9 9 11 / 0.09);
+  --tn-border-strong: rgb(9 9 11 / 0.17);
+  --tn-divider:       rgb(9 9 11 / 0.06);
 
-  --tn-text:          #0f172a;
-  --tn-text-muted:    #475569;
-  --tn-text-subtle:   #5f6f84;   /* was #64748b: 4.34:1 on bg/surface-4 (slate-50) */
-  --tn-text-disabled: #94a3b8;
+  --tn-text:          #18181b;
+  --tn-text-muted:    #4f4f58;
+  --tn-text-subtle:   #62626c;
+  --tn-text-disabled: #a1a1aa;
   --tn-text-inverse:  #ffffff;
 
   --tn-accent:        var(--teal-700);   /* #0f766e: 5.5:1 on white (§7.3; teal-600 was 3.74:1) */
@@ -158,15 +160,16 @@
   --tn-status-done-text:    var(--green-700);  /* 5.0:1 */
   --tn-status-waiting:      var(--amber-700);  /* §5.4: 3:1 as a dot (amber-600 was 2.9:1 on bg) */
   --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
-  --tn-status-done:         var(--green-600);
+  --tn-status-done:         var(--green-700);  /* 3:1 as a dot on the ink-50 bg */
   --tn-status-done-soft:    rgb(22 163 74 / 0.10);
-  --tn-status-idle:         var(--slate-400);
-  --tn-status-idle-soft:    rgb(100 116 139 / 0.12);
-  --tn-status-error:        var(--rose-600);
+  --tn-status-idle:         var(--ink-400);
+  --tn-status-idle-soft:    rgb(113 113 122 / 0.12);
+  --tn-status-error:        var(--rose-700);  /* AA as text too: it labels errors across the app */
   --tn-status-error-soft:   rgb(225 29 72 / 0.10);
 
   --tn-success: var(--green-600);
   --tn-warning: var(--amber-600);
+  --tn-warning-text: var(--amber-700); /* AA as text on every light surface */
   --tn-danger:  var(--rose-700);   /* §5.4: 4.5:1 as text (rose-600 was 4.3:1 on bg) */
   --tn-danger-hover: var(--rose-800);
   --tn-danger-fg: #ffffff;
@@ -178,10 +181,9 @@
   --tn-diff-del-fg:   var(--rose-700);
   --tn-diff-hunk-bg:  rgb(2 132 199 / 0.06);
 
-  --tn-scrollbar:     rgb(15 23 42 / 0.20);
+  --tn-scrollbar:     rgb(9 9 11 / 0.20);
   --tn-selection:     rgb(15 118 110 / 0.20);
-  --tn-kbd-bg:        var(--slate-50);
-  --tn-shadow-color:  15 23 42;
+  --tn-kbd-bg:        var(--ink-50);
 }
 
 /* ---------- Theme mapping for Tailwind 4 ---------- */
@@ -220,6 +222,7 @@
   --color-error-soft: var(--tn-status-error-soft);
   --color-success: var(--tn-success);
   --color-warning: var(--tn-warning);
+  --color-warning-text: var(--tn-warning-text);
   --color-danger: var(--tn-danger);
   --color-danger-hover: var(--tn-danger-hover);
   --color-danger-fg: var(--tn-danger-fg);
@@ -254,17 +257,17 @@
   /* spacing: Tailwind default 4px scale is used as-is (spacing-1 = 4px) */
   --spacing: 4px;
 
-  /* radii */
+  /* radii: controls 6, panels 10, dialogs 12 (D-1894) */
   --radius-xs: 4px;    /* chips, kbd, badges */
   --radius-sm: 6px;    /* controls: buttons, inputs, menu items */
-  --radius-md: 8px;    /* panels, panes, cards, popovers */
+  --radius-md: 10px;   /* panels, panes, cards, popovers (D-1894) */
   --radius-lg: 12px;   /* dialogs, sheets */
   --radius-full: 9999px;
 
-  /* shadows (dark theme relies more on borders than shadows) */
-  --shadow-1: 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);
-  --shadow-2: 0 4px 12px rgb(var(--tn-shadow-color) / 0.22), 0 1px 2px rgb(var(--tn-shadow-color) / 0.16);
-  --shadow-3: 0 12px 32px rgb(var(--tn-shadow-color) / 0.30), 0 2px 6px rgb(var(--tn-shadow-color) / 0.18);
+  /* elevation: one set, brand.css's e1–e3 (D-1891, D-1894) */
+  --shadow-1: var(--tn-elev-1);
+  --shadow-2: var(--tn-elev-2);
+  --shadow-3: var(--tn-elev-3);
   --shadow-focus: 0 0 0 2px var(--tn-bg), 0 0 0 4px var(--tn-accent-ring);
 
   /* motion */
@@ -313,7 +316,7 @@
 
 /* base */
 html, body, #root { height: 100%; background: var(--tn-bg); color: var(--tn-text); }
-body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-sans); font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv01", "cv09", "cv11", "ss03"; }
 ::selection { background: var(--tn-selection); }
 :focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: inherit; }
 * { scrollbar-width: thin; scrollbar-color: var(--tn-scrollbar) transparent; }

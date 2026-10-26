@@ -7,6 +7,7 @@ import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
 import { WorkspaceScene } from "../components/site/scenes/WorkspaceScene";
+import { Glyph } from "../components/site/scenes/parts";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE } from "../lib/release";
 import { LANDS, SAMPLE, SCENE_BUILD, atLeast, t } from "../lib/scenes";
@@ -63,6 +64,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     // (D-1897, D-1885), with the scene player allowed there.
     expect(home).not.toContain('data-scene="land"');
     expect(v090.includes('data-scene="land"')).toBe(LANDS);
+    // Drawn from the current build, on the page of the release that brought it (D-1886).
+    expect(v090.includes(`Scene from Vibezeo ${SCENE_BUILD}, simplified. New in 0.9.0.`)).toBe(LANDS && (SCENE_BUILD as string) !== "0.9.0");
+    expect(home).not.toContain("New in");
     expect(v090.includes('<script src="/demo/embed.js" defer=""')).toBe(LANDS);
     expect(allowedScripts("changelog/0.9.0/index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
     const v080 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.8.0" }) }));
@@ -117,6 +121,30 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(js).toContain('document.documentElement.setAttribute("data-scenes", "")');
     // The hero's window starts low on a laptop: 120 px of it is enough.
     expect(js).toContain("x.intersectionRect.height >= 120");
+  });
+
+  it("F-WB-01 AC9 the scenes draw engines as the app does: a tinted 4 px tile per engine, letters in fg (D-1895, D-1887)", () => {
+    const g = renderToStaticMarkup(<Glyph engine="Claude Code" />);
+    expect(g).toContain("background-color:var(--tn-engine-claude)");
+    expect(g).toContain(">C<");
+    expect(renderToStaticMarkup(<Glyph engine="Codex" />)).toContain("var(--tn-engine-codex)");
+    const rule = /\.sc-glyph \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).not.toContain("999px");
+    expect(rule).toContain("color: var(--tn-text)");
+    // Every engine glyph in every scene carries its tint.
+    for (const [id, el] of Object.entries(ALL))
+      for (const m of renderToStaticMarkup(el).matchAll(/<span class="sc-glyph(?! sc-glyph-shell)[^"]*"[^>]*>/g)) expect(m[0], id).toMatch(/--tn-engine-/);
+  });
+
+  it("F-WB-01 AC9 the scenes follow app-ui's T2 and T3: lit raised surfaces, status as text rather than pills (D-1887)", () => {
+    for (const cls of ["sc-ask", "sc-toast", "sc-comment", "sc-dialog"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-[23]\\)`).test(css), cls).toBe(true);
+    for (const cls of ["sc-card", "sc-item"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-1\\)`).test(css), cls).toBe(true);
+    // A risk is an outlined tag, a check's result is text, a warning sent is a status.
+    expect(/\.sc-chip \{([^}]*)\}/.exec(css)?.[1]).not.toMatch(/status-waiting/);
+    expect(css).not.toMatch(/\.sc-chip-ok \{[^}]*background/);
+    expect(css).not.toContain(".sc-btn-done");
+    const w = renderToStaticMarkup(<WorkspaceScene />);
+    if (LANDS) expect(w).toMatch(new RegExp(`<span class="sc-status"[^>]*><span class="sc-dot">[\\s\\S]*?</span> ${t("radar.notice.warned")}</span>`));
   });
 
   it("F-WB-01 AC9 every scene renders, always in the app's dark theme", () => {

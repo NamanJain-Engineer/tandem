@@ -5,7 +5,7 @@ import "../styles.css";
 import { useUi } from "../stores/ui";
 import { installDemo } from "./backend";
 import { DemoBar } from "./DemoBar";
-import { DemoHints } from "./DemoHints";
+import { DemoCoach } from "./DemoCoach";
 import { holdFocusUntilEngaged } from "./embedFocus";
 
 // vibezeo.com/demo: the real interface against a simulated core. On the home
@@ -32,7 +32,7 @@ if (root) {
         <DemoBar core={core} firstThread={core.firstThread} embedded={embedded} />
         <div className="relative min-h-0 flex-1">
           <App />
-          <DemoHints />
+          <DemoCoach core={core} />
         </div>
       </div>
     </StrictMode>,

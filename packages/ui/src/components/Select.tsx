@@ -16,7 +16,7 @@ export type SelectOption = {
 
 const TRIGGER =
   "inline-flex w-full items-center gap-2 rounded-sm border border-border bg-surface-4 px-2.5 text-left text-base text-fg hover:border-border-strong focus-visible:border-accent focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40";
-const PANEL = "tn-pop z-[var(--z-popover)] min-w-[200px] overflow-hidden rounded-md border border-border bg-surface-3 p-1 shadow-2";
+const PANEL = "tn-pop z-[var(--z-popover)] min-w-[200px] overflow-hidden rounded-md border border-border bg-surface-3 p-1 shadow-e2";
 const ITEM =
   "relative flex cursor-default select-none items-start gap-2 rounded-sm px-2 py-1 text-base text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-surface-4 data-[selected=true]:bg-surface-4";
 

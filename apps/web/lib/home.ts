@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Kiro CLI, OpenCode and any agent you add that speaks ACP, up to six side by side.",
   },
   {
     title: "Switch engines mid-thread",
@@ -117,8 +117,24 @@ export const CLAUDE = [
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Multi-repo workspaces, claims and any ACP agent",
-    body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
+    title: "Code intelligence in the editor and diffs",
+    body: "Go to definition, find references, hover and errors in the Files editor, and the same jumps from a diff, using the language servers you already have, once you trust the repository. Built and in review now.",
+  },
+  {
+    title: "Lead keeps a plan moving",
+    body: "Once a plan's runs start, Lead can answer their routine questions for you and pass the rest on to you. Built and in review now.",
+  },
+  {
+    title: "Secrets for agents' commands",
+    body: "An agent runs a command that needs your secrets with vibezeo run, after you approve it, and the output comes back to it with the values masked. Built and in review now.",
+  },
+  {
+    title: "Local models as engines",
+    body: "Agents that run on a model served from your own computer. Built and in review now.",
+  },
+  {
+    title: "Activity ledger",
+    body: "What an agent session did, in order: the turns it was given, the commands it ran, the files it changed, and the approvals it asked for and who answered. Built and in review now.",
   },
   {
     title: "Your phone, from anywhere",
@@ -319,6 +335,16 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Session library": { icon: "history", docs: docsPath("workflow-tools") },
   "Sandbox agent panes": { icon: "lock", docs: docsPath("engines") },
   "Antigravity CLI and Kiro CLI": { icon: "terminal", docs: docsPath("engines") },
+  "Resource governor": { icon: "activity", docs: docsPath("engines") },
+  "Agent-proof secrets": { icon: "lock", docs: docsPath("privacy") },
+  "Multi-repo workspaces": { icon: "branch", docs: docsPath("code-mode") },
+  "Any ACP agent in Thread mode": { icon: "plug", docs: docsPath("engines") },
+  Claims: { icon: "compare", docs: docsPath("tasks") },
+  "Plan with Lead": { icon: "tasks", docs: docsPath("tasks") },
+  "Follow a plan through": { icon: "tasks", docs: docsPath("tasks") },
+  "Land approved work in the plan's order": { icon: "merge", docs: docsPath("tasks") },
+  "Plans are kept": { icon: "history", docs: docsPath("tasks") },
+  "Chat threads claim the files they edit": { icon: "compare", docs: docsPath("tasks") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

@@ -537,3 +537,86 @@ fn f_en_08_3_a_generic_error_result_isnt_the_engines_fault() {
         .collect();
     assert_eq!(faults, vec![false], "{events:?}");
 }
+
+/// The `paths` of every tool row in `parsed`, in order.
+fn tool_paths(parsed: Vec<Parsed>) -> Vec<Option<Vec<String>>> {
+    parsed
+        .into_iter()
+        .filter_map(|p| match p {
+            Parsed::Event(ThreadEvent::Tool { paths, .. }) => Some(paths),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
+    let mut p = ClaudeParser::new(PathBuf::from("/work/shop"), &[], false);
+    let use_line = |name: &str, input: Value, id: &str| {
+        json!({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": id, "name": name, "input": input}
+        ]}})
+        .to_string()
+    };
+    let one = |p: &str| Some(vec![p.to_string()]);
+    let edit = use_line(
+        "Edit",
+        json!({"file_path": "/work/shop/src/a.ts", "old_string": "x", "new_string": "y"}),
+        "t1",
+    );
+    assert_eq!(
+        tool_paths(p.line(&edit, now())),
+        vec![one("/work/shop/src/a.ts")]
+    );
+    // A relative path counts from the thread's folder.
+    let write = use_line(
+        "Write",
+        json!({"file_path": "notes.md", "content": "hi"}),
+        "t2",
+    );
+    assert_eq!(
+        tool_paths(p.line(&write, now())),
+        vec![one("/work/shop/notes.md")]
+    );
+    let multi = use_line(
+        "MultiEdit",
+        json!({"file_path": "/work/shop/b.ts", "edits": []}),
+        "t3",
+    );
+    assert_eq!(
+        tool_paths(p.line(&multi, now())),
+        vec![one("/work/shop/b.ts")]
+    );
+    let notebook = use_line(
+        "NotebookEdit",
+        json!({"notebook_path": "/work/shop/n.ipynb"}),
+        "t4",
+    );
+    assert_eq!(
+        tool_paths(p.line(&notebook, now())),
+        vec![one("/work/shop/n.ipynb")]
+    );
+    // Reading names no file to claim, nor does a command.
+    let read = use_line("Read", json!({"file_path": "/work/shop/src/a.ts"}), "t5");
+    assert_eq!(tool_paths(p.line(&read, now())), vec![None]);
+    let bash = use_line("Bash", json!({"command": "touch x"}), "t6");
+    assert_eq!(tool_paths(p.line(&bash, now())), vec![None]);
+    // The edit's result row keeps its files.
+    let result = json!({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+    ]}})
+    .to_string();
+    assert_eq!(
+        tool_paths(p.line(&result, now())),
+        vec![one("/work/shop/src/a.ts")]
+    );
+    // Rows without files serialize as before.
+    let row = serde_json::to_value(ThreadEvent::tool(
+        "t7",
+        ToolVerb::Read,
+        "a.ts",
+        ToolStatus::Ok,
+    ))
+    .expect("json");
+    assert!(row.get("paths").is_none(), "{row}");
+}

@@ -30,6 +30,28 @@ export function diffCounts(diff: string): { add: number; del: number } {
   return { add, del };
 }
 
+export type TestResult = { passed: number; failed: number };
+
+const count = (line: string, word: string) => Number(new RegExp(`(\\d+) ${word}`).exec(line)?.[1] ?? 0);
+
+/** The test summary a command printed (D-2604): vitest's and jest's
+ * "Tests" line (the last one), cargo's "test result" lines (summed), or
+ * pytest's closing line. Nothing when the output carries none. */
+export function testResult(output: string | null | undefined): TestResult | null {
+  if (!output) return null;
+  const cargo = [...output.matchAll(/^test result: \w+\. (\d+) passed; (\d+) failed/gm)];
+  if (cargo.length > 0)
+    return cargo.reduce((r, m) => ({ passed: r.passed + Number(m[1]), failed: r.failed + Number(m[2]) }), {
+      passed: 0,
+      failed: 0,
+    });
+  const tests = [...output.matchAll(/^\s*Tests:?\s+(.*\d+ (?:passed|failed).*)$/gm)].pop();
+  if (tests?.[1]) return { passed: count(tests[1], "passed"), failed: count(tests[1], "failed") };
+  const pytest = [...output.matchAll(/^=+ (.*\d+ (?:passed|failed).*) in [\d.]+s =+$/gm)].pop();
+  if (pytest?.[1]) return { passed: count(pytest[1], "passed"), failed: count(pytest[1], "failed") };
+  return null;
+}
+
 const STATUS_KEY: Record<ToolStatus, MessageKey> = {
   pending: "thread.tool.status.running",
   running: "thread.tool.status.running",
@@ -53,10 +75,11 @@ export function toolView(tool: ToolEvent): {
   const active = tool.status === "running" || tool.status === "pending";
   const verb = t(`thread.tool.${tool.verb}${active ? ".active" : ""}` as MessageKey);
   let meta: string | undefined;
+  const tests = tool.verb === "bash" && !active ? testResult(tool.output) : null;
   if (tool.status === "denied") meta = t("thread.tool.denied");
   else if (tool.diff) {
     const { add, del } = diffCounts(tool.diff);
     meta = t("thread.tool.diffMeta", { add, del });
-  }
+  } else if (tests) meta = t("thread.tool.tests", { passed: tests.passed, failed: tests.failed });
   return { icon: ICON[tool.verb], verb, arg: tool.argSummary, meta, statusLabel: statusLabel(tool.status) };
 }

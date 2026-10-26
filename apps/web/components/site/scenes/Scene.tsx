@@ -11,6 +11,7 @@ export function Scene({
   id,
   text,
   caption,
+  since,
   children,
   className,
 }: {
@@ -19,6 +20,9 @@ export function Scene({
   text: string;
   /** A short visible caption; `text` is read instead where it's given. */
   caption?: string;
+  /** The release that brought what the scene shows, when the scene sits on
+   * that release's page and the build drawn is a later one (D-1886). */
+  since?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -31,7 +35,7 @@ export function Scene({
       </div>
       <figcaption className="flex flex-col gap-1.5 text-caption text-pretty text-fg-muted sm:flex-row sm:items-baseline sm:gap-4">
         <span className="shrink-0 font-mono text-[0.6875rem] uppercase tracking-[0.1em] text-fg-subtle">
-          Scene from {SITE.product} {SCENE_BUILD}, simplified.
+          Scene from {SITE.product} {SCENE_BUILD}, simplified.{since && since !== SCENE_BUILD ? ` New in ${since}.` : ""}
         </span>
         {caption ? (
           <>

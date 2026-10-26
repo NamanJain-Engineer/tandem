@@ -85,7 +85,7 @@ export default function DemoPage() {
                 height={800}
                 fetchPriority="high"
                 decoding="async"
-                alt="Launch the demo: Vibezeo's Thread mode with a thread about a redirect loop after login, its first message ready to send."
+                alt="Launch the demo: Vibezeo's Code mode with Claude Code done, Codex at work, a shell, and Gemini CLI waiting on you in another workspace."
                 className="block h-auto w-full transition-opacity duration-(--dur-base) group-hover:opacity-90"
               />
             </picture>

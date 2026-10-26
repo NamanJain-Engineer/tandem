@@ -414,7 +414,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           id={listId}
           role="listbox"
           aria-label={labels.mentions}
-          className="absolute inset-x-2 bottom-full z-[var(--z-popover)] mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-3 p-1 shadow-2"
+          className="absolute inset-x-2 bottom-full z-[var(--z-popover)] mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-3 p-1 shadow-e2"
         >
           {picker.items.length === 0 ? (
             <p className="px-2 py-1 text-sm text-fg-subtle">{labels.noMentions}</p>
