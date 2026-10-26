@@ -6,7 +6,7 @@ import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { followPlans, usePlans } from "../../stores/plan";
 import { useSession } from "../../stores/session";
-import { useTasks } from "../../stores/tasks";
+import { resetTasks, useTasks } from "../../stores/tasks";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
@@ -395,6 +395,75 @@ const THREE: PlanView["tasks"] = [
 const states = () => screen.getAllByTestId("plan-run").map((r) => r.dataset.state);
 
 describe("Follow a plan through (F-TK-07)", () => {
+  it("F-TK-07.2 two runs that finish while a read is under way keep their verdicts (E2E-M18-TK-07)", async () => {
+    // The plan starts and its chip and dialog read the runs, one in setup
+    // and one running; both finish, reviewed, before that read lands. The
+    // rows show where the runs are, not what the read saw.
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({ task_attempts_list: () => new Promise<AttemptView[]>((ok) => held.push(ok)) });
+    usePlans.setState({
+      plans: {
+        pl_1: plan({ state: "started", tasks: THREE.slice(0, 2), issueIds: ["TAN-1", "TAN-2"] }),
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(held.length).toBeGreaterThan(0));
+    act(() => {
+      emitLocal("tasks:attempt", run("TAN-1", "in_review", 1, { reviewVerdict: "approve" }));
+      emitLocal("tasks:attempt", run("TAN-2", "in_review", 2, { reviewVerdict: "approve" }));
+    });
+    const stale = [run("TAN-1", "setup", 1), run("TAN-2", "running", 2)];
+    await act(async () => {
+      for (const ok of held) ok(stale);
+    });
+    await waitFor(() => expect(states()).toEqual(["in_review", "in_review"]));
+    const verdicts = screen.getAllByTestId("plan-run").map((r) => r.dataset.verdict);
+    expect(verdicts).toEqual(["approve", "approve"]);
+  });
+
+  it("F-TK-07.2 overlapping reads of the runs: only the latest writes, and a run that moved meanwhile keeps its state", async () => {
+    const held: Array<{ ok: (v: AttemptView[]) => void; fail: (e: unknown) => void }> = [];
+    backend({
+      task_attempts_list: () => new Promise<AttemptView[]>((ok, fail) => held.push({ ok, fail })),
+    });
+    const tasks = useTasks.getState();
+    const first = tasks.loadAttempts();
+    const second = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(2));
+    // The later read lands first; the earlier one fails after it.
+    held[1]!.ok([run("TAN-1", "running", 1)]);
+    await second;
+    held[0]!.fail({ code: "io", message: "The disk is busy", stage: null, hint: null, retryable: true });
+    await first;
+    expect(useTasks.getState().attemptsStatus).toBe("ready");
+    expect(useTasks.getState().attemptsError).toBeNull();
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["running"]);
+    // A run moves while a read is under way: the read's older list
+    // doesn't take it back.
+    const third = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(3));
+    act(() => emitLocal("tasks:attempt", run("TAN-1", "in_review", 1)));
+    held[2]!.ok([run("TAN-1", "running", 1)]);
+    await third;
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["in_review"]);
+  });
+
+  it("F-TK-07.2 a read still under way when the view resets never writes the runs", async () => {
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({ task_attempts_list: () => new Promise<AttemptView[]>((ok) => held.push(ok)) });
+    const before = useTasks.getState().loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(1));
+    resetTasks();
+    const after = useTasks.getState().loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(2));
+    held[1]!([run("TAN-2", "running", 2)]);
+    await after;
+    held[0]!([run("TAN-1", "failed", 1)]);
+    await before;
+    expect(useTasks.getState().attempts.map((a) => a.attempt.id)).toEqual(["atm_TAN-2_2"]);
+  });
+
   it("F-TK-07.2 each task shows its latest run, its verdict and a count, and follows the runs", async () => {
     let runs: AttemptView[] = [
       run("TAN-1", "failed", 1),

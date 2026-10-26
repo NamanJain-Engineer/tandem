@@ -1580,6 +1580,54 @@ pub(crate) mod tests {
         f.host.release.store(true, Ordering::SeqCst);
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn f_tk_07_2_two_runs_that_finish_together_both_reach_review_with_their_verdicts() {
+        // E2E-M18-TK-07 on chain26: two reviewed runs whose sessions end at
+        // the same moment, and then their reviews. Both end In review with
+        // their reviewer's verdict, on two workers.
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                ..Default::default()
+            },
+            2,
+        )
+        .await;
+        let mut ids = Vec::new();
+        for n in 1..=2 {
+            ids.push(
+                f.svc
+                    .execute(input(&format!("TAN-{n}")))
+                    .await
+                    .expect("run")
+                    .attempt
+                    .id,
+            );
+        }
+        let host = f.host.clone();
+        until(|| host.spawns.load(Ordering::SeqCst) == 2).await;
+        // Both sessions end at once, then both reviews do.
+        f.host.release.store(true, Ordering::SeqCst);
+        for id in &ids {
+            let mut reached = false;
+            for _ in 0..400 {
+                let a = repo::get(&f.svc.store, id).await.expect("get");
+                if a.state == AttemptState::InReview {
+                    assert_eq!(a.review_verdict.as_deref(), Some("approve"));
+                    reached = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            assert!(reached, "{id:?} never reached review");
+        }
+        assert_eq!(
+            f.host.spawns.load(Ordering::SeqCst),
+            4,
+            "two runs, two reviews"
+        );
+    }
+
     #[tokio::test]
     async fn f_tk_04_3_stop_during_lane_creation_leaves_no_process_and_no_lane() {
         let f = fixture(

@@ -2667,6 +2667,19 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
     - coverage 189, and protocol drift with 579 types (this line adds none).
     - E2E: m18-db04 6 of 6, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-wt07 2 of 2.
+- [x] F-TK-07, E2E-M18-TK-07's failure in 0.12.0's E2E run on chain26 6c813365. On a line from origin/chain26.
+  - **What failed:** the plan's rows stayed at `[setup, running]`, though both runs ended in review with Approve.
+  - **The cause, a stale read in the UI:** when the plan starts, its chip in the Tasks page's header and its dialog read the runs (`loadAttempts`). One run was still in setup and the other running. Both finished, with their reviews, through `tasks:attempt` events before that read landed. The read then wrote back what it had seen, and no event came after it.
+  - **The fix,** already on `m16a-conductor` since 07d8114f (F-TK-07's low findings, which never reached chain26):
+    - `loadAttempts` reads are numbered, and only the latest writes the runs and the status;
+    - a run `tasks:attempt` moved while it was being read keeps its newer state;
+    - `resetTasks` doesn't put the counter back to 0.
+  - **Not the backend:** the task runner logs nothing as a run ends, so the quiet app log wasn't a stall. Two reviewed runs whose sessions and reviews end at the same moment reach In review with their verdicts.
+  - **Tests** (3 new TypeScript, 1 new Rust):
+    - `plan.test.tsx`: two runs that finish while a read is under way keep their verdicts (on chain26's store it fails with `['setup', 'running']`, the E2E's own rows); overlapping reads, where only the latest writes and a run that moved keeps its state; and a read still under way when the view resets never writes.
+    - `tasks_exec`: two runs that finish together, and their reviews, both reach In review with Approve, on two workers.
+  - **Docs.** ARCHITECTURE §9.6 (following the runs).
+  - **Gate:** pending.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
