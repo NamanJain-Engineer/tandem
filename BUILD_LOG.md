@@ -2411,6 +2411,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Codex's `item/completed` without `changes` keeps the paths its start named (tested).
     - `resetState` retries a task that changed while it was being archived.
   - **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
+  - **Gate:** passed on 07d8114f:
+    - 2,378 Rust tests (6 ignored) and 1,640 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 190, and protocol drift with 581 types: `PlanQuestion` and `PlanQuestionState` added; `PlanView` gains `supervise`, `baseCommit` and `questions`, and `AttemptView` gains `waiting`.
+    - E2E on 07d8114f: m18-tk08 1 of 1, m18-tk07 3 of 3, m18-tk06 1 of 1, m18-tk05 3 of 3 and m11-2-execute 4 of 4 (run first, so the next spec's reset stops the runs it leaves going).
+    - CHANGELOG: two `[lin]` bullets under `## Unreleased` (9074b93d); `check-changelog.ts` passes.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
