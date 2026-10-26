@@ -146,7 +146,7 @@ test("demo AC5 the 13th message says Demo limit reached; Reset the demo brings t
   await page.getByRole("button", { name: "Reset the demo" }).click();
   await page.waitForSelector('[data-testid="demo-bar"]');
   await expect(page.locator('[data-testid="demo-limit"]')).toHaveCount(0);
-  await toThread(page.mainFrame());
+  await toThread(frame);
   await expect(page.locator('[data-testid="composer"] textarea[aria-label="Message"]').first()).toHaveValue(/checkout sends some people back/);
   await expect(page.getByText("question 2", { exact: true })).toHaveCount(0);
 });

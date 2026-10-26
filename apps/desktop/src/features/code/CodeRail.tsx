@@ -294,6 +294,7 @@ function WorkspaceSessions({ ws }: { ws: WorkspaceSummary }) {
           aria-selected={false}
           tabIndex={-1}
           data-testid="rail-session"
+          data-pane={pane.id}
           onClick={() => open(tab.id, pane.id)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
