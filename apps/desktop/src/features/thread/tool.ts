@@ -30,6 +30,15 @@ export function diffCounts(diff: string): { add: number; del: number } {
   return { add, del };
 }
 
+/** An edit's lines added and removed: from its diff, or, from an engine
+ * that sends none (Claude Code), what it counted from the edit's input
+ * (F-TH-12, D-2608). Null when neither says. */
+export function editCounts(tool: ToolEvent): { add: number; del: number } | null {
+  if (tool.diff) return diffCounts(tool.diff);
+  if (tool.lines) return { add: tool.lines.added, del: tool.lines.removed };
+  return null;
+}
+
 export type TestResult = { passed: number; failed: number };
 
 const count = (line: string, word: string) => Number(new RegExp(`(\\d+) ${word}`).exec(line)?.[1] ?? 0);
@@ -76,10 +85,9 @@ export function toolView(tool: ToolEvent): {
   const verb = t(`thread.tool.${tool.verb}${active ? ".active" : ""}` as MessageKey);
   let meta: string | undefined;
   const tests = tool.verb === "bash" && !active ? testResult(tool.output) : null;
+  const counts = editCounts(tool);
   if (tool.status === "denied") meta = t("thread.tool.denied");
-  else if (tool.diff) {
-    const { add, del } = diffCounts(tool.diff);
-    meta = t("thread.tool.diffMeta", { add, del });
-  } else if (tests) meta = t("thread.tool.tests", { passed: tests.passed, failed: tests.failed });
+  else if (counts) meta = t("thread.tool.diffMeta", { add: counts.add, del: counts.del });
+  else if (tests) meta = t("thread.tool.tests", { passed: tests.passed, failed: tests.failed });
   return { icon: ICON[tool.verb], verb, arg: tool.argSummary, meta, statusLabel: statusLabel(tool.status) };
 }

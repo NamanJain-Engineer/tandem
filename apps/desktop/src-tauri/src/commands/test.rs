@@ -361,6 +361,7 @@ pub async fn test_thread_seed_events(
                         diff: None,
                         detail: None,
                         paths: None,
+                        lines: None,
                     });
                 }
                 evs.push(ThreadEvent::TurnEnd { reason: TurnEndReason::Completed, blocked_actions: 0 });

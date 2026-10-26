@@ -359,6 +359,8 @@ impl AcpParser {
             diff: state.diff,
             detail: state.detail,
             paths: state.paths,
+            // The diff carries its lines.
+            lines: None,
         })
     }
 

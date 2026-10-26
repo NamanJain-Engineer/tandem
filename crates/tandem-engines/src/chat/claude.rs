@@ -30,8 +30,8 @@ use super::{
     AdapterError, AdapterEvent, ChatAdapter, ChatSession, ChatStart, InterruptOutcome, TurnInput,
 };
 use crate::events::{
-    truncate_output, ErrorAction, ErrorStage, LimitKind, ThreadEvent, ToolStatus, ToolVerb,
-    TurnEndReason,
+    truncate_output, ErrorAction, ErrorStage, LimitKind, LineCounts, ThreadEvent, ToolStatus,
+    ToolVerb, TurnEndReason,
 };
 use crate::transcript::window_for;
 
@@ -213,6 +213,39 @@ struct ToolCall {
     summary: String,
     detail: Option<String>,
     paths: Option<Vec<String>>,
+    lines: Option<LineCounts>,
+}
+
+/// The lines an edit tool's input says it changes (F-TH-12, D-2608), since
+/// Claude Code sends no diff: an Edit's old and new strings, counted once
+/// even with `replace_all` (how many places it changed isn't in the event),
+/// a MultiEdit's edits summed, and all of a Write's content, which holds
+/// only when the Write made a new file (see [`created`]).
+fn input_lines(tool: &str, input: &Value) -> Option<LineCounts> {
+    let pair = |e: &Value| {
+        let s = |k: &str| e.get(k).and_then(Value::as_str);
+        Some(LineCounts::between(s("old_string")?, s("new_string")?))
+    };
+    match tool {
+        "Edit" => pair(input),
+        "MultiEdit" => input
+            .get("edits")?
+            .as_array()?
+            .iter()
+            .map(pair)
+            .sum::<Option<LineCounts>>(),
+        "Write" => Some(LineCounts::between(
+            "",
+            input.get("content").and_then(Value::as_str)?,
+        )),
+        _ => None,
+    }
+}
+
+/// Whether a Write's result says it made a new file. Over a file that
+/// existed, what it replaced isn't in the event, so it counts no lines.
+fn created(text: &str) -> bool {
+    text.trim_start().starts_with("File created successfully")
 }
 
 /// The files an edit tool names, absolute (F-TK-07); `None` for tools that
@@ -435,6 +468,7 @@ impl ClaudeParser {
                     let summary = arg_summary(&name, &input, &self.cwd);
                     let detail = detail(&input);
                     let paths = edited_paths(&name, &input, &self.cwd);
+                    let lines = input_lines(&name, &input);
                     let mut ev = ThreadEvent::tool(&id, verb(&name), &summary, ToolStatus::Running);
                     if let ThreadEvent::Tool {
                         detail: d,
@@ -452,6 +486,7 @@ impl ClaudeParser {
                             summary,
                             detail,
                             paths,
+                            lines,
                         },
                     );
                     out.push(Parsed::Event(ev));
@@ -477,6 +512,7 @@ impl ClaudeParser {
                 summary,
                 detail,
                 paths,
+                lines,
             } = self.tools.get(id).cloned().unwrap_or_default();
             let text = result_text(&b["content"]);
             let is_error = b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
@@ -487,6 +523,9 @@ impl ClaudeParser {
             } else {
                 ToolStatus::Error
             };
+            // Only an edit that happened counts its lines.
+            let lines =
+                lines.filter(|_| status == ToolStatus::Ok && (name != "Write" || created(&text)));
             let (output, truncated) = truncate_output(&text);
             out.push(Parsed::Event(ThreadEvent::Tool {
                 id: id.to_string(),
@@ -499,6 +538,7 @@ impl ClaudeParser {
                 diff: None,
                 detail,
                 paths,
+                lines,
             }));
         }
         out

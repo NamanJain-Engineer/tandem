@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ThreadEvent, ThreadEventEnvelope } from "@tandem/protocol";
 import { emptyThread, reduce } from "./reducer";
 import { groupStatus, pendingApprovals, reuseRows, toRows, usageOf, type ToolEvent } from "./rows";
+import { toolView } from "./tool";
 
 let seq = 0;
 function env(turnId: string, event: ThreadEvent, s?: number): ThreadEventEnvelope {
@@ -272,5 +273,82 @@ describe("UI-21 F-TH-12 scannable turns (D-2604)", () => {
       env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
     );
     expect(toRows(view).some((r) => r.kind === "summary")).toBe(false);
+  });
+});
+
+describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
+  /** A Claude Code edit's result: no diff, its files absolute, and the
+   * lines its input describes when the edit happened. */
+  const claudeEdit = (
+    id: string,
+    verb: "edit" | "multiedit" | "write",
+    path: string,
+    lines: { added: number; removed: number } | undefined,
+    status: ToolEvent["status"] = "ok",
+  ): ThreadEvent => ({
+    type: "tool",
+    id,
+    verb,
+    argSummary: path.replace("/work/shop/", ""),
+    status,
+    output: "The file has been updated.",
+    outputTruncated: false,
+    outputFile: null,
+    diff: null,
+    detail: null,
+    paths: [path],
+    ...(lines ? { lines } : {}),
+  });
+  const turn = (...events: ThreadEvent[]) => {
+    seq = 0;
+    return toRows(
+      play(
+        env("t1", { type: "user", text: "fix the loop", attachments: [] }),
+        ...events.map((e) => env("t1", e)),
+        env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
+      ),
+    );
+  };
+
+  it("F-TH-12.4 a turn of Edit, MultiEdit and a new file's Write says Changed 3 files +7 −4", () => {
+    const rows = turn(
+      claudeEdit("a", "edit", "/work/shop/src/redirect.ts", { added: 2, removed: 2 }),
+      claudeEdit("b", "multiedit", "/work/shop/src/next.ts", { added: 2, removed: 2 }),
+      claudeEdit("c", "write", "/work/shop/src/redirect.test.ts", { added: 3, removed: 0 }),
+    );
+    expect(rows.find((r) => r.kind === "summary")).toMatchObject({ files: 3, add: 7, del: 4 });
+  });
+
+  it("F-TH-12.4 each of those rows shows its own counts", () => {
+    const one = claudeEdit("a", "edit", "/work/shop/src/redirect.ts", { added: 2, removed: 2 }) as ToolEvent;
+    expect(toolView(one).meta).toBe("+2 −2");
+    const created = claudeEdit("c", "write", "/work/shop/src/new.ts", { added: 3, removed: 0 }) as ToolEvent;
+    expect(toolView(created).meta).toBe("+3 −0");
+  });
+
+  it("F-TH-12.4 a file edited twice counts once, and its lines twice", () => {
+    const rows = turn(
+      claudeEdit("a", "edit", "/work/shop/src/next.ts", { added: 1, removed: 1 }),
+      claudeEdit("b", "edit", "/work/shop/src/next.ts", { added: 2, removed: 0 }),
+    );
+    expect(rows.find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 3, del: 1 });
+  });
+
+  it("F-TH-12.4 a Write over an existing file counts the file but no lines; with nothing counted, no +0 −0", () => {
+    const rewrite = claudeEdit("a", "write", "/work/shop/README.md", undefined);
+    expect(toolView(rewrite as ToolEvent).meta).toBeUndefined();
+    expect(turn(rewrite).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: null, del: null });
+    const mixed = turn(rewrite, claudeEdit("b", "edit", "/work/shop/src/a.ts", { added: 1, removed: 0 }));
+    expect(mixed.find((r) => r.kind === "summary")).toMatchObject({ files: 2, add: 1, del: 0 });
+  });
+
+  it("F-TH-12.5 a refused or failed edit adds no file and no lines", () => {
+    const rows = turn(
+      claudeEdit("a", "edit", "/work/shop/.env", { added: 1, removed: 1 }, "denied"),
+      claudeEdit("b", "edit", "/work/shop/src/next.ts", { added: 1, removed: 1 }, "error"),
+    );
+    expect(rows.some((r) => r.kind === "summary")).toBe(false);
+    const denied = claudeEdit("a", "edit", "/work/shop/.env", { added: 1, removed: 1 }, "denied") as ToolEvent;
+    expect(toolView(denied).meta).toBe("Denied");
   });
 });

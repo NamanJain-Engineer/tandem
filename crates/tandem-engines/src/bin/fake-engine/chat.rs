@@ -552,11 +552,21 @@ pub fn run(args: &[String], session: String) {
                 if let Some(dir) = std::path::Path::new(path).parent() {
                     let _ = std::fs::create_dir_all(dir);
                 }
+                let existed = std::path::Path::new(path).exists();
                 let ok = std::fs::write(path, &body).is_ok();
+                // Claude Code's own words, which tell a new file from a
+                // rewrite (F-TH-12, D-2608).
+                let text = if !ok {
+                    "failed".to_string()
+                } else if existed {
+                    format!("The file {path} has been updated.")
+                } else {
+                    format!("File created successfully at: {path}")
+                };
                 emit(
                     json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
                     "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
-                        "content": if ok { "written" } else { "failed" }, "is_error": !ok}]}}),
+                        "content": text, "is_error": !ok}]}}),
                 );
                 count += 1;
             }

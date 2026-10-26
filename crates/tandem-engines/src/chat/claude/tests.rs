@@ -620,3 +620,102 @@ fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
     .expect("json");
     assert!(row.get("paths").is_none(), "{row}");
 }
+
+/// Every finished tool row in `parsed`: its id, status, lines and files.
+type Finished = (String, ToolStatus, Option<LineCounts>, Option<Vec<String>>);
+
+fn finished(parsed: Vec<Parsed>) -> Vec<Finished> {
+    parsed
+        .into_iter()
+        .filter_map(|p| match p {
+            Parsed::Event(ThreadEvent::Tool {
+                id,
+                status,
+                lines,
+                paths,
+                ..
+            }) if status != ToolStatus::Running => Some((id, status, lines, paths)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn edits_fixture() -> Vec<Parsed> {
+    let text = std::fs::read_to_string(fixtures().join("edits.jsonl")).expect("fixture");
+    let mut p = ClaudeParser::new(PathBuf::from("/work/shop"), &[], false);
+    text.lines().flat_map(|l| p.line(l, now())).collect()
+}
+
+const fn lines(added: u32, removed: u32) -> Option<LineCounts> {
+    Some(LineCounts { added, removed })
+}
+
+#[test]
+fn f_th_12_4_claude_codes_edits_count_the_lines_their_inputs_describe() {
+    let parsed = edits_fixture();
+    // A call that's still running claims no lines yet.
+    for p in &parsed {
+        if let Parsed::Event(ThreadEvent::Tool {
+            status: ToolStatus::Running,
+            lines,
+            ..
+        }) = p
+        {
+            assert_eq!(*lines, None);
+        }
+    }
+    let rows = finished(parsed);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Two changed lines with an unchanged one between them: 2 and 2, not
+    // the 3 and 3 of the span from the first change to the last.
+    assert_eq!(at("toolu_e1").2, lines(2, 2));
+    // A MultiEdit counts each of its edits.
+    assert_eq!(at("toolu_e2").2, lines(2, 2));
+    // A new file: every line of it is added.
+    assert_eq!(at("toolu_e3").2, lines(3, 0));
+    // A Write over a file that existed: what it replaced isn't in the
+    // event, so it names its file and counts no lines.
+    assert_eq!(at("toolu_e4").2, None);
+    assert_eq!(at("toolu_e4").3, Some(vec!["/work/shop/README.md".into()]));
+    // replace_all: once, since how many places it changed isn't said.
+    assert_eq!(at("toolu_e7").2, lines(1, 1));
+}
+
+#[test]
+fn f_th_12_5_a_refused_or_failed_edit_counts_no_lines() {
+    let rows = finished(edits_fixture());
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    assert_eq!(at("toolu_e5").1, ToolStatus::Denied);
+    assert_eq!(at("toolu_e5").2, None);
+    assert_eq!(at("toolu_e6").1, ToolStatus::Error);
+    assert_eq!(at("toolu_e6").2, None);
+}
+
+#[test]
+fn f_th_12_4_lines_come_from_a_line_diff_not_the_changed_span() {
+    let c = |old: &str, new: &str| {
+        let l = LineCounts::between(old, new);
+        (l.added, l.removed)
+    };
+    assert_eq!(c("a\nb\nc", "a\nB\nc"), (1, 1));
+    assert_eq!(c("a\nX\nb\nY", "a\nX2\nb\nY2"), (2, 2));
+    // An insertion between context lines.
+    assert_eq!(c("fn a() {\n}", "fn a() {\n    b();\n}"), (1, 0));
+    // A deletion.
+    assert_eq!(c("a\nb\nc", "a\nc"), (0, 1));
+    // Uneven sides, either way round: one line kept between the changes.
+    assert_eq!(c("a\nX\nb\nY\nc", "a\nZ\nb\nc"), (1, 2));
+    assert_eq!(c("a\nZ\nb\nc", "a\nX\nb\nY\nc"), (2, 1));
+    // A change inside one line changes that line.
+    assert_eq!(c("foo(1)", "bar(1)"), (1, 1));
+    assert_eq!(c("a\nb", "a\nb"), (0, 0));
+    assert_eq!(c("a\nb", ""), (0, 2));
+    assert_eq!(c("", "a\nb\n"), (2, 0));
+    // A huge edit stays quick: past the comparison budget, the changed
+    // span counts.
+    let old: String = (0..5000).map(|i| format!("a{i}\n")).collect();
+    let new: String = (0..5000).map(|i| format!("b{i}\n")).collect();
+    let started = std::time::Instant::now();
+    assert_eq!(c(&old, &new), (5000, 5000));
+    assert!(started.elapsed() < Duration::from_secs(1));
+}

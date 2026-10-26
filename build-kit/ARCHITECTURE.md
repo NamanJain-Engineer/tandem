@@ -1933,7 +1933,10 @@ pub enum ThreadEvent {
     ReasoningDelta { text: String },
     Tool { id: String, verb: ToolVerb, arg_summary: String, status: ToolStatus, output: Option<String>,
            output_truncated: bool, output_file: Option<AttachmentId>, diff: Option<String>, detail: Option<String>,
-           paths: Option<Vec<String>> /* the files an edit names, absolute; left out otherwise (F-TK-07) */ },
+           paths: Option<Vec<String>> /* the files an edit names, absolute; left out otherwise (F-TK-07) */,
+           lines: Option<LineCounts> /* a successful edit's lines added and removed, counted from its input by an
+                                        engine that sends no diff (Claude Code's Edit, MultiEdit, Write); left out
+                                        when unknown or the edit didn't happen (F-TH-12, D-2608) */ },
     AssistantDelta { text: String },
     Assistant { markdown: String },                                   // compacted at turn end
     ApprovalRequest { id: ApprovalId, kind: ApprovalKind, summary: String, detail: String, options: Vec<ApprovalScope>, expires_at: i64 },
@@ -1949,6 +1952,7 @@ pub enum ThreadEvent {
 }
 pub enum ToolVerb { Bash, Read, Grep, Glob, Edit, Write, Multiedit, Webfetch, Websearch, Task, Mcp, Other }
 pub enum ToolStatus { Pending, Running, Ok, Error, Denied }
+pub struct LineCounts { added: u32, removed: u32 }
 pub enum ApprovalKind { Command, FileWrite, FileDelete, Network, Mcp, PluginAction, Spend, Question, Other }
 ```
 Persistence: every envelope except `*Delta` is appended to `thread_messages`; deltas are buffered in memory per text block (and flushed as a partial `assistant`/`reasoning` row every 2 s so a crash keeps partial text); when the block closes (the adapter's own final text, the next non-delta event, or `turn_end`), its final text replaces the partial row in place, so each block is one row at its `seq` (F-TH-03, D-115). Reducer (`apps/desktop/src/features/thread/reducer.ts`) is pure and unit-tested (F-TH-03 AC3).

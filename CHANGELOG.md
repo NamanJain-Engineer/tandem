@@ -7,6 +7,18 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Changed
+
+- [lin] **Claude Code threads summarise their edits too.** A finished Claude
+  Code turn counts the files it changed, with lines added and removed,
+  worked out from the edits Claude Code reports, and each edit's row shows
+  its own counts. A file Claude Code rewrites whole counts as changed
+  without line counts, an edit that replaces every occurrence of some text
+  counts its lines once, and an edit that was refused or failed counts
+  nothing.
+
 ## 0.12.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

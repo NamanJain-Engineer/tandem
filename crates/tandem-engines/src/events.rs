@@ -55,6 +55,12 @@ pub enum ThreadEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         paths: Option<Vec<String>>,
+        /// A successful edit's lines added and removed, counted from its
+        /// input by an engine that sends no diff (F-TH-12, D-2608). Left out
+        /// when unknown, and for edits that didn't happen.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        lines: Option<LineCounts>,
     },
     AssistantDelta {
         text: String,
@@ -164,8 +170,89 @@ impl ThreadEvent {
             diff: None,
             detail: None,
             paths: None,
+            lines: None,
         }
     }
+}
+
+/// The lines an edit added and removed (F-TH-12, D-2608).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LineCounts {
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// Line pairs compared exactly; past this, the changed span counts.
+const COMPARE_MAX: usize = 4_000_000;
+
+impl LineCounts {
+    /// The lines `old` → `new` adds and removes: a line diff (the longest
+    /// common subsequence of the lines between the common head and tail),
+    /// so an unchanged line between two changes isn't counted. Past
+    /// [`COMPARE_MAX`] line pairs, every line of the changed span counts.
+    pub fn between(old: &str, new: &str) -> Self {
+        let a: Vec<&str> = old.lines().collect();
+        let b: Vec<&str> = new.lines().collect();
+        let head = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+        let (a, b) = (&a[head..], &b[head..]);
+        let tail = a
+            .iter()
+            .rev()
+            .zip(b.iter().rev())
+            .take_while(|(x, y)| x == y)
+            .count();
+        let (a, b) = (&a[..a.len() - tail], &b[..b.len() - tail]);
+        let common =
+            if a.is_empty() || b.is_empty() || a.len().saturating_mul(b.len()) > COMPARE_MAX {
+                0
+            } else {
+                common_lines(a, b)
+            };
+        let n = |x: usize| u32::try_from(x).unwrap_or(u32::MAX);
+        Self {
+            added: n(b.len() - common),
+            removed: n(a.len() - common),
+        }
+    }
+}
+
+impl std::ops::Add for LineCounts {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            added: self.added.saturating_add(other.added),
+            removed: self.removed.saturating_add(other.removed),
+        }
+    }
+}
+
+impl std::iter::Sum for LineCounts {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::default(), |a, b| a + b)
+    }
+}
+
+/// The length of the longest common subsequence of `a` and `b`, in two
+/// rows as long as the shorter side: within [`COMPARE_MAX`] pairs, at most
+/// about 2,000 entries each.
+fn common_lines(a: &[&str], b: &[&str]) -> usize {
+    let (long, short) = if a.len() >= b.len() { (a, b) } else { (b, a) };
+    let mut prev = vec![0; short.len() + 1];
+    let mut cur = vec![0; short.len() + 1];
+    for x in long {
+        for (j, y) in short.iter().enumerate() {
+            cur[j + 1] = if x == y {
+                prev[j] + 1
+            } else {
+                prev[j + 1].max(cur[j])
+            };
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[short.len()]
 }
 
 /// `path` as an absolute path: as given, or under `cwd` (F-TK-07).

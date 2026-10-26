@@ -1,6 +1,6 @@
 import type { ApprovalDecisionView, ThreadEvent, TurnEndReason } from "@tandem/protocol";
 import type { ThreadView } from "./reducer";
-import { diffCounts, testResult, type TestResult } from "./tool";
+import { editCounts, testResult, type TestResult } from "./tool";
 
 type Ev<T extends ThreadEvent["type"]> = Extract<ThreadEvent, { type: T }>;
 export type ToolEvent = Ev<"tool">;
@@ -28,13 +28,14 @@ export type Row =
   | { kind: "plan"; key: string; version: number }
   | { kind: "end"; key: string; reason: TurnEndReason; blocked: number }
   /** A finished turn's closing line (D-2604): files it edited with their
-   * diff stats, and its last test run. Only from events the engine sent. */
+   * lines added and removed, and its last test run. Only from events the
+   * engine sent; `add` and `del` are null when no edit said (D-2608). */
   | {
       kind: "summary";
       key: string;
       files: number;
-      add: number;
-      del: number;
+      add: number | null;
+      del: number | null;
       tests: { passed: number; failed: number } | null;
     }
   | { kind: "working"; key: string; turnId: string };
@@ -66,17 +67,22 @@ export function toRows(view: ThreadView): Row[] {
     const edited = new Set<string>();
     let add = 0;
     let del = 0;
+    let counted = false;
     let tests: TestResult | null = null;
     for (const item of turn.items) {
       const e = item.event;
       if (e.type !== "tool") continue;
       // Only edits that happened: a declined or failed patch keeps its diff.
-      if (e.status === "ok" && e.diff && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
-        const paths = diffPaths(e.diff);
+      // An engine that sends no diff names its files (D-2608).
+      if (e.status === "ok" && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
+        const paths = e.diff ? diffPaths(e.diff) : (e.paths ?? []);
         for (const path of paths.length > 0 ? paths : [e.argSummary]) edited.add(path);
-        const c = diffCounts(e.diff);
-        add += c.add;
-        del += c.del;
+        const c = editCounts(e);
+        if (c) {
+          add += c.add;
+          del += c.del;
+          counted = true;
+        }
       }
       if (e.verb === "bash") tests = testResult(e.output) ?? tests;
     }
@@ -163,7 +169,14 @@ export function toRows(view: ThreadView): Row[] {
             rows.push({ kind: "end", key, reason: e.reason, blocked: e.blockedActions });
           }
           if (e.reason !== "cancelled" && (edited.size > 0 || tests))
-            rows.push({ kind: "summary", key: `${key}:summary`, files: edited.size, add, del, tests });
+            rows.push({
+              kind: "summary",
+              key: `${key}:summary`,
+              files: edited.size,
+              add: counted ? add : null,
+              del: counted ? del : null,
+              tests,
+            });
           break;
         default:
           break;

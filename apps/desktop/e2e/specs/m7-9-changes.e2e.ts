@@ -51,7 +51,7 @@ describe("E2E-M7-9 changes", () => {
     await threadMode();
   });
 
-  it("F-TH-13.1 a turn that edits 2 files lists both with correct diffs", async function () {
+  it("F-TH-13.1 a turn that edits 2 files lists both with correct diffs; F-TH-12.4 its summary counts them", async function () {
     this.timeout(90_000);
     const list = await invoke<Array<{ id: string; root: string }>>("workspace_list");
     const ws = list.find((w) => w.root === root);
@@ -69,6 +69,11 @@ describe("E2E-M7-9 changes", () => {
 
     await sendMessage("write app/a.txt=one\\nTWO\\n;b.txt=brand new\\n");
     await waitForAssistant("Wrote 2 files.");
+    // F-TH-12.4: the rewrite of app/a.txt counts its file but not its lines
+    // (what it replaced isn't in the event); the new b.txt adds its line.
+    const summary = await $('[data-testid="turn-summary"]');
+    await summary.waitForExist({ timeout: 10_000 });
+    expect(await summary.getText()).toContain("Changed 2 files +1 −0");
     // The panel reads the folder again when the turn ends.
     await browser.waitUntil(async () => (await changedPaths()).length === 2, {
       timeout: 10_000,

@@ -225,6 +225,68 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(screen.queryByTestId("thread-pending")).toBeNull();
   });
 
+  it("F-TH-12.4 a finished Claude Code turn says what its edits changed; a rewrite alone names its file without +0 −0", async () => {
+    const th = thread({ title: "Fix redirect", engineId: "claude", cwd: "/work/shop" });
+    const turn = (id: string, k: number) => ({
+      id,
+      threadId: th.id,
+      n: k,
+      engineId: "claude",
+      accountId: null,
+      state: "completed" as const,
+      blockedActions: 0,
+      startedAt: 1_000,
+      endedAt: 2_000,
+    });
+    const edit = (id: string, verb: ToolEvent["verb"], path: string, lines?: { added: number; removed: number }) =>
+      ({
+        type: "tool",
+        id,
+        verb,
+        argSummary: path,
+        status: "ok",
+        output: "The file has been updated.",
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+        paths: [`/work/shop/${path}`],
+        ...(lines ? { lines } : {}),
+      }) as ThreadEvent;
+    fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th, { turns: [turn("turn_1", 1), turn("turn_2", 2)] }),
+      thread_events: () => ({
+        items: [
+          env(th.id, "turn_1", 0, { type: "user", text: "fix the loop", attachments: [] }),
+          env(th.id, "turn_1", 1, edit("e1", "edit", "src/redirect.ts", { added: 2, removed: 2 })),
+          env(th.id, "turn_1", 2, edit("e2", "multiedit", "src/next.ts", { added: 2, removed: 2 })),
+          env(th.id, "turn_1", 3, edit("e3", "write", "src/redirect.test.ts", { added: 3, removed: 0 })),
+          env(th.id, "turn_1", 4, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+          env(th.id, "turn_2", 0, { type: "user", text: "update the readme", attachments: [] }),
+          env(th.id, "turn_2", 1, edit("e4", "write", "README.md")),
+          env(th.id, "turn_2", 2, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+        ],
+        nextBeforeId: null,
+      }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    const summaries = await screen.findAllByTestId("turn-summary");
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]?.textContent).toContain("Changed 3 files +7 −4");
+    // The rewrite's lines aren't in the event: its file counts, and no +0 −0.
+    expect(summaries[1]?.textContent).toContain("Changed 1 file");
+    expect(summaries[1]?.textContent).not.toMatch(/[+−]\d/);
+    // The latest edit's own row shows its counts.
+    expect(screen.getByText("+3 −0")).toBeTruthy();
+  });
+
   it("F-TH-01.6 a thread a crash interrupted says Interrupted — Resume? and Resume sends its turn again", async () => {
     const th = thread({ title: "Crashed", state: "interrupted" });
     const calls = fakeBackend({
