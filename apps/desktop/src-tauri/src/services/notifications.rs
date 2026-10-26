@@ -257,8 +257,9 @@ impl NotificationService {
                     .map(display_name)
                     .unwrap_or_else(|| "An agent".into());
                 // A pane's approval is an agent's `vibezeo run` (F-TL-12): its
-                // line and secret names stay off disk and out of the OS
-                // notification, and it's answered on the pane or its card,
+                // line and secret names stay out of the stored notification
+                // and the OS one (the session's Activity keeps the redacted
+                // line, F-EX-07), and it's answered on the pane or its card,
                 // where the whole line shows (no Allow in the list).
                 let (body, dedupe) = approval_notice(
                     &view,

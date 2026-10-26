@@ -347,7 +347,7 @@ impl AgentRuns {
         } else {
             format!("with {}", c.names())
         };
-        let (view, ticket) = self.broker.request(ApprovalRequest {
+        let (_, ticket) = self.broker.request(ApprovalRequest {
             source: SourceRef::Pane {
                 pane_id: c.pane.as_str().to_string(),
             },
@@ -386,7 +386,7 @@ impl AgentRuns {
         };
         self.terminals
             .activity
-            .approval(c.pane.as_str(), &view.summary, &answer)
+            .approval(c.pane.as_str(), &answer)
             .await;
         match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
@@ -722,9 +722,10 @@ mod tests {
         let events = fx
             .terminals
             .activity
-            .list("pane", fx.agent.as_str())
+            .list("pane", fx.agent.as_str(), None)
             .await
-            .expect("ledger");
+            .expect("ledger")
+            .events;
         let kinds: Vec<(&str, Option<&str>)> = events
             .iter()
             .map(|e| (e.kind.as_str(), e.decided.as_deref()))
@@ -884,13 +885,17 @@ mod tests {
             .trim()
             .to_string();
         let _ = std::fs::remove_file(std::env::temp_dir().join("bg.pid"));
-        let gone = (0..50).any(|_| {
+        // Gone, or a zombie waiting for its new parent to reap it.
+        let gone = (0..100).any(|_| {
             std::thread::sleep(Duration::from_millis(20));
-            !std::process::Command::new("kill")
-                .args(["-0", &pid])
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success())
+            match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                Err(_) => true,
+                Ok(stat) => stat
+                    .rsplit(')')
+                    .next()
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .is_some_and(|state| state == "Z" || state == "X"),
+            }
         });
         assert!(gone, "the background child outlived the run");
     }

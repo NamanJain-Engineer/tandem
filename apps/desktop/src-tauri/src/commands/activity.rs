@@ -3,17 +3,19 @@
 use tandem_core::{ErrorCode, IpcError};
 use tauri::{AppHandle, State};
 
-use crate::services::activity::ActivityEvent;
+use crate::services::activity::ActivityPage;
 use crate::state::AppState;
 
-/// `source` is `pane` or `thread`.
+/// `source` is `pane` or `thread`; `before` (ms) pages back from the
+/// newest events.
 #[tauri::command]
 pub async fn activity_list(
     state: State<'_, AppState>,
     source: String,
     id: String,
-) -> Result<Vec<ActivityEvent>, IpcError> {
-    state.terminals.activity.list(&source, &id).await
+    before: Option<i64>,
+) -> Result<ActivityPage, IpcError> {
+    state.terminals.activity.list(&source, &id, before).await
 }
 
 /// Writes the events as JSON Lines where the person picks. `None` when they
@@ -49,7 +51,7 @@ pub async fn activity_export(
         }
     };
     let Some(path) = path else { return Ok(None) };
-    tandem_core::atomic::atomic_write(&path, text.as_bytes(), None).map_err(|e| {
+    tandem_core::atomic::atomic_write(&path, text.as_bytes(), Some(0o600)).map_err(|e| {
         IpcError::new(
             ErrorCode::Io,
             format!("The activity couldn't be written: {e}"),

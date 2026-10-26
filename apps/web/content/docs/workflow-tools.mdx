@@ -21,12 +21,12 @@ Vibezeo saves a copy of a folder's files just before an agent works on it, so yo
 
 - **Turns** sent to the agent, never their words. A thread's turn offers **Open transcript**.
 - **Files**: a checkpoint was taken because the folder changed since the last one. **Checkpoint** opens the Checkpoints tab.
-- **Commands** run in the pane, as command recall stored them, with their exit codes. With "Remember commands I run" off, they don't appear.
+- **Commands** you or a script typed in the pane's shell, as command recall stored them, with their exit codes. Commands an engine runs itself (its own Bash tool) show as its **tools**. With "Remember commands I run" off, commands don't appear.
 - **Tools** and **subagents** an agent pane's engine started (their names).
 - **Approvals**: what was asked, the answer and where it came from.
 - **vibezeo run**: the command, the secrets it used (names only), who decided, its exit code and how long it took. Never its output.
 
-**Export…** saves the same events as a JSON Lines file. The activity stays on your computer for 14 days. It doesn't record network connections yet.
+Turns are counted from the engine's own prompt reports when it has them (Claude Code), else from Enter in the pane (not Shift+Enter or a paste's lines). The list shows the newest 500 events; **Show earlier** goes back. **Export…** saves them all as a JSON Lines file. Activity's own events stay on your computer for 14 days (at most 10,000 per session); commands, checkpoints and thread approvals keep their own retention. It doesn't record network connections yet.
 
 ## Command recall
 

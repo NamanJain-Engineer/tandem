@@ -161,8 +161,14 @@ pub struct TerminalService {
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
 /// true when the prompt went ahead without waiting for it.
+/// Runs before a prompt goes to an agent pane: its checkpoint, and with
+/// `Some(at)` its turn in the ledger (F-EX-07), dated when Enter came.
 pub type PromptHook = Arc<
-    dyn Fn(PaneId, Arc<std::sync::atomic::AtomicBool>) -> futures::future::BoxFuture<'static, ()>
+    dyn Fn(
+            PaneId,
+            Arc<std::sync::atomic::AtomicBool>,
+            Option<i64>,
+        ) -> futures::future::BoxFuture<'static, ()>
         + Send
         + Sync,
 >;
@@ -502,12 +508,17 @@ impl TerminalService {
 
     /// Runs the prompt hook, waiting at most [`PROMPT_WAIT`]; the
     /// checkpoint carries on (marked late) if it takes longer.
-    pub async fn before_prompt(&self, pane: &PaneId) {
+    pub async fn before_prompt(&self, pane: &PaneId, turn: bool) {
         let Some(hook) = self.prompt_hook.get() else {
             return;
         };
+        let turn_at = if turn && self.typed_turns(pane).await {
+            Some(self.activity.now_ms())
+        } else {
+            None
+        };
         let late = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let task = tokio::spawn(hook(pane.clone(), late.clone()));
+        let task = tokio::spawn(hook(pane.clone(), late.clone(), turn_at));
         if tokio::time::timeout(PROMPT_WAIT, task).await.is_err() {
             late.store(true, std::sync::atomic::Ordering::SeqCst);
             tracing::info!(
@@ -515,6 +526,23 @@ impl TerminalService {
                 "a prompt went ahead before its checkpoint"
             );
         }
+    }
+
+    /// Whether the ledger counts this pane's turns at Enter (F-EX-07): its
+    /// engine runs (not handed back to a shell) and doesn't report prompts
+    /// through hooks (Claude-style hooks send UserPromptSubmit, which counts
+    /// them more exactly).
+    async fn typed_turns(&self, pane: &PaneId) -> bool {
+        if !self.status.is_watched(pane.as_str()) {
+            return false;
+        }
+        let engine = panes::get(&self.store, pane)
+            .await
+            .ok()
+            .and_then(|r| r.engine_id)
+            .and_then(|id| self.engines.get(&id));
+        !engine
+            .is_some_and(|e| e.hooks_support == tandem_engines::registry::HooksSupport::ClaudeHooks)
     }
 
     /// `pty_write`. Agent panes with a prompt hook get their input in order
@@ -536,9 +564,11 @@ impl TerminalService {
                 let this = self.clone();
                 let pane = pane.clone();
                 tauri::async_runtime::spawn(async move {
+                    let mut input = SubmitScan::default();
                     while let Some(data) = rx.recv().await {
+                        let submit = input.scan(&data);
                         if data.contains(&b'\r') {
-                            this.before_prompt(&pane).await;
+                            this.before_prompt(&pane, submit).await;
                         }
                         if this.pty.write(pane.as_str(), &data).is_err() {
                             break;
@@ -1765,7 +1795,8 @@ impl TerminalService {
             .state(pane.as_str())
             .is_some_and(|s| s.bracketed_paste);
         let (body, enter) = typing::prompt_writes(text, bracketed, &newline);
-        self.before_prompt(pane).await;
+        // Typed without Enter (send: false) isn't a turn.
+        self.before_prompt(pane, send).await;
         self.status.quiet_window(pane.as_str());
         self.pty.write(pane.as_str(), &body)?;
         if send {
@@ -1894,6 +1925,47 @@ pub const RUN_IN_WSL: &str = "Run with secrets doesn't work in terminals that op
 
 /// Run with secrets needs a shell that can unset the variables after the command.
 pub const RUN_NEEDS_SHELL: &str = "Run with secrets needs a POSIX shell, fish or PowerShell";
+
+/// Finds the Enter that submits a prompt in an agent pane's input, across
+/// chunks: a carriage return that isn't Alt/Shift+Enter (`ESC CR`) and isn't
+/// inside a bracketed paste.
+#[derive(Debug, Default)]
+pub(crate) struct SubmitScan {
+    in_paste: bool,
+    after_esc: bool,
+}
+
+impl SubmitScan {
+    const PASTE_START: &'static [u8] = b"\x1b[200~";
+    const PASTE_END: &'static [u8] = b"\x1b[201~";
+
+    pub(crate) fn scan(&mut self, data: &[u8]) -> bool {
+        let mut submit = false;
+        let mut i = 0;
+        while i < data.len() {
+            let rest = &data[i..];
+            if rest.starts_with(Self::PASTE_START) {
+                self.in_paste = true;
+                self.after_esc = false;
+                i += Self::PASTE_START.len();
+                continue;
+            }
+            if rest.starts_with(Self::PASTE_END) {
+                self.in_paste = false;
+                self.after_esc = false;
+                i += Self::PASTE_END.len();
+                continue;
+            }
+            let b = data[i];
+            if b == b'\r' && !self.in_paste && !self.after_esc {
+                submit = true;
+            }
+            self.after_esc = b == 0x1b;
+            i += 1;
+        }
+        submit
+    }
+}
 
 /// The `wsl_default_distro` setting as a distro name `wsl.exe -d` can take.
 fn plain_distro(value: &serde_json::Value) -> Option<String> {
@@ -2252,6 +2324,24 @@ mod tests {
         assert_eq!(plain_distro(&serde_json::json!(null)), None);
         assert_eq!(plain_distro(&serde_json::json!("")), None);
         assert_eq!(plain_distro(&serde_json::json!("--exec")), None);
+    }
+
+    #[test]
+    fn f_ex_07_only_a_bare_enter_outside_a_paste_submits() {
+        let scan = |chunks: &[&[u8]]| {
+            let mut s = SubmitScan::default();
+            chunks.iter().map(|c| s.scan(c)).collect::<Vec<_>>()
+        };
+        assert_eq!(scan(&[b"fix the bug\r"]), [true]);
+        // Shift+Enter (ESC CR) adds a line, also when split across chunks.
+        assert_eq!(scan(&[b"line one\x1b\r", b"line two\r"]), [false, true]);
+        assert_eq!(scan(&[b"a\x1b", b"\r"]), [false, false]);
+        // A bracketed paste's lines aren't Enters, even over several chunks.
+        assert_eq!(
+            scan(&[b"\x1b[200~one\rtwo\r", b"three\r\x1b[201~", b"\r"]),
+            [false, false, true]
+        );
+        assert_eq!(scan(&[b"no enter"]), [false]);
     }
 
     #[tokio::test]

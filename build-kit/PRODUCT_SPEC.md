@@ -3539,21 +3539,21 @@ Features beyond the original spec that make working with coding agents faster, s
 
 **Behavior:**
 - **Activity…** in an agent pane's menu, a thread's menu and a Dashboard card's menu opens that session's ledger: a dialog with one row per event, oldest first, each with its time, an icon and one line, and a link where there is one.
-  - **Turn sent** (a thread's turn, or a prompt typed into an agent pane through Vibezeo). Never the text; a thread's row offers **Open transcript**.
+  - **Turn sent** (a thread's turn, or a prompt to an agent pane: from the engine's UserPromptSubmit hook when it has one, else a bare Enter, not Shift+Enter, a paste's lines or text Conductor types without sending). Never the text; a thread's row offers **Open transcript**.
   - **Files changed**: a checkpoint was taken because the folder differed from its last one (F-EX-01). Links to it in the Checkpoints tab.
-  - **Command** (F-EX-02): a command finished in the pane, as command recall stored it (redacted), with its exit code and duration. With "Remember commands I run" off, commands don't appear.
+  - **Command** (F-EX-02): a command typed in the pane's shell finished, as command recall stored it (redacted), with its exit code and duration. An engine's own commands (its Bash tool) show as tools. With "Remember commands I run" off, commands don't appear.
   - **Tool** and **Subagent**: an agent pane's engine started a tool (its name only, from its status hooks) or a subagent.
   - **Approval**: what was asked (redacted), the answer and where it came from ("Allowed once from the Dashboard", "Denied in the pane", "Expired", "A rule"). From threads and agent panes.
   - **vibezeo run** (F-TL-12): the command line (redacted), the secrets it used (names, never values), who decided ("You, once", "You, for this agent", "A repository rule", "Allowed earlier for this agent", "You declined"), its exit code and how long it took. Never its output.
   - Every row links to the checkpoint taken at or before it, when there is one ("Checkpoint 14:02").
   - States: loading, error ("Couldn't read the activity." [Retry]), empty ("Nothing recorded for this session yet."), populated.
 - **Export** writes the same events as JSON Lines (one object per line, `kind`, `at` in milliseconds, `summary` and the event's fields) to a file the person chooses.
-- **What's stored:** events not stored elsewhere (turns sent, tools, subagents, pane approvals and runs) go in a local table; commands, checkpoints and thread approvals are read from their own tables. Never prompt text, file contents, output or secret values. Events are kept 14 days, at most 50,000; a closed session's events go with it after that. Delete local data… removes them.
+- **What's stored:** events not stored elsewhere (turns sent, tools, subagents, pane approvals and runs) go in a local table; commands, checkpoints and thread approvals are read from their own tables. Never prompt text, file contents, output or secret values. Events are kept 14 days, at most 10,000 per session and 50,000 in all. The dialog shows the newest 500, with **Show earlier**. Delete local data… removes them.
 - Not built yet: the network connections a session opened, and attaching an export to a team's audit log.
 - Nothing here leaves the machine.
 
 **Acceptance:**
-1. An agent pane whose engine runs two commands, edits a file and gets one approval shows those events in order, each command linked to its stored command and each event to the checkpoint at or before it.
+1. An agent pane in which two commands are typed (command recall), whose engine edits a file and which gets one approval shows those events in order, each command linked to its stored command and each event to the checkpoint at or before it (a turn only to its own).
 2. The ledger's table never holds prompt text: after a thread turn and an agent pane prompt carrying a known sentence, no row of `activity` contains it.
 3. Export writes valid JSON Lines with the same events, in the same order.
 4. A `vibezeo run` shows its command, the secret names, who decided, its exit code and its duration, and never the secret's value or the run's output.

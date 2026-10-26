@@ -13,9 +13,13 @@ kind: string, at: number,
  */
 summary: string, 
 /**
- * The checkpoint taken at or before it.
+ * The checkpoint taken at or before it (a turn: only its own).
  */
 checkpointId: string | null, 
+/**
+ * That checkpoint's workspace, so the link opens its folder.
+ */
+checkpointWorkspace: string | null, 
 /**
  * A command's row in command recall.
  */

@@ -5,7 +5,7 @@ description: What stays on your computer and what the app can send.
 
 The download on this site doesn't contact Vibezeo's servers at all: no sign-in, no analytics, no crash reports and no update checks.
 
-- **On your computer.** Workspaces, layouts, settings, threads, teammates, tasks, notes, Dictate's history and dictionary, file checkpoints and the commands you run in Vibezeo terminals (text that looks like a secret is stored redacted) are stored in the app's data folder, `~/.tandem/`.
+- **On your computer.** Workspaces, layouts, settings, threads, teammates, tasks, notes, Dictate's history and dictionary, file checkpoints, the commands you run in Vibezeo terminals (text that looks like a secret is stored redacted) and each agent session's Activity (turns without their words, tool names, approvals and `vibezeo run`s, for 14 days) are stored in the app's data folder, `~/.tandem/`.
 - **Your data.** Settings › Privacy exports it to a zip (every table as JSON, teammates' memory and skills, your notes), without engine sign-ins or secrets, and can delete Vibezeo's data from this computer. Engine sign-ins stay unless you tick **Also remove engine sign-ins**.
 - **Secrets** are stored only in your operating system's keychain. Logs are scrubbed of tokens and keys, and diagnostics contain no prompts, file contents or tokens.
 - **Engines** talk to their vendors directly, under those vendors' terms, from their own provider homes. Vibezeo doesn't send your prompts, code or terminal output to us.
@@ -51,7 +51,7 @@ One argument is a command line for the shell (`vibezeo run 'pnpm build && pnpm d
 - **Commands agents can run without asking** (Settings › Secrets): per folder, a command such as `pnpm deploy`. It then runs with any arguments (`pnpm deploy --prod`), never chained, piped or redirected (`pnpm deploy; rm -rf x` still asks). Worktrees use their folder's rules. The first run under a rule, and the first after `.env` changes, still asks. A rule on a command that runs the repository's own scripts (`pnpm deploy`, `npm run`, `make`) lets the agent change what runs by editing those scripts.
 - **Tell agents in this folder** (in the Run with secrets dialog) adds one paragraph to the folder's `AGENTS.md`, shown as a change first: put `vibezeo run --` before commands that need secrets. It names no secrets.
 - `vibezeo run` says why and exits 1 outside an agent pane, in SSH and WSL panes, in the Flatpak build, for a missing secret and when you deny. On Windows it runs commands with `cmd /C` and hasn't been tested there yet.
-- The pane's question and its notification aren't stored; the notification says only that an agent wants to run a command with secrets. Each run's command, the secrets it used (names), who decided, its exit code and duration go in the session's Activity for 14 days, never its output.
+- The pane's question isn't stored, and its notification says only that an agent wants to run a command with secrets. The session's Activity keeps, for 14 days, that a question was asked and the answer (where it came from), and each run's command (with token-shaped text redacted), the variables it got (names and secret names), who decided, its exit code and duration. Never its output or a value.
 - What "agent-proof" covers: an agent that uses `vibezeo run` never holds the values. It doesn't stop another program running as you from reading your keychain or Vibezeo's memory, and a pane's requests are tied to it by a secret in its environment.
 
 Settings › Privacy › Delete local data… removes every secret from the keychain too.

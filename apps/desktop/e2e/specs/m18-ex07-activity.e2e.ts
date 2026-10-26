@@ -89,11 +89,14 @@ describe("E2E-M18-EX07 activity ledger", function () {
 
     const events = await list();
     const kinds = events.map((e) => e.kind).filter((k) => k !== "tool" && k !== "subagent" && k !== "files");
-    expect(kinds).toEqual(["turn", "turn", "turn", "approval", "run", "turn", "command", "command"]);
+    // Three prompts (the sentence and two /sh lines), counted from the
+    // engine's UserPromptSubmit; /exit and what's typed after handback aren't
+    // turns.
+    expect(kinds).toEqual(["turn", "turn", "turn", "approval", "run", "command", "command"]);
     const run = events.find((e) => e.kind === "run");
     expect(run).toMatchObject({
       summary: "printenv API_KEY",
-      secrets: ["stripe-test"],
+      secrets: ["API_KEY (stripe-test)"],
       decided: "once",
       exitCode: 0,
     });

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
-import { useActivity } from "../../stores/activity";
+import { useActivity, useCheckpointFocus } from "../../stores/activity";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { ActivityDialog, decidedLabel } from "./ActivityDialog";
 
@@ -21,6 +21,7 @@ const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
   at: 1_760_000_000_000,
   summary: "Turn sent",
   checkpointId: null,
+  checkpointWorkspace: null,
   commandId: null,
   exitCode: null,
   durationMs: null,
@@ -31,7 +32,12 @@ const ev = (over: Partial<ActivityEvent>): ActivityEvent => ({
 });
 
 const EVENTS: ActivityEvent[] = [
-  ev({ kind: "files", summary: "Folder saved as it was", checkpointId: "cp_1" }),
+  ev({
+    kind: "files",
+    summary: "Folder saved as it was",
+    checkpointId: "cp_1",
+    checkpointWorkspace: "ws_shop",
+  }),
   ev({ kind: "turn", checkpointId: "cp_1" }),
   ev({
     kind: "command",
@@ -61,7 +67,7 @@ const dialog = () =>
 
 describe("the activity ledger (F-EX-07)", () => {
   it("F-EX-07.1 shows the session's events in order with their facts and links", async () => {
-    const calls = fakeBackend({ activity_list: () => EVENTS });
+    const calls = fakeBackend({ activity_list: () => ({ events: EVENTS, more: false }) });
     dialog();
     await waitFor(() => expect(screen.getAllByTestId("activity-row")).toHaveLength(5));
     expect(screen.getAllByTestId("activity-row").map((r) => r.dataset.kind)).toEqual([
@@ -77,11 +83,37 @@ describe("the activity ledger (F-EX-07)", () => {
       "exit 0 · 1,200 ms · uses stripe-test · You, once",
     ]);
     expect(screen.getAllByTestId("activity-checkpoint")).toHaveLength(3);
-    expect(calls.find((c) => c.cmd === "activity_list")?.args).toEqual({ source: "pane", id: "pn_1" });
+    expect(calls.find((c) => c.cmd === "activity_list")?.args).toEqual({
+      source: "pane",
+      id: "pn_1",
+      before: null,
+    });
+  });
+
+  it("Show earlier pages back, and a checkpoint link opens its own folder on it", async () => {
+    const older = ev({ kind: "tool", summary: "Read", at: 1_759_000_000_000 });
+    const calls = fakeBackend({
+      activity_list: (a) =>
+        a?.before == null ? { events: EVENTS, more: true } : { events: [older], more: false },
+    });
+    dialog();
+    fireEvent.click(await screen.findByTestId("activity-earlier"));
+    await waitFor(() => expect(screen.getAllByTestId("activity-row")).toHaveLength(6));
+    expect(calls.filter((c) => c.cmd === "activity_list").pop()?.args).toMatchObject({
+      before: EVENTS[0]?.at,
+    });
+    expect(screen.queryByTestId("activity-earlier")).toBeNull();
+    expect(screen.getAllByTestId("activity-day").length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(screen.getAllByTestId("activity-checkpoint")[0] as HTMLElement);
+    expect(useCheckpointFocus.getState().focus).toEqual({ workspaceId: "ws_shop", checkpointId: "cp_1" });
+    expect(useActivity.getState().open).toBeNull();
   });
 
   it("F-EX-07.3 Export writes the file and says where", async () => {
-    const calls = fakeBackend({ activity_list: () => EVENTS, activity_export: () => "/home/me/a.jsonl" });
+    const calls = fakeBackend({
+      activity_list: () => ({ events: EVENTS, more: false }),
+      activity_export: () => "/home/me/a.jsonl",
+    });
     dialog();
     await screen.findAllByTestId("activity-row");
     fireEvent.click(screen.getByTestId("activity-export"));
@@ -94,7 +126,7 @@ describe("the activity ledger (F-EX-07)", () => {
     fakeBackend({
       activity_list: () => {
         if (fail) throw { code: "io", message: "disk" };
-        return [];
+        return { events: [], more: false };
       },
     });
     dialog();

@@ -59,21 +59,43 @@ pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> 
         .await
 }
 
-/// A source's events, oldest first.
+/// A window of a source's history: the newest `limit` before `before` (ms,
+/// exclusive; `None` for now), returned oldest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Page {
+    pub before: Option<i64>,
+    pub limit: i64,
+}
+
+impl Page {
+    /// Everything (Export).
+    pub const ALL: Page = Page {
+        before: None,
+        limit: i64::MAX,
+    };
+
+    fn before(&self) -> i64 {
+        self.before.unwrap_or(i64::MAX)
+    }
+}
+
+/// A source's events in `page`, oldest first.
 pub async fn list(
     store: &Store,
     source_kind: &str,
     source_id: &str,
+    page: Page,
 ) -> Result<Vec<ActivityRow>, StoreError> {
     let (kind, id) = (source_kind.to_string(), source_id.to_string());
     store
         .read(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, source_kind, source_id, kind, at, summary, detail_json, checkpoint_id
-                 FROM activity WHERE source_kind = ?1 AND source_id = ?2 ORDER BY at, id",
+                 FROM activity WHERE source_kind = ?1 AND source_id = ?2 AND at < ?3
+                 ORDER BY at DESC, id DESC LIMIT ?4",
             )?;
-            let rows = stmt
-                .query_map(params![kind, id], |r| {
+            let mut rows = stmt
+                .query_map(params![kind, id, page.before(), page.limit], |r| {
                     let detail: String = r.get(6)?;
                     Ok(ActivityRow {
                         id: r.get(0)?,
@@ -87,6 +109,7 @@ pub async fn list(
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
+            rows.reverse();
             Ok(rows)
         })
         .await
@@ -100,6 +123,8 @@ pub struct CheckpointMark {
     /// `turn` | `prompt` | `manual` | `restore`
     pub reason: String,
     pub first_of_folder: bool,
+    /// Its workspace, so a link opens the right folder's Checkpoints.
+    pub workspace_id: Option<String>,
 }
 
 /// A command the source's pane ran (command recall, redacted).
@@ -124,11 +149,12 @@ pub struct ApprovalMark {
     pub via: Option<String>,
 }
 
-/// The checkpoints a pane or thread took, oldest first.
+/// The checkpoints a pane or thread took in `page`, oldest first.
 pub async fn checkpoints(
     store: &Store,
     source_kind: &str,
     source_id: &str,
+    page: Page,
 ) -> Result<Vec<CheckpointMark>, StoreError> {
     let column = if source_kind == "thread" {
         "thread_id"
@@ -137,40 +163,49 @@ pub async fn checkpoints(
     };
     let sql = format!(
         "SELECT c.id, c.created_at, c.reason,
-                NOT EXISTS (SELECT 1 FROM checkpoints e WHERE e.folder = c.folder AND e.created_at < c.created_at)
-         FROM checkpoints c WHERE c.{column} = ?1 ORDER BY c.created_at, c.id"
+                NOT EXISTS (SELECT 1 FROM checkpoints e WHERE e.folder = c.folder AND e.created_at < c.created_at),
+                c.workspace_id
+         FROM checkpoints c WHERE c.{column} = ?1 AND c.created_at < ?2
+         ORDER BY c.created_at DESC, c.id DESC LIMIT ?3"
     );
     let id = source_id.to_string();
     store
         .read(move |c| {
             let mut stmt = c.prepare(&sql)?;
-            let rows = stmt
-                .query_map([id], |r| {
+            let mut rows = stmt
+                .query_map(params![id, page.before(), page.limit], |r| {
                     Ok(CheckpointMark {
                         id: r.get(0)?,
                         at: r.get(1)?,
                         reason: r.get(2)?,
                         first_of_folder: r.get(3)?,
+                        workspace_id: r.get(4)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
+            rows.reverse();
             Ok(rows)
         })
         .await
 }
 
-/// The commands a pane ran, oldest first; ended commands are dated by
-/// when they ended.
-pub async fn commands(store: &Store, pane_id: &str) -> Result<Vec<CommandMark>, StoreError> {
+/// The commands a pane ran in `page`, oldest first; a command is dated by
+/// when it ended.
+pub async fn commands(
+    store: &Store,
+    pane_id: &str,
+    page: Page,
+) -> Result<Vec<CommandMark>, StoreError> {
     let id = pane_id.to_string();
     store
         .read(move |c| {
             let mut stmt = c.prepare(
-                "SELECT id, started_at + COALESCE(duration_ms, 0), command, exit_code, duration_ms
-                 FROM command_history WHERE pane_id = ?1 ORDER BY started_at, id",
+                "SELECT id, started_at + COALESCE(duration_ms, 0) AS ended, command, exit_code, duration_ms
+                 FROM command_history WHERE pane_id = ?1 AND started_at + COALESCE(duration_ms, 0) < ?2
+                 ORDER BY ended DESC, id DESC LIMIT ?3",
             )?;
-            let rows = stmt
-                .query_map([id], |r| {
+            let mut rows = stmt
+                .query_map(params![id, page.before(), page.limit], |r| {
                     Ok(CommandMark {
                         id: r.get(0)?,
                         at: r.get(1)?,
@@ -180,22 +215,28 @@ pub async fn commands(store: &Store, pane_id: &str) -> Result<Vec<CommandMark>, 
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
+            rows.reverse();
             Ok(rows)
         })
         .await
 }
 
-/// A thread's approvals, by when they were asked.
-pub async fn approvals(store: &Store, thread_id: &str) -> Result<Vec<ApprovalMark>, StoreError> {
+/// A thread's approvals in `page`, by when they were asked.
+pub async fn approvals(
+    store: &Store,
+    thread_id: &str,
+    page: Page,
+) -> Result<Vec<ApprovalMark>, StoreError> {
     let id = thread_id.to_string();
     store
         .read(move |c| {
             let mut stmt = c.prepare(
                 "SELECT id, created_at, summary, state, scope, decided_via FROM approvals
-                 WHERE source_kind = 'thread' AND source_id = ?1 ORDER BY created_at, id",
+                 WHERE source_kind = 'thread' AND source_id = ?1 AND created_at < ?2
+                 ORDER BY created_at DESC, id DESC LIMIT ?3",
             )?;
-            let rows = stmt
-                .query_map([id], |r| {
+            let mut rows = stmt
+                .query_map(params![id, page.before(), page.limit], |r| {
                     Ok(ApprovalMark {
                         id: r.get(0)?,
                         at: r.get(1)?,
@@ -206,22 +247,46 @@ pub async fn approvals(store: &Store, thread_id: &str) -> Result<Vec<ApprovalMar
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
+            rows.reverse();
             Ok(rows)
         })
         .await
 }
 
-/// Drops events older than [`KEEP_DAYS`], then the oldest past [`KEEP_ROWS`].
+/// At most this many events per pane or thread: one looping agent can't
+/// push every other session's history out.
+pub const KEEP_PER_SOURCE: i64 = 10_000;
+
+/// Drops events older than [`KEEP_DAYS`], then each source's oldest past
+/// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`].
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
+    prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS).await
+}
+
+async fn prune_to(
+    store: &Store,
+    now: i64,
+    per_source: i64,
+    total: i64,
+) -> Result<usize, StoreError> {
     let cutoff = now - KEEP_DAYS * 24 * 60 * 60 * 1000;
     store
         .write(move |t| {
             let old = t.execute("DELETE FROM activity WHERE at < ?1", [cutoff])?;
+            let crowded = t.execute(
+                "DELETE FROM activity WHERE id IN (
+                   SELECT id FROM (
+                     SELECT id, ROW_NUMBER() OVER (
+                       PARTITION BY source_kind, source_id ORDER BY at DESC, id DESC) AS n
+                     FROM activity)
+                   WHERE n > ?1)",
+                [per_source],
+            )?;
             let over = t.execute(
                 "DELETE FROM activity WHERE id IN (SELECT id FROM activity ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
-                [KEEP_ROWS],
+                [total],
             )?;
-            Ok(old + over)
+            Ok(old + crowded + over)
         })
         .await
 }
@@ -260,14 +325,33 @@ mod tests {
         insert(&store, event("pn_1", "turn", 10))
             .await
             .expect("insert");
-        let rows = list(&store, "pane", "pn_1").await.expect("list");
+        let rows = list(&store, "pane", "pn_1", Page::ALL).await.expect("list");
         let kinds: Vec<&str> = rows.iter().map(|r| r.kind.as_str()).collect();
         assert_eq!(kinds, ["turn", "tool"]);
         assert_eq!(rows[1].detail, serde_json::json!({ "n": 20 }));
-        assert!(list(&store, "thread", "pn_1")
+        assert!(list(&store, "thread", "pn_1", Page::ALL)
             .await
             .expect("list")
             .is_empty());
+        // A page is the newest events before its cursor, oldest first.
+        for at in 30..40 {
+            insert(&store, event("pn_1", "tool", at))
+                .await
+                .expect("insert");
+        }
+        let page = list(
+            &store,
+            "pane",
+            "pn_1",
+            Page {
+                before: Some(38),
+                limit: 3,
+            },
+        )
+        .await
+        .expect("page");
+        let ats: Vec<i64> = page.iter().map(|r| r.at).collect();
+        assert_eq!(ats, vec![35, 36, 37]);
     }
 
     #[tokio::test]
@@ -282,7 +366,41 @@ mod tests {
             .await
             .expect("insert");
         assert_eq!(prune(&store, now).await.expect("prune"), 1);
-        assert_eq!(list(&store, "pane", "pn_1").await.expect("list").len(), 1);
+        assert_eq!(
+            list(&store, "pane", "pn_1", Page::ALL)
+                .await
+                .expect("list")
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_retention_by_count_keeps_each_sessions_newest_and_the_newest_overall() {
+        let (_d, store) = store();
+        let now = 1_000_000;
+        for at in 0..10 {
+            insert(&store, event("pn_loop", "tool", now - 100 + at))
+                .await
+                .expect("insert");
+        }
+        for at in 0..3 {
+            insert(&store, event("pn_quiet", "tool", now - 1000 + at))
+                .await
+                .expect("insert");
+        }
+        // Per session 4, 6 in all: the loop keeps its newest 4, the quiet
+        // pane its 3 (it isn't pushed out by the loop's flood).
+        assert_eq!(prune_to(&store, now, 4, 6).await.expect("prune"), 7);
+        let looping = list(&store, "pane", "pn_loop", Page::ALL)
+            .await
+            .expect("list");
+        let ats: Vec<i64> = looping.iter().map(|r| r.at - (now - 100)).collect();
+        assert_eq!(ats, vec![6, 7, 8, 9]);
+        let quiet = list(&store, "pane", "pn_quiet", Page::ALL)
+            .await
+            .expect("list");
+        assert_eq!(quiet.len(), 2);
     }
 
     #[tokio::test]

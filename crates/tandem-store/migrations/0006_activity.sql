@@ -15,3 +15,8 @@ CREATE TABLE activity (
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);
 CREATE INDEX activity_at ON activity(at);
+
+-- The ledger reads these by pane or thread, newest first.
+CREATE INDEX IF NOT EXISTS command_history_pane ON command_history(pane_id, started_at);
+CREATE INDEX IF NOT EXISTS approvals_source ON approvals(source_kind, source_id, created_at);
+CREATE INDEX IF NOT EXISTS checkpoints_pane ON checkpoints(pane_id, created_at);

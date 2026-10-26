@@ -1699,6 +1699,7 @@ impl ThreadService {
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
         // F-EX-01: the folder as it was before the engine hears the message.
+        let turn_at = self.clock.now_ms();
         let mut checkpoint = None;
         if let (Some(cps), Some(ws)) = (self.checkpoints.get(), thread.workspace_id.as_ref()) {
             checkpoint = cps
@@ -1728,6 +1729,7 @@ impl ThreadService {
                     id.as_str(),
                     Some(thread.engine_id.as_str()),
                     checkpoint.map(|c| c.id),
+                    turn_at,
                 )
                 .await;
         }
@@ -3867,9 +3869,10 @@ mod tests {
             .expect("send");
         ended(&f, 1).await;
         let events = activity
-            .list("thread", f.thread.id.as_str())
+            .list("thread", f.thread.id.as_str(), None)
             .await
-            .expect("list");
+            .expect("list")
+            .events;
         assert_eq!(events.len(), 1);
         assert_eq!(
             (events[0].kind.as_str(), events[0].summary.as_str()),

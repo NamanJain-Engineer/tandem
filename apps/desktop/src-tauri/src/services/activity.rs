@@ -25,8 +25,10 @@ pub struct ActivityEvent {
     pub at: i64,
     /// One line, redacted.
     pub summary: String,
-    /// The checkpoint taken at or before it.
+    /// The checkpoint taken at or before it (a turn: only its own).
     pub checkpoint_id: Option<String>,
+    /// That checkpoint's workspace, so the link opens its folder.
+    pub checkpoint_workspace: Option<String>,
     /// A command's row in command recall.
     #[ts(type = "number | null")]
     pub command_id: Option<i64>,
@@ -50,6 +52,7 @@ impl ActivityEvent {
             at,
             summary: summary.into(),
             checkpoint_id: None,
+            checkpoint_workspace: None,
             command_id: None,
             exit_code: None,
             duration_ms: None,
@@ -69,6 +72,34 @@ pub struct RunRecord {
     pub decided: &'static str,
     pub exit_code: Option<i32>,
     pub duration_ms: Option<i64>,
+}
+
+/// `activity_list`: a window of a session's events, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ActivityPage {
+    pub events: Vec<ActivityEvent>,
+    /// Earlier events exist: ask again with `before` set to the first one's `at`.
+    pub more: bool,
+}
+
+/// Events per page.
+pub const PAGE: i64 = 500;
+
+/// The summary of a pane approval: what kind of question, never its text
+/// (the run's own row carries the redacted line).
+pub const APPROVAL_SUMMARY: &str = "Asked to run a command with secrets";
+
+/// A tool's name as engines report it (`Bash`, `mcp__github__search`);
+/// anything else is dropped, since any process in the pane can sign a report.
+pub fn tool_name(tool: &str) -> Option<&str> {
+    (!tool.is_empty()
+        && tool.len() <= 64
+        && tool
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c)))
+    .then_some(tool)
 }
 
 /// `pane` or `thread`.
@@ -99,39 +130,48 @@ impl ActivityService {
         }
     }
 
-    /// A turn went to a thread's engine, or a prompt to an agent pane's.
-    /// Never its text.
+    /// A turn went to a thread's engine, or a prompt to an agent pane's,
+    /// at `at` (taken before its checkpoint). Never its text.
     pub async fn turn(
         &self,
         source_kind: &'static str,
         id: &str,
         engine: Option<&str>,
         checkpoint: Option<String>,
+        at: i64,
     ) {
         self.record(NewActivity {
             source_kind,
             source_id: id.to_string(),
             kind: "turn",
-            at: self.clock.now_ms(),
+            at,
             summary: "Turn sent".into(),
-            detail: serde_json::json!({ "engine": engine }),
+            detail: serde_json::json!({ "engine": engine.and_then(tool_name) }),
             checkpoint_id: checkpoint,
         })
         .await;
     }
 
-    /// An agent pane's engine started a tool (its name, from its hooks).
-    pub async fn tool(&self, pane: &str, tool: &str, subagent: bool) {
-        let tool: String = tool.chars().take(80).collect();
+    /// The clock the ledger dates events by.
+    pub fn now_ms(&self) -> i64 {
+        self.clock.now_ms()
+    }
+
+    /// An agent pane's engine started a tool (its name, from its hooks), at
+    /// the report's time. A name that isn't a tool's is dropped.
+    pub async fn tool(&self, pane: &str, tool: &str, subagent: bool, at: i64) {
+        let Some(tool) = tool_name(tool) else {
+            return;
+        };
         self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
             kind: if subagent { "subagent" } else { "tool" },
-            at: self.clock.now_ms(),
+            at,
             summary: if subagent {
                 format!("Subagent started ({tool})")
             } else {
-                tool.clone()
+                tool.to_string()
             },
             detail: serde_json::json!({ "tool": tool }),
             checkpoint_id: None,
@@ -140,14 +180,15 @@ impl ActivityService {
     }
 
     /// The person answered a pane's approval (`decided` as in
-    /// [`ActivityEvent::decided`]).
-    pub async fn approval(&self, pane: &str, summary: &str, decided: &str) {
+    /// [`ActivityEvent::decided`]). A fixed summary: the question's text
+    /// could carry what the agent typed before the redactor knew the values.
+    pub async fn approval(&self, pane: &str, decided: &str) {
         self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
             kind: "approval",
             at: self.clock.now_ms(),
-            summary: Redactor::global().redact(summary).into_owned(),
+            summary: APPROVAL_SUMMARY.into(),
             detail: serde_json::json!({ "decided": decided }),
             checkpoint_id: None,
         })
@@ -180,32 +221,66 @@ impl ActivityService {
         }
     }
 
-    /// `activity_list`: the source's events, oldest first, each linked to
-    /// the checkpoint taken at or before it.
-    pub async fn list(&self, source: &str, id: &str) -> Result<Vec<ActivityEvent>, IpcError> {
+    /// `activity_list`: the newest [`PAGE`] events before `before`, oldest
+    /// first, each linked to the checkpoint taken at or before it.
+    pub async fn list(
+        &self,
+        source: &str,
+        id: &str,
+        before: Option<i64>,
+    ) -> Result<ActivityPage, IpcError> {
+        let page = repo::Page {
+            before,
+            limit: PAGE + 1,
+        };
+        let mut events = self.merged(source, id, page).await?;
+        let more = events.len() as i64 > PAGE;
+        if more {
+            events.drain(..events.len() - PAGE as usize);
+        }
+        Ok(ActivityPage { events, more })
+    }
+
+    /// The source's events in `page`, from every table, oldest first.
+    async fn merged(
+        &self,
+        source: &str,
+        id: &str,
+        page: repo::Page,
+    ) -> Result<Vec<ActivityEvent>, IpcError> {
         let source = kind_of(source)?;
-        let checkpoints = repo::checkpoints(&self.store, source, id).await?;
+        // One more checkpoint than the page: the one events at its start link to.
+        let checkpoints = repo::checkpoints(
+            &self.store,
+            source,
+            id,
+            repo::Page {
+                limit: page.limit.saturating_add(1),
+                ..page
+            },
+        )
+        .await?;
         let mut out: Vec<(i64, u8, ActivityEvent)> = Vec::new();
         for c in &checkpoints {
-            let summary = if c.first_of_folder {
-                "Folder saved as it was"
-            } else {
-                "Files changed since the last checkpoint"
+            let summary = match (c.reason.as_str(), c.first_of_folder) {
+                ("restore", _) => "Saved before a restore",
+                ("manual", _) => "Checkpoint saved",
+                (_, true) => "Folder saved as it was",
+                (_, false) => "Files changed since the last checkpoint",
             };
             let mut e = ActivityEvent::new("files", c.at, summary);
             e.checkpoint_id = Some(c.id.clone());
+            e.checkpoint_workspace = c.workspace_id.clone();
             // Before the turn it was taken for, at the same moment.
             out.push((c.at, 0, e));
         }
-        for row in repo::list(&self.store, source, id).await? {
+        for row in repo::list(&self.store, source, id, page).await? {
             let mut e = ActivityEvent::new(&row.kind, row.at, row.summary);
             e.checkpoint_id = row.checkpoint_id;
             let d = &row.detail;
-            e.decided = d
-                .get("decided")
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-            e.engine = d.get("engine").and_then(|v| v.as_str()).map(str::to_string);
+            let text = |k: &str| d.get(k).and_then(|v| v.as_str()).map(str::to_string);
+            e.decided = text("decided");
+            e.engine = text("engine");
             e.exit_code = d
                 .get("exit_code")
                 .and_then(serde_json::Value::as_i64)
@@ -223,7 +298,7 @@ impl ActivityService {
             out.push((row.at, 1, e));
         }
         if source == "pane" {
-            for c in repo::commands(&self.store, id).await? {
+            for c in repo::commands(&self.store, id, page).await? {
                 let mut e = ActivityEvent::new("command", c.at, c.command);
                 e.command_id = Some(c.id);
                 e.exit_code = c.exit_code;
@@ -231,7 +306,7 @@ impl ActivityService {
                 out.push((c.at, 1, e));
             }
         } else {
-            for a in repo::approvals(&self.store, id).await? {
+            for a in repo::approvals(&self.store, id, page).await? {
                 let mut e = ActivityEvent::new("approval", a.at, a.summary);
                 e.decided = Some(match &a.via {
                     Some(via) => format!("{}:{via}", a.state),
@@ -241,24 +316,39 @@ impl ActivityService {
             }
         }
         out.sort_by_key(|(at, order, _)| (*at, *order));
+        let workspaces: std::collections::HashMap<String, Option<String>> = checkpoints
+            .iter()
+            .map(|c| (c.id.clone(), c.workspace_id.clone()))
+            .collect();
         let mut last: Option<String> = None;
         let mut events = Vec::with_capacity(out.len());
         for (_, _, mut e) in out {
-            if e.kind == "files" {
-                last = e.checkpoint_id.clone();
-            } else if e.checkpoint_id.is_none() {
-                e.checkpoint_id = last.clone();
-            } else {
-                last = e.checkpoint_id.clone();
+            match e.kind.as_str() {
+                "files" => last = e.checkpoint_id.clone(),
+                // A turn links only to the checkpoint it made.
+                "turn" => {
+                    if e.checkpoint_id.is_some() {
+                        last = e.checkpoint_id.clone();
+                    }
+                }
+                _ => e.checkpoint_id = last.clone(),
             }
+            e.checkpoint_workspace = e
+                .checkpoint_id
+                .as_ref()
+                .and_then(|id| workspaces.get(id).cloned().flatten());
             events.push(e);
         }
+        // The extra checkpoint only lent its link; the page keeps its size.
+        let keep = page.limit.min(events.len() as i64) as usize;
+        let drop = events.len().saturating_sub(keep);
+        events.drain(..drop);
         Ok(events)
     }
 
-    /// `activity_export`: the same events as JSON Lines.
+    /// `activity_export`: every event as JSON Lines.
     pub async fn export(&self, source: &str, id: &str) -> Result<String, IpcError> {
-        Ok(jsonl(&self.list(source, id).await?))
+        Ok(jsonl(&self.merged(source, id, repo::Page::ALL).await?))
     }
 }
 
@@ -295,7 +385,7 @@ mod tests {
         Checkpoint {
             id: id.into(),
             folder: "/w/shop".into(),
-            workspace_id: None,
+            workspace_id: Some("ws_shop".into()),
             thread_id: None,
             pane_id: Some(pane.into()),
             turn_id: None,
@@ -334,39 +424,41 @@ mod tests {
         clock.now_ms()
     }
 
+    async fn all(svc: &ActivityService, source: &str, id: &str) -> Vec<ActivityEvent> {
+        let page = svc.list(source, id, None).await.expect("list");
+        assert!(!page.more);
+        page.events
+    }
+
     #[tokio::test]
-    async fn f_ex_07_1_a_panes_commands_edit_and_approval_show_in_order_with_their_links() {
+    async fn f_ex_07_1_a_panes_turns_commands_edit_and_approval_show_in_order_with_their_links() {
         let (_d, store, clock, svc) = fixture();
         let t0 = tick(&clock);
         cps::insert(&store, checkpoint("cp_1", "pn_1", t0))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("claude"), Some("cp_1".into()))
+        svc.turn("pane", "pn_1", Some("claude"), Some("cp_1".into()), t0)
             .await;
-        let t1 = tick(&clock);
-        let first = command(&store, "pn_1", "pnpm test", t1, 0).await;
-        tick(&clock);
-        svc.tool("pn_1", "Edit", false).await;
-        let t2 = tick(&clock);
-        let second = command(&store, "pn_1", "git diff --stat", t2, 1).await;
+        let first = command(&store, "pn_1", "pnpm test", tick(&clock), 0).await;
+        let t = tick(&clock);
+        svc.tool("pn_1", "Edit", false, t).await;
+        let second = command(&store, "pn_1", "git diff --stat", tick(&clock), 1).await;
         // The edit shows at the next prompt's checkpoint.
         let t3 = tick(&clock);
         cps::insert(&store, checkpoint("cp_2", "pn_1", t3))
             .await
             .expect("cp");
-        svc.turn("pane", "pn_1", Some("claude"), Some("cp_2".into()))
+        svc.turn("pane", "pn_1", Some("claude"), Some("cp_2".into()), t3)
             .await;
+        // A turn whose folder didn't change made no checkpoint: no link.
+        let t4 = tick(&clock);
+        svc.turn("pane", "pn_1", Some("claude"), None, t4).await;
         tick(&clock);
-        svc.approval(
-            "pn_1",
-            "run `pnpm deploy` with stripe-test",
-            "allowed:inline",
-        )
-        .await;
+        svc.approval("pn_1", "allowed:inline").await;
         // Another pane's events stay out.
-        command(&store, "pn_2", "ls", t1, 0).await;
+        command(&store, "pn_2", "ls", t0, 0).await;
 
-        let events = svc.list("pane", "pn_1").await.expect("list");
+        let events = all(&svc, "pane", "pn_1").await;
         let got: Vec<(&str, &str)> = events
             .iter()
             .map(|e| (e.kind.as_str(), e.summary.as_str()))
@@ -381,7 +473,8 @@ mod tests {
                 ("command", "git diff --stat"),
                 ("files", "Files changed since the last checkpoint"),
                 ("turn", "Turn sent"),
-                ("approval", "run `pnpm deploy` with stripe-test"),
+                ("turn", "Turn sent"),
+                ("approval", APPROVAL_SUMMARY),
             ]
         );
         assert_eq!(events[2].command_id, Some(first));
@@ -398,85 +491,94 @@ mod tests {
                 Some("cp_1"),
                 Some("cp_2"),
                 Some("cp_2"),
+                None,
                 Some("cp_2")
             ]
         );
-        assert_eq!(events[7].decided.as_deref(), Some("allowed:inline"));
+        assert_eq!(events[5].checkpoint_workspace.as_deref(), Some("ws_shop"));
+        assert_eq!(events[1].engine.as_deref(), Some("claude"));
+        assert_eq!(events[8].decided.as_deref(), Some("allowed:inline"));
     }
 
     #[tokio::test]
-    async fn f_ex_07_2_turn_and_run_rows_hold_names_and_numbers_only() {
-        let (_d, store, _clock, svc) = fixture();
-        // Everything the recorders are handed for a turn and a run.
-        svc.turn("thread", "th_1", Some("codex"), None).await;
-        svc.turn("pane", "pn_1", Some("claude"), None).await;
-        svc.run(
-            "pn_1",
-            RunRecord {
-                command: "pnpm deploy".into(),
-                secrets: vec!["stripe-test".into()],
-                decided: "once",
-                exit_code: Some(0),
-                duration_ms: Some(12),
-            },
-        )
-        .await;
-        let rows: Vec<String> = store
-            .read(|c| {
-                let mut stmt = c.prepare(
-                    "SELECT source_id || kind || summary || detail_json || COALESCE(checkpoint_id, '') FROM activity",
-                )?;
-                let rows = stmt
-                    .query_map([], |r| r.get::<_, String>(0))?
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(rows)
-            })
-            .await
-            .expect("rows");
-        assert_eq!(rows.len(), 3);
-        // Only names and numbers: the recorders are never handed text.
-        assert!(rows.iter().all(|r| r.len() < 200), "{rows:?}");
-    }
-
-    #[tokio::test]
-    async fn f_ex_07_3_export_is_json_lines_of_the_same_events_in_order() {
+    async fn f_ex_07_tool_names_that_arent_names_are_dropped() {
         let (_d, store, clock, svc) = fixture();
-        svc.turn("pane", "pn_1", Some("claude"), None).await;
+        let t = tick(&clock);
+        for bad in [
+            "Bash; please rename the quarterly flamingo report",
+            "x y",
+            "",
+            &"a".repeat(65),
+            "naïve",
+        ] {
+            svc.tool("pn_1", bad, false, t).await;
+        }
+        svc.tool("pn_1", "mcp__github__search_code", false, t).await;
+        let events = all(&svc, "pane", "pn_1").await;
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "mcp__github__search_code");
+        let rows: i64 = store
+            .read(|c| Ok(c.query_row("SELECT COUNT(*) FROM activity", [], |r| r.get(0))?))
+            .await
+            .expect("count");
+        assert_eq!(rows, 1);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_3_a_page_is_the_newest_events_and_export_is_all_of_them_as_json_lines() {
+        let (_d, store, clock, svc) = fixture();
+        for n in 0..(PAGE + 20) {
+            clock.advance(Duration::from_millis(10));
+            svc.tool("pn_1", &format!("T{n}"), n % 7 == 0, clock.now_ms())
+                .await;
+        }
         let t = tick(&clock);
         command(&store, "pn_1", "make", t, 0).await;
-        tick(&clock);
-        svc.tool("pn_1", "Task", true).await;
-        let events = svc.list("pane", "pn_1").await.expect("list");
+        let first = svc.list("pane", "pn_1", None).await.expect("list");
+        assert!(first.more);
+        assert_eq!(first.events.len() as i64, PAGE);
+        assert_eq!(
+            first.events.last().map(|e| e.kind.as_str()),
+            Some("command")
+        );
+        let before = first.events[0].at;
+        let earlier = svc
+            .list("pane", "pn_1", Some(before))
+            .await
+            .expect("earlier");
+        assert!(!earlier.more);
+        assert_eq!(earlier.events.len(), 21);
+        assert!(earlier.events.iter().all(|e| e.at < before));
         let text = svc.export("pane", "pn_1").await.expect("export");
-        assert!(text.ends_with('\n'));
         let back: Vec<ActivityEvent> = text
             .lines()
             .map(|l| serde_json::from_str(l).expect("a JSON object per line"))
             .collect();
-        assert_eq!(back, events);
-        assert_eq!(back.len(), 3);
-        assert_eq!(back[2].kind, "subagent");
-        assert_eq!(back[2].summary, "Subagent started (Task)");
+        let mut joined = earlier.events.clone();
+        joined.extend(first.events.clone());
+        assert_eq!(back, joined);
+        assert_eq!(back[0].kind, "subagent");
+        assert_eq!(back[0].summary, "Subagent started (T0)");
     }
 
     #[tokio::test]
-    async fn f_ex_07_4_a_run_shows_its_command_secrets_decider_exit_and_duration_only() {
+    async fn f_ex_07_4_a_run_shows_its_command_variables_decider_exit_and_duration_only() {
         let (_d, store, _clock, svc) = fixture();
         svc.run(
             "pn_1",
             RunRecord {
                 command: "printenv API_KEY".into(),
-                secrets: vec!["stripe-test".into()],
+                secrets: vec!["API_KEY (stripe-test)".into()],
                 decided: "agent",
                 exit_code: Some(3),
                 duration_ms: Some(840),
             },
         )
         .await;
-        let e = &svc.list("pane", "pn_1").await.expect("list")[0];
+        let e = &all(&svc, "pane", "pn_1").await[0];
         assert_eq!(e.kind, "run");
         assert_eq!(e.summary, "printenv API_KEY");
-        assert_eq!(e.secrets, vec!["stripe-test"]);
+        assert_eq!(e.secrets, vec!["API_KEY (stripe-test)"]);
         assert_eq!(e.decided.as_deref(), Some("agent"));
         assert_eq!((e.exit_code, e.duration_ms), (Some(3), Some(840)));
         // A command line carrying a token-shaped value is stored redacted.
@@ -492,7 +594,7 @@ mod tests {
             },
         )
         .await;
-        let all: String = store
+        let all_text: String = store
             .read(|c| {
                 Ok(
                     c.query_row("SELECT group_concat(summary) FROM activity", [], |r| {
@@ -502,18 +604,19 @@ mod tests {
             })
             .await
             .expect("summaries");
-        assert!(!all.contains(token), "{all}");
+        assert!(!all_text.contains(token), "{all_text}");
     }
 
     #[tokio::test]
     async fn f_ex_07_a_threads_ledger_has_its_turns_and_only_panes_and_threads_have_one() {
-        let (_d, _store, _clock, svc) = fixture();
-        svc.turn("thread", "th_1", Some("codex"), None).await;
-        let events = svc.list("thread", "th_1").await.expect("list");
+        let (_d, _store, clock, svc) = fixture();
+        svc.turn("thread", "th_1", Some("codex"), None, clock.now_ms())
+            .await;
+        let events = all(&svc, "thread", "th_1").await;
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "turn");
         assert_eq!(events[0].engine.as_deref(), Some("codex"));
-        assert!(svc.list("routine", "r_1").await.is_err());
-        assert!(svc.list("pane", "pn_none").await.expect("list").is_empty());
+        assert!(svc.list("routine", "r_1", None).await.is_err());
+        assert!(all(&svc, "pane", "pn_none").await.is_empty());
     }
 }

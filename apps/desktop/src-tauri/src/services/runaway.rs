@@ -450,7 +450,7 @@ impl RunawayService {
         app.state::<AppState>()
             .terminals
             .status
-            .set_tool_sink(Arc::new(move |pane: &str, tool: &str| {
+            .set_tool_sink(Arc::new(move |pane: &str, tool: &str, at: i64| {
                 let me = sink_me.clone();
                 let app = sink_state.clone();
                 let (pane, tool) = (pane.to_string(), tool.to_string());
@@ -460,7 +460,11 @@ impl RunawayService {
                     let tripped = me.on_tool(&state, &pane, &tool, &limits).await;
                     // F-EX-07: the tool's name in the pane's ledger.
                     let subagent = me.subagent_tool(&state, &pane, &tool);
-                    state.terminals.activity.tool(&pane, &tool, subagent).await;
+                    state
+                        .terminals
+                        .activity
+                        .tool(&pane, &tool, subagent, at)
+                        .await;
                     if let Some(t) = tripped {
                         me.tripped(&state, t, action).await;
                     }

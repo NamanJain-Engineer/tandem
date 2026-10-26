@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ActivityEvent } from "@tandem/protocol";
+import type { ActivityPage } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 
 /** Whose ledger is open (F-EX-07): an agent pane's or a thread's. */
@@ -17,11 +17,21 @@ export const useActivity = create<ActivityState>((set) => ({
   close: () => set({ open: null }),
 }));
 
-export function activityList(source: ActivitySource): Promise<ActivityEvent[]> {
-  return invoke<ActivityEvent[] | null>("activity_list", { source: source.source, id: source.id }).then(
-    (l) => l ?? [],
+/** The newest events, or those before `before` (ms). */
+export function activityList(source: ActivitySource, before: number | null = null): Promise<ActivityPage> {
+  return invoke<ActivityPage | null>("activity_list", { source: source.source, id: source.id, before }).then(
+    (p) => p ?? { events: [], more: false },
   );
 }
+
+/** A checkpoint the Checkpoints tab should open on: its workspace's folder,
+ * with that checkpoint selected (F-EX-07's links). */
+export type CheckpointFocus = { workspaceId: string; checkpointId: string };
+
+export const useCheckpointFocus = create<{
+  focus: CheckpointFocus | null;
+  set: (f: CheckpointFocus | null) => void;
+}>((set) => ({ focus: null, set: (focus) => set({ focus }) }));
 
 /** Writes the ledger as JSON Lines where the person picks; `null` when they cancel. */
 export function activityExport(source: ActivitySource): Promise<string | null> {

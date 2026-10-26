@@ -784,13 +784,38 @@ impl AppState {
         threads.set_activity(terminals.activity.clone());
         let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
         let hook_activity = terminals.activity.clone();
-        let hook_status = terminals.status.clone();
-        terminals.set_prompt_hook(Arc::new(move |pane, late| {
+        // F-EX-07: engines with hooks report each prompt (UserPromptSubmit);
+        // the turn links to the checkpoint its Enter took just before.
+        let (prompt_activity, prompt_store) = (terminals.activity.clone(), store.clone());
+        terminals.status.set_prompt_sink(Arc::new(move |pane, at| {
+            let (activity, store) = (prompt_activity.clone(), prompt_store.clone());
+            let pane = pane.to_string();
+            tauri::async_runtime::spawn(async move {
+                use tandem_store::repo::{activity as ledger, panes};
+                let id = tandem_core::ids::PaneId::from_db(pane.clone());
+                let engine = panes::get(&store, &id).await.ok().and_then(|r| r.engine_id);
+                let checkpoint = ledger::checkpoints(
+                    &store,
+                    "pane",
+                    &pane,
+                    ledger::Page {
+                        before: Some(at + 1),
+                        limit: 1,
+                    },
+                )
+                .await
+                .ok()
+                .and_then(|c| c.into_iter().next())
+                .filter(|c| at - c.at <= 10_000)
+                .map(|c| c.id);
+                activity
+                    .turn("pane", &pane, engine.as_deref(), checkpoint, at)
+                    .await;
+            });
+        }));
+        terminals.set_prompt_hook(Arc::new(move |pane, late, turn_at| {
             let (cps, store) = (hook_cps.clone(), hook_store.clone());
             let activity = hook_activity.clone();
-            // After handback the pane is a shell: what's typed is a command
-            // (command recall has it), not a turn.
-            let engine_running = hook_status.watching(pane.as_str());
             Box::pin(async move {
                 use tandem_store::repo::{panes, workspaces};
                 let Ok(record) = panes::get(&store, &pane).await else {
@@ -799,7 +824,6 @@ impl AppState {
                 let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
                     return;
                 };
-                let is_agent = record.kind == "agent" && engine_running;
                 let engine = record.engine_id.clone();
                 let made = cps
                     .before_turn(
@@ -814,11 +838,15 @@ impl AppState {
                         tandem_store::repo::checkpoints::CheckpointReason::Prompt,
                     )
                     .await;
-                // F-EX-07: the prompt, never its text.
-                if is_agent {
-                    activity
-                        .turn("pane", pane.as_str(), engine.as_deref(), made.map(|c| c.id))
-                        .await;
+                // F-EX-07: the prompt, never its text, recorded off the Enter
+                // path; the terminal decided it's a turn (`turn_at`).
+                if let (Some(at), "agent") = (turn_at, record.kind.as_str()) {
+                    let pane = pane.as_str().to_string();
+                    tauri::async_runtime::spawn(async move {
+                        activity
+                            .turn("pane", &pane, engine.as_deref(), made.map(|c| c.id), at)
+                            .await;
+                    });
                 }
             })
         }));

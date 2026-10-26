@@ -43,7 +43,11 @@ pub fn claude_report(
         ..ReportPayload::default()
     };
     let event = match event_name.as_str() {
-        "UserPromptSubmit" | "SubagentStop" => ReportEvent::Working,
+        "UserPromptSubmit" => {
+            payload.prompt = true;
+            ReportEvent::Working
+        }
+        "SubagentStop" => ReportEvent::Working,
         "PreToolUse" => {
             payload.tool = field("tool_name").filter(|s| short(s));
             let edited = payload

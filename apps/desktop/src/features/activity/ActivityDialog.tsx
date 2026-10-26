@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityEvent, IpcError } from "@tandem/protocol";
 import {
   Bot,
@@ -12,11 +12,20 @@ import {
 } from "lucide-react";
 import { Button, Callout, Dialog, EmptyState, Skeleton, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
-import { activityExport, activityList, useActivity } from "../../stores/activity";
+import {
+  activityExport,
+  activityList,
+  useActivity,
+  useCheckpointFocus,
+  type ActivitySource,
+} from "../../stores/activity";
 import { focusSource } from "../../stores/focus";
 import { useSidebar } from "../../stores/sidebar";
 
-type Load = { at: "loading" } | { at: "error"; message: string } | { at: "ready"; events: ActivityEvent[] };
+type Load =
+  | { at: "loading" }
+  | { at: "error"; message: string }
+  | { at: "ready"; events: ActivityEvent[]; more: boolean };
 
 const ICONS: Record<string, typeof Bot> = {
   turn: MessageSquare,
@@ -34,6 +43,15 @@ function time(ms: number): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+/** "25 Oct", shown above the first event of each day. */
+function day(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function hhmm(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Who decided a run or an approval, in words. */
@@ -90,6 +108,7 @@ function facts(e: ActivityEvent): string[] {
   if (e.exitCode !== null) out.push(t("activity.exit", { code: e.exitCode }));
   if (e.durationMs !== null) out.push(t("activity.took", { ms: e.durationMs }));
   if (e.secrets.length > 0) out.push(t("activity.uses", { names: e.secrets.join(", ") }));
+  if (e.engine) out.push(t("activity.engine", { engine: e.engine }));
   const who = decidedLabel(e.decided);
   if (who) out.push(who);
   return out;
@@ -122,7 +141,7 @@ function Row({
   onTranscript,
 }: {
   e: ActivityEvent;
-  onCheckpoint: () => void;
+  onCheckpoint: (e: ActivityEvent) => void;
   onTranscript?: () => void;
 }) {
   const Icon = ICONS[e.kind] ?? CheckCircle2;
@@ -163,8 +182,8 @@ function Row({
           </Button>
         )}
         {e.checkpointId && (
-          <Button size="sm" variant="ghost" data-testid="activity-checkpoint" onClick={onCheckpoint}>
-            {t("activity.checkpoint")}
+          <Button size="sm" variant="ghost" data-testid="activity-checkpoint" onClick={() => onCheckpoint(e)}>
+            {t("activity.checkpoint", { time: hhmm(e.at) })}
           </Button>
         )}
       </span>
@@ -172,21 +191,46 @@ function Row({
   );
 }
 
-/** F-EX-07: a session's activity, oldest first, with Export. */
+/** F-EX-07: a session's activity, oldest first (the newest page, with
+ * "Show earlier"), with Export. */
 export function ActivityDialog() {
   const open = useActivity((s) => s.open);
+  // A fresh dialog per session: nothing of the last one shows.
+  return open ? <SessionActivity key={`${open.source}:${open.id}`} open={open} /> : null;
+}
+
+function SessionActivity({ open }: { open: ActivitySource }) {
   const { show } = useToast();
   const [load, setLoad] = useState<Load>({ at: "loading" });
   const [exporting, setExporting] = useState(false);
+  const [earlier, setEarlier] = useState(false);
+  // A reply for an older request (another session, an earlier Retry) is dropped.
+  const request = useRef(0);
   const refresh = useCallback(() => {
-    if (!open) return;
+    const n = ++request.current;
     setLoad({ at: "loading" });
     activityList(open)
-      .then((events) => setLoad({ at: "ready", events }))
-      .catch((e: IpcError) => setLoad({ at: "error", message: e.message ?? String(e) }));
+      .then((p) => n === request.current && setLoad({ at: "ready", events: p.events, more: p.more }))
+      .catch(
+        (e: IpcError) => n === request.current && setLoad({ at: "error", message: e.message ?? String(e) }),
+      );
   }, [open]);
   useEffect(refresh, [refresh]);
-  if (!open) return null;
+  const events = load.at === "ready" ? load.events : [];
+  const showEarlier = async () => {
+    const first = events[0];
+    if (!first || load.at !== "ready") return;
+    const n = request.current;
+    setEarlier(true);
+    try {
+      const p = await activityList(open, first.at);
+      if (n === request.current) setLoad({ at: "ready", events: [...p.events, ...events], more: p.more });
+    } catch (e) {
+      show({ tone: "error", title: (e as IpcError).message ?? t("activity.error") });
+    } finally {
+      setEarlier(false);
+    }
+  };
   const doExport = async () => {
     setExporting(true);
     try {
@@ -199,7 +243,9 @@ export function ActivityDialog() {
     }
   };
   const close = () => useActivity.getState().close();
-  const toCheckpoint = () => {
+  const toCheckpoint = (e: ActivityEvent) => {
+    if (e.checkpointId && e.checkpointWorkspace)
+      useCheckpointFocus.getState().set({ workspaceId: e.checkpointWorkspace, checkpointId: e.checkpointId });
     useSidebar.getState().openTab("checkpoints");
     close();
   };
@@ -210,7 +256,6 @@ export function ActivityDialog() {
           close();
         }
       : undefined;
-  const events = load.at === "ready" ? load.events : [];
   return (
     <Dialog
       open
@@ -247,7 +292,7 @@ export function ActivityDialog() {
             tone="error"
             actions={
               <Button size="sm" variant="secondary" onClick={refresh}>
-                {t("secrets.retry")}
+                {t("activity.retry")}
               </Button>
             }
           >
@@ -257,8 +302,28 @@ export function ActivityDialog() {
           <EmptyState title={t("activity.empty.title")} body={t("activity.empty.body")} />
         ) : (
           <ol className="flex max-h-[60vh] flex-col overflow-y-auto" aria-label={t("activity.list")}>
+            {load.more && (
+              <li className="py-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={earlier}
+                  data-testid="activity-earlier"
+                  onClick={() => void showEarlier()}
+                >
+                  {t("activity.earlier")}
+                </Button>
+              </li>
+            )}
             {events.map((e, i) => (
-              <Row key={`${e.at}-${i}`} e={e} onCheckpoint={toCheckpoint} onTranscript={toTranscript} />
+              <Fragment key={`${e.at}-${i}`}>
+                {(i === 0 || day(events[i - 1]?.at ?? 0) !== day(e.at)) && (
+                  <li className="pt-2 text-xs font-semibold text-fg-subtle" data-testid="activity-day">
+                    {day(e.at)}
+                  </li>
+                )}
+                <Row e={e} onCheckpoint={toCheckpoint} onTranscript={toTranscript} />
+              </Fragment>
             ))}
           </ol>
         )}
