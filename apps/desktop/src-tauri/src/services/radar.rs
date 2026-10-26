@@ -57,6 +57,8 @@ fn covered(ws: &Workspace) -> bool {
         // A multi-repo worktree (F-CD-22) has no single base: not covered yet.
         && ws.lane_base.as_deref().is_some_and(|b| !b.is_empty())
         && Path::new(&ws.root).is_dir()
+        // A jj workspace (F-CD-24, `.jj` and no `.git`): not covered yet.
+        && !tandem_git::jj::jj_without_git(Path::new(&ws.root))
 }
 
 /// Parses the worktree again and keeps the result.

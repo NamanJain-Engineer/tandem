@@ -951,6 +951,26 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 5. A server unused for 10 minutes is stopped; the next request starts it again.
 6. In a repository not yet trusted, no language server starts and the status line says so; after Trust repository… (and the native confirm) servers start for it and its worktrees.
 
+#### F-CD-24 jj (Jujutsu) workspaces (P2)
+**Story:** My repository is co-located with jj. I want each agent's lane to be a jj workspace, so I keep working the way jj works, while diffs and the overlap check still show what changed.
+
+**Behavior:**
+- **Co-located repositories only.** A repository whose root holds both `.jj` and `.git`, with a `jj` binary on the login PATH or in the usual install places (`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.nix-profile/bin`). Vibezeo shows jj's version, never installs jj and never writes the user's jj config. A repository with `.jj` and no `.git` says "This repository uses jj without git. Vibezeo works with jj in repositories co-located with git." Folders on SSH hosts and in WSL offer no jj workspace and say "jj workspaces work on folders on this computer".
+- **New worktree.** In a co-located repository the New worktree dialog offers **jj workspace** and preselects it; **git worktree** is one click away, and the choice is remembered per repository. A jj workspace is made with `jj workspace add <repo>/.tandem/worktrees/<slug> --name <slug>` (the slug rules as for git worktrees). Its rail row is marked **jj**. A new worktree made from a jj workspace (New worktree on it, a handoff or a launch into a new worktree) is a jj workspace that starts from its working-copy commit. From the repository itself, launch-sheet lanes, Best of N, task runs and handoffs make git worktrees in this slice.
+- **Diff and overlap.** A jj workspace's diff against its base (the commit it started from) comes from `jj diff --git --from <base> --to @` and shows the same files and hunks as a git worktree holding the same changes. The overlap check compares its files with its siblings' (`jj diff --name-only`), jj or git; the merge forecast says "No forecast for jj workspaces yet".
+- **Not yet for jj workspaces**, refused before anything runs with "Not available for jj workspaces yet": Merge into, Land worktrees, pull request checks, Create pull request, previews, worktree setup, second opinion, the intent radar and the git panel (Files › Changes). Code intelligence (F-CD-23) works as in any worktree.
+- **Agents.** A jj workspace has no `.git`, so the lane briefing Vibezeo writes for its agents says so in one line: use `jj`, not `git`. Nothing else engines receive changes.
+- **Discard** asks as for any worktree, then stops its panes and language servers, runs `jj workspace forget <slug>` and removes the folder. The workspace's commits stay in the repository (jj's version of keeping the branch): Vibezeo never runs `jj abandon`, `jj rebase`, `jj git push` or anything else that rewrites or publishes history.
+- jj runs with an argument list (no shell), `--no-pager --color=never`, the login environment and a time limit, with no `--config` that changes the user's settings. Free.
+
+**Acceptance:**
+1. In a co-located repository (jj found), New worktree preselects jj workspace and makes `<repo>/.tandem/worktrees/<slug>` with `jj workspace add`; the rail row is marked jj, an agent pane runs in it, and the choice is remembered for the repository.
+2. The same changes in a jj workspace and a git worktree give the same diff files, counts and hunks, and the same overlap files.
+3. Landing, pull request checks, previews, second opinion, setup, the radar and the git panel say "Not available for jj workspaces yet" before running anything.
+4. Discard runs `jj workspace forget` and removes the folder; the workspace's commit is still in `jj log`, and no history was rewritten or pushed.
+5. A repository with `.jj` and no `.git`, and folders on SSH hosts or in WSL, offer no jj workspace and say why.
+6. A jj workspace's agents are told to use jj, not git.
+
 ### 4.3 TH: Thread mode
 
 #### F-TH-01 Thread model and rail (P0)

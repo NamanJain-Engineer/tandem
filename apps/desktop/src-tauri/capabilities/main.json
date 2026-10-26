@@ -154,6 +154,7 @@
     "allow-workspace-rename",
     "allow-workspace-remove",
     "allow-lane-create",
+    "allow-lane-kind-get",
     "allow-lane-diff",
     "allow-lane-second-opinion",
     "allow-review-queue",

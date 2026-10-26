@@ -24,6 +24,7 @@ use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, NewLane, Workspace};
 use tandem_store::Store;
 
+use crate::services::jj_lanes::{self, LaneKind};
 use crate::services::worktree_setup::{self, RemoveReport};
 
 pub const NOT_A_REPO: &str = "Worktrees need a git repository";
@@ -160,11 +161,26 @@ pub async fn create(
     workspace: &WorkspaceId,
     slug_source: &str,
 ) -> Result<Workspace, IpcError> {
+    create_kind(store, git, workspace, slug_source, LaneKind::Git).await
+}
+
+/// [`create`], or a jj workspace for `LaneKind::Jj` (F-CD-24). Made from a
+/// jj workspace, the new one is a jj workspace whatever `kind` says.
+pub async fn create_kind(
+    store: &Store,
+    git: &Git,
+    workspace: &WorkspaceId,
+    slug_source: &str,
+    kind: LaneKind,
+) -> Result<Workspace, IpcError> {
     let ws = workspaces::get(store, workspace).await?;
     let top = match &ws.parent_id {
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws.clone(),
     };
+    if kind == LaneKind::Jj || jj_lanes::is_jj(store, &ws).await? {
+        return jj_lanes::create(store, &ws, &top, slug_source).await;
+    }
     if let Some((remote, host)) = remote_for(&ws)? {
         return create_on_host(store, &remote, &host, &ws, &top, slug_source).await;
     }
@@ -229,12 +245,13 @@ pub async fn is_multi(store: &Store, ws: &Workspace) -> Result<bool, IpcError> {
 
 /// Refuses, up front, what needs one repository for a multi-repo worktree
 /// or folder (F-CD-22, D-2534).
+/// It also refuses, with its own message, what isn't available for jj
+/// workspaces yet (F-CD-24).
 pub async fn single_repo(store: &Store, ws: &Workspace) -> Result<(), IpcError> {
     if is_multi(store, ws).await? {
-        Err(IpcError::new(ErrorCode::Invalid, MULTI_NOT_YET).with_stage("git"))
-    } else {
-        Ok(())
+        return Err(IpcError::new(ErrorCode::Invalid, MULTI_NOT_YET).with_stage("git"));
     }
+    jj_lanes::refuse_jj(store, ws).await
 }
 pub const MULTI_NOT_YET: &str = "Not available for multi-repo worktrees yet";
 
@@ -445,6 +462,10 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
                 serde_json::json!({"root": lane.root, "base": lane.lane_base.unwrap_or_default()}),
             )
             .await;
+    }
+    // F-CD-24: a jj workspace's, from jj.
+    if jj_lanes::is_jj(store, &lane).await? {
+        return jj_lanes::diff(&lane).await;
     }
     // F-CD-22: each repository's changes, its name leading every path.
     let repos = lane_repos::list(store, &lane.id).await?;
@@ -730,6 +751,9 @@ pub async fn remove_with_teardown(
     if !repos.is_empty() {
         return remove_multi(store, terms, git, &lane, &repos, force).await;
     }
+    if jj_lanes::is_jj(store, &lane).await? {
+        return remove_jj(store, terms, &lane, &parent).await;
+    }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
         if let Some(repo) = Repo::discover(lane_path)? {
@@ -770,6 +794,30 @@ pub async fn remove_with_teardown(
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
     Ok(report)
+}
+
+/// F-CD-24: Discard for a jj workspace. Nothing in it is lost (jj keeps
+/// the working copy in its commit), so there's no uncommitted-changes
+/// refusal: its panes stop, then its language servers, then
+/// `jj workspace forget` and the folder go. Its commits stay.
+async fn remove_jj(
+    store: &Store,
+    terms: &TerminalService,
+    lane: &Workspace,
+    parent: &Workspace,
+) -> Result<RemoveReport, IpcError> {
+    stop_panes(store, terms, &lane.id).await?;
+    let _closing =
+        crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
+    let lane_path = Path::new(&lane.root);
+    let claimed_in =
+        tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
+    jj_lanes::forget(lane, parent).await?;
+    release_claims(&claimed_in);
+    workspaces::remove(store, &lane.id).await?;
+    crate::services::radar::forget(lane.id.as_str());
+    tracing::info!(code = "lane.removed_jj", "jj workspace removed");
+    Ok(RemoveReport::default())
 }
 
 /// F-CD-22: Discard for a multi-repo worktree: every repository's worktree
@@ -1379,6 +1427,223 @@ mod tests {
         assert_eq!(cleanup_title(3), "3 finished worktrees can be cleaned up");
     }
 
+    /// jj, co-located in the fixture's repository; `None` (said) when jj
+    /// isn't installed, a failure when `JJ_REQUIRED` is set.
+    async fn jj_fixture() -> Option<(Fx, std::sync::Arc<dyn tandem_git::jj::JjRunner>)> {
+        let Some(jj) = jj_lanes::runner().await else {
+            assert!(
+                std::env::var("JJ_REQUIRED").is_err(),
+                "JJ_REQUIRED is set but jj isn't installed"
+            );
+            eprintln!("F-CD-24: jj isn't installed here; the real-jj checks didn't run");
+            return None;
+        };
+        let fx = fixture().await;
+        let out = jj
+            .run(Path::new(&fx.repo.root), &["git", "init", "--colocate"])
+            .expect("jj");
+        assert!(out.success(), "jj git init: {}", out.stderr);
+        Some((fx, jj))
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_1_2_new_worktree_as_jj_workspace_diffs_and_overlaps_like_a_git_one() {
+        let Some((fx, jj)) = jj_fixture().await else {
+            return;
+        };
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().to_path_buf()).expect("data");
+        let kinds = jj_lanes::kinds(&fx.store, &data, &fx.repo.id)
+            .await
+            .expect("kinds");
+        assert!(kinds.colocated && kinds.jj_version.is_some());
+        assert_eq!(kinds.preferred, LaneKind::Jj, "jj by default");
+        let lane = create_kind(&fx.store, &fx.git, &fx.repo.id, "fix login", LaneKind::Jj)
+            .await
+            .expect("jj workspace");
+        assert!(Path::new(&lane.root).ends_with(".tandem/worktrees/fix-login"));
+        assert!(Path::new(&lane.root).join(".jj").is_dir());
+        assert!(!Path::new(&lane.root).join(".git").exists());
+        let names =
+            tandem_git::jj::workspace_names(jj.as_ref(), Path::new(&fx.repo.root)).expect("names");
+        assert!(names.contains("fix-login"));
+        // The rail row is marked jj, with no git branch read for it.
+        let rows = crate::services::workspaces::list(&fx.store, &PtyManager::new())
+            .await
+            .expect("list");
+        let row = rows
+            .iter()
+            .find(|r| r.workspace.id == lane.id)
+            .expect("row");
+        assert_eq!(row.lane_vcs.as_deref(), Some("jj"));
+        assert_eq!(row.branch, None);
+        // The choice is remembered for the repository.
+        jj_lanes::remember(&data, Path::new(&fx.repo.root), LaneKind::Git);
+        let again = jj_lanes::kinds(&fx.store, &data, &fx.repo.id)
+            .await
+            .expect("kinds");
+        assert_eq!(again.preferred, LaneKind::Git);
+        // The same change in it and in a git worktree: the same diff.
+        let git_lane = create(&fx.store, &fx.git, &fx.repo.id, "git lane")
+            .await
+            .expect("git lane");
+        for root in [&lane.root, &git_lane.root] {
+            std::fs::write(Path::new(root).join("app.txt"), "one\ntwo\n").expect("write");
+        }
+        let seen = |files: Vec<tandem_git::FileDiff>| {
+            files
+                .into_iter()
+                .map(|f| (f.path, f.additions, f.deletions))
+                .collect::<Vec<_>>()
+        };
+        let jj_diff = seen(diff(&fx.store, &lane.id).await.expect("jj diff"));
+        assert_eq!(jj_diff, vec![("app.txt".to_string(), 1, 0)]);
+        assert_eq!(
+            jj_diff,
+            seen(diff(&fx.store, &git_lane.id).await.expect("git diff"))
+        );
+        // The overlap check sees the shared file both ways; jj has no forecast.
+        let report = overlap(&fx.store, &fx.git, &lane.id)
+            .await
+            .expect("overlap");
+        assert_eq!(report.files, 1);
+        assert_eq!(report.siblings.len(), 1);
+        assert_eq!(report.siblings[0].files, vec!["app.txt".to_string()]);
+        assert_eq!(
+            report.forecast,
+            tandem_git::overlap::Forecast::Unavailable {
+                reason: jj_lanes::NO_FORECAST.into()
+            }
+        );
+        let back = overlap(&fx.store, &fx.git, &git_lane.id)
+            .await
+            .expect("overlap");
+        assert_eq!(back.siblings[0].lane_id, lane.id);
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_3_what_needs_git_says_not_yet_before_running() {
+        let Some((fx, _jj)) = jj_fixture().await else {
+            return;
+        };
+        let lane = create_kind(&fx.store, &fx.git, &fx.repo.id, "tidy", LaneKind::Jj)
+            .await
+            .expect("jj workspace");
+        let head = git_cmd(Path::new(&fx.repo.root), &["rev-parse", "HEAD"]);
+        let not_yet = |e: IpcError| assert_eq!(e.message, jj_lanes::JJ_NOT_YET);
+        not_yet(
+            merge(&fx.store, &fx.git, &lane.id)
+                .await
+                .expect_err("merge"),
+        );
+        not_yet(single_repo(&fx.store, &lane).await.expect_err("guard"));
+        not_yet(
+            crate::services::merge_queue::repo_of(&fx.store, &lane.id)
+                .await
+                .expect_err("landing"),
+        );
+        not_yet(
+            crate::services::pr_checks::repo_of(&fx.store, &lane.id)
+                .await
+                .expect_err("checks"),
+        );
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().to_path_buf()).expect("data");
+        not_yet(
+            worktree_setup::get(&fx.store, &data, &lane.id)
+                .await
+                .expect_err("setup"),
+        );
+        assert!(worktree_setup::lane_setup(&fx.store, &data, &lane.id)
+            .await
+            .expect("setup state")
+            .is_none());
+        // Nothing ran: the repository's HEAD is where it was.
+        assert_eq!(
+            git_cmd(Path::new(&fx.repo.root), &["rev-parse", "HEAD"]),
+            head
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_4_discard_forgets_the_workspace_and_keeps_its_commit() {
+        let Some((fx, jj)) = jj_fixture().await else {
+            return;
+        };
+        let lane = create_kind(&fx.store, &fx.git, &fx.repo.id, "tidy", LaneKind::Jj)
+            .await
+            .expect("jj workspace");
+        std::fs::write(Path::new(&lane.root).join("kept.txt"), "kept\n").expect("write");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        remove(&fx.store, &terms, &fx.git, &lane.id, None)
+            .await
+            .expect("discard");
+        assert!(!Path::new(&lane.root).exists());
+        assert!(workspaces::lanes(&fx.store, &fx.repo.id)
+            .await
+            .expect("lanes")
+            .is_empty());
+        let root = Path::new(&fx.repo.root);
+        let names = tandem_git::jj::workspace_names(jj.as_ref(), root).expect("names");
+        assert!(!names.contains("tidy"));
+        // Its commit, with the file, is still there.
+        let out = jj
+            .run(
+                root,
+                &[
+                    "log",
+                    "-r",
+                    "all()",
+                    "--no-graph",
+                    "-T",
+                    "commit_id ++ \"\\n\"",
+                ],
+            )
+            .expect("log");
+        let kept = out.stdout.lines().filter(|l| !l.is_empty()).any(|id| {
+            jj.run(root, &["diff", "--name-only", "-r", id])
+                .map(|o| o.stdout.lines().any(|l| l.trim() == "kept.txt"))
+                .unwrap_or(false)
+        });
+        assert!(kept, "the workspace's commit keeps its file");
+        assert_eq!(git_cmd(root, &["branch", "--show-current"]), "main");
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_5_jj_without_git_says_why() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = tmp.path().join("jjonly");
+        std::fs::create_dir_all(root.join(".jj")).expect("mkdir");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("add");
+        let kinds = jj_lanes::kinds(&store, &data, &added.workspace.id)
+            .await
+            .expect("kinds");
+        assert!(kinds.jj_only && !kinds.colocated);
+        assert_eq!(kinds.preferred, LaneKind::Git);
+        let login = LoginEnv {
+            vars: [(
+                "PATH".to_string(),
+                std::env::var("PATH").unwrap_or_default(),
+            )]
+            .into(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        };
+        let git = git_for(&data, &login).expect("git");
+        let e = create_kind(&store, &git, &added.workspace.id, "x", LaneKind::Jj)
+            .await
+            .expect_err("jj only");
+        assert_eq!(e.message, jj_lanes::JJ_ONLY);
+        let rows = crate::services::workspaces::list(&store, &PtyManager::new())
+            .await
+            .expect("list");
+        assert_eq!(rows[0].jj_only, Some(true));
+    }
+
     /// `shop` holding `api` and `web`, each with one commit.
     async fn multi_fixture() -> (tempfile::TempDir, Store, Git, Workspace, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1632,10 +1897,25 @@ pub async fn overlap(
 ) -> Result<OverlapReport, IpcError> {
     use tandem_git::overlap::{changed_files, forecast, shared};
     let (lane, parent) = lane_row(store, id).await?;
-    single_repo(store, &lane).await?;
-    let lane_repo = discover(&lane.root, FOLDER_MISSING)?;
+    if is_multi(store, &lane).await? {
+        return Err(IpcError::new(ErrorCode::Invalid, MULTI_NOT_YET).with_stage("git"));
+    }
+    // F-CD-24: a jj workspace's files come from jj; it has no forecast yet.
+    let jj_ids = tandem_store::repo::lane_vcs::jj_lanes(store).await?;
+    let is_jj = jj_ids.contains(&lane.id);
+    if is_jj && !Path::new(&lane.root).is_dir() {
+        return Err(IpcError::new(ErrorCode::NotFound, FOLDER_MISSING).with_stage("jj"));
+    }
+    let lane_repo = if is_jj {
+        None
+    } else {
+        Some(discover(&lane.root, FOLDER_MISSING)?)
+    };
     let base = lane.lane_base.clone().unwrap_or_default();
-    let mine = changed_files(git, lane_repo.root(), &base).await?;
+    let mine = match &lane_repo {
+        Some(repo) => changed_files(git, repo.root(), &base).await?,
+        None => jj_lanes::changed_files(&lane).await?.into_iter().collect(),
+    };
     // F-WT-10: this worktree's symbols, parsed now.
     let my_symbols = crate::services::radar::refresh(git, &lane).await?;
     let mut siblings = Vec::new();
@@ -1647,10 +1927,17 @@ pub async fn overlap(
         else {
             continue;
         };
-        let Ok(Some(other_repo)) = Repo::discover(Path::new(&other.root)) else {
-            continue;
+        let theirs = if jj_ids.contains(&other.id) {
+            match jj_lanes::changed_files(&other).await {
+                Ok(files) => files.into_iter().collect(),
+                Err(_) => continue,
+            }
+        } else {
+            let Ok(Some(other_repo)) = Repo::discover(Path::new(&other.root)) else {
+                continue;
+            };
+            changed_files(git, other_repo.root(), &other_base).await?
         };
-        let theirs = changed_files(git, other_repo.root(), &other_base).await?;
         let files = shared(&mine, &theirs);
         let symbols = match crate::services::radar::refresh(git, &other).await {
             Ok(their_symbols) => crate::services::radar::shared(&my_symbols, &their_symbols),
@@ -1665,6 +1952,24 @@ pub async fn overlap(
             });
         }
     }
+    let Some(lane_repo) = lane_repo else {
+        tracing::info!(
+            code = "lane.overlap",
+            siblings = siblings.len(),
+            jj = true,
+            "worktree overlap checked"
+        );
+        // jj keeps the working copy in a commit: nothing is uncommitted.
+        return Ok(OverlapReport {
+            files: u32::try_from(mine.len()).unwrap_or(u32::MAX),
+            siblings,
+            forecast: tandem_git::overlap::Forecast::Unavailable {
+                reason: jj_lanes::NO_FORECAST.into(),
+            },
+            uncommitted: 0,
+            unparsed: my_symbols.unparsed,
+        });
+    };
     let parent_repo = discover(&parent.root, "Folder not found")?;
     let branch = lane.lane_branch.clone().unwrap_or_default();
     let forecast = forecast(git, &parent_repo.main_root(), "HEAD", &branch).await?;

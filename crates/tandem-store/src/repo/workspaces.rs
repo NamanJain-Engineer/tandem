@@ -251,6 +251,7 @@ pub(crate) fn add_lane_in(
                 params![id, ws.name, parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.kind, ws.wsl_distro],
             )?;
             t.execute("DELETE FROM lane_repos WHERE lane_id = ?1", [id.as_str()])?;
+            t.execute("DELETE FROM lane_vcs WHERE lane_id = ?1", [id.as_str()])?;
             Ok(Workspace {
                 id: WorkspaceId::from_db(id),
                 ..ws

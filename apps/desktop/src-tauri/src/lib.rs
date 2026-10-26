@@ -166,6 +166,7 @@ macro_rules! app_commands {
             commands::handoff::handoff_start,
             commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
+            commands::lanes::lane_kind_get,
             commands::lanes::lane_diff,
             commands::lanes::lane_second_opinion,
             commands::review::review_queue,

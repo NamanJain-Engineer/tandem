@@ -18,6 +18,13 @@ release fails when its version has no section.
   worktree and review diffs jump from a changed name to its definition or
   callers. No server runs until you trust the repository (each worktree on its
   own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+- [all] **jj workspaces.** In a repository co-located with jj, New worktree…
+  makes a jj workspace (`jj workspace add`) instead of a git worktree, with a
+  git worktree one click away and your choice remembered. Its diff and overlap
+  check come from jj, agents in it are told to use jj, and Discard forgets the
+  workspace while its commits stay. Landing, pull requests, previews, setup,
+  second opinion, the intent radar and the git panel aren't available for jj
+  workspaces yet.
 
 ## 0.10.0
 

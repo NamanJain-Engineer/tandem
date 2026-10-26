@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type {
   FileDiff,
   Forge,
+  LaneKind,
+  LaneKinds,
   IpcError,
   LaneChecks,
   PrsRun,
@@ -124,8 +126,25 @@ async function run<T>(cmd: string, args: Record<string, unknown>): Promise<Outco
 /** `lane_create`, then the new worktree is selected in the rail while
  * `prepareWorktree` runs. Its tab waits for the setup's or preview's pane
  * rather than starting a shell beside it (D-863). */
-export async function createWorktree(workspaceId: string, slugSource: string): Promise<Outcome<Workspace>> {
-  const out = await run<Workspace>("lane_create", { workspaceId, slugSource });
+/** F-CD-24: whether New worktree offers a jj workspace for this repository. */
+export function laneKinds(workspaceId: string): Promise<Outcome<LaneKinds>> {
+  return run<LaneKinds>("lane_kind_get", { workspaceId });
+}
+
+/** F-CD-24: a jj workspace, and other things it can't do yet. */
+export function isJj(ws: Pick<WorkspaceSummary, "laneVcs">): boolean {
+  return ws.laneVcs === "jj";
+}
+
+export async function createWorktree(
+  workspaceId: string,
+  slugSource: string,
+  kind?: LaneKind,
+): Promise<Outcome<Workspace>> {
+  const out = await run<Workspace>(
+    "lane_create",
+    kind ? { workspaceId, slugSource, kind } : { workspaceId, slugSource },
+  );
   if (out.ok) {
     const ws = useWorkspaces.getState();
     await ws.refresh();

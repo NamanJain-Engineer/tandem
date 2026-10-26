@@ -35,6 +35,7 @@ pub mod git_panel;
 pub mod handoff;
 pub mod hosted;
 pub mod instructions;
+pub mod jj_lanes;
 pub mod lanes;
 pub mod launch;
 pub mod learn;

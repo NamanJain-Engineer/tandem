@@ -220,6 +220,8 @@ export type * from "./LandingUndo";
 export type * from "./LaneChecks";
 export type * from "./LaneChecksState";
 export type * from "./LaneDiff";
+export type * from "./LaneKind";
+export type * from "./LaneKinds";
 export type * from "./LaneRepo";
 export type * from "./LaneSetup";
 export type * from "./LastOutput";

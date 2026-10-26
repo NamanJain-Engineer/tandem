@@ -164,6 +164,18 @@ Add a folder that holds several repositories side by side, such as `shop/` with 
 
 Merge into…, Land worktrees, Check overlap, pull request checks, previews, worktree setup, second opinion and the intent radar don't work for multi-repo worktrees yet; their menu entries say so.
 
+### jj workspaces
+
+If your repository is co-located with jj (it has `.jj` beside `.git` at the top, as `jj git init --colocate` makes it) and `jj` is installed, **New worktree…** offers **jj workspace** or **git worktree**, with jj workspace chosen first and your last choice remembered for the repository. The dialog shows jj's version. Vibezeo finds `jj` on your login PATH or in the usual places (`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.nix-profile/bin`). It never installs jj or changes its settings.
+
+A jj workspace is made with `jj workspace add` at the same place as a worktree, `.tandem/worktrees/<name>`, with the workspace named `<name>`; its rail row is marked **jj**. Agents in it are told to use `jj`, not `git`, since it has no `.git` of its own.
+
+- **Open diff** and **Check overlap** work as for any worktree: the diff against the commit it started from comes from `jj diff --git` and shows the same files and hunks a git worktree would. The overlap check compares its files with every other worktree's; there's no merge forecast for jj workspaces yet.
+- **Discard worktree…** runs `jj workspace forget` and removes the folder. Its commits stay in the repository: Vibezeo never abandons, rebases or pushes anything.
+- A new worktree made from a jj workspace (New worktree on it, a handoff or a launch into a new worktree) is a jj workspace that starts from its working copy. From the repository itself, launch-sheet worktrees, Best of N, task runs and handoffs make git worktrees.
+
+Merge into…, Land worktrees, pull request checks, Create pull request, previews, worktree setup, second opinion, the intent radar and the git panel aren't available for jj workspaces yet; their menu entries say so. A repository with `.jj` but no `.git` gets no jj workspaces, and the dialog says why; neither do folders on SSH hosts or in WSL.
+
 ### Merge requests on GitLab
 
 When a worktree's `origin` remote is on a host whose name contains `gitlab`, **Create pull request** becomes **Create merge request** and runs `glab mr create` in a terminal in the worktree; it needs the GitLab CLI (`glab`) installed and signed in. Other remotes use `gh pr create`, which needs the GitHub CLI (`gh`).

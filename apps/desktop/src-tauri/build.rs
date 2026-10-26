@@ -69,6 +69,7 @@ const COMMANDS: &[&str] = &[
     "workspace_rename",
     "workspace_remove",
     "lane_create",
+    "lane_kind_get",
     "lane_diff",
     "lane_second_opinion",
     "review_queue",
