@@ -594,6 +594,7 @@ const DRAIN: Duration = Duration::from_millis(500);
 /// `secret_env`, stdout and stderr together through a masker for `values`,
 /// for up to `limit`. When it exits, its process group is killed, so nothing
 /// it left running in the background keeps the values.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     command: &str,
     cwd: &Path,
