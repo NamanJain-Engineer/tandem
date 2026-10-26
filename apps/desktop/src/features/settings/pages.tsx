@@ -11,6 +11,8 @@ import { PluginsPage } from "../plugins/PluginsPage";
 import { NotificationTypes, SoundPreview } from "./NotificationTypes";
 import { RunawayGuardControl } from "./RunawayGuard";
 import { SandboxSetting } from "./SandboxSetting";
+import { SecretsPage } from "../secrets/SecretsPage";
+import { MemoryCapSetting } from "./MemoryCapSetting";
 import { AdvancedExtras, PrivacyFlows } from "./extras";
 import { UpdatesPanel } from "../updates/UpdatesPanel";
 import { RunSetupAgain } from "../onboarding/RunSetupAgain";
@@ -488,6 +490,22 @@ export function settingsPages(
           keywords: ["sandbox", "bubblewrap", "bwrap", "isolate", "security"],
           control: (ids) => <SandboxSetting ids={ids} />,
         },
+        {
+          id: "agent_memory_cap",
+          label: t("resources.cap.setting"),
+          description: t("resources.cap.setting.desc"),
+          keywords: ["memory", "cap", "limit", "ram", "oom", "resources", "cgroup"],
+          control: (ids) => <MemoryCapSetting ids={ids} />,
+        },
+        {
+          id: "checks_one_at_a_time",
+          label: t("resources.checks.setting"),
+          description: t("resources.checks.setting.desc"),
+          keywords: ["checks", "queue", "one at a time", "sequential", "tests", "resources"],
+          control: (ids) => (
+            <BoolControl k="checks_one_at_a_time" ids={ids} label={t("resources.checks.setting")} />
+          ),
+        },
       ],
       extra: <EnginesPage />,
     },
@@ -923,6 +941,14 @@ export function settingsPages(
       keywords: ["plugins", "connect", "github", "oauth", "api key", "grants", "approvals", "held"],
       rows: [],
       extra: <PluginsPage />,
+    },
+    {
+      id: "secrets",
+      label: t("settings.secrets"),
+      subtitle: t("settings.secrets.subtitle"),
+      keywords: ["secrets", "keys", "api key", "env", ".env", "keychain", "credentials", "tokens"],
+      rows: [],
+      extra: <SecretsPage />,
     },
     {
       id: "privacy",

@@ -37,11 +37,12 @@ test.describe("@m13 hosted services, credits and Team", () => {
     await expect(page.getByTestId("credits-ledger")).toContainText("Credit pack");
   });
 
-  test("E2E-M13-3b Free accounts are sent to plans; Team members to their admin @m13", async ({ page, request }) => {
+  test("E2E-M13-3b Free accounts see there's nothing to buy, never plans (D-2917); Team members their admin @m13", async ({ page, request }) => {
     await testRoute(request, "plan", { email: "free@tandem.test", plan: "free" });
     await testRoute(request, "team", { owner: "owner@tandem.test", members: ["member@tandem.test"] });
     await signIn(page, "free@tandem.test", undefined, "/credits");
-    await expect(page.getByText("Credit packs come with Pro and Team.")).toBeVisible();
+    await expect(page.getByTestId("packs-nothing-to-buy")).toBeVisible();
+    await expect(page.getByText(/See plans|Pro and Team/)).toHaveCount(0);
     await signIn(page, "member@tandem.test", undefined, "/credits");
     await expect(page.getByTestId("packs-ask-admin")).toBeVisible();
     await expect(page.getByText("Your organization's pool")).toBeVisible();
@@ -132,7 +133,8 @@ test.describe("@m13 hosted services, credits and Team", () => {
     await signIn(page, email);
     const view = await me(page);
     expect(view.plan).toBe("free");
-    expect(view.limits.panes).toBe(4);
+    // The no-account limits: nothing local capped, hosted features off (D-2900).
+    expect(view.limits.panes).toBeNull();
     expect(view.credits.monthly).toBe(0);
     // Back to the seed's lapsed subscription (ended 10 days ago).
     await testRoute(request, "plan", { email, plan: "pro", status: "canceled", periodEndDays: -10 });

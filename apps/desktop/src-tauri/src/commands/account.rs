@@ -87,15 +87,12 @@ pub async fn entitlement_refresh(state: State<'_, AppState>) -> Result<Entitleme
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum BillingTarget {
-    Portal,
-    Credits,
     /// The web account page, where "Delete account…" lives (F-TL-05).
     Account,
 }
 
-/// Opens the billing portal, the credits page or the account page in the
-/// system browser (never an in-app webview for payment, UI-121). There's no
-/// checkout: nothing is sold (D-869, D-2904).
+/// Opens the web account page in the system browser. There's no checkout,
+/// billing portal or credits page: nothing is sold (D-869, D-2904, D-2914).
 #[tauri::command]
 pub async fn billing_open(
     state: State<'_, AppState>,
@@ -107,32 +104,9 @@ pub async fn billing_open(
             "Sign in to your Vibezeo account first.",
         ));
     }
-    let api = state.api.clone();
     let url = match target {
-        BillingTarget::Portal => {
-            state
-                .auth
-                .with_token(move |t| {
-                    let api = api.clone();
-                    async move { api.portal(&t).await }
-                })
-                .await
-        }
-        BillingTarget::Credits => Ok(format!("{}/credits", state.endpoints.web)),
-        BillingTarget::Account => Ok(format!("{}/account", state.endpoints.web)),
-    }
-    .map_err(|e| {
-        if e.is_network() {
-            IpcError::new(
-                ErrorCode::Unavailable,
-                "Couldn't reach Vibezeo. Check your connection.",
-            )
-            .with_stage("network")
-        } else {
-            IpcError::new(ErrorCode::Unavailable, "Couldn't open billing. Try again.")
-                .with_stage("billing")
-        }
-    })?;
+        BillingTarget::Account => format!("{}/account", state.endpoints.web),
+    };
     state
         .opener
         .open(&url)

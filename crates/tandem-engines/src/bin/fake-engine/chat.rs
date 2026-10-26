@@ -665,6 +665,9 @@ pub fn run(args: &[String], session: String) {
             let said = format!("Fixed {issue}: the change is in the worktree.");
             turn.say(&[&said]);
             turn.done(&said);
+        } else if let Some(said) = crate::plan_reply(&text) {
+            turn.say(&[&said]);
+            turn.done(&said);
         } else if let Some(said) = crate::second_opinion_reply(&text) {
             turn.say(&[&said]);
             turn.done(&said);

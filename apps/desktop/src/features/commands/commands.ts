@@ -219,7 +219,7 @@ export const handlers: Record<string, () => void> = {
   "terminal.find_prev": onPane((_, paneId) => terminalHandles.get(paneId)?.find("prev")),
   "terminal.copy_last_output": onPane((_, paneId) => void copyLastOutput(paneId, toast)),
   "work.find": () => useUi.getState().openFindWork(),
-  // Free plan: the call command opens the plans (UI-61).
+  // Without Conductor (hosted) the call command says it comes with Vibezeo accounts (D-2903).
   "conductor.call": () => toggleCall(),
   "conductor.mute": () => {
     const v = useConductor.getState().view;

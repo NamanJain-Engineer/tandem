@@ -7,11 +7,6 @@ export const NOTIFY_HREF = `mailto:contact@vibezeo.com?subject=${encodeURICompon
   "Tell me when Vibezeo accounts open",
 )}`;
 
-/** The one sentence that follows the label, or carries it in a tooltip. */
-export function hostedTooltip(): string {
-  return `${t("hosted.withAccounts")}. ${t("hosted.why")}`;
-}
-
 /** A hosted feature's place when it can't run: it needs Vibezeo's servers.
  * The words are DESIGN §9.5's, word for word: never a plan, a price or
  * credits (D-869, D-2903). */

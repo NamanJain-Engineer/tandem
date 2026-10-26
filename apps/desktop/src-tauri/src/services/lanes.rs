@@ -3,9 +3,9 @@
 //! `<repo>/.tandem/worktrees/<slug>`. Copy the user sees says "worktree";
 //! "lane" is the internal word (UI_SPEC §6.2).
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -13,11 +13,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::services::terminal::TerminalService;
 use tandem_core::ids::{TabId, WorkspaceId};
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_git::{ForceConfirm, Git, GitError, LaneManager, MergeReport, Repo, StaleLane};
 use tandem_pty::env::{resolve_on_path, LoginEnv};
-use tandem_pty::PtyManager;
+use tandem_store::repo::lane_repos;
 use tandem_store::repo::panes::{self, PaneRecord};
 use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, NewLane, Workspace};
@@ -42,6 +43,44 @@ static REMOTE: std::sync::OnceLock<std::sync::Weak<crate::services::remote::Remo
 
 pub fn set_remote(remote: &std::sync::Arc<crate::services::remote::RemoteService>) {
     let _ = REMOTE.set(std::sync::Arc::downgrade(remote));
+}
+
+/// The trackers whose claims a merged or removed lane releases (F-TK-05):
+/// the app's one, set at startup (tests make their own, so every live one
+/// is told).
+static TASKS: std::sync::Mutex<Vec<std::sync::Weak<crate::services::tasks::TasksService>>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub fn set_tasks(tasks: &std::sync::Arc<crate::services::tasks::TasksService>) {
+    if let Ok(mut all) = TASKS.lock() {
+        all.retain(|w| w.strong_count() > 0);
+        all.push(std::sync::Arc::downgrade(tasks));
+    }
+}
+
+/// A lane's worktree was merged (here or by the merge queue) or removed:
+/// its claims go (F-TK-05 AC3). `folder` is the worktree's path resolved
+/// with `contain::canonical`, as its sessions claimed in.
+pub(crate) fn release_claims(folder: &Path) {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.release_folder(folder);
+    }
+}
+
+/// Worktrees deleted outside the app: their claims go, in every tracker
+/// (F-TK-05). Blocking file IO.
+fn prune_gone_claims() {
+    let live: Vec<_> = match TASKS.lock() {
+        Ok(all) => all.iter().filter_map(std::sync::Weak::upgrade).collect(),
+        Err(_) => return,
+    };
+    for tasks in live {
+        tasks.prune_gone();
+    }
 }
 
 type Remote = (
@@ -129,6 +168,11 @@ pub async fn create(
     if let Some((remote, host)) = remote_for(&ws)? {
         return create_on_host(store, &remote, &host, &ws, &top, slug_source).await;
     }
+    // F-CD-22: a folder holding several repositories.
+    let names = crate::services::workspaces::multi_repos(Path::new(&top.root));
+    if !names.is_empty() {
+        return create_multi(store, git, &ws, &top, &names, slug_source).await;
+    }
     let repo = discover(&ws.root, "Folder not found")?;
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
     let root = lane.path.to_str().map(str::to_string).ok_or_else(|| {
@@ -166,6 +210,127 @@ pub async fn create(
     crate::services::worktree_setup::copy_for_new_lane(&row).await;
     // F-WT-06: its index and port block, reported by `lane_setup`.
     crate::services::worktree_runtime::note_new_lane(&row);
+    Ok(row)
+}
+
+/// F-CD-22: a multi-repo worktree (it has `lane_repos` rows), or a
+/// multi-repo folder.
+pub async fn is_multi(store: &Store, ws: &Workspace) -> Result<bool, IpcError> {
+    if !lane_repos::list(store, &ws.id).await?.is_empty() {
+        return Ok(true);
+    }
+    Ok(ws.kind == "local"
+        && ws.parent_id.is_none()
+        && !crate::services::workspaces::multi_repos(Path::new(&ws.root)).is_empty())
+}
+
+/// Refuses, up front, what needs one repository for a multi-repo worktree
+/// or folder (F-CD-22, D-2534).
+pub async fn single_repo(store: &Store, ws: &Workspace) -> Result<(), IpcError> {
+    if is_multi(store, ws).await? {
+        Err(IpcError::new(ErrorCode::Invalid, MULTI_NOT_YET).with_stage("git"))
+    } else {
+        Ok(())
+    }
+}
+pub const MULTI_NOT_YET: &str = "Not available for multi-repo worktrees yet";
+
+/// F-CD-22: a worktree across a multi-repo folder: the parent folder's row,
+/// each repository's worktree in `lane_repos`, and a tab. Setup (F-WT-01)
+/// and the runtime (F-WT-06) don't apply to it yet.
+async fn create_multi(
+    store: &Store,
+    git: &Git,
+    from: &Workspace,
+    top: &Workspace,
+    names: &[String],
+    slug_source: &str,
+) -> Result<Workspace, IpcError> {
+    let folder = Path::new(&top.root);
+    // Called on a multi-repo worktree (a handoff to a new one), each
+    // repository starts from that worktree's HEAD, not the main checkout's.
+    let starts: HashMap<String, String> = lane_repos::list(store, &from.id)
+        .await?
+        .into_iter()
+        .map(|r| (r.name, r.root))
+        .collect();
+    let mut repos = Vec::new();
+    for name in names {
+        let start = starts
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|p| p.is_dir())
+            .unwrap_or_else(|| folder.join(name));
+        let repo = Repo::discover(&start)?.ok_or_else(|| {
+            IpcError::new(ErrorCode::Invalid, format!("{name} isn't a git repository"))
+        })?;
+        repos.push((name.clone(), repo));
+    }
+    let lane = LaneManager::create_multi(git, folder, &repos, slug_source, &HashSet::new()).await?;
+    let utf8 = |p: &Path| {
+        p.to_str().map(str::to_string).ok_or_else(|| {
+            IpcError::new(
+                ErrorCode::Invalid,
+                "Vibezeo can't open folders whose names aren't valid UTF-8",
+            )
+        })
+    };
+    let undo = |lane: &tandem_git::lanes::MultiLane| {
+        let lane = lane.clone();
+        let repos: Vec<(String, Repo)> =
+            repos.iter().map(|(n, r)| (n.clone(), r.clone())).collect();
+        async move {
+            // Force-remove what was just made, and delete its new branches.
+            for ((_, wt), (_, repo)) in lane.repos.iter().zip(&repos) {
+                LaneManager::discard_new(git, repo, &wt.path, &wt.branch).await;
+            }
+            let _ = std::fs::remove_dir_all(&lane.path);
+        }
+    };
+    let made = async {
+        let mut rows = Vec::new();
+        for ((name, wt), (_, repo)) in lane.repos.iter().zip(&repos) {
+            rows.push(lane_repos::LaneRepo {
+                name: name.clone(),
+                // The repository's own checkout, even when the worktree
+                // started from another worktree's HEAD.
+                repo_root: utf8(&repo.main_root())?,
+                root: utf8(&wt.path)?,
+                base: wt.base.clone(),
+            });
+        }
+        // The row and its repositories together, or neither.
+        let row = lane_repos::add_lane(
+            store,
+            NewLane {
+                parent_id: top.id.clone(),
+                root: utf8(&lane.path)?,
+                name: lane.slug.clone(),
+                branch: lane.branch.clone(),
+                base: String::new(),
+            },
+            rows,
+        )
+        .await?;
+        if let Err(e) = tabs::create(store, &row.id, None).await {
+            let _ = workspaces::remove(store, &row.id).await;
+            let _ = lane_repos::clear(store, &row.id).await;
+            return Err(e.into());
+        }
+        Ok::<Workspace, IpcError>(row)
+    };
+    let row = match made.await {
+        Ok(row) => row,
+        Err(err) => {
+            undo(&lane).await;
+            return Err(err);
+        }
+    };
+    tracing::info!(
+        code = "lane.created_multi",
+        repos = lane.repos.len(),
+        "multi-repo worktree created"
+    );
     Ok(row)
 }
 
@@ -217,6 +382,53 @@ async fn create_on_host(
     Ok(row)
 }
 
+/// A unified patch's file headers with `name/` leading each path, so a
+/// multi-repo diff's patches say which repository they're in (F-CD-22).
+pub fn prefix_patch(patch: &str, name: &str) -> String {
+    let mut out = String::with_capacity(patch.len() + 64);
+    let mut in_hunk = false;
+    for line in patch.split_inclusive('\n') {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            in_hunk = false;
+            out.push_str("diff --git ");
+            out.push_str(&rest.replacen("a/", &format!("a/{name}/"), 1).replacen(
+                " b/",
+                &format!(" b/{name}/"),
+                1,
+            ));
+            continue;
+        }
+        if line.starts_with("@@") {
+            in_hunk = true;
+        }
+        if !in_hunk {
+            for (head, side) in [("--- ", "a/"), ("+++ ", "b/")] {
+                if let Some(rest) = line.strip_prefix(head).and_then(|r| r.strip_prefix(side)) {
+                    out.push_str(&format!("{head}{side}{name}/{rest}"));
+                    break;
+                }
+            }
+            if line.starts_with("--- a/") || line.starts_with("+++ b/") {
+                continue;
+            }
+            for head in ["rename from ", "rename to ", "copy from ", "copy to "] {
+                if let Some(rest) = line.strip_prefix(head) {
+                    out.push_str(&format!("{head}{name}/{rest}"));
+                    break;
+                }
+            }
+            if ["rename from ", "rename to ", "copy from ", "copy to "]
+                .iter()
+                .any(|h| line.starts_with(h))
+            {
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// `lane_diff`: the worktree's changes against the commit it started from,
 /// including uncommitted work.
 pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::FileDiff>, IpcError> {
@@ -230,6 +442,21 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
             )
             .await;
     }
+    // F-CD-22: each repository's changes, its name leading every path.
+    let repos = lane_repos::list(store, &lane.id).await?;
+    if !repos.is_empty() {
+        let mut out = Vec::new();
+        for r in repos {
+            let repo = discover(&r.root, FOLDER_MISSING)?;
+            for mut f in repo.diff_since(&r.base).await? {
+                f.path = format!("{}/{}", r.name, f.path);
+                f.old_path = f.old_path.map(|p| format!("{}/{p}", r.name));
+                f.patch = prefix_patch(&f.patch, &r.name);
+                out.push(f);
+            }
+        }
+        return Ok(out);
+    }
     let repo = discover(&lane.root, FOLDER_MISSING)?;
     let base = lane.lane_base.unwrap_or_default();
     Ok(repo.diff_since(&base).await?)
@@ -239,6 +466,7 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
 /// it and is reported; nothing is committed and nothing is resolved.
 pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
+    single_repo(store, &lane).await?;
     let dirty = || {
         IpcError::new(
             ErrorCode::Conflict,
@@ -266,6 +494,12 @@ pub async fn merge(store: &Store, git: &Git, id: &WorkspaceId) -> Result<MergeRe
     let branch = lane.lane_branch.unwrap_or_default();
     match LaneManager::merge_into_base(git, &repo, &branch).await {
         Ok(report) => {
+            if report.merged {
+                release_claims(
+                    &tandem_core::contain::canonical(Path::new(&lane.root))
+                        .unwrap_or_else(|_| lane.root.clone().into()),
+                );
+            }
             tracing::info!(
                 code = "lane.merged",
                 merged = report.merged,
@@ -358,6 +592,7 @@ pub async fn create_pr_pane(
     tab: &TabId,
 ) -> Result<(PaneRecord, &'static str), IpcError> {
     let (lane, _) = lane_row(store, id).await?;
+    single_repo(store, &lane).await?;
     if let Some((remote, host)) = remote_for(&lane)? {
         // The host's own gh, signed in there; its pane runs on the host.
         let (ssh, target) = remote.transport(&host).await?;
@@ -404,10 +639,14 @@ pub async fn create_pr_pane(
 }
 
 /// Stops every open pane in a workspace's tabs.
-pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Result<(), IpcError> {
+pub async fn stop_panes(
+    store: &Store,
+    terms: &TerminalService,
+    ws: &WorkspaceId,
+) -> Result<(), IpcError> {
     for tab in tabs::list(store, ws).await? {
         for pane in panes::list_open(store, &tab.id).await? {
-            let _ = pty.kill(pane.id.as_str());
+            let _ = terms.end_pane(pane.id.as_str()).await;
             panes::close(store, &pane.id).await?;
         }
     }
@@ -420,12 +659,12 @@ pub async fn stop_panes(store: &Store, pty: &PtyManager, ws: &WorkspaceId) -> Re
 /// changes go. Either way the branch and its commits stay.
 pub async fn remove(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
 ) -> Result<(), IpcError> {
-    remove_with_teardown(store, pty, git, id, force, None)
+    remove_with_teardown(store, terms, git, id, force, None)
         .await
         .map(|_| ())
 }
@@ -435,7 +674,7 @@ pub async fn remove(
 /// result never blocks the removal.
 pub async fn remove_with_teardown(
     store: &Store,
-    pty: &PtyManager,
+    terms: &TerminalService,
     git: &Git,
     id: &WorkspaceId,
     force: Option<ForceConfirm>,
@@ -463,7 +702,7 @@ pub async fn remove_with_teardown(
                 );
             }
         }
-        stop_panes(store, pty, &lane.id).await?;
+        stop_panes(store, terms, &lane.id).await?;
         remote
             .call::<serde_json::Value>(
                 &host,
@@ -483,6 +722,10 @@ pub async fn remove_with_teardown(
         // The repository's teardown is a local command; a host's lane has none.
         return Ok(RemoveReport::default());
     }
+    let repos = lane_repos::list(store, &lane.id).await?;
+    if !repos.is_empty() {
+        return remove_multi(store, terms, git, &lane, &repos, force).await;
+    }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
         if let Some(repo) = Repo::discover(lane_path)? {
@@ -493,7 +736,7 @@ pub async fn remove_with_teardown(
             }
         }
     }
-    stop_panes(store, pty, &lane.id).await?;
+    stop_panes(store, terms, &lane.id).await?;
     let mut report = RemoveReport::default();
     if let Some((data, login)) = teardown {
         // F-WT-06: the teardown sees the worktree's variables.
@@ -508,11 +751,88 @@ pub async fn remove_with_teardown(
         .await;
     }
     let repo = discover(&parent.root, "Folder not found")?;
+    let claimed_in =
+        tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
     LaneManager::remove(git, &repo, lane_path, force).await?;
+    release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
     Ok(report)
+}
+
+/// F-CD-22: Discard for a multi-repo worktree: every repository's worktree
+/// (each as an ordinary Discard, branches kept), then the parent folder.
+/// Without `force`, uncommitted changes in any repository, or files the
+/// agent left in the parent folder outside them, refuse it first.
+async fn remove_multi(
+    store: &Store,
+    terms: &TerminalService,
+    git: &Git,
+    lane: &Workspace,
+    repos: &[lane_repos::LaneRepo],
+    force: Option<ForceConfirm>,
+) -> Result<RemoveReport, IpcError> {
+    let dirty = || IpcError::new(ErrorCode::Conflict, "Uncommitted changes").with_stage("git");
+    let parent = Path::new(&lane.root);
+    if force.is_none() {
+        for r in repos {
+            // A repository's worktree folder that's already gone has
+            // nothing to lose; its registration is pruned below.
+            if !Path::new(&r.root).exists() {
+                continue;
+            }
+            if let Some(repo) = Repo::discover(Path::new(&r.root))? {
+                if !repo.status().await?.is_clean() {
+                    return Err(dirty());
+                }
+            }
+        }
+        let extra = std::fs::read_dir(parent)
+            .map(|d| {
+                d.flatten().any(|e| {
+                    !repos
+                        .iter()
+                        .any(|r| e.file_name().to_string_lossy() == r.name)
+                })
+            })
+            .unwrap_or(false);
+        if extra {
+            return Err(dirty());
+        }
+    }
+    stop_panes(store, terms, &lane.id).await?;
+    let forced = force.is_some();
+    let mut each = Vec::new();
+    for r in repos {
+        // A repository that's gone from the folder has no worktree to remove.
+        match Repo::discover(Path::new(&r.repo_root)) {
+            Ok(Some(repo)) => each.push((repo, PathBuf::from(&r.root))),
+            _ => tracing::warn!(
+                code = "lane.multi_repo_missing",
+                "a multi-repo worktree's repository is gone; skipped"
+            ),
+        }
+    }
+    LaneManager::remove_many(git, &each, force).await?;
+    let gone = if forced {
+        std::fs::remove_dir_all(parent)
+    } else {
+        std::fs::remove_dir(parent)
+    };
+    if let Err(e) = gone {
+        match e.kind() {
+            std::io::ErrorKind::NotFound => {}
+            // Something besides the worktrees is in it: Discard with force.
+            std::io::ErrorKind::DirectoryNotEmpty => return Err(dirty()),
+            _ => return Err(IpcError::new(ErrorCode::Io, e.to_string()).with_stage("git")),
+        }
+    }
+    workspaces::remove(store, &lane.id).await?;
+    // The soft removal keeps the row; its repositories go now.
+    lane_repos::clear(store, &lane.id).await?;
+    tracing::info!(code = "lane.removed_multi", "multi-repo worktree removed");
+    Ok(RemoveReport::default())
 }
 
 /// Top-level workspaces whose repository has a `.tandem/worktrees` folder.
@@ -529,13 +849,17 @@ async fn swept(store: &Store) -> Result<Vec<Workspace>, IpcError> {
         .collect())
 }
 
-/// `lanes_sweep`: `git worktree prune` in each repository with worktrees,
-/// then the merged ones idle for over 7 days. Never deletes a worktree.
+/// `lanes_sweep`: the claims of worktrees that are gone (F-TK-05), then
+/// `git worktree prune` in each repository with worktrees, then the merged
+/// ones idle for over 7 days. Never deletes a worktree.
 pub async fn sweep(
     store: &Store,
     git: &Git,
     now: DateTime<Utc>,
 ) -> Result<Vec<StaleLanes>, IpcError> {
+    if let Err(e) = tokio::task::spawn_blocking(prune_gone_claims).await {
+        tracing::warn!(error = %e, "the claims sweep stopped");
+    }
     let mut out = Vec::new();
     for ws in swept(store).await? {
         let Ok(Some(repo)) = Repo::discover(Path::new(&ws.root)) else {
@@ -660,6 +984,7 @@ mod tests {
     use super::*;
     use std::process::Command;
     use tandem_core::origin::{LocalReview, Origin};
+    use tandem_pty::PtyManager;
 
     /// Plain git for fixtures, with no global or system config.
     fn git_cmd(cwd: &Path, args: &[&str]) -> String {
@@ -797,7 +1122,8 @@ mod tests {
             .await
             .expect("lane");
         std::fs::write(Path::new(&lane.root).join("wip.txt"), "draft\n").expect("dirty");
-        let err = remove(&fx.store, &PtyManager::new(), &fx.git, &lane.id, None)
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        let err = remove(&fx.store, &terms, &fx.git, &lane.id, None)
             .await
             .expect_err("dirty");
         assert_eq!(err.code, ErrorCode::Conflict);
@@ -810,7 +1136,7 @@ mod tests {
         let local = LocalReview::check(&Origin::main_window()).expect("main window");
         remove(
             &fx.store,
-            &PtyManager::new(),
+            &terms,
             &fx.git,
             &lane.id,
             Some(ForceConfirm::new(local)),
@@ -824,6 +1150,82 @@ mod tests {
             .is_empty());
         let branches = git_cmd(Path::new(&fx.repo.root), &["branch", "--list", "tandem/*"]);
         assert!(branches.contains("tandem/fix-auth"), "the branch stays");
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_merging_or_removing_a_lane_releases_its_claims() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let merged = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let removed = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for (pane, lane) in [("p1", &merged), ("p2", &removed)] {
+            tasks
+                .begin_session(
+                    &format!("pn:{pane}"),
+                    "Claude Code",
+                    "me",
+                    Some(Path::new(&lane.root)),
+                )
+                .expect("session");
+            let file = Path::new(&lane.root).join("app.txt");
+            tasks.claim_edits(pane, &[file.to_string_lossy().into_owned()]);
+        }
+        assert_eq!(tracker.claim_overlaps().expect("overlaps").len(), 1);
+        std::fs::write(Path::new(&merged.root).join("app.txt"), "oauth\n").expect("write");
+        git_cmd(Path::new(&merged.root), &["commit", "-qam", "oauth"]);
+        assert!(
+            merge(&fx.store, &fx.git, &merged.id)
+                .await
+                .expect("merge")
+                .merged
+        );
+        let claims = tracker.claims().expect("claims");
+        assert_eq!(claims.len(), 1, "the merged lane's claim went");
+        assert_eq!(claims[0].agent, "fix-auth");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        remove(&fx.store, &terms, &fx.git, &removed.id, None)
+            .await
+            .expect("remove");
+        assert!(tracker.claims().expect("claims").is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_tk_05_3_the_sweep_drops_the_claims_of_worktrees_deleted_outside_the_app() {
+        let fx = fixture().await;
+        let tasks_dir = tempfile::tempdir().expect("dir");
+        let data = DataDir::at(tasks_dir.path().to_path_buf()).expect("data");
+        let tasks = crate::services::tasks::TasksService::new(&data, fx.store.clone(), None);
+        set_tasks(&tasks);
+        let tracker = tasks.tracker.clone().expect("tracker");
+        let kept = create(&fx.store, &fx.git, &fx.repo.id, "add oauth")
+            .await
+            .expect("lane");
+        let deleted = create(&fx.store, &fx.git, &fx.repo.id, "fix auth")
+            .await
+            .expect("lane");
+        for lane in [&kept, &deleted] {
+            let scope = crate::services::tasks::claim_scope(Path::new(&lane.root)).expect("scope");
+            tracker
+                .claim_inferred(&scope, &["app.txt".into()])
+                .expect("claim");
+        }
+        std::fs::remove_dir_all(&deleted.root).expect("rm");
+        sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
+        let left: Vec<String> = tracker
+            .claims()
+            .expect("claims")
+            .into_iter()
+            .map(|c| c.agent)
+            .collect();
+        assert_eq!(left, ["add-oauth"]);
     }
 
     #[tokio::test]
@@ -898,6 +1300,208 @@ mod tests {
         assert_eq!(cleanup_title(1), "1 finished worktree can be cleaned up");
         assert_eq!(cleanup_title(3), "3 finished worktrees can be cleaned up");
     }
+
+    /// `shop` holding `api` and `web`, each with one commit.
+    async fn multi_fixture() -> (tempfile::TempDir, Store, Git, Workspace, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = std::fs::canonicalize(dir.path())
+            .expect("canonical")
+            .join("shop");
+        for name in ["api", "web"] {
+            let repo = root.join(name);
+            std::fs::create_dir_all(repo.join("src")).expect("mkdir");
+            git_cmd(&repo, &["init", "-q", "-b", "main"]);
+            std::fs::write(repo.join("src/app.ts"), format!("// {name}\n")).expect("write");
+            git_cmd(&repo, &["add", "."]);
+            git_cmd(&repo, &["commit", "-qm", "first"]);
+        }
+        let login = LoginEnv {
+            vars: [(
+                "PATH".to_string(),
+                std::env::var("PATH").unwrap_or_default(),
+            )]
+            .into(),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        };
+        let git = git_for(&data, &login).expect("git on PATH");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(3))
+            .await
+            .expect("add");
+        (dir, store, git, added.workspace, root)
+    }
+
+    #[test]
+    fn f_cd_22_3_patches_name_their_repository() {
+        let patch = "diff --git a/src/app.ts b/src/app.ts\nindex 1..2 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n--- a/not a header\n+x\n";
+        assert_eq!(
+            prefix_patch(patch, "web"),
+            "diff --git a/web/src/app.ts b/web/src/app.ts\nindex 1..2 100644\n--- a/web/src/app.ts\n+++ b/web/src/app.ts\n@@ -1 +1 @@\n--- a/not a header\n+x\n"
+        );
+        let renamed = "diff --git a/a.ts b/b.ts\nrename from a.ts\nrename to b.ts\n";
+        assert_eq!(
+            prefix_patch(renamed, "api"),
+            "diff --git a/api/a.ts b/api/b.ts\nrename from api/a.ts\nrename to api/b.ts\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_1_2_a_worktree_across_both_repositories() {
+        let (_d, store, git, ws, root) = multi_fixture().await;
+        assert_eq!(
+            crate::services::workspaces::multi_repos(&root),
+            vec!["api".to_string(), "web".to_string()]
+        );
+        // D-869: free for everyone, no plan check.
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        assert_eq!(lane.lane_branch.as_deref(), Some("tandem/tidy"));
+        assert_eq!(Path::new(&lane.root), root.join(".tandem/worktrees/tidy"));
+        for name in ["api", "web"] {
+            let wt = root.join(".tandem/worktrees/tidy").join(name);
+            assert_eq!(git_cmd(&wt, &["branch", "--show-current"]), "tandem/tidy");
+        }
+        let rows = crate::services::workspaces::list(&store, &PtyManager::new())
+            .await
+            .expect("list");
+        let top = rows.iter().find(|r| r.workspace.id == ws.id).expect("top");
+        assert_eq!(
+            top.repos.as_deref(),
+            Some(&["api".to_string(), "web".to_string()][..])
+        );
+        assert_eq!(top.branch, None);
+        let child = rows
+            .iter()
+            .find(|r| r.workspace.id == lane.id)
+            .expect("lane");
+        assert_eq!(child.repos.as_ref().map(Vec::len), Some(2));
+        // What needs one repository says so.
+        let e = merge(&store, &git, &lane.id).await.expect_err("merge");
+        assert_eq!(e.message, MULTI_NOT_YET);
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_3_5_the_diff_names_each_repository_and_discard_keeps_the_branches() {
+        let (_d, store, git, ws, root) = multi_fixture().await;
+        let terms = TerminalService::new(PtyManager::new(), store.clone());
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        let parent = PathBuf::from(&lane.root);
+        std::fs::write(parent.join("web/src/app.ts"), "// web\nchanged\n").expect("write");
+        std::fs::write(parent.join("api/new.ts"), "x\n").expect("write");
+        let files = diff(&store, &lane.id).await.expect("diff");
+        let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, ["api/new.ts", "web/src/app.ts"]);
+        // Dirty: refused; then forced.
+        let e = remove(&store, &terms, &git, &lane.id, None)
+            .await
+            .expect_err("dirty");
+        assert_eq!(e.code, ErrorCode::Conflict);
+        let force =
+            ForceConfirm::new(LocalReview::check(&Origin::main_window()).expect("main window"));
+        remove(&store, &terms, &git, &lane.id, Some(force))
+            .await
+            .expect("forced");
+        assert!(!parent.exists());
+        for name in ["api", "web"] {
+            assert_eq!(
+                git_cmd(&root.join(name), &["branch", "--list", "tandem/tidy"]),
+                "tandem/tidy"
+            );
+        }
+        assert!(
+            !workspaces::list(&store)
+                .await
+                .expect("list")
+                .iter()
+                .any(|w| w.id == lane.id),
+            "the row is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_review_setup_refuses_up_front_and_a_handoff_starts_from_the_worktree() {
+        let (d, store, git, ws, root) = multi_fixture().await;
+        let data = DataDir::at(d.path().join("data")).expect("data");
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        // Setup doesn't apply: lane_setup says nothing, and the folder's
+        // setup is refused before anything reads git.
+        assert!(
+            crate::services::worktree_setup::lane_setup(&store, &data, &lane.id)
+                .await
+                .expect("lane_setup")
+                .is_none()
+        );
+        let e = crate::services::worktree_setup::get(&store, &data, &ws.id)
+            .await
+            .expect_err("setup");
+        assert_eq!(e.message, MULTI_NOT_YET);
+        let e = crate::services::merge_queue::repo_of(&store, &lane.id)
+            .await
+            .expect_err("landing");
+        assert_eq!(e.message, MULTI_NOT_YET);
+        // A commit in the worktree's api, then a new worktree made from it.
+        let api = PathBuf::from(&lane.root).join("api");
+        std::fs::write(api.join("more.ts"), "x\n").expect("write");
+        git_cmd(&api, &["add", "."]);
+        git_cmd(
+            &api,
+            &[
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "more",
+            ],
+        );
+        let head = git_cmd(&api, &["rev-parse", "HEAD"]);
+        let next = create(&store, &git, &lane.id, "next")
+            .await
+            .expect("from the worktree");
+        let next_api = PathBuf::from(&next.root).join("api");
+        assert_eq!(git_cmd(&next_api, &["rev-parse", "HEAD"]), head);
+        let rows = lane_repos::list(&store, &next.id).await.expect("rows");
+        assert_eq!(
+            Path::new(&rows[0].repo_root),
+            std::fs::canonicalize(root.join("api")).expect("api")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_22_review_discard_survives_a_missing_repository_folder_and_forgets_its_rows() {
+        let (_d, store, git, ws, _root) = multi_fixture().await;
+        let terms = TerminalService::new(PtyManager::new(), store.clone());
+        let lane = create(&store, &git, &ws.id, "tidy").await.expect("create");
+        let parent = PathBuf::from(&lane.root);
+        // Someone deleted web's worktree by hand.
+        std::fs::remove_dir_all(parent.join("web")).expect("rm");
+        remove(&store, &terms, &git, &lane.id, None)
+            .await
+            .expect("discard without force");
+        assert!(!parent.exists());
+        assert!(lane_repos::list(&store, &lane.id)
+            .await
+            .expect("rows")
+            .is_empty());
+        // A new worktree has exactly its own repositories.
+        let again = create(&store, &git, &ws.id, "tidy").await.expect("again");
+        assert_eq!(
+            lane_repos::list(&store, &again.id)
+                .await
+                .expect("rows")
+                .len(),
+            2
+        );
+        // A stray file in the parent folder: Conflict, so Discard can force.
+        std::fs::write(PathBuf::from(&again.root).join("notes.txt"), "x").expect("write");
+        let e = remove(&store, &terms, &git, &again.id, None)
+            .await
+            .expect_err("stray file");
+        assert_eq!(e.code, ErrorCode::Conflict);
+    }
 }
 
 /// One sibling worktree that changed some of the same files (F-WT-03).
@@ -937,6 +1541,7 @@ pub async fn overlap(
 ) -> Result<OverlapReport, IpcError> {
     use tandem_git::overlap::{changed_files, forecast, shared};
     let (lane, parent) = lane_row(store, id).await?;
+    single_repo(store, &lane).await?;
     let lane_repo = discover(&lane.root, FOLDER_MISSING)?;
     let base = lane.lane_base.clone().unwrap_or_default();
     let mine = changed_files(git, lane_repo.root(), &base).await?;

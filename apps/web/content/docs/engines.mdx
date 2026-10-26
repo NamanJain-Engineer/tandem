@@ -9,7 +9,19 @@ Vibezeo detects these coding agent CLIs on your login shell's `PATH` and shows h
 
 <EnginesTable />
 
-Antigravity CLI and Kiro CLI run in terminal panes only, as their vendors ship them. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+Antigravity CLI runs in terminal panes only, as Google ships it. Kiro CLI runs in terminal panes and, through its Agent Client Protocol mode, in Thread mode. Kiro CLI can have several accounts, each in its own home; Antigravity CLI keeps one account per computer, because it stores its sign-in in the system keyring. Gemini CLI is still listed: Google serves it to paid API keys and Gemini Code Assist Standard or Enterprise, and personal Google accounts use Antigravity CLI.
+
+## Any ACP agent in Thread mode
+
+Agents that speak the Agent Client Protocol (ACP) can run threads. Cursor Agent, Gemini CLI, Grok, Kiro CLI and OpenCode do out of the box. Gemini CLI runs as `gemini --acp`, or `gemini --experimental-acp` on older releases. To add another, open **Settings › Engines › ACP agents** and choose **Add an ACP agent…**:
+
+- **Name**, **Command** (a command on your `PATH`, or its full path), **Arguments** and **Environment variables**. **Goose** fills in `goose acp`.
+- **Test** starts the command, asks it to introduce itself, waits up to 10 seconds and stops it. You see its name, version and how it signs in. If it doesn't answer as an ACP agent, it says "Not an ACP agent" and why, and nothing is saved. **Add** runs the same test before saving.
+- The agent then appears in the Thread engine picker as "via ACP". Threads run the command at the path saved when you added it, never another program of the same name. Agents you add run on this computer only, not in SSH or WSL folders, and only in Thread mode.
+- **Remove** stops the agent's threads. They stay readable but won't run again: an agent you add later, even with the same name, is a new engine.
+- The agent signs in its own way. Vibezeo never sees or keeps its keys: a variable whose value looks like a key or token is refused, and so are variables that change which home an engine uses or what a program loads. When it asks for a sign-in, the thread names the methods it offers: sign in with the agent's own command in a terminal, then try again.
+
+Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals and models. Usage and status beyond that depend on the agent. When an agent asks for approval without offering a one-time allow, **Allow once** declines the request rather than allowing it for good.
 
 ## One instructions file for every engine
 
@@ -71,3 +83,13 @@ The engine signs in by itself as always; the sandbox only narrows what it can re
 It uses bubblewrap (the `bwrap` command), which Vibezeo never installs: install it with your package manager (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`). Without it, or where it can't run, the setting says why and Workspace can't be chosen. If it stops working after you turned it on, agent panes start without it: their header says **Not sandboxed** with the reason, and you get one notification.
 
 Claude Code, Codex and OpenCode run sandboxed. Engines that keep their sign-in in your own home folder (Cursor Agent, Gemini CLI, Copilot CLI and the rest) start outside the sandbox for now, with **Not sandboxed** saying why: inside it, your home is read-only, so their sign-in would fail. The pane's shell stays outside the sandbox. Panes on SSH hosts and in WSL aren't sandboxed, and macOS and Windows don't have it yet.
+
+## Resource governor (Linux)
+
+The **Ports** tab's **Panes** section lists each pane running on this computer with its CPU ("CPU 120%" is 1.2 cores busy) and memory, grouped by worktree like the ports. Each agent's Dashboard card shows the same. They refresh every 2 seconds while you're looking, and never while hidden.
+
+- **Freeze** (in the pane's menu, or its row) stops every process in the pane, so it uses no CPU; **Thaw** picks up where it left off. A frozen pane shows **Frozen** in its header.
+- **Settings › Engines › Memory cap per agent** (Off, 512 MB up to 16 GB) caps each new agent pane. When a process in it goes over, the system ends that process; the pane and its shell keep running, and its header says **Stopped: memory cap 512 MB**. With systemd older than 253, the whole pane ends instead. Caps need a systemd user session (most Linux desktops have one); without one the setting says why and stays Off. Each agent pane then runs in its own systemd user scope, `vibezeo-pane-…`.
+- **Settings › Engines › One check at a time** runs check commands (Best of N's **Run check**, the review queue's checks and the check **Land worktrees** runs) one after another instead of all at once. A lane waiting its turn shows **Queued**.
+
+On macOS and Windows you get the usage; Freeze and the memory cap are Linux only for now. Nothing here leaves your computer or is saved to disk.

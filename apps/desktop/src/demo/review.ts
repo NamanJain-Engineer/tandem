@@ -44,7 +44,7 @@ export class DemoReview {
   }
 
   view(): ReviewQueueView {
-    return { items: [this.item] };
+    return { items: [this.item], overlaps: [] };
   }
 
   diff(key: string): FileDiff[] {

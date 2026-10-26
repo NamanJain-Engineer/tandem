@@ -3,10 +3,14 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tandem_pty::{wait_until, FrameKind, OutputSink, PtyManager, SpawnSpec, TermColors, VecSink};
+use tandem_pty::{
+    wait_until, FrameKind, OutputSink, PtyManager, SpawnSpec, TermColors, VecSink,
+    PENDING_NOTICES_MAX,
+};
 
 fn spec(pane: &str, script: &str) -> SpawnSpec {
     let mut env = BTreeMap::new();
@@ -30,6 +34,18 @@ fn spec(pane: &str, script: &str) -> SpawnSpec {
 
 fn text(sink: &VecSink) -> String {
     String::from_utf8_lossy(&sink.data()).into_owned()
+}
+
+/// The messages of the notice frames a sink got, in order.
+fn notices(sink: &VecSink) -> Vec<String> {
+    sink.frames
+        .lock()
+        .expect("frames")
+        .iter()
+        .filter(|f| f.kind == FrameKind::Notice)
+        .filter_map(|f| serde_json::from_slice::<serde_json::Value>(&f.payload).ok())
+        .filter_map(|v| v["message"].as_str().map(str::to_string))
+        .collect()
 }
 
 #[test]
@@ -745,4 +761,263 @@ fn nfr_5_1_a_parked_pane_is_never_held_back_by_its_missing_acks() {
         "the program finished with nobody acking"
     );
     let _ = mgr.kill("p51c");
+}
+
+fn masked_spawn(mgr: &PtyManager, pane: &str, script: &str, sink: Arc<VecSink>) {
+    mgr.mask_next_spawn(
+        pane,
+        vec![zeroize::Zeroizing::new(b"sk_test_4242".to_vec())],
+    );
+    mgr.spawn(spec(pane, script), Some(sink as Arc<dyn OutputSink>))
+        .expect("spawn");
+}
+
+#[test]
+fn f_tl_12_3_a_value_is_masked_on_screen_in_frames_and_scrollback_even_split() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    // Two writes with a pause between: the value arrives in two reads.
+    masked_spawn(
+        &mgr,
+        "m1",
+        "printf 'key=sk_te'; sleep 0.02; printf 'st_4242 end\\n'; sleep 1",
+        sink.clone(),
+    );
+    assert!(wait_until(Duration::from_secs(5), || text(&sink).contains("end")));
+    assert!(
+        text(&sink).contains("key=[REDACTED] end"),
+        "{}",
+        text(&sink)
+    );
+    assert!(!text(&sink).contains("sk_test_4242"));
+    let screen = mgr.screen_text("m1").unwrap_or_default();
+    assert!(screen.contains("key=[REDACTED] end"), "{screen}");
+    let ring = String::from_utf8_lossy(&mgr.scrollback("m1").expect("ring")).into_owned();
+    assert!(
+        ring.contains("[REDACTED]") && !ring.contains("sk_test_4242"),
+        "{ring}"
+    );
+}
+
+#[test]
+fn f_tl_12_3_a_held_prefix_shows_after_a_short_quiet() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    masked_spawn(&mgr, "m2", "printf 'prompt sk_te'; sleep 3", sink.clone());
+    // Not a whole value: it shows well before the process ends.
+    assert!(wait_until(Duration::from_millis(1500), || text(&sink)
+        .contains("prompt sk_te")));
+    assert!(!sink.has_exit());
+}
+
+#[test]
+fn f_tl_12_unmasked_panes_are_untouched() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("m3", "printf 'sk_test_4242\\n'"),
+        Some(sink.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || sink.has_exit()));
+    assert!(text(&sink).contains("sk_test_4242"));
+}
+
+/// The run wrapper under `shell`: `command` gets `API_KEY`; afterwards the
+/// pane's shell answers `printenv API_KEY || echo after-none`.
+/// `interrupt` sends Ctrl-C once the command printed "started"; without it a
+/// command that may never print (a syntax error) gets a fixed wait instead.
+fn run_under(shell: &str, pane: &str, command: &str, interrupt: bool) -> String {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    let mut s = spec(pane, "");
+    s.program = PathBuf::from(shell);
+    s.args = tandem_pty::env::run_wrapper(
+        std::path::Path::new(shell),
+        command,
+        &["API_KEY".to_string()],
+    )
+    .expect("wrapper");
+    s.env.insert("API_KEY".into(), "value-123".into());
+    s.env.insert("TANDEM_SHELL_TOKEN".into(), "tok-1".into());
+    s.env.insert(
+        "HOME".into(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    );
+    mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+        .expect("spawn");
+    if interrupt {
+        assert!(
+            wait_until(Duration::from_secs(10), || text(&sink).contains("started")),
+            "{shell}: {}",
+            text(&sink)
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        mgr.write(pane, b"\x03").expect("ctrl-c");
+    }
+    std::thread::sleep(Duration::from_millis(if interrupt { 800 } else { 1_500 }));
+    mgr.write(
+        pane,
+        b"printenv API_KEY || echo after-none; printenv TANDEM_SHELL_TOKEN || echo token-none\r",
+    )
+    .expect("write");
+    let done = wait_until(Duration::from_secs(10), || {
+        text(&sink).contains("token-none")
+    });
+    let out = text(&sink);
+    let _ = mgr.kill(pane);
+    assert!(done, "{shell}: {out}");
+    out
+}
+
+fn shells() -> Vec<&'static str> {
+    ["/bin/sh", "/usr/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"]
+        .into_iter()
+        .filter(|s| std::path::Path::new(s).exists())
+        .collect()
+}
+
+#[test]
+fn f_tl_12_5_ctrl_c_on_the_command_still_unsets_the_variables_in_every_shell() {
+    for (i, shell) in shells().into_iter().enumerate() {
+        let out = run_under(shell, &format!("ri{i}"), "echo started; sleep 30", true);
+        assert!(out.contains("after-none"), "{shell}: {out}");
+        assert!(!out.contains("value-123"), "{shell}: {out}");
+    }
+}
+
+#[test]
+fn f_tl_12_5_a_command_that_ends_in_an_operator_cant_swallow_the_unset() {
+    for (i, shell) in shells().into_iter().enumerate() {
+        let out = run_under(shell, &format!("ro{i}"), "echo started &&", false);
+        assert!(out.contains("after-none"), "{shell}: {out}");
+        assert!(!out.contains("value-123"), "{shell}: {out}");
+    }
+}
+
+#[test]
+fn f_tl_12_5_the_command_gets_the_variables_and_the_shell_after_it_doesnt() {
+    let mgr = PtyManager::new();
+    let sink = Arc::new(VecSink::default());
+    let mut s = spec("r1", "");
+    s.args = tandem_pty::env::run_wrapper(
+        std::path::Path::new("/bin/sh"),
+        "echo \"got=${API_KEY}\"",
+        &["API_KEY".to_string()],
+    )
+    .expect("posix");
+    s.env.insert("API_KEY".into(), "value-123".into());
+    mgr.spawn(s, Some(sink.clone() as Arc<dyn OutputSink>))
+        .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&sink)
+        .contains("got=value-123")));
+    std::thread::sleep(Duration::from_millis(300));
+    mgr.write("r1", b"echo \"after=${API_KEY:-none}\"\r")
+        .expect("write");
+    assert!(
+        wait_until(Duration::from_secs(5), || text(&sink)
+            .contains("after=none")),
+        "{}",
+        text(&sink)
+    );
+    let _ = mgr.kill("r1");
+}
+
+#[test]
+fn f_tk_05_1_a_notice_to_a_parked_pane_arrives_when_it_attaches() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk51", "echo ready; read line; echo got:$line; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    // A shown pane gets its notice at once.
+    mgr.notice("tk51", "shown at once").expect("notice");
+    assert_eq!(notices(&view), ["shown at once"]);
+    // Hidden for 30 s, the view hands its terminal to the core (§5.1).
+    let at = view.data().len() as u64;
+    assert!(mgr.park("tk51", at, vec![]).expect("park"));
+    let overlap = "add-oauth and fix-auth both claim src/auth/session.ts";
+    mgr.notice("tk51", overlap).expect("notice");
+    assert_eq!(
+        notices(&view),
+        ["shown at once"],
+        "nothing more went to the parked view"
+    );
+    // Shown again, the new view gets it once, after its replay and before
+    // the output that follows.
+    let shown = Arc::new(VecSink::default());
+    let attached = mgr
+        .attach("tk51", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    mgr.write("tk51", b"x\r").expect("write");
+    assert!(wait_until(Duration::from_secs(5), || text(&shown).contains("got:x")));
+    assert_eq!(notices(&shown), [overlap]);
+    assert!(
+        !String::from_utf8_lossy(&attached.replay).contains("both claim"),
+        "a notice isn't output: it's never in the ring"
+    );
+    {
+        let frames = shown.frames.lock().expect("frames");
+        assert_eq!(frames.first().map(|f| f.kind), Some(FrameKind::Notice));
+        assert!(
+            frames.windows(2).all(|w| w[0].seq < w[1].seq),
+            "seq still rises along the pane's frames (ARCHITECTURE §3.4)"
+        );
+    }
+    let later = Arc::new(VecSink::default());
+    mgr.attach("tk51", later.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert!(notices(&later).is_empty(), "delivered once");
+    let _ = mgr.kill("tk51");
+}
+
+#[test]
+fn f_tk_05_1_a_parked_pane_keeps_its_newest_notices_up_to_the_cap() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk52", "echo ready; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    assert!(mgr
+        .park("tk52", view.data().len() as u64, vec![])
+        .expect("park"));
+    let sent = PENDING_NOTICES_MAX + 5;
+    for i in 0..sent {
+        mgr.notice("tk52", &format!("notice {i}")).expect("notice");
+    }
+    let shown = Arc::new(VecSink::default());
+    mgr.attach("tk52", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    let newest: Vec<String> = (sent - PENDING_NOTICES_MAX..sent)
+        .map(|i| format!("notice {i}"))
+        .collect();
+    assert_eq!(notices(&shown), newest, "the oldest are dropped first");
+    let _ = mgr.kill("tk52");
+}
+
+#[test]
+fn f_tk_05_1_a_notice_to_a_view_that_has_gone_waits_for_the_next_attach() {
+    let mgr = PtyManager::new();
+    let view = Arc::new(VecSink::default());
+    mgr.spawn(
+        spec("tk53", "echo ready; read wait"),
+        Some(view.clone() as Arc<dyn OutputSink>),
+    )
+    .expect("spawn");
+    assert!(wait_until(Duration::from_secs(5), || text(&view).contains("ready")));
+    // The webview reloaded: the old view's channel is closed, and the new
+    // view hasn't attached yet.
+    view.closed.store(true, Ordering::Release);
+    mgr.notice("tk53", "while reloading").expect("notice");
+    let shown = Arc::new(VecSink::default());
+    mgr.attach("tk53", shown.clone() as Arc<dyn OutputSink>)
+        .expect("attach");
+    assert_eq!(notices(&shown), ["while reloading"]);
+    let _ = mgr.kill("tk53");
 }

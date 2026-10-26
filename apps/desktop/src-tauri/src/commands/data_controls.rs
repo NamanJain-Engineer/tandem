@@ -78,6 +78,12 @@ pub async fn data_delete_local(
         )
     })?;
     data_controls::forget_secrets(state.keychain.as_ref());
+    // The names go with the database; their values go now (F-TL-12).
+    let names: Vec<String> = tandem_store::repo::secrets::list(&state.store)
+        .await
+        .map(|rows| rows.into_iter().map(|r| r.name).collect())
+        .unwrap_or_default();
+    crate::services::secrets::forget_all(state.keychain.as_ref(), &names);
     if state.e2e {
         tracing::info!(code = "data.delete_recorded", "test harness: no restart");
         return Ok(());

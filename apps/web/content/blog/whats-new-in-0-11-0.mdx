@@ -1,0 +1,93 @@
+---
+title: What's new in 0.11.0
+description: Run several agents at once and stay in charge of them. See and cap what each agent pane uses, keep secret values out of the files agents read, give one agent a worktree across several repositories, run any ACP agent as a thread, see which files each agent is about to change, and let Lead split a goal into tasks.
+date: 2026-10-25
+author: Naman Jain
+tags: [release, worktrees, engines, linux]
+---
+
+Vibezeo 0.11.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Vibezeo is free and needs no account, and like 0.10.0 it runs on your computer, with nothing sent to our servers.
+
+0.9.0 was about bringing parallel agents' work home, and 0.10.0 took the limits off what runs on your computer. This release is about running several agents at once and staying in charge of them: what they use, what they can read, where they work, which agents you can run, and how a bigger job gets split between them.
+
+## See and limit what each agent uses
+
+Four or five agents running builds and tests at once can slow a laptop to a crawl, and it's hard to tell which pane is to blame.
+
+The **Ports** tab now has a **Panes** section that lists every pane running on this computer with its CPU and memory, grouped by worktree, and an agent pane's Dashboard card shows the same, such as "CPU 12% · 840 MB". CPU counts one core as 100%, so a pane at 250% is keeping two and a half cores busy.
+
+- **Freeze**, in a pane's ⋯ menu or its row in Panes, stops every process in the pane until you choose **Thaw**. Closing or restarting a frozen pane thaws it first.
+- **Settings › Engines › Memory cap per agent**, off by default, caps each agent pane you start after setting it, at 512 MB up to 16 GB. When a process in the pane goes over, the system ends that process and the pane says "Stopped: memory cap 512 MB", while its shell keeps running. With systemd older than 253, the whole pane ends instead.
+- **One check at a time**, in the same place, runs the check commands of Best of N, the review queue and Land worktrees one after another instead of all at once.
+
+With a systemd user session, each agent pane runs in its own systemd user scope, and caps also need that session to be able to limit memory. Without one, the setting says why and stays off, and Freeze stops the pane's processes with signals.
+
+## Keep secret values out of the files agents read
+
+Agents read `.env` files, so a key written there ends up in their context, their transcripts and every worktree copy.
+
+Save the value with **Add secret** in **Settings › Secrets** instead. It goes into your system keychain, and Vibezeo keeps only its name. The variable in the `.env` then holds a reference, such as `API_KEY=vibezeo-secret://stripe-test`, and that reference is all that agents, diffs and worktree copies see.
+
+To run a command that needs the values, choose **Run with secrets…** in the ⋯ menu of a terminal pane on this computer, or the play button in its header. The dialog lists what the command gets from the `.env`, and names any secret that's missing, which keeps **Run** off until you add it. **Run** opens a new terminal pane beside it, where the command gets every variable with each reference replaced by its value. When it ends, the variables are unset and a fresh shell takes over. In that pane, a secret's value of 4 bytes or more that the command prints shows as `[REDACTED]`, on screen and in the scrollback.
+
+Masking catches only the exact value, and only in that pane: a command that has a secret can still use it, write it to a file or print it in another form. Agent panes don't get the values in this release.
+
+## One worktree across several repositories
+
+When a change spans an API and a web app that live in separate repositories, one agent should be able to change both, and you should be able to review them and open their pull requests together.
+
+Add a folder that holds them side by side, such as `api` and `web`, and its rail row says "2 repositories". **New worktree…** and the launch sheet's "Give each agent its own worktree" then make one folder holding a worktree of every repository, all on the same branch, and the agent starts there, so it sees them all.
+
+- **Open diff** shows each repository's share of the changes, such as "api · 3 files", with every path under its repository's name.
+- **Create pull requests** asks first, then pushes the branch in each repository with new commits, opens a pull request there with your GitHub CLI, and links each one to the others.
+- **Discard worktree…** removes every repository's worktree and keeps the branches.
+
+Merging, landing, the overlap check, pull request checks, previews, worktree setup and second opinions don't work for these worktrees yet, and their menu entries say so.
+
+## Any agent that speaks ACP, as a thread
+
+If you use an agent that speaks the Agent Client Protocol (ACP) and Vibezeo doesn't list it, you can now add it yourself and run it as a thread, signed in its own way.
+
+Gemini CLI and Kiro CLI now run threads through their own ACP modes, beside Cursor Agent, Grok and OpenCode. To add another agent, choose **Add an ACP agent…** under **Settings › Engines › ACP agents** and give its command; a Goose preset fills in `goose acp`. **Test** asks the agent to introduce itself and shows its name, version and how it signs in, and **Add** runs the same test before it saves. The agent then appears in the Thread engine picker, labelled "via ACP".
+
+Vibezeo never sees the agent's keys: a variable whose value looks like a key or token is refused, and when the agent asks for a sign-in, the thread names the ways it offers. Agents you add run on this computer only.
+
+## See which files each agent is about to change
+
+Git only reports a conflict when two agents' changes meet at a merge, after both have done the work. With claims, agents in worktrees of one repository say which files they're about to change, so you see two of them heading for the same file first.
+
+Agents with Vibezeo's tasks server claim files or folders with a `claim` tool, saying what they're changing, and check `list_claims` for what agents in the other worktrees claimed; a worktree's briefing asks its agent to do both. Claude Code in a terminal pane also claims a file just by editing it, and only the file's path leaves its hook, never the change.
+
+When two worktrees claim the same file, both agents' panes show a line such as "add-oauth and fix-auth both claim src/auth/session.ts", even a pane in a tab you open later, and the Dashboard's review queue lists every overlap above its items. A worktree's claims go when it's merged, landed or removed. What one agent writes in a claim reaches the others marked as data, never as instructions.
+
+## Plan with Lead
+
+A goal bigger than one task needs splitting up before several agents can work on it side by side.
+
+**Plan with Lead…** on the Tasks page takes the goal and a workspace. Lead plans in a new chat there, at Read access, where you can follow its reasoning and answer it. It sees which engines can run tasks and how much of each account's usage window is used, and suggests an engine for each task. Lead has no task tools in that chat, so nothing reaches your tasks until you approve.
+
+Lead's reply becomes a list of tasks you can edit, then create in a new project named after the goal. For a plan of three tasks, **Execute all 3…** first lists each run: the task, its engine, that engine's account with the most room left, its own worktree and the engine that reviews it. Nothing starts until you confirm. Then each task runs once, in its own worktree, at most 4 at a time, and finished work shows in the review queue. Merging stays with you.
+
+## Also in this release
+
+- **Execute…** on a task whose run is queued or under way says it's already running and starts nothing. A run's independent review uses the reviewing engine's account with the most room left, and counts only its own reviewer's verdict.
+- **Allow once** on an approval from Cursor Agent, Grok or OpenCode declines the request when the agent offers no one-time option. Before, it could choose the agent's allow-always option.
+- Notices Vibezeo writes into a terminal pane, such as "Reconnecting…" when an SSH host drops, now appear in a pane whose tab you weren't looking at, when you open it.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.11.0_amd64.deb
+sudo apt install ./Vibezeo_0.11.0_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.11.0-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.11.0-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The full notes are in the [changelog](/changelog/0.11.0/).

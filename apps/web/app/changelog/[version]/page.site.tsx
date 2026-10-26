@@ -46,7 +46,7 @@ export default async function VersionPage({ params }: Params) {
       <article className="relative isolate">
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[32rem]" />
       <div className="container-site grid gap-10 py-16 lg:grid-cols-12 lg:gap-6 lg:py-24">
-        <aside className="flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-3 lg:self-start">
+        <aside className={`flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-3 lg:self-start ${scene ? "" : "lg:row-span-2"}`}>
           <a href="/changelog/" className="inline-flex min-h-8 items-center gap-1.5 text-copy-sm text-fg-muted">
             <Icon icon={ArrowLeft} size={14} />
             Changelog
@@ -93,11 +93,15 @@ export default async function VersionPage({ params }: Params) {
               {p}
             </p>
           ))}
-          {scene && (
-            <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} className="rise mt-4">
-              <LandScene />
-            </Scene>
-          )}
+        </div>
+        {/* The scene takes the container's full width, so the app's text
+            reads at its own size (D-1886). */}
+        {scene && (
+          <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} since="0.9.0" className="rise lg:col-span-12">
+            <LandScene />
+          </Scene>
+        )}
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-8 lg:col-start-5">
           {CATEGORIES.map((c) => {
             const entries = release.entries.filter((e) => e.category === c);
             if (!entries.length) return null;

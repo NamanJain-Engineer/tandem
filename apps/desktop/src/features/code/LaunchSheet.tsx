@@ -343,7 +343,9 @@ function LaunchSheetBody({ workspaceId }: { workspaceId: string }) {
   const ws = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
   // A folder on a host lists the host's engines, not this computer's (F-RM-01).
   const remote = ws && ws.kind !== "local" ? ws.hostId : null;
-  const localEngines = useEngines((s) => s.list);
+  // Added ACP agents run in threads only, never in a terminal pane (D-2513).
+  const allLocal = useEngines((s) => s.list);
+  const localEngines = useMemo(() => allLocal.filter((e) => !e.added), [allLocal]);
   const hostEngines = useRemote((s) => (remote ? s.engines[remote] : undefined));
   const engines = useMemo(
     () => (remote ? (hostEngines ?? []) : localEngines),
