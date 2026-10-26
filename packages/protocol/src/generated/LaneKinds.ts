@@ -16,4 +16,13 @@ jjOnly: boolean,
 /**
  * A folder on an SSH host or in WSL: no jj workspaces.
  */
-remote: boolean, preferred: LaneKind, };
+remote: boolean, preferred: LaneKind, 
+/**
+ * The repository is trusted (F-CD-23's trust): jj runs only then.
+ */
+trusted: boolean, 
+/**
+ * Why a `.jj` here isn't used (committed to git, or not this
+ * repository's).
+ */
+refused?: string, };

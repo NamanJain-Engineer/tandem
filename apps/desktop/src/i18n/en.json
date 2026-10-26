@@ -602,6 +602,8 @@
   "worktree.jj.only": "This repository uses jj without git. Vibezeo works with jj in repositories co-located with git.",
   "worktree.jj.badge": "jj",
   "worktree.jj.badgeLabel": "jj workspace",
+  "worktree.jj.untrusted": "Vibezeo runs jj only in repositories you trust, since jj reads the repository's own settings.",
+  "worktree.jj.trust": "Trust repository…",
   "worktree.multi.repoSummary": "{repo} · {n, plural, =0 {No changes} one {# file} other {# files}}",
   "worktree.overlap.menu": "Check overlap…",
   "worktree.overlap.title": "Overlap: {branch}",

@@ -434,13 +434,14 @@ fn confirm_text(name: &str, sandboxed: bool, sandbox_on: bool) -> (String, Strin
             "{RUNS} {name}'s build scripts, macros, plugins or Python interpreter when they load \
              it. Language servers run outside the agent sandbox: code an agent writes in {name} \
              itself can run outside it when they load it. Its worktrees aren't covered: with \
-             agents sandboxed, each worktree asks on its own. Trust it only if you trust its code \
-             and read what agents change in it."
+             agents sandboxed, each worktree asks on its own. The same trust lets Vibezeo run jj \
+             in it. Trust it only if you trust its code and read what agents change in it."
         )
     } else {
         format!(
             "{RUNS} {name}'s build scripts, macros, plugins or Python interpreter when they load \
-             it, and its worktrees' too. Trust it only if you trust its code."
+             it, and its worktrees' too. The same trust lets Vibezeo run jj in it. Trust it only \
+             if you trust its code."
         )
     };
     (format!("Trust {name} for language servers?"), body)
@@ -693,6 +694,16 @@ mod tests {
             .await
             .expect("remove");
         assert!(!lsp::is_trusted(&data, &lane), "its worktree's trust went");
+        let dir = root.join(".tandem/worktrees");
+        let seen = crate::commands::workspaces::TRUST_AT_STOP
+            .lock()
+            .map(|s| s.iter().find(|(d, _)| *d == dir).map(|(_, left)| *left))
+            .expect("lock");
+        assert_eq!(
+            seen,
+            Some(false),
+            "trust went before the servers began to stop"
+        );
         assert!(
             lsp::is_trusted(&data, &root),
             "the repository keeps its own"

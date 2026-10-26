@@ -57,6 +57,10 @@ function setup(list: WorkspaceSummary[] = [APP, JJ_LANE]) {
     lane_kind_get: () => kinds,
     lane_create: () => ({ ...JJ_LANE, id: "wt_2", laneBranch: "fix-login" }),
     lane_setup: () => null,
+    lsp_trust: () => {
+      kinds = { ...kinds, trusted: true };
+      return null;
+    },
   });
 }
 
@@ -64,7 +68,14 @@ beforeEach(() => {
   resetStores();
   useWorktrees.setState({ ask: null });
   useLayout.setState({ tabs: {}, loaded: {}, boxes: {}, dragging: false, picker: null });
-  kinds = { colocated: true, jjVersion: "0.34.0", jjOnly: false, remote: false, preferred: "jj" };
+  kinds = {
+    colocated: true,
+    jjVersion: "0.34.0",
+    jjOnly: false,
+    remote: false,
+    preferred: "jj",
+    trusted: true,
+  };
 });
 afterEach(() => setInvokeBackend(null));
 
@@ -108,8 +119,45 @@ describe("jj workspaces (F-CD-24)", () => {
     );
   });
 
+  it("F-CD-24 jj waits for the repository's trust, and Trust repository… asks for it", async () => {
+    kinds = { ...kinds, trusted: false };
+    setup();
+    openNew();
+    expect(
+      await screen.findByText(
+        "Vibezeo runs jj only in repositories you trust, since jj reads the repository's own settings.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "Make" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Trust repository…" }));
+    await screen.findByRole("radiogroup", { name: "Make" });
+    expect(calls.find((c) => c.cmd === "lsp_trust")?.args).toEqual({
+      context: { type: "workspace", workspaceId: "app" },
+      path: ".",
+    });
+  });
+
+  it("F-CD-24 a .jj that isn't jj's own is refused, and says why", async () => {
+    kinds = {
+      colocated: false,
+      jjOnly: false,
+      remote: false,
+      preferred: "git",
+      trusted: true,
+      refused: "This repository's .jj folder is committed to git, so Vibezeo won't run jj in it",
+    };
+    setup();
+    openNew();
+    expect(
+      await screen.findByText(
+        "This repository's .jj folder is committed to git, so Vibezeo won't run jj in it",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "Make" })).toBeNull();
+  });
+
   it("F-CD-24.5 a jj-only repository says why, and offers no jj workspace", async () => {
-    kinds = { colocated: false, jjOnly: true, remote: false, preferred: "git" };
+    kinds = { colocated: false, jjOnly: true, remote: false, preferred: "git", trusted: false };
     setup();
     openNew();
     expect(
@@ -121,7 +169,7 @@ describe("jj workspaces (F-CD-24)", () => {
   });
 
   it("F-CD-24.5 a folder on another machine shows nothing about jj, and asks without a kind", async () => {
-    kinds = { colocated: false, jjOnly: false, remote: true, preferred: "git" };
+    kinds = { colocated: false, jjOnly: false, remote: true, preferred: "git", trusted: false };
     setup();
     openNew();
     await waitFor(() => expect(calls.some((c) => c.cmd === "lane_kind_get")).toBe(true));

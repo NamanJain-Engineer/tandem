@@ -140,6 +140,11 @@ pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Re
     remove_workspace(&state, &id).await
 }
 
+/// Tests: whether worktree trust was left when servers began to stop.
+#[cfg(test)]
+pub(crate) static TRUST_AT_STOP: std::sync::Mutex<Vec<(std::path::PathBuf, bool)>> =
+    std::sync::Mutex::new(Vec::new());
+
 /// `workspace_remove`'s work (tests call it with a test state).
 pub(crate) async fn remove_workspace(state: &AppState, id: &WorkspaceId) -> Result<(), IpcError> {
     let root = repo::get(&state.store, id)
@@ -159,6 +164,15 @@ pub(crate) async fn remove_workspace(state: &AppState, id: &WorkspaceId) -> Resu
         Some(root) => Some(crate::services::lsp::global().begin_removal(root).await),
         None => None,
     };
+    #[cfg(test)]
+    if let Some(root) = &root {
+        // What a start waiting meanwhile would find: no worktree trust.
+        let dir = root.join(tandem_git::lanes::WORKTREES_DIR);
+        let left = crate::services::lsp::trusted_under(&state.data, &dir);
+        if let Ok(mut seen) = TRUST_AT_STOP.lock() {
+            seen.push((dir, left));
+        }
+    }
     let removed = workspaces::remove(&state.store, &state.terminals, id).await?;
     // Its agents' sessions end and its claims go (F-TK-05): file IO.
     let (terminals, tasks) = (state.terminals.clone(), state.tasks.clone());

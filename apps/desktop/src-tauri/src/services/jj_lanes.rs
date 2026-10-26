@@ -29,6 +29,11 @@ pub const JJ_REMOTE: &str = "jj workspaces work on folders on this computer";
 pub const JJ_MISSING: &str = "jj isn't installed";
 pub const NOT_COLOCATED: &str = "This repository isn't co-located with jj";
 pub const NO_FORECAST: &str = "No forecast for jj workspaces yet";
+pub const JJ_UNTRUSTED: &str =
+    "Vibezeo runs jj only in repositories you trust: trust this repository first";
+/// A jj workspace being made that never got its row is forgotten by the
+/// sweep after this long.
+pub const ORPHAN_AGE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 /// The choice New worktree remembers per repository.
 pub const KINDS_FILE: &str = "lane-kinds.json";
 
@@ -57,6 +62,13 @@ pub struct LaneKinds {
     /// A folder on an SSH host or in WSL: no jj workspaces.
     pub remote: bool,
     pub preferred: LaneKind,
+    /// The repository is trusted (F-CD-23's trust): jj runs only then.
+    pub trusted: bool,
+    /// Why a `.jj` here isn't used (committed to git, or not this
+    /// repository's).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
 }
 
 /// The terminals, for the login environment jj runs in. Set at startup;
@@ -112,6 +124,29 @@ fn jj_err(e: tandem_git::GitError) -> IpcError {
     IpcError::from(e).with_stage("jj")
 }
 
+/// The repository at `root` is trusted for its code to run (F-CD-23's
+/// trust, which covers jj too).
+fn trusted(root: &Path) -> bool {
+    crate::services::lsp::data_dir().is_some_and(|d| crate::services::lsp::is_trusted(d, root))
+}
+
+/// What every jj command in the repository at `root` needs first: a `.jj`
+/// of jj's own beside `.git`, and the person's trust. jj reads the
+/// repository's config, so an untrusted clone never gets that far.
+pub fn gate(root: &Path) -> Result<(), IpcError> {
+    if jj::jj_without_git(root) {
+        return Err(IpcError::new(ErrorCode::Invalid, JJ_ONLY).with_stage("jj"));
+    }
+    jj::check_repo(root).map_err(|e| match e {
+        tandem_git::GitError::Invalid(m) => IpcError::new(ErrorCode::Invalid, m).with_stage("jj"),
+        other => jj_err(other),
+    })?;
+    if !trusted(root) {
+        return Err(IpcError::new(ErrorCode::PermissionDenied, JJ_UNTRUSTED).with_stage("jj"));
+    }
+    Ok(())
+}
+
 fn read_kinds(data: &DataDir) -> BTreeMap<String, LaneKind> {
     std::fs::read(data.root().join(KINDS_FILE))
         .ok()
@@ -163,12 +198,28 @@ pub async fn kinds(store: &Store, data: &DataDir, id: &WorkspaceId) -> Result<La
             jj_only: false,
             remote: true,
             preferred: LaneKind::Git,
+            trusted: false,
+            refused: None,
         });
     }
     let root = PathBuf::from(&top.root);
     let jj_only = jj::jj_without_git(&root);
     let mut version = None;
-    if jj::colocated(&root) {
+    let check = {
+        let root = root.clone();
+        tokio::task::spawn_blocking(move || jj::check_repo(&root))
+            .await
+            .unwrap_or_else(|e| Err(tandem_git::GitError::Invalid(e.to_string())))
+    };
+    let refused = match (&check, jj::colocated(&root)) {
+        (Err(e), true) => Some(match e {
+            tandem_git::GitError::Invalid(m) => m.clone(),
+            other => other.to_string(),
+        }),
+        _ => None,
+    };
+    if check.is_ok() {
+        // `--version` reads no repository.
         if let Some(j) = runner().await {
             version = tokio::task::spawn_blocking(move || jj::version(j.as_ref()))
                 .await
@@ -194,6 +245,8 @@ pub async fn kinds(store: &Store, data: &DataDir, id: &WorkspaceId) -> Result<La
         jj_only,
         remote: false,
         preferred,
+        trusted: trusted(&root),
+        refused,
     })
 }
 
@@ -209,12 +262,7 @@ pub async fn create(
         return Err(IpcError::new(ErrorCode::Invalid, JJ_REMOTE).with_stage("jj"));
     }
     let root = PathBuf::from(&top.root);
-    if jj::jj_without_git(&root) {
-        return Err(IpcError::new(ErrorCode::Invalid, JJ_ONLY).with_stage("jj"));
-    }
-    if !jj::colocated(&root) {
-        return Err(IpcError::new(ErrorCode::Invalid, NOT_COLOCATED).with_stage("jj"));
-    }
+    gate(&root)?;
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
@@ -225,6 +273,8 @@ pub async fn create(
     } else {
         None
     };
+    // F-CD-23: no trust is left at a path the new workspace may take.
+    crate::services::lsp::untrust_missing_under(&root.join(tandem_git::lanes::WORKTREES_DIR));
     let lane = jj::add_workspace(
         runner.clone(),
         &repo,
@@ -261,6 +311,8 @@ pub async fn create(
             return Err(e.into());
         }
     };
+    // The row exists: the sweep's marker goes.
+    jj::done_adding(&lane);
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created_jj", "jj workspace created");
     Ok(row)
@@ -269,10 +321,12 @@ pub async fn create(
 /// Nothing half-made stays behind.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
     let _ = jj::forget_workspace(runner, root, &lane.path, &lane.slug).await;
+    jj::done_adding(lane);
 }
 
 /// A jj lane's changes against the commit it started from.
-pub async fn diff(lane: &Workspace) -> Result<Vec<FileDiff>, IpcError> {
+pub async fn diff(lane: &Workspace, parent: &Workspace) -> Result<Vec<FileDiff>, IpcError> {
+    gate(Path::new(&parent.root))?;
     let root = PathBuf::from(&lane.root);
     if !root.is_dir() {
         return Err(
@@ -288,7 +342,8 @@ pub async fn diff(lane: &Workspace) -> Result<Vec<FileDiff>, IpcError> {
 }
 
 /// A jj lane's changed files since its base (the overlap check).
-pub async fn changed_files(lane: &Workspace) -> Result<Vec<String>, IpcError> {
+pub async fn changed_files(lane: &Workspace, parent: &Workspace) -> Result<Vec<String>, IpcError> {
+    gate(Path::new(&parent.root))?;
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
@@ -301,6 +356,7 @@ pub async fn changed_files(lane: &Workspace) -> Result<Vec<String>, IpcError> {
 /// Discard's last step for a jj lane: `jj workspace forget` and the folder.
 /// The workspace's commits stay in the repository.
 pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError> {
+    gate(Path::new(&parent.root))?;
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
@@ -316,4 +372,23 @@ pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError
     )
     .await
     .map_err(jj_err)
+}
+
+/// The sweep: jj workspaces in the repository at `root` whose making was
+/// cut short (no row was written) are forgotten, their commits kept. Only
+/// in a repository jj may run in.
+pub async fn forget_orphans(root: &Path) -> usize {
+    if !root.join(tandem_git::lanes::WORKTREES_DIR).is_dir() || gate(root).is_err() {
+        return 0;
+    }
+    let Some(runner) = runner().await else {
+        return 0;
+    };
+    match jj::forget_orphans(runner, root, ORPHAN_AGE).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(code = "jj.orphans_failed", error = %e, "unfinished jj workspaces weren't forgotten");
+            0
+        }
+    }
 }

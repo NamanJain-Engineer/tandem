@@ -1551,12 +1551,56 @@ pub async fn forget_worktree(root: &Path) -> Closing<'static> {
 /// row went with its workspace, or its folder was deleted outside the
 /// app), so it asks again.
 pub async fn untrust_new_worktree(root: &Path) {
-    if let Some(data) = data_dir() {
+    untrust_new_worktree_in(global(), data_dir(), root).await;
+}
+
+/// [`untrust_new_worktree`] for a given set of servers and trust store.
+pub(crate) async fn untrust_new_worktree_in(lsp: &Lsp, data: Option<&DataDir>, root: &Path) {
+    if let Some(data) = data {
         untrust(data, root);
     }
     // A request that read the leftover trust before it went is superseded,
     // as after a sandbox switch: trust first, then the bump.
-    global().forget(root).await;
+    lsp.forget(root).await;
+}
+
+/// Before a worktree is made in `dir` (`<repo>/.tandem/worktrees`): the
+/// trust of every folder there that no longer exists goes, so the new
+/// worktree's path has none when its folder appears.
+pub fn untrust_missing_under(dir: &Path) {
+    if let Some(data) = data_dir() {
+        untrust_missing_in(data, dir);
+    }
+}
+
+/// Whether any folder in or under `dir` is trusted (tests).
+#[cfg(test)]
+pub(crate) fn trusted_under(data: &DataDir, dir: &Path) -> bool {
+    let under = trust_key(dir);
+    read_trust(data)
+        .iter()
+        .any(|k| Path::new(k).starts_with(&under))
+}
+
+pub(crate) fn untrust_missing_in(data: &DataDir, dir: &Path) {
+    let _guard = lock(&TRUST_LOCK);
+    let under = trust_key(dir);
+    let mut all = read_trust(data);
+    let before = all.len();
+    all.retain(|k| {
+        let p = Path::new(k);
+        !(p.starts_with(&under) && p != Path::new(&under) && !p.exists())
+    });
+    if all.len() == before {
+        return;
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(&all) {
+        if let Err(e) =
+            tandem_core::atomic::atomic_write(&data.root().join(TRUST_FILE), &bytes, Some(0o600))
+        {
+            tracing::warn!(code = "lsp.untrust_failed", error = %e, "trust not forgotten");
+        }
+    }
 }
 
 /// Whether no server may start in `root` now (a removal is under way).
@@ -2352,6 +2396,106 @@ pub(crate) mod tests {
         assert!(global().closing(&root));
         drop(closing);
         assert!(!global().closing(&root));
+    }
+
+    /// Servers whose availability probe takes a while (it's blocking);
+    /// spawns are counted.
+    #[derive(Default)]
+    struct SlowProbe {
+        probing: Arc<AtomicBool>,
+        spawns: Arc<AtomicU64>,
+    }
+
+    impl Spawner for SlowProbe {
+        fn available(&self, _: &ServerSpec, _: &LoginEnv) -> bool {
+            self.probing.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(300));
+            true
+        }
+        fn spawn(&self, s: &ServerSpec, r: &Path, l: &LoginEnv) -> Result<Spawned, String> {
+            self.spawns.fetch_add(1, Ordering::SeqCst);
+            FakeSpawner { installed: true }.spawn(s, r, l)
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn f_cd_23_a_sandbox_switch_during_the_probe_spawns_nothing() {
+        let (_t, root) = folder();
+        let slow = SlowProbe::default();
+        let (probing, spawns) = (slow.probing.clone(), slow.spawns.clone());
+        let lsp = Arc::new(Lsp::new(Box::new(slow)));
+        let (l, r) = (lsp.clone(), root.clone());
+        let task = tokio::spawn(async move {
+            l.client(&r, spec_for("main.py").expect("spec"), &login())
+                .await
+        });
+        while !probing.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        lsp.shutdown().await;
+        let why = task.await.expect("join").err().expect("not started");
+        assert_eq!(why.message, RESTARTED);
+        assert_eq!(spawns.load(Ordering::SeqCst), 0, "nothing was spawned");
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_forgets_a_start_can_no_longer_see_fail_closed() {
+        let (_t, root) = folder();
+        let lsp = Lsp::new(Box::new(FakeSpawner { installed: true }));
+        let epoch = lsp.epoch();
+        // More forgets of other folders than the list keeps.
+        for i in 0..(FORGOTTEN_KEPT + 10) {
+            lsp.forget(&root.join(format!("elsewhere-{i}"))).await;
+        }
+        assert!(lsp.superseded(&root, epoch).is_some(), "evicted: unknown");
+        assert!(
+            lsp.superseded(&root, lsp.epoch()).is_none(),
+            "a fresh epoch is fine"
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_23_a_start_in_flight_at_a_new_worktrees_path_isnt_kept() {
+        let (_t, root) = folder();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let data = DataDir::at(tmp.path().to_path_buf()).expect("data");
+        trust(&data, &root).expect("leftover trust");
+        let parked = ParkedSpawner::default();
+        let (release, stops) = (parked.release.clone(), parked.stops.clone());
+        let lsp = Arc::new(Lsp::new(Box::new(parked)));
+        // A request let through on the leftover trust, starting meanwhile.
+        let task = parked_start(&lsp, &root).await;
+        untrust_new_worktree_in(&lsp, Some(&data), &root).await;
+        release.notify_one();
+        assert!(task.await.expect("join").is_err());
+        assert_eq!(lsp.count().await, 0);
+        assert_eq!(stops.load(Ordering::SeqCst), 1);
+        assert!(!is_trusted(&data, &root));
+    }
+
+    #[test]
+    fn f_cd_23_before_a_worktree_is_made_trust_at_missing_paths_goes() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let base = std::fs::canonicalize(tmp.path()).expect("canonical");
+        let data = DataDir::at(base.join("data")).expect("data");
+        let dir = base.join("repo/.tandem/worktrees");
+        let (here, gone) = (dir.join("here"), dir.join("gone"));
+        std::fs::create_dir_all(&here).expect("mkdir");
+        std::fs::create_dir_all(&gone).expect("mkdir");
+        trust(&data, &here).expect("trust");
+        trust(&data, &gone).expect("trust");
+        trust(&data, &base.join("repo")).expect("trust");
+        std::fs::remove_dir_all(&gone).expect("deleted outside the app");
+        untrust_missing_in(&data, &dir);
+        assert!(
+            is_trusted(&data, &here),
+            "an existing worktree keeps its own"
+        );
+        assert!(!is_trusted(&data, &gone));
+        assert!(
+            is_trusted(&data, &base.join("repo")),
+            "the repository keeps its own"
+        );
     }
 
     #[test]

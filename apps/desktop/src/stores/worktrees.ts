@@ -123,12 +123,25 @@ async function run<T>(cmd: string, args: Record<string, unknown>): Promise<Outco
   }
 }
 
-/** `lane_create`, then the new worktree is selected in the rail while
- * `prepareWorktree` runs. Its tab waits for the setup's or preview's pane
- * rather than starting a shell beside it (D-863). */
 /** F-CD-24: whether New worktree offers a jj workspace for this repository. */
 export function laneKinds(workspaceId: string): Promise<Outcome<LaneKinds>> {
   return run<LaneKinds>("lane_kind_get", { workspaceId });
+}
+
+/** F-CD-24: trusts the repository (F-CD-23's trust, after the native
+ * confirm), which jj needs before it runs there. */
+export async function trustRepository(workspaceId: string): Promise<Outcome<null>> {
+  try {
+    const value = await invoke<null>(
+      "lsp_trust",
+      { context: { type: "workspace", workspaceId }, path: "." },
+      // The person answers the native confirm.
+      { timeoutMs: 10 * 60_000 },
+    );
+    return { ok: true, value };
+  } catch (e) {
+    return { ok: false, error: e as IpcError };
+  }
 }
 
 /** F-CD-24: a jj workspace, and other things it can't do yet. */
@@ -136,6 +149,9 @@ export function isJj(ws: Pick<WorkspaceSummary, "laneVcs">): boolean {
   return ws.laneVcs === "jj";
 }
 
+/** `lane_create`, then the new worktree is selected in the rail while
+ * `prepareWorktree` runs. Its tab waits for the setup's or preview's pane
+ * rather than starting a shell beside it (D-863). */
 export async function createWorktree(
   workspaceId: string,
   slugSource: string,

@@ -221,3 +221,121 @@ async fn f_cd_24_1_a_workspace_made_from_another_starts_at_its_working_copy() {
         .expect("again");
     assert_eq!(again.slug, "first-2");
 }
+
+#[test]
+fn f_cd_24_every_jj_call_carries_the_fixed_overrides_first() {
+    let argv = jj::argv(&["status"]);
+    assert_eq!(argv[..2], ["--no-pager", "--color=never"]);
+    for o in jj::HARDENED {
+        assert!(argv.contains(&o.to_string()), "{o}");
+    }
+    assert!(argv
+        .iter()
+        .any(|a| a == "--config=fsmonitor.backend=\"none\""));
+    assert!(argv
+        .iter()
+        .any(|a| a == "--config=signing.behavior=\"drop\""));
+    assert_eq!(argv.last().map(String::as_str), Some("status"));
+}
+
+#[tokio::test]
+async fn f_cd_24_a_repositorys_own_config_runs_no_program() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    // A hostile repository config: a signing program, and watchman.
+    let marker = fx.dir.path().join("ran");
+    let program = fx.dir.path().join("sign.sh");
+    std::fs::write(
+        &program,
+        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+    )
+    .expect("write");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let config = fx.repo.join(".jj/repo/config.toml");
+    let mut text = std::fs::read_to_string(&config).unwrap_or_default();
+    text.push_str(&format!(
+        "\n[signing]\nbehavior = \"own\"\nbackend = \"gpg\"\n[signing.backends.gpg]\nprogram = \"{}\"\n[fsmonitor]\nbackend = \"watchman\"\n",
+        program.display()
+    ));
+    std::fs::write(&config, text).expect("config");
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None)
+        .await
+        .expect("jj workspace");
+    change(&lane.path);
+    jj::diff(jj.clone(), &lane.path, &lane.base)
+        .await
+        .expect("diff");
+    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug)
+        .await
+        .expect("forget");
+    assert!(!marker.exists(), "the repository's signing program ran");
+}
+
+#[tokio::test]
+async fn f_cd_24_a_committed_or_foreign_jj_folder_is_refused() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    jj::check_repo(&fx.repo).expect("jj's own .jj");
+    // A store that points at another repository's .git.
+    let target = fx.repo.join(".jj/repo/store/git_target");
+    let was = std::fs::read_to_string(&target).expect("git_target");
+    let elsewhere = fx.dir.path().join("other");
+    std::fs::create_dir_all(elsewhere.join(".git")).expect("mkdir");
+    std::fs::write(&target, elsewhere.join(".git").to_string_lossy().as_bytes()).expect("write");
+    let e = jj::check_repo(&fx.repo).expect_err("foreign");
+    assert!(e.to_string().contains(jj::FOREIGN_STORE), "{e}");
+    std::fs::write(&target, was).expect("restore");
+    // A .jj committed to git, as a cloned repository could ship it.
+    std::fs::write(fx.repo.join(".jj/repo/config.toml"), "").expect("config");
+    git(&fx.repo, &["add", "-f", ".jj/repo/config.toml"]);
+    git(&fx.repo, &["commit", "-qm", "ship a jj config"]);
+    let e = jj::check_repo(&fx.repo).expect_err("committed");
+    assert!(e.to_string().contains(jj::COMMITTED_JJ), "{e}");
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    assert!(
+        jj::add_workspace(jj.clone(), &repo, "x", &HashSet::new(), None)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn f_cd_24_a_workspace_whose_making_was_cut_short_is_forgotten_by_the_sweep() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    // Made, but its row never written (the marker stays).
+    let lane = jj::add_workspace(jj.clone(), &repo, "cut", &HashSet::new(), None)
+        .await
+        .expect("jj workspace");
+    let dir = fx.repo.join(".tandem/worktrees");
+    assert!(jj::adding_marker(&dir, "cut").exists());
+    // A finished one isn't touched.
+    let kept = jj::add_workspace(jj.clone(), &repo, "kept", &HashSet::new(), None)
+        .await
+        .expect("jj workspace");
+    jj::done_adding(&kept);
+    let n = jj::forget_orphans(jj.clone(), &fx.repo, std::time::Duration::ZERO)
+        .await
+        .expect("sweep");
+    assert_eq!(n, 1);
+    assert!(!lane.path.exists());
+    assert!(!jj::adding_marker(&dir, "cut").exists());
+    let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
+    assert!(!names.contains("cut"));
+    assert!(names.contains("kept") && kept.path.exists());
+}

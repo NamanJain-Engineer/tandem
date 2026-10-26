@@ -8,9 +8,13 @@
 //!
 //! jj runs through a [`JjRunner`]: an argument list (never a shell),
 //! `--no-pager --color=never`, the login environment and a time limit, and
-//! no `--config` that changes the user's settings. Vibezeo never installs
-//! jj, never writes its config, and never runs a command that rewrites or
-//! publishes history (`abandon`, `rebase`, `git push`, ...).
+//! fixed `--config` overrides ([`HARDENED`]) that outrank a repository's own
+//! `.jj/repo/config.toml`, so a cloned repository can't make jj run a
+//! program (fsmonitor's watchman, a signing program). Vibezeo runs jj only
+//! in a repository the person trusts, whose `.jj` is jj's own (not committed
+//! to git, its store pointing at this repository's `.git`: [`check_repo`]).
+//! It never installs jj, never writes its config, and never runs a command
+//! that rewrites or publishes history (`abandon`, `rebase`, `git push`, ...).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -31,6 +35,67 @@ pub const JJ_LIMIT: Duration = Duration::from_secs(120);
 
 /// Flags every jj command gets: no pager, no colour.
 const COMMON: [&str; 2] = ["--no-pager", "--color=never"];
+
+/// Settings every jj command gets on its command line, which outranks the
+/// repository's config: nothing a repository sets runs a program (the
+/// filesystem monitor, signing, a pager or an external diff tool).
+pub const HARDENED: [&str; 6] = [
+    "--config=fsmonitor.backend=\"none\"",
+    "--config=signing.behavior=\"drop\"",
+    "--config=signing.backend=\"none\"",
+    "--config=ui.diff-formatter=\":git\"",
+    "--config=ui.pager=\":builtin\"",
+    "--config=ui.paginate=\"never\"",
+];
+
+/// The whole argument list for `args`: the common flags, the overrides,
+/// then the command.
+pub fn argv(args: &[&str]) -> Vec<String> {
+    COMMON
+        .iter()
+        .chain(HARDENED.iter())
+        .chain(args.iter())
+        .map(|a| a.to_string())
+        .collect()
+}
+
+pub const COMMITTED_JJ: &str =
+    "This repository's .jj folder is committed to git, so Vibezeo won't run jj in it";
+pub const FOREIGN_STORE: &str =
+    "This repository's .jj folder doesn't belong to its git repository, so Vibezeo won't run jj in it";
+pub const NOT_COLOCATED: &str = "This repository isn't co-located with jj";
+
+/// The repository at `main` is co-located with jj, and its `.jj` is jj's
+/// own: not tracked by git (a clone can't ship one), a real folder, and its
+/// store's `git_target` resolving to this repository's `.git`.
+pub fn check_repo(main: &Path) -> Result<(), GitError> {
+    if !colocated(main) {
+        return Err(GitError::Invalid(NOT_COLOCATED.into()));
+    }
+    let git = git2::Repository::open(main)?;
+    let tracked = git.index()?.iter().any(|e| {
+        let p = String::from_utf8_lossy(&e.path);
+        p == ".jj" || p.starts_with(".jj/")
+    });
+    if tracked {
+        return Err(GitError::Invalid(COMMITTED_JJ.into()));
+    }
+    let repo_dir = main.join(".jj").join("repo");
+    let real_dir = std::fs::symlink_metadata(&repo_dir).is_ok_and(|m| m.is_dir());
+    let store = repo_dir.join("store");
+    let target = std::fs::read_to_string(store.join("git_target"))
+        .ok()
+        .map(|t| store.join(t.trim()));
+    let resolves = |p: &Path| std::fs::canonicalize(p).ok();
+    let ours = match (real_dir, target) {
+        (true, Some(t)) => resolves(&t).is_some() && resolves(&t) == resolves(git.path()),
+        _ => false,
+    };
+    if !ours {
+        return Err(GitError::Invalid(FOREIGN_STORE.into()));
+    }
+    Ok(())
+}
 
 /// A jj command's result.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -102,8 +167,7 @@ impl Jj {
 impl JjRunner for Jj {
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<JjOutput, GitError> {
         let mut cmd = std::process::Command::new(&self.program);
-        cmd.args(COMMON)
-            .args(args)
+        cmd.args(argv(args))
             .current_dir(cwd)
             .env_clear()
             .envs(self.env.iter().map(|(k, v)| (k, v)))
@@ -295,11 +359,7 @@ pub async fn add_workspace(
     from: Option<String>,
 ) -> Result<JjLane, GitError> {
     let main = repo.main_root();
-    if !colocated(&main) {
-        return Err(GitError::Invalid(
-            "This repository isn't co-located with jj".into(),
-        ));
-    }
+    check_repo(&main)?;
     let mut taken = LaneManager::taken_slugs(repo).await?;
     taken.extend(also_taken.iter().cloned());
     ensure_tandem_excluded(repo.common_dir())?;
@@ -317,24 +377,40 @@ pub async fn add_workspace(
                 continue;
             }
             let path_s = path.to_string_lossy().into_owned();
+            // Marked before jj makes it, until its row exists
+            // ([`done_adding`]): a crash in between leaves a marker the
+            // sweep finds ([`forget_orphans`]).
+            let marker = adding_marker(&dir, &slug);
+            std::fs::write(&marker, b"")?;
             let rev = from.as_ref().map(|w| format!("{w}@"));
             let mut args = vec!["workspace", "add", path_s.as_str(), "--name", slug.as_str()];
             if let Some(r) = &rev {
                 args.push("--revision");
                 args.push(r.as_str());
             }
-            let out = jj.run(&main, &args)?;
+            let out = match jj.run(&main, &args) {
+                Ok(out) => out,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&marker);
+                    return Err(e);
+                }
+            };
             if !out.success() && out.stderr.contains("already exists") {
+                let _ = std::fs::remove_file(&marker);
                 taken.insert(slug);
                 continue;
             }
-            ok_or(out, "workspace add")?;
+            if let Err(e) = ok_or(out, "workspace add") {
+                let _ = std::fs::remove_file(&marker);
+                return Err(e);
+            }
             let base = match base_of(jj.as_ref(), &path) {
                 Ok(b) => b,
                 Err(e) => {
                     // Nothing half-made stays behind.
                     let _ = jj.run(&main, &["workspace", "forget", slug.as_str()]);
                     let _ = std::fs::remove_dir_all(&path);
+                    let _ = std::fs::remove_file(&marker);
                     return Err(e);
                 }
             };
@@ -350,6 +426,61 @@ pub async fn add_workspace(
     })
     .await
     .map_err(|e| GitError::Invalid(e.to_string()))?
+}
+
+/// The marker a jj workspace being made has beside it.
+pub fn adding_marker(dir: &Path, slug: &str) -> PathBuf {
+    dir.join(format!(".{slug}{ADDING}"))
+}
+
+const ADDING: &str = ".jj-adding";
+
+/// The workspace's row exists: its marker goes.
+pub fn done_adding(lane: &JjLane) {
+    if let Some(dir) = lane.path.parent() {
+        let _ = std::fs::remove_file(adding_marker(dir, &lane.slug));
+    }
+}
+
+/// jj workspaces whose making was cut short (a marker older than `age`
+/// left in `<repo>/.tandem/worktrees`): each is forgotten and its folder
+/// removed, as Discard would, and its commits stay. Returns how many.
+pub async fn forget_orphans(
+    jj: Arc<dyn JjRunner>,
+    repo_root: &Path,
+    age: Duration,
+) -> Result<usize, GitError> {
+    let dir = repo_root.join(WORKTREES_DIR);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut found = Vec::new();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(slug) = name
+            .strip_prefix('.')
+            .and_then(|n| n.strip_suffix(ADDING))
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        else {
+            continue;
+        };
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|d| d >= age);
+        if old {
+            found.push((slug.to_string(), e.path()));
+        }
+    }
+    let mut n = 0;
+    for (slug, marker) in found {
+        forget_workspace(jj.clone(), repo_root, &dir.join(&slug), &slug).await?;
+        let _ = std::fs::remove_file(marker);
+        n += 1;
+    }
+    Ok(n)
 }
 
 /// The workspace's changes since `base`, working copy included, as git
@@ -424,6 +555,18 @@ pub async fn forget_workspace(
     let repo_root = repo_root.to_path_buf();
     let ws_root = ws_root.to_path_buf();
     let name = name.to_string();
+    // Only a folder of Vibezeo's own goes: `<repo>/.tandem/worktrees/<name>`.
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let dir = canon(&repo_root.join(WORKTREES_DIR));
+    let parent = ws_root.parent().map(canon);
+    let ours = parent.as_deref() == Some(dir.as_path())
+        && ws_root.file_name() == Some(std::ffi::OsStr::new(&name))
+        && !std::fs::symlink_metadata(&ws_root).is_ok_and(|m| m.file_type().is_symlink());
+    if !ours {
+        return Err(GitError::Invalid(
+            "That folder isn't one of this repository's worktrees".into(),
+        ));
+    }
     tokio::task::spawn_blocking(move || {
         if ws_root.is_dir() {
             // `jj status` snapshots the working copy into its commit.

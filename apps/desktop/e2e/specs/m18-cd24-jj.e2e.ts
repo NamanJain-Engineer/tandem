@@ -2,8 +2,8 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, fakeLog, freshOffline, invoke, mod, settled, userHome } from "../support/app";
-import { newWorktree, pick } from "../support/worktrees";
+import { addFolder, fakeLog, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
+import { newWorktree, pick, repoMenu } from "../support/worktrees";
 
 // E2E-M18-CD24-1 jj workspaces (F-CD-24): a repository co-located with jj
 // (jj from its release, in the usual places). New worktree preselects jj
@@ -80,6 +80,20 @@ describe("E2E-M18-CD24-1 jj workspaces", function () {
     jj(repo, "git", "init", "--colocate");
     await freshOffline();
     await addFolder(repo);
+  });
+
+  it("F-CD-24 jj waits for the repository's trust, asked for in New worktree", async () => {
+    await repoMenu(repo);
+    await pick("New worktree…");
+    const trust = $("button=Trust repository…");
+    await trust.waitForExist({ timeout: 15_000 });
+    expect(await $('[data-testid="worktree-kind"]').isExisting()).toBe(false);
+    // The native confirm answers Yes.
+    writeFileSync(join(home(), "confirm.txt"), "yes");
+    await trust.click();
+    await $('[data-testid="worktree-kind"]').waitForExist({ timeout: 15_000 });
+    await browser.keys("Escape");
+    await $('[data-testid="worktree-name"]').waitForExist({ reverse: true, timeout: 10_000 });
   });
 
   it("F-CD-24.1 New worktree preselects jj workspace, makes it, and marks its row", async () => {

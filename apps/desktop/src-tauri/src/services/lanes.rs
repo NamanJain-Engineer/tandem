@@ -190,6 +190,10 @@ pub async fn create_kind(
         return create_multi(store, git, &ws, &top, &names, slug_source).await;
     }
     let repo = discover(&ws.root, "Folder not found")?;
+    // F-CD-23: no trust is left at a path the new worktree may take.
+    crate::services::lsp::untrust_missing_under(
+        &repo.main_root().join(tandem_git::lanes::WORKTREES_DIR),
+    );
     let lane = LaneManager::create(git, &repo, slug_source, &HashSet::new()).await?;
     // F-CD-23: a worktree at a path used before (its row removed with its
     // workspace, or its folder deleted outside the app) starts untrusted.
@@ -286,6 +290,7 @@ async fn create_multi(
         })?;
         repos.push((name.clone(), repo));
     }
+    crate::services::lsp::untrust_missing_under(&folder.join(tandem_git::lanes::WORKTREES_DIR));
     let lane = LaneManager::create_multi(git, folder, &repos, slug_source, &HashSet::new()).await?;
     crate::services::lsp::untrust_new_worktree(&lane.path).await;
     let utf8 = |p: &Path| {
@@ -453,7 +458,7 @@ pub fn prefix_patch(patch: &str, name: &str) -> String {
 /// `lane_diff`: the worktree's changes against the commit it started from,
 /// including uncommitted work.
 pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::FileDiff>, IpcError> {
-    let (lane, _) = lane_row(store, id).await?;
+    let (lane, parent) = lane_row(store, id).await?;
     if let Some((remote, host)) = remote_for(&lane)? {
         return remote
             .call(
@@ -465,7 +470,7 @@ pub async fn diff(store: &Store, id: &WorkspaceId) -> Result<Vec<tandem_git::Fil
     }
     // F-CD-24: a jj workspace's, from jj.
     if jj_lanes::is_jj(store, &lane).await? {
-        return jj_lanes::diff(&lane).await;
+        return jj_lanes::diff(&lane, &parent).await;
     }
     // F-CD-22: each repository's changes, its name leading every path.
     let repos = lane_repos::list(store, &lane.id).await?;
@@ -808,6 +813,9 @@ async fn remove_jj(
     lane: &Workspace,
     parent: &Workspace,
 ) -> Result<RemoveReport, IpcError> {
+    // jj must be allowed to run here before anything stops: nothing fails
+    // halfway.
+    jj_lanes::gate(Path::new(&parent.root))?;
     stop_panes(store, terms, &lane.id).await?;
     let _closing =
         crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
@@ -929,6 +937,15 @@ pub async fn sweep(
     }
     let mut out = Vec::new();
     for ws in swept(store).await? {
+        // F-CD-24: jj workspaces whose making was cut short.
+        let orphans = jj_lanes::forget_orphans(Path::new(&ws.root)).await;
+        if orphans > 0 {
+            tracing::info!(
+                code = "jj.orphans_forgotten",
+                count = orphans,
+                "unfinished jj workspaces forgotten"
+            );
+        }
         let Ok(Some(repo)) = Repo::discover(Path::new(&ws.root)) else {
             continue;
         };
@@ -1507,6 +1524,18 @@ mod tests {
             .run(Path::new(&fx.repo.root), &["git", "init", "--colocate"])
             .expect("jj");
         assert!(out.success(), "jj git init: {}", out.stderr);
+        // jj runs only in a repository the person trusts.
+        let data = crate::services::lsp::data_dir().expect("data dir");
+        let root = Path::new(&fx.repo.root);
+        let e = create_kind(&fx.store, &fx.git, &fx.repo.id, "early", LaneKind::Jj)
+            .await
+            .expect_err("untrusted");
+        assert_eq!(e.message, jj_lanes::JJ_UNTRUSTED);
+        assert!(
+            !root.join(".tandem/worktrees/early").exists(),
+            "jj never ran"
+        );
+        crate::services::lsp::trust(data, root).expect("trust");
         Some((fx, jj))
     }
 
@@ -1521,6 +1550,7 @@ mod tests {
             .await
             .expect("kinds");
         assert!(kinds.colocated && kinds.jj_version.is_some());
+        assert!(kinds.trusted && kinds.refused.is_none());
         assert_eq!(kinds.preferred, LaneKind::Jj, "jj by default");
         let lane = create_kind(&fx.store, &fx.git, &fx.repo.id, "fix login", LaneKind::Jj)
             .await
@@ -1978,7 +2008,10 @@ pub async fn overlap(
     let base = lane.lane_base.clone().unwrap_or_default();
     let mine = match &lane_repo {
         Some(repo) => changed_files(git, repo.root(), &base).await?,
-        None => jj_lanes::changed_files(&lane).await?.into_iter().collect(),
+        None => jj_lanes::changed_files(&lane, &parent)
+            .await?
+            .into_iter()
+            .collect(),
     };
     // F-WT-10: this worktree's symbols, parsed now.
     let my_symbols = crate::services::radar::refresh(git, &lane).await?;
@@ -1992,7 +2025,7 @@ pub async fn overlap(
             continue;
         };
         let theirs = if jj_ids.contains(&other.id) {
-            match jj_lanes::changed_files(&other).await {
+            match jj_lanes::changed_files(&other, &parent).await {
                 Ok(files) => files.into_iter().collect(),
                 Err(_) => continue,
             }

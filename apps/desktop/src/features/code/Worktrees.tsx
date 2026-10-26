@@ -28,6 +28,7 @@ import {
   createWorktree,
   isJj,
   laneKinds,
+  trustRepository,
   PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
@@ -382,6 +383,7 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
   const [kinds, setKinds] = useState<LaneKinds | null | undefined>(undefined);
   const [kind, setKind] = useState<LaneKind>("git");
   const asked = useRef<Promise<LaneKinds | null> | null>(null);
+  const [asking, setAsking] = useState(0);
   const { show } = useToast();
   useEffect(() => {
     let live = true;
@@ -396,9 +398,16 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
     return () => {
       live = false;
     };
-  }, [ws.id]);
-  // From a jj workspace, the new one is a jj workspace (F-CD-24).
-  const offers = (k: LaneKinds | null | undefined) => k?.colocated === true && !isJj(ws);
+  }, [ws.id, asking]);
+  // From a jj workspace, the new one is a jj workspace (F-CD-24); jj runs
+  // only in a trusted repository.
+  const offers = (k: LaneKinds | null | undefined) => k?.colocated === true && k.trusted && !isJj(ws);
+  const trustNeeded = kinds?.colocated === true && !kinds.trusted && !isJj(ws);
+  const trust = async () => {
+    const out = await trustRepository(ws.id);
+    if (out.ok) setAsking((n) => n + 1);
+    else if (out.error.code !== "cancelled") setError(out.error.message);
+  };
   const choose = offers(kinds);
   const submit = async () => {
     setBusy(true);
@@ -444,6 +453,12 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
         className="flex flex-col gap-3"
       >
         {kinds?.jjOnly ? <Banner tone="info">{t("worktree.jj.only")}</Banner> : null}
+        {kinds?.refused ? <Banner tone="warning">{kinds.refused}</Banner> : null}
+        {trustNeeded ? (
+          <Banner tone="info" action={{ label: t("worktree.jj.trust"), onClick: () => void trust() }}>
+            {t("worktree.jj.untrusted")}
+          </Banner>
+        ) : null}
         {choose ? (
           <div data-testid="worktree-kind">
             <SegmentedControl

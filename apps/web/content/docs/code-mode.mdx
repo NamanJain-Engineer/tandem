@@ -166,7 +166,7 @@ Merge into…, Land worktrees, Check overlap, pull request checks, previews, wor
 
 ### jj workspaces
 
-If your repository is co-located with jj (it has `.jj` beside `.git` at the top, as `jj git init --colocate` makes it) and `jj` is installed, **New worktree…** offers **jj workspace** or **git worktree**, with jj workspace chosen first and your last choice remembered for the repository. The dialog shows jj's version. Vibezeo finds `jj` on your login PATH or in the usual places (`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.nix-profile/bin`). It never installs jj or changes its settings.
+If your repository is co-located with jj (it has `.jj` beside `.git` at the top, as `jj git init --colocate` makes it) and `jj` is installed, **New worktree…** offers **jj workspace** or **git worktree**, with jj workspace chosen first and your last choice remembered for the repository. The dialog shows jj's version. Vibezeo finds `jj` on your login PATH or in the usual places (`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.nix-profile/bin`). It never installs jj or changes its settings. jj reads a repository's own settings, so Vibezeo runs it only in a repository you trust (the same **Trust repository…** as for code intelligence, offered in the dialog), only when its `.jj` belongs to that repository (not committed to git), and always with its own settings for what could run a program (no filesystem monitor, no signing, no pager).
 
 A jj workspace is made with `jj workspace add` at the same place as a worktree, `.tandem/worktrees/<name>`, with the workspace named `<name>`; its rail row is marked **jj**. Agents in it are told to use `jj`, not `git`, since it has no `.git` of its own.
 
