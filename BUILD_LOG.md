@@ -1273,7 +1273,8 @@ Built by the session that coordinates the parallel milestone sessions, while the
   - **The site, with the design lead:** they checked every product scene's final frame in both themes against 0.11.0 and approved it (captions "Scene from Vibezeo 0.11.0", the status bar's v0.11.0, nothing drawn that changed in `chain25`), along with `/changelog/0.11.0/`, the six "New in 0.11.0" tiles and the roadmap.
   - **The demo (D-128):** no new surfaces (D-873). Everything the demo shows is in the download.
   - **Known issue, fixed for 0.12.0:** without a systemd user session, Freeze falls back to signals. If the pane is running a loop of short commands, Freeze can fail with "the program isn't running", because the foreground job exits between being read and being stopped (`suspend::pause`'s ESRCH). A second try works. `app-ui` found it by bisecting E2E-M18-EX06 across a full sequential run. The fix (keep the shell stopped when the job has already ended) goes to `product-research` for `chain26`.
-  - **E2E and the site check:** running on the release tree; their results are added here when they finish.
+  - **E2E:** the full desktop suite passed 152 of 152 spec files on the release tree, in five chunks of 31, 31, 31, 31 and 28 (37 minutes of runs), E2E-M18-EX06 among them.
+  - **The site check:** running from a fresh clone of f74a3740; its results follow.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
