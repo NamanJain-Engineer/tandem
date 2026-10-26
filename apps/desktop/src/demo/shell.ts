@@ -137,10 +137,12 @@ export class DemoShell {
 
 /** What an agent pane shows: a still frame of an agent's terminal UI. */
 export function agentScreen(engine: string, task: string, lines: string[]): string {
-  const bar = "─".repeat(58);
+  // As wide as its words, so it fits a narrow pane without wrapping.
+  const label = ` ${engine} · simulated in this demo `;
+  const bar = "─".repeat(label.length);
   return [
     `${DIM}╭${bar}╮${RESET}`,
-    `${DIM}│${RESET} ${BOLD}${engine}${RESET} ${DIM}· simulated in this demo${RESET}${" ".repeat(Math.max(0, 57 - engine.length - 25))}${DIM}│${RESET}`,
+    `${DIM}│${RESET} ${BOLD}${engine}${RESET} ${DIM}· simulated in this demo${RESET} ${DIM}│${RESET}`,
     `${DIM}╰${bar}╯${RESET}`,
     "",
     `${BOLD}>${RESET} ${task}`,

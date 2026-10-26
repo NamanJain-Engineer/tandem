@@ -19,8 +19,12 @@ import {
 // Not a test: run it on its own, under a display, with the real `claude`
 // CLI on the machine (it's only detected, never launched or signed in):
 //
-//   dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" \
+//   GDK_SCALE=2 TANDEM_SCREENS_DIR=/tmp/screens dbus-run-session -- \
+//     xvfb-run -a -s "-screen 0 3840x2160x24" \
 //     pnpm --filter desktop e2e -- --spec e2e/screens/site.screens.ts
+//
+// Then copy code-mode.png to apps/web/media/code-mode@2x.png and run
+// apps/web/scripts/optimize-screens.py (OPERATING §6).
 //
 // The workspace is a fresh clone of this repository, so the terminals show
 // its real history, tests and code.
@@ -29,8 +33,18 @@ const repo = new URL("../../../..", import.meta.url).pathname.replace(/\/$/, "")
 const out = process.env.TANDEM_SCREENS_DIR ?? join(repo, "apps/web/public/screens");
 const enginePath = process.env.TANDEM_SCREENS_PATH ?? "/opt/node22/bin";
 
+/** The debug build's DEV badge, which release builds don't show (D-1838). */
+async function hideDevBadge(): Promise<void> {
+  await browser.execute(() => {
+    for (const el of Array.from(document.querySelectorAll("header span, [data-tauri-drag-region] span"))) {
+      if (el.textContent === "DEV" && el.children.length === 0) (el as HTMLElement).style.display = "none";
+    }
+  });
+}
+
 async function shot(name: string): Promise<void> {
   await settled();
+  await hideDevBadge();
   await browser.pause(600);
   await browser.saveScreenshot(join(out, `${name}.png`));
 }
@@ -93,15 +107,17 @@ describe("site screenshots", () => {
   before(() => {
     mkdirSync(out, { recursive: true });
     execFileSync("git", ["clone", "-q", "--depth", "80", `file://${repo}`, join(work, "vibezeo")]);
+    // On `main`, so no working branch's name shows in the rail.
+    execFileSync("git", ["-C", join(work, "vibezeo"), "checkout", "-q", "-B", "main"]);
     // `git recent`: the product's own history (the app and its crates), one
-    // line per commit, without internal code names, release-channel or
-    // dated subjects.
+    // line per commit, without merges, internal code names, release-channel
+    // or dated subjects.
     execFileSync("git", [
       "-C",
       join(work, "vibezeo"),
       "config",
       "alias.recent",
-      "!git --no-pager log --oneline --decorate --color=always -n 14 -i --invert-grep --grep=tandem --grep=early --grep='20[0-9][0-9]' -- crates apps/desktop",
+      "!git --no-pager log --oneline --no-merges --color=always -n 14 -i --invert-grep --grep=tandem --grep=early --grep=chain --grep='20[0-9][0-9]' -- crates apps/desktop",
     ]);
     // The run's HOME is a temp dir: point the shells at this machine's Rust
     // toolchain and build cache so `cargo test` in a pane runs as usual.
@@ -121,6 +137,8 @@ describe("site screenshots", () => {
 
   it("code mode: four real terminals over this repository", async () => {
     await freshOffline();
+    // 1440×900 points; under GDK_SCALE=2 the capture is 2880×1800.
+    await browser.setWindowRect(0, 0, 1440, 900);
     const ws = join(work, "vibezeo");
     await addFolder(ws);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
@@ -134,12 +152,14 @@ describe("site screenshots", () => {
     // How Vibezeo reads Claude Code's hooks.
     await sendToPane(belowLeft, "(cd crates/*engines/src && vim +/PreToolUse hook.rs)\r");
     await sendToPane(belowRight, "(cd crates/*core && cargo test -q --lib 2>&1 | tail -n 12)\r");
-    await waitForPaneText(first ?? "", "M5:", 20_000);
+    await waitForPaneText(first ?? "", "M18:", 20_000);
     await waitForPaneText(belowRight, "test result", 240_000);
     await shot("code-mode");
   });
 
-  it("the launch grid finds the engines installed on this machine", async () => {
+  // The site no longer shows this capture (D-1885); it needs the real
+  // `claude` CLI, so it runs only when asked.
+  (process.env.TANDEM_SCREENS_LAUNCH_GRID ? it : it.skip)("the launch grid finds the engines installed on this machine", async () => {
     const report = await checkAgain();
     expect(report.found.map((f) => f.engineId)).toContain("claude");
     for (const pane of await paneIds()) {
