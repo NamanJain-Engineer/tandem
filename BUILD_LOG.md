@@ -2404,6 +2404,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `plan.test.tsx` (6): the option and its wording; no option when nothing can run; the counts and Lead answering; Needs you, why and Answer…; Waiting for your approval; the switch. `demo.test.ts`: the new commands aren't in the demo.
     - E2E: `m18-tk08-lead-keeps-moving.e2e.ts`.
   - **Docs.** ARCHITECTURE §3.2 (`plan_execute`, `plan_supervise`, `plan_answer`, `AttemptView.waiting`, `PlanView`), §3.3, the data folder, §9.4 (a plan run's questions) and §9.6 (supervised runs, Lead's turn, delivery, the switch and restarts, the UI); tasks.mdx "Questions from the runs"; MILESTONES (F-TK-08, E2E-M18-TK-08); REMAINING.
+  - **The F-TK-07 review's low findings**, folded into this round after cea685af was approved:
+    - A plan's save on a runtime worker runs in `block_in_place`, so Execute all's loop of fsync'd writes doesn't hold up the worker (`f_tk_07_3_execute_all_saves_each_run_from_a_runtime_worker`, on a multi-threaded runtime).
+    - `loadAttempts` reads are numbered: only the latest writes the runs and the status, and runs `tasks:attempt` moved during a read keep their newer state. The test failed on the old store: an earlier failed read settling last left "error" over fresh runs.
+    - Tests for the gaps: every branch of `startedStatus`; Create tasks after a restart partway writes only the rest, into the same project; Claude's MultiEdit result row keeps its file.
+    - Codex's `item/completed` without `changes` keeps the paths its start named (tested).
+    - `resetState` retries a task that changed while it was being archived.
   - **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
 
 ### M18 · Review loop decisions
@@ -2545,10 +2551,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Approvals are F-AU-01's: a run waiting for one shows "Waiting for your approval" from `AttemptView.waiting`, and Lead never sees it.
 - D-2836: A chat thread's edit claims when its tool succeeded, not before (F-TK-07 AC1, the coordinator's review of F-TK-07).
   - Every adapter reports a tool before its outcome, and all three carry the edit's paths on the result row too. So the claim waits for `Ok`: a refused or failed edit changed nothing and claims nothing, and a read-only thread never claims.
+  - Codex's result row falls back to the paths its start named, so a result that doesn't list its changes again still claims (the review's hardening, in F-TK-08's round).
   - Still once per tool per turn.
 - D-2837: A plan keeps its progress as it happens (F-TK-07 AC3, the review).
   - Execute all saves each run it queues, and Create tasks the project and each task as they're written. A quit at any point leaves the plan holding exactly what was done, and the next try does only the rest.
-  - The writes stay whole-file and atomic. Commands that write from the main thread run them on `spawn_blocking`.
+  - The writes stay whole-file and atomic. Commands that write from the main thread run them on `spawn_blocking`, and a save on a runtime worker runs in `block_in_place` (F-TK-08's round).
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

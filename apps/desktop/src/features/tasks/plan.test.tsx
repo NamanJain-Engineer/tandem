@@ -18,7 +18,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { TasksPage } from "./TasksPanel";
-import { engineOption } from "./PlanWithLead";
+import { engineOption, startedStatus } from "./PlanWithLead";
 
 const META: TasksMeta = {
   version: 1,
@@ -408,6 +408,45 @@ const THREE: PlanView["tasks"] = [
 const states = () => screen.getAllByTestId("plan-run").map((r) => r.dataset.state);
 
 describe("Follow a plan through (F-TK-07)", () => {
+  it("F-TK-07.2 overlapping reads of the runs: only the latest writes, and a run that moved meanwhile keeps its state", async () => {
+    const held: Array<{ ok: (v: AttemptView[]) => void; fail: (e: unknown) => void }> = [];
+    backend({
+      task_attempts_list: () => new Promise<AttemptView[]>((ok, fail) => held.push({ ok, fail })),
+    });
+    const tasks = useTasks.getState();
+    const first = tasks.loadAttempts();
+    const second = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(2));
+    // The later read lands first; the earlier one fails after it.
+    held[1]!.ok([run("TAN-1", "running", 1)]);
+    await second;
+    held[0]!.fail({ code: "io", message: "The disk is busy", stage: null, hint: null, retryable: true });
+    await first;
+    expect(useTasks.getState().attemptsStatus).toBe("ready");
+    expect(useTasks.getState().attemptsError).toBeNull();
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["running"]);
+    // A run moves while a read is under way: the read's older list
+    // doesn't take it back.
+    const third = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(3));
+    act(() => emitLocal("tasks:attempt", run("TAN-1", "in_review", 1)));
+    held[2]!.ok([run("TAN-1", "running", 1)]);
+    await third;
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["in_review"]);
+  });
+
+  it("F-TK-07.2 a started plan's shape: working, failed, waiting on a review or a stop, then done", () => {
+    const p = plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] });
+    expect(startedStatus(p, [run("TAN-1", "queued", 1)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "running", 1), run("TAN-2", "failed", 2)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "failed", 1), run("TAN-2", "in_review", 2)])).toBe("error");
+    expect(startedStatus(p, [run("TAN-1", "stopped", 1)])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "in_review", 1, { reviewVerdict: "approve" })])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "done", 1), run("TAN-2", "done", 2)])).toBe("done");
+    // A run waiting on you comes first (F-TK-08).
+    expect(startedStatus(p, [{ ...run("TAN-1", "running", 1), waiting: true }])).toBe("waiting");
+  });
+
   it("F-TK-07.2 each task shows its latest run, its verdict and a count, and follows the runs", async () => {
     let runs: AttemptView[] = [
       run("TAN-1", "failed", 1),
@@ -731,12 +770,10 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     expect(shape()).toBe("Working");
     // Its question came to you.
     act(() =>
-      usePlans
-        .getState()
-        .apply({
-          ...STARTED,
-          questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })],
-        }),
+      usePlans.getState().apply({
+        ...STARTED,
+        questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })],
+      }),
     );
     await waitFor(() => expect(shape()).toBe("Waiting for you"));
     // Answered, it works on; then it waits for an approval.

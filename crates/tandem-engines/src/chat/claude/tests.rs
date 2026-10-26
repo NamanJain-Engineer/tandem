@@ -610,6 +610,15 @@ fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
         tool_paths(p.line(&result, now())),
         vec![one("/work/shop/src/a.ts")]
     );
+    // So does MultiEdit's: the row a claim is made from (D-2836).
+    let multi_done = json!({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t3", "content": "Applied 2 edits"}
+    ]}})
+    .to_string();
+    assert_eq!(
+        tool_paths(p.line(&multi_done, now())),
+        vec![one("/work/shop/b.ts")]
+    );
     // Rows without files serialize as before.
     let row = serde_json::to_value(ThreadEvent::tool(
         "t7",

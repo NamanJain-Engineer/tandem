@@ -275,17 +275,18 @@ async function clearTasks(): Promise<void> {
     if (going.has(a.attempt.state))
       await invoke("task_attempt_stop", { attemptId: a.attempt.id }).catch(() => undefined);
   }
-  // A page at a time, until none is left; a task that can't be archived
-  // fails the reset with its reason.
+  // A page at a time, until none is left. A task that changed since it
+  // was listed is archived on the next pass, at its new revision.
   for (let page = 0; page < 40; page++) {
     const { items } = await invoke<{ items: Array<{ id: string; revision: number }> }>("tasks_list", {
       filter: {},
       cursor: null,
     });
     if (items.length === 0) return;
-    for (const i of items) await invoke("task_archive", { id: i.id, expectedRevision: i.revision });
+    for (const i of items)
+      await invoke("task_archive", { id: i.id, expectedRevision: i.revision }).catch(() => undefined);
   }
-  throw new Error("resetState: tasks kept coming back after archiving 40 pages");
+  throw new Error("resetState: tasks were still there after 40 passes of archiving");
 }
 
 /** Clears the shared TANDEM_HOME's account and workspaces, whichever screen

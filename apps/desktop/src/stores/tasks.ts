@@ -90,6 +90,10 @@ let unlisten: (() => void) | null = null;
 let listening: Promise<void> | null = null;
 let unlistenAttempts: (() => void) | null = null;
 let listeningAttempts: Promise<void> | null = null;
+/** The latest `task_attempts_list` read: only it writes the runs (F-TK-07). */
+let attemptsRead = 0;
+/** Runs `tasks:attempt` moved since that read began: newer than its list. */
+let movedMeanwhile = new Map<string, AttemptView>();
 
 function upsertAttempt(list: AttemptView[], v: AttemptView): AttemptView[] {
   const at = list.findIndex((a) => a.attempt.id === v.attempt.id);
@@ -114,19 +118,29 @@ export const useTasks = create<TasksState>((set, get) => ({
   attemptsError: null,
   loadAttempts: async () => {
     listeningAttempts ??= listen<AttemptView>("tasks:attempt", (v) => {
+      movedMeanwhile.set(v.attempt.id, v);
       set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
     }).then((u) => {
       unlistenAttempts = u;
     });
+    // Several views read the runs; only the latest read writes them, so an
+    // earlier one settling last can't bring back an error or an old list.
+    const read = ++attemptsRead;
+    movedMeanwhile = new Map();
     // A refresh keeps what's shown; a first read or a retry shows loading.
     set((s) => ({
       attemptsStatus: s.attemptsStatus === "ready" ? "ready" : "loading",
       attemptsError: null,
     }));
     try {
-      const attempts = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
+      const listed = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
+      if (read !== attemptsRead) return;
+      // A run that moved while the list was read keeps its newer state.
+      let attempts = listed;
+      for (const v of movedMeanwhile.values()) attempts = upsertAttempt(attempts, v);
       set({ attempts, attemptsStatus: "ready" });
     } catch (e) {
+      if (read !== attemptsRead) return;
       // Runs stay as they were; the tracker itself still works.
       set({ attemptsStatus: "error", attemptsError: asError(e).message });
     }
@@ -256,6 +270,8 @@ export function resetTasks(): void {
   unlistenAttempts?.();
   unlistenAttempts = null;
   listeningAttempts = null;
+  attemptsRead = 0;
+  movedMeanwhile = new Map();
   useTasks.setState({
     meta: null,
     issues: [],

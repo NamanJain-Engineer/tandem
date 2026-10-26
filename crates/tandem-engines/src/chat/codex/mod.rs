@@ -99,6 +99,9 @@ pub struct CodexParser {
     cwd: PathBuf,
     /// Item id → its command or paths, for approval cards and results.
     items: HashMap<String, (ToolVerb, String, Option<String>)>,
+    /// A file change's files from its start, for a result that doesn't
+    /// list them again (F-TK-07: it's the row a claim is made from).
+    edits: HashMap<String, Vec<String>>,
 }
 
 impl CodexParser {
@@ -107,6 +110,7 @@ impl CodexParser {
             limits: limits::compile(limit_patterns),
             cwd,
             items: HashMap::new(),
+            edits: HashMap::new(),
         }
     }
 
@@ -210,6 +214,9 @@ impl CodexParser {
             Some("fileChange") => self.edited(&item["changes"]),
             _ => None,
         };
+        if let Some(paths) = &edited {
+            self.edits.insert(id.clone(), paths.clone());
+        }
         let mut ev = ThreadEvent::tool(&id, verb, &summary, ToolStatus::Running);
         if let ThreadEvent::Tool {
             detail: d,
@@ -292,8 +299,9 @@ impl CodexParser {
                     .then(|| item["changes"].as_array().map(|c| self.diffs(c)))
                     .flatten()
                     .filter(|d| !d.is_empty());
+                let started = self.edits.remove(&id);
                 let paths = (kind == "fileChange")
-                    .then(|| self.edited(&item["changes"]))
+                    .then(|| self.edited(&item["changes"]).or(started))
                     .flatten();
                 Some(ThreadEvent::Tool {
                     id,
