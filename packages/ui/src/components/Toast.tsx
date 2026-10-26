@@ -45,7 +45,7 @@ function ToastCard({ item, onDismiss, dismissLabel }: { item: ToastItem; onDismi
       aria-live={tone === "error" ? "assertive" : "polite"}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="tn-toast relative flex w-[360px] gap-3 overflow-hidden rounded-md border border-border bg-surface-3 py-3 pl-4 pr-2 shadow-3"
+      className="tn-toast relative flex w-[360px] gap-3 overflow-hidden rounded-md border border-border bg-surface-3 py-3 pl-4 pr-2 shadow-e2"
     >
       <span aria-hidden="true" className={cx("absolute inset-y-0 left-0 w-[3px]", BAR[tone])} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">

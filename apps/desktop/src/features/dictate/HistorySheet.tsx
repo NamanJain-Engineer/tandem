@@ -32,7 +32,7 @@ export function drawShareCard(
   if (!g) return;
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  g.fillStyle = v("--tn-bg", "#060a12");
+  g.fillStyle = v("--tn-bg", "#09090b");
   g.fillRect(0, 0, 1080, 810);
   g.fillStyle = v("--tn-accent", "#2dd4bf");
   g.fillRect(80, 80, 12, 650);

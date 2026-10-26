@@ -497,3 +497,48 @@ fn f_en_08_3_codexs_turn_failures_arent_the_engines_fault() {
         assert_eq!(errors, vec![false], "{info}");
     }
 }
+
+#[test]
+fn f_tk_07_1_a_file_change_names_its_files_absolute() {
+    let mut parser = CodexParser::new(PathBuf::from("/work/shop"), &patterns());
+    let item = |method: &str, status: &str| {
+        json!({"jsonrpc": "2.0", "method": method, "params": {"threadId": "thr_1", "turnId": "turn_1", "item": {
+            "type": "fileChange", "id": "fc_9", "status": status,
+            "changes": [
+                {"path": "/work/shop/src/cart.ts", "kind": {"type": "update"}, "diff": ""},
+                {"path": "src/new, odd.ts", "kind": {"type": "add"}, "diff": ""}
+            ]
+        }}})
+    };
+    let want = Some(vec![
+        "/work/shop/src/cart.ts".to_string(),
+        "/work/shop/src/new, odd.ts".to_string(),
+    ]);
+    for (method, status) in [
+        ("item/started", "inProgress"),
+        ("item/completed", "completed"),
+    ] {
+        let paths: Vec<Option<Vec<String>>> = parser
+            .message(&item(method, status), now())
+            .into_iter()
+            .filter_map(|c| match c {
+                Codex::Event(ThreadEvent::Tool { paths, .. }) => Some(paths),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths, vec![want.clone()], "{method}");
+    }
+    // A command names no file.
+    let cmd = json!({"jsonrpc": "2.0", "method": "item/started", "params": {"item": {
+        "type": "commandExecution", "id": "call_9", "command": "touch x"
+    }}});
+    let paths: Vec<Option<Vec<String>>> = parser
+        .message(&cmd, now())
+        .into_iter()
+        .filter_map(|c| match c {
+            Codex::Event(ThreadEvent::Tool { paths, .. }) => Some(paths),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(paths, vec![None]);
+}

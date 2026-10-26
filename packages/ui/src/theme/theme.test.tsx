@@ -119,6 +119,6 @@ describe("ThemeProvider (F-SH-05)", () => {
     expect(terminalThemeFor("follow_app", "light")).toBe(tandemDay);
     expect(terminalThemeFor("follow_app", "dark", true)).toBe(tandemHighContrast);
     expect(terminalThemeFor("day", "dark")).toBe(tandemDay);
-    expect(tandemNight.background).toBe("#0b111c");
+    expect(tandemNight.background).toBe("#121214");
   });
 });

@@ -29,7 +29,6 @@ import {
   type Post,
 } from "../../lib/blog/posts";
 import { llmsTxt } from "../../lib/discovery";
-import { SCREENS } from "../../lib/media";
 import { RELEASES } from "../../lib/changelog";
 import { RELEASE } from "../../lib/release";
 import { SITE, sitemapXml } from "../../lib/site";
@@ -237,9 +236,10 @@ describe("blog (F-WB-06)", () => {
     const cover = (build: string) => `{ src: /blog/my-post/cover.png, alt: The app, width: 1440, height: 900, build: ${build} }`;
     expect(parsePost("my-post.mdx", front({ cover: cover("0.7.2") }), pub).cover).toMatchObject({ build: "0.7.2", retina: true, narrow: true });
     expect(() => parsePost("my-post.mdx", front({ cover: cover("latest") }), pub)).toThrow(/cover\.build/);
-    // The intro's cover is the real capture the home page shows, labelled with its build.
+    // The intro keeps the real capture it was published with, labelled with
+    // that build; the site's own capture has moved on since (D-2606).
     const intro = POSTS.find((p) => p.slug === "introducing-vibezeo");
-    expect(intro?.cover).toMatchObject({ build: SCREENS.codeMode.build, retina: true, narrow: true });
+    expect(intro?.cover).toMatchObject({ build: "0.7.2", retina: true, narrow: true });
   });
 
   it("F-WB-06 AC4 a tag page lists exactly the posts with that tag", async () => {

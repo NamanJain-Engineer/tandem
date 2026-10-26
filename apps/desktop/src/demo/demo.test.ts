@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  TeammateSummary,
+  TeammateTemplate,
   PlanLaunch,
   PlanView,
   AppBoot,
@@ -60,6 +62,19 @@ describe("browser demo (vibezeo.com/demo)", () => {
     expect(shell.write("pw")).toBe("pw");
     expect(shell.write("x\x7f")).toBe("x\b \b");
     expect(shell.write("d\r")).toBe(`d\r\n/home/you/shop\r\n${PROMPT}`);
+  });
+
+  it("UI-70 F-AG-01 the demo's Agent mode: Lead and three teammates, one working and one waiting, and the app's templates", () => {
+    core = new DemoCore(0);
+    const list = core.handle("teammate_list", {}) as TeammateSummary[];
+    expect(list.map((s) => s.teammate.name)).toEqual(["Lead", "Reviewer", "Release notes writer", "Researcher"]);
+    expect(list[0]?.teammate.isLead).toBe(true);
+    expect(list.filter((s) => s.working > 0)).toHaveLength(1);
+    expect(list.filter((s) => s.waiting)).toHaveLength(1);
+    for (const s of list) expect(s.lastLine).toBeTruthy();
+    const templates = core.handle("teammate_templates", {}) as TeammateTemplate[];
+    expect(templates.map((t) => t.id)).toEqual(["reviewer", "release-notes", "researcher", "triage"]);
+    expect(core.handle("teammate_suggestions", { id: "tm_lead" })).toHaveLength(3);
   });
 
   it("F-DB-04 the demo's review queue: Claude Code's fix with its diff; approve, snooze and run the check", async () => {

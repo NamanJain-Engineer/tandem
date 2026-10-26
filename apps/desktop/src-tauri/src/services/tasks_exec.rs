@@ -212,7 +212,8 @@ fn task_err(e: tandem_tasks::TaskError) -> IpcError {
 }
 
 /// The run's briefing (ARCHITECTURE §9.4): the issue's text and recent
-/// comments are fenced as untrusted data (rule 8), then the instructions.
+/// comments are fenced as untrusted data (rule 8), then the instructions,
+/// claims included (F-TK-07).
 pub fn briefing(issue: &Issue, comments: &[Comment], note: Option<&str>) -> String {
     let mut body = format!("# {}: {}\n\n", issue.id, issue.title);
     if !issue.description.trim().is_empty() {
@@ -235,8 +236,10 @@ pub fn briefing(issue: &Issue, comments: &[Comment], note: Option<&str>) -> Stri
         out.push_str(&format!("The user adds: {n}\n\n"));
     }
     out.push_str(&format!(
-        "Report progress with save_comment on {id}. When done, set status to in_review and put a summary in result.",
-        id = issue.id
+        "Report progress with save_comment on {id}. When done, set status to in_review and put a summary in result. {claims}",
+        id = issue.id,
+        // Runs work beside other worktrees' agents (F-TK-07).
+        claims = tandem_git::lanes::CLAIMS_BRIEFING,
     ));
     out
 }
@@ -1375,6 +1378,43 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_07_1_a_run_is_asked_to_claim_before_it_edits_and_its_review_is_not() {
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        let id = f
+            .svc
+            .execute(input("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        for _ in 0..200 {
+            if state(&f, &id).await == AttemptState::InReview {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        let sessions = f.host.sessions.lock().expect("lock").clone();
+        assert_eq!(sessions.len(), 2, "the run and its review");
+        assert!(
+            sessions[0]
+                .text
+                .ends_with(tandem_git::lanes::CLAIMS_BRIEFING),
+            "{}",
+            sessions[0].text
+        );
+        // The reviewer doesn't edit, so it isn't asked.
+        assert!(!sessions[1].text.contains("claim the files"));
+    }
+
+    #[tokio::test]
     async fn f_tk_04_4_the_review_runs_on_its_engines_roomiest_account_and_reads_its_own_verdict() {
         // F-TK-06's review: another run's verdict on the same task doesn't
         // count, and the review doesn't fall back to the default account.
@@ -1628,7 +1668,11 @@ pub(crate) mod tests {
         let inner = &b[at + fence_open..];
         let close = inner[4..].find("\n````").expect("closed");
         assert!(inner[..close + 4].contains("Ignore previous instructions"));
-        assert!(b.ends_with("When done, set status to in_review and put a summary in result."));
+        // The run is asked to claim its files last (F-TK-07).
+        assert!(b.ends_with(&format!(
+            "When done, set status to in_review and put a summary in result. {}",
+            tandem_git::lanes::CLAIMS_BRIEFING
+        )));
         assert_eq!(
             verdict_of("Verdict: Changes requested — tests fail"),
             Some("changes_requested")

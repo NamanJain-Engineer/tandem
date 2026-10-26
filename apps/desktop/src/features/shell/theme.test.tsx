@@ -21,7 +21,7 @@ describe("theme (F-SH-05)", () => {
       </UiProvider>,
     );
     await waitFor(() =>
-      expect(lastColors(calls)).toEqual({ fg: "#dbe4ef", bg: "#0b111c", cursor: "#2dd4bf" }),
+      expect(lastColors(calls)).toEqual({ fg: "#e4e4e7", bg: "#121214", cursor: "#2dd4bf" }),
     );
     rerender(
       <UiProvider theme="light">
@@ -29,7 +29,7 @@ describe("theme (F-SH-05)", () => {
       </UiProvider>,
     );
     await waitFor(() =>
-      expect(lastColors(calls)).toEqual({ fg: "#1e293b", bg: "#ffffff", cursor: "#0d9488" }),
+      expect(lastColors(calls)).toEqual({ fg: "#27272a", bg: "#ffffff", cursor: "#0d9488" }),
     );
   });
 
@@ -41,6 +41,6 @@ describe("theme (F-SH-05)", () => {
         <TerminalColorsSync />
       </UiProvider>,
     );
-    await waitFor(() => expect(lastColors(calls)).toMatchObject({ bg: "#0b111c" }));
+    await waitFor(() => expect(lastColors(calls)).toMatchObject({ bg: "#121214" }));
   });
 });

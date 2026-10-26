@@ -152,6 +152,39 @@ beforeEach(() => {
 afterEach(() => setInvokeBackend(null));
 
 describe("Land worktrees (F-WT-07, UI-155)", () => {
+  it("F-TK-07.4 opened from a plan, only its worktrees are chosen, listed and landed in the plan's order", async () => {
+    calls = fakeBackend({
+      workspace_list: () => [REPO, A],
+      merge_queue_plan: () => plan,
+      merge_queue_get: () => null,
+      merge_queue_start: (a) => {
+        current = runOf(
+          "running",
+          ((a?.laneIds as string[]) ?? []).map((id) => step(id.slice(3), "waiting")),
+        );
+        return current;
+      },
+    });
+    render(
+      <UiProvider>
+        <WorktreeDialogs />
+      </UiProvider>,
+    );
+    act(() => useWorktrees.getState().open({ kind: "land", workspaceId: "shop", laneIds: ["wt_c", "wt_a"] }));
+    const rows = await screen.findAllByTestId("landing-candidate");
+    // The plan's worktrees first, in its order, then the others.
+    expect(rows.map((r) => r.dataset.branch)).toEqual(["tandem/c", "tandem/a", "tandem/b", "tandem/dirty"]);
+    const ticked = rows.map((r) => within(r).getByRole("checkbox").getAttribute("aria-checked"));
+    expect(ticked).toEqual(["true", "true", "false", "false"]);
+    fireEvent.click(screen.getByTestId("landing-land"));
+    await waitFor(() => expect(named("merge_queue_start")).toHaveLength(1));
+    expect(named("merge_queue_start")[0]?.args).toEqual({
+      workspaceId: "shop",
+      laneIds: ["wt_c", "wt_a"],
+      check: "pnpm test",
+    });
+  });
+
   it("F-WT-07.1 the candidates show in landing order with their forecast, and Land lands the ticked ones in that order", async () => {
     setup();
     const rows = await screen.findAllByTestId("landing-candidate");
