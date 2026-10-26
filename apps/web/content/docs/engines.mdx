@@ -36,6 +36,7 @@ If you run models on your own computer with Ollama or LM Studio, Codex can use o
 - llama.cpp servers are listed, but Codex can't start on them yet.
 - Start works on Linux and macOS for now. On Windows the servers and models are listed, and Start says local models run on Linux and macOS for now.
 - A resumed local pane uses Codex's default sandbox and approvals: `codex resume` takes no extra arguments.
+- Settings an administrator manages for Codex on this computer (such as `/etc/codex/managed_config.toml`, a device management profile, or requirements that name model providers) come before the pane's own home. If your organization sets a model provider there, it applies to local panes too.
 
 ## One instructions file for every engine
 

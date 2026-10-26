@@ -137,7 +137,21 @@ pub async fn ask(http: &dyn LocalHttp, kind: ServerKind, port: u16, added: bool)
     let body = http
         .get_json(&local_models::url(port, kind.models_path()))
         .await;
-    let models = body.as_ref().and_then(|b| local_models::parse(kind, b));
+    let mut models = body.as_ref().and_then(|b| local_models::parse(kind, b));
+    // An OpenAI-style list doesn't say which models run elsewhere. When the
+    // server is Ollama under another kind, its tags do: those models aren't
+    // listed (F-EN-11).
+    if kind != ServerKind::Ollama {
+        if let Some(list) = models.as_mut() {
+            let tags = http
+                .get_json(&local_models::url(port, ServerKind::Ollama.models_path()))
+                .await;
+            if let Some(tags) = tags {
+                let remote = local_models::ollama_remote_ids(&tags);
+                list.retain(|m| !remote.contains(&m.id));
+            }
+        }
+    }
     LocalServer {
         kind,
         port,
@@ -428,9 +442,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Answers one URL and records every request.
+    /// Answers the URLs it knows and records every request.
     struct Fake {
-        answer: (String, serde_json::Value),
+        answers: Vec<(String, serde_json::Value)>,
         asked: std::sync::Mutex<Vec<String>>,
     }
 
@@ -438,22 +452,28 @@ mod tests {
     impl LocalHttp for Fake {
         async fn get_json(&self, url: &str) -> Option<serde_json::Value> {
             self.asked.lock().expect("lock").push(url.to_string());
-            (url == self.answer.0).then(|| self.answer.1.clone())
+            self.answers
+                .iter()
+                .find(|(u, _)| u == url)
+                .map(|(_, v)| v.clone())
         }
     }
 
     #[tokio::test]
     async fn f_en_11_1_a_server_answering_ollamas_tags_is_found_with_its_models() {
         let fake = Fake {
-            answer: (
+            answers: vec![(
                 "http://127.0.0.1:11500/api/tags".into(),
                 json!({"models": [{"name": "qwen3-coder:30b", "size": 18_556_701_696u64, "details": {"parameter_size": "30.5B"}}]}),
-            ),
+            )],
             asked: Default::default(),
         };
         let found = find(&fake, &BTreeMap::from([(11500, ServerKind::Ollama)])).await;
         let ours = found.iter().find(|s| s.port == 11500).expect("listed");
-        assert!(ours.running && ours.added && ours.startable && ours.start_reason.is_none());
+        assert!(ours.running && ours.added);
+        // Start is off on Windows for now (D-2517).
+        assert_eq!(ours.startable, !cfg!(windows));
+        assert_eq!(ours.start_reason.is_none(), !cfg!(windows));
         assert_eq!(ours.models[0].parameters.as_deref(), Some("30.5B"));
         // The defaults were asked too, and aren't running.
         assert_eq!(found.iter().filter(|s| !s.running).count(), 3);
@@ -600,6 +620,51 @@ mod tests {
         assert!(t.contains(&(ServerKind::Ollama, 8080, true)));
         assert!(!t.contains(&(ServerKind::LlamaCpp, 8080, false)));
         assert_eq!(t.len(), 3);
+    }
+
+    /// F-EN-11 review: Ollama added as another kind lists its cloud models
+    /// in `/v1/models` with nothing to mark them; its tags say which are
+    /// remote, and those aren't listed.
+    #[tokio::test]
+    async fn f_en_11_1_ollama_added_as_another_kind_still_hides_its_cloud_models() {
+        let fake = Fake {
+            answers: vec![
+                (
+                    "http://127.0.0.1:11600/v1/models".into(),
+                    json!({"object": "list", "data": [
+                        {"id": "my-alias:latest", "object": "model"},
+                        {"id": "gemma3:4b", "object": "model"}
+                    ]}),
+                ),
+                (
+                    "http://127.0.0.1:11600/api/tags".into(),
+                    json!({"models": [
+                        {"name": "my-alias:latest", "remote_host": "https://ollama.com:443", "remote_model": "gpt-oss:120b"},
+                        {"name": "gemma3:4b", "size": 3_338_801_804u64}
+                    ]}),
+                ),
+            ],
+            asked: Default::default(),
+        };
+        let server = ask(&fake, ServerKind::LmStudio, 11600, true).await;
+        let ids: Vec<&str> = server.models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["gemma3:4b"]);
+        // A server that isn't Ollama doesn't answer the tags: nothing hidden.
+        let lm = Fake {
+            answers: vec![(
+                "http://127.0.0.1:1234/v1/models".into(),
+                json!({"data": [{"id": "openai/gpt-oss-20b"}]}),
+            )],
+            asked: Default::default(),
+        };
+        let server = ask(&lm, ServerKind::LmStudio, 1234, false).await;
+        assert_eq!(server.models.len(), 1);
+        assert!(lm
+            .asked
+            .lock()
+            .expect("lock")
+            .iter()
+            .all(|u| u.starts_with("http://127.0.0.1:1234/")));
     }
 
     #[test]

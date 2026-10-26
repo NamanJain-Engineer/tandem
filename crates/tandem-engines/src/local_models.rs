@@ -112,7 +112,9 @@ pub fn parse_ollama(body: &Value) -> Option<Vec<LocalModel>> {
             .filter(|m| !ollama_remote(m))
             .filter_map(|m| {
                 Some(LocalModel {
-                    id: text(m, "name", 200).or_else(|| text(m, "model", 200))?,
+                    id: text(m, "name", 200)
+                        .or_else(|| text(m, "model", 200))
+                        .filter(|id| !cloud_name(id))?,
                     size: m.get("size").and_then(Value::as_u64),
                     parameters: m.get("details").and_then(|d| text(d, "parameter_size", 16)),
                 })
@@ -130,16 +132,37 @@ fn ollama_remote(m: &Value) -> bool {
         m.get(k)
             .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
     };
+    // As listed: control characters removed, so a name can't hide its tag.
     let cloud_tag = ["name", "model"]
         .iter()
-        .any(|k| m.get(*k).and_then(Value::as_str).is_some_and(cloud_name));
+        .any(|k| text(m, k, 200).is_some_and(|n| cloud_name(&n)));
     set("remote_host") || set("remote_model") || cloud_tag
 }
 
-/// A model name with Ollama's cloud tag (`:cloud`, `:120b-cloud`).
+/// A model name with Ollama's cloud tag (`:cloud`, `:120b-cloud`), in any
+/// case.
 fn cloud_name(name: &str) -> bool {
-    name.rsplit_once(':')
-        .is_some_and(|(_, tag)| tag == "cloud" || tag.ends_with("-cloud"))
+    name.rsplit_once(':').is_some_and(|(_, tag)| {
+        let tag = tag.trim().to_ascii_lowercase();
+        tag == "cloud" || tag.ends_with("-cloud")
+    })
+}
+
+/// The models an Ollama `/api/tags` answer says run on Ollama's servers, by
+/// the names its OpenAI-style list uses: a server added as another kind may
+/// be Ollama, and `/v1/models` doesn't say which models are remote.
+pub fn ollama_remote_ids(tags: &Value) -> Vec<String> {
+    tags.get("models")
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter(|m| ollama_remote(m))
+                .flat_map(|m| [text(m, "name", 200), text(m, "model", 200)])
+                .flatten()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// An OpenAI-style `/v1/models`: `{"data": [{"id"}]}`.
@@ -148,12 +171,12 @@ pub fn parse_openai(body: &Value) -> Option<Vec<LocalModel>> {
     Some(
         models
             .iter()
-            // Ollama lists its cloud models here too (an Ollama server added
-            // as another kind): they run on ollama.com, never listed.
-            .filter(|m| !m.get("id").and_then(Value::as_str).is_some_and(cloud_name))
             .filter_map(|m| {
                 Some(LocalModel {
-                    id: text(m, "id", 200)?,
+                    // Ollama lists its cloud models here too (an Ollama
+                    // server added as another kind): they run on ollama.com,
+                    // never listed.
+                    id: text(m, "id", 200).filter(|id| !cloud_name(id))?,
                     size: None,
                     parameters: None,
                 })
@@ -500,6 +523,7 @@ mod tests {
              "remote_host": "https://ollama.com:443", "size": 384, "details": {"parameter_size": "116.8B"}},
             {"name": "deepseek-v3.1:671b-cloud", "size": 384},
             {"name": "kimi-k2:cloud", "size": 384},
+            {"name": "glm-4.6:CLOUD\u{7}", "size": 384},
             {"name": "gemma3:4b", "size": 3_338_801_804u64, "details": {"parameter_size": "4.3B"}},
             {"name": "qwen3:8b", "remote_host": ""}
         ]});
@@ -509,10 +533,23 @@ mod tests {
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, vec!["gemma3:4b", "qwen3:8b"]);
+        assert_eq!(
+            ollama_remote_ids(&tags),
+            vec![
+                "gpt-oss:120b-cloud",
+                "gpt-oss:120b-cloud",
+                "deepseek-v3.1:671b-cloud",
+                "kimi-k2:cloud",
+                "glm-4.6:CLOUD"
+            ]
+        );
         // Ollama's OpenAI-style list has them too, as another kind would ask.
         let v1 = json!({"object": "list", "data": [
             {"id": "gpt-oss:120b-cloud", "object": "model", "owned_by": "library"},
             {"id": "kimi-k2:cloud", "object": "model"},
+            {"id": "kimi-k2:Cloud", "object": "model"},
+            {"id": "qwen3-coder:480B-CLOUD", "object": "model"},
+            {"id": "gpt-oss:120b-cloud\u{7}", "object": "model"},
             {"id": "gemma3:4b", "object": "model", "owned_by": "library"}
         ]});
         for kind in [ServerKind::LmStudio, ServerKind::LlamaCpp] {

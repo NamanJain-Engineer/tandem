@@ -1033,6 +1033,14 @@ impl TerminalService {
         } else {
             mode
         };
+        // Off on Windows for now, before anything is written or saved
+        // (D-2517).
+        if cfg!(windows) && record.kind == "agent" && record.local_model.is_some() {
+            return Err(IpcError::new(
+                ErrorCode::EngineUnsupported,
+                tandem_engines::local_models::NOT_ON_WINDOWS,
+            ));
+        }
         // A pane on a local model launches in its own home with no account,
         // every time: never on the user's account (F-EN-11, D-2519).
         let local = if record.kind == "agent" && record.local_model.is_some() {
@@ -1073,12 +1081,6 @@ impl TerminalService {
             sessions::save_on_handback(&self.store, pane, None).await?;
         }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
-        if local.is_some() && cfg!(windows) {
-            return Err(IpcError::new(
-                ErrorCode::EngineUnsupported,
-                tandem_engines::local_models::NOT_ON_WINDOWS,
-            ));
-        }
         if local.is_some() && ws.kind != "local" {
             return Err(IpcError::new(
                 ErrorCode::EngineUnsupported,
@@ -2397,7 +2399,10 @@ mod tests {
                 Some(home.to_str().expect("utf8"))
             );
         };
-        let svc = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
+        // The spawn log records the pane's final environment, after every
+        // layer (login, worktree, launch).
+        let mut svc = TerminalService::new(PtyManager::new(), store.clone());
+        Arc::get_mut(&mut svc).expect("unique").spawn_log = Some(dir.path().join("spawns.jsonl"));
         svc.set_login_env(login());
         for mode in [LaunchMode::Normal, LaunchMode::Fresh] {
             // Deleted between starts: written again before Codex runs.
@@ -2406,6 +2411,23 @@ mod tests {
             expect_local(sink, true);
             session_is_local().await;
             svc.pty.kill(pane.id.as_str()).expect("kill");
+        }
+        // The login environment's HTTPS_PROXY never reaches the spawn: the
+        // final environment has no proxy variable, and NO_PROXY names this
+        // computer.
+        let records = svc.spawn_records();
+        assert_eq!(records.len(), 2, "{records:?}");
+        for record in &records {
+            for var in tandem_engines::local_models::PROXY_VARS {
+                assert!(
+                    !record.env_keys.iter().any(|k| k == var),
+                    "{var} in {:?}",
+                    record.env_keys
+                );
+            }
+            for var in ["NO_PROXY", "no_proxy"] {
+                assert!(record.env_keys.iter().any(|k| k == var), "{var}");
+            }
         }
         // Resume: the saved conversation, in the same home.
         sessions::set_engine_session(&store, &pane.id, "thread-1")

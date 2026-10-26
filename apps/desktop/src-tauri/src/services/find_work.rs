@@ -368,6 +368,16 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
                         });
                     }
                 }
+                if !hosted.is_empty() {
+                    // A local model's pane wasn't sent: it keeps its place
+                    // from the local ranking among the hosted answer
+                    // (F-EN-11).
+                    for r in &local {
+                        if stay_here.contains(&r.id) && !hosted.iter().any(|h| h.id == r.id) {
+                            hosted.push(r.clone());
+                        }
+                    }
+                }
                 hosted.sort_by(|a, b| b.score.total_cmp(&a.score));
                 if hosted.is_empty() {
                     tracing::info!(
@@ -710,7 +720,12 @@ mod tests {
         let sent = h.sent.lock().expect("sent").clone();
         assert!(sent.iter().all(|c| c.id != "pan_auth"), "{sent:?}");
         assert_eq!(sent.len(), 2);
-        assert!(!r.matches.is_empty());
+        // The hosted ranking answered, and the local pane is still found,
+        // ranked here.
+        assert_eq!(r.ranking, FindRanking::Hosted);
+        let labels: Vec<&str> = r.matches.iter().map(|m| m.label.as_str()).collect();
+        assert!(labels.contains(&"auth tests"), "{labels:?}");
+        assert!(labels.contains(&"docs"), "{labels:?}");
         // Off: still found, ranked here.
         let mut off = host();
         off.panes[0].local_model = Some("qwen3:8b · Ollama".into());

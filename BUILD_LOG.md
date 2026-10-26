@@ -2516,6 +2516,13 @@ Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; 
     - `refresh_config` writes only into the model's own home.
     - The local config drops `profile` and `[profiles]`.
   - Third review tests: crate (cloud ids in `/v1/models`, `=` in a path, the wrapped program, bad `-s`/`-a` values, profiles dropped), sandbox 1, Find work 1, Auto 1, terminal (a row pointing elsewhere), UI 1 (Windows reason).
+  - Fourth review (approved with nits):
+    - Find work keeps local panes, ranked here, when the hosted ranking answers.
+    - Cloud tags match in any case, on the id as listed.
+    - A server of another kind that answers `/api/tags` has its remote models dropped from its OpenAI-style list.
+    - The Windows refusal comes before any write.
+    - The docs say admin-managed Codex settings come before the home.
+    - Tests: the spawn record's final environment has no proxy variable and has `NO_PROXY` (fails on 7d222dc1); Find work with a hosted answer; Ollama added as LM Studio; cloud tags in mixed case and with a control character; the Ollama test is gated on Windows.
 
 ### M18 · Next features: engines decisions
 - D-2400: Each engine's instructions files and pointer are data in `registry.json`, checked against the vendors' own pages on 15 October 2026: Claude Code's memory page (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; `AGENTS.md` only when none exist; `@path` imports), Codex's AGENTS.md page (`AGENTS.override.md`, else `AGENTS.md`, one per folder), Gemini CLI's GEMINI.md page (`@file.md` imports; `context.fileName`), Copilot CLI's custom instructions page (`.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, combined) and Cursor's CLI page (`.cursor/rules`, `AGENTS.md`, `CLAUDE.md`). Every pointer is an `@AGENTS.md` import in the engine's own file: Gemini CLI takes one in `GEMINI.md`, so its settings file is never edited, and no engine needs a symbolic link. Engines without an entry (Grok, OpenCode, Droid, Amp, Aider, Kimi) are Unknown until their docs are checked.
