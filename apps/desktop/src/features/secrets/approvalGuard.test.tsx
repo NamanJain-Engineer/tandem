@@ -8,7 +8,7 @@ afterEach(() => vi.useRealTimers());
 describe("useSettled (F-TL-12.12)", () => {
   it("starts over on every change, even back to a key it settled on before", () => {
     const { result, rerender } = renderHook(({ k }: { k: string | null }) => useSettled(k), {
-      initialProps: { k: "A" },
+      initialProps: { k: "A" } as { k: string | null },
     });
     expect(result.current).toBe(false);
     act(() => vi.advanceTimersByTime(SETTLE_MS));
