@@ -84,4 +84,34 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(screen.getByTestId("pane-approval")).toBeTruthy();
     expect(screen.queryByTestId("pane-approval-agent")).toBeNull();
   });
+
+  it("F-TL-12.7 a vibezeo run shows its whole line, padding and all, and every variable", () => {
+    fakeBackend();
+    const command = `echo ok${" ".repeat(200)}; rm -rf ~`;
+    withApproval({
+      ...approval,
+      detail: JSON.stringify({
+        vibezeoRun: {
+          command,
+          cwd: "/w/shop",
+          vars: [
+            { name: "API_KEY", secret: "stripe-test" },
+            { name: "DB_URL", secret: "db" },
+          ],
+          envChanged: false,
+        },
+      }),
+    });
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    const line = screen.getByTestId("run-line");
+    expect(line.querySelector("pre")?.textContent).toBe(command);
+    expect(line.querySelector("pre")?.className).toContain("whitespace-pre-wrap");
+    expect(screen.getByTestId("run-line-vars").textContent).toBe(
+      "With API_KEY (stripe-test), DB_URL (db) from .env",
+    );
+  });
 });

@@ -37,6 +37,8 @@ import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
+import { RunLine } from "../secrets/RunLine";
+import { parseRunApproval } from "../secrets/runApproval";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -127,6 +129,7 @@ function AgentCard({
   const busy = item.status === "working" || item.status === "waiting";
   const approval = item.pendingApproval;
   const plugin = approval ? parseApproval(approval.detail) : null;
+  const run = approval ? parseRunApproval(approval.detail) : null;
   const close = () =>
     busy
       ? setConfirm(true)
@@ -156,17 +159,15 @@ function AgentCard({
             id: "activity",
             label: t("activity.menu"),
             onSelect: () =>
-              useActivity
-                .getState()
-                .show(
-                  item.source.type === "pane"
-                    ? { source: "pane", id: item.source.paneId, title }
-                    : {
-                        source: "thread",
-                        id: item.source.type === "thread" ? item.source.threadId : "",
-                        title,
-                      },
-                ),
+              useActivity.getState().show(
+                item.source.type === "pane"
+                  ? { source: "pane", id: item.source.paneId, title }
+                  : {
+                      source: "thread",
+                      id: item.source.type === "thread" ? item.source.threadId : "",
+                      title,
+                    },
+              ),
           },
         ]
       : []),
@@ -245,10 +246,18 @@ function AgentCard({
           })}
         </p>
       )}
-      {showPreview && (approval?.summary ?? item.preview) && (
-        <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
-          {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
-        </p>
+      {run ? (
+        // F-TL-12: the whole line, whatever the previews setting, next to Allow.
+        <div onClick={(e) => e.stopPropagation()}>
+          <RunLine run={run} />
+        </div>
+      ) : (
+        showPreview &&
+        (approval?.summary ?? item.preview) && (
+          <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
+            {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
+          </p>
+        )
       )}
       {plugin && (
         <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">

@@ -4,6 +4,8 @@ import { Button, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useDashboard } from "../../stores/dashboard";
 import { answer } from "../dashboard/actions";
+import { RunLine } from "../secrets/RunLine";
+import { parseRunApproval } from "../secrets/runApproval";
 
 /** A pane's pending approval, on the pane itself: what an agent's
  * `vibezeo run` wants (F-TL-12), with Allow once, Allow for this agent
@@ -13,6 +15,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const [busy, setBusy] = useState(false);
   const { show } = useToast();
   if (!approval) return null;
+  const run = parseRunApproval(approval.detail);
   const decide = async (allow: boolean, scope: "once" | "conversation" = "once") => {
     setBusy(true);
     const err = await answer(approval.id, allow, "inline", scope);
@@ -26,13 +29,12 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
       className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-divider bg-waiting-soft px-2 py-1 text-sm text-fg"
     >
       <KeyRound size={14} aria-hidden="true" className="shrink-0 text-warning-text" />
-      <span
-        className="min-w-[220px] flex-1 truncate"
-        title={approval.detail}
-        data-testid="pane-approval-summary"
-      >
-        {t("dashboard.wants", { summary: approval.summary })}
-      </span>
+      <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+        <span className="break-words" data-testid="pane-approval-summary">
+          {run ? t("runLine.title") : t("dashboard.wants", { summary: approval.summary })}
+        </span>
+        {run && <RunLine run={run} />}
+      </div>
       <Button
         size="sm"
         variant="primary"

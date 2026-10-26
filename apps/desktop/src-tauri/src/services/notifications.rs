@@ -59,6 +59,29 @@ fn type_key(kind: NotificationKind) -> &'static str {
     }
 }
 
+/// An approval's notification body and dedupe key. A pane's (`vibezeo
+/// run`) carries no command or secret names, and its key isn't
+/// `approval:<id>`, so the list offers no Allow for it.
+pub fn approval_notice(
+    view: &tandem_core::approvals::ApprovalView,
+    line: Option<String>,
+) -> (String, String) {
+    if matches!(view.source, SourceRef::Pane { .. }) {
+        return (
+            PANE_APPROVAL_BODY.to_string(),
+            format!("pane-approval:{}", view.id.as_str()),
+        );
+    }
+    (
+        line.unwrap_or_else(|| view.summary.clone()),
+        format!("approval:{}", view.id.as_str()),
+    )
+}
+
+/// A pane approval's notification body: never the command or the secrets.
+pub const PANE_APPROVAL_BODY: &str =
+    "Wants to run a command with secrets. Open the pane to see it and answer.";
+
 pub struct NotificationService {
     store: Store,
     bus: EventBus,
@@ -233,24 +256,32 @@ impl NotificationService {
                     .as_ref()
                     .map(display_name)
                     .unwrap_or_else(|| "An agent".into());
-                let body = match &item {
-                    Some(i) => source_line(i, Some(&view.summary)),
-                    None => view.summary.clone(),
-                };
-                let key =
-                    key.unwrap_or_else(|| SessionKey(format!("approval:{}", view.id.as_str())));
+                // A pane's approval is an agent's `vibezeo run` (F-TL-12): its
+                // line and secret names stay off disk and out of the OS
+                // notification, and it's answered on the pane or its card,
+                // where the whole line shows (no Allow in the list).
+                let (body, dedupe) = approval_notice(
+                    &view,
+                    item.as_ref().map(|i| source_line(i, Some(&view.summary))),
+                );
+                let key = key.unwrap_or_else(|| SessionKey(dedupe.clone()));
                 self.raise(
                     NotificationKind::Approval,
                     format!("{name} needs approval"),
                     body,
                     view.source.clone(),
                     &key,
-                    Some(format!("approval:{}", view.id.as_str())),
+                    Some(dedupe),
                 )
                 .await;
             }
             ApprovalEvent::Resolved { view, .. } => {
-                self.resolve(&format!("approval:{}", view.id.as_str()))
+                let prefix = if matches!(view.source, SourceRef::Pane { .. }) {
+                    "pane-approval"
+                } else {
+                    "approval"
+                };
+                self.resolve(&format!("{prefix}:{}", view.id.as_str()))
                     .await;
             }
         }
@@ -589,6 +620,36 @@ fn notification_for(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn f_tl_12_7_a_vibezeo_run_notification_carries_no_command_or_secret_names() {
+        use tandem_core::approvals::{ApprovalKind, ApprovalScope, ApprovalView};
+        let view = ApprovalView {
+            id: tandem_core::ids::ApprovalId::new(),
+            source: SourceRef::Pane {
+                pane_id: "pn_1".into(),
+            },
+            kind: ApprovalKind::Command,
+            summary: "run `pnpm deploy` with API_KEY (stripe-test)".into(),
+            detail: "{}".into(),
+            options: vec![ApprovalScope::Once],
+            created_at: 1,
+            expires_at: 2,
+        };
+        let (body, key) = approval_notice(&view, Some("Claude in shop: run `pnpm deploy`".into()));
+        assert_eq!(body, PANE_APPROVAL_BODY);
+        assert!(!body.contains("pnpm") && !body.contains("stripe-test"));
+        assert!(key.starts_with("pane-approval:"));
+        let thread = ApprovalView {
+            source: SourceRef::Thread {
+                thread_id: "th_1".into(),
+            },
+            ..view
+        };
+        let (body, key) = approval_notice(&thread, None);
+        assert_eq!(body, thread.summary);
+        assert!(key.starts_with("approval:"));
+    }
     use super::*;
 
     fn prefs(types: Value) -> Prefs {
