@@ -54,7 +54,8 @@ describe("home page", () => {
       expect(t.text.startsWith(t.body), t.title).toBe(true);
       expect(RELEASE_TILE_MAP[t.title]?.docs, t.title).toMatch(/^\/docs\//);
       expect(log).toContain(`href="${t.docs}"`);
-      expect(log).toContain(`>${t.title}<`);
+      // React writes a title's apostrophe as &#x27; ("the plan's order", 0.12.0).
+      expect(log).toContain(`>${t.title.replace(/'/g, "&#x27;")}<`);
     }
     expect(log).toContain(`id="new"`);
   });
