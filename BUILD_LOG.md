@@ -2699,6 +2699,8 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Ported: `startedStatus`'s branches; Execute all saving from a runtime worker; Create tasks after a restart partway; Codex keeping its start's paths and dropping an unfinished change; Claude's MultiEdit result row.
   - **Docs.** ARCHITECTURE §9.5 (Codex's paths) and §9.6 (the saves, following the runs); OPERATING's E2E lessons (a fake left in `fakebin`, `timeoutMsg`).
   - **Gate:** run on `m16a-conductor` after the merge (its entry below).
+- [x] E2E, after E2E-M18-TK-07's diagnosis (test code only; the coordinator accepted both for chain27).
+  - **Specs put back the fakes they install.** E2E-M7-5, E2E-M7-8 and E2E-M18-WT-05 left `fakebin/codex`, and E2E-M7-12 `fakebin/opencode`. Each now removes its fake after it and detects again, as E2E-M18-RT-06 and E2E-M18-FREE do. A later spec would otherwise run with it installed, and a task review picks any other installed chat engine. E2E-M7-5 also empties `fake-version.txt`, which it left at Codex 0.31.0, too old for Thread mode. E2E-M7-12 removes `fake-models.txt`.
 - [x] F-TK-08 Lead keeps a plan moving, bold bet B3's third slice: the supervisor loop (D-2828 to D-2835). Built on F-TK-07 and its review fixes (22d7c7c4, with product-m0-m5 d2ae3155 merged in), from the coordinator's approval with its seven constraints.
   - **Spec.** PRODUCT_SPEC F-TK-08 (P2, owned by M18; coverage 190, M18 owns 24).
   - **Runs ask (`tasks_exec`).**
