@@ -12,6 +12,7 @@ const OLLAMA: LocalServer = {
   added: false,
   running: true,
   startable: true,
+  startReason: null,
   models: [{ id: "qwen3-coder:30b", size: 18_556_701_696, parameters: "30.5B" }],
 };
 const LLAMA: LocalServer = {
@@ -20,9 +21,18 @@ const LLAMA: LocalServer = {
   added: false,
   running: true,
   startable: false,
+  startReason: "Codex can't use llama.cpp servers yet",
   models: [{ id: "gpt-oss-20b", size: null, parameters: null }],
 };
-const ADDED: LocalServer = { kind: "lm_studio", port: 1235, added: true, running: false, startable: true, models: [] };
+const ADDED: LocalServer = {
+  kind: "lm_studio",
+  port: 1235,
+  added: true,
+  running: false,
+  startable: true,
+  startReason: null,
+  models: [],
+};
 
 let calls: Call[];
 function open(handlers: Record<string, (a?: Record<string, unknown>) => unknown>) {
@@ -53,7 +63,7 @@ describe("UI-164 Local models (F-EN-11)", () => {
     const llama = rows.find((r) => r.dataset.port === "8080")!;
     const start = within(llama).getByTestId("local-start") as HTMLButtonElement;
     expect(start.disabled).toBe(true);
-    expect(start.title).toBe("Codex can't use llama.cpp servers yet.");
+    expect(start.title).toBe("Codex can't use llama.cpp servers yet");
     // No Codex installed in this fake: the Ollama model says so too.
     const ollama = rows.find((r) => r.dataset.port === "11434")!;
     expect((within(ollama).getByTestId("local-start") as HTMLButtonElement).title).toBe(
@@ -61,12 +71,28 @@ describe("UI-164 Local models (F-EN-11)", () => {
     );
   });
 
+  it("F-EN-11.2 on Windows Start says local models run on Linux and macOS for now", async () => {
+    const windows = {
+      ...OLLAMA,
+      startable: false,
+      startReason: "Local models run on Linux and macOS for now",
+    };
+    open({ local_models_list: () => [windows] });
+    const row = (await screen.findAllByTestId("local-server"))[0]!;
+    const start = within(row).getByTestId("local-start") as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(start.title).toBe("Local models run on Linux and macOS for now");
+  });
+
   it("F-EN-11.3 Add a port sends the host as typed; a refused host shows the core's reason", async () => {
     open({
       local_models_list: () => [],
       local_models_add_port: (a) => {
         if (a?.host !== "127.0.0.1" && a?.host !== "localhost")
-          throw { code: "invalid", message: "Vibezeo only looks for model servers on this computer (127.0.0.1 or localhost)" };
+          throw {
+            code: "invalid",
+            message: "Vibezeo only looks for model servers on this computer (127.0.0.1 or localhost)",
+          };
         return null;
       },
     });
@@ -77,7 +103,9 @@ describe("UI-164 Local models (F-EN-11)", () => {
     fireEvent.change(await screen.findByTestId("local-host"), { target: { value: "192.168.1.5" } });
     fireEvent.change(screen.getByTestId("local-port"), { target: { value: "11500" } });
     await act(async () => fireEvent.click(screen.getByTestId("local-add-confirm")));
-    expect((await screen.findByTestId("local-error")).textContent).toContain("only looks for model servers on this computer");
+    expect((await screen.findByTestId("local-error")).textContent).toContain(
+      "only looks for model servers on this computer",
+    );
     fireEvent.change(screen.getByTestId("local-host"), { target: { value: "127.0.0.1" } });
     await act(async () => fireEvent.click(screen.getByTestId("local-add-confirm")));
     await waitFor(() => expect(screen.queryByTestId("local-add")).toBeNull());

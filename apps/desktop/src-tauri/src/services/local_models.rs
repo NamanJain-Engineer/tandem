@@ -38,6 +38,19 @@ pub struct LocalServer {
     pub models: Vec<LocalModel>,
     /// Codex can start with its models (D-2518).
     pub startable: bool,
+    /// Why not, when it can't: llama.cpp, or Windows for now (D-2517).
+    pub start_reason: Option<String>,
+}
+
+/// Why Codex can't start on a server's models here, if it can't.
+pub fn start_reason(kind: ServerKind) -> Option<String> {
+    if cfg!(windows) {
+        Some(local_models::NOT_ON_WINDOWS.to_string())
+    } else if !kind.startable() {
+        Some(format!("Codex can't use {} servers yet", kind.label()))
+    } else {
+        None
+    }
 }
 
 /// Asks a server on this computer for a path; the trait is how the tests
@@ -131,7 +144,8 @@ pub async fn ask(http: &dyn LocalHttp, kind: ServerKind, port: u16, added: bool)
         added,
         running: models.is_some(),
         models: models.unwrap_or_default(),
-        startable: kind.startable(),
+        startable: start_reason(kind).is_none(),
+        start_reason: start_reason(kind),
     }
 }
 
@@ -300,13 +314,29 @@ pub fn write_config(
     })
 }
 
-/// [`write_config`] for a pane's saved launch, before each start.
-pub fn refresh_config(home: &std::path::Path, local: &LocalLaunch) -> Result<(), IpcError> {
+/// [`write_config`] for a pane's saved launch, before each start: only into
+/// that model's own home under `$PROVIDERS/codex/`, never a folder a saved
+/// row points elsewhere.
+pub fn refresh_config(
+    providers: &std::path::Path,
+    home: &std::path::Path,
+    local: &LocalLaunch,
+) -> Result<(), IpcError> {
     let kind = ServerKind::ALL
         .into_iter()
         .find(|k| k.slug() == local.kind)
         .filter(|k| k.startable())
         .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))?;
+    let own = providers
+        .join("codex")
+        .join(local_models::home_name(kind, local.port, &local.model));
+    if home != own {
+        return Err(IpcError::new(
+            ErrorCode::Unavailable,
+            crate::services::engines::LAUNCH_CONFIG_UNAVAILABLE,
+        )
+        .with_stage("launch_config"));
+    }
     write_config(home, kind, local.port, &local.model)
 }
 
@@ -320,11 +350,8 @@ pub async fn start(
     port: u16,
     model: &str,
 ) -> Result<LibraryOpened, IpcError> {
-    if !kind.startable() {
-        return Err(IpcError::new(
-            ErrorCode::EngineUnsupported,
-            format!("Codex can't use {} servers yet", kind.label()),
-        ));
+    if let Some(reason) = start_reason(kind) {
+        return Err(IpcError::new(ErrorCode::EngineUnsupported, reason));
     }
     if !local_models::model_ok(model) {
         return Err(IpcError::new(
@@ -426,7 +453,7 @@ mod tests {
         };
         let found = find(&fake, &BTreeMap::from([(11500, ServerKind::Ollama)])).await;
         let ours = found.iter().find(|s| s.port == 11500).expect("listed");
-        assert!(ours.running && ours.added && ours.startable);
+        assert!(ours.running && ours.added && ours.startable && ours.start_reason.is_none());
         assert_eq!(ours.models[0].parameters.as_deref(), Some("30.5B"));
         // The defaults were asked too, and aren't running.
         assert_eq!(found.iter().filter(|s| !s.running).count(), 3);

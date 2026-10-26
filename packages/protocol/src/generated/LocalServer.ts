@@ -13,4 +13,8 @@ added: boolean, running: boolean, models: Array<LocalModel>,
 /**
  * Codex can start with its models (D-2518).
  */
-startable: boolean, };
+startable: boolean, 
+/**
+ * Why not, when it can't: llama.cpp, or Windows for now (D-2517).
+ */
+startReason: string | null, };

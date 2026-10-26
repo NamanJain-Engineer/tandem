@@ -9,7 +9,7 @@
 //! redacted text, never file contents, goes to `/v1/voice/resolve`, and the
 //! local ranking answers whenever that fails.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -286,10 +286,12 @@ fn kind_name(kind: FindKind) -> &'static str {
 
 /// What the hosted ranking is sent: each candidate's name and text, clipped,
 /// the locally likelier ones first when there are too many.
+/// A pane on a local model is never sent (F-EN-11): it's ranked here only.
 fn hosted_candidates(
     candidates: &[Candidate],
     by_id: &HashMap<String, FindMatch>,
     local: &[find_work::Ranked],
+    stay_here: &HashSet<String>,
 ) -> Vec<crate::services::api::ResolveCandidate> {
     let mut order: Vec<&Candidate> = local
         .iter()
@@ -302,6 +304,7 @@ fn hosted_candidates(
     }
     order
         .into_iter()
+        .filter(|c| !stay_here.contains(&c.id))
         .take(HOSTED_CANDIDATES)
         .filter_map(|c| {
             let kind = by_id.get(&c.id)?.kind;
@@ -324,7 +327,11 @@ fn hosted_candidates(
 pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
     let mut candidates = Vec::new();
     let mut by_id = HashMap::new();
+    let mut stay_here = HashSet::new();
     for pane in host.panes().await {
+        if pane.local_model.is_some() {
+            stay_here.insert(pane.id.as_str().to_string());
+        }
         let (candidate, found) = pane_candidate(host, pane).await;
         by_id.insert(candidate.id.clone(), found);
         candidates.push(candidate);
@@ -343,7 +350,7 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
     let mut ranking = FindRanking::Local;
     let mut ranked = local.clone();
     if !candidates.is_empty() && !query.trim().is_empty() {
-        let sent = hosted_candidates(&candidates, &by_id, &local);
+        let sent = hosted_candidates(&candidates, &by_id, &local, &stay_here);
         match host.hosted_rank(query, &sent).await {
             None => {}
             Some(Ok(matches)) => {
@@ -690,6 +697,25 @@ mod tests {
             (r.ranking, r.matches[0].label.as_str()),
             (FindRanking::Local, "auth tests")
         );
+    }
+
+    /// F-EN-11 review: a pane on a local model is ranked on this computer
+    /// only; its name and output never go to the hosted ranking.
+    #[tokio::test]
+    async fn f_en_11_3_a_local_model_pane_is_never_sent_to_the_hosted_ranking() {
+        let mut h = host();
+        h.panes[0].local_model = Some("qwen3:8b · Ollama".into());
+        h.hosted = Some(Ok(vec![("pan_docs".into(), 0.9)]));
+        let r = find(&h, "login testing").await;
+        let sent = h.sent.lock().expect("sent").clone();
+        assert!(sent.iter().all(|c| c.id != "pan_auth"), "{sent:?}");
+        assert_eq!(sent.len(), 2);
+        assert!(!r.matches.is_empty());
+        // Off: still found, ranked here.
+        let mut off = host();
+        off.panes[0].local_model = Some("qwen3:8b · Ollama".into());
+        let r = find(&off, "login testing").await;
+        assert_eq!(r.matches[0].label, "auth tests");
     }
 
     #[tokio::test]

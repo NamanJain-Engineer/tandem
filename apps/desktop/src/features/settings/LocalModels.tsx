@@ -110,7 +110,7 @@ function Server({ s, onChanged }: { s: LocalServer; onChanged: () => void }) {
   const { show } = useToast();
   const [starting, setStarting] = useState<string | null>(null);
   const why = !s.startable
-    ? t("local.notYet", { kind: kindLabel(s.kind) })
+    ? (s.startReason ?? t("local.notYet", { kind: kindLabel(s.kind) }))
     : !codex?.install
       ? t("local.needsCodex")
       : !tabId

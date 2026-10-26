@@ -456,8 +456,7 @@ impl TerminalService {
         let _ = std::fs::create_dir_all(&staging);
         policy.readable.push(staging);
         let path_var = login.vars.get("PATH").cloned().unwrap_or_default();
-        if let Some(dir) = argv
-            .first()
+        if let Some(dir) = tandem_engines::local_models::wrapped_program(&argv)
             .and_then(|p| tandem_engines::sandbox::find_program(p, &path_var))
             .and_then(|p| p.parent().map(Path::to_path_buf))
             .filter(|d| d.starts_with(&data))
@@ -1038,7 +1037,9 @@ impl TerminalService {
         // every time: never on the user's account (F-EN-11, D-2519).
         let local = if record.kind == "agent" && record.local_model.is_some() {
             match panes::launch_config(&self.store, pane).await? {
-                Some(Ok(config)) if local_ready(&config)? => Some(config),
+                Some(Ok(config)) if local_ready(self.engines.homes.root(), &config)? => {
+                    Some(config)
+                }
                 _ => {
                     return Err(
                         IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
@@ -1072,6 +1073,12 @@ impl TerminalService {
             sessions::save_on_handback(&self.store, pane, None).await?;
         }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
+        if local.is_some() && cfg!(windows) {
+            return Err(IpcError::new(
+                ErrorCode::EngineUnsupported,
+                tandem_engines::local_models::NOT_ON_WINDOWS,
+            ));
+        }
         if local.is_some() && ws.kind != "local" {
             return Err(IpcError::new(
                 ErrorCode::EngineUnsupported,
@@ -1215,11 +1222,18 @@ impl TerminalService {
             );
             let inner = match (&local, &launch.home) {
                 // Set inside the command, after the shell's startup files.
-                (Some(_), Some(home)) if cfg!(unix) => tandem_engines::local_models::env_argv(
+                (Some(_), Some(home)) => tandem_engines::local_models::env_argv(
                     launch.spec.argv(),
                     &home.to_string_lossy(),
                     &no_proxy,
-                ),
+                )
+                .ok_or_else(|| {
+                    self.status.unwatch(pane.as_str());
+                    IpcError::new(
+                        ErrorCode::Invalid,
+                        "Codex's path has an = in it, so a local model can't start it",
+                    )
+                })?,
                 _ => launch.spec.argv(),
             };
             let argv = self
@@ -1242,15 +1256,6 @@ impl TerminalService {
                 self.tasks_env(&engine, launch.home.as_deref(), pane.as_str(), &cwd)
                     .await,
             );
-            if local.is_some() {
-                // The model server is on this computer: no proxy carries the
-                // prompts off it (D-2517).
-                env.retain(|(k, _)| {
-                    !tandem_engines::local_models::PROXY_VARS.contains(&k.as_str())
-                });
-                env.push(("NO_PROXY".into(), no_proxy.clone()));
-                env.push(("no_proxy".into(), no_proxy));
-            }
             (args, env, Some(engine), Some(launch))
         } else if let Some(run) = self.take_run(pane) {
             // Run with secrets: the variables reach the command only, and
@@ -1286,11 +1291,24 @@ impl TerminalService {
         launch_env.extend(extra_env);
         // F-WT-06: a worktree's ports, variables and Compose project, under
         // what Vibezeo sets for the pane (provider home, hooks, D-2448).
-        let child_env = crate::services::worktree_runtime::layer_pane_env(
+        let mut child_env = crate::services::worktree_runtime::layer_pane_env(
             env::pane_env(&login, pane.as_str(), env!("CARGO_PKG_VERSION")),
             crate::services::worktree_runtime::vars_for_workspace(&ws),
             launch_env,
         );
+        if local.is_some() {
+            // Last, over every layer: a local pane has no proxy, and this
+            // computer in NO_PROXY (D-2517).
+            let no_proxy = tandem_engines::local_models::no_proxy_value(
+                child_env.get("NO_PROXY").map(String::as_str),
+                child_env.get("no_proxy").map(String::as_str),
+            );
+            for var in tandem_engines::local_models::PROXY_VARS {
+                child_env.remove(var);
+            }
+            child_env.insert("NO_PROXY".into(), no_proxy.clone());
+            child_env.insert("no_proxy".into(), no_proxy);
+        }
         let spec = SpawnSpec {
             pane_id: pane.to_string(),
             args,
@@ -1958,7 +1976,7 @@ impl QuietScreen {
 
 /// A local pane's saved launch can start: its home is there, and its
 /// provider settings are written again first (F-EN-11, D-2519).
-fn local_ready(config: &LaunchConfig) -> Result<bool, IpcError> {
+fn local_ready(providers: &Path, config: &LaunchConfig) -> Result<bool, IpcError> {
     let (Some(home), Some(local)) = (&config.home, &config.local) else {
         return Ok(false);
     };
@@ -1966,7 +1984,7 @@ fn local_ready(config: &LaunchConfig) -> Result<bool, IpcError> {
     if !home.is_dir() {
         return Ok(false);
     }
-    crate::services::local_models::refresh_config(home, local)?;
+    crate::services::local_models::refresh_config(providers, home, local)?;
     Ok(true)
 }
 
@@ -2290,9 +2308,14 @@ mod tests {
         let pane = panes::create_with(&store, &tab.id, "agent", None, Some("codex".into()))
             .await
             .expect("pane");
-        let home = data
-            .root()
-            .join("providers/codex/local-ollama-11434-qwen3-0000abcd");
+        let home =
+            data.root()
+                .join("providers/codex")
+                .join(tandem_engines::local_models::home_name(
+                    tandem_engines::local_models::ServerKind::Ollama,
+                    11434,
+                    "qwen3:8b",
+                ));
         std::fs::create_dir_all(&home).expect("home");
         let config = LaunchConfig {
             extra_args: vec!["--sandbox".into(), "read-only".into()],
@@ -2402,6 +2425,19 @@ mod tests {
             .expect("restart");
         expect_local(sink, true);
         again.pty.kill(pane.id.as_str()).expect("kill");
+        // A saved row pointing at another folder: refused, nothing written.
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).expect("elsewhere");
+        let mut moved = config.clone();
+        moved.home = Some(elsewhere.display().to_string());
+        panes::set_local_model(&store, &pane.id, "qwen3:8b · Ollama", &moved)
+            .await
+            .expect("moved");
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("started in another folder");
+        };
+        assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
+        assert!(!elsewhere.join("config.toml").exists());
         // A corrupt saved launch: refused, and Resume isn't offered.
         let id = pane.id.as_str().to_string();
         store
@@ -2713,6 +2749,48 @@ mod sandbox_tests {
             out.extend(argv.iter().cloned());
             Ok(out)
         }
+    }
+
+    /// F-EN-11 review: behind a local pane's env wrapper, the sandbox
+    /// still finds Codex installed under the data folder and lets it run.
+    #[tokio::test]
+    async fn f_en_11_2_the_sandbox_finds_codex_behind_the_env_wrapper() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        settings::set(
+            &store,
+            SettingKey::AgentSandbox,
+            serde_json::json!("workspace"),
+        )
+        .await
+        .expect("on");
+        let svc = TerminalService::new(PtyManager::new(), store.clone());
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        vars.insert("HOME".to_string(), dir.path().display().to_string());
+        svc.set_login_env(LoginEnv {
+            vars,
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        let _ = svc.sandbox.set(Arc::new(FakeSandbox));
+        let bin = data.root().join("engines/codex/bin");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let codex = bin.join("codex");
+        std::fs::write(&codex, "#!/bin/sh\n").expect("codex");
+        let home = data.provider_home("codex", "local");
+        let argv = tandem_engines::local_models::env_argv(
+            vec![codex.display().to_string()],
+            &home.display().to_string(),
+            "127.0.0.1",
+        )
+        .expect("argv");
+        let wrapped = svc
+            .sandbox_argv(&PaneId::new(), &dir.path().join("ws"), Some(&home), argv)
+            .await;
+        assert_eq!(wrapped[0], "SANDBOX");
+        assert!(wrapped.contains(&bin.display().to_string()), "{wrapped:?}");
     }
 
     #[tokio::test]

@@ -130,13 +130,16 @@ fn ollama_remote(m: &Value) -> bool {
         m.get(k)
             .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
     };
-    let cloud_tag = ["name", "model"].iter().any(|k| {
-        m.get(*k)
-            .and_then(Value::as_str)
-            .and_then(|n| n.rsplit_once(':'))
-            .is_some_and(|(_, tag)| tag == "cloud" || tag.ends_with("-cloud"))
-    });
+    let cloud_tag = ["name", "model"]
+        .iter()
+        .any(|k| m.get(*k).and_then(Value::as_str).is_some_and(cloud_name));
     set("remote_host") || set("remote_model") || cloud_tag
+}
+
+/// A model name with Ollama's cloud tag (`:cloud`, `:120b-cloud`).
+fn cloud_name(name: &str) -> bool {
+    name.rsplit_once(':')
+        .is_some_and(|(_, tag)| tag == "cloud" || tag.ends_with("-cloud"))
 }
 
 /// An OpenAI-style `/v1/models`: `{"data": [{"id"}]}`.
@@ -145,6 +148,9 @@ pub fn parse_openai(body: &Value) -> Option<Vec<LocalModel>> {
     Some(
         models
             .iter()
+            // Ollama lists its cloud models here too (an Ollama server added
+            // as another kind): they run on ollama.com, never listed.
+            .filter(|m| !m.get("id").and_then(Value::as_str).is_some_and(cloud_name))
             .filter_map(|m| {
                 Some(LocalModel {
                     id: text(m, "id", 200)?,
@@ -237,6 +243,11 @@ pub fn no_proxy_value(upper: Option<&str>, lower: Option<&str>) -> String {
     parts.join(",")
 }
 
+/// Why Start isn't offered on Windows yet: its shells run their startup
+/// files before the command, and there's no wrapper to set the pane's
+/// environment after them (D-2517).
+pub const NOT_ON_WINDOWS: &str = "Local models run on Linux and macOS for now";
+
 /// The proxy variables a local pane runs without.
 pub const PROXY_VARS: [&str; 6] = [
     "HTTP_PROXY",
@@ -250,8 +261,13 @@ pub const PROXY_VARS: [&str; 6] = [
 /// A local pane's command with its environment set inside it (unix): the
 /// login shell's startup files run before the command, so a variable they
 /// export (a proxy, `NO_PROXY`, `CODEX_HOME`) can't reach Codex (D-2517).
-pub fn env_argv(argv: Vec<String>, codex_home: &str, no_proxy: &str) -> Vec<String> {
-    let mut out = vec!["/usr/bin/env".to_string()];
+/// `None` when the program's path has an `=`: `env` would read it as a
+/// variable and print the whole environment instead of running it.
+pub fn env_argv(argv: Vec<String>, codex_home: &str, no_proxy: &str) -> Option<Vec<String>> {
+    if argv.first().is_none_or(|p| p.contains('=')) {
+        return None;
+    }
+    let mut out = vec![ENV_PROGRAM.to_string()];
     for var in PROXY_VARS {
         out.push("-u".into());
         out.push(var.into());
@@ -260,7 +276,29 @@ pub fn env_argv(argv: Vec<String>, codex_home: &str, no_proxy: &str) -> Vec<Stri
     out.push(format!("no_proxy={no_proxy}"));
     out.push(format!("CODEX_HOME={codex_home}"));
     out.extend(argv);
-    out
+    Some(out)
+}
+
+/// The program [`env_argv`] wraps.
+pub const ENV_PROGRAM: &str = "/usr/bin/env";
+
+/// The program a command runs: past [`env_argv`]'s wrapper when it has one,
+/// so the sandbox finds the engine itself.
+pub fn wrapped_program(argv: &[String]) -> Option<&str> {
+    if argv.first().map(String::as_str) != Some(ENV_PROGRAM) {
+        return argv.first().map(String::as_str);
+    }
+    let mut rest = argv.iter().skip(1);
+    while let Some(a) = rest.next() {
+        match a.as_str() {
+            "-u" => {
+                rest.next();
+            }
+            a if a.contains('=') => {}
+            a => return Some(a),
+        }
+    }
+    None
 }
 
 /// A Codex flag that takes a value: its short and long spelling, and
@@ -290,8 +328,12 @@ pub fn local_args(args: &[String]) -> Vec<String> {
         }
         // Flags with a value: (short, long, keep the value if).
         let flags: [Flag; 3] = [
-            ("-s", "--sandbox", |v| !v.is_empty()),
-            ("-a", "--ask-for-approval", |v| !v.is_empty()),
+            ("-s", "--sandbox", |v| {
+                matches!(v, "read-only" | "workspace-write" | "danger-full-access")
+            }),
+            ("-a", "--ask-for-approval", |v| {
+                matches!(v, "untrusted" | "on-failure" | "on-request" | "never")
+            }),
             ("-c", "--config", safe_setting),
         ];
         let mut handled = false;
@@ -364,6 +406,9 @@ pub fn codex_config(
         .map_err(|e: toml_edit::TomlError| ConfigError::Toml(e.to_string()))?;
     doc["model"] = toml_edit::value(model);
     doc["check_for_update_on_startup"] = toml_edit::value(false);
+    // A profile could name another provider: none in a local home.
+    doc.remove("profile");
+    doc.remove("profiles");
     doc["model_provider"] = toml_edit::value("vibezeo-local");
     let mut provider = toml_edit::Table::new();
     provider["name"] = toml_edit::value(format!("{} on this computer", kind.label()));
@@ -427,7 +472,15 @@ mod tests {
             vec!["/bin/codex".into(), "--sandbox".into()],
             "/h",
             "127.0.0.1",
+        )
+        .expect("argv");
+        assert_eq!(wrapped_program(&argv), Some("/bin/codex"));
+        assert_eq!(
+            wrapped_program(&["/bin/claude".to_string()]),
+            Some("/bin/claude")
         );
+        // An `=` in the path would make env print the environment.
+        assert_eq!(env_argv(vec!["/opt/a=b/codex".into()], "/h", "x"), None);
         assert_eq!(argv[0], "/usr/bin/env");
         for var in PROXY_VARS {
             assert!(
@@ -456,6 +509,20 @@ mod tests {
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, vec!["gemma3:4b", "qwen3:8b"]);
+        // Ollama's OpenAI-style list has them too, as another kind would ask.
+        let v1 = json!({"object": "list", "data": [
+            {"id": "gpt-oss:120b-cloud", "object": "model", "owned_by": "library"},
+            {"id": "kimi-k2:cloud", "object": "model"},
+            {"id": "gemma3:4b", "object": "model", "owned_by": "library"}
+        ]});
+        for kind in [ServerKind::LmStudio, ServerKind::LlamaCpp] {
+            let ids: Vec<String> = parse(kind, &v1)
+                .expect("models")
+                .into_iter()
+                .map(|m| m.id)
+                .collect();
+            assert_eq!(ids, vec!["gemma3:4b"], "{kind:?}");
+        }
     }
 
     #[test]
@@ -506,6 +573,10 @@ mod tests {
             v(&["--config", "model=o4"]),
             v(&["--config=model_provider=openai"]),
             v(&["-c", "base_url=https://gw.example"]),
+            v(&["--sandbox", "anything"]),
+            v(&["-sfull"]),
+            v(&["-a", "always"]),
+            v(&["--ask-for-approval=yolo"]),
         ] {
             assert_eq!(local_args(&bad), Vec::<String>::new(), "{bad:?}");
         }
@@ -542,6 +613,14 @@ mod tests {
         assert_eq!(p["base_url"].as_str(), Some("http://127.0.0.1:11434/v1"));
         assert_eq!(p["wire_api"].as_str(), Some("responses"));
         assert!(doc.get("notify").is_some(), "the status hook stays");
+        let profiled = codex_config(
+            "profile = \"w\"\n[profiles.w]\nmodel_provider = \"openai\"\n",
+            ServerKind::Ollama,
+            11434,
+            "qwen3:8b",
+        )
+        .expect("config");
+        assert!(!profiled.contains("profile"), "{profiled}");
         // Writing it again replaces, never duplicates.
         let again = codex_config(&out, ServerKind::Ollama, 11434, "gemma3:4b").expect("again");
         assert_eq!(again.matches("[model_providers.vibezeo-local]").count(), 1);
