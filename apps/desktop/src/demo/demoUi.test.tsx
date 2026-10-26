@@ -69,6 +69,8 @@ describe("the interactive demo's page furniture", () => {
     expect(screen.queryByTestId("coachmark")).toBeNull();
     act(() => useThreads.setState((st) => ({ list: st.list.map((x) => ({ ...x, state: "waiting" as const })) })));
     expect(hint()[0]?.textContent).toContain("Open Changes to see what it edited.");
+    // In the header band beside the button, off the transcript.
+    expect(hint()[0]?.dataset.side).toBe("left");
     expect(hint()[0]?.textContent).toContain("3 of 3");
     act(() => useThreads.getState().toggleChanges(c.firstThread));
     expect(screen.queryByTestId("coachmark")).toBeNull();

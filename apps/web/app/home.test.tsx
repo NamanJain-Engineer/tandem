@@ -80,6 +80,13 @@ describe("home page", () => {
     }
   });
 
+  it("F-WB-01 the hero's orbit carries each engine's tile alone, at its 4 px radius, with no ring round it (D-1887)", () => {
+    const orbit = /<div aria-hidden="true" data-orbit=""[\s\S]*?<\/div><\/div>/.exec(home)?.[0] ?? "";
+    expect(orbit.match(/data-engine="/g)?.length).toBe(ENGINES.length);
+    expect(orbit).not.toContain("rounded-full");
+    expect(orbit).not.toContain("--site-glass");
+  });
+
   it("F-WB-01 engine monograms come from the registry", () => {
     for (const e of ENGINES) {
       const entry = registry.find((r) => r.label === e);

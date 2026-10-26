@@ -309,9 +309,14 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    tiles come from the CHANGELOG, and a new Added title needs an entry in
    `RELEASE_TILE_MAP`). The site tests check the file exists. Captures are taken
    at 2× and kept as masters in `apps/web/media/<name>@2x.png` (D-1838): the demo
-   still from `/demo/app/?embed=1` in Chromium at 1280×800 with device scale 2, and
-   the app's screens from the real build under the E2E harness with `GDK_SCALE=2`
-   (hide the debug build's DEV badge; no agents, or the fake engine labelled). Then
+   still from `/demo/app/?embed=1` in Chromium at 1280×800 on a real 2× screen
+   (`--force-device-scale-factor=2` with `viewport: null`, never Playwright's emulated
+   `deviceScaleFactor`, under which the terminals draw blank or at double size; D-2606),
+   and the app's screens from the real build under the E2E harness with `GDK_SCALE=2`
+   (`apps/desktop/e2e/screens/site.screens.ts`, which hides what the download never
+   shows: the debug build's DEV badge and the hosted build's connection state, D-816;
+   no agents, or the fake engine labelled). Before a release whose site shows the demo,
+   `node scripts/agent/demo-retina-check.mjs` checks its terminals at real 2× (D-2607). Then
    run `python3 apps/web/scripts/optimize-screens.py`, which writes the 1× original
    and AVIF and WebP at 1× and 2×, and set each screen's `build` in `SCREENS`
    (`apps/web/lib/media.ts`). If the video is re-recorded, set

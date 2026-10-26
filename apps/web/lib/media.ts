@@ -23,7 +23,7 @@ export const SCREENS = {
     height: 900,
     formats: ["avif", "webp"],
     retina: true,
-    build: "0.7.2",
-    alt: "The Vibezeo desktop app in Code mode with four terminal panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a cargo test run with 256 tests passing.",
+    build: "0.12.0",
+    alt: "The Vibezeo desktop app in Code mode with four shell panes over its own repository: the git history, htop, vim open on the Claude Code hook handler, and a cargo test run with 271 tests passing.",
   },
 } as const;
