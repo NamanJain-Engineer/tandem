@@ -1852,6 +1852,20 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - **Discard** runs `jj workspace forget` and keeps the workspace's commits. Nothing ever abandons, rebases or pushes.
     - **Not in this slice:** SSH and WSL hosts.
   - **Tests** run against a real `jj` in the session's container, plus unit tests with fakes behind a `Vcs` seam, and an E2E-M18-CD24 spec.
+- D-875: 0.12.0 ships the app's new look now, with the pieces already approved. The four still in review go to 0.13.0 (`chain27`).
+  - **Why now:** on 26 October the owner chose to have the new look out sooner rather than wait for the fix rounds still open.
+  - **What 0.12.0 carries (`chain26`):**
+    - `app-ui`'s redesign (867b770e) and the demo coach (37cc2d1a, approved by the design lead, D-2605);
+    - F-TK-07 (cea685af);
+    - the design lead's DESIGN §9.4 line (bb9b04ba);
+    - `product-research`'s Freeze fix (0a931148, cherry-picked as 8c6e343a). It fixes the race 0.11.0 shipped as a known issue, was approved on its own in that branch's third review, and touches only `tandem-pty`.
+  - **The captures:** both of the site's captures of the app show the old look (the demo still from 0.10.0, Code mode from 0.7.2). `app-ui` retakes them from 0.12.0 (OPERATING §6 step 5) before the release merges.
+  - **0.13.0 (`chain27`, from `product-m0-m5` after 0.12.0's record merges):**
+    - F-CD-23 (round 4), then F-CD-24;
+    - F-EN-11 (round 3);
+    - F-TK-08 (must-fixes);
+    - B5's second slice and F-EX-07 (round 3), where `0006_activity` becomes `0007` (D-872).
+    - Their notes stay under the CHANGELOG's `## Unreleased`, above `## 0.12.0`.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
