@@ -2452,7 +2452,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - E2E-M18-TK-08: Lead's plan thread gets no question, the answer session's argv has every tool off and no MCP config, a `.env` beside the main checkout doesn't reach the answer (the fake engine reports a `.env` in its folder), and the run's message is fenced.
     - The replace-ref and reset tests failed on the old code.
   - **Docs.** PRODUCT_SPEC F-TK-08 (the session, AC1, AC3, AC5); ARCHITECTURE §3.1 (`answers_without_tools`), §3.2 (`PlanLaunch.leadAnswers`, `closed`, `plan_supervise`, `plan_answer`), §6.8.1 (every tool off), §9.4 and §9.6; tasks.mdx; the CHANGELOG bullet; HUMAN_TODO.
-  - **Gate:** pending.
+  - **Gate:** passed on db132cfd:
+    - 2,402 Rust tests (6 ignored) and 1,644 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 190, and protocol drift with 581 types: `PlanLaunch` gains `leadAnswers`, and `PlanQuestionState` gains `closed`.
+    - E2E on db132cfd: m11-2-execute 4 of 4, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-tk08 1 of 1.
+    - CHANGELOG: the F-TK-08 bullet under `## Unreleased` reworded; `check-changelog.ts` passes.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
