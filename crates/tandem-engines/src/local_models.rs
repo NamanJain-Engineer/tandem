@@ -57,11 +57,12 @@ impl ServerKind {
         matches!(self, ServerKind::Ollama | ServerKind::LmStudio)
     }
 
+    /// As the IPC names it: settings entries and home folders use it too.
     pub fn slug(self) -> &'static str {
         match self {
             ServerKind::Ollama => "ollama",
-            ServerKind::LmStudio => "lmstudio",
-            ServerKind::LlamaCpp => "llamacpp",
+            ServerKind::LmStudio => "lm_studio",
+            ServerKind::LlamaCpp => "llama_cpp",
         }
     }
 }
@@ -156,34 +157,102 @@ pub fn port_entry(kind: ServerKind, port: u16) -> String {
     format!("{}:{port}", kind.slug())
 }
 
-/// A model id safe to write into a config and pass as an argument.
+/// A model id safe to write into a config and pass as an argument: never
+/// one that reads as a flag.
 pub fn model_ok(id: &str) -> bool {
     !id.is_empty()
+        && !id.starts_with('-')
         && id.len() <= 200
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '/' | '@'))
 }
 
-/// The provider home's folder name under `$PROVIDERS/codex/`.
-pub fn home_name(kind: ServerKind, port: u16) -> String {
-    format!("local-{}-{port}", kind.slug())
+/// The provider home's folder name under `$PROVIDERS/codex/`: one per
+/// server and model, so panes on two models of one server never share a
+/// `config.toml` (D-2519). The model's letters and digits, then a hash of its
+/// full name, so two names that slug alike stay apart.
+pub fn home_name(kind: ServerKind, port: u16, model: &str) -> String {
+    let slug: String = model
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .take(40)
+        .collect();
+    // FNV-1a: stable across runs and builds.
+    let hash = model.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("local-{}-{port}-{slug}-{:08x}", kind.slug(), hash as u32)
+}
+
+/// What a local pane adds to `NO_PROXY` and `no_proxy`: this computer's
+/// names, after whatever the login environment had, so no proxy ever
+/// carries a prompt to the model server (D-2517).
+pub fn no_proxy_env(upper: Option<&str>, lower: Option<&str>) -> Vec<(String, String)> {
+    let with_local = |existing: Option<&str>| {
+        let mut parts: Vec<String> = existing
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect();
+        for host in ["127.0.0.1", "localhost", "::1"] {
+            if !parts.iter().any(|p| p == host) {
+                parts.push(host.to_string());
+            }
+        }
+        parts.join(",")
+    };
+    vec![
+        ("NO_PROXY".to_string(), with_local(upper)),
+        ("no_proxy".to_string(), with_local(lower)),
+    ]
+}
+
+/// Why a local config can't be written.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ConfigError {
+    #[error("That model's name can't be used")]
+    Model,
+    #[error("The home's config.toml can't be read as TOML: {0}")]
+    Toml(String),
+    #[error("The home's config.toml has an unexpected model_providers")]
+    Providers,
 }
 
 /// Codex's `config.toml` for a local server, merged into what the home
-/// already has (its status hook, D-2519): the model and a `vibezeo-local`
-/// provider at `http://127.0.0.1:<port>/v1` over the Responses API.
+/// already has (its status hook, D-2519): the model, a `vibezeo-local`
+/// provider at `http://127.0.0.1:<port>/v1` over the Responses API, and no
+/// update check at startup, which would go off this computer (D-2517).
+/// Nothing about sandboxing or approvals is written: those stay Codex's
+/// defaults and the user's own arguments.
 pub fn codex_config(
     existing: &str,
     kind: ServerKind,
     port: u16,
     model: &str,
-) -> Result<String, String> {
+) -> Result<String, ConfigError> {
     if !model_ok(model) {
-        return Err("That model's name can't be used".into());
+        return Err(ConfigError::Model);
     }
-    let mut doc: toml_edit::DocumentMut = existing.parse().map_err(|e| format!("{e}"))?;
+    let mut doc: toml_edit::DocumentMut = existing
+        .parse()
+        .map_err(|e: toml_edit::TomlError| ConfigError::Toml(e.to_string()))?;
     doc["model"] = toml_edit::value(model);
+    doc["check_for_update_on_startup"] = toml_edit::value(false);
     doc["model_provider"] = toml_edit::value("vibezeo-local");
     let mut provider = toml_edit::Table::new();
     provider["name"] = toml_edit::value(format!("{} on this computer", kind.label()));
@@ -193,7 +262,7 @@ pub fn codex_config(
         .entry("model_providers")
         .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
     let Some(table) = providers.as_table_mut() else {
-        return Err("The home's config.toml has an unexpected model_providers".into());
+        return Err(ConfigError::Providers);
     };
     table.set_implicit(true);
     table.insert("vibezeo-local", toml_edit::Item::Table(provider));
@@ -234,6 +303,27 @@ mod tests {
             1
         );
         assert!(parse(ServerKind::Ollama, &json!({"data": []})).is_none());
+    }
+
+    #[test]
+    fn f_en_11_3_no_proxy_names_this_computer_after_what_was_there() {
+        assert_eq!(
+            no_proxy_env(Some("corp.example, .internal"), None),
+            vec![
+                (
+                    "NO_PROXY".to_string(),
+                    "corp.example,.internal,127.0.0.1,localhost,::1".to_string()
+                ),
+                (
+                    "no_proxy".to_string(),
+                    "127.0.0.1,localhost,::1".to_string()
+                ),
+            ]
+        );
+        assert_eq!(
+            no_proxy_env(Some("localhost"), Some("127.0.0.1"))[0].1,
+            "localhost,127.0.0.1,::1"
+        );
     }
 
     #[test]
@@ -278,12 +368,33 @@ mod tests {
             "x\nmodel_provider = \"openai\""
         )
         .is_err());
-        assert_eq!(home_name(ServerKind::LmStudio, 1234), "local-lmstudio-1234");
+        assert_eq!(doc["check_for_update_on_startup"].as_bool(), Some(false));
+        for key in ["sandbox_mode", "approval_policy"] {
+            assert!(
+                doc.get(key).is_none(),
+                "{key} is left to Codex and the user"
+            );
+        }
+        assert!(codex_config("", ServerKind::Ollama, 11434, "--yolo").is_err());
+        let name = home_name(ServerKind::LmStudio, 1234, "openai/gpt-oss-20b");
+        assert!(
+            name.starts_with("local-lm_studio-1234-openai-gpt-oss-20b-"),
+            "{name}"
+        );
+        // One home per model, and names that slug alike stay apart.
+        assert_ne!(
+            name,
+            home_name(ServerKind::LmStudio, 1234, "openai/gpt-oss-120b")
+        );
+        assert_ne!(
+            home_name(ServerKind::Ollama, 1, "a:b"),
+            home_name(ServerKind::Ollama, 1, "a/b")
+        );
         assert_eq!(
             parse_port_entry("ollama:11500"),
             Some((ServerKind::Ollama, 11500))
         );
-        assert_eq!(port_entry(ServerKind::LmStudio, 1234), "lmstudio:1234");
+        assert_eq!(port_entry(ServerKind::LmStudio, 1234), "lm_studio:1234");
         for bad in ["ollama", "ollama:0", "ollama:70000", "vllm:8000", ":1"] {
             assert_eq!(parse_port_entry(bad), None, "{bad}");
         }

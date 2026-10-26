@@ -1,11 +1,17 @@
 import { $, browser } from "@wdio/globals";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { Key } from "webdriverio";
 import { addFolder, checkAgain, fakeEngine, freshOffline, home, invoke, mod, paneIds } from "../support/app";
 
-type LocalServer = { kind: string; port: number; added: boolean; running: boolean; models: Array<{ id: string }> };
+type LocalServer = {
+  kind: string;
+  port: number;
+  added: boolean;
+  running: boolean;
+  models: Array<{ id: string }>;
+};
 type Spawn = { argv: string[]; envKeys: string[]; providerHome: string | null; cwd: string };
 
 /** A stand-in for Ollama on 127.0.0.1: `/api/tags` lists one model, and
@@ -104,6 +110,17 @@ describe("E2E-M18-EN11 local models", function () {
     expect(line).toContain("qwen3-coder:30b · 18.6 GB · 30.5B");
   });
 
+  it("F-EN-11.2 a model the server doesn't offer, or a llama.cpp server, doesn't start", async () => {
+    const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");
+    const tabId = ws!.tabs[0]!.id;
+    await expect(
+      invoke("local_model_start", { tabId, kind: "ollama", port: ollama.port, model: "absent:1b" }),
+    ).rejects.toThrow(/doesn't offer absent:1b right now/);
+    await expect(
+      invoke("local_model_start", { tabId, kind: "llama_cpp", port: ollama.port, model: "qwen3-coder:30b" }),
+    ).rejects.toThrow(/Codex can't use llama.cpp servers yet/);
+  });
+
   it("F-EN-11.2 Start in Codex runs Codex in its own home, configured for 127.0.0.1, and says On this computer", async () => {
     const before = (await invoke<Spawn[]>("test_spawn_log")).length;
     // Settings covers the panes, so count them in the DOM, not as visible.
@@ -111,15 +128,28 @@ describe("E2E-M18-EN11 local models", function () {
     const panes = await count();
     await press(`[data-testid="local-server"][data-port="${ollama.port}"] [data-testid="local-start"]`);
     await browser.waitUntil(async () => (await count()) === panes + 1, { timeout: 20_000 });
-    const homeDir = join(home(), "providers", "codex", `local-ollama-${ollama.port}`);
+    const homes = join(home(), "providers", "codex");
+    const homeDir = await browser
+      .waitUntil(
+        () =>
+          existsSync(homes) &&
+          readdirSync(homes).find((d) => d.startsWith(`local-ollama-${ollama.port}-qwen3-coder-30b-`)),
+        { timeout: 20_000, timeoutMsg: "no home for the model" },
+      )
+      .then((d) => join(homes, d as string));
     await browser.waitUntil(
-      async () => (await invoke<Spawn[]>("test_spawn_log")).slice(before).some((s) => s.providerHome === homeDir),
+      async () =>
+        (await invoke<Spawn[]>("test_spawn_log")).slice(before).some((s) => s.providerHome === homeDir),
       { timeout: 20_000, timeoutMsg: "Codex didn't start in the local home" },
     );
-    const spawn = (await invoke<Spawn[]>("test_spawn_log")).slice(before).find((s) => s.providerHome === homeDir)!;
+    const spawn = (await invoke<Spawn[]>("test_spawn_log"))
+      .slice(before)
+      .find((s) => s.providerHome === homeDir)!;
     expect(spawn.envKeys).toContain("CODEX_HOME");
+    expect(spawn.envKeys).toEqual(expect.arrayContaining(["NO_PROXY", "no_proxy"]));
     const config = readFileSync(join(homeDir, "config.toml"), "utf8");
     expect(config).toContain('model = "qwen3-coder:30b"');
+    expect(config).toContain("check_for_update_on_startup = false");
     expect(config).toContain(`base_url = "http://127.0.0.1:${ollama.port}/v1"`);
     const chip = $('[data-testid="local-model-chip"]');
     await chip.waitForDisplayed({ timeout: 10_000 });

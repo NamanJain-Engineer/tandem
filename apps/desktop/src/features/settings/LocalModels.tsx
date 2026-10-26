@@ -72,8 +72,19 @@ function AddPort({ onClose, onAdded }: { onClose: () => void; onAdded: () => voi
       }
     >
       <div className="flex flex-col gap-3" data-testid="local-add">
-        <Select label={t("local.kind")} value={kind} onValueChange={(v) => setKind(v as ServerKind)} options={KINDS} />
-        <Input label={t("local.host")} value={host} monospace onChange={(e) => setHost(e.target.value)} data-testid="local-host" />
+        <Select
+          label={t("local.kind")}
+          value={kind}
+          onValueChange={(v) => setKind(v as ServerKind)}
+          options={KINDS}
+        />
+        <Input
+          label={t("local.host")}
+          value={host}
+          monospace
+          onChange={(e) => setHost(e.target.value)}
+          data-testid="local-host"
+        />
         <Input
           label={t("local.port")}
           value={port}
@@ -109,7 +120,12 @@ function Server({ s, onChanged }: { s: LocalServer; onChanged: () => void }) {
     if (!tabId) return;
     setStarting(model);
     try {
-      const opened = await invoke<LibraryOpened>("local_model_start", { tabId, kind: s.kind, port: s.port, model });
+      const opened = await invoke<LibraryOpened>("local_model_start", {
+        tabId,
+        kind: s.kind,
+        port: s.port,
+        model,
+      });
       show({ tone: "success", title: t("local.started", { model }) });
       useUi.getState().closeSettings();
       await showOpened(opened);
@@ -120,7 +136,12 @@ function Server({ s, onChanged }: { s: LocalServer; onChanged: () => void }) {
     }
   };
   return (
-    <li data-testid="local-server" data-kind={s.kind} data-port={s.port} className="flex flex-col gap-1.5 px-3 py-2">
+    <li
+      data-testid="local-server"
+      data-kind={s.kind}
+      data-port={s.port}
+      className="flex flex-col gap-1.5 px-3 py-2"
+    >
       <div className="flex items-center gap-2">
         <span className="text-sm text-fg">{kindLabel(s.kind)}</span>
         <span className="font-mono text-xs text-fg-muted">{t("local.address", { port: s.port })}</span>
@@ -135,7 +156,11 @@ function Server({ s, onChanged }: { s: LocalServer; onChanged: () => void }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void invoke("local_models_remove_port", { port: s.port }).then(onChanged)}
+            onClick={() =>
+              void invoke("local_models_remove_port", { port: s.port }).then(onChanged, (e: IpcError) =>
+                show({ tone: "error", title: e.message }),
+              )
+            }
           >
             {t("local.removePort")}
           </Button>
@@ -143,8 +168,13 @@ function Server({ s, onChanged }: { s: LocalServer; onChanged: () => void }) {
       </div>
       {s.running && s.models.length > 0 && (
         <ul className="flex flex-col">
-          {s.models.map((m) => (
-            <li key={m.id} data-testid="local-model" data-model={m.id} className="flex items-center gap-2 py-1">
+          {s.models.map((m, i) => (
+            <li
+              key={`${i}-${m.id}`}
+              data-testid="local-model"
+              data-model={m.id}
+              className="flex items-center gap-2 py-1"
+            >
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted" title={modelLine(m)}>
                 {modelLine(m)}
               </span>

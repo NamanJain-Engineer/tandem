@@ -124,9 +124,6 @@ pub struct TerminalService {
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Run with secrets: a pane's first spawn runs this (F-TL-12).
     runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
-    /// Agent panes whose first start runs fresh in a given configuration
-    /// (a local model's provider home, F-EN-11).
-    launch_first: std::sync::Mutex<std::collections::HashMap<String, LaunchConfig>>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -306,7 +303,6 @@ impl TerminalService {
             agent_panes: Default::default(),
             resume_first: Default::default(),
             runs: Default::default(),
-            launch_first: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -939,14 +935,6 @@ impl TerminalService {
 
     /// The pane's first start resumes its saved session instead of starting
     /// a new one (F-TH-17).
-    /// The pane's first start runs its engine fresh with `config` (its home
-    /// and arguments) and no account: a Codex pane on a local model.
-    pub fn launch_on_first_start(&self, pane: &PaneId, config: LaunchConfig) {
-        if let Ok(mut map) = self.launch_first.lock() {
-            map.insert(pane.as_str().to_string(), config);
-        }
-    }
-
     pub fn resume_on_first_start(&self, pane: &PaneId) {
         if let Ok(mut set) = self.resume_first.lock() {
             set.insert(pane.as_str().to_string());
@@ -1031,11 +1019,18 @@ impl TerminalService {
         } else {
             mode
         };
-        let launch_first = if mode == LaunchMode::Normal {
-            self.launch_first
-                .lock()
-                .ok()
-                .and_then(|mut map| map.remove(pane.as_str()))
+        // A pane on a local model launches in its own home with no account,
+        // every time: never on the user's account (F-EN-11, D-2519).
+        let local = if record.kind == "agent" && record.local_model.is_some() {
+            match panes::launch_config(&self.store, pane).await? {
+                Some(Ok(config)) if config.home.is_some() => Some(config),
+                _ => {
+                    return Err(
+                        IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
+                            .with_stage("launch_config"),
+                    )
+                }
+            }
         } else {
             None
         };
@@ -1062,6 +1057,12 @@ impl TerminalService {
             sessions::save_on_handback(&self.store, pane, None).await?;
         }
         let ws = workspaces::get(&self.store, &record.workspace_id).await?;
+        if local.is_some() && ws.kind != "local" {
+            return Err(IpcError::new(
+                ErrorCode::EngineUnsupported,
+                "A local model runs in a folder on this computer",
+            ));
+        }
         if ws.kind == "wsl" {
             return self
                 .spawn_in_wsl(pane, &record, &ws, cols, rows, sink, mode)
@@ -1147,8 +1148,12 @@ impl TerminalService {
                     record.account_id.as_ref().map(|a| a.as_str()),
                 )
                 .map(|(url, secret)| StatusEnv { url, secret });
-            let relaunch = match (&plan, &launch_first) {
-                (Some(p), _) => Some(Relaunch {
+            let relaunch = match (&plan, &local) {
+                (Some(p), Some(config)) => Some(Relaunch {
+                    resume: Some(p.engine_session_id.as_str()),
+                    config,
+                }),
+                (Some(p), None) => Some(Relaunch {
                     resume: Some(p.engine_session_id.as_str()),
                     config: &p.config,
                 }),
@@ -1178,10 +1183,10 @@ impl TerminalService {
                 workspace_pick.as_ref(),
                 None,
             );
-            let account = match (&plan, &launch_first) {
-                (Some(p), _) => p.session.account_id.as_ref(),
+            let account = match (&plan, &local) {
                 // Its own home, no account (F-EN-11).
-                (None, Some(_)) => None,
+                (_, Some(_)) => None,
+                (Some(p), None) => p.session.account_id.as_ref(),
                 (None, None) => chosen.as_ref(),
             };
             let launch = self
@@ -1209,6 +1214,14 @@ impl TerminalService {
                 self.tasks_env(&engine, launch.home.as_deref(), pane.as_str(), &cwd)
                     .await,
             );
+            if local.is_some() {
+                // The model server is on this computer: no proxy carries the
+                // prompts off it (D-2517).
+                env.extend(tandem_engines::local_models::no_proxy_env(
+                    login.vars.get("NO_PROXY").map(String::as_str),
+                    login.vars.get("no_proxy").map(String::as_str),
+                ));
+            }
             (args, env, Some(engine), Some(launch))
         } else if let Some(run) = self.take_run(pane) {
             // Run with secrets: the variables reach the command only, and
@@ -2185,6 +2198,131 @@ mod tests {
             .expect_err("missing");
         assert_eq!(err.code, ErrorCode::EngineMissing);
         assert_eq!(svc.pty.live_count(), 0);
+    }
+
+    /// F-EN-11 review: every start of a local-model pane (the first, Start
+    /// fresh, a start in a new run of the app) runs Codex in the model's own
+    /// home with no account and with this computer in NO_PROXY; with the
+    /// home gone it refuses, never falling back to the user's account.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_en_11_2_every_start_of_a_local_pane_uses_its_home_and_no_account() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("ws-local");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let codex = bin.join("codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME\"\nsleep 30\n",
+        )
+        .expect("fake codex");
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        settings::set(
+            &store,
+            SettingKey::DefaultShell,
+            serde_json::json!("/bin/sh"),
+        )
+        .await
+        .expect("shell");
+        let added = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), None)
+            .await
+            .expect("ws");
+        let tab = tabs::list(&store, &added.workspace.id)
+            .await
+            .expect("tabs")
+            .remove(0);
+        let pane = panes::create_with(&store, &tab.id, "agent", None, Some("codex".into()))
+            .await
+            .expect("pane");
+        let home = data
+            .root()
+            .join("providers/codex/local-ollama-11434-qwen3-0000abcd");
+        std::fs::create_dir_all(&home).expect("home");
+        let config = LaunchConfig {
+            extra_args: Vec::new(),
+            home: Some(home.display().to_string()),
+            own_home: false,
+        };
+        panes::set_local_model(&store, &pane.id, "qwen3 · Ollama", &config)
+            .await
+            .expect("local");
+        let login = || {
+            let mut vars = std::collections::BTreeMap::new();
+            vars.insert(
+                "PATH".to_string(),
+                format!("{}:/usr/bin:/bin", bin.display()),
+            );
+            vars.insert("HOME".to_string(), dir.path().display().to_string());
+            vars.insert("NO_PROXY".to_string(), "corp.example".to_string());
+            LoginEnv {
+                vars,
+                shell: "/bin/sh".into(),
+                degraded: false,
+            }
+        };
+        async fn start(
+            svc: &TerminalService,
+            id: &PaneId,
+            mode: LaunchMode,
+        ) -> Result<Arc<VecSink>, IpcError> {
+            let sink = Arc::new(VecSink::default());
+            svc.spawn_with(id, 80, 24, None, Some(sink.clone()), mode)
+                .await
+                .map(|_| sink)
+        }
+        let expect_local = |sink: Arc<VecSink>| {
+            let text = || String::from_utf8_lossy(&sink.data()).into_owned();
+            assert!(
+                wait_until(Duration::from_secs(10), || text().contains("NP=")),
+                "{}",
+                text()
+            );
+            assert!(
+                text().contains("NP=corp.example,127.0.0.1,localhost,::1"),
+                "{}",
+                text()
+            );
+            assert!(
+                text().contains(&format!("HOME={}", home.display())),
+                "{}",
+                text()
+            );
+        };
+        let svc = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
+        svc.set_login_env(login());
+        for mode in [LaunchMode::Normal, LaunchMode::Fresh] {
+            let sink = start(&svc, &pane.id, mode).await.expect("start");
+            expect_local(sink);
+            let session = sessions::latest_for_pane(&store, &pane.id)
+                .await
+                .expect("read")
+                .expect("session");
+            assert_eq!(session.account_id, None, "{mode:?}");
+            assert_eq!(
+                session.provider_home.as_deref(),
+                Some(home.to_str().expect("utf8"))
+            );
+            svc.pty.kill(pane.id.as_str()).expect("kill");
+        }
+        // A new run of the app: nothing in memory, the pane still knows.
+        let again = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
+        again.set_login_env(login());
+        let sink = start(&again, &pane.id, LaunchMode::Normal)
+            .await
+            .expect("restart");
+        expect_local(sink);
+        again.pty.kill(pane.id.as_str()).expect("kill");
+        // The home is gone: refused, not started on an account.
+        std::fs::remove_dir_all(&home).expect("rm");
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("started with its home gone");
+        };
+        assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
+        assert!(!again.pty.is_live(pane.id.as_str()));
     }
 
     /// F-EN-10 review: an added agent whose saved program is gone isn't

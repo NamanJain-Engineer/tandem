@@ -48,8 +48,23 @@ pub trait LocalHttp: Send + Sync {
     async fn get_json(&self, url: &str) -> Option<serde_json::Value>;
 }
 
+/// Most a server's answer may be.
+pub const MAX_BODY: usize = 4 * 1024 * 1024;
+
+/// A URL the finder may ask: plain HTTP to `127.0.0.1` with a port and no
+/// user information (D-2517).
+pub fn loopback_url(url: &str) -> bool {
+    reqwest::Url::parse(url).is_ok_and(|u| {
+        u.scheme() == "http"
+            && u.host_str() == Some("127.0.0.1")
+            && u.username().is_empty()
+            && u.password().is_none()
+            && u.port().is_some()
+    })
+}
+
 /// The real client: no proxy (a proxy would send the request off the
-/// machine), a 1 s limit, at most 4 MB.
+/// machine), a 1 s limit, no redirects, at most [`MAX_BODY`] read.
 pub struct Reqwest(reqwest::Client);
 
 impl Reqwest {
@@ -68,53 +83,62 @@ impl Reqwest {
 #[async_trait::async_trait]
 impl LocalHttp for Reqwest {
     async fn get_json(&self, url: &str) -> Option<serde_json::Value> {
-        if !url.starts_with("http://127.0.0.1:") {
+        if !loopback_url(url) {
             return None;
         }
-        let res = self.0.get(url).send().await.ok()?;
+        let mut res = self.0.get(url).send().await.ok()?;
         if !res.status().is_success() {
             return None;
         }
-        let bytes = res.bytes().await.ok()?;
-        if bytes.len() > 4 * 1024 * 1024 {
+        if res.content_length().is_some_and(|n| n > MAX_BODY as u64) {
             return None;
         }
-        serde_json::from_slice(&bytes).ok()
+        // Read in chunks and stop past the cap: a server that never ends
+        // its answer can't fill memory.
+        let mut body = Vec::new();
+        while let Some(chunk) = res.chunk().await.ok()? {
+            if body.len() + chunk.len() > MAX_BODY {
+                return None;
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&body).ok()
     }
 }
 
-/// The ports to ask: every kind's default, then the user's.
+/// The ports to ask: every kind's default, with a port the user added in
+/// place of the default that has its number (D-2517).
 pub fn targets(added: &BTreeMap<u16, ServerKind>) -> Vec<(ServerKind, u16, bool)> {
     let mut out: Vec<(ServerKind, u16, bool)> = ServerKind::ALL
         .iter()
+        .filter(|k| !added.contains_key(&k.default_port()))
         .map(|k| (*k, k.default_port(), false))
         .collect();
-    for (port, kind) in added {
-        if !out.iter().any(|(_, p, _)| p == port) {
-            out.push((*kind, *port, true));
-        }
-    }
+    out.extend(added.iter().map(|(port, kind)| (*kind, *port, true)));
     out
+}
+
+/// Asks one server for its models.
+pub async fn ask(http: &dyn LocalHttp, kind: ServerKind, port: u16, added: bool) -> LocalServer {
+    let body = http
+        .get_json(&local_models::url(port, kind.models_path()))
+        .await;
+    let models = body.as_ref().and_then(|b| local_models::parse(kind, b));
+    LocalServer {
+        kind,
+        port,
+        added,
+        running: models.is_some(),
+        models: models.unwrap_or_default(),
+        startable: kind.startable(),
+    }
 }
 
 /// Asks each target once, all at once.
 pub async fn find(http: &dyn LocalHttp, added: &BTreeMap<u16, ServerKind>) -> Vec<LocalServer> {
     let asks = targets(added)
         .into_iter()
-        .map(|(kind, port, added)| async move {
-            let body = http
-                .get_json(&local_models::url(port, kind.models_path()))
-                .await;
-            let models = body.as_ref().and_then(|b| local_models::parse(kind, b));
-            LocalServer {
-                kind,
-                port,
-                added,
-                running: models.is_some(),
-                models: models.unwrap_or_default(),
-                startable: kind.startable(),
-            }
-        });
+        .map(|(kind, port, added)| ask(http, kind, port, added));
     futures::future::join_all(asks).await
 }
 
@@ -144,6 +168,9 @@ pub fn ports_value(ports: &BTreeMap<u16, ServerKind>) -> serde_json::Value {
 
 /// Added ports at most.
 pub const MAX_PORTS: usize = 16;
+
+/// Held across each Add and Remove's read, change and write.
+static PORTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn added_ports(state: &AppState) -> BTreeMap<u16, ServerKind> {
     let value = settings::get(&state.store, SettingKey::LocalModelPorts)
@@ -199,6 +226,7 @@ pub async fn add_port(
             "Ports run from 1 to 65535",
         ));
     }
+    let _held = PORTS.lock().await;
     let mut ports = added_ports(state).await;
     if ports.len() >= MAX_PORTS && !ports.contains_key(&port) {
         return Err(IpcError::new(
@@ -212,33 +240,42 @@ pub async fn add_port(
 
 /// `local_models_remove_port`.
 pub async fn remove_port(state: &AppState, port: u16) -> Result<(), IpcError> {
+    let _held = PORTS.lock().await;
     let mut ports = added_ports(state).await;
     ports.remove(&port);
     save_ports(state, &ports).await
 }
 
-/// The provider home a server's Codex panes use, with its `config.toml`
-/// written for `model`. Only this folder is written (F-EN-11 AC2).
+/// The provider home a server's model runs Codex in, with its `config.toml`
+/// written for that model. Only this folder is written, kept private
+/// (F-EN-11 AC2); a `config.toml` that can't be read is refused, never
+/// replaced.
 pub fn prepare_home(
     providers: &std::path::Path,
     kind: ServerKind,
     port: u16,
     model: &str,
 ) -> Result<PathBuf, IpcError> {
-    let home = providers
-        .join("codex")
-        .join(local_models::home_name(kind, port));
-    std::fs::create_dir_all(&home)
-        .map_err(|e| IpcError::new(ErrorCode::Io, format!("Couldn't make the folder: {e}")))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700));
+    let io =
+        |e: std::io::Error| IpcError::new(ErrorCode::Io, format!("Couldn't make the folder: {e}"));
+    let codex = providers.join("codex");
+    let home = codex.join(local_models::home_name(kind, port, model));
+    for dir in [providers, codex.as_path(), home.as_path()] {
+        tandem_engines::homes::private_dir(dir).map_err(io)?;
     }
     let file = home.join("config.toml");
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
+    let existing = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(IpcError::new(
+                ErrorCode::Io,
+                format!("Couldn't read Codex's settings in this model's home: {e}"),
+            ))
+        }
+    };
     let config = local_models::codex_config(&existing, kind, port, model)
-        .map_err(|e| IpcError::new(ErrorCode::Invalid, e))?;
+        .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
     tandem_core::atomic::atomic_write(&file, config.as_bytes(), Some(0o600)).map_err(|e| {
         IpcError::new(
             ErrorCode::Io,
@@ -248,9 +285,54 @@ pub fn prepare_home(
     Ok(home)
 }
 
-/// `local_model_start`: a Codex pane in `tab` for `model` on that server,
-/// whose first start runs Codex in the server's own provider home with no
-/// account (D-2519).
+/// The user's Codex arguments for a local pane: all of them but the ones
+/// that choose a model, provider or profile, which the local home sets
+/// (D-2519). Sandbox and approval arguments carry over.
+pub fn local_args(args: &[String]) -> Vec<String> {
+    let takes_value = ["-m", "--model", "-p", "--profile"];
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if takes_value.contains(&a) {
+            i += 2;
+            continue;
+        }
+        if a == "--oss"
+            || ["--model=", "--profile=", "-m="]
+                .iter()
+                .any(|p| a.starts_with(p))
+        {
+            i += 1;
+            continue;
+        }
+        if a == "-c" || a == "--config" {
+            let value = args.get(i + 1).map(String::as_str).unwrap_or_default();
+            if is_model_setting(value) {
+                i += 2;
+                continue;
+            }
+        }
+        if let Some(value) = a.strip_prefix("--config=") {
+            if is_model_setting(value) {
+                i += 1;
+                continue;
+            }
+        }
+        out.push(args[i].clone());
+        i += 1;
+    }
+    out
+}
+
+fn is_model_setting(kv: &str) -> bool {
+    let key = kv.split('=').next().unwrap_or_default().trim();
+    key == "model" || key == "profile" || key.starts_with("model_provider")
+}
+
+/// `local_model_start`: a Codex pane in `tab` for `model` on that server.
+/// Every start of it runs Codex in the model's own home with no account
+/// (D-2519).
 pub async fn start(
     state: &AppState,
     tab: &TabId,
@@ -270,6 +352,14 @@ pub async fn start(
             "That model's name can't be used",
         ));
     }
+    let tab_row = tandem_store::repo::tabs::get(&state.store, tab).await?;
+    let ws = tandem_store::repo::workspaces::get(&state.store, &tab_row.workspace_id).await?;
+    if ws.kind != "local" {
+        return Err(IpcError::new(
+            ErrorCode::EngineUnsupported,
+            "A local model runs in a folder on this computer",
+        ));
+    }
     let engines = &state.terminals.engines;
     let codex = engines
         .get("codex")
@@ -280,12 +370,9 @@ pub async fn start(
             "Install Codex to use a local model",
         ));
     }
-    let offered = find(http()?.as_ref(), &BTreeMap::from([(port, kind)]))
-        .await
-        .into_iter()
-        .find(|s| s.port == port)
-        .is_some_and(|s| s.models.iter().any(|m| m.id == model));
-    if !offered {
+    let added = added_ports(state).await.get(&port) == Some(&kind);
+    let server = ask(http()?.as_ref(), kind, port, added).await;
+    if !server.models.iter().any(|m| m.id == model) {
         return Err(IpcError::new(
             ErrorCode::NotFound,
             format!(
@@ -294,19 +381,19 @@ pub async fn start(
             ),
         ));
     }
+    state
+        .terminals
+        .check_live_limit(state.entitlements.limits().panes)?;
     let home = prepare_home(engines.homes.root(), kind, port, model)?;
+    let config = LaunchConfig {
+        extra_args: local_args(&engines.extra_args("codex").await),
+        home: Some(home.to_string_lossy().into_owned()),
+        own_home: false,
+    };
     let mut pane =
         create_pane_with(state, tab, "agent", None, Some("codex".into()), None, false).await?;
     let label = format!("{model} · {}", kind.label());
-    panes::set_local_model(&state.store, &pane.id, &label).await?;
-    state.terminals.launch_on_first_start(
-        &pane.id,
-        LaunchConfig {
-            extra_args: Vec::new(),
-            home: Some(home.to_string_lossy().into_owned()),
-            own_home: false,
-        },
-    );
+    panes::set_local_model(&state.store, &pane.id, &label, &config).await?;
     tracing::info!(
         code = "local_models.started",
         "a Codex pane on a local model"
@@ -381,7 +468,13 @@ mod tests {
         let providers = dir.path().join("providers");
         let home = prepare_home(&providers, ServerKind::LmStudio, 1234, "openai/gpt-oss-20b")
             .expect("home");
-        assert_eq!(home, providers.join("codex/local-lmstudio-1234"));
+        assert_eq!(
+            home,
+            providers.join(format!(
+                "codex/{}",
+                local_models::home_name(ServerKind::LmStudio, 1234, "openai/gpt-oss-20b")
+            ))
+        );
         let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
         assert!(
             config.contains("base_url = \"http://127.0.0.1:1234/v1\""),
@@ -399,16 +492,141 @@ mod tests {
                 .permissions()
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
+            for d in [providers.clone(), providers.join("codex"), home.clone()] {
+                let mode = std::fs::metadata(&d).expect("meta").permissions().mode();
+                assert_eq!(mode & 0o777, 0o700, "{}", d.display());
+            }
         }
+        // Another model of the same server gets a home of its own.
+        let other =
+            prepare_home(&providers, ServerKind::LmStudio, 1234, "qwen/qwen3-8b").expect("other");
+        assert_ne!(other, home);
+        assert!(std::fs::read_to_string(home.join("config.toml"))
+            .expect("config")
+            .contains("openai/gpt-oss-20b"));
+        // A config.toml that can't be read is refused, never replaced.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let file = other.join("config.toml");
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+            if std::fs::read_to_string(&file).is_err() {
+                assert!(
+                    prepare_home(&providers, ServerKind::LmStudio, 1234, "qwen/qwen3-8b").is_err()
+                );
+            }
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
+                .expect("chmod back");
+        }
+    }
+
+    #[test]
+    fn f_en_11_3_only_plain_http_to_127_0_0_1_with_a_port_is_asked() {
+        assert!(loopback_url("http://127.0.0.1:11434/api/tags"));
+        for url in [
+            "http://127.0.0.1:80@example.com/",
+            "http://user@127.0.0.1:11434/api/tags",
+            "https://127.0.0.1:11434/api/tags",
+            "http://localhost:11434/api/tags",
+            "http://127.0.0.1/api/tags",
+            "http://192.168.1.5:11434/api/tags",
+            "not a url",
+        ] {
+            assert!(!loopback_url(url), "{url}");
+        }
+    }
+
+    /// F-EN-11 review: an answer that never ends is cut off at 4 MB.
+    #[tokio::test]
+    async fn f_en_11_3_an_endless_answer_is_not_read_past_the_cap() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = sent.clone();
+        tokio::spawn(async move {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await;
+            let _ = sock
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n")
+                .await;
+            let chunk = vec![b' '; 64 * 1024];
+            let framed = [
+                format!("{:x}\r\n", chunk.len()).into_bytes(),
+                chunk,
+                b"\r\n".to_vec(),
+            ]
+            .concat();
+            while sock.write_all(&framed).await.is_ok() {
+                if counter.fetch_add(64 * 1024, std::sync::atomic::Ordering::SeqCst)
+                    > 64 * 1024 * 1024
+                {
+                    break;
+                }
+            }
+        });
+        let client = Reqwest::new().expect("client");
+        let url = local_models::url(port, "/api/tags");
+        assert!(client.get_json(&url).await.is_none());
+        // Stopped soon after the cap, not after reading everything sent.
+        assert!(sent.load(std::sync::atomic::Ordering::SeqCst) < 32 * 1024 * 1024);
+    }
+
+    #[test]
+    fn f_en_11_3_an_added_port_takes_the_place_of_a_default_with_its_number() {
+        let t = targets(&BTreeMap::from([(8080, ServerKind::Ollama)]));
+        assert!(t.contains(&(ServerKind::Ollama, 8080, true)));
+        assert!(!t.contains(&(ServerKind::LlamaCpp, 8080, false)));
+        assert_eq!(t.len(), 3);
+    }
+
+    #[test]
+    fn f_en_11_2_the_users_codex_arguments_carry_over_but_not_model_or_provider() {
+        let args: Vec<String> = [
+            "--sandbox",
+            "read-only",
+            "-a",
+            "untrusted",
+            "-m",
+            "gpt-5",
+            "--oss",
+            "--profile",
+            "work",
+            "-c",
+            "model_provider=openai",
+            "-c",
+            "model_reasoning_effort=high",
+            "--model=o3",
+            "--config=model=o4",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            local_args(&args),
+            vec![
+                "--sandbox",
+                "read-only",
+                "-a",
+                "untrusted",
+                "-c",
+                "model_reasoning_effort=high"
+            ]
+        );
     }
 
     #[test]
     fn f_en_11_3_added_ports_round_trip_and_bad_entries_are_dropped() {
         let ports = BTreeMap::from([(11500, ServerKind::Ollama), (1235, ServerKind::LmStudio)]);
         let value = ports_value(&ports);
-        assert_eq!(value, json!({"ports": ["lmstudio:1235", "ollama:11500"]}));
+        assert_eq!(value, json!({"ports": ["lm_studio:1235", "ollama:11500"]}));
         assert_eq!(ports_from(&value), ports);
-        let messy = json!({"ports": ["ollama:0", "vllm:9", 7, "llamacpp:8081"]});
+        let messy = json!({"ports": ["ollama:0", "vllm:9", 7, "llama_cpp:8081"]});
         assert_eq!(
             ports_from(&messy),
             BTreeMap::from([(8081, ServerKind::LlamaCpp)])

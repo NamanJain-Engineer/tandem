@@ -312,16 +312,47 @@ pub async fn set_cwd(store: &Store, id: &PaneId, cwd: String) -> Result<(), Stor
         .await
 }
 
-/// Marks an agent pane as started on a local model (F-EN-11).
-pub async fn set_local_model(store: &Store, id: &PaneId, label: &str) -> Result<(), StoreError> {
+/// Marks an agent pane as started on a local model and keeps how every
+/// start of it launches: its own home and arguments, never an account
+/// (F-EN-11, D-2519).
+pub async fn set_local_model(
+    store: &Store,
+    id: &PaneId,
+    label: &str,
+    config: &crate::repo::sessions::LaunchConfig,
+) -> Result<(), StoreError> {
     let (id, label) = (id.as_str().to_string(), label.to_string());
+    let json = serde_json::to_string(config).map_err(|e| StoreError::Invalid(e.to_string()))?;
     store
         .write(move |t| {
             t.execute(
-                "UPDATE panes SET local_model = ?2 WHERE id = ?1 AND kind = 'agent' AND closed_at IS NULL",
-                params![id, label],
+                "UPDATE panes SET local_model = ?2, launch_config = ?3 \
+                 WHERE id = ?1 AND kind = 'agent' AND closed_at IS NULL",
+                params![id, label, json],
             )?;
             Ok(())
+        })
+        .await
+}
+
+/// A local-model pane's saved launch (F-EN-11): `None` when none was saved,
+/// `Some(Err)` when it can't be read.
+pub async fn launch_config(
+    store: &Store,
+    id: &PaneId,
+) -> Result<Option<Result<crate::repo::sessions::LaunchConfig, String>>, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            let raw: Option<String> = c
+                .query_row(
+                    "SELECT launch_config FROM panes WHERE id = ?1",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten();
+            Ok(raw.map(|j| serde_json::from_str(&j).map_err(|e| e.to_string())))
         })
         .await
 }
@@ -494,12 +525,25 @@ mod tests {
             .await
             .expect("terminal");
         assert_eq!(agent.local_model, None);
-        set_local_model(&store, &agent.id, "qwen3-coder:30b · Ollama")
+        let config = crate::repo::sessions::LaunchConfig {
+            extra_args: vec!["--sandbox".into(), "read-only".into()],
+            home: Some("/data/providers/codex/local-ollama-11434-qwen3".into()),
+            own_home: false,
+        };
+        assert_eq!(launch_config(&store, &agent.id).await.expect("read"), None);
+        set_local_model(&store, &agent.id, "qwen3-coder:30b · Ollama", &config)
             .await
             .expect("set");
-        set_local_model(&store, &shell.id, "x")
+        set_local_model(&store, &shell.id, "x", &config)
             .await
             .expect("ignored");
+        // Kept in the database, so every later start (and a new run of the
+        // app) launches the same way.
+        assert_eq!(
+            launch_config(&store, &agent.id).await.expect("read"),
+            Some(Ok(config))
+        );
+        assert_eq!(launch_config(&store, &shell.id).await.expect("read"), None);
         let listed = list_open(&store, &tab.id).await.expect("list");
         let model = |id: &PaneId| {
             listed
