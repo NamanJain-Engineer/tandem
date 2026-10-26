@@ -258,6 +258,7 @@ describe("Plan with Lead (F-TK-06)", () => {
       "TAN-2 · Sign-in pageClaude Code · its own sign-inLeft alone: already running",
     ]);
     expect(runs.map((r) => r.getAttribute("data-skip"))).toEqual(["", "running"]);
+    expect(runs.map((r) => r.getAttribute("data-review-engine"))).toEqual(["claude", "codex"]);
     expect(calls.some((c) => c.cmd === "plan_execute")).toBe(false);
     // Back: nothing started.
     fireEvent.click(screen.getByTestId("plan-confirm-back"));
@@ -409,6 +410,33 @@ const THREE: PlanView["tasks"] = [
 const states = () => screen.getAllByTestId("plan-run").map((r) => r.dataset.state);
 
 describe("Follow a plan through (F-TK-07)", () => {
+  it("F-TK-07.2 two runs that finish while a read is under way keep their verdicts (E2E-M18-TK-07)", async () => {
+    // The plan starts and its chip and dialog read the runs, one in setup
+    // and one running; both finish, reviewed, before that read lands. The
+    // rows show where the runs are, not what the read saw.
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({ task_attempts_list: () => new Promise<AttemptView[]>((ok) => held.push(ok)) });
+    usePlans.setState({
+      plans: {
+        pl_1: plan({ state: "started", tasks: THREE.slice(0, 2), issueIds: ["TAN-1", "TAN-2"] }),
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(held.length).toBeGreaterThan(0));
+    act(() => {
+      emitLocal("tasks:attempt", run("TAN-1", "in_review", 1, { reviewVerdict: "approve" }));
+      emitLocal("tasks:attempt", run("TAN-2", "in_review", 2, { reviewVerdict: "approve" }));
+    });
+    const stale = [run("TAN-1", "setup", 1), run("TAN-2", "running", 2)];
+    await act(async () => {
+      for (const ok of held) ok(stale);
+    });
+    await waitFor(() => expect(states()).toEqual(["in_review", "in_review"]));
+    const verdicts = screen.getAllByTestId("plan-run").map((r) => r.dataset.verdict);
+    expect(verdicts).toEqual(["approve", "approve"]);
+  });
+
   it("F-TK-07.2 overlapping reads of the runs: only the latest writes, and a run that moved meanwhile keeps its state", async () => {
     const held: Array<{ ok: (v: AttemptView[]) => void; fail: (e: unknown) => void }> = [];
     backend({

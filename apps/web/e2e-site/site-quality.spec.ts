@@ -9,7 +9,7 @@ import { SITE_PAGES } from "../lib/site";
 // for visitors who ask for reduced motion.
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
+const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
 
 test.beforeEach(async ({ context }) => {
   // The test server streams the product video in full (no Range support), and
@@ -120,5 +120,25 @@ test("F-WB-01 a section anchor lands with its heading just under the sticky head
       return head - (document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0);
     }, id);
     expect(gap, id).toBeLessThanOrEqual(120);
+  }
+});
+
+test("F-WB-01 the home page is at most 8,000 px long at 1440 (DESIGN §5.1.4, D-1897, D-1885)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(8000);
+});
+
+test("F-WB-01 every engine's name fits on one line in the seven-column engines grid (D-1886)", async ({ page }) => {
+  for (const [w, h] of [[1440, 900], [1280, 800]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto("/");
+    const names = page.locator("#engines [data-engine-name]");
+    expect(await names.count()).toBe(13);
+    const bad = await names.evaluateAll((els) =>
+      els.filter((el) => el.scrollWidth > el.clientWidth || el.getBoundingClientRect().height > parseFloat(getComputedStyle(el).lineHeight) * 1.5).map((el) => el.textContent),
+    );
+    expect(bad, `${w}×${h}`).toEqual([]);
   }
 });

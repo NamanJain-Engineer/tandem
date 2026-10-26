@@ -76,8 +76,9 @@ export default function CreditsPage() {
               Purchased credits never expire and are spent after your monthly credits.
             </p>
             {!me.limits.creditPacks ? (
-              <p className="mt-4 text-sm">
-                Credit packs come with Pro and Team. <a className="text-accent underline" href="/billing">See plans</a>
+              <p className="mt-4 text-sm" data-testid="packs-nothing-to-buy">
+                There&apos;s nothing to buy: everything that runs on your computer works without an account.
+                Hosted features come with Vibezeo accounts.
               </p>
             ) : member ? (
               <p className="mt-4 text-sm" data-testid="packs-ask-admin">

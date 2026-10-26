@@ -8,7 +8,8 @@
 //! - A prompt is answered "You said: <text>". `run <cmd>` asks permission
 //!   first and answers "Ran <cmd>." or "Okay, I won't run it."; `/model`
 //!   answers with the session's model; `/hang` streams "Working on it" and
-//!   waits for `session/cancel`.
+//!   waits for `session/cancel`; a task review ("Post one comment on
+//!   TAN-<n>… Verdict") gets the verdict every fake gives (F-TK-04).
 
 use std::io::{BufRead, Write};
 
@@ -142,6 +143,10 @@ impl Agent {
                 );
                 say(&session, "Okay, I won't run it.");
             }
+            return done("end_turn");
+        }
+        if let Some(verdict) = crate::review_reply(text) {
+            say(&session, verdict);
             return done("end_turn");
         }
         say(&session, &format!("You said: {text}"));

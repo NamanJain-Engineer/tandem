@@ -187,7 +187,7 @@ export function RemotePage() {
       <SettingsGroup label={t("remote.devices")}>
         {error && (
           <div className="flex items-center gap-3 px-4 py-3">
-            <span className="flex-1 text-sm text-danger-text">{t("remote.devices.error")}</span>
+            <span className="flex-1 text-sm text-danger">{t("remote.devices.error")}</span>
             <Button size="sm" variant="secondary" onClick={() => void load()}>
               {t("remote.retry")}
             </Button>

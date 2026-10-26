@@ -15,7 +15,8 @@ export {
   initials,
   type AvatarProps,
 } from "./components/Avatar";
-export { Badge, Chip, type BadgeVariant, type ChipProps } from "./components/Badge";
+export { Badge, Chip, Count, type BadgeVariant, type ChipProps, type CountTone } from "./components/Badge";
+export { AGO_LABELS, TimeAgo, compactAgo, useNow, type AgoLabels } from "./components/TimeAgo";
 export { Button, buttonClass, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export {
   Checkbox,
@@ -121,6 +122,7 @@ export {
 } from "./components/markdown";
 export { CodeBlock, LARGE_PREVIEW, MarkdownView, type CodeBlockProps, type MarkdownViewProps } from "./components/MarkdownView";
 export { Popover, type PopoverProps } from "./components/Popover";
+export { Coachmark, placeCoachmark, type CoachmarkProps } from "./components/Coachmark";
 export {
   ContextMeter,
   ProgressBar,

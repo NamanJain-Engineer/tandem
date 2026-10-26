@@ -126,11 +126,14 @@ export type ToolGroupProps = {
   status: ToolCallStatus;
   statusLabel: string;
   children: ReactNode;
+  /** The latest call, always shown under the fold (D-2604): the folded row
+   * then reads "+n previous tool calls". */
+  tail?: ReactNode;
   defaultOpen?: boolean;
 };
 
 /** Three or more consecutive tool calls fold into one row (UI-21). */
-export function ToolGroup({ summary, collapseLabel, status, statusLabel, children, defaultOpen = false }: ToolGroupProps) {
+export function ToolGroup({ summary, collapseLabel, status, statusLabel, children, tail, defaultOpen = false }: ToolGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
   const panel = useId();
   return (
@@ -154,6 +157,7 @@ export function ToolGroup({ summary, collapseLabel, status, statusLabel, childre
           {children}
         </div>
       )}
+      {tail}
     </div>
   );
 }

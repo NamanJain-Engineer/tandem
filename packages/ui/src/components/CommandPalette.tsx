@@ -127,7 +127,7 @@ export function CommandPalette({
         <D.Overlay className="tn-fade fixed inset-0 z-[var(--z-command)] bg-overlay" />
         <D.Content
           aria-describedby={undefined}
-          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[640px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 shadow-3 focus:outline-none"
+          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[640px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 shadow-e3 focus:outline-none"
         >
           <D.Title className="sr-only">{title}</D.Title>
           <Command

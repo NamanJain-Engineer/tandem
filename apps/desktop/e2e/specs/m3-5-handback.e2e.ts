@@ -22,7 +22,7 @@ describe("E2E-M3-5 handback", () => {
     expect(await paneText(agent)).toContain(`cwd: ${root}`);
     // In-page text: WebKitWebDriver's getText drops truncated text.
     const title = `[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-title"]`;
-    await browser.waitUntil(async () => (await textOf(title)) === "Claude Code · 1", {
+    await browser.waitUntil(async () => (await textOf(title)) === `Claude Code · ${root.split("/").pop()}`, {
       timeout: 5_000,
       timeoutMsg: `title: ${await textOf(title)}`,
     });

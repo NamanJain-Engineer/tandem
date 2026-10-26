@@ -2,7 +2,7 @@
 // needs 4.5:1 against every surface it sits on; UI parts that carry meaning
 // (status dots, the focus ring) need 3:1. Alpha colours are blended over the
 // surface they're drawn on before measuring.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -67,6 +67,8 @@ const TEXT = [
   "--tn-status-working-text",
   "--tn-status-waiting-text",
   "--tn-status-done-text",
+  "--tn-warning-text",
+  "--tn-status-error",
   "--tn-danger",
 ];
 /** Text on its own coloured fill (buttons, highlighted rows). */
@@ -111,6 +113,17 @@ describe("§5.4 WCAG 2.2 AA contrast over the tokens", () => {
     });
   }
 
+  it("§1.2a dark: surfaces rise in lightness with elevation, all of them neutral", () => {
+    const t = themes.dark;
+    const lum = SURFACES.map((name) => luminance(parse(t.get(name) as string, t)));
+    for (let i = 1; i < lum.length; i++) expect(lum[i]).toBeGreaterThan(lum[i - 1] as number);
+    for (const name of SURFACES) {
+      const [r, g, b] = parse(t.get(name) as string, t);
+      // Neutral: no channel more than 4 apart (the old slate leaned blue by 12).
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(4);
+    }
+  });
+
   it("measures known pairs correctly", () => {
     const t = new Map([
       ["--tn-bg", "#ffffff"],
@@ -119,5 +132,24 @@ describe("§5.4 WCAG 2.2 AA contrast over the tokens", () => {
     ]);
     expect(ratio(t, "--a", "--tn-bg")).toBeCloseTo(21, 1);
     expect(ratio(t, "--b", "--tn-bg")).toBeCloseTo(4.48, 1);
+  });
+
+  it("every *-text colour utility the code uses has a token behind it", () => {
+    const theme = css.slice(css.indexOf("@theme inline"));
+    const used = new Set<string>();
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== "node_modules") walk(p);
+        } else if (/\.tsx?$/.test(e.name)) {
+          for (const m of readFileSync(p, "utf8").matchAll(/\b(?:text|bg|border)-([a-z]+(?:-[a-z]+)*-text)\b/g)) used.add(m[1] as string);
+        }
+      }
+    };
+    walk(join(import.meta.dirname, ".."));
+    walk(join(import.meta.dirname, "../../../../apps/desktop/src"));
+    expect(used.has("warning-text")).toBe(true);
+    expect([...used].filter((name) => !theme.includes(`--color-${name}:`))).toEqual([]);
   });
 });

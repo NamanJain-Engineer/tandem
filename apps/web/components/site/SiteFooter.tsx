@@ -22,7 +22,7 @@ export function SiteFooter() {
             href={versionPath(RELEASE.version)}
             className="inline-flex h-7 items-center gap-2 rounded-full bg-(--site-glass) px-3 font-mono text-[0.75rem] text-fg-muted shadow-[inset_0_0_0_1px_var(--site-line)] hover:text-fg"
           >
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--tn-accent)]" />
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-subtle" />
             Released · {RELEASE.version} for Linux
           </a>
         </div>

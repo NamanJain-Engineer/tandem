@@ -32,6 +32,11 @@ export function DocsShell({
   const next = at >= 0 ? flat[at + 1] : undefined;
   return (
     <SiteFrame current="/docs/">
+      {/* How far down the page you are, from the scroll alone (D-1861, D-1874). */}
+      <div
+        aria-hidden="true"
+        className="reading-progress pointer-events-none fixed inset-x-0 top-(--site-header-h) z-40 h-0.5 bg-[linear-gradient(90deg,var(--site-ink-a),var(--site-ink-b))]"
+      />
       <div className="relative isolate">
         <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[26rem]" />
         <div className="container-site grid gap-x-12 pb-(--site-section-y) pt-8 lg:grid-cols-[14.5rem_minmax(0,1fr)] lg:pt-12 xl:grid-cols-[14.5rem_minmax(0,1fr)_12.5rem]">
@@ -116,7 +121,7 @@ export function DocsShell({
                   <li key={t.url}>
                     <a
                       href={t.url}
-                      className={`-ml-px block border-l border-transparent py-1.5 text-caption text-fg-muted transition-colors duration-(--dur-base) hover:border-accent hover:text-fg ${t.depth > 2 ? "pl-6" : "pl-3"}`}
+                      className={`-ml-px block border-l border-transparent py-1.5 text-caption text-fg-muted transition-colors duration-(--dur-base) hover:border-line-strong hover:text-fg ${t.depth > 2 ? "pl-6" : "pl-3"}`}
                     >
                       {t.title}
                     </a>

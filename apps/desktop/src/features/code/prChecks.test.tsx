@@ -15,6 +15,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { CHECKS_IDLE_MS, checksDue, loadChecks, pollChecks, useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
+import { checksState } from "./PullRequestChecks";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
 
 const tab = (ws: string): Tab => ({
@@ -272,5 +273,16 @@ describe("CI results and review comments (F-WT-08)", () => {
     withDialogs(null);
     act(() => useWorktrees.getState().open({ kind: "checks", worktreeId: "wt_1" }));
     expect(await screen.findByTestId("check-copy")).toBeTruthy();
+  });
+});
+
+describe("F-WT-08 checks in one word (D-2603)", () => {
+  const c = (bucket: "pass" | "fail" | "pending" | "skipping" | "cancel") =>
+    ({ name: bucket, bucket, link: null, workflow: null }) as unknown as Parameters<typeof checksState>[0][number];
+  it("a cancelled run never reads as passed; skipped checks don't count against it", () => {
+    expect(checksState([c("pass"), c("cancel")])).toBe("cancelled");
+    expect(checksState([c("pass"), c("skipping")])).toBe("passed");
+    expect(checksState([c("cancel"), c("pending")])).toBe("running");
+    expect(checksState([c("pending"), c("fail")])).toBe("failed");
   });
 });
