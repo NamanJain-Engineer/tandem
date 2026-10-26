@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { ThemeSwitch } from "./site/ThemeSwitch";
 
 // Card and Notice have no Next.js imports, so the LAN web app can use them.
 export { Card, Notice } from "./Panel";
@@ -43,6 +44,7 @@ export function Shell({
           <Link href="/transparency" className="text-fg-muted hover:text-fg">
             Transparency
           </Link>
+          <ThemeSwitch name="theme" className="ml-auto" />
         </nav>
       </header>
       <main className="mx-auto max-w-4xl px-6 py-10">

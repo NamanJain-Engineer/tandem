@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Download, FlaskConical, RotateCcw } from "lucide-react";
 import { Badge, Button } from "@tandem/ui";
 import { t } from "../i18n";
@@ -32,13 +32,17 @@ export function DemoBar({
   useEffect(() => {
     void useEngines.getState().refresh();
   }, []);
-  // Open on the thread with a message ready to send.
+  // Thread mode opens on the thread with a message ready to send, the
+  // first time it shows (the demo starts in Code mode, DESIGN §5.2.1).
   const loaded = useThreads((s) => s.loaded);
+  const mode = useUi((s) => s.mode);
+  const opened = useRef(false);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || mode !== "thread" || opened.current) return;
+    opened.current = true;
     const threads = useThreads.getState();
-    if (useUi.getState().mode === "thread" && threads.selectedId === null) threads.select(firstThread);
-  }, [loaded, firstThread]);
+    if (threads.selectedId === null) threads.select(firstThread);
+  }, [loaded, mode, firstThread]);
 
   return (
     <div

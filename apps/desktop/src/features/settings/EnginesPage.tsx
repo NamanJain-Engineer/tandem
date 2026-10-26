@@ -244,7 +244,7 @@ function EngineRow({
             <ChevronRight size={14} aria-hidden="true" />
           )}
         </button>
-        <EngineGlyph letters={engine.spec.logo} size={20} />
+        <EngineGlyph letters={engine.spec.logo} engine={engine.spec.id} size={20} />
         <span className="w-36 truncate text-base text-fg">{engine.spec.label}</span>
         <span className="flex flex-1 items-center gap-2 truncate text-sm text-fg-muted">
           {detecting ? (

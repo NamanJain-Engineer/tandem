@@ -1,14 +1,16 @@
+import { FEATURES } from "../lib/home";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HERO, OWNERSHIP } from "../lib/home";
+import { HERO, OWNERSHIP, PRINCIPLES } from "../lib/home";
+import { FOOTER, NAV } from "../components/site/nav";
 import { VIDEO } from "../lib/media";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
-import { allowedScripts } from "../scripts/script-allowlist.mjs";
+import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import { CHECKSUMS_URL, DOWNLOADS, DOWNLOADS_PATH, RELEASE, assetUrl } from "../lib/release";
 import {
   EARLY_ACCESS_HREF,
@@ -60,8 +62,20 @@ describe("public site", () => {
     expect(h).toContain(`Released · ${RELEASE.version} for Linux`);
     for (const e of ENGINES) expect(h).toContain(`>${e}<`);
     expect(h).toContain(`mailto:${SITE.contactEmail}`);
-    for (const id of ["try", "principles", "engines", "features", "capabilities", "claude", "team", "faq"])
+    for (const id of ["try", "principles", "engines", "features", "capabilities", "faq"])
       expect(h).toContain(`id="${id}"`);
+    // Built with Claude and the figures are about us: they moved to /about/
+    // with the founder's note (DESIGN §5.1, D-1881).
+    for (const id of ["claude", "team"]) expect(h).not.toContain(`id="${id}"`);
+    const about = html(<AboutPage />);
+    expect(about).toContain('id="claude"');
+    // The four principles repeat the ownership chips on the home page; they
+    // live on /about/ (D-1897, D-1885).
+    for (const p of PRINCIPLES) {
+      const body = p.body.replace(/'/g, "&#x27;");
+      expect(h).not.toContain(body);
+      expect(about).toContain(body);
+    }
     // The roadmap and the release tiles live on /changelog/, the video on /demo/.
     for (const id of ["roadmap", "new", "demo"]) expect(h).not.toContain(`id="${id}"`);
     const log = html(<ChangelogPage />);
@@ -69,16 +83,28 @@ describe("public site", () => {
     expect(log).toContain("None of this is in the download yet");
   });
 
+  it("F-WB-01 every header and footer link to a section lands on a page that has it (D-1885)", () => {
+    const pages: Record<string, string> = { "/": html(<HomePage />), "/about/": html(<AboutPage />) };
+    const anchored = [...NAV, ...FOOTER.flatMap((g) => g.links)].filter((l) => l.href.includes("#"));
+    expect(anchored.map((l) => l.href)).toContain("/about/#claude");
+    for (const l of anchored) {
+      const [path = "", id] = l.href.split("#");
+      expect(pages[path], l.href).toBeDefined();
+      expect(pages[path], l.href).toContain(`id="${id}"`);
+    }
+  });
+
   it("F-WB-01 the founder is named on the home and About pages, and Terms and Privacy name who runs the site", () => {
-    for (const Page of [HomePage, AboutPage])
-      expect(html(<Page />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
+    expect(html(<AboutPage />)).toContain(`${SITE.founder.role}, ${SITE.company}`);
+    // The home page's closing band names who builds it and links About (D-1881).
+    expect(html(<HomePage />)).toMatch(new RegExp(`Built by ${SITE.founder.name}\\.[\\s\\S]*?<a href="/about/"`));
     for (const Page of [TermsPage, PrivacyPage]) expect(html(<Page />)).toContain(OPERATOR);
     expect(html(<PrivacyPage />)).toContain(`Our host, ${SITE.host}`);
   });
 
-  it("F-WB-01 the founder's name links to their X profile on About and the home page", () => {
+  it("F-WB-01 the founder's name links to their X profile on About", () => {
     expect(SITE.founder.link).toBe("https://x.com/jus_eng_njainam");
-    for (const Page of [AboutPage, HomePage])
+    for (const Page of [AboutPage])
       expect(html(<Page />)).toMatch(/<a href="https:\/\/x\.com\/jus_eng_njainam"[^>]*>Naman Jain<\/a>/);
   });
 
@@ -93,33 +119,37 @@ describe("public site", () => {
   });
 
   it("F-WB-01 the screenshots are of the real app and ship with the site", () => {
-    const h = html(<HomePage />);
-    for (const name of ["code-mode", "launch-grid"]) {
-      expect(h).toContain(`src="/screens/${name}.png"`);
-      expect(existsSync(join(import.meta.dirname, `../public/screens/${name}.png`)), name).toBe(true);
-    }
+    // Code mode's capture is on /demo/; the home page shows it as a scene (D-1881).
+    const h = html(<HomePage />) + html(<DemoPage />);
+    expect(h).toContain(`src="/screens/code-mode.png"`);
+    expect(existsSync(join(import.meta.dirname, "../public/screens/code-mode.png"))).toBe(true);
+    // The engines section runs its grid full width without the old launch
+    // grid capture (D-1897, D-1885).
+    expect(html(<HomePage />)).not.toContain("/screens/launch-grid");
     // Only the labelled interactive demo (D-128) runs on sample data.
-    const outsideDemo = h.replace(/<section id="try"[\s\S]*?<\/section>/, "");
+    const outsideDemo = html(<HomePage />).replace(/<section id="try"[\s\S]*?<\/section>/, "");
     expect(outsideDemo).not.toContain("sample data");
   });
 
-  it("F-WB-01 Built with Claude separates what's shipped from what's built but not live", () => {
-    const h = html(<HomePage />);
+  it("F-WB-01 Built with Claude separates what's shipped from what's built but not live (on /about/, D-1881)", () => {
+    const h = html(<AboutPage />);
     expect(h).toContain("Built with Claude");
     expect(h).toContain("--resume");
-    expect(h).toContain("Built, live when accounts open");
-    expect(h).toContain("go live when accounts open");
+    // Hosted features take DESIGN §9.5's phrase, word for word (D-869).
+    expect(h).toContain("Comes with Vibezeo accounts");
+    expect(h).toContain("It uses Vibezeo&#x27;s servers and switches on when Vibezeo accounts open.");
+    expect(h).not.toMatch(/\bcredits?\b|\bPro\b|premium|upgrade/i);
     expect(h).not.toContain("not built yet");
     // Dashboard approvals have no real source until Thread mode: never claim them.
     expect(h).not.toMatch(/approve or deny tool requests right on the card/i);
   });
 
-  it("F-WB-01 the home page leads to the download, takes feedback by email and shows the real progress figures", () => {
+  it("F-WB-01 the home page leads to the download and takes feedback by email; /about/ shows the real progress figures", () => {
     const h = html(<HomePage />);
     expect(h).toContain(`href="/download/"`);
     expect(h).toContain("Download for Linux");
     expect(EARLY_ACCESS_HREF.startsWith(`mailto:${SITE.contactEmail}?subject=`)).toBe(true);
-    expect(h).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
+    expect(html(<AboutPage />)).toContain(PROGRESS.automatedTests.toLocaleString("en-US"));
     expect(h).toContain(`href="/changelog/"`);
   });
 
@@ -204,9 +234,10 @@ describe("public site", () => {
   it("F-WB-01 every build is named Vibezeo, and same-day platforms are a goal, not a claim", () => {
     // Each package keeps its format's naming: Name_version_arch.deb, Name-version-release.arch.rpm (D-832).
     for (const d of DOWNLOADS) for (const a of d.assets) expect(a.file, a.file).toMatch(/^Vibezeo[_-]\d/);
-    const h = html(<HomePage />);
-    expect(h).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
-    expect(h).toContain(`milestones in the ${RELEASE.version} release`);
+    // A principle, on /about/ with the others (D-1885).
+    expect(html(<AboutPage />)).toContain("The goal is that Linux, macOS and Windows get the same features on the same day");
+    // The figures moved to /about/ (D-1881).
+    expect(html(<AboutPage />)).toContain(`milestones in the ${RELEASE.version} release`);
   });
 
   it("F-WB-01 search engines get a canonical URL for every page, a share image and PNG icons", () => {
@@ -243,9 +274,14 @@ describe("public site", () => {
     expect(html(<DownloadPage />)).toContain("Free, with no paid plans.");
   });
 
-  it("F-TH-06 the home page says threads run every chat engine, six side by side, with no plan (D-2900)", () => {
+  it("F-TH-06 threads run every chat engine, six side by side, with no plan (D-2900); the home page links Thread mode (D-1881)", () => {
     const home = html(<HomePage />);
-    expect(home).toContain("Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.");
+    // The home page names Thread mode only as a link to its docs, so the
+    // sentence lives in the feature's own text, which the docs carry.
+    expect(home).toMatch(/<a href="\/docs\/thread-mode\/"[^>]*>Thread mode<\/a>/);
+    expect(FEATURES.find((f) => f.title === "Thread mode")?.body).toContain(
+      "Threads run Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Kiro CLI, OpenCode and any agent you add that speaks ACP, up to six side by side.",
+    );
     expect(home).not.toMatch(
       /need Pro|next release|in the next\b|the next (shows|has|runs|adds|lifts)|this release (has|includes|keeps|shows|runs)/i,
     );
@@ -276,7 +312,7 @@ describe("public site", () => {
     expect(DEMO_APP).toBe("/demo/app/");
   });
 
-  it("F-WB-01 AC2 (D-128, D-132) only the home page's demo loader, the download page's OS note and a blog post's JSON-LD and reading script (F-WB-06) load scripts, all first-party; no page has a frame or a third-party resource", () => {
+  it("F-WB-01 AC2 (D-128, D-132) only the scene player (the home page and 0.9.0's changelog page), the download page's OS note and a blog post's JSON-LD and reading script (F-WB-06) load scripts, all first-party; no page has a frame or a third-party resource", () => {
     for (const [name, Page] of Object.entries(PAGES)) {
       const h = html(<Page />);
       const scripts = [...h.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
@@ -290,13 +326,15 @@ describe("public site", () => {
       expect(external, name).toEqual([]);
     }
     // A blog post page (F-WB-06, D-1852, D-1860) keeps its JSON-LD and its
-    // reading script; strip-runtime fails the build on anything else.
+    // reading script; every page opens with the theme script (D-1871), which
+    // the root layout adds; strip-runtime fails the build on anything else.
     expect(allowedScripts("blog/a-post/index.html")).toEqual([
+      THEME_BOOT,
       '<script type="application/ld+json">',
       '<script src="/blog/blog.js" defer="">',
     ]);
-    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html"])
-      expect(allowedScripts(page), page).toEqual([]);
+    for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html", "changelog/0.8.0/index.html"])
+      expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
     // The loader names no other origin and frames only /demo/app/.
     const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");
     expect(loader).not.toMatch(/https?:\/\//);

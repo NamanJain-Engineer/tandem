@@ -8,7 +8,7 @@ import { Input } from "./Field";
 const WIDTH = { sm: "w-[400px]", md: "w-[520px]", lg: "w-[720px]" };
 const OVERLAY = "tn-fade fixed inset-0 z-[var(--z-dialog)] bg-overlay";
 const PANEL =
-  "tn-dialog fixed left-1/2 top-1/2 z-[var(--z-dialog)] flex max-h-[85vh] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-surface-3 shadow-3 focus:outline-none";
+  "tn-dialog fixed left-1/2 top-1/2 z-[var(--z-dialog)] flex max-h-[85vh] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-surface-3 shadow-e3 focus:outline-none";
 
 export type DialogProps = {
   open: boolean;
@@ -177,7 +177,7 @@ export function Sheet({
           <D.Content
             aria-modal={modal}
             className={cx(
-              "tn-sheet fixed bottom-0 right-0 top-[var(--titlebar-h)] z-[var(--z-sheet)] flex flex-col border-l border-border bg-surface-3 shadow-3 focus:outline-none",
+              "tn-sheet fixed bottom-0 right-0 top-[var(--titlebar-h)] z-[var(--z-sheet)] flex flex-col border-l border-border bg-surface-3 shadow-e3 focus:outline-none",
               size === "md" ? "w-[480px]" : "w-[640px]",
               "max-w-full",
             )}

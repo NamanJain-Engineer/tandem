@@ -220,7 +220,7 @@ function Header({
             data-testid="grid-close"
           />
         )}
-        {engine && <EngineBadge letters={engine.spec.logo} name={engine.spec.label} size={14} />}
+        {engine && <EngineBadge letters={engine.spec.logo} engine={engine.spec.id} name={engine.spec.label} size={14} />}
         <span className="hidden text-fg-muted md:inline">
           {thread.model ?? t("thread.header.defaultModel")}
         </span>

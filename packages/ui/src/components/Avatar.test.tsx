@@ -30,3 +30,19 @@ describe("Avatar", () => {
     expect(initials("  ")).toBe("?");
   });
 });
+
+describe("§1.7 avatars stay rounded squares at every size", () => {
+  it("the radius grows with the size: 4px to 24, 6px at 32, 10px from 48", () => {
+    const radius = (size: 20 | 24 | 32 | 48 | 72) =>
+      (render(<Avatar name="Ana" id="tm_ana" size={size} />).container.querySelector('[role="img"]') as HTMLElement)
+        .className.split(" ")
+        .find((c) => c.startsWith("rounded-"));
+    expect([20, 24, 32, 48, 72].map((s) => radius(s as 20))).toEqual([
+      "rounded-xs",
+      "rounded-xs",
+      "rounded-sm",
+      "rounded-md",
+      "rounded-md",
+    ]);
+  });
+});

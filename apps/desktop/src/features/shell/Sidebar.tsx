@@ -340,7 +340,7 @@ export function Sidebar() {
           fullscreen
             ? "absolute inset-0"
             : floating
-              ? "absolute inset-y-0 right-0 border-l border-border shadow-3"
+              ? "absolute inset-y-0 right-0 border-l border-border shadow-e3"
               : "relative shrink-0 border-l border-border",
         )}
       >

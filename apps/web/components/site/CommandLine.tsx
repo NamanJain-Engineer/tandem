@@ -14,7 +14,7 @@ export function CommandLine({ command, label = "Terminal" }: { command: string; 
         <span className="ml-auto">Click to select</span>
       </div>
       <pre className="whitespace-pre-wrap px-4 py-3 font-mono text-[0.8125rem] leading-6 text-stage-fg wrap-anywhere">
-        <span aria-hidden="true" className="select-none text-stage-accent">
+        <span aria-hidden="true" className="select-none text-stage-muted">
           ${" "}
         </span>
         <code className="select-all">{command}</code>

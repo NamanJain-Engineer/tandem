@@ -571,9 +571,9 @@ pub fn theme_background(theme: &str, os_light: bool) -> (u8, u8, u8) {
         _ => false,
     };
     if light {
-        (0xf1, 0xf5, 0xf9)
+        (0xf4, 0xf4, 0xf5)
     } else {
-        (0x06, 0x0a, 0x12)
+        (0x09, 0x09, 0x0b)
     }
 }
 
@@ -1224,10 +1224,18 @@ pub fn run() {
                     .review
                     .set(services::review_queue::start(handle.clone()));
                 // F-TK-06: Plan with Lead.
-                let _ = state.plan.set(services::plan::PlanService::new(
+                // F-TK-07: plans are kept in the data folder; a plan Lead was
+                // still writing is read again.
+                let plans = services::plan::PlanService::new(
                     std::sync::Arc::new(services::plan::AppHost { app: handle.clone() }),
                     state.bus.clone(),
-                ));
+                    Some(state.data.plans()),
+                );
+                let _ = state.plan.set(plans.clone());
+                // Before anything can start their chats (resume does it
+                // again, with the waits).
+                plans.withhold_kept();
+                tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
                 // whose process hasn't started yet gets it when it does.
@@ -1422,17 +1430,17 @@ mod tests {
     #[test]
     fn f_sh_05_1_dark_on_a_light_os_starts_hidden_on_the_dark_background() {
         // Dark stays dark on a light OS; only "system" follows the OS.
-        assert_eq!(theme_background("dark", true), (0x06, 0x0a, 0x12));
-        assert_eq!(theme_background("light", false), (0xf1, 0xf5, 0xf9));
-        assert_eq!(theme_background("system", true), (0xf1, 0xf5, 0xf9));
-        assert_eq!(theme_background("system", false), (0x06, 0x0a, 0x12));
+        assert_eq!(theme_background("dark", true), (0x09, 0x09, 0x0b));
+        assert_eq!(theme_background("light", false), (0xf4, 0xf4, 0xf5));
+        assert_eq!(theme_background("system", true), (0xf4, 0xf4, 0xf5));
+        assert_eq!(theme_background("system", false), (0x09, 0x09, 0x0b));
         // The window is created hidden on the dark background and only shown
         // by `app_ready` after the UI's first paint.
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).expect("conf");
         let main = &conf["app"]["windows"][0];
         assert_eq!(main["visible"], false);
-        assert_eq!(main["backgroundColor"], "#060a12");
+        assert_eq!(main["backgroundColor"], "#09090b");
         let html = include_str!("../../index.html");
         assert!(
             html.contains(r#"data-theme="dark""#),

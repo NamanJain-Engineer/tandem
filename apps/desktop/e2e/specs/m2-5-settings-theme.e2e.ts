@@ -107,7 +107,7 @@ describe("E2E-M2-5 settings and theme", () => {
     const durations = (await browser.execute(() => {
       const probe = document.createElement("div");
       probe.innerHTML =
-        '<span class="tn-dot"></span><span class="tn-shimmer"></span><span class="tn-indeterminate"></span><span class="animate-spin"></span><div class="tn-dialog"></div>';
+        '<span class="tn-breathe"></span><span class="tn-shimmer"></span><span class="tn-indeterminate"></span><span class="animate-spin"></span><div class="tn-dialog"></div>';
       document.body.appendChild(probe);
       const out = Array.from(probe.children).map((el) => getComputedStyle(el).animationDuration);
       probe.remove();

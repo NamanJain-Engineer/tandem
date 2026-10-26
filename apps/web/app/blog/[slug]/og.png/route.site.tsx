@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
           flexDirection: "column",
           justifyContent: "space-between",
           padding: 72,
-          backgroundColor: "#060a12",
+          backgroundColor: "#09090b",
           backgroundImage: backdrop,
           backgroundSize: "100% 100%, 48px 48px, 48px 48px",
           color: "#e6edf5",

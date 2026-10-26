@@ -4,25 +4,28 @@
    app never imports it. */
 
 /* ---------- 1. Light theme by OS preference ----------
-   The site follows the visitor's OS with CSS only: no script, no storage, so
-   no toggle (D-1801). This block is a copy of [data-theme="light"] in
-   tokens.css; site.test.ts fails if the two ever differ. */
+   With System chosen (the default, and every page without JavaScript) the
+   site follows the visitor's OS in CSS (D-1801). This block is a copy of
+   [data-theme="light"] in tokens.css; site.test.ts fails if the two ever
+   differ. Light or Dark from the header's control (D-1870) sets
+   data-theme on <html>: tokens.css answers it for the app's tokens, and
+   section 2 below for the site's. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --tn-bg: var(--slate-50);
-    --tn-surface-1: var(--slate-25);
-    --tn-surface-2: var(--slate-0);
-    --tn-surface-3: var(--slate-0);
-    --tn-surface-4: var(--slate-50);
-    --tn-overlay: rgb(15 23 42 / 0.36);
-    --tn-border: rgb(15 23 42 / 0.10);
-    --tn-border-strong: rgb(15 23 42 / 0.20);
-    --tn-divider: rgb(15 23 42 / 0.06);
-    --tn-text: #0f172a;
-    --tn-text-muted: #475569;
-    --tn-text-subtle: #5f6f84;
-    --tn-text-disabled: #94a3b8;
+    --tn-bg: var(--ink-50);
+    --tn-surface-1: var(--ink-25);
+    --tn-surface-2: var(--ink-0);
+    --tn-surface-3: var(--ink-0);
+    --tn-surface-4: var(--ink-50);
+    --tn-overlay: rgb(9 9 11 / 0.32);
+    --tn-border: rgb(9 9 11 / 0.09);
+    --tn-border-strong: rgb(9 9 11 / 0.17);
+    --tn-divider: rgb(9 9 11 / 0.06);
+    --tn-text: #18181b;
+    --tn-text-muted: #4f4f58;
+    --tn-text-subtle: #62626c;
+    --tn-text-disabled: #a1a1aa;
     --tn-text-inverse: #ffffff;
     --tn-accent: var(--teal-700);
     --tn-accent-hover: var(--teal-800);
@@ -37,14 +40,15 @@
     --tn-status-done-text: var(--green-700);
     --tn-status-waiting: var(--amber-700);
     --tn-status-waiting-soft: rgb(217 119 6 / 0.12);
-    --tn-status-done: var(--green-600);
+    --tn-status-done: var(--green-700);
     --tn-status-done-soft: rgb(22 163 74 / 0.10);
-    --tn-status-idle: var(--slate-400);
-    --tn-status-idle-soft: rgb(100 116 139 / 0.12);
-    --tn-status-error: var(--rose-600);
+    --tn-status-idle: var(--ink-400);
+    --tn-status-idle-soft: rgb(113 113 122 / 0.12);
+    --tn-status-error: var(--rose-700);
     --tn-status-error-soft: rgb(225 29 72 / 0.10);
     --tn-success: var(--green-600);
     --tn-warning: var(--amber-600);
+    --tn-warning-text: var(--amber-700);
     --tn-danger: var(--rose-700);
     --tn-danger-hover: var(--rose-800);
     --tn-danger-fg: #ffffff;
@@ -54,10 +58,9 @@
     --tn-diff-del-bg: rgb(225 29 72 / 0.08);
     --tn-diff-del-fg: var(--rose-700);
     --tn-diff-hunk-bg: rgb(2 132 199 / 0.06);
-    --tn-scrollbar: rgb(15 23 42 / 0.20);
+    --tn-scrollbar: rgb(9 9 11 / 0.20);
     --tn-selection: rgb(15 118 110 / 0.20);
-    --tn-kbd-bg: var(--slate-50);
-    --tn-shadow-color: 15 23 42;
+    --tn-kbd-bg: var(--ink-50);
   }
 }
 
@@ -66,21 +69,34 @@
    as 1; site.test.ts fails if the two ever differ. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --tn-edge-top:    rgb(15 23 42 / 0.08);
-    --tn-edge-bottom: rgb(15 23 42 / 0.14);
+    --tn-edge-top:    rgb(9 9 11 / 0.08);
+    --tn-edge-bottom: rgb(9 9 11 / 0.14);
     --tn-edge-hi:     rgb(255 255 255 / 0.90);
     --tn-fill-top:    rgb(255 255 255 / 0.70);
-    --tn-fill-bottom: rgb(241 245 249 / 0.50);
+    --tn-fill-bottom: rgb(244 244 245 / 0.50);
     --tn-glow-a:      rgb(20 184 166 / 0.16);
     --tn-glow-b:      rgb(14 165 233 / 0.10);
-    --tn-ring:        rgb(15 23 42 / 0.08);
+    --tn-ring:        rgb(9 9 11 / 0.08);
     --tn-ring-lit:    rgb(13 148 136 / 0.45);
     --tn-spot:        rgb(15 118 110 / 0.05);
     --tn-ink-a:       var(--teal-700);
     --tn-ink-b:       var(--sky-700);
-    --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 6px -2px rgb(15 23 42 / 0.05);
-    --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(15 23 42 / 0.06), 0 16px 32px -14px rgb(15 23 42 / 0.16);
-    --tn-elev-3: 0 0 0 1px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -8px rgb(15 23 42 / 0.10), 0 48px 96px -24px rgb(15 23 42 / 0.22);
+    --tn-elev-1: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(9 9 11 / 0.05), 0 2px 6px -2px rgb(9 9 11 / 0.05);
+    --tn-elev-2: inset 0 1px 0 var(--tn-edge-hi), 0 1px 2px rgb(9 9 11 / 0.06), 0 16px 32px -14px rgb(9 9 11 / 0.16);
+    --tn-elev-3: 0 0 0 1px rgb(9 9 11 / 0.06), 0 2px 4px rgb(9 9 11 / 0.04), 0 16px 32px -8px rgb(9 9 11 / 0.10), 0 48px 96px -24px rgb(9 9 11 / 0.22);
+    --tn-engine-claude: oklch(0.93 0.035 275);
+    --tn-engine-codex: oklch(0.93 0.035 10);
+    --tn-engine-gemini: oklch(0.93 0.035 85);
+    --tn-engine-copilot: oklch(0.93 0.035 120);
+    --tn-engine-cursor-agent: oklch(0.93 0.035 300);
+    --tn-engine-grok: oklch(0.93 0.035 235);
+    --tn-engine-opencode: oklch(0.93 0.035 55);
+    --tn-engine-droid: oklch(0.93 0.035 140);
+    --tn-engine-amp: oklch(0.93 0.035 205);
+    --tn-engine-aider: oklch(0.93 0.035 330);
+    --tn-engine-kimi: oklch(0.93 0.035 25);
+    --tn-engine-antigravity: oklch(0.93 0.035 315);
+    --tn-engine-kiro: oklch(0.93 0.035 165);
   }
 }
 
@@ -92,23 +108,23 @@
   --site-page:        var(--tn-bg);                 /* #060A12 */
   --site-raised:      var(--tn-surface-1);          /* alternate bands */
   --site-card:        var(--tn-surface-2);          /* cards and tiles */
-  --site-stage:       var(--slate-900);             /* product media backdrop: dark in both themes */
-  --site-stage-line:  rgb(148 163 184 / 0.18);
-  --site-stage-fg:    #e6edf5;                      /* text on the stage: the dark theme's, in both themes */
-  --site-stage-muted: #9aa8bb;
+  --site-stage:       var(--ink-900);               /* product media backdrop: dark in both themes (ink, D-1894) */
+  --site-stage-line:  rgb(255 255 255 / 0.12);
+  --site-stage-fg:    #ededef;                      /* text on the stage: the dark theme's, in both themes */
+  --site-stage-muted: #a3a3ac;
   --site-stage-accent: var(--teal-400);
-  --site-grid:        rgb(148 163 184 / 0.06);      /* the faint grid of og.png and the video poster */
+  --site-grid:        rgb(255 255 255 / 0.04);      /* the faint grid of og.png and the video poster */
   --site-glow:        rgb(45 212 191 / 0.13);       /* the poster's soft teal glow */
   --site-ink-a:       var(--tn-ink-a);
   --site-ink-b:       var(--tn-ink-b);
-  --site-header:      color-mix(in oklab, var(--site-page) 78%, transparent);
+  --site-header:      color-mix(in oklab, var(--site-page) 90%, transparent);   /* text under it stays unreadable */
   --site-gutter:      clamp(1rem, 0.6rem + 1.8vw, 2rem);    /* 16 → 32 px */
-  --site-section-y:   clamp(5rem, 3rem + 6vw, 9rem);        /* 80 → 144 px */
+  --site-section-y:   clamp(5rem, 3.4rem + 4vw, 6rem);      /* 80 → 96 px, so the home page fits 8,000 px (D-1881, D-1885) */
   --site-header-h:    4rem;
 
   /* Hairlines */
-  --site-line:        rgb(148 163 184 / 0.12);
-  --site-line-strong: rgb(148 163 184 / 0.22);
+  --site-line:        rgb(255 255 255 / 0.08);
+  --site-line-strong: rgb(255 255 255 / 0.14);
   /* Edges: a lit top and a quiet bottom, drawn as a gradient border */
   --site-edge-top:    var(--tn-edge-top);
   --site-edge-bottom: var(--tn-edge-bottom);
@@ -123,7 +139,7 @@
   --site-ring-lit:    var(--tn-ring-lit);
   --site-spot:        var(--tn-spot);
   /* The bezel product captures sit in */
-  --site-bezel:       var(--slate-900);
+  --site-bezel:       var(--ink-900);
   --site-bezel-edge:  rgb(255 255 255 / 0.10);
   /* Elevation: e1 cards, e2 raised cards, e3 product frames */
   --site-elev-1:      var(--tn-elev-1);
@@ -136,20 +152,20 @@
   --site-btn-glow:    rgb(45 212 191 / 0.28);
   --site-btn-hi:      rgb(255 255 255 / 0.45);
   /* Glass: the secondary button and the header */
-  --site-glass:       rgb(148 163 184 / 0.06);
-  --site-glass-hover: rgb(148 163 184 / 0.11);
+  --site-glass:       rgb(255 255 255 / 0.04);
+  --site-glass-hover: rgb(255 255 255 / 0.07);
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --site-page:   var(--slate-25);   /* #F8FAFC, a touch whiter than the app's slate-50 */
-    --site-raised: var(--slate-50);   /* #F1F5F9: the app's bg, so bands read as bands */
-    --site-card:   var(--slate-0);
-    --site-grid:   rgb(15 23 42 / 0.05);
+    --site-page:   var(--ink-25);     /* #FAFAFA, a touch whiter than the app's light bg (ink, D-1894) */
+    --site-raised: var(--ink-50);     /* #F4F4F5: so bands read as bands */
+    --site-card:   var(--ink-0);
+    --site-grid:   rgb(9 9 11 / 0.05);
     --site-glow:   rgb(15 118 110 / 0.09);
-    --site-line:        rgb(15 23 42 / 0.08);
-    --site-line-strong: rgb(15 23 42 / 0.16);
+    --site-line:        rgb(9 9 11 / 0.08);
+    --site-line-strong: rgb(9 9 11 / 0.16);
     --site-bezel:       rgb(255 255 255 / 0.75);
-    --site-bezel-edge:  rgb(15 23 42 / 0.10);
+    --site-bezel-edge:  rgb(9 9 11 / 0.10);
     --site-btn-top:     var(--teal-700);
     --site-btn-bottom:  var(--teal-800);
     --site-btn-hover:   var(--teal-800);
@@ -158,6 +174,36 @@
     --site-glass:       rgb(255 255 255 / 0.70);
     --site-glass-hover: rgb(255 255 255 / 1);
   }
+}
+
+/* The same values when the visitor picks Light (D-1870). site.test.ts fails
+   if this block and the one above ever differ. */
+:root[data-theme="light"] {
+  --site-page:   var(--ink-25);     /* #FAFAFA, a touch whiter than the app's light bg (ink, D-1894) */
+  --site-raised: var(--ink-50);     /* #F4F4F5: so bands read as bands */
+  --site-card:   var(--ink-0);
+  --site-grid:   rgb(9 9 11 / 0.05);
+  --site-glow:   rgb(15 118 110 / 0.09);
+  --site-line:        rgb(9 9 11 / 0.08);
+  --site-line-strong: rgb(9 9 11 / 0.16);
+  --site-bezel:       rgb(255 255 255 / 0.75);
+  --site-bezel-edge:  rgb(9 9 11 / 0.10);
+  --site-btn-top:     var(--teal-700);
+  --site-btn-bottom:  var(--teal-800);
+  --site-btn-hover:   var(--teal-800);
+  --site-btn-glow:    rgb(15 118 110 / 0.22);
+  --site-btn-hi:      rgb(255 255 255 / 0.22);
+  --site-glass:       rgb(255 255 255 / 0.70);
+  --site-glass-hover: rgb(255 255 255 / 1);
+}
+
+/* `light:` for the odd utility that differs by theme (Shiki's colours in
+   code blocks): the OS's light under System, or the visitor's Light. */
+@custom-variant light {
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) & { @slot; }
+  }
+  :root[data-theme="light"] & { @slot; }
 }
 
 @theme inline {
@@ -243,7 +289,7 @@
   /* descenders stay inside the painted box */
   padding-bottom: 0.06em;
 }
-@utility eyebrow {              /* "CODE MODE": mono caps after a short lit rule */
+@utility eyebrow {              /* "CODE MODE": mono caps after a short rule */
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
@@ -253,7 +299,7 @@
   letter-spacing: var(--text-eyebrow--letter-spacing);
   font-weight: 500;
   text-transform: uppercase;
-  color: var(--tn-accent);
+  color: var(--tn-text-muted);   /* neutral: teal is for the next step (DESIGN §4.2, D-1875) */
   &::before {
     content: "";
     width: 1.25rem;
@@ -444,15 +490,79 @@ body.site {
 }
 .site :where(p, dd, figcaption, td, blockquote) a:hover { text-decoration-color: currentColor; }
 
+/* The theme control (D-1870): three icon radios in a well. The selected one
+   is lit from data-theme-choice on <html>, which the theme script sets before
+   the first paint. Without that script (no JavaScript) the control and its
+   menu row aren't shown: the page follows the OS. In the components layer,
+   so utilities (`ml-auto`, `max-sm:hidden`) still place it. */
+@layer components {
+  .theme-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+    padding: 1px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--site-glass);
+    box-shadow: inset 0 0 0 1px var(--site-line);
+    & label {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.375rem;
+      height: 2rem;
+      min-width: 2rem;
+      padding-inline: 0.375rem;
+      border-radius: 5px;
+      color: var(--tn-text-muted);
+      cursor: pointer;
+      transition: color var(--dur-base) var(--ease-out-site), background-color var(--dur-base) var(--ease-out-site), box-shadow var(--dur-base) var(--ease-out-site);
+    }
+    & label:hover { color: var(--tn-text); }
+    /* Keyboard focus on the cell, not the hidden radio: an outline, so the
+       selected cell's lit edge (a box-shadow) can't cover it (WCAG 2.4.7). */
+    & label:has(input:focus-visible) { outline: 2px solid var(--tn-accent-ring); outline-offset: 2px; color: var(--tn-text); }
+    & svg { transition: rotate var(--dur-slow) var(--ease-spring); }
+  }
+  .theme-switch-wide label { height: 2.25rem; padding-inline: 0.75rem; font-size: 0.875rem; }
+  :root[data-theme-choice="system"] .theme-switch [data-choice="system"],
+  :root[data-theme-choice="light"] .theme-switch [data-choice="light"],
+  :root[data-theme-choice="dark"] .theme-switch [data-choice="dark"] {
+    /* A 1 px ring in fg-muted marks the selected cell at well over 3:1
+       against the well (WCAG 1.4.11), in both themes. Neutral, not teal:
+       the header sits in every first viewport, where teal is kept for the
+       primary action and the highlight (D-1875, at most three). */
+    color: var(--tn-text);
+    background: var(--site-card);
+    box-shadow: inset 0 1px 0 var(--site-edge-hi), 0 0 0 1px var(--tn-text-muted), 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);
+  }
+}
+:root:not([data-theme-choice]) :is(.theme-switch, .theme-only) { display: none !important; }
+
 @media (forced-colors: active) {
   .text-ink, .text-sheen { background: none; color: CanvasText; }
   .btn { border: 1px solid ButtonText; }
 }
 
-/* ---------- 5. Motion: CSS only, progressive, off under reduced motion (D-1831) ---------- */
+/* ---------- 5. Motion: CSS only, progressive, off under reduced motion (D-1831, D-1874) ----------
+   Tokens: entrances ease out (expo), moves ease in and out, and a small
+   overshoot for things that pop in. Named durations on top of the app's
+   60/120/180/260/400 ms. Transform and opacity only (DESIGN §4.7): reveals
+   no longer blur, since a filter over a whole section is costly to paint. */
+:root {
+  --ease-io-site:     cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring-site: cubic-bezier(0.3, 1.35, 0.5, 1);
+  --dur-pop:    180ms;   /* a chip, a tick, a badge arriving */
+  --dur-panel:  420ms;   /* a card or panel settling */
+  --dur-spring: 520ms;   /* an overshooting pop */
+  --dur-reveal: 700ms;   /* a section's content as it scrolls in */
+  --stagger:    60ms;    /* one step between related items; five steps at most */
+}
 @keyframes site-reveal {
-  from { opacity: 0.001; translate: 0 1.5rem; filter: blur(6px); }
-  to   { opacity: 1; translate: 0 0; filter: blur(0); }
+  from { opacity: 0.001; translate: 0 1.5rem; }
+  to   { opacity: 1; translate: 0 0; }
 }
 @keyframes site-rise {
   from { opacity: 0.001; translate: 0 2.5rem; scale: 0.985; }
@@ -460,28 +570,72 @@ body.site {
 }
 @keyframes site-header-line { from { border-bottom-color: transparent; } to { border-bottom-color: var(--site-line); } }
 @keyframes site-ring-turn { to { rotate: 360deg; } }
+@keyframes site-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* The reading-progress hairline (D-1861), now on the docs too: hidden where
+   it can't follow the scroll. */
+.reading-progress { display: none; }
 
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
     .reveal { animation: site-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
     .reveal-late { animation-range: entry 12% entry 52%; }
+    /* Staggered by scroll: items that enter together arrive one after the
+       other, each a little later in the same entry. */
+    .reveal.stagger-1 { animation-range: entry 4% entry 44%; }
+    .reveal.stagger-2 { animation-range: entry 8% entry 48%; }
+    .reveal.stagger-3 { animation-range: entry 12% entry 52%; }
+    .reveal.stagger-4 { animation-range: entry 16% entry 56%; }
+    .reveal.stagger-5 { animation-range: entry 20% entry 60%; }
     .rise { animation: site-rise linear both; animation-timeline: view(); animation-range: entry 0% cover 30%; }
   }
   @supports (animation-timeline: scroll()) {
     .site-header { border-bottom-color: transparent; animation: site-header-line linear both; animation-timeline: scroll(root); animation-range: 0 4rem; }
+    .reading-progress { display: block; transform-origin: 0 50%; animation: site-progress linear both; animation-timeline: scroll(root); }
   }
   .enter {
-    transition: opacity 700ms var(--ease-out-site), translate 700ms var(--ease-out-site), filter 700ms var(--ease-out-site);
-    @starting-style { opacity: 0; translate: 0 0.75rem; filter: blur(4px); }
+    transition: opacity var(--dur-reveal) var(--ease-out-site), translate var(--dur-reveal) var(--ease-out-site);
+    @starting-style { opacity: 0; translate: 0 0.75rem; }
   }
-  .enter-2 { transition-delay: 80ms; }
-  .enter-3 { transition-delay: 160ms; }
-  .enter-4 { transition-delay: 240ms; }
+  .enter-2 { transition-delay: calc(var(--stagger) * 1); }
+  .enter-3 { transition-delay: calc(var(--stagger) * 2); }
+  .enter-4 { transition-delay: calc(var(--stagger) * 3); }
+  .enter-5 { transition-delay: calc(var(--stagger) * 4); }
   .ring-turn { animation: site-ring-turn 120s linear infinite; transform-origin: center; transform-box: fill-box; }
+  /* The theme control's icon turns a quarter as it's pressed (D-1870). */
+  .theme-switch label:active svg { rotate: 90deg; }
+
+  /* Micro-interactions (D-1874). A bar under a header link fills from the
+     middle with a little overshoot; an icon in an `icon-turn` control turns
+     a quarter on hover and focus; a pressed button sinks a touch. */
+  .hover-bar { position: relative; }
+  .hover-bar::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.875rem;
+    bottom: 0.3125rem;
+    height: 1px;
+    border-radius: 1px;
+    background: currentColor;
+    scale: 0 1;
+    transition: scale var(--dur-spring) var(--ease-spring-site);
+  }
+  .hover-bar:hover::after, .hover-bar:focus-visible::after, .hover-bar[aria-current="page"]::after { scale: 1 1; }
+  .icon-turn svg { transition: rotate var(--dur-panel) var(--ease-spring-site); }
+  .icon-turn:hover svg, .icon-turn:focus-visible svg { rotate: 90deg; }
+  .btn:active { scale: 0.98; }
+  .btn { transition-property: background-color, box-shadow, translate, scale, color; }
+
   @view-transition { navigation: auto; }
   ::view-transition-group(root) { animation-duration: var(--dur-slow); animation-timing-function: var(--ease-out-site); }
 }
 .site-header { view-transition-name: site-header; }
+/* Under reduced motion the current page keeps its bar, drawn still, so it
+   isn't marked by colour alone (D-1883). */
+@media (prefers-reduced-motion: reduce) {
+  .hover-bar[aria-current="page"] { position: relative; }
+  .hover-bar[aria-current="page"]::after { content: ""; position: absolute; inset-inline: 0.875rem; bottom: 0.3125rem; height: 1px; border-radius: 1px; background: currentColor; }
+}
 
 /* The phone menu's sheet slides down from under the header (Popover API). */
 @media (prefers-reduced-motion: no-preference) {

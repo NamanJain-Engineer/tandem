@@ -7,6 +7,235 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.12.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. This release gives the app
+a new look: neutral greys, a tinted tile for each engine, quieter pane
+headers, and a status bar that shows what your agents are doing. Plans from
+Lead also carry through now: follow each task's run and review, land the
+approved work in the plan's order, and find the plan again after a restart.
+
+### Added
+
+- [lin] **Follow a plan through.** Once a plan's tasks are created, Plan with
+  Lead lists each task with its latest run: not started, queued, running,
+  ready to review with the review's verdict (Approved or Changes requested),
+  stopped, failed or done. A line counts them, and each row opens its task.
+  While the runs load the list says so, and if they can't be read it says
+  why, with Retry.
+- [lin] **Land approved work in the plan's order.** "Land N approved…" opens
+  Land worktrees with exactly the approved tasks' worktrees chosen, in the
+  plan's order. You check the forecast and confirm the landing there.
+- [lin] **Plans are kept.** A plan stays in the Tasks page's header until you
+  remove it, and comes back after a restart. Its chip there shows whether its
+  runs are going, wait on you, or are done. If Vibezeo closed while Lead was
+  planning, the plan says so and offers Plan again. If it closed while
+  Execute all was starting the runs, or while Create tasks was writing, the
+  plan keeps what was done and the next try does only the rest.
+- [lin] **Chat threads claim the files they edit.** In a thread on this
+  computer, a Claude Code or Codex agent's edits claim their files, as a
+  terminal agent's do, and so do an ACP agent's edits that name their files,
+  so agents in other worktrees of the repository see the overlap. An edit you
+  refused, or one that failed, claims nothing. A task run is asked to claim
+  its files before it edits them.
+
+### Changed
+
+- [lin] **A quieter look.** Neutral ink greys in both the light and dark
+  themes, and softer shadows in the light theme. A working agent shows a
+  filled dot with a slow, breathing halo, which holds still when you reduce
+  motion.
+- [lin] **Engines are easy to tell apart.** Each built-in engine has its own
+  tinted letter tile in pane headers, the rail, the launch grid and threads.
+- [lin] **Pane headers say where you are.** A terminal pane's title names its
+  folder, and an agent pane's names its engine and folder until the agent or
+  your first prompt names the work. Tabs show the task in a few words, and
+  the header's buttons stay dimmed until you point at the header.
+- [lin] **Launch faster.** The launch grid takes the number keys 1 to 9,
+  marks the default engine, and copies a missing engine's install command
+  with one click.
+- [lin] **More in the status bar, only when it matters.** It now shows agents
+  working and waiting, the checks on a worktree's pull request, usage and
+  listening ports, each only while there's something to show.
+- [lin] **Threads summarise their work.** In a Codex thread, and in an ACP
+  agent's thread when the agent sends its edits as diffs, a finished turn
+  counts the files it changed, with lines added and removed. Test runs from
+  Vitest, Jest, cargo test or pytest show passed and failed counts in every
+  thread.
+
+### Fixed
+
+- [lin] Freeze could fail with "Couldn't freeze this pane" on a pane running
+  one short command after another, when a command ended just as Freeze
+  stopped it. This could happen in terminal panes, and in agent panes that
+  run without a systemd user scope, where Freeze stops the pane's processes
+  with signals. Freeze now keeps the pane's shell stopped instead, so the
+  next command waits until you choose "Thaw".
+
+## 0.11.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. This release is about
+running several agents at once and staying in charge of them: see what each
+pane uses and cap an agent's memory, keep secret values out of the files
+agents read, give one agent a worktree across several repositories, run any
+agent that speaks ACP as a thread, see which files each agent is about to
+change, and have Lead split a goal into tasks.
+
+### Added
+
+- [lin] **Resource governor.** See how much CPU and memory each pane uses,
+  freeze a pane until you need it, and cap an agent's memory. The Ports tab
+  gets a Panes section that lists every pane running on this computer with
+  its CPU and memory, grouped by worktree, and an agent pane's Dashboard
+  card shows the same, such as "CPU 12% · 840 MB". CPU counts one core as
+  100%, so 250% is two and a half cores busy. Both refresh every 2 seconds
+  while you're looking. "Freeze", in a pane's ⋯ menu or its row in Panes,
+  stops every process in the pane until you choose "Thaw", and the pane's
+  header says "Frozen" meanwhile; closing or restarting a frozen pane thaws
+  it first. Settings › Engines › Memory cap per agent ("Off" by default, or
+  512 MB to 16 GB) caps each agent pane started after you set it: when a
+  process in the pane goes over, the system ends that process, and the pane
+  says "Stopped: memory cap 512 MB" while its shell keeps running. With
+  systemd older than 253, the whole pane ends instead. With a systemd user
+  session, each agent pane runs in its own systemd user scope, and caps also
+  need that session to be able to limit memory. Without one, the setting
+  says why and stays "Off", and Freeze stops the pane's processes with
+  signals. Settings › Engines › One check at a time, off by default, runs
+  the check commands of Best of N, the review queue and Land worktrees one
+  after another instead of all at once; a Best of N lane waiting its turn
+  shows "Queued". Readings and frozen states aren't saved, and nothing
+  leaves your computer.
+- [lin] **Agent-proof secrets.** Keep a key's value in your system keychain
+  and put a reference in `.env` instead, so agents, diffs and worktree
+  copies only ever see the reference. "Add secret" in Settings › Secrets
+  saves a value of up to 16 KB under a name such as `stripe-test`; Vibezeo
+  keeps only the name and never shows the value again. "Copy reference"
+  gives you `vibezeo-secret://stripe-test` to use in the `.env`, as in
+  `API_KEY=vibezeo-secret://stripe-test`. "Run with secrets…" in the ⋯ menu
+  of a terminal pane on this computer, or the play button in its header,
+  asks for a command and lists the variables it will get from the `.env` at
+  the top of the pane's workspace or worktree. A reference to a secret that
+  doesn't exist reads "No secret named stripe-test", and "Run" stays off.
+  Run opens a new terminal pane beside it, named after the command, where
+  the command gets every variable in that `.env`, with each reference
+  replaced by its value; when the command ends, the variables are unset and
+  a fresh shell takes over, so what you type there next never sees them. In
+  that pane, a secret's value of 4 bytes or more that the command prints
+  shows as `[REDACTED]`, on screen, in the scrollback and in what Vibezeo
+  saves of the pane. Masking catches only the exact value, and only in that
+  pane: a command can still use a value, write it to a file or print it in
+  another form. Agent panes don't get the values in this release; a way for
+  agents to run commands with them, after you approve, comes in a later
+  release. "Delete local data…" in Settings › Privacy removes every secret
+  too.
+- [lin] **Multi-repo workspaces.** Give one agent a worktree across several
+  repositories that sit side by side in one folder, such as `api` and `web`.
+  Add the folder (it can't be inside a repository itself) and its rail row
+  says how many it holds, such as "2 repositories": it needs 2 to 12
+  repositories directly inside it, and a repository's own worktrees beside
+  it count once. "New worktree…" and the launch sheet's "Give each agent its
+  own worktree" then make one folder inside it, `.tandem/worktrees/<name>`,
+  holding a worktree of every repository, all on the branch `tandem/<name>`,
+  and the agent starts there, so it sees them all. If one repository can't
+  get a worktree (one with no commits, say), none is made and Vibezeo says
+  which. "Open diff" shows each repository's share, such as "api · 3 files",
+  with every path under its repository's name, and your comments reach the
+  agent as for any worktree. "Create pull requests" asks first, then in each
+  repository with new commits pushes the branch with your own `git`, opens a
+  pull request with your GitHub CLI (`gh`) and links it to the others in its
+  description; repositories without new commits, and GitLab ones, are
+  skipped and listed. "Discard worktree…" removes every repository's
+  worktree and the folder, and keeps the branches. Merging, landing, the
+  overlap check, pull request checks, previews, worktree setup and second
+  opinions don't work for these worktrees yet: their menu entries are off,
+  under "Not available for multi-repo worktrees yet", and the intent radar
+  skips them. Folders on SSH hosts are never multi-repo.
+- [lin] **Any ACP agent in Thread mode.** Run any coding agent that speaks
+  the Agent Client Protocol (ACP) as a thread. Gemini CLI, through
+  `gemini --acp` (or `--experimental-acp` on older releases), and Kiro CLI,
+  through `kiro-cli acp` in each account's own home, now run threads too,
+  beside Cursor Agent, Grok and OpenCode. To add another,
+  "Add an ACP agent…" under Settings › Engines › ACP agents takes a name, a
+  command (on your `PATH`, or its full path), arguments and environment
+  variables, and a Goose preset fills in `goose acp`. "Test" starts the
+  command, asks it to introduce itself, waits up to 10 seconds and stops it,
+  then shows its name, version and how it signs in; a command that doesn't
+  answer as an ACP agent is refused with the reason, and "Add" runs the same
+  test before it saves. The agent then appears in the Thread engine picker
+  labelled "via ACP", and runs from the path saved when you added it, on
+  this computer only. You can add up to 16. Each agent signs in its own way,
+  and Vibezeo never sees its keys: a variable whose value looks like a key
+  or token is refused, and when an agent asks for a sign-in, the thread
+  names the ways it offers. "Remove" stops the agent's threads; they stay
+  readable but don't run again, and an agent you add later, even under the
+  same name, is a new engine.
+- [lin] **Claims.** Agents in worktrees of one repository say which files
+  they're about to change, so you see two of them heading for the same file
+  before git reports a conflict. Agents with Vibezeo's tasks server get
+  three tools: `claim` takes up to 50 files or folders at a time (a folder
+  covers what's in it, and a pattern isn't allowed) with a note on what the
+  agent is changing, `release` gives them up, and `list_claims` shows what
+  agents in the repository's other worktrees claimed. A worktree's briefing
+  asks its agent to claim before it edits. Claude Code in a terminal pane
+  also claims a file just by editing it: only the file's path leaves its
+  hook, never the change. When two worktrees claim the same file, or one
+  claims a folder holding a file the other claims, both worktrees' agent
+  panes show one line, such as "add-oauth and fix-auth both claim
+  src/auth/session.ts", even a pane in a tab you open later, and the
+  Dashboard's review queue lists every overlap above its items. A worktree's
+  claims go when it's merged, landed or removed, and the main checkout's
+  when its last agent session ends. What one agent wrote in a claim reaches
+  the others marked as data, never as instructions.
+- [lin] **Plan with Lead.** Give Lead a goal bigger than one task, and it
+  splits it into tasks, each with the engine it suggests, for you to edit
+  and approve. "Plan with Lead…" on the Tasks page takes a goal of up to
+  4,000 characters and a workspace on this computer. Lead plans in a new
+  chat there, at Read access, where you can follow its reasoning and answer
+  it; it has no task tools in that chat, so nothing reaches your tasks
+  before you approve. It sees the installed engines that can run tasks and
+  how much of each account's usage window is used. When Lead waits on you,
+  the plan says "Lead is waiting for your answer in its thread", and after
+  30 minutes of work Vibezeo stops it and the plan says why. Lead's reply
+  becomes a list of 1 to 12 tasks you can edit: their titles, descriptions
+  and engines, or remove one. Characters that can hide text are taken out.
+  Creating the tasks puts them in a new project named after the goal, as
+  To do and written as Lead, each remembering its engine, which Execute…
+  then starts with. Execute all, which names how many tasks it runs (such as
+  "Execute all 3…"), first lists each run: the task, its
+  engine and that engine's account with the most room left, its own
+  worktree, and the engine that reviews it, with the tasks it leaves alone
+  and why. Nothing starts until you confirm; then each task runs once, in
+  its own worktree, at most 4 at a time, and finished work shows in the
+  review queue. Merging stays with you. A plan stays in the Tasks page's
+  header until you choose "Remove plan", which keeps its tasks, or quit
+  Vibezeo.
+
+### Changed
+
+- [lin] **A task runs once at a time.** Execute… on a task whose run is
+  queued or under way now says the task is already running and starts
+  nothing, and archived, Done and Canceled tasks aren't run. A task that's
+  in progress or in review can still be run again. A run's independent
+  review now uses the reviewing engine's account with the most room left,
+  instead of that engine's default account.
+
+### Fixed
+
+- [lin] A task run's independent review counts only the verdict its own
+  reviewer wrote. Before, a verdict that another run left on the same task
+  while the review worked could be taken as this run's.
+- [lin] "Allow once" on an approval from Cursor Agent, Grok or OpenCode
+  could choose the agent's allow-always option when the agent offered no
+  one-time allow. It now declines the request instead.
+- [lin] Notices Vibezeo writes into a terminal pane, such as "Reconnecting…"
+  when an SSH host drops, were lost when the pane's tab had been hidden for
+  30 seconds or more, or when the pane started before its tab was first
+  shown. They now appear when you open the tab.
+
 ## 0.10.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

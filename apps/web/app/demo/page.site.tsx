@@ -6,8 +6,11 @@ import { Icon } from "../../components/site/Icon";
 import { Keys } from "../../components/site/Keys";
 import { VideoSection } from "../../components/site/home/VideoSection";
 import { PageHero } from "../../components/site/PageHero";
+import { ProductShot } from "../../components/site/ProductShot";
+import { SCREENS } from "../../lib/media";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
+import { stagger } from "../../lib/motion";
 
 export const metadata: Metadata = {
   title: "Live demo",
@@ -82,7 +85,7 @@ export default function DemoPage() {
                 height={800}
                 fetchPriority="high"
                 decoding="async"
-                alt="Launch the demo: Vibezeo's Thread mode with a thread about a redirect loop after login, its first message ready to send."
+                alt="Launch the demo: Vibezeo's Code mode with Claude Code done, Codex at work, a shell, and Gemini CLI waiting on you in another workspace."
                 className="block h-auto w-full transition-opacity duration-(--dur-base) group-hover:opacity-90"
               />
             </picture>
@@ -102,13 +105,28 @@ export default function DemoPage() {
           </div>
           <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {TRY.map((t, i) => (
-              <li key={t.body} className="reveal surface-raised flex flex-col gap-3 p-6">
+              <li key={t.body} className={`reveal ${stagger(i)} surface-raised flex flex-col gap-3 p-6`}>
                 <span className="keycap !h-8 !min-w-8 self-start !px-0 !text-[0.75rem] text-fg-muted">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-copy font-semibold text-fg">{t.title}</span>
                 <span className="text-copy-sm text-fg-muted">{t.body}</span>
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+      <section id="capture" aria-labelledby="capture-title" className="relative bg-page py-(--site-section-y)">
+        <div className="container-site flex flex-col gap-10">
+          <div className="flex flex-col gap-4">
+            <p className="eyebrow">The real app</p>
+            <h2 id="capture-title" className="text-sheen text-display-lg text-fg">
+              And the download, as it runs
+            </h2>
+          </div>
+          <ProductShot
+            zoom
+            shot={SCREENS.codeMode}
+            caption="Four real terminals over Vibezeo's own repository: git history, htop, the Claude Code hook handler in vim, and a passing test run."
+          />
         </div>
       </section>
       <VideoSection />

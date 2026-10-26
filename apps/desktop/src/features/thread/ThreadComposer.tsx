@@ -60,7 +60,7 @@ export function engineOptionsFor(engines: EngineView[], chatEngines: string[] | 
         value: e.spec.id,
         // An agent the user added runs through ACP and says so (F-EN-10).
         label: e.added ? `${e.spec.label} · ${t("acp.via")}` : e.spec.label,
-        icon: <EngineGlyph letters={e.spec.logo} size={14} />,
+        icon: <EngineGlyph letters={e.spec.logo} engine={e.spec.id} size={14} />,
         disabled: !e.chatCapable || !onPlan,
         disabledReason: !e.chatCapable
           ? t("thread.composer.terminalOnly")

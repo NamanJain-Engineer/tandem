@@ -1,0 +1,243 @@
+/* The animated product scenes (F-WB-01 AC9, D-1880). A scene is the app's
+   window drawn in HTML and CSS on the app's own tokens (always its dark
+   theme), sized in em so the whole window scales with the frame: one em is
+   1/80 of the frame's width (a container query unit). Everything an
+   element shows in its own styles is the scene's final frame; the effects
+   below only say how it got there. So under reduced motion, without the
+   scene script, and once a scene has played, the same complete frame shows.
+   Effects move transform and opacity only (DESIGN §4.7), plus a CSS counter. */
+
+.scene-box { container-type: inline-size; }
+
+.sc-window {
+  --sc-line: var(--tn-border);
+  position: relative;
+  display: grid;
+  grid-template-rows: 2.5em 1fr 1.5em;
+  width: 100%;
+  aspect-ratio: 80 / 40;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: calc(100cqw / 80);
+  line-height: 1.45;
+  color: var(--tn-text);
+  background: var(--tn-bg);
+  color-scheme: dark;
+  text-align: left;
+  user-select: none;
+}
+
+/* Title bar: the mark, the mode switch and the omnibox. */
+.sc-titlebar { display: flex; align-items: center; gap: 1.25em; padding-inline: 1em; border-bottom: 1px solid var(--sc-line); background: var(--tn-surface-1); }
+.sc-mark { width: 1.25em; height: 1.25em; }
+.sc-modes { display: inline-flex; gap: 0.125em; padding: 0.1875em; border-radius: 0.4375em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-mode { padding: 0.125em 0.75em; border-radius: 0.3125em; font-size: 0.8125em; font-weight: 500; color: var(--tn-text-muted); }
+.sc-mode-on { color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 1px 0 var(--tn-edge-hi); }
+.sc-omnibox { margin-left: auto; width: 16em; padding: 0.25em 0.75em; border-radius: 0.375em; font-size: 0.75em; color: var(--tn-text-subtle); background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+
+.sc-body { position: relative; display: grid; grid-template-columns: 14em 1fr; min-height: 0; }
+
+/* The rail: the workspace and its worktrees. */
+.sc-rail { display: flex; flex-direction: column; gap: 0.25em; padding: 0.875em 0.625em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
+.sc-rail-head { padding: 0 0.5em 0.375em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; color: var(--tn-text-subtle); }
+.sc-ws { display: flex; align-items: center; justify-content: space-between; padding: 0.375em 0.5em; border-radius: 0.375em; font-size: 0.8125em; font-weight: 600; background: var(--tn-surface-3); }
+.sc-ws-count { display: inline-flex; align-items: center; gap: 0.375em; font-family: var(--font-mono); font-size: 0.875em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
+.sc-lane { display: grid; grid-template-columns: 1em 1fr; align-items: center; column-gap: 0.5em; row-gap: 0.125em; padding: 0.3125em 0.5em 0.3125em 1em; font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-lane-name { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-radar { grid-column: 2; justify-self: start; padding: 0 0.5em; border-radius: 0.25em; font-size: 0.875em; color: var(--tn-status-waiting-text); background: var(--tn-status-waiting-soft); }
+.sc-rail-foot { margin-top: auto; padding: 0 0.5em; font-size: 0.6875em; color: var(--tn-text-subtle); }
+
+/* Panes: four in a 2 × 2 grid, 6 px apart as in the app. */
+.sc-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 0.375em; padding: 0.375em; min-height: 0; }
+.sc-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 0.5em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-pane-on { box-shadow: inset 0 0 0 1px var(--tn-border-strong), inset 0 2px 0 var(--tn-accent); }
+.sc-pane-head { display: flex; align-items: center; gap: 0.5em; height: 1.875em; flex: none; padding-inline: 0.625em; border-bottom: 1px solid var(--sc-line); font-size: 0.75em; }
+.sc-pane-title { font-weight: 500; color: var(--tn-text); white-space: nowrap; }
+.sc-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.9375em; color: var(--tn-text-subtle); }
+.sc-pane-status { margin-left: auto; display: inline-flex; }
+.sc-term { position: relative; display: flex; flex-direction: column; gap: 0.1em; flex: 1; min-height: 0; padding: 0.625em 0.75em; overflow: hidden; font-family: var(--font-mono); font-size: 0.6875em; line-height: 1.6; color: var(--tn-text-muted); white-space: pre; background: var(--tn-bg); }
+.sc-line:first-child { color: var(--tn-text); }
+.sc-caret { width: 0.6em; height: 1.1em; background: var(--tn-text-muted); }
+
+/* EngineGlyph (D-1895): letters in fg on a 4 px tile in the engine's tint, at 80 % until its pane has focus. */
+.sc-glyph { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 1.5em; height: 1.5em; border-radius: 0.3em; font-size: 0.75em; font-weight: 600; line-height: 1; letter-spacing: -0.01em; color: var(--tn-text); background: var(--tn-surface-4); opacity: 0.8; }
+.sc-glyph-on { opacity: 1; }
+.sc-glyph-shell { font-family: var(--font-mono); }
+.sc-dot { display: inline-flex; }
+.sc-dot svg { width: 0.75em; height: 0.75em; }
+.sc-dot-swap { display: inline-grid; }
+.sc-dot-swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; }
+
+/* An approval in a pane, and buttons as the app draws them. */
+.sc-ask { position: absolute; inset: auto 0.75em 0.75em; display: flex; flex-direction: column; gap: 0.5em; padding: 0.625em 0.75em; border-radius: 0.5em; font-family: var(--font-sans); white-space: normal; color: var(--tn-text); background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), 0 0 0 1px var(--tn-border-strong); }
+.sc-ask-text { font-size: 1.05em; }
+.sc-ask-actions { display: flex; gap: 0.5em; }
+.sc-btn { display: inline-flex; align-items: center; height: 1.875em; padding-inline: 0.75em; border-radius: 0.375em; font-family: var(--font-sans); font-size: 0.75em; font-weight: 500; white-space: nowrap; color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-term .sc-btn { font-size: 1em; }
+.sc-btn-primary { color: var(--tn-accent-fg); background: var(--tn-accent); box-shadow: none; }
+/* A status as text: its StatusDot shape and a sentence-case label (T3). */
+.sc-status { display: inline-flex; align-items: center; gap: 0.5em; font-family: var(--font-sans); font-size: 0.75em; white-space: nowrap; color: var(--tn-text-muted); }
+.sc-swap { display: inline-grid; justify-items: start; }
+.sc-swap > * { grid-area: 1 / 1; }
+
+/* Toasts and cards floating over the panes. */
+.sc-toast { position: absolute; right: 1em; display: flex; flex-direction: column; gap: 0.5em; width: 22em; padding: 0.875em 1em; border-radius: 0.75em; background: var(--tn-surface-3); box-shadow: inset 0 1px 0 var(--tn-edge-hi), var(--tn-elev-3); }
+.sc-toast-top { top: 1em; }
+.sc-toast-bottom { bottom: 1em; }
+.sc-toast-row { display: flex; align-items: center; gap: 0.5em; }
+.sc-toast-title { font-size: 0.8125em; font-weight: 600; }
+.sc-toast-body { font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-stat { font-family: var(--font-mono); font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
+.sc-add { color: var(--tn-diff-add-fg); }
+.sc-del { color: var(--tn-diff-del-fg); }
+.sc-chips { display: flex; flex-wrap: wrap; gap: 0.375em; }
+/* T3 (D-1887): a risk is an outlined tag, as the review queue's Badge; a check's result is text. */
+.sc-chip { padding: 0.125em 0.5em; border-radius: 0.25em; font-size: 0.6875em; font-weight: 500; color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-chip-ok { padding-inline: 0.25em; box-shadow: none; }
+
+/* A pane that finishes lights its header once; the window catches the
+   light once as it lands. */
+.sc-flash { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--tn-status-done), inset 0 0 2.5em -0.5em var(--tn-status-done-soft); }
+.sc-pane { position: relative; }
+.sc-sheen { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(105deg, transparent 35%, var(--tn-edge-hi) 50%, transparent 65%); translate: 100% 0; }
+
+.sc-statusbar { display: flex; align-items: center; justify-content: space-between; padding-inline: 0.875em; border-top: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.625em; color: var(--tn-text-subtle); background: var(--tn-surface-1); }
+.sc-statusbar-right { display: inline-flex; gap: 1.5em; }
+
+/* The Dashboard. */
+.sc-dash { display: flex; flex-direction: column; gap: 0.875em; min-height: 0; padding: 1.25em 1.5em; overflow: hidden; }
+.sc-dash-head { display: flex; align-items: center; gap: 1em; }
+.sc-dash-title { font-size: 1.125em; font-weight: 600; letter-spacing: -0.01em; }
+.sc-seg { display: inline-flex; gap: 0.125em; padding: 0.1875em; border-radius: 0.4375em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-dash-group { margin-left: auto; display: inline-flex; align-items: center; gap: 0.5em; font-size: 0.75em; color: var(--tn-text-subtle); }
+.sc-dash-group .sc-mode { font-size: 1em; box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-dash-chips { gap: 0.5em; }
+.sc-filter { padding: 0.1875em 0.625em; border-radius: 0.375em; font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-filter-on { color: var(--tn-text); background: var(--tn-surface-3); }
+.sc-group { display: flex; flex-direction: column; gap: 0.375em; }
+.sc-group-head { display: flex; align-items: center; gap: 0.5em; padding-inline: 0.25em; font-size: 0.6875em; font-weight: 600; letter-spacing: 0.04em; color: var(--tn-text-subtle); }
+.sc-card-wrap { position: relative; display: block; border-radius: 0.625em; }
+.sc-card { display: grid; grid-template-columns: auto 14em 1fr auto; align-items: center; column-gap: 0.875em; row-gap: 0.5em; padding: 0.625em 0.875em; border-radius: 0.625em; background: var(--tn-surface-2); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--sc-line); }
+.sc-card .sc-glyph { font-size: 0.8125em; }
+.sc-card-main { display: flex; flex-direction: column; min-width: 0; }
+.sc-card-title { font-size: 0.8125em; font-weight: 500; white-space: nowrap; }
+.sc-card-meta { font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-subtle); white-space: nowrap; }
+.sc-card-line { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-muted); white-space: nowrap; }
+.sc-card-status { display: inline-flex; }
+.sc-card-actions { grid-column: 3 / -1; display: flex; gap: 0.5em; }
+.sc-card-ask .sc-card { background: var(--tn-surface-3); }
+.sc-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 1px var(--tn-status-waiting), 0 0 1.5em -0.25em var(--tn-status-waiting-soft); }
+
+/* The review queue and a diff with a second opinion's comments. */
+.sc-rev { display: grid; grid-template-columns: 26em 1fr; min-height: 0; }
+.sc-rev-list { display: flex; flex-direction: column; gap: 0.625em; padding: 1.25em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
+.sc-item { display: flex; flex-direction: column; gap: 0.625em; padding: 0.875em; border-radius: 0.625em; background: var(--tn-surface-2); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--sc-line); }
+.sc-item-on { background: var(--tn-surface-3); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--tn-border-strong); }
+.sc-diff { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sc-diff-head { display: flex; align-items: center; justify-content: space-between; height: 2.25em; padding-inline: 1em; border-bottom: 1px solid var(--sc-line); }
+.sc-diff-state { font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-diff-state > * { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+.sc-diff-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-block: 0.5em; font-family: var(--font-mono); font-size: 0.6875em; line-height: 1.9; }
+.sc-diff-line { position: relative; display: grid; grid-template-columns: 3.5em 1.5em 1fr; white-space: pre; color: var(--tn-text-muted); }
+.sc-diff-add { color: var(--tn-diff-add-fg); background: var(--tn-diff-add-bg); }
+.sc-diff-del { color: var(--tn-diff-del-fg); background: var(--tn-diff-del-bg); }
+.sc-diff-no { padding-right: 1em; text-align: right; color: var(--tn-text-subtle); }
+.sc-comment { position: absolute; right: 1.5em; top: 50%; z-index: 1; display: flex; align-items: flex-start; gap: 0.625em; width: 30em; padding: 0.625em 0.875em; border-radius: 0.625em; font-family: var(--font-sans); font-size: 1.1em; line-height: 1.45; white-space: normal; color: var(--tn-text); background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), 0 0 0 1px var(--tn-border-strong); transform-origin: 100% 0; }
+.sc-diff-foot { display: flex; justify-content: flex-end; padding: 0.75em 1em; border-top: 1px solid var(--sc-line); }
+
+/* Land worktrees: the dialog over the workspace. */
+.sc-land-body { display: grid; place-items: center; min-height: 0; padding: 1.5em; background: radial-gradient(60% 60% at 50% 40%, var(--tn-surface-1), var(--tn-bg)); }
+.sc-dialog { display: flex; flex-direction: column; gap: 0.875em; width: 44em; padding: 1.25em 1.5em; border-radius: 0.75em; background: var(--tn-surface-3); box-shadow: inset 0 1px 0 var(--tn-edge-hi), var(--tn-elev-3); }
+.sc-field { display: flex; flex-direction: column; gap: 0.375em; }
+.sc-field-label { font-size: 0.6875em; font-weight: 500; color: var(--tn-text-muted); }
+.sc-input { padding: 0.375em 0.625em; border-radius: 0.375em; font-family: var(--font-mono); font-size: 0.75em; background: var(--tn-surface-4); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-lanes { display: flex; flex-direction: column; gap: 0.375em; }
+.sc-lane-row { display: grid; grid-template-columns: auto auto 1fr 15em; align-items: center; column-gap: 0.75em; padding: 0.5em 0.75em; border-radius: 0.5em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-tick { width: 0.875em; height: 0.875em; border-radius: 0.25em; background: var(--tn-accent); box-shadow: inset 0 0 0 0.25em var(--tn-surface-2); }
+.sc-mono { font-family: var(--font-mono); }
+.sc-step { font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-step > * { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+.sc-dialog-foot { display: flex; justify-content: flex-end; }
+.sc-dialog-done { display: inline-flex; align-items: center; gap: 0.75em; font-size: 0.8125em; color: var(--tn-status-done-text); }
+.sc-dialog-done .sc-btn { font-size: 0.9em; }
+
+/* A count's final number is text; while it counts, a CSS counter shows. */
+@property --sc-n { syntax: "<integer>"; inherits: false; initial-value: 0; }
+.sc-count { --sc-n: var(--to); }
+.sc-sr { display: inline; }
+
+/* A narrow frame (a phone): the rail and two panes go, the rest grows. */
+@container (max-width: 40rem) {
+  .sc-window { font-size: calc(100cqw / 28); aspect-ratio: 28 / 34; }
+  .sc-body { grid-template-columns: 1fr; }
+  .sc-rail, .sc-hide-narrow, .sc-omnibox { display: none; }
+  .sc-grid { grid-template-columns: 1fr; }
+  .sc-toast { left: 1em; right: 1em; width: auto; }
+  .sc-dash { padding: 1em; }
+  .sc-dash-group, .sc-seg { display: none; }
+  .sc-card { grid-template-columns: auto 1fr auto; }
+  .sc-card-line { grid-column: 2 / -1; grid-row: 2; }
+  .sc-card-status { grid-column: 3; grid-row: 1; }
+  .sc-card-actions { grid-column: 1 / -1; }
+  .sc-rev { grid-template-columns: 1fr; }
+  .sc-rev-list { display: none; }
+  .sc-diff-no { display: none; }
+  .sc-diff-line { grid-template-columns: 1.25em 1fr; }
+  .sc-comment { right: 0.75em; left: 2em; width: auto; }
+  .sc-land-body { padding: 0.75em; }
+  .sc-dialog { width: 100%; }
+  .sc-lane-row { grid-template-columns: auto 1fr; }
+  .sc-lane-row .sc-tick { display: none; }
+  .sc-lane-row .sc-step { grid-column: 1 / -1; }
+}
+
+/* Final frame: things that come and go, and things that leave, aren't in it. */
+[data-fx-visit], [data-fx-out] { opacity: 0; }
+/* The sweep has passed in the final frame (it rests off the window's edge). */
+
+/* ---------- The effects ----------
+   Only with motion allowed and the scene player running: the theme script
+   marks <html> with data-fx and drops it at load unless /demo/embed.js
+   has marked it data-scenes, so a page whose player is blocked or fails
+   shows each scene's final frame. The player marks a scene data-live while
+   it's on screen; paused otherwise, so a scene off screen or in a hidden
+   tab waits where it is. */
+@keyframes sc-in    { from { opacity: 0; translate: 0 0.5em; } }
+@keyframes sc-line  { from { opacity: 0; translate: -0.25em 0; } }
+@keyframes sc-pop   { 0% { opacity: 0; scale: 0.6; } 60% { opacity: 1; scale: 1.08; } 100% { opacity: 1; scale: 1; } }
+@keyframes sc-out   { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sc-press { 0%, 100% { scale: 1; } 40% { scale: 0.92; } }
+@keyframes sc-rise  { from { opacity: 0; translate: 0 1em; } }
+@keyframes sc-slide { from { opacity: 0; translate: 2em 0; scale: 0.98; } }
+@keyframes sc-visit { 0% { opacity: 0; translate: 0 0.5em; } 10%, 90% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: 0 0; } }
+@keyframes sc-count { from { --sc-n: 0; } }
+@keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
+
+@media screen and (prefers-reduced-motion: no-preference) {
+  :root[data-fx] [data-scene] {
+    & :is([data-fx-in], [data-fx-line], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count]),
+    & .tn-dot, & .tn-attention { animation-play-state: paused; }
+    & [data-fx-in]    { animation: sc-in var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-line]  { animation: sc-line var(--dur-pop) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-pop]   { animation: sc-pop var(--dur-spring) var(--ease-spring-site) var(--at) both paused; }
+    & [data-fx-out]   { animation: sc-out var(--dur-pop) var(--ease-exit) var(--at) both paused; }
+    & [data-fx-press] { animation: sc-press 260ms var(--ease-io-site) var(--at) both paused; }
+    & [data-fx-rise]  { animation: sc-rise var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-slide] { animation: sc-slide var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-visit] { animation: sc-visit var(--stay) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-sweep] { animation: sc-sweep 1.6s var(--ease-io-site) var(--at) both paused; }
+    & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
+    & [data-fx-count] .sc-sr { display: none; }
+    & [data-fx-count]::after { content: attr(data-prefix) counter(sc); }
+    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], .tn-dot, .tn-attention) {
+      animation-play-state: running;
+    }
+  }
+}
+/* A working agent's dots pulse only while their scene is on screen, with or
+   without the player (without it, never). */
+[data-scene]:not([data-live]) :is(.tn-dot, .tn-attention) { animation-play-state: paused; }
+/* Under reduced motion the working dots hold still too. */
+@media (prefers-reduced-motion: reduce) {
+  [data-scene] :is(.tn-dot, .tn-attention) { animation: none; }
+}

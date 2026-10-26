@@ -921,8 +921,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Not for multi-repo worktrees yet** (their menu entries are disabled with "Not available for multi-repo worktrees yet"): Merge into…, Land worktrees, Check overlap, Check pull request, previews, worktree setup and its ports and environment, second opinion, and the intent radar. Local folders only: on SSH hosts and in WSL a folder is never multi-repo.
 
 **Acceptance:**
-1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". On Pro, launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
-2. On Free, the Worktrees option is disabled with the Pro reason, and `lane_create` for the folder is refused with ForbiddenPlan.
+1. A folder holding two repositories (`api`, `web`) is listed with "2 repositories". Launching two agents with worktrees creates `tandem/<slug>` in both repositories for each agent, with one parent folder each, and each agent's pane starts in its parent folder.
+2. With no account and no plan check (D-869), New worktree works for the folder, and what needs one repository (Merge into…, for one) is refused up front with "Not available for multi-repo worktrees yet".
 3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
@@ -2054,13 +2054,47 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   Then it runs those tasks through F-TK-04's queue, at Edits, at most 4 at once. It starts once: while its runs are queuing the plan says "Starting the runs…", and the plan keeps what it queued. If a run fails to start, the plan says why and Execute all can go again without queuing anything twice.
   It needs no account (D-869). When the limits turn runs off, the check says so where Run would be, and the tasks stay usable.
 - **Not in this slice:** Lead answering agents' questions, and merging. Review and merge stay yours.
-- A plan lives until you remove it or the app quits, and a reloaded window lists it again. **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
+- A plan lives until you remove it, and plans are kept across restarts (F-TK-07). **Remove plan** leaves its tasks in the tracker. Lead's thread keeps the reply.
 
 **Acceptance:**
 1. Plan with Lead opens a Lead chat in the chosen workspace whose first message has the goal, the offered engines with their usage, and the reply markers.
 2. A reply with a valid block becomes a draft of its tasks with their engines. An engine that wasn't offered falls back to Lead's, and a reply without a block fails the plan.
 3. Create tasks writes one To do task per row in a new project, each with its suggested engine, as Lead. Nothing is written before it, and trying again after a failure writes no task twice.
 4. Execute all lists each run (engine, account, its own worktree, the review's engine) and starts none until you confirm. Then it starts one attempt per To do task on its suggested engine, in a worktree, and none for a task that's already running. When the limits turn runs off, it starts none and says why.
+
+#### F-TK-07 Follow a plan through (P2)
+**Story:** Lead's plan is running, each task in its own worktree. I see how each task is doing from the plan without opening every thread, the agents claim what they change so they don't collide, and I land the work that passed review in the plan's order, in one step at my desk.
+
+**Behavior (bold bet B3's second slice):**
+- **Task runs claim their files.**
+  - A run's first message (F-TK-04) asks its agent to claim the files it's about to change and to check `list_claims`, as a worktree's briefing does (F-TK-05).
+  - A chat thread's edits claim too. When a thread's engine reports an edit, its working tree claims the files the report names, as a terminal agent's edits do (F-TK-05 AC2):
+    - Claude Code's Edit, Write, MultiEdit and NotebookEdit;
+    - Codex's file changes;
+    - an ACP agent's edits that name their files.
+
+    Only the files' paths are kept, never the edit. An edit that was refused or failed claims nothing. This holds for every chat thread in a git folder on this computer, not only task runs.
+- **The plan follows its runs.** Once its tasks are created, the plan lists each task with its latest run (F-TK-04), as a status shape and a word: not started, queued (with its place), setting up, running, reviewing, in review with the review's verdict (Approve or Changes requested), stopped, failed or done.
+  - A line above the list counts them ("2 running · 1 approved · 1 changes requested").
+  - Each row opens its task, where its runs are.
+  - While the runs are being read the list says it's loading, and if they can't be read it says why, with Retry.
+  - The plan stays in the Tasks page's header until you remove it. A started plan's shape there follows its runs: working while one runs, waiting while one waits on you, done when they've all ended.
+- **Plans are kept.** Vibezeo keeps plans in its data folder, so they survive a restart.
+  - A plan whose Lead was still planning when Vibezeo closed is read again if Lead's turn had finished. Otherwise it fails with "Vibezeo closed while Lead was planning", and Plan again offers the same goal.
+  - A plan that was starting its runs when Vibezeo closed offers Execute all again, keeping the runs it had queued. Create tasks that Vibezeo closed partway keeps its project and the tasks it wrote, and the next try writes the rest.
+  - Lead's planning thread still gets no tasks tools after a restart.
+  - **Remove plan** forgets a plan. Its tasks, their runs and Lead's thread stay.
+- **Land approved.** When at least one task's latest run is in review with Approve, the plan offers **Land N approved…**.
+  - It opens Land worktrees (F-WT-07) for the plan's repository with exactly those worktrees chosen, in the plan's order.
+  - That dialog's forecast, check command and confirm work as F-WT-07 describes, including for a worktree that can't land yet (uncommitted changes, or nothing to land).
+  - Landing is a local action (F-TL-06 rule 5), so a plan can't land work by itself.
+- **Not in this slice:** Lead answering agents' questions (the supervisor loop), marking landed tasks Done, and running a task again from the plan after Changes requested.
+
+**Acceptance:**
+1. A chat thread in a worktree that edits `a.ts` claims it from the engine's edit report, and a task run's first message asks its agent to claim.
+2. A plan with created tasks shows each task's latest run with its state and verdict, and updates as runs move on.
+3. Plans are listed again after a restart with their tasks. A plan whose Lead was interrupted fails with its reason and offers Plan again.
+4. Land approved opens Land worktrees with only the approved tasks' worktrees chosen, in plan order.
 
 ### 4.9 RT: Routines
 
@@ -3164,11 +3198,21 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 - **Interactive demo:** a browser-only replica of the Code, Thread and Dashboard surfaces built from `packages/ui` components with sample data and **no network or mic access**. It is labelled "Interactive demo · sample data".
 - **Performance:** Lighthouse ≥90 for performance and accessibility on `/` and `/pricing`.
 - **Legal:** a cookie-consent banner **before** any non-essential cookies or analytics load. The site ships no analytics by default.
+- **Theme (D-1870):** System, Light or Dark, chosen in the header (the phone menu below 640 px) on every page: marketing pages, the blog, the docs, the 404 and the account portal. System, which follows the OS live, is the default. An inline script in `<head>` applies the choice before the first paint as `data-theme-choice` on `<html>` (and `data-theme` when it isn't System), so no page paints in the wrong theme, and `color-scheme` follows. The choice is kept in `localStorage` under one key, `vibezeo-theme`, written only when the visitor picks Light or Dark (System removes it); every read and write is wrapped so a blocked storage still leaves a working page. Without JavaScript the pages follow the OS and the control is not shown. Every site colour token has a value for each theme. Product media keep the app's dark screen in both themes, inside a bezel that follows the theme; share images don't change.
+- **Motion (D-1874):** motion tokens (easings and named durations) in `site.css`; scroll-driven reveals in CSS (`animation-timeline: view()`) inside `@supports`, so content is simply there where the browser lacks it; staggered entrances; and hover and focus micro-interactions. Nothing moves under `prefers-reduced-motion: reduce`, and nothing that moves changes layout.
+- **Product scenes (D-1880):** animated scenes of the product in HTML, CSS and SVG, built from `packages/ui` tokens and the app's own words, showing only what the shipped build does. They are decorative (`aria-hidden`) with a text alternative beside them, pause when off screen or in a hidden tab, and under reduced motion show a still, complete frame.
 
 **Acceptance:**
 1. Lighthouse CI thresholds pass.
 2. No analytics or ads script loads before consent (Playwright network assertion).
 3. The pricing page values match `GET /config` prices (a build-time check).
+4. Every exported page carries the theme script inline in `<head>`, before the body. It sets `data-theme-choice` from storage before the body is parsed (unset or unreadable storage gives `system`), and the header's control (System, Light, Dark) switches the page at once, marks the choice, and keeps it across pages and reloads.
+5. Every site colour pair the site draws meets WCAG 2.2 AA in both themes, and axe finds nothing serious on any page in either theme, whether it comes from the OS or the control.
+6. Choosing Light while the OS is dark (and Dark while it's light) applies every site and app token of that theme and the matching `color-scheme`, docs and blog code blocks included.
+7. Nothing is stored until the visitor picks a theme, and then only `vibezeo-theme`.
+8. With reduced motion nothing on any page animates, and every product scene shows its complete final frame; elsewhere the reveals sit inside `@supports (animation-timeline: view())`.
+9. Each product scene is `aria-hidden` with a text alternative, uses only words from the app's catalog (`en.json`) or the site's own copy, pauses its animations off screen and in a hidden tab, and the home page keeps its Lighthouse budgets (performance ≥ 0.99, LCP ≤ 2.0 s, CLS ≤ 0.02).
+10. No first viewport at 1440×900, in either theme, shows more than three teal things (the primary action, the one highlighted phrase, the mark; DESIGN §4.2): eyebrows, inline links, ticks and list icons are neutral.
 
 #### F-WB-02 Docs (P1)
 **Behavior:**
@@ -3214,7 +3258,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
   - `/blog/tags/<tag>/`: the posts with that tag, newest first.
   - `/blog/feed.xml`: an Atom feed of every published post.
 - Drafts are built by `next dev` only, never exported, listed or fed.
-- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2), no cookies or storage, no third-party resources or embeds. A post page may carry two scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
+- Static like the other marketing pages: server components, no client JavaScript after the runtime strip (F-WB-01 AC2) beyond the site's theme script (F-WB-01 AC4), no cookies, no storage beyond the visitor's theme choice, no third-party resources or embeds. A post page may carry two more scripts and no others: its JSON-LD (`<script type="application/ld+json">`, data, not code) and the first-party `/blog/blog.js` (about 1 KB, deferred), which shows the code blocks' Copy buttons (D-1860). Without it the page reads the same and the buttons stay hidden.
 - Subscribing is the Atom feed or an email to the contact address. No newsletter form.
 - Dates appear on blog pages only inside `<time datetime>` elements and as JSON-LD date fields; the site's no-year rule holds for everything else.
 - Linked from the header, the footer, the sitemap and `/llms.txt`.
@@ -3225,7 +3269,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 3. Each post page has one `h1`, the author, a `<time datetime>` for its date, a reading time, its tags linking to their tag pages, and links to its neighbours; a post without a cover renders without an image.
 4. Each tag page lists exactly the posts with that tag.
 5. `/blog/feed.xml` is valid Atom with one entry per published post, and every blog page links it with `<link rel="alternate" type="application/atom+xml">`.
-6. After `build:site`, the blog's index and tag pages carry no script, a post page carries only its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
+6. After `build:site`, the blog's index and tag pages carry no script but the theme script, a post page only that, its JSON-LD block and `/blog/blog.js`, and no blog page has a year outside `<time datetime>` and JSON-LD dates.
 7. The sitemap, `/llms.txt`, the header and the footer link the blog, and every blog URL answers at its trailing-slash form with no redirect.
 8. Lighthouse CI on `/blog/` and one post meets the site's budgets (each category ≥ 0.95, CLS ≤ 0.02).
 

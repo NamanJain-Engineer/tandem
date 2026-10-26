@@ -18,6 +18,9 @@ await page.goto(url);
 await page.waitForSelector('[data-testid="demo-bar"]', { timeout: 15000 });
 await page.waitForTimeout(2500);
 await page.screenshot({ path: `${out}/1-start.png` });
+// The demo opens in Code mode; the ready message waits in Thread mode.
+await page.click('[role="radio"][value="thread"]');
+await page.waitForTimeout(1000);
 const box = page.locator('[data-testid="composer"] textarea[aria-label="Message"]');
 console.log("draft:", await box.inputValue().catch((e) => `ERR ${e.message}`));
 await box.focus();

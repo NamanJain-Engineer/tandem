@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { SITE } from "../lib/site";
+import { THEME_COLOR, THEME_SCRIPT } from "../lib/theme";
 import { inter, mono } from "./fonts";
 import "./globals.css";
 
@@ -28,18 +29,26 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: SITE.product, description: SITE.tagline, images: ["/og.png"] },
 };
 
-/** The site follows the visitor's OS theme with CSS only (D-1801). */
+/** System follows the visitor's OS in CSS (D-1801); the theme script sets
+ * these colours itself when the visitor picks Light or Dark (D-1870). */
 export const viewport: Viewport = {
   colorScheme: "dark light",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#060a12" },
-    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
   ],
 };
 
+/** The theme script is the first thing in `<head>`, so the choice is on
+ * `<html>` before anything paints (F-WB-01 AC4, D-1871). It changes `<html>`'s
+ * attributes before React hydrates the portal's pages, hence
+ * `suppressHydrationWarning` there and nowhere else. */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${mono.variable}`}>
+    <html lang="en" className={`${inter.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script data-theme-boot="" dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="site">{children}</body>
     </html>
   );

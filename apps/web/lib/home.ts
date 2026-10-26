@@ -26,7 +26,7 @@ export const FEATURES = [
   },
   {
     title: "Thread mode",
-    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Grok and OpenCode, up to six side by side.",
+    body: "Work with Claude Code, Codex and other agents as a conversation: streamed replies, tool calls, and approvals you answer inline, once or for the whole thread. Plan mode writes numbered plans you can implement exactly, and the Changes panel shows every file a thread touched. Threads run Claude Code, Codex, Cursor Agent, Gemini CLI, Grok, Kiro CLI, OpenCode and any agent you add that speaks ACP, up to six side by side.",
   },
   {
     title: "Switch engines mid-thread",
@@ -107,17 +107,34 @@ export const CLAUDE = [
     body: "Vibezeo is built with Claude Code. Most of the code, including the desktop app, the backend, this site and their tests, was written with it, and the commit history records it.",
   },
   {
-    tag: "Built, live when accounts open",
+    tag: "Comes with Vibezeo accounts",
     title: "Hosted features on the Claude API",
-    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend: it calls Claude and stores no prompts or responses. They go live when accounts open.",
+    // DESIGN §9.5: the one phrase for hosted features, word for word.
+    body: "Vibezeo's hosted AI runs on the Claude API. Session titles, teammate drafts, Enhance and Polish for dictated prompts, and the Auto supervisor are built in the app and the backend, which calls Claude and stores no prompts or responses. It uses Vibezeo's servers and switches on when Vibezeo accounts open.",
   },
 ] as const;
 
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Multi-repo workspaces, claims and any ACP agent",
-    body: "Built and in review now: one worktree per agent across several repositories in a folder, with linked pull requests; agents claim the files they're about to change, so overlaps show before they clash; any agent that speaks ACP, Gemini CLI among them, as a thread engine; and a resource governor that caps an agent pane's memory on Linux.",
+    title: "Code intelligence in the editor and diffs",
+    body: "Go to definition, find references, hover and errors in the Files editor, and the same jumps from a diff, using the language servers you already have, once you trust the repository. Built and in review now.",
+  },
+  {
+    title: "Lead keeps a plan moving",
+    body: "Once a plan's runs start, Lead can answer their routine questions for you and pass the rest on to you. Built and in review now.",
+  },
+  {
+    title: "Secrets for agents' commands",
+    body: "An agent runs a command that needs your secrets with vibezeo run, after you approve it, and the output comes back to it with the values masked. Built and in review now.",
+  },
+  {
+    title: "Local models as engines",
+    body: "Agents that run on a model served from your own computer. Built and in review now.",
+  },
+  {
+    title: "Activity ledger",
+    body: "What an agent session did, in order: the turns it was given, the commands it ran, the files it changed, and the approvals it asked for and who answered. Built and in review now.",
   },
   {
     title: "Your phone, from anywhere",
@@ -211,61 +228,69 @@ export function firstSentence(text: string): string {
   return cut < 0 ? text : text.slice(0, cut + 1);
 }
 
-/** The four mode rows (#features), each built from FEATURES. Every feature
- * is shown in exactly one place on the home page: a mode row, the "New in"
- * tiles or the capability index (a test checks). */
-export const MODE_ROWS = [
-  {
-    id: "code",
-    eyebrow: "Code mode",
-    title: "Real terminals, side by side",
-    features: ["Real terminals, side by side"],
-    facts: ["Full-screen TUIs, colours and mouse input", "Layouts you split, maximize and rearrange", "Your own folders, your own shell"],
-    docs: docsPath("code-mode"),
-  },
-  {
-    id: "thread",
-    eyebrow: "Thread mode",
-    title: "Agents as conversations, with approvals inline",
-    features: ["Thread mode", "Switch engines mid-thread"],
-    facts: ["Plan mode writes numbered plans", "The Changes panel shows every file a thread touched", "Move a thread to another engine with a summary"],
-    docs: docsPath("thread-mode"),
-  },
-  {
-    id: "agent",
-    eyebrow: "Agent mode",
-    title: "Teammates that remember",
-    features: ["Teammates"],
-    facts: ["A brief, notes and skills for each teammate", "Search past chats; send each other mail", "Runs on the engines you already use"],
-    docs: docsPath("agent-mode"),
-  },
+/** The feature the hero's scene shows: Code mode's real terminals (D-1881). */
+export const HERO_FEATURES = ["Real terminals, side by side"] as const satisfies readonly FeatureTitle[];
+
+/** #features: what it's like, as scenes of the app (DESIGN §5.1, D-1881).
+ * Each row's features are shown by its scene; every feature appears in
+ * exactly one place on the home page: the hero, a scene row, the capability
+ * index or its "Everything else" list (a test checks). `release` gates a
+ * row on the release that ships what it shows (D-128). */
+export const SCENE_ROWS = [
   {
     id: "dashboard",
     eyebrow: "Dashboard",
-    title: "Every agent, and which ones need you",
-    features: ["One Dashboard", "Live status for every agent", "A review queue across engines"],
-    facts: ["Across all your workspaces", "One click to the pane that needs you", "A review queue for finished work, with a second opinion"],
+    title: "See who needs you",
+    body: "Working, waiting, done or failed: every pane, the rail and the Dashboard show it, from each engine's own signals.",
+    features: ["One Dashboard", "Live status for every agent"],
     docs: docsPath("code-mode"),
+    release: "0.5.0",
+  },
+  {
+    id: "review",
+    eyebrow: "Review",
+    title: "Review before you merge",
+    body: "Finished work waits in one queue with its diff. Ask another engine for a second opinion before you approve.",
+    features: ["A review queue across engines"],
+    docs: docsPath("code-mode"),
+    release: "0.8.0",
   },
 ] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
 
-/** The capability index (#capabilities): one line each, the full copy is in the docs. */
+/** The capability index (#capabilities): eight, one line each, as DESIGN
+ * §9.1 lists them; the full copy is in the docs (progressive disclosure). */
 export const CAPABILITIES = [
   { title: "Dictate", icon: "mic", docs: docsPath("dictate") },
-  { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
-  { title: "Tasks", icon: "tasks", docs: docsPath("tasks") },
-  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Worktree lanes and handoff", icon: "branch", docs: docsPath("code-mode") },
   { title: "Previews per worktree", icon: "compare", docs: docsPath("code-mode") },
   { title: "Files, git and a browser", icon: "files", docs: docsPath("code-mode") },
+  { title: "SSH workspaces", icon: "server", docs: docsPath("remote") },
   { title: "Find work by what it's about", icon: "search", docs: docsPath("code-mode") },
-  { title: "Several accounts per engine", icon: "users", docs: docsPath("accounts-and-limits") },
-  { title: "Your accounts, untouched", icon: "key", docs: docsPath("privacy") },
-  { title: "Notifications that matter", icon: "bell", docs: docsPath("settings") },
+  { title: "Plugins with approvals", icon: "plug", docs: docsPath("plugins") },
   { title: "Crash-safe restore", icon: "restore", docs: docsPath("troubleshooting") },
-  { title: "Signed updates", icon: "shield", docs: docsPath("troubleshooting") },
-  { title: "Private by default", icon: "lock", docs: docsPath("privacy") },
 ] as const satisfies ReadonlyArray<{ title: FeatureTitle; [key: string]: unknown }>;
+
+/** "Everything else in the docs": the rest, as one line of links. */
+export const MORE = [
+  { title: "Thread mode", docs: docsPath("thread-mode") },
+  { title: "Switch engines mid-thread", docs: docsPath("thread-mode") },
+  { title: "Teammates", docs: docsPath("agent-mode") },
+  { title: "Tasks", docs: docsPath("tasks") },
+  { title: "Several accounts per engine", docs: docsPath("accounts-and-limits") },
+  { title: "Your accounts, untouched", docs: docsPath("privacy") },
+  { title: "Notifications that matter", docs: docsPath("settings") },
+  { title: "Signed updates", docs: docsPath("troubleshooting") },
+  { title: "Private by default", docs: docsPath("privacy") },
+] as const satisfies ReadonlyArray<{ title: FeatureTitle; docs: string }>;
+
+/** The four questions on the home page (DESIGN §5.1); the rest of FAQ is
+ * answered on /about/ and /download/. */
+export const HOME_FAQ = [
+  "Can I use Vibezeo today?",
+  "Do I need a new AI subscription?",
+  "Does Vibezeo see my API keys or subscription tokens?",
+  "Is Vibezeo free?",
+] as const;
 
 /** Release-note tiles: icon and docs page for each lead phrase in a
  * release's Added section. A release whose Added title isn't listed here
@@ -310,6 +335,16 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Session library": { icon: "history", docs: docsPath("workflow-tools") },
   "Sandbox agent panes": { icon: "lock", docs: docsPath("engines") },
   "Antigravity CLI and Kiro CLI": { icon: "terminal", docs: docsPath("engines") },
+  "Resource governor": { icon: "activity", docs: docsPath("engines") },
+  "Agent-proof secrets": { icon: "lock", docs: docsPath("privacy") },
+  "Multi-repo workspaces": { icon: "branch", docs: docsPath("code-mode") },
+  "Any ACP agent in Thread mode": { icon: "plug", docs: docsPath("engines") },
+  Claims: { icon: "compare", docs: docsPath("tasks") },
+  "Plan with Lead": { icon: "tasks", docs: docsPath("tasks") },
+  "Follow a plan through": { icon: "tasks", docs: docsPath("tasks") },
+  "Land approved work in the plan's order": { icon: "merge", docs: docsPath("tasks") },
+  "Plans are kept": { icon: "history", docs: docsPath("tasks") },
+  "Chat threads claim the files they edit": { icon: "compare", docs: docsPath("tasks") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

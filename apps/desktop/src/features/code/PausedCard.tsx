@@ -92,7 +92,7 @@ export function PausedCard({
       ) : (
         <div className="absolute inset-0 flex items-center justify-center p-4">
           <div className="flex max-w-sm flex-col items-center gap-3 rounded-lg border border-border bg-surface-2 p-5 text-center shadow-lg">
-            {spec && <EngineGlyph letters={spec.logo} size={32} />}
+            {spec && <EngineGlyph letters={spec.logo} engine={spec.id} size={32} />}
             <span className="line-clamp-2 text-base font-semibold text-fg" data-testid="paused-title">
               {title}
             </span>

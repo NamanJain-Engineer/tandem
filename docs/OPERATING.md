@@ -300,9 +300,14 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    tiles come from the CHANGELOG, and a new Added title needs an entry in
    `RELEASE_TILE_MAP`). The site tests check the file exists. Captures are taken
    at 2× and kept as masters in `apps/web/media/<name>@2x.png` (D-1838): the demo
-   still from `/demo/app/?embed=1` in Chromium at 1280×800 with device scale 2, and
-   the app's screens from the real build under the E2E harness with `GDK_SCALE=2`
-   (hide the debug build's DEV badge; no agents, or the fake engine labelled). Then
+   still from `/demo/app/?embed=1` in Chromium at 1280×800 on a real 2× screen
+   (`--force-device-scale-factor=2` with `viewport: null`, never Playwright's emulated
+   `deviceScaleFactor`, under which the terminals draw blank or at double size; D-2606),
+   and the app's screens from the real build under the E2E harness with `GDK_SCALE=2`
+   (`apps/desktop/e2e/screens/site.screens.ts`, which hides what the download never
+   shows: the debug build's DEV badge and the hosted build's connection state, D-816;
+   no agents, or the fake engine labelled). Before a release whose site shows the demo,
+   `node scripts/agent/demo-retina-check.mjs` checks its terminals at real 2× (D-2607). Then
    run `python3 apps/web/scripts/optimize-screens.py`, which writes the 1× original
    and AVIF and WebP at 1× and 2×, and set each screen's `build` in `SCREENS`
    (`apps/web/lib/media.ts`). If the video is re-recorded, set
@@ -314,6 +319,13 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    plan must match the download's (`ENTITLEMENT` in `src/demo/backend.ts`), and
    anything new and visible in the release should be added to it with a test in
    `demo.test.ts`. List the surfaces in the release pull request.
+   The home page's product scenes (D-1880, `components/site/scenes`) follow
+   the same rule: they draw only what the download does, with the app's own
+   words from `en.json`, and label the build from `lib/release.ts`. A scene
+   or part of one that needs a newer release is gated on it (`LANDS` in
+   `lib/scenes.ts` switches on 0.9.0's landing queue and intent radar): after
+   bumping `release.ts`, look at each scene's final frame in both themes and
+   check it against the release.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)
@@ -422,7 +434,7 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   (`CHROME_PATH=/opt/pw-browsers/chromium pnpm --filter web lhci`: `/`, `/about/`,
   `/download/`, `/changelog/`, `/docs/`, `/blog/` and one post, three runs each, 95 or more in all four
   categories and CLS under 0.02; delete `apps/web/.lighthouseci` first, it keeps old
-  runs), then walk the demo:
+  runs; `pnpm --filter web lhci:dark` runs the same in the dark theme, D-1870), then walk the demo:
   `(cd apps/web/public && python3 -m http.server 4321 &)` and
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
@@ -432,7 +444,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   unused client runtime from the marketing pages and the docs (not the demo app;
   D-1843)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
-  and `/download/detect.js` on `/download/`. Site components stay server-only.
+  and `/changelog/0.9.0/` (the Land scene, D-1885), `/download/detect.js` on
+  `/download/` and a blog post's two (`scripts/script-allowlist.mjs`). Site components stay server-only.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are
   off for the export, and the "add a slash" rule is in `vercel.json`.

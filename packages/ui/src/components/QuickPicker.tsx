@@ -74,7 +74,7 @@ export function QuickPicker({
         <D.Content
           aria-describedby={undefined}
           data-testid="quick-picker"
-          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[680px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 shadow-3 focus:outline-none"
+          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[680px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 shadow-e3 focus:outline-none"
         >
           <D.Title className="sr-only">{title}</D.Title>
           <Command label={title} shouldFilter={false} value={value} onValueChange={onValueChange} onKeyDown={onKeyDown}>

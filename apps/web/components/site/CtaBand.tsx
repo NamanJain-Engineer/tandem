@@ -9,11 +9,14 @@ export function CtaBand({
   id,
   title,
   lead,
+  note,
   children,
 }: {
   id: string;
   title: ReactNode;
   lead?: ReactNode;
+  /** One quiet line under the actions. */
+  note?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -25,15 +28,16 @@ export function CtaBand({
         turn
         className="absolute left-1/2 top-1/2 -z-10 h-[52rem] w-[82rem] max-w-none -translate-x-1/2 -translate-y-[38%] opacity-90 [mask-image:radial-gradient(closest-side,black_45%,transparent)]"
       />
-      <div className="container-site flex flex-col items-center gap-7 py-[calc(var(--site-section-y)*1.15)] text-center">
+      <div className="container-site flex flex-col items-center gap-7 py-(--site-section-y) text-center">
         <span className="reveal inline-flex size-16 items-center justify-center rounded-2xl surface">
           <Mark size={34} />
         </span>
-        <h2 id={`${id}-title`} className="reveal text-sheen max-w-[16em] text-display-2xl text-fg">
+        <h2 id={`${id}-title`} className="reveal stagger-1 text-sheen max-w-[16em] text-display-2xl text-fg">
           {title}
         </h2>
-        {lead && <p className="reveal max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
-        <div className="reveal flex flex-wrap justify-center gap-3 pt-1">{children}</div>
+        {lead && <p className="reveal stagger-2 max-w-measure text-lead text-pretty text-fg-muted">{lead}</p>}
+        <div className="reveal stagger-3 flex flex-wrap justify-center gap-3 pt-1">{children}</div>
+        {note && <p className="reveal stagger-4 text-caption text-fg-muted">{note}</p>}
       </div>
     </section>
   );

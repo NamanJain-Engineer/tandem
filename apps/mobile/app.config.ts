@@ -15,7 +15,7 @@ const config: ExpoConfig = {
   scheme: "vibezeo-remote",
   orientation: "portrait",
   userInterfaceStyle: "dark",
-  backgroundColor: "#060a12",
+  backgroundColor: "#09090b",
   icon: "./assets/icon.png",
   ios: {
     bundleIdentifier: "com.vibezeo.remote",
@@ -106,7 +106,7 @@ const config: ExpoConfig = {
     "./plugins/withReleaseSigning",
     "./plugins/withPushExtension",
     "expo-secure-store",
-    ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 160, backgroundColor: "#060a12" }],
+    ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 160, backgroundColor: "#09090b" }],
     [
       "expo-camera",
       {

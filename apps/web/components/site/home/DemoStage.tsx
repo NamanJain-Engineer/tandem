@@ -13,7 +13,7 @@ const DEMO_STAGE = `<div data-demo-stage="" data-stage="" class="absolute inset-
 <span>Interactive demo · simulated agents, sample data</span>
 <button type="button" data-demo-close="" class="ml-auto rounded-sm px-3 py-1 font-medium text-stage-fg hover:bg-white/10">Close (Esc)</button>
 </div>
-<picture><source type="image/avif" srcset="/demo/still-800.avif 800w, /demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><source type="image/webp" srcset="/demo/still-800.webp 800w, /demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Thread mode in the demo: a thread about a redirect loop after login with its first message ready to send, the thread list, and a card that lists what to try." class="block h-full w-full"></picture>
+<picture><source type="image/avif" srcset="/demo/still-800.avif 800w, /demo/still.avif 1280w, /demo/still@2x.avif 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><source type="image/webp" srcset="/demo/still-800.webp 800w, /demo/still.webp 1280w, /demo/still@2x.webp 2560w" sizes="(min-width: 1312px) 1268px, 100vw"><img data-demo-still="" src="/demo/still.jpg" width="1280" height="800" loading="lazy" decoding="async" alt="Vibezeo's Code mode in the demo: three workspaces in the rail, Claude Code done fixing a redirect loop, Codex reviewing the diff, a shell, and a tip that Gemini CLI is waiting in another workspace." class="block h-full w-full"></picture>
 <a href="/demo/app/" data-demo-open="" class="absolute inset-0 flex items-center justify-center bg-black/40 text-md font-semibold lg:hidden"><span class="btn btn-primary btn-md">Tap to explore</span></a>
 </div>`;
 
@@ -30,8 +30,8 @@ export function DemoStage() {
       <div className="relative mx-auto flex w-full max-w-stage flex-col gap-6 px-(--site-gutter)">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3">
-            <span className="inline-flex h-7 items-center gap-2 self-start rounded-full bg-(--site-glass) px-3 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-accent shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--tn-accent)]" />
+            <span className="inline-flex h-7 items-center gap-2 self-start rounded-full bg-(--site-glass) px-3 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-fg-muted shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-subtle" />
               Interactive demo · sample data
             </span>
             <h2 id="try-title" className="text-sheen text-display-md text-fg">
@@ -39,7 +39,7 @@ export function DemoStage() {
             </h2>
           </div>
           <div className="hidden lg:block">
-            <a href="/demo/app/" data-demo-open="" className={siteButton("secondary", "md")}>
+            <a href="/demo/app/" data-demo-open="" className={siteButton("secondary", "md", "icon-turn")}>
               <Icon icon={Maximize2} size={16} />
               Explore full screen
             </a>
