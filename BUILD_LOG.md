@@ -2736,7 +2736,8 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `tasks_exec`: two runs that finish together, and their reviews, both reach In review with Approve, on two workers.
     - Ported: `startedStatus`'s branches; Execute all saving from a runtime worker; Create tasks after a restart partway; Codex keeping its start's paths and dropping an unfinished change; Claude's MultiEdit result row.
   - **Docs.** ARCHITECTURE §9.5 (Codex's paths) and §9.6 (the saves, following the runs); OPERATING's E2E lessons (a fake left in `fakebin`, `timeoutMsg`).
-  - **Gate:** run on `m16a-conductor` after the merge (its entry below).
+  - **With 0.12.0:** product-m0-m5 297d1238 (0.12.0, with 60819dad) is merged into `tk07-stall` (f6b20a17), then into `m16a-conductor` (cf97bf8d). Since 6c813365, 60819dad and 8dda9997 were the only changes to `fake-engine.rs`, `fake-engine/acp.rs`, `fake-engine/chat.rs` and both specs, so they keep this line's version. The clean merge had left `review_reply` defined twice, and the ACP fake's doc saying it twice.
+  - **Gate:** run on `m16a-conductor` after the merges (round 3's entry below).
 - [x] E2E, after E2E-M18-TK-07's diagnosis (test code only; the coordinator accepted both for chain27).
   - **Specs put back the fakes they install.** E2E-M7-5, E2E-M7-8 and E2E-M18-WT-05 left `fakebin/codex`, and E2E-M7-12 `fakebin/opencode`. Each now removes its fake after it and detects again, as E2E-M18-RT-06 and E2E-M18-FREE do. A later spec would otherwise run with it installed, and a task review picks any other installed chat engine. E2E-M7-5 also empties `fake-version.txt`, which it left at Codex 0.31.0, too old for Thread mode. E2E-M7-12 removes `fake-models.txt`.
   - **A wait's timeout says what it last read.** `waitUntil` builds `timeoutMsg` with its options, before the wait starts. So `${await rows()}` showed the state at the start, as E2E-M18-TK-07's `[setup, running]` did, and a variable the condition sets showed `null` or `undefined`.
@@ -2744,7 +2745,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Moved onto it: the six helpers whose message used a value their condition sets (E2E-M10-5's `delivered`, E2E-M11-2's `untilState`, E2E-M11-3's `untilStatus`, E2E-M16-1's and E2E-M18-CN-09's `until`, and `ensureModel` in `support/dictate.ts`); E2E-M18-TK-07's own helper; and the shared waits that read state for their message (`addFolder`, `waitForPaneText`, `waitForStatus`, `waitForSessionStarts`, `waitForAssistant`, `waitForRow`, `waitForChanges`, the commit message box, `waitForEntitlement`).
     - E2E-M16-7's `until` already caught the timeout and threw what it last saw.
     - About a hundred waits written inline in some 55 specs still build their message at the start. New waits use `waitFor` (OPERATING's E2E lessons).
-  - **Checked:** e2e `tsc` and ESLint; the E2E runs are with the gate below.
+  - **Checked:** e2e `tsc` and ESLint, and E2E with round 3's gate below: the four specs, then E2E-M18-FREE, then E2E-M18-TK-07, which checks that Claude Code reviews. The waits' other users pass too (E2E-M10-5, M11-2, M11-3, M16-1, M18-CN-09, M5-1, M9-1, M9-2, M8-1).
 - [x] F-TK-08 Lead keeps a plan moving, bold bet B3's third slice: the supervisor loop (D-2828 to D-2835). Built on F-TK-07 and its review fixes (22d7c7c4, with product-m0-m5 d2ae3155 merged in), from the coordinator's approval with its seven constraints.
   - **Spec.** PRODUCT_SPEC F-TK-08 (P2, owned by M18; coverage 190, M18 owns 24).
   - **Runs ask (`tasks_exec`).**
@@ -2870,7 +2871,15 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `paths`: a private folder and the folders made for it are 0700, a folder already there is left alone unless it's the one asked for, and a file in the way is an error.
     - `plan`: an answer folder is 0700 (and tightens an older `answers/`), two are never the same, and a panic while one is held still removes it.
   - **Docs.** ARCHITECTURE §6.8.1 (the pre-release) and §9.6 (the folder); D-2838 amended.
-  - **Gate:** pending.
+  - **Gate:** passed on cf97bf8d. That is this entry, the two E2E commits after it, and the merges of tk07-stall and 0.12.0:
+    - 2,414 Rust tests (6 ignored) and 1,751 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 190, and protocol drift with 581 types (none added).
+    - E2E on cf97bf8d, 20 specs and 74 tests, all passing, in this order:
+      - m7-5-codex 2, m7-8-switch 1, m7-12-acp 4, m18-wt05 2, m18-free-offline 2, m18-tk07 3;
+      - m18-tk08 1, m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2;
+      - m11-3-routines 4, m10-5-mail 5, m16-1-conductor 15, m18-cn09 3, m5-1-restore 2, m9-1-editor 4, m9-2-git 3, m8-1-push-to-talk 7.
+    - The first run, on a35a6077, was stopped in its clippy step after every test had passed, because the merge of 0.12.0 changed docs and TypeScript that tests read.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
