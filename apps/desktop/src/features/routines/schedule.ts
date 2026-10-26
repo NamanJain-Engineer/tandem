@@ -61,12 +61,30 @@ export function formatRun(ms: number, timeZone: string): string {
   }
 }
 
+/** One offset formatter per zone: building one is far slower than using
+ * it, and `clockChange` asks a zone up to 84 times. `null` for a zone the
+ * runtime doesn't know. */
+const offsetFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+function offsetFormat(timeZone: string): Intl.DateTimeFormat | null {
+  let format = offsetFormats.get(timeZone);
+  if (format === undefined) {
+    try {
+      format = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" });
+    } catch {
+      format = null;
+    }
+    offsetFormats.set(timeZone, format);
+  }
+  return format;
+}
+
 /** The zone's UTC offset at `ms`, in minutes. */
 export function offsetAt(timeZone: string, ms: number): number | null {
+  const format = offsetFormat(timeZone);
+  if (!format) return null;
   try {
-    const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
-      .formatToParts(new Date(ms))
-      .find((p) => p.type === "timeZoneName")?.value;
+    const part = format.formatToParts(new Date(ms)).find((p) => p.type === "timeZoneName")?.value;
     if (!part) return null;
     const m = /GMT(?:([+-])(\d{2}):?(\d{2}))?/.exec(part);
     if (!m) return null;
