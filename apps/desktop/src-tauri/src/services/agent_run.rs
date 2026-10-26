@@ -27,6 +27,7 @@ use tandem_pty::mask::LiteralMasker;
 use tandem_store::repo::{panes, secrets as names, workspaces};
 use tandem_store::Store;
 use tokio::io::AsyncReadExt;
+use zeroize::Zeroizing;
 
 use crate::services::secrets;
 use crate::services::terminal::TerminalService;
@@ -107,9 +108,35 @@ struct Checked {
     pane: PaneId,
     cwd: PathBuf,
     command: String,
+    /// The `.env`'s references, the only variables the run gets from it.
     vars: Vec<refs::EnvVar>,
-    secrets: Vec<String>,
+    /// [`refs::fingerprint`] of `vars`.
+    fingerprint: String,
     repo: String,
+}
+
+impl Checked {
+    /// "API_KEY (stripe-test), DB_URL (db)": every variable the run gets
+    /// from `.env`, by name, and its secret.
+    fn names(&self) -> String {
+        self.vars
+            .iter()
+            .map(|v| match refs::reference(&v.value) {
+                Some(secret) => format!("{} ({secret})", v.name),
+                None => v.name.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// The shell a run's line goes to.
+fn dialect() -> ShellDialect {
+    if cfg!(windows) {
+        ShellDialect::Cmd
+    } else {
+        ShellDialect::Posix
+    }
 }
 
 impl AgentRuns {
@@ -146,12 +173,18 @@ impl AgentRuns {
             Err(e) => return RunReply::refused(e.message),
         };
         let login = self.terminals.login_env().await;
-        let mut env: Vec<(String, String)> = login
+        // The login environment, without any variable `.env` sets.
+        let env: Vec<(String, String)> = login
             .vars
+            .iter()
+            .filter(|(k, _)| !resolved.env.contains_key(k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let secret_env: Vec<(String, Zeroizing<String>)> = resolved
+            .env
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        env.extend(resolved.env);
         tracing::info!(
             code = "secrets.agent_run",
             "an agent's run with secrets started"
@@ -161,6 +194,7 @@ impl AgentRuns {
             &checked.command,
             &checked.cwd,
             &env,
+            &secret_env,
             &resolved.secrets,
             RUN_LIMIT,
         )
@@ -186,7 +220,15 @@ impl AgentRuns {
                 c.pane.as_str(),
                 crate::services::activity::RunRecord {
                     command: c.command.clone(),
-                    secrets: c.secrets.clone(),
+                    // Every variable the run got, by name, and its secret.
+                    secrets: c
+                        .vars
+                        .iter()
+                        .map(|v| match refs::reference(&v.value) {
+                            Some(secret) => format!("{} ({secret})", v.name),
+                            None => v.name.clone(),
+                        })
+                        .collect(),
                     decided,
                     exit_code,
                     duration_ms,
@@ -220,33 +262,21 @@ impl AgentRuns {
             .ok()
             .filter(|c| c.starts_with(&root))
             .ok_or_else(|| format!("vibezeo run works inside this pane's folder, {}", ws.root))?;
-        let dialect = if cfg!(windows) {
-            ShellDialect::Cmd
-        } else {
-            ShellDialect::Posix
-        };
-        let command = run_request::command_line(&req.argv, dialect).map_err(str::to_string)?;
-        let vars = secrets::read_env(&root)
+        let command = run_request::command_line(&req.argv, dialect()).map_err(str::to_string)?;
+        let parsed = secrets::read_env(&root)
             .map_err(|e| e.message)?
             .map(|(_, v)| v)
             .unwrap_or_default();
-        let mut used = Vec::new();
+        // Only references reach an agent's run: a plain value (or a loader
+        // variable) in `.env` would change what runs without anyone seeing.
+        let vars = refs::for_agent(&parsed).map_err(|e| e.to_string())?;
         for p in refs::plan(&vars) {
-            if p.malformed {
-                return Err(format!(
-                    "{} isn't a valid vibezeo-secret:// reference",
-                    p.name
-                ));
-            }
             if let Some(name) = p.secret {
                 if !names::exists(&self.store, &name)
                     .await
                     .map_err(|e| e.to_string())?
                 {
                     return Err(format!("No secret named {name}"));
-                }
-                if !used.contains(&name) {
-                    used.push(name);
                 }
             }
         }
@@ -262,29 +292,31 @@ impl AgentRuns {
             pane,
             cwd,
             command,
+            fingerprint: refs::fingerprint(&vars),
             vars,
-            secrets: used,
             repo,
         })
     }
 
-    /// A repository rule, this agent's earlier "Allow for this agent", or
-    /// the person's answer.
-    /// Who decided (as the ledger names it), or that and why not.
+    /// A repository rule, or this agent's earlier "Allow for this agent",
+    /// each only while `.env` gives the run what it did then; else the
+    /// person's answer. Who decided (as the ledger names it), or that and
+    /// why not.
     async fn decide(&self, c: &Checked) -> Result<&'static str, (&'static str, String)> {
-        if RunRules::load(&self.data).allows(&c.repo, &c.command) {
+        let rules = RunRules::load(&self.data);
+        if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
             return Ok("rule");
         }
         if self
             .terminals
-            .agent_run_allowed(c.pane.as_str(), &c.command)
+            .agent_run_allowed(c.pane.as_str(), &c.command, &c.fingerprint)
         {
             return Ok("allowed_before");
         }
-        let with = if c.secrets.is_empty() {
-            "with the folder's .env".to_string()
+        let with = if c.vars.is_empty() {
+            "with no secrets".to_string()
         } else {
-            format!("with {}", c.secrets.join(", "))
+            format!("with {}", c.names())
         };
         let (view, ticket) = self.broker.request(ApprovalRequest {
             source: SourceRef::Pane {
@@ -292,11 +324,19 @@ impl AgentRuns {
             },
             kind: ApprovalKind::Command,
             summary: format!("run `{}` {with}", c.command),
-            detail: format!(
-                "vibezeo run in {}: `{}` {with}. It runs outside the agent, and its output comes back with the values hidden.",
-                c.cwd.display(),
-                c.command
-            ),
+            detail: serde_json::json!({
+                "vibezeoRun": {
+                    "command": c.command,
+                    "cwd": c.cwd.to_string_lossy(),
+                    "vars": c.vars.iter().map(|v| serde_json::json!({
+                        "name": v.name,
+                        "secret": refs::reference(&v.value),
+                    })).collect::<Vec<_>>(),
+                    // A rule covers it, but `.env` changed since it was allowed.
+                    "envChanged": rules.matches(&c.repo, &c.command, dialect()),
+                }
+            })
+            .to_string(),
             options: vec![ApprovalScope::Once, ApprovalScope::Conversation],
         });
         let outcome = ticket.outcome().await;
@@ -322,7 +362,16 @@ impl AgentRuns {
         match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
                 if scope == ApprovalScope::Conversation {
-                    self.terminals.allow_agent_run(c.pane.as_str(), &c.command);
+                    self.terminals
+                        .allow_agent_run(c.pane.as_str(), &c.command, &c.fingerprint);
+                }
+                // A rule that asked because `.env` changed holds again for it.
+                if rules.matches(&c.repo, &c.command, dialect()) {
+                    let mut rules = RunRules::load(&self.data);
+                    rules.approve_env(&c.repo, &c.fingerprint);
+                    if let Err(e) = rules.save(&self.data) {
+                        tracing::warn!(code = "secrets.rules_save_failed", error = %e, "the rule will ask again");
+                    }
                 }
                 Ok(decided)
             }
@@ -359,21 +408,36 @@ impl Tail {
     }
 }
 
-/// Runs `command` under `sh -c` (`cmd /C` on Windows) in `cwd` with exactly
-/// `env`, stdout and stderr together through a masker for `values`, for up
-/// to `limit`.
+/// How long output still comes in after the command exits (and its group
+/// was killed), before the reply goes back.
+const DRAIN: Duration = Duration::from_millis(500);
+
+/// Runs `command` under `/bin/sh -c` (`%SystemRoot%\\System32\\cmd.exe /D /S
+/// /C` on Windows, the line passed as it is) in `cwd` with exactly `env` and
+/// `secret_env`, stdout and stderr together through a masker for `values`,
+/// for up to `limit`. When it exits, its process group is killed, so nothing
+/// it left running in the background keeps the values.
 pub async fn run(
     command: &str,
     cwd: &Path,
     env: &[(String, String)],
-    values: &[String],
+    secret_env: &[(String, Zeroizing<String>)],
+    values: &[Zeroizing<String>],
     limit: Duration,
 ) -> RunReply {
-    let mut cmd = if cfg!(windows) {
-        let mut c = tokio::process::Command::new("cmd");
-        c.arg("/C").arg(command);
+    #[cfg(windows)]
+    let mut cmd = {
+        let root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        let mut c = tokio::process::Command::new(root.join("System32").join("cmd.exe"));
+        // /D: no AutoRun. /S with the outer quotes: cmd runs the line as it
+        // is, the one the person approved.
+        c.raw_arg(format!("/D /S /C \"{command}\""));
         c
-    } else {
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
         let mut c = tokio::process::Command::new("/bin/sh");
         c.arg("-c").arg(command);
         c
@@ -381,6 +445,7 @@ pub async fn run(
     cmd.current_dir(cwd)
         .env_clear()
         .envs(env.iter().map(|(k, v)| (k, v)))
+        .envs(secret_env.iter().map(|(k, v)| (k, v.as_str())))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -418,28 +483,40 @@ pub async fn run(
         });
     }
     drop(tx);
-    let mut masker = LiteralMasker::new(values.iter().map(String::as_bytes));
+    let mut masker = LiteralMasker::new(values.iter().map(|v| v.as_bytes()));
     let mut tail = Tail::default();
-    let collected = async {
-        while let Some(chunk) = rx.recv().await {
-            match masker.as_mut() {
-                Some(m) => tail.push(&m.push(&chunk)),
-                None => tail.push(&chunk),
-            }
-        }
-        child.wait().await
+    let mut take = |chunk: &[u8], tail: &mut Tail| match masker.as_mut() {
+        Some(m) => tail.push(&m.push(chunk)),
+        None => tail.push(chunk),
     };
-    let (status, error) = match tokio::time::timeout(limit, collected).await {
-        Ok(Ok(status)) => (Some(status), None),
-        Ok(Err(e)) => (None, Some(format!("The command failed: {e}"))),
-        Err(_) => {
-            kill_group(pid);
-            (
-                None,
-                Some(format!("Stopped after {} minutes", limit.as_secs() / 60)),
-            )
+    let deadline = tokio::time::Instant::now() + limit;
+    // Output and the exit, whichever comes; the command's own exit ends it.
+    let mut pipes_open = true;
+    let ended = loop {
+        tokio::select! {
+            chunk = rx.recv(), if pipes_open => match chunk {
+                Some(chunk) => take(&chunk, &mut tail),
+                None => pipes_open = false,
+            },
+            status = child.wait() => break Some(status),
+            _ = tokio::time::sleep_until(deadline) => break None,
         }
     };
+    let (status, error) = match ended {
+        Some(Ok(status)) => (Some(status), None),
+        Some(Err(e)) => (None, Some(format!("The command failed: {e}"))),
+        None => (
+            None,
+            Some(format!("Stopped after {} minutes", limit.as_secs() / 60)),
+        ),
+    };
+    // Whatever it started and left behind goes with it.
+    kill_group(pid);
+    let _ = child.kill().await;
+    let drained = tokio::time::Instant::now() + DRAIN;
+    while let Ok(Some(chunk)) = tokio::time::timeout_at(drained, rx.recv()).await {
+        take(&chunk, &mut tail);
+    }
     if let Some(m) = masker.as_mut() {
         tail.push(&m.flush());
     }
@@ -569,7 +646,16 @@ mod tests {
             req(&fx.agent, &fx.root.join("sub"), &["printenv", "API_KEY"]),
         )
         .await;
-        assert_eq!(view.summary, "run `printenv API_KEY` with stripe-test");
+        assert_eq!(
+            view.summary,
+            "run `printenv API_KEY` with API_KEY (stripe-test)"
+        );
+        let detail: serde_json::Value = serde_json::from_str(&view.detail).expect("json");
+        assert_eq!(detail["vibezeoRun"]["command"], "printenv API_KEY");
+        assert_eq!(
+            detail["vibezeoRun"]["vars"],
+            serde_json::json!([{ "name": "API_KEY", "secret": "stripe-test" }])
+        );
         assert_eq!(
             view.source,
             SourceRef::Pane {
@@ -586,10 +672,12 @@ mod tests {
         assert_eq!(reply.error, None);
         assert_eq!(reply.exit_code, Some(0));
         assert_eq!(reply.output, "[REDACTED]\n");
-        // Once is once: the same command asks again.
+        // Once is once: the next command asks again. A plain value in
+        // `.env` doesn't reach an agent's run.
         let (again, task) = asked(&fx, req(&fx.agent, &fx.root, &["printenv", "PORT"])).await;
         allow(&fx, &again, ApprovalScope::Once);
-        assert_eq!(task.await.expect("task").output, "3000\n");
+        let reply = task.await.expect("task");
+        assert_eq!((reply.exit_code, reply.output.as_str()), (Some(1), ""));
         // The pane's approvals aren't stored.
         let stored: i64 = fx
             .store
@@ -618,7 +706,8 @@ mod tests {
             ]
         );
         assert_eq!(events[1].summary, "printenv API_KEY");
-        assert_eq!(events[1].secrets, vec!["stripe-test"]);
+        assert_eq!(events[3].exit_code, Some(1));
+        assert_eq!(events[1].secrets, vec!["API_KEY (stripe-test)"]);
         assert_eq!(events[1].exit_code, Some(0));
         assert!(events[1].duration_ms.is_some());
         let all = serde_json::to_string(&events).expect("json");
@@ -629,8 +718,9 @@ mod tests {
     async fn f_tl_12_8_the_exit_code_comes_back_and_long_output_keeps_its_end() {
         let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
         let command = "head -c 70000 /dev/zero | tr '\\0' a; printf 'END %s' \"$API_KEY\"; exit 3";
-        fx.terminals.allow_agent_run(fx.agent.as_str(), command);
-        let reply = fx.runs.handle(req(&fx.agent, &fx.root, &[command])).await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &[command])).await;
+        allow(&fx, &view, ApprovalScope::Once);
+        let reply = task.await.expect("task");
         assert_eq!(reply.exit_code, Some(3));
         assert!(reply.cut);
         assert_eq!(reply.output.len(), OUTPUT_CAP);
@@ -698,16 +788,119 @@ mod tests {
         let mut rules = RunRules::default();
         rules.set(&ws_root, &["echo deploy".into()]).expect("rule");
         rules.save(&fx.runs.data).expect("save");
+        // The first run under a rule asks: nobody has seen this `.env` yet.
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "deploy"])).await;
+        let detail: serde_json::Value = serde_json::from_str(&view.detail).expect("json");
+        assert_eq!(detail["vibezeoRun"]["envChanged"], true);
+        allow(&fx, &view, ApprovalScope::Once);
+        assert_eq!(task.await.expect("task").output, "deploy\n");
+        // Then it runs without asking, with any arguments...
         let reply = fx
             .runs
             .handle(req(&fx.agent, &fx.root, &["echo", "deploy", "--prod"]))
             .await;
         assert_eq!(reply.output, "deploy --prod\n");
+        // ...until `.env` gives it something else: then it asks again.
+        std::fs::write(
+            fx.root.join(".env"),
+            "API_KEY=vibezeo-secret://stripe-test\nMORE=vibezeo-secret://stripe-test\n",
+        )
+        .expect(".env");
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "deploy"])).await;
+        assert!(
+            view.summary
+                .contains("API_KEY (stripe-test), MORE (stripe-test)"),
+            "{}",
+            view.summary
+        );
+        fx.broker.cancel_source(&view.source);
+        let _ = task.await;
         let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo deploy; touch x"])).await;
         assert!(view.summary.contains("echo deploy; touch x"));
         fx.broker.cancel_source(&view.source);
         let _ = task.await;
         assert!(!fx.root.join("x").exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_an_env_edited_after_allow_for_this_agent_asks_again() {
+        let fx = fixture("API_KEY=vibezeo-secret://stripe-test\n").await;
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "ok"])).await;
+        allow(&fx, &view, ApprovalScope::Conversation);
+        assert_eq!(task.await.expect("task").output, "ok\n");
+        assert_eq!(
+            fx.runs
+                .handle(req(&fx.agent, &fx.root, &["echo", "ok"]))
+                .await
+                .output,
+            "ok\n"
+        );
+        // The agent adds a reference: the allowance no longer holds.
+        std::fs::write(
+            fx.root.join(".env"),
+            "API_KEY=vibezeo-secret://stripe-test\nTOKEN=vibezeo-secret://stripe-test\n",
+        )
+        .expect(".env");
+        let (view, task) = asked(&fx, req(&fx.agent, &fx.root, &["echo", "ok"])).await;
+        assert!(
+            view.summary.contains("TOKEN (stripe-test)"),
+            "{}",
+            view.summary
+        );
+        fx.broker.cancel_source(&view.source);
+        let _ = task.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_7_a_loader_variable_in_env_never_reaches_the_run() {
+        // As a plain value: not passed at all.
+        let fx =
+            fixture("LD_PRELOAD=/tmp/evil.so\nNODE_OPTIONS=--require ./x\nBASH_ENV=./x\n").await;
+        let (view, task) = asked(
+            &fx,
+            req(
+                &fx.agent,
+                &fx.root,
+                &["sh -c 'echo \"[$LD_PRELOAD][$NODE_OPTIONS][$BASH_ENV]\"'"],
+            ),
+        )
+        .await;
+        assert!(
+            view.summary.ends_with("with no secrets"),
+            "{}",
+            view.summary
+        );
+        allow(&fx, &view, ApprovalScope::Once);
+        // (The machine's own login environment may set some of these.)
+        let out = task.await.expect("task").output;
+        assert!(
+            !out.contains("evil.so") && !out.contains("--require ./x") && !out.contains("[./x]"),
+            "{out}"
+        );
+        // As a reference: refused, by name, before anyone is asked.
+        for name in [
+            "LD_PRELOAD",
+            "DYLD_INSERT_LIBRARIES",
+            "NODE_OPTIONS",
+            "PYTHONSTARTUP",
+            "BASH_ENV",
+            "ENV",
+            "PATH",
+            "GIT_SSH_COMMAND",
+        ] {
+            std::fs::write(
+                fx.root.join(".env"),
+                format!("{name}=vibezeo-secret://stripe-test\n"),
+            )
+            .expect(".env");
+            let reply = fx.runs.handle(req(&fx.agent, &fx.root, &["true"])).await;
+            assert_eq!(
+                reply.error.as_deref(),
+                Some(format!("vibezeo run doesn't set {name}: it can change what a program loads or runs").as_str()),
+                "{name}"
+            );
+            assert!(fx.broker.pending().is_empty());
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

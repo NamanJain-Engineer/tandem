@@ -296,7 +296,12 @@ pub async fn prepare(
         folder,
         PendingRun {
             command: command.to_string(),
-            env: resolved.env.into_iter().collect(),
+            // The PTY's environment takes plain strings.
+            env: resolved
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+                .collect(),
             mask,
         },
     ))
@@ -310,7 +315,7 @@ pub(crate) fn resolve(
 ) -> Result<refs::Resolved, IpcError> {
     let mut failed: Option<KeychainError> = None;
     let resolved = refs::resolve(vars, |name| match keychain.get(&service(), name) {
-        Ok(Some(v)) => String::from_utf8(v.to_vec()).ok(),
+        Ok(Some(v)) => String::from_utf8(v.to_vec()).ok().map(Zeroizing::new),
         Ok(None) => None,
         Err(e) => {
             failed = Some(e);

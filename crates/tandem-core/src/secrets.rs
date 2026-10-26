@@ -161,6 +161,103 @@ pub fn plan(vars: &[EnvVar]) -> Vec<Planned> {
         .collect()
 }
 
+/// Variables an agent's `vibezeo run` never gets from a `.env`: ones that
+/// make a loader, shell or interpreter run code or look elsewhere for it
+/// (F-TL-12 slice 2). Checked without case, for Windows.
+const AGENT_REFUSED: &[&str] = &[
+    "PATH",
+    "IFS",
+    "ENV",
+    "BASH_ENV",
+    "ZDOTDIR",
+    "PS4",
+    "PROMPT_COMMAND",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "SHELL",
+    "HOME",
+    "TMPDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PYTHONSTARTUP",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONINSPECT",
+    "PYTHONUSERBASE",
+    "PERL5OPT",
+    "PERL5LIB",
+    "PERLLIB",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "CLASSPATH",
+    "LUA_INIT",
+    "LUA_PATH",
+    "LUA_CPATH",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE",
+    "REQUESTS_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "EDITOR",
+    "VISUAL",
+    "PAGER",
+];
+
+/// Prefixes refused the same way (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+/// `GIT_SSH_COMMAND`, `NPM_CONFIG_SCRIPT_SHELL`).
+const AGENT_REFUSED_PREFIXES: &[&str] = &["LD_", "DYLD_", "GIT_", "NPM_CONFIG_", "BASH_FUNC_"];
+
+/// Whether an agent's run may get `name` from a `.env`.
+pub fn agent_may_set(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    !AGENT_REFUSED.contains(&upper.as_str())
+        && !AGENT_REFUSED_PREFIXES.iter().any(|p| upper.starts_with(p))
+}
+
+/// What an agent's `vibezeo run` gets from a `.env`: its references only,
+/// never plain values, and none under a refused name.
+pub fn for_agent(vars: &[EnvVar]) -> Result<Vec<EnvVar>, AgentEnvError> {
+    let mut out = Vec::new();
+    for v in vars {
+        if malformed(&v.value) {
+            return Err(AgentEnvError::Malformed(v.name.clone()));
+        }
+        if reference(&v.value).is_none() {
+            continue;
+        }
+        if !agent_may_set(&v.name) {
+            return Err(AgentEnvError::Refused(v.name.clone()));
+        }
+        out.push(v.clone());
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AgentEnvError {
+    #[error("{0} isn't a valid vibezeo-secret:// reference")]
+    Malformed(String),
+    #[error("vibezeo run doesn't set {0}: it can change what a program loads or runs")]
+    Refused(String),
+}
+
+/// A fingerprint of what a run gets: each name and the secret it refers to,
+/// sorted. An allowance or a rule holds only while it's the same.
+pub fn fingerprint(vars: &[EnvVar]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut lines: Vec<String> = vars
+        .iter()
+        .map(|v| format!("{}={}", v.name, v.value))
+        .collect();
+    lines.sort();
+    hex::encode(Sha256::digest(lines.join("\n").as_bytes()))
+}
+
 /// Why a `.env` can't be resolved.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ResolveError {
@@ -174,14 +271,15 @@ pub enum ResolveError {
 
 /// The environment a run gets, references replaced by `lookup`'s values, and
 /// the values to mask in its pane.
+/// Values are wiped from memory when they're dropped.
 pub struct Resolved {
-    pub env: BTreeMap<String, String>,
-    pub secrets: Vec<String>,
+    pub env: BTreeMap<String, zeroize::Zeroizing<String>>,
+    pub secrets: Vec<zeroize::Zeroizing<String>>,
 }
 
 pub fn resolve(
     vars: &[EnvVar],
-    mut lookup: impl FnMut(&str) -> Option<String>,
+    mut lookup: impl FnMut(&str) -> Option<zeroize::Zeroizing<String>>,
 ) -> Result<Resolved, ResolveError> {
     let mut env = BTreeMap::new();
     let mut secrets = Vec::new();
@@ -194,7 +292,7 @@ pub fn resolve(
                 value
             }
             None if malformed(&v.value) => return Err(ResolveError::Malformed(v.name.clone())),
-            None => v.value.clone(),
+            None => zeroize::Zeroizing::new(v.value.clone()),
         };
         env.insert(v.name.clone(), value);
     }
@@ -267,12 +365,13 @@ mod tests {
             ]
         );
         let r = resolve(&vars, |n| {
-            (n == "stripe-test").then(|| "sk_test_42".to_string())
+            (n == "stripe-test").then(|| zeroize::Zeroizing::new("sk_test_42".to_string()))
         })
         .expect("resolved");
-        assert_eq!(r.env.get("API_KEY").map(String::as_str), Some("sk_test_42"));
-        assert_eq!(r.env.get("PORT").map(String::as_str), Some("3000"));
-        assert_eq!(r.secrets, vec!["sk_test_42".to_string()]);
+        assert_eq!(r.env.get("API_KEY").map(|v| v.as_str()), Some("sk_test_42"));
+        assert_eq!(r.env.get("PORT").map(|v| v.as_str()), Some("3000"));
+        assert_eq!(r.secrets.len(), 1);
+        assert_eq!(r.secrets[0].as_str(), "sk_test_42");
     }
 
     #[test]
@@ -326,8 +425,64 @@ mod tests {
         let vars = parse_env("KEY=\"vibezeo-secret://Stripe\"\n");
         assert!(plan(&vars)[0].malformed);
         assert_eq!(
-            resolve(&vars, |_| Some("x".into())).err(),
+            resolve(&vars, |_| Some(zeroize::Zeroizing::new("x".into()))).err(),
             Some(ResolveError::Malformed("KEY".into()))
         );
+    }
+
+    #[test]
+    fn f_tl_12_7_an_agents_run_gets_references_only_and_never_a_loader_variable() {
+        let vars = parse_env(
+            "API_KEY=vibezeo-secret://stripe-test\nPORT=3000\nDB_URL=vibezeo-secret://db\n",
+        );
+        let got: Vec<String> = for_agent(&vars)
+            .expect("ok")
+            .into_iter()
+            .map(|v| v.name)
+            .collect();
+        assert_eq!(got, vec!["API_KEY", "DB_URL"]);
+        for name in [
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "DYLD_INSERT_LIBRARIES",
+            "NODE_OPTIONS",
+            "PYTHONSTARTUP",
+            "PYTHONPATH",
+            "BASH_ENV",
+            "ENV",
+            "PATH",
+            "Path",
+            "GIT_SSH_COMMAND",
+            "GIT_DIR",
+            "PERL5OPT",
+            "RUBYOPT",
+            "JAVA_TOOL_OPTIONS",
+            "NPM_CONFIG_SCRIPT_SHELL",
+            "PROMPT_COMMAND",
+            "IFS",
+        ] {
+            let vars = parse_env(&format!("{name}=vibezeo-secret://x\n"));
+            assert_eq!(
+                for_agent(&vars),
+                Err(AgentEnvError::Refused(name.to_string())),
+                "{name}"
+            );
+        }
+        // A plain value under a refused name isn't passed at all.
+        let vars = parse_env("LD_PRELOAD=/tmp/evil.so\nNODE_OPTIONS=--require ./x\n");
+        assert_eq!(for_agent(&vars), Ok(Vec::new()));
+        let vars = parse_env("K=vibezeo-secret://Bad\n");
+        assert_eq!(for_agent(&vars), Err(AgentEnvError::Malformed("K".into())));
+    }
+
+    #[test]
+    fn f_tl_12_9_the_fingerprint_changes_with_any_name_or_reference_and_not_with_order() {
+        let a = parse_env("A=vibezeo-secret://x\nB=vibezeo-secret://y\n");
+        let b = parse_env("B=vibezeo-secret://y\nA=vibezeo-secret://x\n");
+        assert_eq!(fingerprint(&a), fingerprint(&b));
+        let c = parse_env("A=vibezeo-secret://x\nB=vibezeo-secret://z\n");
+        let d = parse_env("A=vibezeo-secret://x\nB=vibezeo-secret://y\nC=vibezeo-secret://y\n");
+        assert_ne!(fingerprint(&a), fingerprint(&c));
+        assert_ne!(fingerprint(&a), fingerprint(&d));
     }
 }

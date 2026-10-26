@@ -927,21 +927,23 @@ impl TerminalService {
         }
     }
 
-    /// "Allow for this agent": `command` runs from `pane` without asking
-    /// until the pane closes.
-    pub fn allow_agent_run(&self, pane: &str, command: &str) {
+    /// "Allow for this agent": `command` runs from `pane` without asking,
+    /// while `.env` gives it what it did (`fingerprint`), until the pane
+    /// closes.
+    pub fn allow_agent_run(&self, pane: &str, command: &str, fingerprint: &str) {
         if let Ok(mut allowed) = self.agent_runs.lock() {
             allowed
                 .entry(pane.to_string())
                 .or_default()
-                .insert(command.to_string());
+                .insert(format!("{fingerprint}\n{command}"));
         }
     }
 
-    pub fn agent_run_allowed(&self, pane: &str, command: &str) -> bool {
+    pub fn agent_run_allowed(&self, pane: &str, command: &str, fingerprint: &str) -> bool {
+        let key = format!("{fingerprint}\n{command}");
         self.agent_runs
             .lock()
-            .map(|a| a.get(pane).is_some_and(|c| c.contains(command)))
+            .map(|a| a.get(pane).is_some_and(|c| c.contains(&key)))
             .unwrap_or(false)
     }
 
