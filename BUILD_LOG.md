@@ -1,7 +1,7 @@
 # BUILD_LOG
 
 ## Current state
-- Developer-first UI (M18, branch `app-ui`, from 20 October 2026): the owner asked for a calmer, more developer-friendly app. Slices 1 to 3 are in: the `ink` palette and brand elevation (D-1894, D-2600), quiet status primitives (D-2601), tinted engine tiles (D-1895, D-2602), and the developer-first surfaces: status bar, rail, pane headers, names, launch grid, Agent mode's first run and threads (D-2603, D-2604). The demo opens in Code mode with a three-hint coach (D-2605). Slice 4 retook the site's captures from 0.12.0 (D-2606). See "M18 · Developer-first UI (`app-ui`)".
+- Developer-first UI (M18, branch `app-ui`, from 20 October 2026): the owner asked for a calmer, more developer-friendly app. Slices 1 to 3 are in: the `ink` palette and brand elevation (D-1894, D-2600), quiet status primitives (D-2601), tinted engine tiles (D-1895, D-2602), and the developer-first surfaces: status bar, rail, pane headers, names, launch grid, Agent mode's first run and threads (D-2603, D-2604). The demo opens in Code mode with a three-hint coach (D-2605). Slice 4 retook the site's captures from 0.12.0 (D-2606), and the demo's terminals are checked on a real 2× screen (D-2607). Released in 0.12.0 (D-875). See "M18 · Developer-first UI (`app-ui`)".
 - Free for everyone (M18, branch `free-for-everyone`, D-2900 to D-2919): the app matches D-869. With no account every local feature is free and unlimited (panes, workspaces, teammates, plugin connections, accounts per engine, six threads, every chat engine, routines, task runs, the Night Shift, session search), the hosted ones say "Comes with Vibezeo accounts", and nothing in the app, demo, docs or site offers a plan. Released in 0.10.0 (`CHANGELOG.md`'s `## 0.10.0`). See "M18 · Free for everyone".
 - Design direction (`design-lead`, D-1890 to D-1899, then D-2700 on): `docs/DESIGN.md` sets the look, feel and journey for the app and the site after the owner's 20 October ask for a premium feel; `app-ui` and `site-motion` build on it, and the design lead reviews their READYs. See "Design direction (`design-lead`)".
 - Agent sandbox (M18, F-TL-11, branch `product-research`): Settings › Engines › Sandbox agent panes runs the engine of a local agent pane under bubblewrap on Linux (writes only to its folder, git data, provider home, tasks folder and `/tmp`; `~/.ssh`, the other secrets and Vibezeo's own data hidden; `.git/hooks` read-only; engines without a provider home run unsandboxed and say why); macOS and Windows say "Not available on this system yet". See "M18 checklist (Next features: sandbox)".
@@ -34,28 +34,23 @@
     - the footer's "Built with Claude" links `/about/#claude`, which has its principles;
     - in a real browser at 1440, home is 7,985 px in both themes (7,986 at #100), on rgb(250, 250, 250) and rgb(9, 9, 11), with the effects on and the hero's scene live.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.11.0** (25 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on e50c1ee7; D-873).
-  - **Files:** `Vibezeo_0.11.0_amd64.deb` (SHA-256 `a56b8941…3481c525`) and `Vibezeo-0.11.0-1.x86_64.rpm` (SHA-256 `3e7822e3…cfa3f54b`), 54.8 MB each.
-  - **chain25's six M18 features:**
-    - the resource governor (F-EX-06);
-    - agent-proof secrets (F-TL-12);
-    - multi-repo workspaces (F-CD-22);
-    - any ACP agent in Thread mode (F-EN-10);
-    - claims (F-TK-05);
-    - Plan with Lead (F-TK-06).
-  - **Changed and fixed:**
-    - a task runs once at a time;
-    - a review counts only its own reviewer's verdict;
-    - ACP's "Allow once" never picks allow-always;
-    - notices reach panes in hidden tabs.
+- Release: **0.12.0** (26 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on cf149e2d; D-875).
+  - **Files:** `Vibezeo_0.12.0_amd64.deb` (SHA-256 `8e5eab09…1be8a94b`) and `Vibezeo-0.12.0-1.x86_64.rpm` (SHA-256 `5ba7543a…6d1b67f3`), 54.9 MB each.
+  - **The new look** (`app-ui`, D-2600 to D-2604):
+    - neutral ink greys, softer shadows in the light theme, and a tinted tile for each engine;
+    - pane headers that say where you are, and a launch grid that takes the number keys;
+    - a status bar that shows agents working and waiting, a pull request's checks, usage and ports, only while there's something to show;
+    - threads that summarise their work.
+  - **F-TK-07 Follow a plan through:** a plan follows its runs to their review's verdict, lands the approved work in the plan's order and is kept; chat threads claim the files they edit.
+  - **Fixed:** Freeze without a systemd user scope (0.11.0's known issue).
   - **The site:**
-    - `site-motion`'s polish (D-1886);
-    - D-2917's /credits;
-    - "New in 0.11.0", the roadmap and the post "What's new in 0.11.0";
-    - 3,996 tests and 152 E2E spec files.
-  - Verified: see "Release 0.11.0" in the log below.
-  - Previous release: 0.10.0 (24 October; Vibezeo is free, D-869), deployed by #97 (fb3fef94).
-  Deployed by #104 (d76688f2) on 26 October, live at 15:32 UTC. `main` came back into `product-m0-m5` with this record.
+    - `site-motion`'s 0.12.0 look (D-1887);
+    - `app-ui`'s captures from 0.12.0 (D-2606) and the demo's three-hint coach (D-2605), its terminals checked on a real 2× screen (D-2607);
+    - "New in 0.12.0", the roadmap and the post "What's new in 0.12.0";
+    - 4,094 tests and 153 E2E spec files.
+  - **For 0.13.0 (`chain27`, D-875):** F-EN-11, F-CD-23 and F-CD-24, F-TK-08, and B5's second slice with F-EX-07, each in review.
+  - Verified: see "Release 0.12.0" in the log below.
+  - Previous release: 0.11.0 (25 and 26 October; D-873), deployed by #104 (d76688f2) on 26 October.
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
@@ -1287,6 +1282,37 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - Lighthouse CI on seven URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme, `/` and a blog post scored 0.99 for performance (LCP 1.89 s and 1.81 s) and the rest 1.00, with 1.00 for accessibility, best practices and SEO, CLS at most 0.001 and TBT 0 ms;
     - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings.
   - **Merged and deployed:** #103 into `product-m0-m5` (958dfdfe, after CI's `quick`), then #104 to `main` (d76688f2). vibezeo.com served 0.11.0 two minutes later (15:32 UTC, 26 October), and the live checks passed (see Current state). `main` came back into `product-m0-m5` with this record.
+- Release 0.12.0 (`chain26`, 26 October; D-875): `product-m0-m5` at 29575770 (0.11.0's deploy record) with these added:
+  - **The new look:** `app-ui` 867b770e (slices 1 to 3, D-2600 to D-2604, design approved, with its review fixes), 37cc2d1a (the demo's coach, D-2605) and 5662afa8 (slice 4's captures and the coach's polish, D-2606, D-2607). The design lead approved 2fb5df74 but for one must-fix: the Code mode capture showed "Online", which the download never shows (D-816). They approved its fix in 5662afa8: the hosted build's connection state is hidden, the set is true 2×, and every served file comes from the new master.
+  - **F-TK-07** cea685af (review fixes D-2836, D-2837), approved by its review.
+  - **The Freeze fix** 8c6e343a (F-EX-06), 0.11.0's known issue.
+  - `design-lead` bb9b04ba (DESIGN §9.4) and `site-motion` 5e01e92b (D-1887, approved by the design lead).
+  - **Version and notes:**
+    - the version and `release.ts`;
+    - the CHANGELOG's `## 0.12.0`: four Added, six Changed and one Fixed. A read-only check of every claim against the code found six wrong; they were rewritten before the build (cf149e2d), along with the post and the tasks docs;
+    - the "New in" tiles, the roadmap and the post "What's new in 0.12.0".
+  - **Files:** the .deb and .rpm with SHA256SUMS, and the Flatpak and Snap manifests at 0.12.0's .deb.
+  - **Decisions:** D-875.
+  - **Found by the release E2E and fixed:**
+    - E2E-M16-4 (F-RM-03.4) timed out on a real race in the API's relay: a socket whose pairing was deleted while its token was being checked still joined. The relay now notes each pairing's drops and refuses such a socket with 1008 (6c813365, F-BE-11, with a deterministic test; API 235/235).
+    - E2E-M18-TK-07 waited for Approve and never got it. E2E-M18-FREE had left a fake Cursor Agent installed, so the runs' reviewer was an ACP engine, and the fake ACP agent echoed the review briefing without a verdict. All three fake engines now answer a review briefing with a verdict, and E2E-M18-FREE removes its Cursor Agent (60819dad; test tools only). The M16A session found a real stale read in the plan's run list on the way; its fix goes to 0.13.0.
+  - **The gate** passed on the release tree (b11fa2f4):
+    - 2,358 Rust tests (6 ignored);
+    - 1,731 TypeScript tests: desktop 829, UI 462, API 234, web 138, remote 33, mobile 21, protocol 14;
+    - coverage (189 spec IDs), the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift (579 types).
+    - On the final tree (e2e9a552: the relay fix, the fake engines, `site-motion` and `app-ui`), these passed: lint; 1,736 TypeScript tests (API 235, web 142); the desktop build; and tandem-engines' 202 tests (1 ignored), clippy and fmt. tandem-engines holds the fake engines, the only Rust changed since. No Rust type changed, so the protocol is as checked. The figures commit (e2e9a552) changes only `progress.ts`.
+  - **The packages:**
+    - `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on cf149e2d built the .deb, .rpm and AppImage. The later commits are the downloads and manifests, the relay fix (the API, not the app), the fake engines (test tools), the two merges and the figures. Their only app code is one attribute: the rail's session rows carry `data-pane`, for the demo's first hint. The rest is the browser demo's coach (`Coachmark`, used only by the demo) and the site's styles.
+    - `Vibezeo_0.12.0_amd64.deb` (SHA-256 `8e5eab09…1be8a94b`) and `Vibezeo-0.12.0-1.x86_64.rpm` (`5ba7543a…6d1b67f3`) are 54.9 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
+    - The AppImage passed the offline smoke test, and Start opens setup with all 13 engines, each in its tinted tile.
+  - **The demo (D-128):** the demo is the app's own interface, so it has the new look, and its coach and captures are `app-ui`'s (D-2605 to D-2607). Everything it shows is in the download.
+  - **E2E:** the full desktop suite passed 153 of 153 spec files on the release tree, in five chunks of 31, 31, 31, 31 and 29 (40 minutes of runs). Chunk 2 passed after the relay fix and chunk 3 after the fake engines' fix. Chunk 3's first re-run started without Docker, because the earlier chunks' `with-infra.sh` had stopped it when they ended, and E2E-M18-CN09's sign-up got a 500. Run under `with-infra.sh`, it passed 31 of 31.
+  - **The site**, from a fresh clone of e2e9a552:
+    - `build:site` with `strip-runtime` and `check-routes`: 58 pages, no redirects;
+    - web vitest 142/142 and site Playwright 54/54;
+    - Lighthouse CI on seven URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme, `/` and a blog post scored 0.99 for performance (LCP 1.89 s and 1.81 s) and the rest 1.00 (LCP 1.51 to 1.73 s), with 1.00 for accessibility, best practices and SEO, TBT 0 ms and CLS at most 0.001;
+    - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
