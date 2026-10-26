@@ -108,6 +108,8 @@ pub fn parse_ollama(body: &Value) -> Option<Vec<LocalModel>> {
     Some(
         models
             .iter()
+            // A cloud model runs on ollama.com, not here: never listed.
+            .filter(|m| !ollama_remote(m))
             .filter_map(|m| {
                 Some(LocalModel {
                     id: text(m, "name", 200).or_else(|| text(m, "model", 200))?,
@@ -118,6 +120,23 @@ pub fn parse_ollama(body: &Value) -> Option<Vec<LocalModel>> {
             .take(200)
             .collect(),
     )
+}
+
+/// An Ollama model that runs on Ollama's servers (`remote_host` or
+/// `remote_model`, or a `cloud` tag such as `gpt-oss:120b-cloud`): Ollama
+/// passes prompts on to ollama.com, so it isn't a local model.
+fn ollama_remote(m: &Value) -> bool {
+    let set = |k: &str| {
+        m.get(k)
+            .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
+    };
+    let cloud_tag = ["name", "model"].iter().any(|k| {
+        m.get(*k)
+            .and_then(Value::as_str)
+            .and_then(|n| n.rsplit_once(':'))
+            .is_some_and(|(_, tag)| tag == "cloud" || tag.ends_with("-cloud"))
+    });
+    set("remote_host") || set("remote_model") || cloud_tag
 }
 
 /// An OpenAI-style `/v1/models`: `{"data": [{"id"}]}`.
@@ -194,32 +213,124 @@ pub fn home_name(kind: ServerKind, port: u16, model: &str) -> String {
     let hash = model.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     });
-    format!("local-{}-{port}-{slug}-{:08x}", kind.slug(), hash as u32)
+    format!("local-{}-{port}-{slug}-{hash:016x}", kind.slug())
 }
 
-/// What a local pane adds to `NO_PROXY` and `no_proxy`: this computer's
-/// names, after whatever the login environment had, so no proxy ever
-/// carries a prompt to the model server (D-2517).
-pub fn no_proxy_env(upper: Option<&str>, lower: Option<&str>) -> Vec<(String, String)> {
-    let with_local = |existing: Option<&str>| {
-        let mut parts: Vec<String> = existing
-            .unwrap_or_default()
-            .split(',')
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .map(str::to_string)
-            .collect();
-        for host in ["127.0.0.1", "localhost", "::1"] {
-            if !parts.iter().any(|p| p == host) {
-                parts.push(host.to_string());
-            }
+/// `NO_PROXY` for a local pane: what the login environment had in
+/// `NO_PROXY` and `no_proxy` (one variable on Windows), then this
+/// computer's names, so no proxy ever carries a prompt to the model server
+/// (D-2517).
+pub fn no_proxy_value(upper: Option<&str>, lower: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for p in [upper, lower]
+        .into_iter()
+        .flatten()
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .chain(["127.0.0.1", "localhost", "::1"])
+    {
+        if !parts.iter().any(|q| q == p) {
+            parts.push(p.to_string());
         }
-        parts.join(",")
+    }
+    parts.join(",")
+}
+
+/// The proxy variables a local pane runs without.
+pub const PROXY_VARS: [&str; 6] = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+];
+
+/// A local pane's command with its environment set inside it (unix): the
+/// login shell's startup files run before the command, so a variable they
+/// export (a proxy, `NO_PROXY`, `CODEX_HOME`) can't reach Codex (D-2517).
+pub fn env_argv(argv: Vec<String>, codex_home: &str, no_proxy: &str) -> Vec<String> {
+    let mut out = vec!["/usr/bin/env".to_string()];
+    for var in PROXY_VARS {
+        out.push("-u".into());
+        out.push(var.into());
+    }
+    out.push(format!("NO_PROXY={no_proxy}"));
+    out.push(format!("no_proxy={no_proxy}"));
+    out.push(format!("CODEX_HOME={codex_home}"));
+    out.extend(argv);
+    out
+}
+
+/// A Codex flag that takes a value: its short and long spelling, and
+/// whether a value may be kept.
+type Flag = (&'static str, &'static str, fn(&str) -> bool);
+
+/// The user's Codex arguments a local pane keeps (D-2519): an allowlist.
+/// Only sandbox and approval flags, and `-c` settings whose key is in
+/// [`safe_setting`], carry over, in every spelling Codex's parser takes
+/// (`-cK=V`, `-c=K=V`, `-c K=V`, `--config K=V`, `--config=K=V`, and the
+/// same for each flag). Everything else is dropped: a model, provider or
+/// profile, in any form, could send prompts off this computer.
+pub fn local_args(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let next = args.get(i + 1).map(String::as_str);
+        // Flags without a value.
+        if matches!(
+            a,
+            "--full-auto" | "--dangerously-bypass-approvals-and-sandbox"
+        ) {
+            out.push(a.to_string());
+            i += 1;
+            continue;
+        }
+        // Flags with a value: (short, long, keep the value if).
+        let flags: [Flag; 3] = [
+            ("-s", "--sandbox", |v| !v.is_empty()),
+            ("-a", "--ask-for-approval", |v| !v.is_empty()),
+            ("-c", "--config", safe_setting),
+        ];
+        let mut handled = false;
+        for (short, long, keep) in flags {
+            let (value, used) = if a == short || a == long {
+                (next, 2)
+            } else if let Some(v) = a.strip_prefix(&format!("{long}=")) {
+                (Some(v), 1)
+            } else if let Some(v) = a.strip_prefix(short).filter(|_| a.len() > short.len()) {
+                (Some(v.strip_prefix('=').unwrap_or(v)), 1)
+            } else {
+                continue;
+            };
+            handled = true;
+            if let Some(v) = value.filter(|v| keep(v)) {
+                out.push(long.to_string());
+                out.push(v.to_string());
+            }
+            i += used;
+            break;
+        }
+        if !handled {
+            // Dropped, and a value it may take with it is dropped too: an
+            // unknown flag's next argument is read as a flag on its own.
+            i += 1;
+        }
+    }
+    out
+}
+
+/// A `-c key=value` a local pane may keep: sandbox, approval and reasoning
+/// settings only. Never a model, provider or profile, nor a `profiles.*`
+/// table that could name one.
+pub fn safe_setting(kv: &str) -> bool {
+    let Some((key, _)) = kv.split_once('=') else {
+        return false;
     };
-    vec![
-        ("NO_PROXY".to_string(), with_local(upper)),
-        ("no_proxy".to_string(), with_local(lower)),
-    ]
+    let key = key.trim();
+    key == "approval_policy" || key.starts_with("sandbox_") || key.starts_with("model_reasoning_")
 }
 
 /// Why a local config can't be written.
@@ -306,24 +417,98 @@ mod tests {
     }
 
     #[test]
-    fn f_en_11_3_no_proxy_names_this_computer_after_what_was_there() {
+    fn f_en_11_3_no_proxy_is_both_spellings_and_this_computer() {
         assert_eq!(
-            no_proxy_env(Some("corp.example, .internal"), None),
-            vec![
-                (
-                    "NO_PROXY".to_string(),
-                    "corp.example,.internal,127.0.0.1,localhost,::1".to_string()
-                ),
-                (
-                    "no_proxy".to_string(),
-                    "127.0.0.1,localhost,::1".to_string()
-                ),
-            ]
+            no_proxy_value(Some("corp.example, .internal"), Some(".lan,corp.example")),
+            "corp.example,.internal,.lan,127.0.0.1,localhost,::1"
         );
+        assert_eq!(no_proxy_value(None, None), "127.0.0.1,localhost,::1");
+        let argv = env_argv(
+            vec!["/bin/codex".into(), "--sandbox".into()],
+            "/h",
+            "127.0.0.1",
+        );
+        assert_eq!(argv[0], "/usr/bin/env");
+        for var in PROXY_VARS {
+            assert!(
+                argv.windows(2).any(|w| w[0] == "-u" && w[1] == var),
+                "{var}"
+            );
+        }
+        assert!(argv.contains(&"NO_PROXY=127.0.0.1".to_string()));
+        assert!(argv.contains(&"CODEX_HOME=/h".to_string()));
+        assert_eq!(&argv[argv.len() - 2..], ["/bin/codex", "--sandbox"]);
+    }
+
+    #[test]
+    fn f_en_11_1_ollamas_cloud_models_are_not_listed() {
+        let tags = json!({"models": [
+            {"name": "gpt-oss:120b-cloud", "model": "gpt-oss:120b-cloud", "remote_model": "gpt-oss:120b",
+             "remote_host": "https://ollama.com:443", "size": 384, "details": {"parameter_size": "116.8B"}},
+            {"name": "deepseek-v3.1:671b-cloud", "size": 384},
+            {"name": "kimi-k2:cloud", "size": 384},
+            {"name": "gemma3:4b", "size": 3_338_801_804u64, "details": {"parameter_size": "4.3B"}},
+            {"name": "qwen3:8b", "remote_host": ""}
+        ]});
+        let ids: Vec<String> = parse(ServerKind::Ollama, &tags)
+            .expect("tags")
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(ids, vec!["gemma3:4b", "qwen3:8b"]);
+    }
+
+    #[test]
+    fn f_en_11_2_only_sandbox_approval_and_reasoning_arguments_carry_over_in_any_spelling() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // Kept, normalized to the long form.
         assert_eq!(
-            no_proxy_env(Some("localhost"), Some("127.0.0.1"))[0].1,
-            "localhost,127.0.0.1,::1"
+            local_args(&v(&[
+                "--sandbox",
+                "read-only",
+                "-auntrusted",
+                "-c",
+                "model_reasoning_effort=high",
+                "-csandbox_workspace_write.network_access=false",
+                "--config=approval_policy=never",
+                "--full-auto",
+            ])),
+            v(&[
+                "--sandbox",
+                "read-only",
+                "--ask-for-approval",
+                "untrusted",
+                "--config",
+                "model_reasoning_effort=high",
+                "--config",
+                "sandbox_workspace_write.network_access=false",
+                "--config",
+                "approval_policy=never",
+                "--full-auto",
+            ])
         );
+        // Dropped, every spelling the review found and more.
+        for bad in [
+            v(&["-cmodel_providers.vibezeo-local.base_url=https://gw.example/v1"]),
+            v(&[
+                "-c=model_provider=corp",
+                "-c=model_providers.corp.base_url=https://gw.example/v1",
+            ]),
+            v(&["-c", "profiles.w.model_provider=openai", "-pw"]),
+            v(&["-p=w"]),
+            v(&["--profile", "w"]),
+            v(&["--profile=w"]),
+            v(&["-mNAME"]),
+            v(&["-m", "gpt-5"]),
+            v(&["--model=o3"]),
+            v(&["--oss"]),
+            v(&["--local-provider", "lmstudio"]),
+            v(&["--config", "model=o4"]),
+            v(&["--config=model_provider=openai"]),
+            v(&["-c", "base_url=https://gw.example"]),
+        ] {
+            assert_eq!(local_args(&bad), Vec::<String>::new(), "{bad:?}");
+        }
     }
 
     #[test]

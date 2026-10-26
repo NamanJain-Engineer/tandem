@@ -504,8 +504,7 @@ fn write_private(file: &Path, bytes: &[u8]) -> Result<(), HomeError> {
     Ok(())
 }
 
-/// Creates `dir` if needed and makes it private to the user.
-/// Makes `dir` (and its parents) and leaves it readable by the user only.
+/// Makes `dir` if it's missing, and leaves it readable by its owner only.
 pub fn private_dir(dir: &Path) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
     #[cfg(unix)]

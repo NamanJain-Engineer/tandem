@@ -15,7 +15,7 @@ use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::local_models::{self, LocalModel, ServerKind};
 use tandem_store::repo::panes;
-use tandem_store::repo::sessions::LaunchConfig;
+use tandem_store::repo::sessions::{LaunchConfig, LocalLaunch};
 use tandem_store::repo::settings;
 
 use crate::commands::terminal::create_pane_with;
@@ -59,7 +59,8 @@ pub fn loopback_url(url: &str) -> bool {
             && u.host_str() == Some("127.0.0.1")
             && u.username().is_empty()
             && u.password().is_none()
-            && u.port().is_some()
+            // `port()` is None for http's own 80, which can be added.
+            && u.port_or_known_default().is_some()
     })
 }
 
@@ -263,6 +264,21 @@ pub fn prepare_home(
     for dir in [providers, codex.as_path(), home.as_path()] {
         tandem_engines::homes::private_dir(dir).map_err(io)?;
     }
+    write_config(&home, kind, port, model)?;
+    Ok(home)
+}
+
+/// Merges the local provider into the home's `config.toml`: the model, the
+/// `vibezeo-local` provider at 127.0.0.1 and no update check. Start writes
+/// it, and so does every later start of the pane, so a deleted or edited
+/// file never leaves Codex on its default provider (D-2519). A file that
+/// can't be read is refused, never replaced.
+pub fn write_config(
+    home: &std::path::Path,
+    kind: ServerKind,
+    port: u16,
+    model: &str,
+) -> Result<(), IpcError> {
     let file = home.join("config.toml");
     let existing = match std::fs::read_to_string(&file) {
         Ok(text) => text,
@@ -281,53 +297,17 @@ pub fn prepare_home(
             ErrorCode::Io,
             format!("Couldn't write Codex's settings: {e}"),
         )
-    })?;
-    Ok(home)
+    })
 }
 
-/// The user's Codex arguments for a local pane: all of them but the ones
-/// that choose a model, provider or profile, which the local home sets
-/// (D-2519). Sandbox and approval arguments carry over.
-pub fn local_args(args: &[String]) -> Vec<String> {
-    let takes_value = ["-m", "--model", "-p", "--profile"];
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < args.len() {
-        let a = args[i].as_str();
-        if takes_value.contains(&a) {
-            i += 2;
-            continue;
-        }
-        if a == "--oss"
-            || ["--model=", "--profile=", "-m="]
-                .iter()
-                .any(|p| a.starts_with(p))
-        {
-            i += 1;
-            continue;
-        }
-        if a == "-c" || a == "--config" {
-            let value = args.get(i + 1).map(String::as_str).unwrap_or_default();
-            if is_model_setting(value) {
-                i += 2;
-                continue;
-            }
-        }
-        if let Some(value) = a.strip_prefix("--config=") {
-            if is_model_setting(value) {
-                i += 1;
-                continue;
-            }
-        }
-        out.push(args[i].clone());
-        i += 1;
-    }
-    out
-}
-
-fn is_model_setting(kv: &str) -> bool {
-    let key = kv.split('=').next().unwrap_or_default().trim();
-    key == "model" || key == "profile" || key.starts_with("model_provider")
+/// [`write_config`] for a pane's saved launch, before each start.
+pub fn refresh_config(home: &std::path::Path, local: &LocalLaunch) -> Result<(), IpcError> {
+    let kind = ServerKind::ALL
+        .into_iter()
+        .find(|k| k.slug() == local.kind)
+        .filter(|k| k.startable())
+        .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))?;
+    write_config(home, kind, local.port, &local.model)
 }
 
 /// `local_model_start`: a Codex pane in `tab` for `model` on that server.
@@ -386,14 +366,24 @@ pub async fn start(
         .check_live_limit(state.entitlements.limits().panes)?;
     let home = prepare_home(engines.homes.root(), kind, port, model)?;
     let config = LaunchConfig {
-        extra_args: local_args(&engines.extra_args("codex").await),
+        extra_args: local_models::local_args(&engines.extra_args("codex").await),
         home: Some(home.to_string_lossy().into_owned()),
         own_home: false,
+        local: Some(LocalLaunch {
+            kind: kind.slug().to_string(),
+            port,
+            model: model.to_string(),
+        }),
     };
     let mut pane =
         create_pane_with(state, tab, "agent", None, Some("codex".into()), None, false).await?;
     let label = format!("{model} · {}", kind.label());
-    panes::set_local_model(&state.store, &pane.id, &label, &config).await?;
+    // Never left behind as an ordinary Codex pane: one that couldn't be
+    // marked local is closed again.
+    if let Err(e) = panes::set_local_model(&state.store, &pane.id, &label, &config).await {
+        let _ = panes::close(&state.store, &pane.id).await;
+        return Err(e.into());
+    }
     tracing::info!(
         code = "local_models.started",
         "a Codex pane on a local model"
@@ -523,12 +513,12 @@ mod tests {
     #[test]
     fn f_en_11_3_only_plain_http_to_127_0_0_1_with_a_port_is_asked() {
         assert!(loopback_url("http://127.0.0.1:11434/api/tags"));
+        assert!(loopback_url(&local_models::url(80, "/v1/models")));
         for url in [
             "http://127.0.0.1:80@example.com/",
             "http://user@127.0.0.1:11434/api/tags",
             "https://127.0.0.1:11434/api/tags",
             "http://localhost:11434/api/tags",
-            "http://127.0.0.1/api/tags",
             "http://192.168.1.5:11434/api/tags",
             "not a url",
         ] {
@@ -583,41 +573,6 @@ mod tests {
         assert!(t.contains(&(ServerKind::Ollama, 8080, true)));
         assert!(!t.contains(&(ServerKind::LlamaCpp, 8080, false)));
         assert_eq!(t.len(), 3);
-    }
-
-    #[test]
-    fn f_en_11_2_the_users_codex_arguments_carry_over_but_not_model_or_provider() {
-        let args: Vec<String> = [
-            "--sandbox",
-            "read-only",
-            "-a",
-            "untrusted",
-            "-m",
-            "gpt-5",
-            "--oss",
-            "--profile",
-            "work",
-            "-c",
-            "model_provider=openai",
-            "-c",
-            "model_reasoning_effort=high",
-            "--model=o3",
-            "--config=model=o4",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        assert_eq!(
-            local_args(&args),
-            vec![
-                "--sandbox",
-                "read-only",
-                "-a",
-                "untrusted",
-                "-c",
-                "model_reasoning_effort=high"
-            ]
-        );
     }
 
     #[test]

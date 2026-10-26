@@ -418,6 +418,7 @@ impl EngineService {
             extra_args: extra_args.clone(),
             home: home.as_ref().map(|h| h.to_string_lossy().into_owned()),
             own_home: false,
+            local: None,
         };
         let req = TerminalLaunchRequest {
             engine,
@@ -743,6 +744,7 @@ mod tests {
             extra_args: Vec::new(),
             home: None,
             own_home: true,
+            local: None,
         };
         let launch = svc
             .agent_launch_with(

@@ -945,6 +945,20 @@ impl TerminalService {
     /// are the card's reason: "Launch configuration unavailable" when the
     /// saved configuration is gone, never a fallback to defaults.
     pub async fn resume_plan(&self, record: &PaneRecord) -> Result<ResumePlan, IpcError> {
+        // A local-model pane resumes only in its own home: the card says so
+        // when that home or its saved launch is gone (F-EN-11).
+        if record.kind == "agent" && record.local_model.is_some() {
+            let usable = matches!(
+                panes::launch_config(&self.store, &record.id).await?,
+                Some(Ok(c)) if c.local.is_some() && c.home.as_deref().is_some_and(|h| Path::new(h).is_dir())
+            );
+            if !usable {
+                return Err(
+                    IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
+                        .with_stage("launch_config"),
+                );
+            }
+        }
         let engine = record
             .engine_id
             .as_deref()
@@ -980,6 +994,7 @@ impl TerminalService {
                 extra_args: Vec::new(),
                 home: session.provider_home.clone(),
                 own_home: false,
+                local: None,
             },
         };
         if config
@@ -1023,7 +1038,7 @@ impl TerminalService {
         // every time: never on the user's account (F-EN-11, D-2519).
         let local = if record.kind == "agent" && record.local_model.is_some() {
             match panes::launch_config(&self.store, pane).await? {
-                Some(Ok(config)) if config.home.is_some() => Some(config),
+                Some(Ok(config)) if local_ready(&config)? => Some(config),
                 _ => {
                     return Err(
                         IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
@@ -1194,8 +1209,21 @@ impl TerminalService {
                 .agent_launch_with(&engine, path, &root, status, account, relaunch)
                 .await
                 .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
+            let no_proxy = tandem_engines::local_models::no_proxy_value(
+                login.vars.get("NO_PROXY").map(String::as_str),
+                login.vars.get("no_proxy").map(String::as_str),
+            );
+            let inner = match (&local, &launch.home) {
+                // Set inside the command, after the shell's startup files.
+                (Some(_), Some(home)) if cfg!(unix) => tandem_engines::local_models::env_argv(
+                    launch.spec.argv(),
+                    &home.to_string_lossy(),
+                    &no_proxy,
+                ),
+                _ => launch.spec.argv(),
+            };
             let argv = self
-                .sandbox_argv(pane, &root, launch.home.as_deref(), launch.spec.argv())
+                .sandbox_argv(pane, &root, launch.home.as_deref(), inner)
                 .await;
             let args = env::agent_wrapper(
                 &shell,
@@ -1217,10 +1245,11 @@ impl TerminalService {
             if local.is_some() {
                 // The model server is on this computer: no proxy carries the
                 // prompts off it (D-2517).
-                env.extend(tandem_engines::local_models::no_proxy_env(
-                    login.vars.get("NO_PROXY").map(String::as_str),
-                    login.vars.get("no_proxy").map(String::as_str),
-                ));
+                env.retain(|(k, _)| {
+                    !tandem_engines::local_models::PROXY_VARS.contains(&k.as_str())
+                });
+                env.push(("NO_PROXY".into(), no_proxy.clone()));
+                env.push(("no_proxy".into(), no_proxy));
             }
             (args, env, Some(engine), Some(launch))
         } else if let Some(run) = self.take_run(pane) {
@@ -1927,6 +1956,20 @@ impl QuietScreen {
     }
 }
 
+/// A local pane's saved launch can start: its home is there, and its
+/// provider settings are written again first (F-EN-11, D-2519).
+fn local_ready(config: &LaunchConfig) -> Result<bool, IpcError> {
+    let (Some(home), Some(local)) = (&config.home, &config.local) else {
+        return Ok(false);
+    };
+    let home = Path::new(home);
+    if !home.is_dir() {
+        return Ok(false);
+    }
+    crate::services::local_models::refresh_config(home, local)?;
+    Ok(true)
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -2201,12 +2244,15 @@ mod tests {
     }
 
     /// F-EN-11 review: every start of a local-model pane (the first, Start
-    /// fresh, a start in a new run of the app) runs Codex in the model's own
-    /// home with no account and with this computer in NO_PROXY; with the
-    /// home gone it refuses, never falling back to the user's account.
+    /// fresh, Resume, a start in a new run of the app) runs Codex in the
+    /// model's own home with no account, whatever the login shell's
+    /// startup files export, and writes the home's provider settings again;
+    /// with the home gone, a corrupt saved launch or a folder off this
+    /// computer it refuses, never falling back to the user's account.
     #[tokio::test(flavor = "multi_thread")]
     async fn f_en_11_2_every_start_of_a_local_pane_uses_its_home_and_no_account() {
         use std::os::unix::fs::PermissionsExt;
+        use tandem_store::repo::sessions::LocalLaunch;
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().join("data")).expect("data");
         let store = Store::open(&data).expect("store");
@@ -2217,10 +2263,16 @@ mod tests {
         let codex = bin.join("codex");
         std::fs::write(
             &codex,
-            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME\"\nsleep 30\n",
+            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME PX=[$HTTP_PROXY$HTTPS_PROXY] ARGS=$*\"\nsleep 30\n",
         )
         .expect("fake codex");
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        // The login shell's own startup file tries to undo the pane's setup.
+        std::fs::write(
+            dir.path().join(".profile"),
+            "export NO_PROXY=.corp.example\nexport HTTP_PROXY=http://proxy.corp:3128\nexport CODEX_HOME=/elsewhere\n",
+        )
+        .expect("profile");
         settings::set(
             &store,
             SettingKey::DefaultShell,
@@ -2243,11 +2295,16 @@ mod tests {
             .join("providers/codex/local-ollama-11434-qwen3-0000abcd");
         std::fs::create_dir_all(&home).expect("home");
         let config = LaunchConfig {
-            extra_args: Vec::new(),
+            extra_args: vec!["--sandbox".into(), "read-only".into()],
             home: Some(home.display().to_string()),
             own_home: false,
+            local: Some(LocalLaunch {
+                kind: "ollama".into(),
+                port: 11434,
+                model: "qwen3:8b".into(),
+            }),
         };
-        panes::set_local_model(&store, &pane.id, "qwen3 · Ollama", &config)
+        panes::set_local_model(&store, &pane.id, "qwen3:8b · Ollama", &config)
             .await
             .expect("local");
         let login = || {
@@ -2258,6 +2315,11 @@ mod tests {
             );
             vars.insert("HOME".to_string(), dir.path().display().to_string());
             vars.insert("NO_PROXY".to_string(), "corp.example".to_string());
+            vars.insert("no_proxy".to_string(), ".lan".to_string());
+            vars.insert(
+                "HTTPS_PROXY".to_string(),
+                "http://proxy.corp:3128".to_string(),
+            );
             LoginEnv {
                 vars,
                 shell: "/bin/sh".into(),
@@ -2274,55 +2336,132 @@ mod tests {
                 .await
                 .map(|_| sink)
         }
-        let expect_local = |sink: Arc<VecSink>| {
+        let expect_local = |sink: Arc<VecSink>, fresh: bool| {
             let text = || String::from_utf8_lossy(&sink.data()).into_owned();
             assert!(
                 wait_until(Duration::from_secs(10), || text().contains("NP=")),
                 "{}",
                 text()
             );
+            let out = text();
             assert!(
-                text().contains("NP=corp.example,127.0.0.1,localhost,::1"),
-                "{}",
-                text()
+                out.contains("NP=corp.example,.lan,127.0.0.1,localhost,::1 "),
+                "{out}"
             );
+            assert!(out.contains(&format!("HOME={} ", home.display())), "{out}");
+            assert!(out.contains("PX=[]"), "{out}");
+            // `codex resume <id>` takes no extra arguments (launch.rs), as
+            // for any Codex pane.
+            if fresh {
+                assert!(out.contains("--sandbox read-only"), "{out}");
+            }
+            // The provider settings are there, whatever happened to the file.
+            let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
             assert!(
-                text().contains(&format!("HOME={}", home.display())),
-                "{}",
-                text()
+                config.contains("[model_providers.vibezeo-local]"),
+                "{config}"
+            );
+            assert!(config.contains("model = \"qwen3:8b\""), "{config}");
+        };
+        let session_is_local = || async {
+            let session = sessions::latest_for_pane(&store, &pane.id)
+                .await
+                .expect("read")
+                .expect("session");
+            assert_eq!(session.account_id, None);
+            assert_eq!(
+                session.provider_home.as_deref(),
+                Some(home.to_str().expect("utf8"))
             );
         };
         let svc = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
         svc.set_login_env(login());
         for mode in [LaunchMode::Normal, LaunchMode::Fresh] {
+            // Deleted between starts: written again before Codex runs.
+            let _ = std::fs::remove_file(home.join("config.toml"));
             let sink = start(&svc, &pane.id, mode).await.expect("start");
-            expect_local(sink);
-            let session = sessions::latest_for_pane(&store, &pane.id)
-                .await
-                .expect("read")
-                .expect("session");
-            assert_eq!(session.account_id, None, "{mode:?}");
-            assert_eq!(
-                session.provider_home.as_deref(),
-                Some(home.to_str().expect("utf8"))
-            );
+            expect_local(sink, true);
+            session_is_local().await;
             svc.pty.kill(pane.id.as_str()).expect("kill");
         }
+        // Resume: the saved conversation, in the same home.
+        sessions::set_engine_session(&store, &pane.id, "thread-1")
+            .await
+            .expect("engine session");
+        let sink = start(&svc, &pane.id, LaunchMode::Resume)
+            .await
+            .expect("resume");
+        expect_local(sink, false);
+        session_is_local().await;
+        svc.pty.kill(pane.id.as_str()).expect("kill");
         // A new run of the app: nothing in memory, the pane still knows.
         let again = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
         again.set_login_env(login());
         let sink = start(&again, &pane.id, LaunchMode::Normal)
             .await
             .expect("restart");
-        expect_local(sink);
+        expect_local(sink, true);
         again.pty.kill(pane.id.as_str()).expect("kill");
+        // A corrupt saved launch: refused, and Resume isn't offered.
+        let id = pane.id.as_str().to_string();
+        store
+            .write(move |t| {
+                t.execute(
+                    "UPDATE panes SET launch_config = '{oops' WHERE id = ?1",
+                    [&id],
+                )?;
+                Ok(())
+            })
+            .await
+            .expect("corrupt");
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("started with a corrupt launch");
+        };
+        assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
+        let record = panes::get_open(&store, &pane.id).await.expect("pane");
+        assert_eq!(
+            again.resume_plan(&record).await.err().map(|e| e.message),
+            Some(LAUNCH_CONFIG_UNAVAILABLE.to_string())
+        );
         // The home is gone: refused, not started on an account.
+        panes::set_local_model(&store, &pane.id, "qwen3:8b · Ollama", &config)
+            .await
+            .expect("restore row");
         std::fs::remove_dir_all(&home).expect("rm");
         let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
             panic!("started with its home gone");
         };
         assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
         assert!(!again.pty.is_live(pane.id.as_str()));
+        // A folder off this computer: refused.
+        std::fs::create_dir_all(&home).expect("home again");
+        let (wsl, _) = tandem_store::repo::workspaces::add(
+            &store,
+            tandem_store::repo::workspaces::NewWorkspace {
+                kind: "wsl".into(),
+                host_id: "local".into(),
+                root: "/home/me/repo".into(),
+                name: "repo".into(),
+                wsl_distro: Some("Ubuntu".into()),
+            },
+            None,
+        )
+        .await
+        .expect("wsl ws");
+        let wsl_tab = tabs::create(&store, &wsl.id, None).await.expect("tab");
+        let far = panes::create_with(&store, &wsl_tab.id, "agent", None, Some("codex".into()))
+            .await
+            .expect("pane");
+        panes::set_local_model(&store, &far.id, "qwen3:8b · Ollama", &config)
+            .await
+            .expect("local");
+        let Err(err) = start(&again, &far.id, LaunchMode::Normal).await else {
+            panic!("started a local model in WSL");
+        };
+        assert_eq!(
+            err.message,
+            "A local model runs in a folder on this computer"
+        );
     }
 
     /// F-EN-10 review: an added agent whose saved program is gone isn't

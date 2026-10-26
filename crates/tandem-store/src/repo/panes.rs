@@ -529,6 +529,7 @@ mod tests {
             extra_args: vec!["--sandbox".into(), "read-only".into()],
             home: Some("/data/providers/codex/local-ollama-11434-qwen3".into()),
             own_home: false,
+            local: None,
         };
         assert_eq!(launch_config(&store, &agent.id).await.expect("read"), None);
         set_local_model(&store, &agent.id, "qwen3-coder:30b · Ollama", &config)
