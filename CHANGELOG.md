@@ -12,18 +12,19 @@ release fails when its version has no section.
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
 Vibezeo is free and needs no account, and everything in this release runs on
 your computer, with nothing sent to our servers. This release gives the app
-a new look: neutral greys, sharper corners, a tinted tile for each engine,
-and quieter pane headers and status bar. Plans from Lead also carry through
-now: follow each task's run and review, land the approved work in the plan's
-order, and find the plan again after a restart.
+a new look: neutral greys, a tinted tile for each engine, quieter pane
+headers, and a status bar that shows what your agents are doing. Plans from
+Lead also carry through now: follow each task's run and review, land the
+approved work in the plan's order, and find the plan again after a restart.
 
 ### Added
 
 - [lin] **Follow a plan through.** Once a plan's tasks are created, Plan with
-  Lead lists each task with its latest run: queued, running, in review with
-  the review's verdict (Approve or Changes requested), stopped, failed or
-  done. A line counts them, and each row opens its task. While the runs load
-  the list says so, and if they can't be read it says why, with Retry.
+  Lead lists each task with its latest run: not started, queued, running,
+  ready to review with the review's verdict (Approved or Changes requested),
+  stopped, failed or done. A line counts them, and each row opens its task.
+  While the runs load the list says so, and if they can't be read it says
+  why, with Retry.
 - [lin] **Land approved work in the plan's order.** "Land N approved…" opens
   Land worktrees with exactly the approved tasks' worktrees chosen, in the
   plan's order. You check the forecast and confirm the landing there.
@@ -33,40 +34,45 @@ order, and find the plan again after a restart.
   planning, the plan says so and offers Plan again. If it closed while
   Execute all was starting the runs, or while Create tasks was writing, the
   plan keeps what was done and the next try does only the rest.
-- [lin] **Chat threads claim the files they edit.** A Claude Code, Codex or
-  ACP agent's edits in a thread claim their files, as a terminal agent's do,
+- [lin] **Chat threads claim the files they edit.** In a thread on this
+  computer, a Claude Code or Codex agent's edits claim their files, as a
+  terminal agent's do, and so do an ACP agent's edits that name their files,
   so agents in other worktrees of the repository see the overlap. An edit you
   refused, or one that failed, claims nothing. A task run is asked to claim
   its files before it edits them.
 
 ### Changed
 
-- [lin] **A quieter, sharper look.** Neutral ink greys, tighter corners and
-  softer shadows, in both light and dark themes. A working agent
-  shows a filled dot with a slow, breathing halo.
-- [lin] **Engines are easy to tell apart.** Each engine has its own tinted
-  letter tile in pane headers, the rail, the launch grid and threads.
-- [lin] **Pane headers say where you are.** A pane's title names its engine
-  and folder, tabs show the task in a few words, and the header's buttons
-  stay quiet until you need them.
-- [lin] **Launch faster.** The launch grid takes number keys, marks the
-  default engine, and copies an engine's command with one click.
-- [lin] **A calmer status bar.** It shows working agents, checks, usage and
-  ports only while there's something to show.
-- [lin] **Threads summarise their work.** A finished turn says which files it
-  edited, with lines added and removed, and test runs show passed and
-  failed counts.
-- [lin] **A first-run page for Agents.** With no teammates yet, the Agents
-  view helps you start one from a template.
+- [lin] **A quieter look.** Neutral ink greys in both the light and dark
+  themes, and softer shadows in the light theme. A working agent shows a
+  filled dot with a slow, breathing halo, which holds still when you reduce
+  motion.
+- [lin] **Engines are easy to tell apart.** Each built-in engine has its own
+  tinted letter tile in pane headers, the rail, the launch grid and threads.
+- [lin] **Pane headers say where you are.** A terminal pane's title names its
+  folder, and an agent pane's names its engine and folder until the agent or
+  your first prompt names the work. Tabs show the task in a few words, and
+  the header's buttons stay dimmed until you point at the header.
+- [lin] **Launch faster.** The launch grid takes the number keys 1 to 9,
+  marks the default engine, and copies a missing engine's install command
+  with one click.
+- [lin] **More in the status bar, only when it matters.** It now shows agents
+  working and waiting, the checks on a worktree's pull request, usage and
+  listening ports, each only while there's something to show.
+- [lin] **Threads summarise their work.** In a Codex thread, and in an ACP
+  agent's thread when the agent sends its edits as diffs, a finished turn
+  counts the files it changed, with lines added and removed. Test runs from
+  Vitest, Jest, cargo test or pytest show passed and failed counts in every
+  thread.
 
 ### Fixed
 
 - [lin] Freeze could fail with "Couldn't freeze this pane" on a pane running
   one short command after another, when a command ended just as Freeze
-  stopped it. This happened only without a systemd user session, where
-  Freeze stops the pane's processes with signals. Freeze now keeps the
-  pane's shell stopped instead, so the next command waits until you choose
-  "Thaw".
+  stopped it. This could happen in terminal panes, and in agent panes that
+  run without a systemd user scope, where Freeze stops the pane's processes
+  with signals. Freeze now keeps the pane's shell stopped instead, so the
+  next command waits until you choose "Thaw".
 
 ## 0.11.0
 
