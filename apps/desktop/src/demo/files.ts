@@ -1,56 +1,31 @@
-// The browser demo's Files tab: the same made-up "shop" project its terminal
-// lists (`ls`, `git status`), in memory. Edits stay in the page and checks
-// work like the core's (a stale hash is a conflict); nothing is saved. Its
-// Changes view says what the terminal's `git status` says, plus the files
-// edited in the page; the demo runs no git actions (D-204).
-import type { Branch, EditorTabs, FileContent, FileDiff, FileStatus, FsEntry, GitPanel } from "@tandem/protocol";
-import { DEMO_CHANGES } from "./agent";
+// The browser demo's Files tab and git panel: the sample repository
+// (repo.ts) as each checkout sees it, the repository's own folder on main
+// and each worktree on its branch. Edits stay in the page and checks work
+// like the core's (a stale hash is a conflict); nothing is saved. The demo
+// runs no git actions (D-204).
+import type { Branch, EditorTabs, FileChange, FileContent, FileDiff, FileStatus, FsEntry, GitPanel } from "@tandem/protocol";
+import { MAIN, fileDiff } from "./repo";
 
-export const DEMO_ROOT = "/home/you/shop";
 export const NO_GIT = "The browser demo doesn't run git commands.";
 
-const REDIRECT = `import type { Session } from "../session";
-
-/** Where a shopper goes next: sign-in first, then their cart or payment. */
-export function nextStep(session: Session): string {
-  if (!session.user) {
-    return \`/login?next=\${encodeURIComponent(session.path)}\`;
-  }
-  return session.cart.empty ? "/cart" : "/checkout/pay";
-}
-`;
-
-const SOURCES: Record<string, string> = {
-  "README.md": "# shop\n\nA made-up storefront for the Vibezeo browser demo. Nothing here runs.\n",
-  "package.json": `{
-  "name": "shop",
-  "private": true,
-  "type": "module",
-  "scripts": { "dev": "vite", "test": "vitest run" }
-}
-`,
-  "tsconfig.json": `{ "compilerOptions": { "strict": true, "module": "ESNext", "target": "ES2022" } }\n`,
-  "vite.config.ts": `import { defineConfig } from "vite";\n\nexport default defineConfig({});\n`,
-  "src/checkout/redirect.ts": REDIRECT,
-  "src/checkout/redirect.test.ts": `import { describe, expect, it } from "vitest";
-import { nextStep } from "./redirect";
-import { guest } from "../../tests/setup";
-
-describe("nextStep", () => {
-  it("sends guests to sign in first", () => {
-    expect(nextStep(guest("/cart"))).toBe("/login?next=%2Fcart");
-  });
-});
-`,
-  "src/checkout/cart.ts": `export type Cart = { items: string[]; empty: boolean };\n\nexport const emptyCart: Cart = { items: [], empty: true };\n`,
-  "src/api/orders.ts": `export async function orders(userId: string): Promise<string[]> {\n  return [userId];\n}\n`,
-  "src/api/rate-limit.ts": `export const LIMIT_PER_MINUTE = 300;\n`,
-  "src/session.ts": `import type { Cart } from "./checkout/cart";\n\nexport type Session = { user: string | null; path: string; cart: Cart };\n`,
-  "tests/setup.ts": `import type { Session } from "../src/session";\n\nexport const guest = (path: string): Session => ({ user: null, path, cart: { items: ["tea"], empty: false } });\n`,
+/** One checkout: its folder and branch, what its branch has committed
+ * beyond main's files, and what's changed in it and not committed. */
+export type CheckoutSeed = {
+  id: string;
+  root: string;
+  branch: string;
+  committed: Readonly<Record<string, string>>;
+  uncommitted: Readonly<Record<string, string>>;
 };
 
-/** What `git status` in the demo terminal says. */
-const MODIFIED = new Set(["src/checkout/redirect.ts", "src/checkout/redirect.test.ts"]);
+type Checkout = {
+  root: string;
+  branch: string;
+  /** Its branch's files, as committed. */
+  head: Map<string, string>;
+  /** Files changed since, by an agent or in the page. */
+  work: Map<string, string>;
+};
 
 const hash = (text: string) => {
   let h = 0x811c9dc5;
@@ -58,93 +33,169 @@ const hash = (text: string) => {
   return `demo-${(h >>> 0).toString(16)}`;
 };
 
-export class DemoFiles {
-  private files = new Map(Object.entries(SOURCES));
-  private tabs: EditorTabs = { tabs: [], active: null, expanded: [], showIgnored: false, divider: null, view: null };
+const missing = () => ({ code: "not_found", message: "That file or folder doesn't exist" });
 
-  list(dir: string): FsEntry[] {
+export class DemoFiles {
+  private checkouts = new Map<string, Checkout>();
+  /** The editor's open files, by context ("ws:<id>"). */
+  private tabs = new Map<string, EditorTabs>();
+
+  constructor(seeds: CheckoutSeed[]) {
+    for (const s of seeds) {
+      this.checkouts.set(s.id, {
+        root: s.root,
+        branch: s.branch,
+        head: new Map(Object.entries({ ...MAIN, ...s.committed })),
+        work: new Map(Object.entries(s.uncommitted)),
+      });
+    }
+  }
+
+  private at(id: string): Checkout {
+    const c = this.checkouts.get(id);
+    if (!c) throw { code: "not_found", message: "That folder isn't open in the demo." };
+    return c;
+  }
+
+  /** A file as it is in the checkout's folder now. */
+  text(id: string, path: string): string | undefined {
+    const c = this.at(id);
+    return c.work.get(path) ?? c.head.get(path);
+  }
+
+  /** Every file in the folder now, by path. */
+  paths(id: string): string[] {
+    const c = this.at(id);
+    return [...new Set([...c.head.keys(), ...c.work.keys()])].sort();
+  }
+
+  /** How a file differs from its branch's commit: modified, untracked
+   * (new and not added), or not at all. */
+  private change(c: Checkout, path: string): FileChange | null {
+    const now = c.work.get(path);
+    if (now === undefined) return null;
+    const was = c.head.get(path);
+    if (was === undefined) return "untracked";
+    return was === now ? null : "modified";
+  }
+
+  /** Changed files and their changes, by path. */
+  changes(id: string): FileStatus[] {
+    const c = this.at(id);
+    return [...c.work.keys()]
+      .sort()
+      .flatMap((path) => {
+        const change = this.change(c, path);
+        return change ? [{ path, change }] : [];
+      });
+  }
+
+  list(id: string, dir: string): FsEntry[] {
+    const c = this.at(id);
     const prefix = dir ? `${dir}/` : "";
     const dirs = new Set<string>();
     const files: string[] = [];
-    for (const path of this.files.keys()) {
+    for (const path of this.paths(id)) {
       if (!path.startsWith(prefix)) continue;
       const rest = path.slice(prefix.length);
       const at = rest.indexOf("/");
       if (at >= 0) dirs.add(rest.slice(0, at));
       else files.push(rest);
     }
-    const changed = (p: string) => [...MODIFIED].some((m) => m === p || m.startsWith(`${p}/`));
+    const changed = this.changes(id);
+    // A folder is Untracked when everything changed in it is new, else Modified.
+    const folderStatus = (p: string): FileChange | undefined => {
+      const inside = changed.filter((f) => f.path.startsWith(`${p}/`));
+      if (inside.length === 0) return undefined;
+      return inside.every((f) => f.change === "untracked") ? "untracked" : "modified";
+    };
     const sort = (a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase());
     return [
       ...[...dirs].sort(sort).map((name): FsEntry => {
         const path = prefix + name;
-        return { name, path, kind: "dir", symlink: false, ignored: false, gitStatus: changed(path) ? "modified" : undefined };
+        return { name, path, kind: "dir", symlink: false, ignored: false, gitStatus: folderStatus(path) };
       }),
       ...files.sort(sort).map((name): FsEntry => {
         const path = prefix + name;
-        return { name, path, kind: "file", symlink: false, ignored: false, gitStatus: MODIFIED.has(path) ? "modified" : undefined };
+        return { name, path, kind: "file", symlink: false, ignored: false, gitStatus: this.change(c, path) ?? undefined };
       }),
     ];
   }
 
-  read(path: string): FileContent {
-    const text = this.files.get(path);
-    if (text === undefined) throw { code: "not_found", message: "That file or folder doesn't exist" };
-    return { path, kind: "text", text, size: text.length, readonly: false, readonlyReason: null, truncated: false, hash: hash(text), mtime: 0, dataUrl: null, hex: null };
-  }
-
-  write(path: string, text: string, expected: string | null): { hash: string; mtime: number } {
-    const now = this.files.get(path);
-    if (now !== undefined && expected !== hash(now)) throw { code: "conflict", message: "File changed on disk" };
-    if (now === undefined && expected !== null) throw { code: "conflict", message: "File changed on disk" };
-    this.files.set(path, text);
-    return { hash: hash(text), mtime: Date.now() };
-  }
-
-  compare(path: string, text: string): FileDiff {
-    return this.compareTexts(path, this.files.get(path) ?? "", text);
-  }
-
-  /** Files edited in the page, besides the ones `git status` names. */
-  private edited(): string[] {
-    return [...this.files.entries()]
-      .filter(([path, text]) => !MODIFIED.has(path) && SOURCES[path] !== text)
-      .map(([path]) => path)
-      .sort();
-  }
-
-  gitStatus(): GitPanel {
-    const unstaged: FileStatus[] = [...MODIFIED, ...this.edited()].sort().map((path) => ({ path, change: "modified" }));
+  read(id: string, path: string): FileContent {
+    const text = this.text(id, path);
+    if (text === undefined) throw missing();
     return {
-      root: DEMO_ROOT,
-      folder: "",
-      status: { branch: "main", upstream: null, ahead: 0, behind: 0, staged: [], unstaged, noCommits: false },
+      path,
+      kind: "text",
+      text,
+      size: text.length,
+      readonly: false,
+      readonlyReason: null,
+      truncated: false,
+      hash: hash(text),
+      mtime: 0,
+      dataUrl: null,
+      hex: null,
     };
   }
 
-  gitDiff(path: string): FileDiff {
-    const known = DEMO_CHANGES.find((d) => d.path === path);
-    if (known) return known;
-    const before = SOURCES[path] ?? "";
-    return this.compareTexts(path, before, this.files.get(path) ?? "");
+  write(id: string, path: string, text: string, expected: string | null): { hash: string; mtime: number } {
+    const now = this.text(id, path);
+    if (now === undefined ? expected !== null : expected !== hash(now)) {
+      throw { code: "conflict", message: "File changed on disk" };
+    }
+    this.at(id).work.set(path, text);
+    return { hash: hash(text), mtime: Date.now() };
   }
 
-  gitBranches(): Branch[] {
-    return [{ name: "main", current: true, remote: false, upstream: null, ahead: 0, behind: 0 }];
+  /** An agent's edit, in its checkout's folder. */
+  edit(id: string, path: string, text: string): void {
+    this.at(id).work.set(path, text);
   }
 
-  private compareTexts(path: string, before: string, after: string): FileDiff {
-    const a = before.split("\n");
-    const b = after.split("\n");
-    const lines = [`--- a/${path}`, `+++ b/${path}`, `@@ -1,${a.length} +1,${b.length} @@`, ...a.map((l) => `-${l}`), ...b.map((l) => `+${l}`)];
-    return { path, change: "modified", additions: b.length, deletions: a.length, binary: false, truncated: false, patch: lines.join("\n") };
+  compare(id: string, path: string, text: string): FileDiff {
+    return fileDiff(path, this.text(id, path) ?? "", text);
   }
 
-  savedTabs(): EditorTabs {
-    return this.tabs;
+  gitStatus(id: string): GitPanel {
+    const c = this.at(id);
+    return {
+      root: c.root,
+      folder: "",
+      status: {
+        branch: c.branch,
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        staged: [],
+        unstaged: this.changes(id),
+        noCommits: false,
+      },
+    };
   }
 
-  saveTabs(state: EditorTabs): void {
-    this.tabs = state;
+  /** What `git diff` shows for one changed file: its commit against now. */
+  gitDiff(id: string, path: string): FileDiff {
+    const c = this.at(id);
+    const now = this.text(id, path);
+    if (now === undefined) throw missing();
+    const d = fileDiff(path, c.head.get(path) ?? null, now);
+    return { ...d, change: this.change(c, path) ?? d.change };
+  }
+
+  /** The local branches: main and every worktree's, the checkout's current. */
+  gitBranches(id: string): Branch[] {
+    const current = this.at(id).branch;
+    const names = [...new Set([...this.checkouts.values()].map((c) => c.branch))];
+    return names.map((name) => ({ name, current: name === current, remote: false, upstream: null, ahead: 0, behind: 0 }));
+  }
+
+  savedTabs(key: string): EditorTabs {
+    return this.tabs.get(key) ?? { tabs: [], active: null, expanded: [], showIgnored: false, divider: null, view: null };
+  }
+
+  saveTabs(key: string, state: EditorTabs): void {
+    this.tabs.set(key, state);
   }
 }

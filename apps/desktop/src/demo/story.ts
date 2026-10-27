@@ -54,6 +54,9 @@ export type Story = {
   dev: { command: string; port: number; requests: string[] };
   /** The symbol two worktrees both change (the intent radar), and those two. */
   overlap: { symbol: string; file: string; between: string[] };
+  /** Plan with Lead's goal and the tasks it splits into, an engine each
+   * (the site's plan scene; the demo drafts from whatever goal is typed). */
+  plan: { goal: string; tasks: Array<{ title: string; engine: string }> };
   /** Another engine's line comments on a worktree's diff (Second opinion). */
   secondOpinion: { worktree: string; engine: string; comments: StoryComment[] };
   pr: {

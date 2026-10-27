@@ -791,6 +791,8 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 
 ### 3.3 Left rail · SH
 > **D-2603:** a workspace row's status is quiet: amber "Needs you", or a working dot with "n working", or "Failed" in rose, never a boxed chip. The name keeps at least 10 characters; the branch gives way to a status, and live panes are a `Count` pill. Teammate rows (UI-70) are two lines: name with Failed > Needs you > n working > age, then the latest activity.
+
+> **D-2611:** a worktree's row (F-CD-15) is named as its workspace is, `coupon-rules` rather than `tandem/coupon-rules`: a worktree's branch is always `tandem/` and that name, so the prefix said nothing and took the room. The branch is in the row's tooltip, before the path, and in the pane header's chip and the status bar. Beside a status the name keeps at least 10 characters, as a workspace row's does, and ⋯ takes no room: it covers the row's end while the row is hovered or holds focus.
 - **Width:** default 248px, drag-resizable between 180 and 360px (F-SH-03); the width persists per mode.
 - **Collapse** with Mod+\ (§5), or by dragging below 160px. Collapsed it is a 52px icon rail showing avatars/glyphs with tooltips.
 - **Background** surface-1, with a 1px right border.

@@ -1,8 +1,9 @@
-// The sample repository's files (story.json's `repo`): the base branch's,
-// and the ones each worktree's agent and the demo's first thread changed.
-// They're kept as `shop/<place>/<path>.sample`, so nothing type-checks or
-// lints them, and every diff and line count the demo shows is worked out
-// from them.
+// The sample repository's files (story.json's `repo`), kept as
+// `shop/<place>/<path>.sample` so nothing type-checks or lints them: `main`
+// has the base branch's, each worktree's slug the files its agent changed,
+// `thread` the demo's first thread's fix, and `before` main's files as they
+// were before the seeded threads' changes in its history. Every diff, line
+// count and test count the demo shows is worked out from them.
 import type { FileDiff } from "@tandem/protocol";
 import { unifiedDiff } from "./udiff";
 
@@ -80,4 +81,18 @@ export function testRun(files: Readonly<Record<string, string>>, filter = ""): s
     ` Test Files  ${run.length} passed (${run.length})`,
     `      Tests  ${total} passed (${total})`,
   ];
+}
+
+/** Where `text` appears in `files`: `path:line` for each line it's on. */
+export function grep(files: Readonly<Record<string, string>>, text: string): string[] {
+  return Object.keys(files)
+    .sort()
+    .flatMap((path) =>
+      (files[path] ?? "").split("\n").flatMap((line, i) => (line.includes(text) ? [`${path}:${i + 1}`] : [])),
+    );
+}
+
+/** How many lines a file has, as an agent's Read reports it. */
+export function lineCount(text: string): number {
+  return text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length;
 }

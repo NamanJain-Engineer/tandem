@@ -1,118 +1,153 @@
 /** A tiny line-editing shell for the browser demo's terminals: it echoes
  * keys, handles Backspace, Ctrl+C and Ctrl+L, and answers a few commands
- * with canned output. Nothing runs. */
+ * from the sample repository as its checkout has it. Nothing runs. */
 
-import { CHECKOUT_PATCH } from "./agent";
+import type { StoryCommit } from "./story";
 
 const ESC = "\x1b";
 const GREEN = `${ESC}[32m`;
+const RED = `${ESC}[31m`;
+const YELLOW = `${ESC}[33m`;
 const BLUE = `${ESC}[34m`;
+const CYAN = `${ESC}[36m`;
 const DIM = `${ESC}[2m`;
 const BOLD = `${ESC}[1m`;
 const RESET = `${ESC}[0m`;
 
-export const PROMPT = `${GREEN}you@vibezeo${RESET}:${BLUE}~/shop${RESET}$ `;
+/** What the shell can see of its checkout. */
+export type ShellPlace = {
+  /** As the prompt shows it: "~/shop/.tandem/worktrees/coupon-rules". */
+  dir: string;
+  /** `pwd`. */
+  path: string;
+  branch: string;
+  /** Every file in the folder now. */
+  paths: () => string[];
+  text: (path: string) => string | undefined;
+  /** `git status`'s files. */
+  changes: () => Array<{ path: string; change: string }>;
+  /** `git diff` of one changed file. */
+  diff: (path: string) => string;
+  /** The branch's commits, newest first. */
+  log: () => StoryCommit[];
+  /** `pnpm test [filter]`'s output. */
+  test: (filter: string) => string[];
+};
 
-const FILES = ["README.md", "package.json", "src/", "tests/", "tsconfig.json", "vite.config.ts"];
-
-const TEST_RUN = [
-  "",
-  "> shop@1.4.0 test",
-  "> vitest run",
-  "",
-  ` ${GREEN}✓${RESET} src/checkout/redirect.test.ts (4 tests) 12ms`,
-  ` ${GREEN}✓${RESET} src/checkout/cart.test.ts (9 tests) 31ms`,
-  ` ${GREEN}✓${RESET} src/api/rate-limit.test.ts (6 tests) 18ms`,
-  "",
-  ` Test Files  ${GREEN}3 passed${RESET} (3)`,
-  `      Tests  ${GREEN}19 passed${RESET} (19)`,
-  "",
-];
-
-/** Canned answers; `null` clears the screen. */
-export function run(line: string): string[] | null {
-  const [cmd = "", ...args] = line.trim().split(/\s+/);
-  switch (cmd) {
-    case "":
-      return [];
-    case "help":
-      return [
-        `${BOLD}This terminal is part of a browser demo.${RESET} It understands:`,
-        "  ls, pwd, git status, git diff, git log, npm test, echo, whoami, date, clear",
-        `${DIM}In Vibezeo every pane is a real terminal on your machine.${RESET}`,
-      ];
-    case "ls":
-      return [FILES.map((f) => (f.endsWith("/") ? `${BLUE}${f}${RESET}` : f)).join("  ")];
-    case "pwd":
-      return ["/home/you/shop"];
-    case "whoami":
-      return ["you"];
-    case "date":
-      return [new Date().toString()];
-    case "echo":
-      return [args.join(" ")];
-    case "clear":
-      return null;
-    case "git":
-      if (args[0] === "status")
-        return [
-          "On branch main",
-          "Changes not staged for commit:",
-          `  ${ESC}[31mmodified:   src/checkout/redirect.ts${RESET}`,
-          `  ${ESC}[31mmodified:   src/checkout/redirect.test.ts${RESET}`,
-        ];
-      if (args[0] === "diff")
-        return CHECKOUT_PATCH.trimEnd()
-          .split("\n")
-          .map((l) =>
-            l.startsWith("+") && !l.startsWith("+++")
-              ? `${GREEN}${l}${RESET}`
-              : l.startsWith("-") && !l.startsWith("---")
-                ? `${ESC}[31m${l}${RESET}`
-                : l.startsWith("@@")
-                  ? `${ESC}[36m${l}${RESET}`
-                  : l,
-          );
-      if (args[0] === "log")
-        return [
-          `${ESC}[33m4f2c9e1${RESET} Add cart totals endpoint`,
-          `${ESC}[33m91b07aa${RESET} Checkout: keep the coupon on reload`,
-          `${ESC}[33m0d5e3b2${RESET} First commit`,
-        ];
-      return [`git: '${args[0] ?? ""}' isn't available in this demo. Try git status, git diff or git log.`];
-    case "npm":
-    case "pnpm":
-      if (args[0] === "test" || args[0] === "t") return TEST_RUN;
-      return [`${cmd} ${args.join(" ")}: only \`${cmd} test\` works in this demo.`];
-    case "claude":
-    case "codex":
-    case "gemini":
-      return [
-        `${cmd} would start here in Vibezeo. This demo has no real agents:`,
-        "the panes beside this one show what they look like.",
-      ];
-    default:
-      return [`${cmd}: command not found (type ${BOLD}help${RESET})`];
-  }
-}
+const color = (line: string) =>
+  line.startsWith("+") && !line.startsWith("+++")
+    ? `${GREEN}${line}${RESET}`
+    : line.startsWith("-") && !line.startsWith("---")
+      ? `${RED}${line}${RESET}`
+      : line.startsWith("@@")
+        ? `${CYAN}${line}${RESET}`
+        : line;
 
 /** One terminal's line editor. `write` gets what xterm sends and returns
  * what the "PTY" echoes back. */
 export class DemoShell {
   private line = "";
 
+  constructor(private readonly place: ShellPlace) {}
+
+  prompt(): string {
+    return `${GREEN}you@vibezeo${RESET}:${BLUE}${this.place.dir}${RESET}$ `;
+  }
+
   greeting(): string {
-    return `${DIM}Simulated shell, type ${RESET}${BOLD}help${RESET}${DIM} to see what it knows.${RESET}\r\n${PROMPT}`;
+    return `${DIM}Simulated shell, type ${RESET}${BOLD}help${RESET}${DIM} to see what it knows.${RESET}\r\n${this.prompt()}`;
+  }
+
+  /** Canned answers; `null` clears the screen. */
+  run(input: string): string[] | null {
+    const [cmd = "", ...args] = input.trim().split(/\s+/);
+    const p = this.place;
+    switch (cmd) {
+      case "":
+        return [];
+      case "help":
+        return [
+          `${BOLD}This terminal is part of a browser demo.${RESET} It understands:`,
+          "  ls, cat, pwd, git status, git diff, git log, pnpm test, echo, whoami, date, clear",
+          `${DIM}In Vibezeo every pane is a real terminal on your machine.${RESET}`,
+        ];
+      case "ls": {
+        const dir = (args[0] ?? "").replace(/\/+$/, "");
+        const prefix = dir ? `${dir}/` : "";
+        const names = new Set<string>();
+        for (const path of p.paths()) {
+          if (!path.startsWith(prefix)) continue;
+          const rest = path.slice(prefix.length);
+          const at = rest.indexOf("/");
+          names.add(at >= 0 ? `${rest.slice(0, at)}/` : rest);
+        }
+        if (names.size === 0) return [`ls: cannot access '${dir}': No such file or directory`];
+        return [[...names].sort().map((n) => (n.endsWith("/") ? `${BLUE}${n}${RESET}` : n)).join("  ")];
+      }
+      case "cat": {
+        if (!args[0]) return ["cat: which file? Try cat package.json"];
+        const text = p.text(args[0]);
+        return text === undefined ? [`cat: ${args[0]}: No such file or directory`] : text.replace(/\n$/, "").split("\n");
+      }
+      case "pwd":
+        return [p.path];
+      case "whoami":
+        return ["you"];
+      case "date":
+        return [new Date().toString()];
+      case "echo":
+        return [args.join(" ")];
+      case "clear":
+        return null;
+      case "git": {
+        if (args[0] === "status") {
+          const changes = p.changes();
+          const modified = changes.filter((c) => c.change !== "untracked");
+          const untracked = changes.filter((c) => c.change === "untracked");
+          return [
+            `On branch ${p.branch}`,
+            ...(modified.length
+              ? ["Changes not staged for commit:", ...modified.map((c) => `  ${RED}modified:   ${c.path}${RESET}`)]
+              : []),
+            ...(untracked.length ? ["Untracked files:", ...untracked.map((c) => `  ${RED}${c.path}${RESET}`)] : []),
+            ...(changes.length ? [] : ["nothing to commit, working tree clean"]),
+          ];
+        }
+        if (args[0] === "diff") {
+          // Like git: changes to tracked files; new files wait for `git add`.
+          const lines = p
+            .changes()
+            .filter((c) => c.change !== "untracked")
+            .flatMap((c) => p.diff(c.path).replace(/\n$/, "").split("\n"));
+          return lines.map(color);
+        }
+        if (args[0] === "log") return p.log().map((c) => `${YELLOW}${c.sha}${RESET} ${c.subject}`);
+        return [`git: '${args[0] ?? ""}' isn't available in this demo. Try git status, git diff or git log.`];
+      }
+      case "npm":
+      case "pnpm":
+        if (args[0] === "test" || args[0] === "t") return p.test(args.slice(1).join(" "));
+        return [`${cmd} ${args.join(" ")}: only \`${cmd} test\` works in this demo.`];
+      case "claude":
+      case "codex":
+      case "gemini":
+        return [
+          `${cmd} would start here in Vibezeo. This demo has no real agents:`,
+          "each worktree's agent pane shows what they look like.",
+        ];
+      default:
+        return [`${cmd}: command not found (type ${BOLD}help${RESET})`];
+    }
   }
 
   write(data: string): string {
     let out = "";
     for (const ch of data) {
       if (ch === "\r") {
-        const result = run(this.line);
+        const result = this.run(this.line);
         this.line = "";
-        if (result === null) out += `${ESC}[2J${ESC}[H${PROMPT}`;
-        else out += `\r\n${result.map((l) => `${l}\r\n`).join("")}${PROMPT}`;
+        if (result === null) out += `${ESC}[2J${ESC}[H${this.prompt()}`;
+        else out += `\r\n${result.map((l) => `${l}\r\n`).join("")}${this.prompt()}`;
       } else if (ch === "\x7f" || ch === "\b") {
         if (this.line.length > 0) {
           this.line = this.line.slice(0, -1);
@@ -120,9 +155,9 @@ export class DemoShell {
         }
       } else if (ch === "\x03") {
         this.line = "";
-        out += `^C\r\n${PROMPT}`;
+        out += `^C\r\n${this.prompt()}`;
       } else if (ch === "\x0c") {
-        out += `${ESC}[2J${ESC}[H${PROMPT}${this.line}`;
+        out += `${ESC}[2J${ESC}[H${this.prompt()}${this.line}`;
       } else if (ch === ESC) {
         // Arrow keys and other sequences: ignored.
         break;

@@ -32,18 +32,18 @@ type Spot = {
 const HINTS: { id: HintId; spots: Spot[] }[] = [
   {
     id: "waiting",
-    // To the agent's row's right, centred on it, beside the rail; its
-    // workspace's row while the workspace is folded.
+    // Under the waiting worktree's row, in the rail's free space below its
+    // last row, so it covers neither a row nor the panes' text.
     spots: [
       {
-        anchor: `[data-testid="rail-session"][data-pane="${DEMO_WAITING.paneId}"]`,
-        side: "right",
-        // One line: it crosses the pane's edge, not lines of its text.
-        compact: true,
+        anchor: `[data-testid="worktree-row"][data-branch="${DEMO_WAITING.branch}"]`,
+        side: "bottom",
+        align: "start",
         text: () => t("demo.coach.waiting", { engine: DEMO_WAITING.engine }),
       },
+      // Its repository's row while the repository is folded or the rail collapsed.
       {
-        anchor: `[data-testid="workspace-row"][data-root="${DEMO_WAITING.root}"]`,
+        anchor: `[data-testid="workspace-row"][data-root="${DEMO_WAITING.repoRoot}"]`,
         side: "right",
         text: () => t("demo.coach.waiting", { engine: DEMO_WAITING.engine }),
       },

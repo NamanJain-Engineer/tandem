@@ -1,0 +1,13 @@
+import { db } from "../db";
+import type { Product } from "../catalog/product";
+
+/** Products whose name contains `text`, A to Z, at most `limit` of them. */
+export async function searchProducts(text: string, limit = 20): Promise<Product[]> {
+  const needle = text.trim().toLowerCase();
+  if (!needle) return [];
+  const all = await db.all<Product>("SELECT id, name, price FROM products");
+  return all
+    .filter((p) => p.name.toLowerCase().includes(needle))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, limit);
+}

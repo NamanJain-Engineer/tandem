@@ -1,0 +1,8 @@
+/** The shop's database (SQLite in development). */
+export const db = {
+  async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+    void sql;
+    void params;
+    return [];
+  },
+};

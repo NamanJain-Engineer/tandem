@@ -31,11 +31,13 @@ import type {
 import pkg from "../../package.json";
 import { listen } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
+import { decodeFrame } from "../ipc/pty";
 import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
 import { NOTIFY_HREF } from "../features/billing/ComesWithAccounts";
-import { DEMO_MESSAGE_LIMIT, DemoCore, FIRST_MESSAGE } from "./backend";
-import { DemoShell, PROMPT, run } from "./shell";
+import { DEMO_ACTIVE, DEMO_MESSAGE_LIMIT, DEMO_WAITING, DEMO_WORKTREES, DemoCore, FIRST_MESSAGE } from "./backend";
+import { MAIN, changedIn, diffsOf, testRun } from "./repo";
+import { STORY, branchOf, editsOf, engineLabel, totalsOf, worktreeIn } from "./story";
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
@@ -51,17 +53,38 @@ afterEach(() => {
 });
 
 describe("browser demo (vibezeo.com/demo)", () => {
-  it("F-WB-01 the demo shell answers its commands and echoes typing", () => {
-    expect(run("ls")?.join(" ")).toContain("package.json");
-    expect(run("git status")?.join("\n")).toContain("src/checkout/redirect.ts");
-    expect(run("npm test")?.join("\n")).toContain("19 passed");
-    expect(run("rm -rf /")?.[0]).toContain("command not found");
-    expect(run("clear")).toBeNull();
-    const shell = new DemoShell();
-    expect(shell.greeting()).toContain(PROMPT);
-    expect(shell.write("pw")).toBe("pw");
-    expect(shell.write("x\x7f")).toBe("x\b \b");
-    expect(shell.write("d\r")).toBe(`d\r\n/home/you/shop\r\n${PROMPT}`);
+  it("F-WB-01 the demo shell answers its commands from its worktree's checkout and echoes typing", async () => {
+    core = new DemoCore(0);
+    const working = worktreeIn("working");
+    const root = `/home/you/${STORY.repo}/.tandem/worktrees/${working.slug}`;
+    const prompt = `\x1b[32myou@vibezeo\x1b[0m:\x1b[34m~/${STORY.repo}/.tandem/worktrees/${working.slug}\x1b[0m$ `;
+    let screen = "";
+    const decode = (bytes: Uint8Array) => new TextDecoder().decode(decodeFrame(bytes).payload);
+    core.handle("pty_spawn", { paneId: "pn_shell", channel: { onmessage: (f: Uint8Array) => (screen += decode(f)) } });
+    await until(() => screen.includes(prompt));
+    const type = (text: string) => core?.handle("pty_write", { paneId: "pn_shell", data: text });
+    const said = async (line: string): Promise<string> => {
+      const from = screen.length;
+      type(`${line}\r`);
+      await until(() => screen.slice(from).endsWith(prompt));
+      return screen.slice(from);
+    };
+    expect(await said("pwd")).toContain(root);
+    expect(await said("ls")).toContain("package.json");
+    // git status lists the working agent's uncommitted edits, on its branch.
+    const status = await said("git status");
+    expect(status).toContain(`On branch ${branchOf(working.slug)}`);
+    for (const e of editsOf(working)) expect(status).toContain(e.edit);
+    expect(status).toContain("Untracked files:");
+    // git diff shows the tracked file's change; cat shows a file as the worktree has it.
+    expect(await said("git diff")).toContain("+import { stack, type StackRule } from \"./rules\";");
+    expect(await said("cat src/cart/rules.ts")).toContain("export function stack(");
+    expect(await said("git log")).toContain(STORY.history[0]?.subject ?? "?");
+    expect(await said("pnpm test coupon")).toContain("Tests  19 passed (19)");
+    expect(await said("rm -rf /")).toContain("command not found");
+    const from = screen.length;
+    type("x\x7f");
+    expect(screen.slice(from)).toBe("x\b \b");
   });
 
   it("UI-70 F-AG-01 the demo's Agent mode: Lead and three teammates, one working and one waiting, and the app's templates", () => {
@@ -77,20 +100,31 @@ describe("browser demo (vibezeo.com/demo)", () => {
     expect(core.handle("teammate_suggestions", { id: "tm_lead" })).toHaveLength(3);
   });
 
-  it("F-DB-04 the demo's review queue: Claude Code's fix with its diff; approve, snooze and run the check", async () => {
+  it("F-DB-04 the demo's review queue: the finished agent's work in its worktree with its diff; approve, snooze and run the check", async () => {
     core = new DemoCore(0);
+    const done = worktreeIn("done");
     const item = (core.handle("review_queue", {}) as ReviewQueueView).items[0];
+    const totals = totalsOf(done);
     expect(item).toMatchObject({
       key: "pane:pn_claude",
-      title: "Claude Code",
-      engineId: "claude",
+      title: engineLabel(done.engine),
+      engineId: done.engine,
+      workspace: done.slug,
+      branch: branchOf(done.slug),
+      closing: done.closing,
       state: "review",
-      files: 2,
+      files: totals.files,
+      additions: totals.adds,
+      deletions: totals.dels,
     });
+    expect(item?.laneId).toBe(item?.workspaceId);
+    // The core's local rules: the session file touches auth paths, nothing else fires.
+    expect(item?.risks).toEqual([{ rule: "auth", files: ["src/auth/session.ts"] }]);
     expect(item?.check?.state).toBe("passed");
+    expect(item?.check?.output).toBe(testRun({ ...MAIN, ...changedIn(done.slug) }).join("\n"));
     const key = item?.key ?? "";
     const files = core.handle("review_item_diff", { key, scope: "all" }) as FileDiff[];
-    expect(files.map((f) => f.path)).toEqual(["src/checkout/redirect.test.ts", "src/checkout/redirect.ts"]);
+    expect(files).toEqual(diffsOf(done.slug));
     const seen: ReviewQueueView[] = [];
     const stop = await listen<ReviewQueueView>("review:queue", (q) => void seen.push(q));
     // Approve needs the diff that was read; the queue updates as in the app.
@@ -105,7 +139,7 @@ describe("browser demo (vibezeo.com/demo)", () => {
     expect((core.handle("review_run_check", { key }) as ReviewItem).check?.state).toBe("running");
     await until(() => seen.at(-1)?.items[0]?.check?.state === "passed");
     expect((core.handle("review_repo_get", { workspaceId: item?.workspaceId }) as RepoReview).check).toBe(
-      "npm test",
+      STORY.check,
     );
     expect(() => core?.handle("review_approve", { key: "pane:nope", diffHash: "x" })).toThrow();
     stop();
@@ -127,7 +161,13 @@ describe("browser demo (vibezeo.com/demo)", () => {
     core.handle("thread_send", { threadId: core.firstThread, text: FIRST_MESSAGE, attachments: [] });
     await until(() => seen.some((e) => e.type === "approval_request"));
     const ask = seen.find((e) => e.type === "approval_request");
-    expect(ask?.type === "approval_request" && ask.detail).toBe("npm test -- src/checkout");
+    expect(ask?.type === "approval_request" && ask.detail).toBe("pnpm test auth");
+    // Its edits are in shop's folder, uncommitted, by the time it asks.
+    const shop = (core.handle("git_status", { context: { type: "thread", threadId: core.firstThread } }) as GitPanel).status;
+    expect(shop.unstaged).toEqual([
+      { path: "src/auth/session.test.ts", change: "untracked" },
+      { path: "src/auth/session.ts", change: "modified" },
+    ]);
     // Nothing more happens until the visitor answers.
     await tick();
     expect(seen.at(-1)?.type).toBe("approval_request");
@@ -139,10 +179,15 @@ describe("browser demo (vibezeo.com/demo)", () => {
     await until(() => seen.some((e) => e.type === "turn_end"));
     const reply = seen.find((e) => e.type === "assistant");
     expect(reply?.type === "assistant" && reply.markdown).toContain("Fixed the redirect loop.");
+    // The tests it ran are the ones the fix's files have.
+    const run = seen.find((e) => e.type === "tool" && e.verb === "bash" && e.status === "ok");
+    expect(run?.type === "tool" && run.output).toBe(testRun({ ...MAIN, ...changedIn("thread") }, "auth").join("\n"));
+    expect(reply?.type === "assistant" && reply.markdown).toContain("all 6 tests pass");
     const changes = core.handle("thread_changes", { threadId: core.firstThread }) as ThreadChanges;
-    expect(changes.files.map((f) => f.path)).toEqual([
-      "src/checkout/redirect.test.ts",
-      "src/checkout/redirect.ts",
+    expect(changes.files).toEqual(diffsOf("thread"));
+    expect(changes.files.map((f) => [f.path, f.change])).toEqual([
+      ["src/auth/session.test.ts", "added"],
+      ["src/auth/session.ts", "modified"],
     ]);
 
     // Later messages get a short simulated answer.
@@ -177,13 +222,14 @@ describe("browser demo (vibezeo.com/demo)", () => {
 });
 
 describe("browser demo Files tab (F-CD-19)", () => {
-  it("lists the demo project the terminal shows, edits in memory and refuses stale saves", () => {
+  const ws = (workspaceId: string) => ({ context: { type: "workspace", workspaceId } });
+  const shopId = () => (core?.handle("workspace_list", {}) as WorkspaceSummary[]).find((w) => w.parentId === null)?.id ?? "";
+
+  it("lists each worktree's checkout of the sample repository, edits in memory and refuses stale saves", () => {
     core = new DemoCore(0);
-    const top = core.handle("fs_list", { dir: "" }) as Array<{
-      path: string;
-      kind: string;
-      gitStatus?: string;
-    }>;
+    const working = worktreeIn("working");
+    const id = DEMO_WORKTREES[STORY.worktrees.indexOf(working)] ?? "";
+    const top = core.handle("fs_list", { ...ws(id), dir: "" }) as Array<{ path: string; gitStatus?: string }>;
     expect(top.map((e) => e.path)).toEqual([
       "src",
       "tests",
@@ -193,50 +239,50 @@ describe("browser demo Files tab (F-CD-19)", () => {
       "vite.config.ts",
     ]);
     expect(top.find((e) => e.path === "src")?.gitStatus).toBe("modified");
-    const checkout = core.handle("fs_list", { dir: "src/checkout" }) as Array<{
-      path: string;
-      gitStatus?: string;
-    }>;
-    expect(checkout.find((e) => e.path === "src/checkout/redirect.ts")?.gitStatus).toBe("modified");
-    const file = core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as {
-      text: string;
-      hash: string;
-    };
-    expect(file.text).toContain("export function nextStep");
-    core.handle("fs_write", { path: "src/checkout/redirect.ts", text: "edited\n", expectedHash: file.hash });
-    expect((core.handle("fs_read", { path: "src/checkout/redirect.ts" }) as { text: string }).text).toBe(
-      "edited\n",
-    );
+    const cart = core.handle("fs_list", { ...ws(id), dir: "src/cart" }) as Array<{ path: string; gitStatus?: string }>;
+    expect(cart.find((e) => e.path === "src/cart/coupon.ts")?.gitStatus).toBe("modified");
+    expect(cart.find((e) => e.path === "src/cart/rules.ts")?.gitStatus).toBe("untracked");
+    // shop itself is on main, as committed: no rules.ts, and nothing changed.
+    const main = core.handle("fs_list", { ...ws(shopId()), dir: "src/cart" }) as Array<{ path: string; gitStatus?: string }>;
+    expect(main.map((e) => e.path)).not.toContain("src/cart/rules.ts");
+    expect(main.every((e) => e.gitStatus === undefined)).toBe(true);
+    const file = core.handle("fs_read", { ...ws(id), path: "src/cart/coupon.ts" }) as { text: string; hash: string };
+    expect(file.text).toBe(changedIn(working.slug)["src/cart/coupon.ts"]);
+    core.handle("fs_write", { ...ws(id), path: "src/cart/coupon.ts", text: "edited\n", expectedHash: file.hash });
+    expect((core.handle("fs_read", { ...ws(id), path: "src/cart/coupon.ts" }) as { text: string }).text).toBe("edited\n");
     expect(() =>
-      core?.handle("fs_write", { path: "src/checkout/redirect.ts", text: "x", expectedHash: file.hash }),
+      core?.handle("fs_write", { ...ws(id), path: "src/cart/coupon.ts", text: "x", expectedHash: file.hash }),
     ).toThrow();
-    expect(() => core?.handle("fs_delete", { path: "README.md" })).toThrow();
+    expect(() => core?.handle("fs_delete", { ...ws(id), path: "README.md" })).toThrow();
   });
 
-  it("F-CD-20 its Changes view says what the terminal's git status says, plus page edits, and runs no git", () => {
+  it("F-CD-20 each checkout's Changes view: its branch, its agent's uncommitted edits, page edits, and no git", () => {
     core = new DemoCore(0);
-    const terminal = run("git status")?.join("\n") ?? "";
-    const before = core.handle("git_status", {}) as GitPanel;
-    expect(before.status.branch).toBe("main");
-    expect(terminal).toContain("On branch main");
-    for (const f of before.status.unstaged) expect(terminal).toContain(f.path);
-    expect(before.status.unstaged.map((f) => f.path)).toEqual([
-      "src/checkout/redirect.test.ts",
-      "src/checkout/redirect.ts",
+    for (const [i, w] of STORY.worktrees.entries()) {
+      const panel = (core.handle("git_status", ws(DEMO_WORKTREES[i] ?? "")) as GitPanel).status;
+      expect(panel.branch, w.slug).toBe(branchOf(w.slug));
+      // A finished agent's work is committed; a working or waiting one's isn't yet.
+      expect(panel.unstaged.map((f) => f.path).sort(), w.slug).toEqual(
+        w.state === "done" ? [] : editsOf(w).map((e) => e.edit).sort(),
+      );
+    }
+    const waiting = worktreeIn("waiting");
+    const id = DEMO_WORKTREES[STORY.worktrees.indexOf(waiting)] ?? "";
+    const diff = core.handle("git_diff", { ...ws(id), path: "src/search/results.tsx", staged: false }) as FileDiff;
+    expect([diff.additions, diff.deletions]).toEqual([22, 6]);
+    expect((core.handle("git_status", ws(shopId())) as GitPanel).status).toMatchObject({ branch: STORY.base, unstaged: [] });
+    const readme = core.handle("fs_read", { ...ws(shopId()), path: "README.md" }) as { hash: string };
+    core.handle("fs_write", { ...ws(shopId()), path: "README.md", text: "# shop, edited\n", expectedHash: readme.hash });
+    const after = core.handle("git_status", ws(shopId())) as GitPanel;
+    expect(after.status.unstaged).toEqual([{ path: "README.md", change: "modified" }]);
+    expect((core.handle("git_diff", { ...ws(shopId()), path: "README.md", staged: false }) as FileDiff).patch).toContain(
+      "+# shop, edited",
+    );
+    expect((core.handle("git_branches", ws(id)) as Array<{ name: string; current: boolean }>).filter((b) => b.current)).toEqual([
+      expect.objectContaining({ name: branchOf(waiting.slug) }),
     ]);
-    const diff = core.handle("git_diff", { path: "src/checkout/redirect.ts", staged: false }) as {
-      patch: string;
-    };
-    expect(diff.patch).toContain("Don't send the login page back to itself.");
-    const readme = core.handle("fs_read", { path: "README.md" }) as { hash: string };
-    core.handle("fs_write", { path: "README.md", text: "# shop, edited\n", expectedHash: readme.hash });
-    const after = core.handle("git_status", {}) as GitPanel;
-    expect(after.status.unstaged.map((f) => f.path)).toContain("README.md");
-    expect(
-      (core.handle("git_diff", { path: "README.md", staged: false }) as { patch: string }).patch,
-    ).toContain("+# shop, edited");
     for (const cmd of ["git_stage", "git_commit", "git_push", "git_switch"]) {
-      expect(() => core?.handle(cmd, { paths: ["README.md"] })).toThrow();
+      expect(() => core?.handle(cmd, { ...ws(shopId()), paths: ["README.md"] })).toThrow();
     }
   });
 });
@@ -518,44 +564,22 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     }
   });
 
-  it("demo the sample world: three workspaces, Claude Code, Codex and Gemini CLI panes, and the Dashboard's states", () => {
+  it("demo the shell's help names what it answers, and clear clears", () => {
     core = new DemoCore(0);
-    const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];
-    expect(workspaces.map((w) => w.name)).toEqual(["shop", "api", "docs-site"]);
-    const panes = core.handle("pane_list", {}) as PaneRecord[];
-    expect(
-      panes
-        .filter((p) => p.kind === "agent")
-        .map((p) => p.engineId)
-        .sort(),
-    ).toEqual(["claude", "codex", "gemini"]);
-    // No live-pane limit with no account (D-2900); the sample world starts four.
-    expect(FREE.panes).toBeNull();
-    expect(panes.length).toBe(4);
-    for (const w of workspaces) {
-      const layouts = core.handle("layout_get", { workspaceId: w.id }) as TabLayout[];
-      expect(layouts.length, w.name).toBe(1);
-      // Each tab lists only its own panes.
-      const tabPanes = core.handle("pane_list", { tabId: layouts[0]?.tab.id }) as PaneRecord[];
-      expect(
-        tabPanes.every((p) => p.workspaceId === w.id),
-        w.name,
-      ).toBe(true);
-    }
-    expect((core.handle("pane_list", { tabId: "tb_demo" }) as PaneRecord[]).map((p) => p.id)).toEqual([
-      "pn_claude",
-      "pn_codex",
-      "pn_shell",
-    ]);
-    const states = new Set((core.handle("status_snapshot", {}) as DashboardItem[]).map((d) => d.status));
-    for (const s of ["working", "waiting", "done"] as const) expect(states.has(s), s).toBe(true);
-  });
-
-  it("demo the shell answers help, ls, pwd, git status, git diff, git log, npm test and clear", () => {
-    const help = run("help")?.join("\n") ?? "";
-    for (const c of ["ls", "pwd", "git status", "git diff", "git log", "npm test", "clear"])
-      expect(help).toContain(c);
-    expect(run("git diff")?.join("\n")).toContain("Don't send the login page back to itself.");
+    const lines: string[] = [];
+    core.handle("pty_spawn", { paneId: "pn_shell", channel: { onmessage: () => undefined } });
+    const said = (line: string) => core?.handle("pty_write", { paneId: "pn_shell", data: `${line}\r` });
+    // pty_write answers through the channel; the shell itself is checked above.
+    core.handle("pty_attach", {
+      paneId: "pn_shell",
+      channel: { onmessage: (f: Uint8Array) => lines.push(new TextDecoder().decode(decodeFrame(f).payload)) },
+    });
+    said("help");
+    const help = lines.join("");
+    for (const c of ["ls", "cat", "pwd", "git status", "git diff", "git log", "pnpm test", "clear"]) expect(help).toContain(c);
+    lines.length = 0;
+    said("clear");
+    expect(lines.join("")).toContain("\x1b[2J");
   });
 
   it("demo threads to read: a finished one, one switched to another engine, and a Plan-mode turn makes a plan version", async () => {
@@ -582,5 +606,74 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     const turn = c.handle("thread_implement_plan", { threadId: id, version: 1 }) as { turnId: string };
     expect(turn.turnId).toBeTruthy();
     c.handle("thread_stop", { threadId: id });
+  });
+});
+
+describe("D-2609 the demo's sample world is the story the site's scenes tell (D-1899)", () => {
+  const screenOf = async (c: DemoCore, paneId: string): Promise<string> => {
+    c.handle("pty_spawn", { paneId, channel: { onmessage: () => undefined } });
+    await tick();
+    const snap = c.handle("pty_attach", { paneId, channel: { onmessage: () => undefined } }) as { replay: string };
+    return new TextDecoder().decode(Uint8Array.from(atob(snap.replay), (ch) => ch.charCodeAt(0)));
+  };
+
+  it("D-2609 Code mode is shop and its three worktrees, each agent in its own worktree's tab, opening on the working one", () => {
+    core = new DemoCore(0);
+    const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];
+    const shop = workspaces.find((w) => w.name === STORY.repo);
+    expect(shop?.parentId).toBeNull();
+    // One repository and its worktrees, nothing else (D-1899).
+    expect(workspaces).toHaveLength(1 + STORY.worktrees.length);
+    const wts = workspaces.filter((w) => w.parentId === shop?.id);
+    expect(wts.map((w) => w.name)).toEqual(STORY.worktrees.map((w) => w.slug));
+    expect(wts.map((w) => w.laneBranch)).toEqual(STORY.worktrees.map((w) => branchOf(w.slug)));
+    expect(wts.every((w) => w.laneBase === STORY.base && w.root.startsWith(`${shop?.root}/.tandem/worktrees/`))).toBe(true);
+    const panes = core.handle("pane_list", {}) as PaneRecord[];
+    for (const w of STORY.worktrees) {
+      const ws = wts.find((x) => x.name === w.slug);
+      const agents = panes.filter((p) => p.kind === "agent" && p.workspaceId === ws?.id);
+      expect(agents.map((p) => p.engineId), w.slug).toEqual([w.engine]);
+      // A worktree's tab holds only its own panes: its agent shares no grid.
+      const layouts = core.handle("layout_get", { workspaceId: ws?.id }) as TabLayout[];
+      expect(layouts, w.slug).toHaveLength(1);
+      const tabPanes = core.handle("pane_list", { tabId: layouts[0]?.tab.id }) as PaneRecord[];
+      expect(tabPanes.every((p) => p.workspaceId === ws?.id), w.slug).toBe(true);
+    }
+    // The Dashboard's states are the story's.
+    const dash = core.handle("status_snapshot", {}) as DashboardItem[];
+    for (const w of STORY.worktrees) {
+      const pane = panes.find((p) => p.kind === "agent" && p.engineId === w.engine);
+      expect(dash.find((d) => d.key === `pane:${pane?.id}`)?.status, w.slug).toBe(w.state);
+    }
+    // It opens on the working agent's worktree; the coach points at the waiting one.
+    expect(DEMO_ACTIVE).toBe(wts.find((w) => w.name === worktreeIn("working").slug)?.id);
+    expect(DEMO_WAITING.workspaceId).toBe(wts.find((w) => w.name === worktreeIn("waiting").slug)?.id);
+    expect(DEMO_WAITING.branch).toBe(branchOf(worktreeIn("waiting").slug));
+  });
+
+  it("D-2609 each agent's terminal says what the story says it did; the waiting one asks to run its command", async () => {
+    core = new DemoCore(0);
+    const panes = core.handle("pane_list", {}) as PaneRecord[];
+    for (const w of STORY.worktrees) {
+      const pane = panes.find((p) => p.kind === "agent" && p.engineId === w.engine);
+      const screen = await screenOf(core, pane?.id ?? "");
+      expect(screen, w.slug).toContain(w.task);
+      for (const step of w.steps) {
+        const said = "read" in step ? step.read : "edit" in step ? step.edit : step.run;
+        expect(screen, `${w.slug}: ${said}`).toContain(said);
+        if ("edit" in step) expect(screen).toContain(`+${step.add} -${step.del}`);
+      }
+    }
+    expect(await screenOf(core, DEMO_WAITING.paneId)).toContain(worktreeIn("waiting").ask ?? "");
+  });
+
+  it("D-2609 the worktrees answer as the app does with no pull request, no overlap and no landing yet", () => {
+    core = new DemoCore(0);
+    const wts = (core.handle("workspace_list", {}) as WorkspaceSummary[]).filter((w) => w.parentId !== null);
+    for (const w of wts) {
+      expect(core.handle("lane_checks", { laneId: w.id })).toMatchObject({ laneId: w.id, state: "no_pr", pr: null, checks: [] });
+    }
+    expect(core.handle("lane_radar", { laneIds: wts.map((w) => w.id) })).toEqual([]);
+    expect(core.handle("merge_queue_get", { workspaceId: wts[0]?.parentId })).toBeNull();
   });
 });
