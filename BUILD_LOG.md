@@ -2900,7 +2900,15 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `plan` (4): the save beside a stalled worker; an answer folder is never one already there; it goes with its dropped future; the sweep takes a crash's folders and leaves recent ones.
     - Claude adapter: the two parsers agree; `v.9.9.9 2.1.310-rc.1` can't answer.
     - `paths`: a link to one of our folders is followed, and its folder made 0700.
-  - **Gate:** pending.
+  - **Gate:** passed on 08027389:
+    - 2,420 Rust tests (6 ignored) and 1,753 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 190, and protocol drift with 581 types (none added).
+    - E2E on 08027389, 14 specs and 39 tests, all passing, in this order:
+      - the specs whose `after` hooks changed: m10-1-teammates 4, m10-6-settings 4, m7-5-codex 2, m7-8-switch 1, m7-12-acp 4, m18-wt05 2, m18-free-offline 2;
+      - then m18-tk07 3, which checks that Claude Code reviews;
+      - m18-tk08 1, which checks the answer session's folder is gone;
+      - m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
