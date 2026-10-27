@@ -8,4 +8,9 @@ export type PlanLaunch = {
 /**
  * Why no run can start here (F-TK-04's limits), if none can.
  */
-blocked: string | null, runs: Array<PlanRun>, };
+blocked: string | null, runs: Array<PlanRun>, 
+/**
+ * Lead's engine can answer its runs' questions with every tool off
+ * (F-TK-08, D-2838): otherwise each question comes to you.
+ */
+leadAnswers: boolean, };

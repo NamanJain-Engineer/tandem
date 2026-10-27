@@ -191,12 +191,7 @@ impl ExecHost for AppExecHost {
         let rows = tandem_store::repo::threads::all_messages(&self.store, thread)
             .await
             .ok()?;
-        rows.iter().rev().find_map(|r| {
-            match serde_json::from_str::<ThreadEvent>(&r.payload_json).ok()? {
-                ThreadEvent::Assistant { markdown } => Some(markdown),
-                _ => None,
-            }
-        })
+        latest_reply(&rows)
     }
 
     async fn stop(&self, thread: &ThreadId) {
@@ -237,9 +232,88 @@ impl ExecHost for AppExecHost {
     }
 }
 
+/// The thread's latest turn's reply: its last assistant block, or none when
+/// that turn wrote none. An earlier turn's reply, such as a question
+/// already answered, is never read again (F-TK-08).
+pub fn latest_reply(rows: &[tandem_store::repo::threads::MessageRow]) -> Option<String> {
+    let latest = rows.last()?.turn_id.clone();
+    rows.iter()
+        .rev()
+        .take_while(|r| r.turn_id == latest)
+        .find_map(
+            |r| match serde_json::from_str::<ThreadEvent>(&r.payload_json).ok()? {
+                ThreadEvent::Assistant { markdown } => Some(markdown),
+                _ => None,
+            },
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_tk_08_2_a_run_reads_only_its_latest_turns_reply() {
+        use tandem_core::ids::TurnId;
+        use tandem_store::repo::threads::MessageRow;
+        let thread = ThreadId::new();
+        let row = |id: i64, turn: &TurnId, event: ThreadEvent| MessageRow {
+            id,
+            thread_id: thread.clone(),
+            turn_id: turn.clone(),
+            seq: id as u64,
+            kind: event.tag().to_string(),
+            payload_json: serde_json::to_string(&event).expect("json"),
+            created_at: 0,
+        };
+        let (asked, answered) = (TurnId::new(), TurnId::new());
+        let mut rows = vec![
+            row(
+                1,
+                &asked,
+                ThreadEvent::User {
+                    text: "Do the task".into(),
+                    attachments: Vec::new(),
+                },
+            ),
+            row(
+                2,
+                &asked,
+                ThreadEvent::Assistant {
+                    markdown: "QUESTION-ab12cd34: Vitest?".into(),
+                },
+            ),
+            row(
+                3,
+                &answered,
+                ThreadEvent::User {
+                    text: "Vitest.".into(),
+                    attachments: Vec::new(),
+                },
+            ),
+            row(
+                4,
+                &answered,
+                ThreadEvent::tool(
+                    "t1",
+                    tandem_engines::events::ToolVerb::Bash,
+                    "npm test",
+                    tandem_engines::events::ToolStatus::Ok,
+                ),
+            ),
+        ];
+        // The answered turn wrote no reply: the question isn't read again.
+        assert_eq!(latest_reply(&rows), None);
+        rows.push(row(
+            5,
+            &answered,
+            ThreadEvent::Assistant {
+                markdown: "Done.".into(),
+            },
+        ));
+        assert_eq!(latest_reply(&rows).as_deref(), Some("Done."));
+        assert_eq!(latest_reply(&[]), None);
+    }
     use crate::services::plugins::parse_origin;
     use tandem_store::repo::held_drafts::OriginKind;
 

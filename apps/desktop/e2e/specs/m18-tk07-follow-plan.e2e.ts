@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, relaunch, userHome } from "../support/app";
+import { addFolder, freshOffline, home, invoke, mod, relaunch, userHome, waitFor } from "../support/app";
 import { newWorktree } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -87,11 +87,13 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
       args: { kind: "thread", workspaceId: lane.id, engineId: "claude", access: "edits" },
     });
     await invoke("thread_send", { threadId: thread.id, text: "write notes.md=hello" });
-    const claim = await browser
-      .waitUntil(() => claims().find((c) => c.path === "notes.md") ?? false, { timeout: 30_000 })
-      .catch(() => {
-        throw new Error(`notes.md wasn't claimed: ${JSON.stringify(claims())}`);
-      });
+    const claimed = await waitFor(
+      claims,
+      (cs) => cs.some((c) => c.path === "notes.md"),
+      "notes.md wasn't claimed",
+      { timeout: 30_000 },
+    );
+    const claim = claimed.find((c) => c.path === "notes.md")!;
     expect(claim.inferred).toBe(true);
     expect(claim.folder.endsWith("/.tandem/worktrees/notes")).toBe(true);
   });
@@ -106,23 +108,24 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     expect((await rows()).map((r) => r.state)).toEqual(["none", "none"]);
     await $('[data-testid="plan-execute"]').click();
     await $('[data-testid="plan-confirm-run"]').waitForClickable({ timeout: 10_000 });
+    // Claude Code reviews both runs, the one chat engine installed: a fake
+    // engine another spec left installed would review them instead.
+    const reviewers = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('[data-testid="plan-launch-run"]')).map(
+        (r) => r.dataset.reviewEngine ?? "",
+      ),
+    );
+    expect(reviewers).toEqual(["claude", "claude"]);
     await $('[data-testid="plan-confirm-run"]').click();
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
 
-    // The plan follows each run to in review, approved by the review. The
-    // message names the rows the last check saw, not the first.
-    let seen: Array<{ state: string; verdict: string }> = [];
-    await browser
-      .waitUntil(
-        async () => {
-          seen = await rows();
-          return seen.every((r) => r.state === "in_review" && r.verdict === "approve");
-        },
-        { timeout: 180_000 },
-      )
-      .catch(() => {
-        throw new Error(`the runs didn't reach Approve: ${JSON.stringify(seen)}`);
-      });
+    // The plan follows each run to in review, approved by the review.
+    await waitFor(
+      rows,
+      (rs) => rs.length === 2 && rs.every((r) => r.state === "in_review" && r.verdict === "approve"),
+      "the runs didn't reach Approve",
+      { timeout: 180_000 },
+    );
     expect(await text('[data-testid="plan-summary"]')).toBe("2 approved");
 
     // Each run's worktree gets a commit, so it can land.

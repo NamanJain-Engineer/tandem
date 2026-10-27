@@ -41,6 +41,21 @@ pub fn installed(specs: &[EngineSpec], installed: impl Fn(&str) -> bool) -> Vec<
         .collect()
 }
 
+/// Every instructions file the registry names, folders left out, in
+/// registry order without repeats: what Lead reads to answer a plan run's
+/// question (F-TK-08).
+pub fn file_names(specs: &[EngineSpec]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for i in specs.iter().filter_map(|s| s.instructions.as_ref()) {
+        for f in i.files.iter().chain(i.fallback.iter()) {
+            if !f.ends_with('/') && !out.contains(f) {
+                out.push(f.clone());
+            }
+        }
+    }
+    out
+}
+
 /// Where a workspace's instructions live: its repository's main checkout,
 /// or the folder itself when it isn't a repository.
 pub fn root_of(ws: &Workspace) -> Result<PathBuf, IpcError> {
@@ -61,6 +76,20 @@ pub fn root_of(ws: &Workspace) -> Result<PathBuf, IpcError> {
 mod tests {
     use super::*;
     use tandem_engines::registry::EngineRegistry;
+
+    #[test]
+    fn f_tk_08_1_lead_reads_every_instructions_file_the_registry_names_once() {
+        let names = file_names(EngineRegistry::bundled().all());
+        assert_eq!(
+            names[..2],
+            ["CLAUDE.md".to_string(), ".claude/CLAUDE.md".to_string()]
+        );
+        for n in ["AGENTS.md", "GEMINI.md", ".github/copilot-instructions.md"] {
+            assert_eq!(names.iter().filter(|x| *x == n).count(), 1, "{n}");
+        }
+        // Folders aren't files to read.
+        assert!(names.iter().all(|n| !n.ends_with('/')), "{names:?}");
+    }
 
     #[test]
     fn f_en_07_installed_engines_carry_their_registry_rules_and_the_rest_are_unknown() {

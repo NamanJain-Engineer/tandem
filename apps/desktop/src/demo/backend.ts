@@ -1326,6 +1326,8 @@ export class DemoCore {
       case "plan_prepare":
         return this.plans.prepare(String(args?.id ?? ""));
       case "plan_execute":
+      case "plan_supervise":
+      case "plan_answer":
         return this.plans.execute();
       case "plan_discard":
         return this.plans.discard(String(args?.id ?? ""));

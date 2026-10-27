@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshUser, home, invoke, mod } from "../support/app";
+import { addFolder, freshUser, home, invoke, mod, waitFor } from "../support/app";
 import { expectNoSeriousA11yViolations } from "../support/axe";
 
 const GIT_ENV = {
@@ -54,19 +54,15 @@ async function attemptOf(id: string): Promise<Attempt> {
 }
 
 async function untilState(id: string, states: string[], timeout = 60_000): Promise<Attempt> {
-  let last: Attempt | null = null;
-  await browser.waitUntil(
-    async () => {
-      last = await attemptOf(id);
-      return states.includes(last.state);
-    },
+  return waitFor(
+    () => attemptOf(id),
+    (a) => states.includes(a.state),
+    `attempt never reached ${states.join("/")}`,
     {
       timeout,
       interval: 250,
-      timeoutMsg: `attempt never reached ${states.join("/")}: ${JSON.stringify(last)}`,
     },
   );
-  return last!;
 }
 
 /** Chat-engine spawns so far (Claude in stream-json mode). */

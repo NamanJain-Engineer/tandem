@@ -445,6 +445,7 @@ impl NightShiftService {
                         full_confirmed: run.full_confirmed,
                         review: run.review,
                         note: None,
+                        supervision: None,
                     };
                     let out = state.task_exec.execute(input).await;
                     let ended = state.clock.now_ms();

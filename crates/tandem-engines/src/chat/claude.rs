@@ -39,6 +39,54 @@ use crate::transcript::window_for;
 pub const PERMISSION_TOOL: &str = "mcp__tandem__tandem_approvals__request";
 /// Tools a Read-only or Plan-mode thread can't use at all.
 const NO_WRITES: &str = "Bash,Edit,Write,MultiEdit,NotebookEdit";
+/// The oldest Claude Code a session with every tool off runs on (F-TK-08,
+/// D-2838): the first Vibezeo checked to have `--tools ""`, `--safe-mode`,
+/// `--disable-slash-commands`, `--no-session-persistence` and
+/// `--permission-prompts none` (its `system/init` then lists no tool, MCP
+/// server, command or skill). An older or unknown one never answers.
+pub const TOOLS_OFF_MIN: (u64, u64, u64) = (2, 1, 310);
+/// Every built-in tool Claude Code has had, denied as a second layer under
+/// `--tools ""` (F-TK-08, D-2838): 2.1.310's own list and the older names.
+/// A name a version doesn't know is ignored.
+pub const ALL_TOOLS: &str = "Agent,AskUserQuestion,Bash,BashOutput,Config,CronCreate,CronDelete,CronList,Edit,EnterPlanMode,EnterWorktree,ExitPlanMode,ExitWorktree,Glob,Grep,KillBash,KillShell,LS,ListAgents,ListMcpResourcesTool,LSP,Monitor,MultiEdit,NotebookEdit,NotebookRead,PowerShell,REPL,Read,ReadMcpResourceTool,RemoteTrigger,ReportFindings,ScheduleWakeup,SendMessage,Skill,Sleep,SlashCommand,Task,TaskCreate,TaskGet,TaskList,TaskOutput,TaskStop,TaskUpdate,TeamCreate,TeamDelete,TodoRead,TodoWrite,ToolSearch,WebFetch,WebSearch,Workflow,Write";
+/// What a session with every tool off also runs with: no scheduled tasks,
+/// and no auto-memory to read or write.
+pub const TOOLS_OFF_ENV: &[(&str, &str)] = &[
+    ("CLAUDE_CODE_DISABLE_CRON", "1"),
+    ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+];
+
+/// A Claude Code at `version` can run a session with every tool off. A
+/// pre-release of [`TOOLS_OFF_MIN`] itself (`2.1.310-rc.1`) comes before
+/// it, so it can't; one of a later version can.
+pub fn tools_off_supported(version: Option<&str>) -> bool {
+    let Some(version) = version else {
+        return false;
+    };
+    match super::codex::protocol::parse_version(version) {
+        Some(v) if v == TOOLS_OFF_MIN => !pre_release(version),
+        Some(v) => v > TOOLS_OFF_MIN,
+        None => false,
+    }
+}
+
+/// Whether the first `x.y.z` in `version` has a pre-release after it
+/// (`-rc.1`); build metadata (`+5`) isn't one.
+fn pre_release(version: &str) -> bool {
+    let mut rest = version;
+    while let Some(start) = rest.find(|c: char| c.is_ascii_digit()) {
+        let run = &rest[start..];
+        let len = run
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(run.len());
+        let (number, after) = run.split_at(len);
+        if super::codex::protocol::parse_version(number).is_some() {
+            return after.starts_with('-');
+        }
+        rest = after;
+    }
+    false
+}
 const PROMPT_TOO_LONG_HINT: &str =
     "The conversation is too long. Start a new thread with a summary?";
 /// Tool input kept as the row's detail.
@@ -56,8 +104,46 @@ pub fn permissions(access: Access, mode: ThreadMode) -> (&'static str, Option<&'
 }
 
 /// The spawn arguments (F-TH-04 AC1/AC2: every spawn has
-/// `--setting-sources user` and `--strict-mcp-config`).
+/// `--setting-sources user` and `--strict-mcp-config`). With `tools_off`
+/// (F-TK-08, D-2838): no built-in tool (`--tools ""`, with every one also
+/// denied), no MCP server (strict, with no config), no customization
+/// (`--safe-mode`: CLAUDE.md, skills, plugins, hooks, output styles), no
+/// commands, nothing saved to resume, `dontAsk` with nobody to ask, and no
+/// briefing or session to resume.
 pub fn args(req: &ChatStart) -> Vec<OsString> {
+    if req.tools_off {
+        let mut a: Vec<OsString> = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--setting-sources",
+            "user",
+            "--strict-mcp-config",
+            "--safe-mode",
+            "--tools",
+            "",
+            "--disallowedTools",
+            ALL_TOOLS,
+            "--disable-slash-commands",
+            "--no-session-persistence",
+            "--permission-mode",
+            "dontAsk",
+            "--permission-prompts",
+            "none",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        if let Some(model) = &req.model {
+            a.push("--model".into());
+            a.push(model.into());
+        }
+        return a;
+    }
     let mut a: Vec<OsString> = [
         "-p",
         "--output-format",
@@ -140,6 +226,12 @@ pub enum Parsed {
         request_id: String,
         tool_name: String,
         input: Value,
+    },
+    /// A tool block started streaming in a session with every tool off
+    /// (F-TK-08): before the tool can run.
+    ToolStart {
+        id: String,
+        name: String,
     },
 }
 
@@ -284,6 +376,8 @@ pub struct ClaudeParser {
     model: String,
     /// Tool id → (name, summary, detail, edited files), for its result row.
     tools: HashMap<String, ToolCall>,
+    /// Every tool is off: a tool block starting is reported at once.
+    tools_off: bool,
 }
 
 impl ClaudeParser {
@@ -294,7 +388,15 @@ impl ClaudeParser {
             announce: !resumed,
             model: String::new(),
             tools: HashMap::new(),
+            tools_off: false,
         }
+    }
+
+    /// A parser for a session with every tool off (F-TK-08): any block
+    /// but text or thinking starting is [`Parsed::ToolStart`].
+    pub fn tools_off(mut self) -> Self {
+        self.tools_off = true;
+        self
     }
 
     pub fn line(&mut self, line: &str, now: DateTime<FixedOffset>) -> Vec<Parsed> {
@@ -368,6 +470,21 @@ impl ClaudeParser {
 
     fn stream(&mut self, v: &Value) -> Vec<Parsed> {
         let ev = &v["event"];
+        if self.tools_off && ev.get("type").and_then(Value::as_str) == Some("content_block_start") {
+            let block = &ev["content_block"];
+            let kind = block.get("type").and_then(Value::as_str).unwrap_or("");
+            if !matches!(kind, "text" | "thinking" | "redacted_thinking") {
+                let name = block.get("name").and_then(Value::as_str).unwrap_or(kind);
+                return vec![Parsed::ToolStart {
+                    id: block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("tool")
+                        .to_string(),
+                    name: name.to_string(),
+                }];
+            }
+        }
         if ev.get("type").and_then(Value::as_str) != Some("content_block_delta") {
             return Vec::new();
         }
@@ -655,18 +772,39 @@ impl ChatAdapter for ClaudeAdapter {
         "claude"
     }
 
+    fn answers_without_tools(&self, version: Option<&str>) -> bool {
+        tools_off_supported(version)
+    }
+
     async fn start(
         &self,
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        if req.tools_off && !tools_off_supported(req.engine_version.as_deref()) {
+            let (a, b, c) = TOOLS_OFF_MIN;
+            return Err(AdapterError::Unsupported(format!(
+                "Claude Code {} can't run with every tool off: {a}.{b}.{c} or newer can",
+                req.engine_version
+                    .as_deref()
+                    .unwrap_or("of an unknown version")
+            )));
+        }
         // Status hooks are for panes; a thread's process never reports there.
-        let env: Vec<(String, String)> = req
+        let mut env: Vec<(String, String)> = req
             .env
             .iter()
             .filter(|(k, _)| !k.starts_with("TANDEM_STATUS"))
             .cloned()
             .collect();
+        if req.tools_off {
+            env.retain(|(k, _)| !TOOLS_OFF_ENV.iter().any(|(off, _)| off == k));
+            env.extend(
+                TOOLS_OFF_ENV
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string())),
+            );
+        }
         let spec = ProcessSpec::new(req.program.clone(), args(&req), env, req.cwd.clone());
         let spec = super::Relocate::apply(req.relocate.as_ref(), spec);
         let (process, lines) = ChatProcess::spawn(spec)?;
@@ -677,12 +815,18 @@ impl ChatAdapter for ClaudeAdapter {
             acked: Arc::new(Notify::new()),
             asks: Arc::new(Mutex::new(HashMap::new())),
             cwd: req.cwd.clone(),
+            tools_off: req.tools_off,
         };
         let parser = ClaudeParser::new(
             req.cwd.clone(),
             &self.limit_patterns,
             req.resume_session.is_some(),
         );
+        let parser = if req.tools_off {
+            parser.tools_off()
+        } else {
+            parser
+        };
         tokio::spawn(session.clone().read(parser, lines, events));
         Ok(Box::new(session))
     }
@@ -698,6 +842,8 @@ struct ClaudeSession {
     /// (Claude's request id, the tool input to hand back on Allow).
     asks: Arc<Mutex<HashMap<String, (String, Value)>>>,
     cwd: PathBuf,
+    /// Every tool is off (F-TK-08): a tool starting kills the process.
+    tools_off: bool,
 }
 
 impl ClaudeSession {
@@ -719,7 +865,28 @@ impl ClaudeSession {
                 })],
             };
             for p in parsed {
+                // With every tool off, a tool starting, asked about or
+                // reported ends the process before the tool can do anything
+                // more; the row still goes out, so the session ends with no
+                // answer (F-TK-08).
+                let tool = matches!(
+                    &p,
+                    Parsed::ToolStart { .. }
+                        | Parsed::Permission { .. }
+                        | Parsed::Event(ThreadEvent::Tool { .. })
+                );
+                if self.tools_off && tool {
+                    self.process.kill_tree().await;
+                }
                 match p {
+                    Parsed::ToolStart { id, name } => {
+                        let turn = lock(&self.turn).clone();
+                        if let Some(turn_id) = turn {
+                            let event =
+                                ThreadEvent::tool(&id, ToolVerb::Other, &name, ToolStatus::Running);
+                            let _ = events.send(AdapterEvent::Event { turn_id, event }).await;
+                        }
+                    }
                     Parsed::Ack => self.acked.notify_waiters(),
                     Parsed::Permission {
                         request_id,
