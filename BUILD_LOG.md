@@ -2909,6 +2909,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - then m18-tk07 3, which checks that Claude Code reviews;
       - m18-tk08 1, which checks the answer session's folder is gone;
       - m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2.
+- [x] F-TK-01, the tracker's first read waits for its listener too, as the coordinator asked after the review of 7c6a4f1b. `load()` had the same window as `loadAttempts`: a `tasks:changed` before the listener was up was lost until the next change. It now awaits the listener before reading, and a listener that can't start fails the read with its reason, after which Retry listens again. Tests in `stores/tasks.test.ts` (2 new TypeScript; both fail on the old store). ARCHITECTURE §9.6.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
