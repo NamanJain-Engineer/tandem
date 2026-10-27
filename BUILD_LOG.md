@@ -2910,6 +2910,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - m18-tk08 1, which checks the answer session's folder is gone;
       - m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2.
 - [x] F-TK-01, the tracker's first read waits for its listener too, as the coordinator asked after the review of 7c6a4f1b. `load()` had the same window as `loadAttempts`: a `tasks:changed` before the listener was up was lost until the next change. It now awaits the listener before reading, and a listener that can't start fails the read with its reason, after which Retry listens again. Tests in `stores/tasks.test.ts` (2 new TypeScript; both fail on the old store). ARCHITECTURE §9.6.
+- [x] F-TK-08, the re-review's three later items (the coordinator assigned them for chain27; D-3020 on).
+  - **Only the runs a plan started are its own (D-3020).** After a restart, `supervision_for` found a run's code by its task, so a run you started yourself of a plan's task got Lead's answers too.
+    - The runner now tells the plan each run it starts with the plan's code (`QuestionEvent::Started`, Execute all's and Retry's), and the plan keeps the attempt (`runs` in `plans.json`).
+    - The lookup goes by attempt: a run you start of the same task has no code, and its questions come to you.
+    - Tests: the runner reports Execute all's run and not yours, and after a restart Retry of yours has no code while Retry of the plan's does and is kept again; the plan keeps its runs through a restart, ignores a plan that's gone, and forgets them with Remove plan. The question tests now count questions, not events.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3067,6 +3072,10 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.
   - The instructions files are read by size first, without replace refs, so a ref a run writes can't swap their text and a huge file is never read whole.
   - Amended by the re-review (N6): a run's first message and its review's are read the same way, with ＠ for @ in the task's text, its comments and the diff. Checked on Claude Code 2.1.310: `@/path` attaches the file even with every tool off, and `＠/path` doesn't.
+- D-3020: A plan's runs are the ones it started, kept by attempt, not by task (F-TK-08, the re-review's later item).
+  - Every run started with a plan's code, by Execute all or a Retry of one, tells its plan (`QuestionEvent::Started`), and the plan keeps the attempt in `plans.json` (`runs`) before the run can ask.
+  - After a restart, a run's code comes only from the plan that kept it. A run you start yourself of a plan's task is yours: its questions come to you, never to Lead.
+  - Not a column on the attempt: `plans.json` already holds the codes, and a migration in this slice could meet another branch's in chain27.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

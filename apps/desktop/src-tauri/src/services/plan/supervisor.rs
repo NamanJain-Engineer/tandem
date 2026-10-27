@@ -447,6 +447,16 @@ impl PlanService {
     /// Lead answers or you do, in the background, or one it stopped
     /// waiting for.
     pub fn on_question_event(self: &Arc<Self>, event: QuestionEvent) {
+        // Kept before the run can ask anything, and saved at once.
+        if let QuestionEvent::Started {
+            plan_id,
+            attempt_id,
+            ..
+        } = &event
+        {
+            self.keep_run(plan_id, attempt_id);
+            return;
+        }
         let me = self.clone();
         tokio::spawn(async move {
             match event {
@@ -455,8 +465,20 @@ impl PlanService {
                     plan_id,
                     question_id,
                 } => me.close(&plan_id, &question_id),
+                QuestionEvent::Started { .. } => {}
             }
         });
+    }
+
+    /// A run started with this plan's code is the plan's own (F-TK-08).
+    fn keep_run(&self, plan_id: &str, attempt: &AttemptId) {
+        let added = self
+            .lock()
+            .get_mut(plan_id)
+            .is_some_and(|e| e.runs.insert(attempt.as_str().to_string()));
+        if added {
+            self.save();
+        }
     }
 
     /// Keeps the question on its plan, then Lead answers it or it comes to
@@ -953,15 +975,12 @@ impl PlanService {
         Ok(view)
     }
 
-    /// The question code of a task's plan run, for a run this launch didn't
-    /// start (F-TK-08): from the newest kept plan whose Execute all queued
-    /// the task.
-    pub fn supervision_for(&self, issue_id: &str) -> Option<Supervision> {
+    /// The question code of a run this launch didn't start (F-TK-08): its
+    /// plan's, when a kept plan started it (Execute all, or a Retry of its
+    /// run). A run you started yourself of the same task has none.
+    pub fn supervision_for(&self, attempt: &AttemptId, issue_id: &str) -> Option<Supervision> {
         let plans = self.lock();
-        let e = plans
-            .values()
-            .filter(|e| e.view.queued.iter().any(|i| i == issue_id))
-            .max_by_key(|e| e.view.created_at)?;
+        let e = plans.values().find(|e| e.runs.contains(attempt.as_str()))?;
         e.codes.get(issue_id).map(|code| Supervision {
             plan_id: e.view.id.clone(),
             nonce: code.clone(),

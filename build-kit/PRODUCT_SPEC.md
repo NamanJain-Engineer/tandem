@@ -2105,7 +2105,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **On by default, and stoppable.**
   - Execute all's check has "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription", on by default.
   - The plan has the same switch whenever a run can ask: while Execute all starts, once it has, and back at Created after a start that stopped partway. Turning it off stops Lead's answers at once: Lead's session stops, an answer it's still writing is dropped, not sent, and every later question comes to you. Execute all again starts from the switch as you left it, and turning answers off there works the same way.
-  - After a restart, a run Resume or Retry starts again is still its plan's.
+  - After a restart, a run Resume or Retry starts again is still its plan's. A run you start yourself, even of a plan's task, is yours: its questions come to you.
 - **Shown.** Each task's row in the plan counts "Lead answered N", and each answer is on the task and in the run's thread.
 - **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
 

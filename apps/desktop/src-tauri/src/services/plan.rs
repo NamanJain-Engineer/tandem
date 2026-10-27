@@ -5,7 +5,7 @@
 //! (F-TK-01) and Execute all, once you've seen what it starts, runs them
 //! through F-TK-04's queue (D-2430).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -556,6 +556,10 @@ struct Entry {
     /// Each run's question code, by task (F-TK-08).
     #[serde(default)]
     codes: HashMap<String, String>,
+    /// The runs it started (Execute all, or a Retry of one of them): only
+    /// they are its own after a restart, not a run you start of its task.
+    #[serde(default)]
+    runs: BTreeSet<String>,
 }
 
 /// `plans.json` (F-TK-07): every plan and its reply code, so a plan
@@ -720,6 +724,7 @@ impl PlanService {
                     nonce: e.nonce.clone(),
                     launch: None,
                     codes: e.codes.clone(),
+                    runs: e.runs.clone(),
                 })
                 .collect(),
         };
@@ -846,6 +851,7 @@ impl PlanService {
                 nonce,
                 launch: None,
                 codes: HashMap::new(),
+                runs: BTreeSet::new(),
             },
         );
         tracing::info!(code = "plan.started", "Lead is planning");
@@ -3420,6 +3426,12 @@ mod tests {
     async fn f_tk_08_5_a_question_waiting_for_lead_when_vibezeo_closed_comes_to_you() {
         let (dir, fake, plans) = rig_with(Vec::new(), Lead::Still);
         let view = running(&fake, &plans, true).await;
+        // The runner says which run Execute all started.
+        plans.on_question_event(QuestionEvent::Started {
+            plan_id: view.id.clone(),
+            attempt_id: AttemptId::from_db("at_1".to_string()),
+            issue_id: "TAN-1".into(),
+        });
         plans.on_question_event(QuestionEvent::Asked(asks(
             &view,
             "TAN-1",
@@ -3446,13 +3458,19 @@ mod tests {
             fake2.notified.lock().expect("l").len() == 1
         })
         .await;
-        // A run Resume or Retry starts again is still its plan's.
+        // A run Resume or Retry starts again is still its plan's; a run you
+        // started yourself of the same task isn't.
         let code = fake.executed.lock().expect("l")[0]
             .supervision
             .clone()
             .expect("code");
-        assert_eq!(after.supervision_for("TAN-1"), Some(code));
-        assert_eq!(after.supervision_for("TAN-9"), None);
+        let (ours, yours) = (
+            AttemptId::from_db("at_1".to_string()),
+            AttemptId::from_db("at_yours".to_string()),
+        );
+        assert_eq!(after.supervision_for(&ours, "TAN-1"), Some(code));
+        assert_eq!(after.supervision_for(&yours, "TAN-1"), None);
+        assert_eq!(after.supervision_for(&ours, "TAN-9"), None);
         // Your answer can still restart the run's session.
         after
             .answer(&view.id, &q.id, "Tabs.".into())
@@ -3619,5 +3637,51 @@ mod tests {
         // No answers folder at all is fine.
         sweep_answer_folders(&run.path().join("nowhere"), Duration::ZERO);
         assert_eq!(ANSWER_FOLDER_KEEP, Duration::from_secs(600));
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_5_a_plan_keeps_the_runs_it_started_through_a_restart() {
+        let (dir, fake, plans) = rig_with(Vec::new(), Lead::Still);
+        let view = running(&fake, &plans, true).await;
+        let started = |attempt: &str, issue: &str| QuestionEvent::Started {
+            plan_id: view.id.clone(),
+            attempt_id: AttemptId::from_db(attempt.to_string()),
+            issue_id: issue.into(),
+        };
+        plans.on_question_event(started("at_1", "TAN-1"));
+        plans.on_question_event(started("at_2", "TAN-2"));
+        // Told twice (a Retry of the same run can't be, but it does no harm).
+        plans.on_question_event(started("at_1", "TAN-1"));
+        // A plan that's gone keeps nothing.
+        plans.on_question_event(QuestionEvent::Started {
+            plan_id: "pl_gone".into(),
+            attempt_id: AttemptId::from_db("at_9".to_string()),
+            issue_id: "TAN-9".into(),
+        });
+        let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        let codes: Vec<Option<String>> = [("at_1", "TAN-1"), ("at_2", "TAN-2"), ("at_9", "TAN-9")]
+            .iter()
+            .map(|(a, i)| {
+                after
+                    .supervision_for(&AttemptId::from_db(a.to_string()), i)
+                    .map(|s| s.nonce)
+            })
+            .collect();
+        let executed = fake.executed.lock().expect("l").clone();
+        let code_of = |issue: &str| {
+            executed
+                .iter()
+                .find(|e| e.issue_id == issue)
+                .and_then(|e| e.supervision.clone())
+                .map(|s| s.nonce)
+        };
+        assert_eq!(codes, vec![code_of("TAN-1"), code_of("TAN-2"), None]);
+        assert!(codes[0].is_some() && codes[0] != codes[1]);
+        // Remove plan: its runs are nobody's.
+        after.discard(&view.id).expect("remove");
+        assert_eq!(
+            after.supervision_for(&AttemptId::from_db("at_1".to_string()), "TAN-1"),
+            None
+        );
     }
 }

@@ -1252,8 +1252,10 @@ pub fn run() {
                     let lookup = std::sync::Arc::downgrade(&plans);
                     state
                         .task_exec
-                        .set_supervision_lookup(std::sync::Arc::new(move |issue| {
-                            lookup.upgrade().and_then(|p| p.supervision_for(issue))
+                        .set_supervision_lookup(std::sync::Arc::new(move |attempt, issue| {
+                            lookup
+                                .upgrade()
+                                .and_then(|p| p.supervision_for(attempt, issue))
                         }));
                 }
                 tauri::async_runtime::spawn(async move { plans.resume() });
