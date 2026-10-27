@@ -8,4 +8,8 @@ export type AttemptView = { attempt: Attempt,
 /**
  * 1-based place in the queue while queued.
  */
-queuePosition: number | null, };
+queuePosition: number | null, 
+/**
+ * Running, and its session waits for your approval (F-TK-08).
+ */
+waiting: boolean, };

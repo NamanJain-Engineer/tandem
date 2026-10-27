@@ -14,6 +14,7 @@ import {
   split,
   waitForPaneText,
   waitForShell,
+  waitFor,
   waitForStatus,
 } from "../support/app";
 import { entitlement, testRoute, waitForEntitlement } from "../support/hosted";
@@ -48,15 +49,7 @@ async function rt<T = unknown>(path: string, body?: unknown): Promise<T> {
 const view = () => invoke<CallView>("conductor_state");
 
 async function until(ok: (v: CallView) => boolean, what: string, timeout = 20_000): Promise<CallView> {
-  let last: CallView | undefined;
-  await browser.waitUntil(
-    async () => {
-      last = await view();
-      return ok(last);
-    },
-    { timeout, interval: 200, timeoutMsg: `${what}: ${JSON.stringify(last)}` },
-  );
-  return last as CallView;
+  return waitFor(view, ok, what, { timeout, interval: 200 });
 }
 
 /** The user "says" something: the mock talker hands it to act. Returns the

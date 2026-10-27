@@ -47,6 +47,8 @@
     "allow-plan-create-tasks",
     "allow-plan-prepare",
     "allow-plan-execute",
+    "allow-plan-supervise",
+    "allow-plan-answer",
     "allow-plan-discard",
     "allow-task-attempts-list",
     "allow-task-attempt-stop",

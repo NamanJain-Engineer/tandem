@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { crc32, deflateSync } from "node:zlib";
-import { mod } from "./app";
+import { mod, waitFor } from "./app";
 
 /** Thread mode (Mod+3), with its composer showing. */
 export async function threadMode(): Promise<void> {
@@ -29,10 +29,12 @@ export async function assistantTexts(): Promise<string[]> {
 }
 
 export async function waitForAssistant(needle: string, timeout = 20_000): Promise<void> {
-  await browser.waitUntil(async () => (await assistantTexts()).some((t) => t.includes(needle)), {
-    timeout,
-    timeoutMsg: `no reply containing ${JSON.stringify(needle)}: ${JSON.stringify(await assistantTexts())}`,
-  });
+  await waitFor(
+    assistantTexts,
+    (texts) => texts.some((t) => t.includes(needle)),
+    `no reply containing ${JSON.stringify(needle)}`,
+    { timeout },
+  );
 }
 
 /** Rail rows: title and group. */

@@ -26,6 +26,7 @@ fn as_json(p: &Parsed) -> Value {
             tool_name,
             input,
         } => json!({"permission": request_id, "tool": tool_name, "input": input}),
+        Parsed::ToolStart { id, name } => json!({"tool_start": id, "name": name}),
     }
 }
 
@@ -108,6 +109,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
 }
 
@@ -115,6 +117,160 @@ fn flag<'a>(args: &'a [OsString], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|w| w[0] == name)
         .and_then(|w| w[1].to_str())
+}
+
+#[test]
+fn f_tk_08_1_an_answer_session_has_every_tool_off_and_no_mcp_server() {
+    // Even a request that carries a gateway config, the tasks server, a
+    // briefing and a session to resume gets none of them with tools off.
+    let mut req = start(Access::Full, ThreadMode::Act, true);
+    req.tools_off = true;
+    req.mcp_config = Some("/data/mcp/s.json".into());
+    req.stdio_servers = vec![crate::chat::StdioServer {
+        name: "tandem_tasks".into(),
+        command: "/bin/tasks".into(),
+        args: Vec::new(),
+        env_vars: Vec::new(),
+    }];
+    req.briefing = Some("/data/briefings/t.md".into());
+    req.resume_session = Some("sess-1".into());
+    req.model = Some("opus".into());
+    let a = args(&req);
+    // No built-in tool at all, and nobody to ask for one.
+    assert_eq!(flag(&a, "--tools"), Some(""));
+    assert_eq!(flag(&a, "--permission-mode"), Some("dontAsk"));
+    assert_eq!(flag(&a, "--permission-prompts"), Some("none"));
+    for on in [
+        "--safe-mode",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+    ] {
+        assert!(a.iter().any(|x| x == on), "{on}");
+    }
+    // Every tool is denied too, 2.1.310's newer ones among them.
+    let off: Vec<&str> = flag(&a, "--disallowedTools")
+        .expect("disallowed")
+        .split(',')
+        .collect();
+    for tool in [
+        "Read",
+        "Glob",
+        "Grep",
+        "LS",
+        "WebFetch",
+        "WebSearch",
+        "Bash",
+        "PowerShell",
+        "Monitor",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "ScheduleWakeup",
+        "RemoteTrigger",
+        "ToolSearch",
+        "SendMessage",
+        "ListAgents",
+        "TeamCreate",
+        "Workflow",
+        "REPL",
+        "Config",
+        "EnterWorktree",
+        "ExitWorktree",
+        "TaskCreate",
+        "TaskStop",
+        "Edit",
+        "Write",
+        "MultiEdit",
+        "NotebookEdit",
+        "Task",
+        "Agent",
+        "TodoWrite",
+        "Skill",
+        "SlashCommand",
+    ] {
+        assert!(off.contains(&tool), "{tool}");
+    }
+    assert_eq!(flag(&a, "--setting-sources"), Some("user"));
+    for gone in [
+        "--mcp-config",
+        "--permission-prompt-tool",
+        "--append-system-prompt-file",
+        "--resume",
+    ] {
+        assert!(!a.iter().any(|x| x == gone), "{gone}");
+    }
+    assert_eq!(flag(&a, "--model"), Some("opus"));
+    let claude = ClaudeAdapter::new(Vec::new());
+    assert!(claude.answers_without_tools(Some("2.1.310")));
+    assert!(claude.answers_without_tools(Some("2.2.0 (Claude Code)")));
+    for old in [None, Some("2.1.309"), Some("1.9.999"), Some("garbled")] {
+        assert!(!claude.answers_without_tools(old), "{old:?}");
+    }
+}
+
+#[test]
+fn f_tk_08_1_a_pre_release_of_2_1_310_cant_answer_with_every_tool_off() {
+    let claude = ClaudeAdapter::new(Vec::new());
+    for early in [
+        "2.1.310-rc.1",
+        "2.1.310-rc.1 (Claude Code)",
+        "claude 2.1.310-beta",
+    ] {
+        assert!(!claude.answers_without_tools(Some(early)), "{early}");
+    }
+    for ok in [
+        "2.1.310 (Claude Code)",
+        "2.1.310+build.5",
+        "2.1.311-rc.1",
+        "claude 2.1.310",
+    ] {
+        assert!(claude.answers_without_tools(Some(ok)), "{ok}");
+    }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_a_claude_too_old_for_every_tool_off_is_refused_before_it_starts() {
+    let mut req = start(Access::Read, ThreadMode::Plan, false);
+    req.tools_off = true;
+    for version in [None, Some("2.1.309"), Some("2.1.310-rc.1")] {
+        req.engine_version = version.map(str::to_string);
+        let (tx, _rx) = mpsc::channel(4);
+        // `/bin/claude` isn't run: a spawn would fail with another error.
+        match ClaudeAdapter::new(Vec::new()).start(req.clone(), tx).await {
+            Err(AdapterError::Unsupported(why)) => {
+                assert!(why.contains("2.1.310 or newer"), "{why}")
+            }
+            Err(e) => panic!("{version:?}: {e}"),
+            Ok(_) => panic!("{version:?} started"),
+        }
+    }
+}
+
+#[test]
+fn f_tk_08_1_a_tool_block_starting_is_reported_at_once_with_every_tool_off() {
+    let start_of = |kind: &str| {
+        json!({"type": "stream_event", "parent_tool_use_id": null, "event": {
+            "type": "content_block_start", "index": 1,
+            "content_block": {"type": kind, "id": "toolu_1", "name": "CronCreate", "input": {}}
+        }})
+        .to_string()
+    };
+    let mut off = ClaudeParser::new("/w".into(), &[], false).tools_off();
+    assert_eq!(
+        off.line(&start_of("tool_use"), now()),
+        vec![Parsed::ToolStart {
+            id: "toolu_1".into(),
+            name: "CronCreate".into()
+        }]
+    );
+    assert_eq!(off.line(&start_of("server_tool_use"), now()).len(), 1);
+    for prose in ["text", "thinking", "redacted_thinking"] {
+        assert!(off.line(&start_of(prose), now()).is_empty(), "{prose}");
+    }
+    // A thread with tools reports its tools as before, when complete.
+    let mut on = ClaudeParser::new("/w".into(), &[], false);
+    assert!(on.line(&start_of("tool_use"), now()).is_empty());
 }
 
 // F-TL-06 rule 1 is tests/invariants/tests/rule_1.rs.
@@ -194,6 +350,14 @@ fn sh(script: &str) -> ChatStart {
 
 /// Starts a stand-in engine: `sh -c script` with claude's flags as `$@`.
 async fn session(script: &str) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterEvent>) {
+    session_with(script, false).await
+}
+
+/// [`session`], with every tool off when `tools_off`.
+async fn session_with(
+    script: &str,
+    tools_off: bool,
+) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterEvent>) {
     struct Sh(String);
     #[async_trait]
     impl ChatAdapter for Sh {
@@ -217,18 +381,71 @@ async fn session(script: &str) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterE
                 acked: Arc::new(Notify::new()),
                 asks: Arc::new(Mutex::new(HashMap::new())),
                 cwd: req.cwd.clone(),
+                tools_off: req.tools_off,
             };
             let parser = ClaudeParser::new(req.cwd.clone(), &[], false);
+            let parser = if req.tools_off {
+                parser.tools_off()
+            } else {
+                parser
+            };
             tokio::spawn(session.clone().read(parser, lines, events));
             Ok(Box::new(session))
         }
     }
     let (tx, rx) = mpsc::channel(64);
-    let s = Sh(script.to_string())
-        .start(sh(script), tx)
-        .await
-        .expect("start");
+    let mut req = sh(script);
+    req.tools_off = tools_off;
+    let s = Sh(script.to_string()).start(req, tx).await.expect("start");
     (s, rx)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn f_tk_08_1_with_every_tool_off_a_tool_starting_kills_the_engine_before_the_tool_runs() {
+    // The stand-in starts a tool block, then "runs" it a second later: the
+    // session kills it first, so the mark is never written.
+    let mark = tempfile::tempdir().expect("dir");
+    let file = mark.path().join("ran");
+    let script = format!(
+        r#"read line
+echo '{{"type":"system","subtype":"init","session_id":"s-1","model":"m"}}'
+echo '{{"type":"stream_event","parent_tool_use_id":null,"event":{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_1","name":"CronCreate","input":{{}}}}}}}}'
+sleep 1
+touch '{}'
+read more"#,
+        file.display()
+    );
+    let (s, mut rx) = session_with(&script, true).await;
+    let turn = TurnId::new();
+    s.send_turn(TurnInput {
+        turn_id: turn.clone(),
+        text: "hi".into(),
+        images: Vec::new(),
+        files: Vec::new(),
+    })
+    .await
+    .expect("send");
+    let tool = loop {
+        match next(&mut rx).await {
+            AdapterEvent::Event {
+                event: ThreadEvent::Tool { arg_summary, .. },
+                ..
+            } => break arg_summary,
+            AdapterEvent::Exited { .. } => panic!("exited before the tool row"),
+            _ => {}
+        }
+    };
+    assert_eq!(tool, "CronCreate");
+    // The engine is gone: it reports its exit, and never ran the tool.
+    loop {
+        if let AdapterEvent::Exited { .. } = next(&mut rx).await {
+            break;
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(!file.exists(), "the tool ran");
+    s.shutdown().await.expect("shutdown");
 }
 
 async fn next(rx: &mut mpsc::Receiver<AdapterEvent>) -> AdapterEvent {
@@ -609,6 +826,15 @@ fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
     assert_eq!(
         tool_paths(p.line(&result, now())),
         vec![one("/work/shop/src/a.ts")]
+    );
+    // So does MultiEdit's: the row a claim is made from (D-2836).
+    let multi_done = json!({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t3", "content": "Applied 2 edits"}
+    ]}})
+    .to_string();
+    assert_eq!(
+        tool_paths(p.line(&multi_done, now())),
+        vec![one("/work/shop/b.ts")]
     );
     // Rows without files serialize as before.
     let row = serde_json::to_value(ThreadEvent::tool(

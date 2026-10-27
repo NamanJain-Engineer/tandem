@@ -10,6 +10,7 @@
 //! that resolves outside the checkout are listed and never read or written.
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use ignore::gitignore::GitignoreBuilder;
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
+use crate::cli::{Git, Mode};
 use crate::error::GitError;
 use crate::types::FileDiff;
 
@@ -665,6 +667,95 @@ pub fn copy_to_worktrees(
         .map_err(|e| GitError::Invalid(e.to_string()))?;
     crate::setup::write(root, &setup).map_err(|e| GitError::Invalid(e.to_string()))?;
     Ok(setup)
+}
+
+/// The instructions files `names` as committed at `commit` in the checkout
+/// at `root` (F-TK-08). Lead answers a plan run's question from the plan's
+/// base commit in the main checkout, so nothing an agent writes in its
+/// worktree, and nothing left uncommitted, reaches Lead. Git's replace refs
+/// are ignored, so a ref under `refs/replace/` (which every worktree
+/// shares) can't swap other content in. Folders, missing files and files
+/// over `max` bytes are left out, a file's size is asked before it's read,
+/// and `commit` must be a commit id.
+pub async fn at_commit(
+    git: &Git,
+    root: &Path,
+    commit: &str,
+    names: &[String],
+    max: usize,
+) -> Result<Vec<(String, String)>, GitError> {
+    let is_id = (7..=64).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_id {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for name in names {
+        let plain = !name.is_empty()
+            && !name.starts_with('/')
+            && !name.ends_with('/')
+            && !name.split('/').any(|part| part == "..");
+        if !plain {
+            continue;
+        }
+        if let Some(text) = committed(git, root, &format!("{commit}:{name}"), max).await? {
+            out.push((name.clone(), text));
+        }
+    }
+    Ok(out)
+}
+
+/// The blob at `spec` as text, without replace refs, when it's at most
+/// `max` bytes: its size first, then at most `max` bytes of it, so a large
+/// file is never read whole.
+async fn committed(
+    git: &Git,
+    root: &Path,
+    spec: &str,
+    max: usize,
+) -> Result<Option<String>, GitError> {
+    use std::process::Stdio;
+    use tokio::io::AsyncReadExt;
+
+    let command = |args: &[&OsStr]| {
+        let mut cmd = git.command(Mode::Read, root, args);
+        cmd.env("GIT_NO_REPLACE_OBJECTS", "1").stderr(Stdio::null());
+        cmd
+    };
+    let started = |e: std::io::Error| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            GitError::NotInstalled
+        } else {
+            GitError::Io(e)
+        }
+    };
+    let size = command(&[OsStr::new("cat-file"), OsStr::new("-s"), OsStr::new(spec)])
+        .output()
+        .await
+        .map_err(started)?;
+    let fits = size.status.success()
+        && String::from_utf8_lossy(&size.stdout)
+            .trim()
+            .parse::<usize>()
+            .is_ok_and(|n| n <= max);
+    if !fits {
+        return Ok(None);
+    }
+    let mut child = command(&[OsStr::new("cat-file"), OsStr::new("blob"), OsStr::new(spec)])
+        .spawn()
+        .map_err(started)?;
+    let Some(stdout) = child.stdout.take() else {
+        return Ok(None);
+    };
+    let mut bytes = Vec::new();
+    stdout.take(max as u64 + 1).read_to_end(&mut bytes).await?;
+    if bytes.len() > max {
+        // The child is killed as it's dropped.
+        return Ok(None);
+    }
+    let done = child.wait().await?;
+    Ok(done
+        .success()
+        .then(|| String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 #[cfg(test)]

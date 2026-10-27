@@ -1,17 +1,24 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AttemptState, AttemptView, PlanLaunch, PlanView, TasksMeta } from "@tandem/protocol";
+import type {
+  AttemptState,
+  AttemptView,
+  PlanLaunch,
+  PlanQuestion,
+  PlanView,
+  TasksMeta,
+} from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { followPlans, usePlans } from "../../stores/plan";
 import { useSession } from "../../stores/session";
-import { useTasks } from "../../stores/tasks";
+import { resetTasks, useTasks } from "../../stores/tasks";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { TasksPage } from "./TasksPanel";
-import { engineOption } from "./PlanWithLead";
+import { engineOption, startedStatus } from "./PlanWithLead";
 
 const META: TasksMeta = {
   version: 1,
@@ -59,6 +66,9 @@ function plan(over: Partial<PlanView> = {}): PlanView {
     issueIds: [],
     queued: [],
     skipped: [],
+    supervise: false,
+    baseCommit: null,
+    questions: [],
     createdAt: 1,
     ...over,
   };
@@ -112,6 +122,7 @@ const LAUNCH: PlanLaunch = {
       skip: "running",
     },
   ],
+  leadAnswers: true,
 };
 
 let calls: Call[] = [];
@@ -247,6 +258,7 @@ describe("Plan with Lead (F-TK-06)", () => {
       "TAN-2 · Sign-in pageClaude Code · its own sign-inLeft alone: already running",
     ]);
     expect(runs.map((r) => r.getAttribute("data-skip"))).toEqual(["", "running"]);
+    expect(runs.map((r) => r.getAttribute("data-review-engine"))).toEqual(["claude", "codex"]);
     expect(calls.some((c) => c.cmd === "plan_execute")).toBe(false);
     // Back: nothing started.
     fireEvent.click(screen.getByTestId("plan-confirm-back"));
@@ -256,7 +268,9 @@ describe("Plan with Lead (F-TK-06)", () => {
     const run = await screen.findByTestId("plan-confirm-run");
     expect(run.textContent).toBe("Run 1 task");
     fireEvent.click(run);
-    await waitFor(() => expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: true }),
+    );
     await waitFor(() =>
       expect(screen.getByTestId("plan-created").textContent).toBe(
         "Queued 1 task. Each runs in its own worktree; finished work shows in the review queue.",
@@ -383,6 +397,7 @@ function run(
       ...over,
     },
     queuePosition: state === "queued" ? 1 : null,
+    waiting: false,
   };
 }
 
@@ -395,6 +410,87 @@ const THREE: PlanView["tasks"] = [
 const states = () => screen.getAllByTestId("plan-run").map((r) => r.dataset.state);
 
 describe("Follow a plan through (F-TK-07)", () => {
+  it("F-TK-07.2 two runs that finish while a read is under way keep their verdicts (E2E-M18-TK-07)", async () => {
+    // The plan starts and its chip and dialog read the runs, one in setup
+    // and one running; both finish, reviewed, before that read lands. The
+    // rows show where the runs are, not what the read saw.
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({ task_attempts_list: () => new Promise<AttemptView[]>((ok) => held.push(ok)) });
+    usePlans.setState({
+      plans: {
+        pl_1: plan({ state: "started", tasks: THREE.slice(0, 2), issueIds: ["TAN-1", "TAN-2"] }),
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(held.length).toBeGreaterThan(0));
+    act(() => {
+      emitLocal("tasks:attempt", run("TAN-1", "in_review", 1, { reviewVerdict: "approve" }));
+      emitLocal("tasks:attempt", run("TAN-2", "in_review", 2, { reviewVerdict: "approve" }));
+    });
+    const stale = [run("TAN-1", "setup", 1), run("TAN-2", "running", 2)];
+    await act(async () => {
+      for (const ok of held) ok(stale);
+    });
+    await waitFor(() => expect(states()).toEqual(["in_review", "in_review"]));
+    const verdicts = screen.getAllByTestId("plan-run").map((r) => r.dataset.verdict);
+    expect(verdicts).toEqual(["approve", "approve"]);
+  });
+
+  it("F-TK-07.2 overlapping reads of the runs: only the latest writes, and a run that moved meanwhile keeps its state", async () => {
+    const held: Array<{ ok: (v: AttemptView[]) => void; fail: (e: unknown) => void }> = [];
+    backend({
+      task_attempts_list: () => new Promise<AttemptView[]>((ok, fail) => held.push({ ok, fail })),
+    });
+    const tasks = useTasks.getState();
+    const first = tasks.loadAttempts();
+    const second = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(2));
+    // The later read lands first; the earlier one fails after it.
+    held[1]!.ok([run("TAN-1", "running", 1)]);
+    await second;
+    held[0]!.fail({ code: "io", message: "The disk is busy", stage: null, hint: null, retryable: true });
+    await first;
+    expect(useTasks.getState().attemptsStatus).toBe("ready");
+    expect(useTasks.getState().attemptsError).toBeNull();
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["running"]);
+    // A run moves while a read is under way: the read's older list
+    // doesn't take it back.
+    const third = tasks.loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(3));
+    act(() => emitLocal("tasks:attempt", run("TAN-1", "in_review", 1)));
+    held[2]!.ok([run("TAN-1", "running", 1)]);
+    await third;
+    expect(useTasks.getState().attempts.map((a) => a.attempt.state)).toEqual(["in_review"]);
+  });
+
+  it("F-TK-07.2 a read still under way when the view resets never writes the runs", async () => {
+    const held: Array<(v: AttemptView[]) => void> = [];
+    backend({ task_attempts_list: () => new Promise<AttemptView[]>((ok) => held.push(ok)) });
+    const before = useTasks.getState().loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(1));
+    resetTasks();
+    const after = useTasks.getState().loadAttempts();
+    await waitFor(() => expect(held).toHaveLength(2));
+    held[1]!([run("TAN-2", "running", 2)]);
+    await after;
+    held[0]!([run("TAN-1", "failed", 1)]);
+    await before;
+    expect(useTasks.getState().attempts.map((a) => a.attempt.id)).toEqual(["atm_TAN-2_2"]);
+  });
+
+  it("F-TK-07.2 a started plan's shape: working, failed, waiting on a review or a stop, then done", () => {
+    const p = plan({ state: "started", tasks: THREE, issueIds: ["TAN-1", "TAN-2", "TAN-3"] });
+    expect(startedStatus(p, [run("TAN-1", "queued", 1)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "running", 1), run("TAN-2", "failed", 2)])).toBe("working");
+    expect(startedStatus(p, [run("TAN-1", "failed", 1), run("TAN-2", "in_review", 2)])).toBe("error");
+    expect(startedStatus(p, [run("TAN-1", "stopped", 1)])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "in_review", 1, { reviewVerdict: "approve" })])).toBe("waiting");
+    expect(startedStatus(p, [run("TAN-1", "done", 1), run("TAN-2", "done", 2)])).toBe("done");
+    // A run waiting on you comes first (F-TK-08).
+    expect(startedStatus(p, [{ ...run("TAN-1", "running", 1), waiting: true }])).toBe("waiting");
+  });
+
   it("F-TK-07.2 each task shows its latest run, its verdict and a count, and follows the runs", async () => {
     let runs: AttemptView[] = [
       run("TAN-1", "failed", 1),
@@ -560,5 +656,262 @@ describe("Follow a plan through (F-TK-07)", () => {
     await waitFor(() => expect(calls.find((c) => c.cmd === "plan_discard")?.args).toEqual({ id: "pl_1" }));
     await waitFor(() => expect(screen.queryByTestId("plan-reopen")).toBeNull());
     stop();
+  });
+});
+
+/** A run's question in the plan (F-TK-08). */
+function asked(issue: string, attempt: string, over: Partial<PlanQuestion> = {}): PlanQuestion {
+  return {
+    id: `pq_${issue}_${attempt}`,
+    issueId: issue,
+    attemptId: attempt,
+    question: "Vitest or Jest?",
+    state: "answered",
+    reason: null,
+    answer: "Vitest.",
+    askedAt: 1,
+    ...over,
+  };
+}
+
+const STARTED = plan({
+  state: "started",
+  tasks: THREE,
+  issueIds: ["TAN-1", "TAN-2", "TAN-3"],
+  queued: ["TAN-1", "TAN-2", "TAN-3"],
+  supervise: true,
+  baseCommit: "c0ffee12",
+});
+
+const row = (i: number) => screen.getAllByTestId("plan-run")[i]!;
+
+describe("Lead keeps a plan moving (F-TK-08)", () => {
+  it("F-TK-08 Execute all's check has Lead's answers on, says whose engine they use, and sends your choice", async () => {
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    const option = await screen.findByTestId("plan-supervise-option");
+    expect(option.textContent).toContain(
+      "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription",
+    );
+    expect(option.textContent).toContain("a session of its own that can't open files or run tools");
+    expect(option.textContent).toContain("always come to you");
+    const box = screen.getByRole("checkbox");
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(box);
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+    );
+  });
+
+  it("F-TK-08.1 when Lead's engine can't answer with every tool off, the check says questions come to you", async () => {
+    backend({ plan_prepare: () => ({ ...LAUNCH, leadAnswers: false }) });
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    expect((await screen.findByTestId("plan-supervise-unavailable")).textContent).toBe(
+      "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so each run's questions come to you.",
+    );
+    expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+    );
+  });
+
+  it("F-TK-08.5 Execute all again after a start that stopped partway keeps the switch as you left it", async () => {
+    usePlans.setState({
+      plans: { pl_1: { ...CREATED, queued: ["TAN-1"], supervise: false } },
+      openId: "pl_1",
+    });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    await screen.findByTestId("plan-supervise-option");
+    expect(screen.getByRole("checkbox").getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+    );
+  });
+
+  it("F-TK-08 a check with nothing to run doesn't offer Lead's answers", async () => {
+    backend({
+      plan_prepare: () => ({ ...LAUNCH, blocked: "Running tasks is turned off for this account." }),
+    });
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    await screen.findByTestId("plan-execute-blocked");
+    expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
+  });
+
+  it("F-TK-08.2 each row counts Lead's answers and shows Lead answering", async () => {
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "running", 3)],
+    });
+    usePlans.setState({
+      plans: {
+        pl_1: {
+          ...STARTED,
+          questions: [
+            asked("TAN-1", "atm_TAN-1_1"),
+            asked("TAN-1", "atm_TAN-1_2", { id: "pq_2" }),
+            asked("TAN-2", "atm_TAN-2_3", { state: "answering", answer: null }),
+          ],
+        },
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(states()).toEqual(["running", "running", "none"]));
+    expect(within(row(0)).getByTestId("plan-run-answered").textContent).toBe("Lead answered 2");
+    expect(within(row(1)).queryByTestId("plan-run-answered")).toBeNull();
+    expect(within(row(1)).getByTestId("plan-run-answering").textContent).toBe(
+      "Lead is answering its question",
+    );
+    expect(row(1).dataset.question).toBe("answering");
+    expect(screen.queryByTestId("plan-run-needs-you")).toBeNull();
+  });
+
+  it("F-TK-08.3 a question that came to you says why, and Answer… sends your answer to the run", async () => {
+    const pushing = asked("TAN-2", "atm_TAN-2_3", {
+      id: "pq_7",
+      question: "Should I push the branch?",
+      state: "escalated",
+      reason: "It's about pushing, which always comes to you.",
+      answer: null,
+    });
+    const withQuestion: PlanView = {
+      ...STARTED,
+      // An older run's question isn't the latest run's.
+      questions: [asked("TAN-1", "atm_TAN-1_1", { state: "escalated", answer: null }), pushing],
+    };
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "running", 3)],
+      plan_answer: () => ({
+        ...withQuestion,
+        questions: [
+          withQuestion.questions[0]!,
+          { ...pushing, state: "answered_by_you", answer: "No, I'll push." },
+        ],
+      }),
+    });
+    usePlans.setState({ plans: { pl_1: withQuestion }, openId: "pl_1" });
+    wrap();
+    const box = await screen.findByTestId("plan-run-needs-you");
+    expect(screen.getAllByTestId("plan-run-needs-you")).toHaveLength(1);
+    expect(within(row(1)).getByTestId("plan-run-needs-you")).toBe(box);
+    expect(within(box).getByTestId("plan-question").textContent).toBe("Should I push the branch?");
+    expect(within(box).getByTestId("plan-question-why").textContent).toBe(
+      "It's about pushing, which always comes to you.",
+    );
+    fireEvent.click(within(box).getByTestId("plan-answer-open"));
+    const send = within(box).getByTestId("plan-answer-send") as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(within(box).getByTestId("plan-answer-text"), { target: { value: "No, I'll push." } });
+    fireEvent.click(send);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_answer")?.args).toEqual({
+        id: "pl_1",
+        questionId: "pq_7",
+        text: "No, I'll push.",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("plan-run-needs-you")).toBeNull());
+  });
+
+  it("F-TK-08.4 a run waiting for an approval says so, and Lead doesn't answer it", async () => {
+    backend({ task_attempts_list: () => [run("TAN-1", "running", 2)] });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    await waitFor(() => expect(states()).toEqual(["running", "none", "none"]));
+    expect(within(row(0)).queryByTestId("plan-run-approval")).toBeNull();
+    act(() => emitLocal("tasks:attempt", { ...run("TAN-1", "running", 2), waiting: true }));
+    expect((await within(row(0)).findByTestId("plan-run-approval")).textContent).toBe(
+      "Waiting for your approval",
+    );
+    expect(calls.some((c) => c.cmd === "plan_answer")).toBe(false);
+  });
+
+  it("F-TK-08.3 F-TK-08.4 a started plan's chip says it waits on you for an answer or an approval", async () => {
+    backend({ task_attempts_list: () => [run("TAN-1", "running", 2)] });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: null });
+    wrap();
+    const shape = () =>
+      screen.getByTestId("plan-reopen").querySelector('[role="img"]')?.getAttribute("aria-label");
+    await waitFor(() => expect(useTasks.getState().attemptsStatus).toBe("ready"));
+    expect(shape()).toBe("Working");
+    // Its question came to you.
+    act(() =>
+      usePlans.getState().apply({
+        ...STARTED,
+        questions: [asked("TAN-1", "atm_TAN-1_2", { state: "escalated", answer: null })],
+      }),
+    );
+    await waitFor(() => expect(shape()).toBe("Waiting for you"));
+    // Answered, it works on; then it waits for an approval.
+    act(() => usePlans.getState().apply({ ...STARTED, questions: [asked("TAN-1", "atm_TAN-1_2")] }));
+    await waitFor(() => expect(shape()).toBe("Working"));
+    act(() => emitLocal("tasks:attempt", { ...run("TAN-1", "running", 2), waiting: true }));
+    await waitFor(() => expect(shape()).toBe("Waiting for you"));
+  });
+
+  it("F-TK-08.5 the started plan's switch turns Lead's answers off at once", async () => {
+    backend({
+      task_attempts_list: () => [],
+      plan_supervise: (a) => ({ ...STARTED, supervise: a?.on as boolean }),
+    });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    const panel = await screen.findByTestId("plan-supervise");
+    expect(panel.textContent).toContain("Lead answers routine questions");
+    expect(panel.textContent).toContain("using your engine and subscription");
+    const toggle = within(panel).getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_supervise")?.args).toEqual({ id: "pl_1", on: false }),
+    );
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+  });
+
+  it("F-TK-08.5 the switch shows while any run can ask: starting, and back at Created with runs queued", async () => {
+    backend({ task_attempts_list: () => [] });
+    const partway = { ...STARTED, state: "created" as const, queued: ["TAN-1"], error: "The disk is full" };
+    usePlans.setState({ plans: { pl_1: partway }, openId: "pl_1" });
+    wrap();
+    const panel = await screen.findByTestId("plan-supervise");
+    expect(within(panel).getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    act(() => usePlans.getState().apply({ ...partway, state: "starting" }));
+    await screen.findByTestId("plan-starting");
+    expect(screen.getByTestId("plan-supervise")).toBeTruthy();
+    // Nothing queued yet: no run can ask.
+    act(() => usePlans.getState().apply({ ...partway, queued: [] }));
+    await waitFor(() => expect(screen.queryByTestId("plan-supervise")).toBeNull());
+  });
+
+  it("F-TK-08.5 the switch waits while its change is on its way", async () => {
+    let done: (v: PlanView) => void = () => {};
+    backend({
+      task_attempts_list: () => [],
+      plan_supervise: () =>
+        new Promise<PlanView>((resolve) => {
+          done = resolve;
+        }),
+    });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    const panel = await screen.findByTestId("plan-supervise");
+    const toggle = within(panel).getByRole("switch");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(true));
+    expect(panel.getAttribute("aria-busy")).toBe("true");
+    expect(panel.textContent).toContain("Switching…");
+    await act(async () => done({ ...STARTED, supervise: false }));
+    await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(false));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(panel.textContent).not.toContain("Switching…");
   });
 });

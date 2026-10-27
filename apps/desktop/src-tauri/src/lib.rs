@@ -60,6 +60,8 @@ macro_rules! app_commands {
             commands::plan::plan_create_tasks,
             commands::plan::plan_prepare,
             commands::plan::plan_execute,
+            commands::plan::plan_supervise,
+            commands::plan::plan_answer,
             commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
             commands::task_exec::task_attempt_stop,
@@ -1244,6 +1246,24 @@ pub fn run() {
                 // Before anything can start their chats (resume does it
                 // again, with the waits).
                 plans.withhold_kept();
+                // F-TK-08: a plan run's question goes to its plan, and a run
+                // started again after a restart is still its plan's.
+                {
+                    let sink = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_question_sink(std::sync::Arc::new(move |q| {
+                            if let Some(plans) = sink.upgrade() {
+                                plans.on_question_event(q);
+                            }
+                        }));
+                    let lookup = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_supervision_lookup(std::sync::Arc::new(move |issue| {
+                            lookup.upgrade().and_then(|p| p.supervision_for(issue))
+                        }));
+                }
                 tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
