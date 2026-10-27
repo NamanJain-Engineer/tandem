@@ -1,7 +1,7 @@
 import type { Status } from "@tandem/ui/components/StatusDot";
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, DotChange, Glyph, fx } from "./parts";
+import { AppWindow, Changes, Dot, DotChange, Glyph, StatusBar, fx } from "./parts";
 
 function Card({
   engine,
@@ -117,12 +117,7 @@ export function DashboardScene() {
           <Card engine="OpenCode" n={1} branch="release-notes" status={still("done")} line="Wrote the release notes" />
         </div>
       </div>
-      <div className="sc-statusbar">
-        <span>{t("dashboard.barLabel")}</span>
-        <span className="sc-statusbar-right">
-          <span>{t("status.online")}</span>
-        </span>
-      </div>
+      <StatusBar branch={SAMPLE.base} />
     </AppWindow>
   );
 }
