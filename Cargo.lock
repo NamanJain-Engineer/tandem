@@ -6178,6 +6178,7 @@ dependencies = [
  "tracing",
  "ts-rs",
  "ulid",
+ "unicode-normalization",
  "url",
  "uuid",
  "webkit2gtk",

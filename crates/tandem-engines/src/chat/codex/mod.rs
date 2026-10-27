@@ -99,6 +99,10 @@ pub struct CodexParser {
     cwd: PathBuf,
     /// Item id → its command or paths, for approval cards and results.
     items: HashMap<String, (ToolVerb, String, Option<String>)>,
+    /// A file change's files from its start, for a result that doesn't
+    /// list them again (F-TK-07: it's the row a claim is made from). Kept
+    /// until the turn ends, for a change that never completes.
+    edits: HashMap<String, Vec<String>>,
 }
 
 impl CodexParser {
@@ -107,6 +111,7 @@ impl CodexParser {
             limits: limits::compile(limit_patterns),
             cwd,
             items: HashMap::new(),
+            edits: HashMap::new(),
         }
     }
 
@@ -210,6 +215,9 @@ impl CodexParser {
             Some("fileChange") => self.edited(&item["changes"]),
             _ => None,
         };
+        if let Some(paths) = &edited {
+            self.edits.insert(id.clone(), paths.clone());
+        }
         let mut ev = ThreadEvent::tool(&id, verb, &summary, ToolStatus::Running);
         if let ThreadEvent::Tool {
             detail: d,
@@ -292,8 +300,9 @@ impl CodexParser {
                     .then(|| item["changes"].as_array().map(|c| self.diffs(c)))
                     .flatten()
                     .filter(|d| !d.is_empty());
+                let started = self.edits.remove(&id);
                 let paths = (kind == "fileChange")
-                    .then(|| self.edited(&item["changes"]))
+                    .then(|| self.edited(&item["changes"]).or(started))
                     .flatten();
                 Some(ThreadEvent::Tool {
                     id,
@@ -315,10 +324,12 @@ impl CodexParser {
     }
 
     fn turn_completed(
-        &self,
+        &mut self,
         turn: &Value,
         now: chrono::DateTime<chrono::FixedOffset>,
     ) -> Vec<Codex> {
+        // A change that never completed keeps nothing past its turn.
+        self.edits.clear();
         let end = |reason| {
             Codex::Event(ThreadEvent::TurnEnd {
                 reason,
@@ -598,6 +609,12 @@ impl ChatAdapter for CodexAdapter {
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        // Its read-only sandbox still runs commands that read the disk.
+        if req.tools_off {
+            return Err(AdapterError::Unsupported(
+                "Codex can't run with every tool off".into(),
+            ));
+        }
         if let Some(v) = &req.engine_version {
             protocol::check_version(Some(v)).map_err(AdapterError::Unsupported)?;
         }

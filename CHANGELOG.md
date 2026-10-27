@@ -9,6 +9,30 @@ release fails when its version has no section.
 
 ## Unreleased
 
+### Added
+
+- [lin] **Lead keeps a plan moving.** A run started by Execute all can stop and
+  ask when its task and the repository don't settle something. Lead answers
+  routine questions, each in a session of its own with every tool off, so it
+  can't open a file or run a command: all it gets is the task as the plan wrote
+  it, the question, and the repository's instructions files (such as AGENTS.md
+  and CLAUDE.md) as committed when Execute all started, never a run's worktree.
+  Lead answers with Claude Code 2.1.310 or newer; with another engine as Lead,
+  every question comes to you. The answer reaches the run labelled "Lead
+  (automatic answer)" and goes on the task as Lead's comment, and each row
+  counts them. An answer has no more authority than the task: it can't approve
+  anything, change access or start a tool. The option is on by default in
+  Execute all's check, uses your engine and subscription, and the plan can turn
+  it off at once while its runs can ask.
+- [lin] **What matters comes to you.** Lead never answers questions about
+  approvals or permissions, access, the sandbox, secrets or credentials, network
+  calls, deploys or publishing, pushing, deleting files or branches outside the
+  worktree, or the plan's scope, and it answers at most 3 questions per run and
+  10 per plan. Those questions show as Needs you in the plan with the reason, a
+  notification tells you, and Answer… sends your answer to the run. A run
+  waiting for an approval shows "Waiting for your approval", and a question Lead
+  hadn't answered when Vibezeo closed comes to you after the restart.
+
 ### Changed
 
 - [lin] **Claude Code threads summarise their edits too.** A finished Claude

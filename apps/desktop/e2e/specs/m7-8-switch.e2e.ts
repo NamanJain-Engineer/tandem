@@ -1,4 +1,5 @@
 import { $, browser } from "@wdio/globals";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { checkAgain, fakeEngine, freshOffline, home, invoke } from "../support/app";
 import { assistantTexts, composer, sendMessage, threadMode, waitForAssistant } from "../support/thread";
@@ -33,6 +34,12 @@ describe("E2E-M7-8 switch engine", () => {
     await row.waitForExist({ timeout: 10_000 });
     await row.click();
     await composer().waitForDisplayed({ timeout: 10_000 });
+  });
+
+  // Later specs run without this Codex.
+  after(async () => {
+    rmSync(join(home(), "fakebin", "codex"), { force: true });
+    await checkAgain().catch(() => undefined);
   });
 
   it("F-TH-16.1 Claude → Codex after 3 turns seeds Codex with the summary and shows the divider", async function () {

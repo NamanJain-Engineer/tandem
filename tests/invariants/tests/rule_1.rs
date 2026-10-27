@@ -27,6 +27,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
 }
 
