@@ -34,6 +34,9 @@ pub const JJ_UNTRUSTED: &str =
 /// A jj workspace being made that never got its row is forgotten by the
 /// sweep after this long.
 pub const ORPHAN_AGE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+/// A record for a repository no longer on the rail goes after this long
+/// (nothing waits on it; a repository added back meanwhile keeps it).
+pub const PRUNE_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 /// The choice New worktree remembers per repository.
 pub const KINDS_FILE: &str = "lane-kinds.json";
 
@@ -275,8 +278,9 @@ pub async fn create(
     };
     // F-CD-23: no trust is left at a path the new workspace may take.
     crate::services::lsp::untrust_missing_under(&root.join(tandem_git::lanes::WORKTREES_DIR));
-    // The sweep leaves this repository alone while it's made.
-    let _making = Making::start(&root);
+    // One at a time per repository, with the sweep: held until the row
+    // exists and the record is gone.
+    let _repo = repo_lock(&root).lock_owned().await;
     let lane = jj::add_workspace(
         runner.clone(),
         &repo,
@@ -323,8 +327,13 @@ pub async fn create(
 
 /// Nothing half-made stays behind.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
-    let _ = jj::forget_workspace(runner, root, &lane.path, &lane.slug).await;
-    jj::done_adding(lane);
+    // The record stays when the forget failed, so the sweep tries again.
+    if jj::forget_workspace(runner, root, &lane.path, &lane.slug)
+        .await
+        .is_ok()
+    {
+        jj::done_adding(lane);
+    }
 }
 
 /// A jj lane's changes against the commit it started from.
@@ -379,20 +388,30 @@ pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError
 
 /// The sweep: jj workspaces in the repository at `root` whose making was
 /// cut short (no row was written) are forgotten, their commits kept. Only
-/// in a repository jj may run in.
-pub async fn forget_orphans(root: &Path) -> usize {
+/// in a repository jj may run in, never while a workspace is being made in
+/// it (the repository's lock is held throughout), and never for a name any
+/// lane row has.
+pub async fn forget_orphans(store: &Store, root: &Path) -> usize {
     let Some(pending) = pending_dir() else {
         return 0;
     };
-    // Only records Vibezeo wrote, in its own data folder; never while a
-    // workspace is being made in this repository.
-    if !pending.is_dir() || Making::busy(root) || gate(root).is_err() {
+    if !pending.is_dir() || gate(root).is_err() {
         return 0;
     }
+    let Ok(_repo) = repo_lock(root).try_lock_owned() else {
+        return 0;
+    };
     let Some(runner) = runner().await else {
         return 0;
     };
-    match jj::forget_orphans(runner, &pending, root, ORPHAN_AGE, &Default::default()).await {
+    let rows = match row_names(store, root).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(code = "jj.orphans_failed", error = %e.message, "the sweep couldn't read the worktrees");
+            return 0;
+        }
+    };
+    match jj::forget_orphans(runner, &pending, root, ORPHAN_AGE, &rows).await {
         Ok(n) => n,
         Err(e) => {
             tracing::warn!(code = "jj.orphans_failed", error = %e, "unfinished jj workspaces weren't forgotten");
@@ -401,56 +420,68 @@ pub async fn forget_orphans(root: &Path) -> usize {
     }
 }
 
+/// The folder names of every lane row in `<root>/.tandem/worktrees`, jj or
+/// git, removed rows included (a workspace removed from the rail keeps its
+/// worktrees).
+async fn row_names(
+    store: &Store,
+    root: &Path,
+) -> Result<std::collections::HashSet<String>, IpcError> {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let dir = canon(&root.join(tandem_git::lanes::WORKTREES_DIR));
+    let mut rows = Vec::new();
+    for id in lane_vcs::jj_lanes(store).await? {
+        if let Ok(ws) = workspaces::get(store, &id).await {
+            rows.push(ws);
+        }
+    }
+    for top in workspaces::list(store).await? {
+        if top.parent_id.is_none() && canon(Path::new(&top.root)) == canon(root) {
+            rows.extend(workspaces::lanes(store, &top.id).await?);
+        }
+    }
+    Ok(rows
+        .iter()
+        .map(|w| PathBuf::from(&w.root))
+        .filter(|p| p.parent().map(canon).as_deref() == Some(dir.as_path()))
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect())
+}
+
+/// Records for repositories no longer on the rail go (nothing is forgotten
+/// for them).
+pub async fn prune_pending(store: &Store) -> usize {
+    let Some(pending) = pending_dir() else {
+        return 0;
+    };
+    let Ok(all) = workspaces::list(store).await else {
+        return 0;
+    };
+    let known = all
+        .iter()
+        .filter(|w| w.parent_id.is_none() && w.kind == "local")
+        .map(|w| std::fs::canonicalize(&w.root).unwrap_or_else(|_| PathBuf::from(&w.root)))
+        .collect();
+    jj::prune_pending(&pending, &known, PRUNE_AGE)
+}
+
 /// Where records of jj workspaces being made are kept: `$DATA/jj-pending`,
 /// a folder of Vibezeo's own (a repository's content can't name one).
 pub fn pending_dir() -> Option<PathBuf> {
     crate::services::lsp::data_dir().map(|d| d.root().join("jj-pending"))
 }
 
-/// Repositories with a jj workspace being made in this process, by count.
-static MAKING: std::sync::Mutex<BTreeMap<PathBuf, usize>> = std::sync::Mutex::new(BTreeMap::new());
+/// One lock per repository (canonical folder): a jj workspace being made
+/// holds it until its row exists, and the sweep holds it throughout.
+static LOCKS: std::sync::Mutex<BTreeMap<PathBuf, Arc<tokio::sync::Mutex<()>>>> =
+    std::sync::Mutex::new(BTreeMap::new());
 
-/// A jj workspace being made in a repository (the sweep waits).
-pub(crate) struct Making(PathBuf);
-
-/// Marks a jj workspace being made in `root` until the guard drops (tests).
-#[cfg(test)]
-pub(crate) fn making(root: &Path) -> Making {
-    Making::start(root)
-}
-
-impl Making {
-    fn key(root: &Path) -> PathBuf {
-        std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
-    }
-
-    fn start(root: &Path) -> Self {
-        let key = Self::key(root);
-        *MAKING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(key.clone())
-            .or_default() += 1;
-        Making(key)
-    }
-
-    fn busy(root: &Path) -> bool {
-        MAKING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&Self::key(root))
-            .is_some_and(|n| *n > 0)
-    }
-}
-
-impl Drop for Making {
-    fn drop(&mut self) {
-        let mut all = MAKING.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(n) = all.get_mut(&self.0) {
-            *n = n.saturating_sub(1);
-            if *n == 0 {
-                all.remove(&self.0);
-            }
-        }
-    }
+pub(crate) fn repo_lock(root: &Path) -> Arc<tokio::sync::Mutex<()>> {
+    let key = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    LOCKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(key)
+        .or_default()
+        .clone()
 }

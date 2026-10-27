@@ -1333,8 +1333,10 @@ pub fn run() {
                     }
                 },
             ));
-            // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
-            // deletes anything; finished worktrees become one notification.
+            // Worktree sweep: at startup, then every 6 h (F-CD-15). It deletes
+            // nothing a person made: finished worktrees become one
+            // notification. Only a jj workspace whose making Vibezeo itself
+            // cut short is forgotten (F-CD-24, its commits kept).
             let sweep_state = handle.clone();
             tauri::async_runtime::spawn(supervisor::supervise_task(
                 "scheduler/worktree-sweep",

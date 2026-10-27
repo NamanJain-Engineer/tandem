@@ -926,7 +926,9 @@ async fn swept(store: &Store) -> Result<Vec<Workspace>, IpcError> {
 
 /// `lanes_sweep`: the claims of worktrees that are gone (F-TK-05), then
 /// `git worktree prune` in each repository with worktrees, then the merged
-/// ones idle for over 7 days. Never deletes a worktree.
+/// ones idle for over 7 days. Never deletes a worktree a person made: the
+/// only thing it removes is a jj workspace whose making was cut short before
+/// its row existed (F-CD-24, its commits kept; [`jj_lanes::forget_orphans`]).
 pub async fn sweep(
     store: &Store,
     git: &Git,
@@ -938,7 +940,7 @@ pub async fn sweep(
     let mut out = Vec::new();
     for ws in swept(store).await? {
         // F-CD-24: jj workspaces whose making was cut short.
-        let orphans = jj_lanes::forget_orphans(Path::new(&ws.root)).await;
+        let orphans = jj_lanes::forget_orphans(store, Path::new(&ws.root)).await;
         if orphans > 0 {
             tracing::info!(
                 code = "jj.orphans_forgotten",
@@ -958,6 +960,9 @@ pub async fn sweep(
             Err(err) => tracing::warn!(error = %err, "worktree sweep failed for one workspace"),
         }
     }
+    // F-CD-24: records of jj workspaces being made in repositories no
+    // longer on the rail.
+    jj_lanes::prune_pending(store).await;
     // Repositories on SSH hosts, by their helper (D-1602): only hosts
     // connected now, so the sweep never opens a connection (or a password
     // prompt) by itself.
@@ -1723,23 +1728,64 @@ mod tests {
         .expect("jj workspace");
         let record = lane.pending.clone().expect("a record in $DATA");
         assert!(!record.starts_with(root), "never in the repository");
-        let old = std::time::SystemTime::now() - jj_lanes::ORPHAN_AGE - Duration::from_secs(60);
-        std::fs::File::options()
-            .write(true)
-            .open(&record)
-            .and_then(|f| f.set_modified(old))
-            .expect("age it");
-        // While a create runs in this repository, the sweep waits.
+        let age = |p: &Path| {
+            let old = std::time::SystemTime::now() - jj_lanes::ORPHAN_AGE - Duration::from_secs(60);
+            std::fs::File::options()
+                .write(true)
+                .open(p)
+                .and_then(|f| f.set_modified(old))
+                .expect("age it");
+        };
+        age(&record);
+        // A lane made through Vibezeo, with its row, and an old stale record
+        // naming it: it survives.
+        let live = create_kind(&fx.store, &fx.git, &fx.repo.id, "live one", LaneKind::Jj)
+            .await
+            .expect("live lane");
+        let key = std::fs::canonicalize(root).expect("canonical");
+        let pending = jj_lanes::pending_dir().expect("pending dir");
+        let stale =
+            tandem_git::jj::write_pending(&pending, &key, "live-one").expect("stale record");
+        age(&stale);
+        // While the repository is locked (a create runs), the sweep waits.
         {
-            let _making = jj_lanes::making(root);
+            let _held = jj_lanes::repo_lock(root).lock_owned().await;
             sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
             assert!(lane.path.exists());
         }
         sweep(&fx.store, &fx.git, Utc::now()).await.expect("sweep");
         assert!(!lane.path.exists());
-        assert!(!record.exists());
+        assert!(!record.exists() && !stale.exists());
+        assert!(Path::new(&live.root).exists(), "the live lane survives");
         let names = tandem_git::jj::workspace_names(jj.as_ref(), root).expect("names");
-        assert!(!names.contains("cut-short") && names.contains("default"));
+        assert!(
+            !names.contains("cut-short") && names.contains("live-one") && names.contains("default")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_a_jj_create_waits_for_the_repositorys_lock() {
+        let Some((fx, _jj)) = jj_fixture().await else {
+            return;
+        };
+        let root = PathBuf::from(&fx.repo.root);
+        let held = jj_lanes::repo_lock(&root).lock_owned().await;
+        let (store, git, id) = (fx.store.clone(), fx.git.clone(), fx.repo.id.clone());
+        let task =
+            tokio::spawn(
+                async move { create_kind(&store, &git, &id, "waits", LaneKind::Jj).await },
+            );
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !task.is_finished(),
+            "the create waits while the sweep holds the lock"
+        );
+        assert!(!root.join(".tandem/worktrees/waits").exists());
+        drop(held);
+        task.await
+            .expect("join")
+            .expect("made once the lock is free");
+        assert!(root.join(".tandem/worktrees/waits").exists());
     }
 
     #[tokio::test]

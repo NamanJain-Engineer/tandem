@@ -390,7 +390,16 @@ async fn f_cd_24_what_a_repository_commits_never_names_what_the_sweep_forgets() 
     // under the old scheme's name and the new one's.
     let dir = fx.repo.join(".tandem/worktrees");
     std::fs::create_dir_all(&dir).expect("mkdir");
-    for name in [".default.jj-adding", "default-1.pending", ".x.jj-adding"] {
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let tidy = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("a workspace with no row and no record of Vibezeo's");
+    for name in [
+        ".default.jj-adding",
+        "default-1.pending",
+        ".x.jj-adding",
+        "tidy-1.pending",
+    ] {
         std::fs::write(dir.join(name), format!("{}\ndefault\n", fx.repo.display())).expect("write");
     }
     git(&fx.repo, &["add", "-f", ".tandem/worktrees"]);
@@ -421,6 +430,10 @@ async fn f_cd_24_what_a_repository_commits_never_names_what_the_sweep_forgets() 
         names.contains("default"),
         "the main workspace is still there"
     );
+    assert!(
+        names.contains("tidy") && tidy.path.exists(),
+        "a committed record naming tidy is never read"
+    );
     // And Discard itself never forgets `default`.
     assert!(
         jj::forget_workspace(jj.clone(), &fx.repo, &dir.join("default"), "default")
@@ -435,6 +448,10 @@ async fn f_cd_24_a_repositorys_aliases_cant_change_the_base_or_the_diff() {
     let Some(jj) = real_jj(fx.dir.path()) else {
         return;
     };
+    // A base that isn't root's tree: a diff from root() would show base.txt.
+    std::fs::write(fx.repo.join("base.txt"), "base\n").expect("write");
+    git(&fx.repo, &["add", "."]);
+    git(&fx.repo, &["commit", "-qm", "second"]);
     colocated(&fx, jj.as_ref());
     let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
     let head = git(&fx.repo, &["rev-parse", "HEAD"]);
@@ -459,7 +476,7 @@ async fn f_cd_24_a_repositorys_aliases_cant_change_the_base_or_the_diff() {
     assert_eq!(
         files,
         vec!["a.txt".to_string(), "new.txt".to_string()],
-        "not the whole tree from root"
+        "not the whole tree from root (which has base.txt too)"
     );
     let next = jj::add_workspace(
         jj.clone(),
@@ -475,4 +492,106 @@ async fn f_cd_24_a_repositorys_aliases_cant_change_the_base_or_the_diff() {
         next.path.join("new.txt").exists(),
         "it starts from tidy's working copy"
     );
+}
+
+#[tokio::test]
+async fn f_cd_24_a_stale_record_never_forgets_a_live_or_someone_elses_workspace() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let pending = fx.dir.path().join("data/jj-pending");
+    std::fs::create_dir_all(&pending).expect("mkdir");
+    let key = std::fs::canonicalize(&fx.repo).expect("canonical");
+    // The app stopped after writing a record for "fix", before jj made it;
+    // later the lane was made again under the same name, with its row.
+    jj::write_pending(&pending, &key, "fix").expect("stale record");
+    let live = jj::add_workspace(
+        jj.clone(),
+        &repo,
+        "fix",
+        &HashSet::new(),
+        None,
+        Some(pending.clone()),
+    )
+    .await
+    .expect("live lane");
+    jj::done_adding(&live);
+    // The person's own workspace of a name Vibezeo might use, elsewhere.
+    let theirs = fx.dir.path().join("mine");
+    let out = jj
+        .run(
+            &fx.repo,
+            &[
+                "workspace",
+                "add",
+                &theirs.to_string_lossy(),
+                "--name",
+                "mine",
+            ],
+        )
+        .expect("jj");
+    assert!(out.success(), "{}", out.stderr);
+    jj::write_pending(&pending, &key, "mine").expect("stale record");
+    let rows = HashSet::from(["fix".to_string()]);
+    let n = jj::forget_orphans(
+        jj.clone(),
+        &pending,
+        &fx.repo,
+        std::time::Duration::ZERO,
+        &rows,
+    )
+    .await
+    .expect("sweep");
+    assert_eq!(n, 0);
+    let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
+    assert!(
+        names.contains("fix") && live.path.exists(),
+        "the live lane survives"
+    );
+    assert!(
+        names.contains("mine") && theirs.exists(),
+        "the person's own workspace survives"
+    );
+    assert!(
+        std::fs::read_dir(&pending).expect("dir").next().is_none(),
+        "the stale records went"
+    );
+}
+
+#[tokio::test]
+async fn f_cd_24_a_ref_named_like_the_base_is_refused_not_followed() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    let first = git(&fx.repo, &["rev-parse", "HEAD"]);
+    std::fs::write(fx.repo.join("base.txt"), "base\n").expect("write");
+    git(&fx.repo, &["add", "."]);
+    git(&fx.repo, &["commit", "-qm", "second"]);
+    let head = git(&fx.repo, &["rev-parse", "HEAD"]);
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    assert_eq!(lane.base, head);
+    // A clone ships a tag named exactly like the base, pointing elsewhere.
+    git(&fx.repo, &["tag", &head, &first]);
+    let _ = jj.run(&fx.repo, &["git", "import"]);
+    change(&lane.path);
+    let e = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+        .await
+        .expect_err("refused");
+    assert!(e.to_string().contains(jj::SHADOWED_BASE), "{e}");
+    assert!(jj::diff(jj.clone(), &lane.path, &lane.base).await.is_err());
+    // Without it, the diff is from the real base.
+    git(&fx.repo, &["tag", "-d", &head]);
+    let _ = jj.run(&fx.repo, &["git", "import"]);
+    let files = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+        .await
+        .expect("files");
+    assert_eq!(files, vec!["a.txt".to_string(), "new.txt".to_string()]);
 }

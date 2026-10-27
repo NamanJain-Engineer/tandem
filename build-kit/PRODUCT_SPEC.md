@@ -807,7 +807,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Merge into base, via `git merge --no-ff` in the parent checkout with a conflict report. If there are conflicts, it stops and shows the files; it never auto-resolves.
   - Create PR, which opens `gh pr create` in a shell pane if gh is present.
   - Remove lane. This stops the lane's agents, then runs `git worktree remove`. Uncommitted changes need a **forced remove**, which needs an explicit local confirmation dialog and can't be approved by Conductor or the phone.
-- **Background sweep:** at startup and every 6 h, it prunes worktrees whose directories are gone (`git worktree prune`) and lists stale lanes (merged and idle >7 days) in a "Clean up lanes" notification. It never deletes automatically.
+- **Background sweep:** at startup and every 6 h, it prunes worktrees whose directories are gone (`git worktree prune`) and lists stale lanes (merged and idle >7 days) in a "Clean up lanes" notification. It never deletes a worktree automatically; the one exception is a jj workspace whose making Vibezeo cut short before it was added to the rail (F-CD-24), which is forgotten with its commits kept.
 
 **Acceptance:**
 1. Creating 2 lanes for the task "fix auth" yields branches `tandem/fix-auth` and `tandem/fix-auth-2`, and `.git/info/exclude` contains `.tandem/` exactly once.

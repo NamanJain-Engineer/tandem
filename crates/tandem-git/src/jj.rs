@@ -461,7 +461,9 @@ pub async fn add_workspace(
                 unmark();
                 return Err(e);
             }
-            let base = match base_of(jj.as_ref(), &path) {
+            let base = match base_of(jj.as_ref(), &path)
+                .and_then(|b| verify_base(jj.as_ref(), &path, &b).map(|_| b))
+            {
                 Ok(b) => b,
                 Err(e) => {
                     // Nothing half-made stays behind.
@@ -486,18 +488,47 @@ pub async fn add_workspace(
     .map_err(|e| GitError::Invalid(e.to_string()))?
 }
 
-/// A pending record: the repository's canonical folder, then the slug.
-fn write_pending(dir: &Path, repo: &Path, slug: &str) -> Result<PathBuf, GitError> {
+/// A pending record, as JSON (a folder name with a newline in it can't
+/// shift its fields): the repository's canonical folder and the slug.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Pending {
+    repo: PathBuf,
+    slug: String,
+}
+
+/// Writes a pending record (also how tests make a stale one).
+pub fn write_pending(dir: &Path, repo: &Path, slug: &str) -> Result<PathBuf, GitError> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let path = dir.join(format!("{slug}-{nanos}{PENDING}"));
-    std::fs::write(&path, format!("{}\n{slug}\n", repo.to_string_lossy()))?;
+    let record = Pending {
+        repo: repo.to_path_buf(),
+        slug: slug.to_string(),
+    };
+    let bytes = serde_json::to_vec(&record).map_err(|e| GitError::Invalid(e.to_string()))?;
+    std::fs::write(&path, bytes)?;
     Ok(path)
 }
 
 const PENDING: &str = ".pending";
+
+/// The records in `pending`, with their paths and ages.
+fn read_pending(pending: &Path) -> Vec<(PathBuf, Pending, Option<std::time::SystemTime>)> {
+    let Ok(entries) = std::fs::read_dir(pending) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(PENDING))
+        .filter_map(|e| {
+            let record: Pending = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
+            let written = e.metadata().and_then(|m| m.modified()).ok();
+            Some((e.path(), record, written))
+        })
+        .collect()
+}
 
 /// The workspace's row exists: its pending record goes.
 pub fn done_adding(lane: &JjLane) {
@@ -506,56 +537,182 @@ pub fn done_adding(lane: &JjLane) {
     }
 }
 
+/// The main repository folder a jj workspace at `ws_root` belongs to: its
+/// `.jj/repo` is a file naming `<main>/.jj/repo`.
+pub fn main_of_workspace(ws_root: &Path) -> Option<PathBuf> {
+    let link = ws_root.join(".jj").join("repo");
+    if !std::fs::symlink_metadata(&link).is_ok_and(|m| m.is_file()) {
+        return None;
+    }
+    let text = std::fs::read_to_string(&link).ok()?;
+    let named = PathBuf::from(text.trim());
+    let named = if named.is_absolute() {
+        named
+    } else {
+        ws_root.join(".jj").join(named)
+    };
+    let repo = std::fs::canonicalize(named).ok()?;
+    // `<main>/.jj/repo` → `<main>`.
+    repo.parent()?.parent().map(Path::to_path_buf)
+}
+
+/// Why the sweep left a record's workspace alone (it deleted the record).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// A lane row has the name: the workspace is live.
+    HasRow,
+    /// Not a name Vibezeo makes.
+    NotOurs,
+    /// No folder at `<repo>/.tandem/worktrees/<slug>`, or a symlink.
+    NoFolder,
+    /// The folder isn't a jj workspace of this repository.
+    OtherWorkspace,
+    /// The folder was made well before the record: someone else's.
+    Older,
+}
+
+/// What the sweep decides for one record (pure, so it's tested everywhere).
+pub fn orphan_decision(
+    repo_root: &Path,
+    slug: &str,
+    written: Option<std::time::SystemTime>,
+    has_row: &HashSet<String>,
+) -> Result<PathBuf, Kept> {
+    if !is_lane_name(slug) {
+        return Err(Kept::NotOurs);
+    }
+    if has_row.contains(slug) {
+        return Err(Kept::HasRow);
+    }
+    let folder = repo_root.join(WORKTREES_DIR).join(slug);
+    let meta = std::fs::symlink_metadata(&folder);
+    if !meta.as_ref().is_ok_and(|m| m.is_dir()) {
+        return Err(Kept::NoFolder);
+    }
+    let main = std::fs::canonicalize(repo_root).ok();
+    if main.is_none() || main_of_workspace(&folder) != main {
+        return Err(Kept::OtherWorkspace);
+    }
+    // jj made the folder just after the record was written; a folder made
+    // well before it is someone else's (its birth time, where the
+    // filesystem keeps one).
+    let born = meta.ok().and_then(|m| m.created().ok());
+    if let (Some(born), Some(written)) = (born, written) {
+        if born + Duration::from_secs(5) < written {
+            return Err(Kept::Older);
+        }
+    }
+    Ok(folder)
+}
+
 /// jj workspaces whose making was cut short: records in `pending` (a
 /// folder of Vibezeo's own, which the repository can't write) for the
-/// repository at `repo_root`, older than `age` and not in `busy` (slugs
-/// being made now). Each is forgotten and its folder removed, as Discard
-/// would; its commits stay. Only names Vibezeo makes are ever forgotten:
-/// never `default`. Returns how many.
+/// repository at `repo_root`, older than `age`. A record is only ever
+/// acted on when nothing else could own its workspace ([`orphan_decision`]:
+/// no lane row has the name, the folder at `.tandem/worktrees/<slug>` is
+/// that repository's jj workspace and was made after the record); its
+/// workspace is then forgotten and its folder removed, as Discard would,
+/// and its commits stay. Otherwise only the record goes. Never `default`.
+/// A failed forget is logged and kept for the next sweep. Returns how many
+/// were forgotten. The caller holds the repository's lock throughout.
 pub async fn forget_orphans(
     jj: Arc<dyn JjRunner>,
     pending: &Path,
     repo_root: &Path,
     age: Duration,
-    busy: &HashSet<String>,
+    has_row: &HashSet<String>,
 ) -> Result<usize, GitError> {
-    let Ok(entries) = std::fs::read_dir(pending) else {
-        return Ok(0);
-    };
     let repo_key = std::fs::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
-    let dir = repo_root.join(WORKTREES_DIR);
-    let mut found = Vec::new();
-    for e in entries.flatten() {
-        if !e.file_name().to_string_lossy().ends_with(PENDING) {
+    let mut n = 0;
+    for (path, record, written) in read_pending(pending) {
+        if record.repo != repo_key {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(e.path()) else {
-            continue;
-        };
-        let mut lines = text.lines();
-        let (Some(repo), Some(slug)) = (lines.next(), lines.next()) else {
-            continue;
-        };
-        if Path::new(repo) != repo_key || !is_lane_name(slug) || busy.contains(slug) {
-            continue;
-        }
-        let old = e
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
+        let old = written
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|d| d >= age);
-        if old {
-            found.push((slug.to_string(), e.path()));
+        if !old {
+            continue;
+        }
+        match orphan_decision(repo_root, &record.slug, written, has_row) {
+            Ok(folder) => {
+                match forget_workspace(jj.clone(), repo_root, &folder, &record.slug).await {
+                    Ok(()) => {
+                        let _ = std::fs::remove_file(&path);
+                        n += 1;
+                    }
+                    Err(e) => tracing::warn!(
+                        code = "jj.orphan_forget_failed",
+                        error = %e,
+                        "an unfinished jj workspace wasn't forgotten; the next sweep tries again"
+                    ),
+                }
+            }
+            Err(why) => {
+                tracing::info!(code = "jj.orphan_kept", reason = ?why, "a pending record's workspace was left alone");
+                let _ = std::fs::remove_file(&path);
+            }
         }
     }
-    let mut n = 0;
-    for (slug, record) in found {
-        forget_workspace(jj.clone(), repo_root, &dir.join(&slug), &slug).await?;
-        let _ = std::fs::remove_file(record);
-        n += 1;
-    }
     Ok(n)
+}
+
+/// Records older than `age` for repositories not in `known` (removed from
+/// the rail, or gone) go; nothing is forgotten for them.
+pub fn prune_pending(pending: &Path, known: &HashSet<PathBuf>, age: Duration) -> usize {
+    let mut n = 0;
+    for (path, record, written) in read_pending(pending) {
+        let old = written
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|d| d >= age);
+        if old && !known.contains(&record.repo) {
+            let _ = std::fs::remove_file(path);
+            n += 1;
+        }
+    }
+    n
+}
+
+pub const SHADOWED_BASE: &str =
+    "A ref named like this worktree's base commit hides it, so Vibezeo won't diff it";
+
+/// The base, checked before it's used as a revset: 40 hex digits, no git
+/// ref of that name (a tag or branch named like the commit would be
+/// resolved first, and comes with a clone, no config needed), and jj
+/// resolving it to itself.
+pub fn verify_base(jj: &dyn JjRunner, ws_root: &Path, base: &str) -> Result<String, GitError> {
+    let revset = commit_revset(base)?;
+    if let Some(main) = main_of_workspace(ws_root) {
+        let git = git2::Repository::open(&main)?;
+        // jj's own `refs/jj/keep/<id>` refs (they keep its commits alive)
+        // are named after commits; a tag, branch or remote ref isn't.
+        let shadowed = git.references()?.flatten().any(|r| {
+            r.name().is_some_and(|n| {
+                !n.starts_with("refs/jj/") && (n == base || n.ends_with(&format!("/{base}")))
+            })
+        });
+        if shadowed {
+            return Err(GitError::Invalid(SHADOWED_BASE.into()));
+        }
+    }
+    let out = ok_or(
+        jj.run(
+            ws_root,
+            &[
+                "log",
+                "-r",
+                &revset,
+                "--no-graph",
+                "-T",
+                "self.commit_id() ++ \"\\n\"",
+            ],
+        )?,
+        "log",
+    )?;
+    if out.stdout.trim() != base {
+        return Err(GitError::Invalid(SHADOWED_BASE.into()));
+    }
+    Ok(revset)
 }
 
 /// The workspace's changes since `base`, working copy included, as git
@@ -566,8 +723,9 @@ pub async fn diff(
     base: &str,
 ) -> Result<Vec<FileDiff>, GitError> {
     let root = ws_root.to_path_buf();
-    let base = commit_revset(base)?;
+    let base = base.to_string();
     tokio::task::spawn_blocking(move || {
+        let base = verify_base(jj.as_ref(), &root, &base)?;
         let out = ok_or(
             jj.run(&root, &["diff", "--git", "--from", &base, "--to", "@"])?,
             "diff",
@@ -595,8 +753,9 @@ pub async fn changed_files(
     base: &str,
 ) -> Result<Vec<String>, GitError> {
     let root = ws_root.to_path_buf();
-    let base = commit_revset(base)?;
+    let base = base.to_string();
     tokio::task::spawn_blocking(move || {
+        let base = verify_base(jj.as_ref(), &root, &base)?;
         let out = ok_or(
             jj.run(
                 &root,
@@ -829,5 +988,320 @@ mod tests {
             e.to_string(),
             "jj workspace add failed: Error: Workspace already exists"
         );
+    }
+
+    const HEX: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    /// A git repository with a `.jj` of jj's shape beside `.git` (no jj
+    /// needed): `.jj/repo/store/git_target` points at `.git`.
+    fn colocated_fixture() -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let root = std::fs::canonicalize(tmp.path())
+            .expect("canonical")
+            .join("repo");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        git2::Repository::init(&root).expect("git init");
+        let store = root.join(".jj/repo/store");
+        std::fs::create_dir_all(&store).expect("mkdir");
+        std::fs::write(store.join("git_target"), "../../../.git").expect("write");
+        (tmp, root)
+    }
+
+    /// A jj workspace folder of `main` at `<main>/.tandem/worktrees/<slug>`.
+    fn workspace_folder(main: &Path, slug: &str) -> PathBuf {
+        let ws = main.join(WORKTREES_DIR).join(slug);
+        std::fs::create_dir_all(ws.join(".jj/working_copy")).expect("mkdir");
+        std::fs::write(
+            ws.join(".jj/repo"),
+            main.join(".jj/repo").to_string_lossy().as_bytes(),
+        )
+        .expect("write");
+        ws
+    }
+
+    #[test]
+    fn f_cd_24_names_and_commit_ids_vibezeo_accepts() {
+        assert!(is_lane_name("fix-login-2"));
+        for bad in ["", "default", "Fix", "a b", "../x", "a/b", "x\n"] {
+            assert!(!is_lane_name(bad), "{bad:?}");
+        }
+        assert_eq!(commit_revset(HEX).expect("hex"), format!("\"{HEX}\""));
+        for bad in [
+            "abc",
+            &HEX.to_uppercase(),
+            &format!("{HEX}0"),
+            "root()",
+            "zz",
+        ] {
+            assert!(commit_revset(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn f_cd_24_the_sweep_acts_only_where_nothing_else_owns_the_workspace() {
+        let (_t, main) = colocated_fixture();
+        let none = HashSet::new();
+        let now = Some(std::time::SystemTime::now());
+        // Ours: a folder of this repository's, made after the record.
+        let before = Some(std::time::SystemTime::now() - Duration::from_secs(60));
+        let ours = workspace_folder(&main, "cut");
+        assert_eq!(orphan_decision(&main, "cut", before, &none), Ok(ours));
+        // Never `default`, or a name Vibezeo doesn't make.
+        assert_eq!(
+            orphan_decision(&main, "default", before, &none),
+            Err(Kept::NotOurs)
+        );
+        assert_eq!(
+            orphan_decision(&main, "Odd", before, &none),
+            Err(Kept::NotOurs)
+        );
+        // A lane row has the name: live.
+        let rows = HashSet::from(["cut".to_string()]);
+        assert_eq!(
+            orphan_decision(&main, "cut", before, &rows),
+            Err(Kept::HasRow)
+        );
+        // No folder (the person's own same-named workspace lives elsewhere).
+        assert_eq!(
+            orphan_decision(&main, "elsewhere", before, &none),
+            Err(Kept::NoFolder)
+        );
+        // A folder that isn't this repository's jj workspace.
+        std::fs::create_dir_all(main.join(WORKTREES_DIR).join("plain")).expect("mkdir");
+        assert_eq!(
+            orphan_decision(&main, "plain", before, &none),
+            Err(Kept::OtherWorkspace)
+        );
+        let (_t2, other) = colocated_fixture();
+        let foreign = workspace_folder(&main, "foreign");
+        std::fs::write(
+            foreign.join(".jj/repo"),
+            other.join(".jj/repo").to_string_lossy().as_bytes(),
+        )
+        .expect("write");
+        assert_eq!(
+            orphan_decision(&main, "foreign", before, &none),
+            Err(Kept::OtherWorkspace)
+        );
+        // A symlink to a real workspace folder isn't followed.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                main.join(WORKTREES_DIR).join("cut"),
+                main.join(WORKTREES_DIR).join("link"),
+            )
+            .expect("symlink");
+            assert_eq!(
+                orphan_decision(&main, "link", before, &none),
+                Err(Kept::NoFolder)
+            );
+        }
+        // A folder made well before the record (where birth times exist).
+        let later = now.map(|t| t + Duration::from_secs(3600));
+        let born =
+            std::fs::metadata(main.join(WORKTREES_DIR).join("cut")).and_then(|m| m.created());
+        if born.is_ok() {
+            assert_eq!(
+                orphan_decision(&main, "cut", later, &none),
+                Err(Kept::Older)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_the_sweep_keeps_live_workspaces_and_forgets_only_orphans() {
+        let (_t, main) = colocated_fixture();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let pending = tmp.path().join("jj-pending");
+        std::fs::create_dir_all(&pending).expect("mkdir");
+        let key = std::fs::canonicalize(&main).expect("canonical");
+        workspace_folder(&main, "cut");
+        workspace_folder(&main, "live");
+        for slug in ["cut", "live", "elsewhere", "default"] {
+            write_pending(&pending, &key, slug).expect("record");
+        }
+        let (_t2, other) = colocated_fixture();
+        write_pending(&pending, &std::fs::canonicalize(&other).expect("c"), "cut").expect("record");
+        let fake = Arc::new(FakeJj::answering(vec![(
+            "workspace list",
+            ok("default\ncut\nlive\nelsewhere\n"),
+        )]));
+        let rows = HashSet::from(["live".to_string()]);
+        let n = forget_orphans(fake.clone(), &pending, &main, Duration::ZERO, &rows)
+            .await
+            .expect("sweep");
+        assert_eq!(n, 1);
+        let forgets: Vec<Vec<String>> = fake
+            .calls()
+            .into_iter()
+            .filter(|a| {
+                a.first().map(String::as_str) == Some("workspace")
+                    && a.get(1).map(String::as_str) == Some("forget")
+            })
+            .collect();
+        assert_eq!(
+            forgets,
+            vec![vec!["workspace".to_string(), "forget".into(), "cut".into()]]
+        );
+        assert!(!main.join(WORKTREES_DIR).join("cut").exists());
+        assert!(
+            main.join(WORKTREES_DIR).join("live").exists(),
+            "a lane with a row survives"
+        );
+        // Only the other repository's record is left; prune drops it once
+        // that repository isn't known.
+        assert_eq!(read_pending(&pending).len(), 1);
+        assert_eq!(
+            prune_pending(&pending, &HashSet::from([key]), Duration::ZERO),
+            1
+        );
+        assert!(read_pending(&pending).is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_one_failed_forget_doesnt_stop_the_sweep() {
+        let (_t, main) = colocated_fixture();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let pending = tmp.path().join("jj-pending");
+        std::fs::create_dir_all(&pending).expect("mkdir");
+        let key = std::fs::canonicalize(&main).expect("canonical");
+        workspace_folder(&main, "a");
+        workspace_folder(&main, "b");
+        write_pending(&pending, &key, "a").expect("record");
+        write_pending(&pending, &key, "b").expect("record");
+        let fake = Arc::new(FakeJj::answering(vec![
+            ("workspace list", ok("default\na\nb\n")),
+            (
+                "workspace forget a",
+                JjOutput {
+                    code: Some(1),
+                    stdout: String::new(),
+                    stderr: "boom".into(),
+                },
+            ),
+        ]));
+        let n = forget_orphans(fake, &pending, &main, Duration::ZERO, &HashSet::new())
+            .await
+            .expect("sweep");
+        assert_eq!(n, 1, "b was still forgotten");
+        assert_eq!(
+            read_pending(&pending).len(),
+            1,
+            "a's record stays for the next sweep"
+        );
+    }
+
+    #[test]
+    fn f_cd_24_a_record_is_json_so_a_newline_in_a_path_cant_shift_it() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = PathBuf::from("/r/odd\nname");
+        write_pending(tmp.path(), &repo, "cut").expect("record");
+        let all = read_pending(tmp.path());
+        assert_eq!(all.len(), 1);
+        assert_eq!(
+            all[0].1,
+            Pending {
+                repo,
+                slug: "cut".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_the_exact_jj_commands_for_add_handoff_and_diff() {
+        let (_t, main) = colocated_fixture();
+        let repo = Repo::discover(&main).expect("discover").expect("repo");
+        let fake = Arc::new(FakeJj::answering(vec![
+            ("workspace list", ok("default\nfirst\n")),
+            ("log -r @-", ok(&format!("{HEX}\n"))),
+            ("log -r", ok(&format!("{HEX}\n"))),
+        ]));
+        let lane = add_workspace(
+            fake.clone(),
+            &repo,
+            "Tidy up",
+            &HashSet::new(),
+            Some("first".into()),
+            None,
+        )
+        .await
+        .expect("add");
+        assert_eq!(lane.slug, "tidy-up");
+        assert_eq!(lane.base, HEX);
+        let path = main.join(WORKTREES_DIR).join("tidy-up");
+        let calls = fake.calls();
+        let add = calls
+            .iter()
+            .find(|a| {
+                a.first().map(String::as_str) == Some("workspace")
+                    && a.get(1).map(String::as_str) == Some("add")
+            })
+            .expect("add call");
+        assert_eq!(
+            add,
+            &vec![
+                "workspace".to_string(),
+                "add".into(),
+                path.to_string_lossy().into_owned(),
+                "--name".into(),
+                "tidy-up".into(),
+                "--revision".into(),
+                "\"first\"@".into(),
+            ]
+        );
+        assert!(calls.iter().any(|a| a
+            == &vec![
+                "log".to_string(),
+                "-r".into(),
+                "@-".into(),
+                "--no-graph".into(),
+                "-T".into(),
+                "self.commit_id() ++ \"\\n\"".into()
+            ]));
+        // A handoff from a name Vibezeo doesn't make is refused before jj runs.
+        assert!(add_workspace(
+            fake.clone(),
+            &repo,
+            "x",
+            &HashSet::new(),
+            Some("default".into()),
+            None
+        )
+        .await
+        .is_err());
+        // The diff checks the base resolves to itself, then diffs from it quoted.
+        let before = fake.calls().len();
+        diff(fake.clone(), &path, HEX).await.expect("diff");
+        let quoted = format!("\"{HEX}\"");
+        assert_eq!(
+            fake.calls()[before..].to_vec(),
+            vec![
+                vec![
+                    "log".to_string(),
+                    "-r".into(),
+                    quoted.clone(),
+                    "--no-graph".into(),
+                    "-T".into(),
+                    "self.commit_id() ++ \"\\n\"".into()
+                ],
+                vec![
+                    "diff".to_string(),
+                    "--git".into(),
+                    "--from".into(),
+                    quoted.clone(),
+                    "--to".into(),
+                    "@".into()
+                ],
+            ]
+        );
+        // A base jj resolves to another commit (a tag of that name) is refused.
+        let other = Arc::new(FakeJj::answering(vec![(
+            "log -r",
+            ok(&format!("{}\n", "f".repeat(40))),
+        )]));
+        let e = changed_files(other, &path, HEX)
+            .await
+            .expect_err("shadowed");
+        assert!(e.to_string().contains(SHADOWED_BASE), "{e}");
     }
 }
