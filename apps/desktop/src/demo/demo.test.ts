@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   TeammateSummary,
   TeammateTemplate,
@@ -11,6 +11,8 @@ import type {
   EntitlementView,
   GitPanel,
   Issue,
+  LandingPlan,
+  LandingRun,
   IssueSummary,
   PaneRecord,
   RepoReview,
@@ -675,5 +677,138 @@ describe("D-2609 the demo's sample world is the story the site's scenes tell (D-
     }
     expect(core.handle("lane_radar", { laneIds: wts.map((w) => w.id) })).toEqual([]);
     expect(core.handle("merge_queue_get", { workspaceId: wts[0]?.parentId })).toBeNull();
+  });
+});
+
+describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () => {
+  const SHOP = "ws_demo";
+  const ws = (workspaceId: string) => ({ context: { type: "workspace", workspaceId } });
+  const idOf = (slug: string) => DEMO_WORKTREES[STORY.worktrees.findIndex((w) => w.slug === slug)] ?? "";
+  const done = () => worktreeIn("done");
+  const waiting = () => worktreeIn("waiting");
+  const plan = () => core?.handle("merge_queue_plan", { workspaceId: SHOP }) as LandingPlan;
+  const run = () => core?.handle("merge_queue_get", { workspaceId: SHOP }) as LandingRun | null;
+  const text = (id: string, path: string) => (core?.handle("fs_read", { ...ws(id), path }) as { text: string }).text;
+
+  it("F-WT-07 it offers the worktree whose agent committed its work, with its commits, a clean forecast and the check used here", () => {
+    core = new DemoCore(0);
+    const p = plan();
+    expect(p).toMatchObject({ repoId: SHOP, base: STORY.base, baseDirty: false, check: STORY.check, undo: null, interrupted: null });
+    expect(p.candidates).toEqual([
+      {
+        laneId: idOf(done().slug),
+        branch: branchOf(done().slug),
+        ahead: done().commits.length,
+        forecast: { kind: "clean" },
+        uncommitted: 0,
+        missing: false,
+      },
+    ]);
+    // Any worktree's ⋯ opens its repository's landing.
+    expect(core.handle("merge_queue_plan", { workspaceId: idOf(waiting().slug) })).toEqual(p);
+  });
+
+  it("F-WT-07 a landing merges main in, runs the check and lands the worktree as its merge commit; Undo takes main back", () => {
+    vi.useFakeTimers();
+    try {
+      core = new DemoCore(1);
+      const w = done();
+      const started = core.handle("merge_queue_start", { workspaceId: SHOP, laneIds: [idOf(w.slug)], check: STORY.check }) as LandingRun;
+      expect(started).toMatchObject({ state: "running", base: STORY.base, before: STORY.history[0]?.sha, check: STORY.check });
+      // One step at a time, as the dialog polls it.
+      const states: string[] = [];
+      for (let i = 0; i < 40 && run()?.state === "running"; i++) {
+        const state = run()?.steps[0]?.state ?? "";
+        if (states.at(-1) !== state) states.push(state);
+        vi.advanceTimersByTime(100);
+      }
+      states.push(run()?.steps[0]?.state ?? "");
+      expect(states).toEqual(["merging_base", "checking", "landing", "landed"]);
+    } finally {
+      vi.useRealTimers();
+    }
+    const w = done();
+    const changed = Object.keys(changedIn(w.slug));
+    expect(run()).toMatchObject({ state: "done", error: null });
+    expect(run()?.steps).toEqual([expect.objectContaining({ branch: branchOf(w.slug), state: "landed", commit: w.mergeCommit })]);
+    // main has the worktree's changes, committed; it isn't a candidate any more.
+    for (const path of changed) expect(text(SHOP, path), path).toBe(changedIn(w.slug)[path]);
+    expect((core.handle("git_status", ws(SHOP)) as GitPanel).status.unstaged).toEqual([]);
+    expect(plan()).toMatchObject({ candidates: [], undo: { base: STORY.base, landed: 1 } });
+    core.handle("merge_queue_undo", { workspaceId: SHOP });
+    for (const path of changed) expect(text(SHOP, path), path).toBe(MAIN[path] ?? "");
+    expect(plan()).toMatchObject({ undo: null, candidates: [expect.objectContaining({ laneId: idOf(w.slug) })] });
+    expect(run()).toBeNull();
+  });
+
+  it("F-WT-07 main with uncommitted changes refuses Land and Undo; the demo runs only pnpm test as a check; none lands untested", async () => {
+    core = new DemoCore(0);
+    const lane = idOf(done().slug);
+    const readme = core.handle("fs_read", { ...ws(SHOP), path: "README.md" }) as { hash: string };
+    core.handle("fs_write", { ...ws(SHOP), path: "README.md", text: "edited\n", expectedHash: readme.hash });
+    expect(plan().baseDirty).toBe(true);
+    expect(() => core?.handle("merge_queue_start", { workspaceId: SHOP, laneIds: [lane], check: null })).toThrow(
+      expect.objectContaining({ code: "conflict", message: `${STORY.repo} has uncommitted changes. Commit or stash them, then land.` }),
+    );
+    core = new DemoCore(0);
+    expect(() => core?.handle("merge_queue_start", { workspaceId: SHOP, laneIds: [lane], check: "make lint" })).toThrow(
+      expect.objectContaining({ code: "unavailable" }),
+    );
+    expect(run()).toBeNull();
+    core.handle("merge_queue_start", { workspaceId: SHOP, laneIds: [lane], check: "" });
+    const seen = new Set<string>();
+    await until(() => {
+      const r = run();
+      for (const s of r?.steps ?? []) seen.add(s.state);
+      return r?.state === "done";
+    });
+    expect(seen.has("checking")).toBe(false);
+    expect(run()?.check).toBeNull();
+  });
+
+  it("F-WT-07 Stop stops the queue before its next step; what landed stays landed", async () => {
+    core = new DemoCore(0);
+    core.handle("merge_queue_start", { workspaceId: SHOP, laneIds: [idOf(done().slug)], check: STORY.check });
+    core.handle("merge_queue_stop", { workspaceId: SHOP });
+    await until(() => run()?.state === "stopped");
+    expect(run()?.steps[0]?.state).toBe("stopped");
+    expect(plan()).toMatchObject({ undo: null });
+  });
+
+  it("D-1899 the waiting agent's question is answered in its terminal: yes runs its tests and commits, and its worktree can land next", async () => {
+    core = new DemoCore(0);
+    const w = waiting();
+    const paneId = DEMO_WAITING.paneId;
+    let screen = "";
+    core.handle("pty_spawn", {
+      paneId,
+      channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
+    });
+    await until(() => screen.includes(`${w.ask}?`));
+    const status: Array<{ key: string; status: string }> = [];
+    const stop = await listen<{ records: Array<{ key: string; status: string }> }>("status:changed", (e) => void status.push(...e.records));
+    core.handle("pty_write", { paneId, data: "maybe\r" });
+    expect(screen).toContain("Type y or n, then Enter.");
+    core.handle("pty_write", { paneId, data: "y\r" });
+    await until(() => screen.includes(w.closing ?? "?"));
+    for (const c of w.commits) expect(screen).toContain(`[${branchOf(w.slug)} ${c.sha}] ${c.subject}`);
+    expect(screen).toContain(`✓ ${testRun({ ...MAIN, ...changedIn(w.slug) }, "search").at(-1)?.match(/(\d+) passed/)?.[1]} tests passed`);
+    expect(status.at(-1)).toMatchObject({ key: `pane:${paneId}`, status: "done" });
+    expect((core.handle("git_status", ws(idOf(w.slug))) as GitPanel).status.unstaged).toEqual([]);
+    expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug), branchOf(w.slug)]);
+    stop();
+  });
+
+  it("D-1899 no leaves the waiting agent's work uncommitted, so it can't land", async () => {
+    core = new DemoCore(0);
+    let screen = "";
+    core.handle("pty_spawn", {
+      paneId: DEMO_WAITING.paneId,
+      channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
+    });
+    await until(() => screen.includes("(y/n)"));
+    core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "n\r" });
+    expect(screen).toContain("won't run");
+    expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug)]);
   });
 });

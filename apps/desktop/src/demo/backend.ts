@@ -51,10 +51,11 @@ import {
 import { DemoFiles, NO_GIT, type CheckoutSeed } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
+import { DemoLanding } from "./landing";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen, type ShellPlace } from "./shell";
-import { STORY, branchOf, engineLabel, worktreeIn, type StoryWorktree } from "./story";
+import { STORY, branchOf, engineLabel, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
 import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
 import { version } from "../../package.json";
 
@@ -485,7 +486,7 @@ const STATUS: Record<string, { status: StatusRecord["status"]; title: string; pr
   STORY.worktrees.map((w) => [agentPane(w), { status: w.state, title: w.task, preview: previewOf(w) }]),
 );
 
-type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null };
+type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null; typed?: string };
 
 type DemoThread = {
   thread: Thread;
@@ -547,6 +548,37 @@ export class DemoCore {
   readonly plans = new DemoPlans(this.tasks, (ms, fn) => this.later(ms, fn));
   /** The review queue (F-DB-04): the finished agent's work in its worktree. */
   private readonly review = new DemoReview(REVIEW_SEED);
+  /** Each agent pane's state; the waiting one can finish in the page. */
+  private status: Record<string, (typeof STATUS)[string]> = structuredClone(STATUS);
+  private since: Record<string, number> = {};
+  /** Worktrees whose agent has committed its work: the finished ones, then
+   * any that finish here. */
+  private committed = new Set(STORY.worktrees.filter((w) => w.state === "done").map((w) => w.slug));
+  /** Worktrees landed in main, and main's commits, newest first. */
+  private landed = new Set<string>();
+  private mainLog: StoryCommit[] = [...STORY.history];
+  /** main as each landing found it, by its commit, for Undo landing. */
+  private beforeLanding = new Map<string, { head: Map<string, string>; log: StoryCommit[]; landed: Set<string> }>();
+  /** Land worktrees (F-WT-07), on this repository's checkouts. */
+  private readonly landing = new DemoLanding(
+    {
+      repoId: WS,
+      repoName: STORY.repo,
+      base: STORY.base,
+      head: () => this.mainLog[0]?.sha ?? "",
+      dirty: (id) => this.files.dirty(id),
+      lanes: () =>
+        STORY.worktrees
+          .filter((w) => this.committed.has(w.slug) && !this.landed.has(w.slug))
+          .map((w) => ({ id: wsOf(w.slug), branch: branchOf(w.slug), ahead: w.commits.length })),
+      check: (id, command) => this.check(id, command),
+      land: (id) => this.land(id),
+      undo: (before) => this.undoLanding(before),
+    },
+    (ms, fn) => this.later(ms, fn),
+    // Used here before, by a landing since undone: Undo keeps the check.
+    STORY.check,
+  );
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -789,6 +821,123 @@ export class DemoCore {
     });
   }
 
+  private record(paneId: string): StatusRecord {
+    const s = this.status[paneId];
+    const at = this.since[paneId] ?? START;
+    return {
+      key: `pane:${paneId}`,
+      status: s?.status ?? "idle",
+      reason: null,
+      since: at,
+      ts: at,
+      tool: null,
+      title: s?.title ?? null,
+      preview: s?.preview ?? null,
+    };
+  }
+
+  /** Every file in a checkout now, by path. */
+  private filesOf(id: string): Record<string, string> {
+    return Object.fromEntries(this.files.paths(id).map((p) => [p, this.files.text(id, p) ?? ""]));
+  }
+
+  /** A landing's check in a worktree, with main merged in: the demo runs
+   * `pnpm test` (with or without a filter) and nothing else. */
+  private check(id: string, command: string): { output: string } | { refused: string } {
+    const run = /^(?:pnpm|npm) (?:run )?test(?: (\S+))?$/.exec(command.trim());
+    if (!run) {
+      return {
+        refused: `The demo can run only ${STORY.check} as a check. In Vibezeo the check runs in each worktree's folder, whatever it is.`,
+      };
+    }
+    return { output: testRun({ ...Object.fromEntries(this.files.head(WS)), ...this.filesOf(id) }, run[1] ?? "").join("\n") };
+  }
+
+  /** Lands a worktree: main is merged into it, then it into main, as its
+   * merge commit. The worktrees keep main merged into them. */
+  private land(id: string): string {
+    const w = STORY.worktrees.find((x) => wsOf(x.slug) === id);
+    if (!w) throw { code: "not_found", message: "That worktree isn't in this repository" };
+    const head = this.mainLog[0]?.sha ?? "";
+    if (!this.beforeLanding.has(head))
+      this.beforeLanding.set(head, { head: this.files.head(WS), log: [...this.mainLog], landed: new Set(this.landed) });
+    const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
+    this.files.setHead(id, merged);
+    this.files.setHead(WS, merged);
+    this.mainLog = [{ sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` }, ...w.commits, ...this.mainLog];
+    this.landed.add(w.slug);
+    return w.mergeCommit;
+  }
+
+  private undoLanding(before: string): void {
+    const was = this.beforeLanding.get(before);
+    if (!was) return;
+    this.files.setHead(WS, was.head);
+    this.mainLog = was.log;
+    this.landed = was.landed;
+    this.beforeLanding.clear();
+  }
+
+  /** The waiting agent's question, answered in its terminal: yes runs its
+   * tests and commits its work, which can then land; no leaves it as is. */
+  private answerWaiting(pty: Pty, yes: boolean): void {
+    const w = WAITING;
+    const paneId = agentPane(w);
+    const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
+    if (!yes) {
+      this.frame(pty, `\r\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\r\n`);
+      this.finish(paneId, "done", "Didn't run the tests");
+      return;
+    }
+    const id = wsOf(w.slug);
+    const filter = (w.ask ?? "").replace(/^pnpm test ?/, "");
+    const run = testRun(this.filesOf(id), filter);
+    const passed = /Tests {2}(\d+) passed/.exec(run.at(-1) ?? "")?.[1] ?? "0";
+    const lines = [
+      `${st.mark} ${st.run} ${w.ask ?? ""}`,
+      `  ✓ ${passed} tests passed`,
+      `${st.mark} ${st.run} git commit`,
+      ...[...w.commits].reverse().map((c) => `  [${branchOf(w.slug)} ${c.sha}] ${c.subject}`),
+      "",
+      w.closing ?? "Done.",
+    ];
+    this.later(600, () => {
+      this.frame(pty, `\r\n${lines.join("\r\n")}\r\n`);
+      this.files.commit(id);
+      this.committed.add(w.slug);
+      this.finish(paneId, "done", w.closing ?? "Done.");
+    });
+  }
+
+  private finish(paneId: string, status: StatusRecord["status"], preview: string): void {
+    const s = this.status[paneId];
+    if (!s) return;
+    this.status[paneId] = { ...s, status, preview };
+    this.since[paneId] = Date.now();
+    emitLocal("status:changed", { records: [this.record(paneId)], removed: [] });
+  }
+
+  /** Keys typed at the waiting agent's question: y or n, then Enter. */
+  private answer(pty: Pty, data: string): void {
+    for (const ch of data) {
+      if (ch === "\r") {
+        const said = (pty.typed ?? "").trim().toLowerCase();
+        pty.typed = "";
+        if (said === "y" || said === "yes") this.answerWaiting(pty, true);
+        else if (said === "n" || said === "no") this.answerWaiting(pty, false);
+        else this.frame(pty, "\r\nType y or n, then Enter.\r\n");
+      } else if (ch === "\x7f" || ch === "\b") {
+        if (pty.typed) {
+          pty.typed = pty.typed.slice(0, -1);
+          this.frame(pty, "\b \b");
+        }
+      } else if (ch >= " " && ch !== "\x1b") {
+        pty.typed = (pty.typed ?? "") + ch;
+        this.frame(pty, ch);
+      }
+    }
+  }
+
   /** The thread's fix lands in its workspace's folder: `shop/thread/`'s
    * files, uncommitted, as an agent leaves them. */
   private applyFix(t: DemoThread): void {
@@ -805,6 +954,15 @@ export class DemoCore {
     return c?.type === "workspace" ? c.workspaceId : WS;
   }
 
+  /** The repository a landing command is about: the one asked, or a
+   * worktree's (every worktree's ⋯ opens its repository's landing). */
+  private repoOf(args: Args): string {
+    const id = String(args?.workspaceId ?? "");
+    const ws = WORKSPACES.find((w) => w.id === id);
+    if (!ws) throw { code: "not_found", message: "That folder isn't open in the demo." };
+    return ws.parentId ?? ws.id;
+  }
+
   /** What a shell in `workspaceId`'s folder can see of its checkout. */
   private place(workspaceId: string): ShellPlace {
     const ws = WORKSPACES.find((w) => w.id === workspaceId) ?? WORKSPACE;
@@ -818,7 +976,7 @@ export class DemoCore {
       text: (path) => this.files.text(ws.id, path),
       changes: () => this.files.changes(ws.id),
       diff: (path) => this.files.gitDiff(ws.id, path).patch,
-      log: () => [...(story?.state === "done" ? story.commits : []), ...STORY.history],
+      log: () => [...(story && this.committed.has(story.slug) && !this.landed.has(story.slug) ? story.commits : []), ...this.mainLog],
       test: (filter) => testRun(files(), filter),
     };
   }
@@ -897,8 +1055,8 @@ export class DemoCore {
   }
 
   private dashboard(): DashboardItem[] {
-    const panes = PANES.filter((p) => STATUS[p.id]).map((p): DashboardItem => {
-      const s = STATUS[p.id] ?? { status: "idle", title: "", preview: "" };
+    const panes = PANES.filter((p) => this.status[p.id]).map((p): DashboardItem => {
+      const s = this.status[p.id] ?? { status: "idle", title: "", preview: "" };
       const engine = ENGINES.find((e) => e.spec.id === p.engineId);
       return {
         key: `pane:${p.id}`,
@@ -1006,16 +1164,7 @@ export class DemoCore {
       case "models_list":
         return MODELS[String(args?.engineId)] ?? [];
       case "status_list":
-        return PANES.filter((p) => STATUS[p.id]).map((p): StatusRecord => ({
-          key: `pane:${p.id}`,
-          status: STATUS[p.id]?.status ?? "idle",
-          reason: null,
-          since: START,
-          ts: START,
-          tool: null,
-          title: STATUS[p.id]?.title ?? null,
-          preview: STATUS[p.id]?.preview ?? null,
-        }));
+        return PANES.filter((p) => this.status[p.id]).map((p) => this.record(p.id));
       case "status_snapshot":
         return this.dashboard();
       case "pty_attach": {
@@ -1041,9 +1190,12 @@ export class DemoCore {
         return { pid: 4000 + this.ptys.size, startedAt: Date.now() };
       }
       case "pty_write": {
-        const pty = this.ptys.get(String(args?.paneId));
+        const paneId = String(args?.paneId);
+        const pty = this.ptys.get(paneId);
         const data = String(args?.data ?? "");
         if (pty?.shell) this.frame(pty, pty.shell.write(data));
+        else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
+          this.answer(pty, data);
         else if (pty && data.includes("\r"))
           this.frame(
             pty,
@@ -1252,6 +1404,26 @@ export class DemoCore {
       // or landing (F-WT-04, F-WT-10, F-WT-07; D-2609).
       case "lane_checks":
         return { laneId: String(args?.laneId ?? ""), state: "no_pr", pr: null, checks: [], error: null };
+      case "merge_queue_plan":
+        this.repoOf(args);
+        return this.landing.plan();
+      case "merge_queue_start":
+        this.repoOf(args);
+        return this.landing.start(
+          (args?.laneIds as string[] | undefined) ?? [],
+          (args?.check as string | null | undefined) ?? null,
+        );
+      case "merge_queue_get":
+        this.repoOf(args);
+        return this.landing.get();
+      case "merge_queue_stop":
+        this.repoOf(args);
+        this.landing.stop();
+        return null;
+      case "merge_queue_undo":
+        this.repoOf(args);
+        this.landing.undo();
+        return null;
       case "lane_radar":
         return [];
       case "review_queue":

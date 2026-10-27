@@ -26,7 +26,8 @@ export type StoryWorktree = {
   task: string;
   state: StoryState;
   steps: StoryStep[];
-  /** A finished agent's last words. */
+  /** A finished agent's last words (the waiting one's, once it's allowed
+   * to run its command and finishes). */
   closing?: string;
   /** The command a waiting agent asks to run. */
   ask?: string;

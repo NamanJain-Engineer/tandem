@@ -27,6 +27,7 @@ describe("D-2609 the sample world the demo and the site's scenes share (D-1899)"
     expect(worktreeIn("working").steps.at(-1)).toMatchObject({ run: expect.any(String) });
     expect(worktreeIn("working").steps.at(-1)).not.toHaveProperty("passed");
     expect(worktreeIn("waiting").ask).toBeTruthy();
+    expect(worktreeIn("waiting").closing).toBeTruthy();
   });
 
   it("D-2609 every worktree it names is its own, and the radar's symbol is in a file both its worktrees change", () => {

@@ -66,6 +66,7 @@
         { "edit": "src/search/results.tsx", "add": 22, "del": 6 }
       ],
       "ask": "pnpm test search",
+      "closing": "Search results move with the arrow keys, Home and End, and Enter opens one.",
       "commits": [
         { "sha": "6e4d8f1", "subject": "Open a search result with Enter" },
         { "sha": "d93b2c5", "subject": "Move through search results with the arrow keys" }

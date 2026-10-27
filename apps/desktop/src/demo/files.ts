@@ -154,6 +154,36 @@ export class DemoFiles {
     this.at(id).work.set(path, text);
   }
 
+  /** How many tracked files have uncommitted changes (new, untracked files
+   * don't count), as Land worktrees counts them. */
+  dirty(id: string): number {
+    return this.changes(id).filter((f) => f.change !== "untracked").length;
+  }
+
+  /** Commits everything changed in the folder, new files included. */
+  commit(id: string): void {
+    const c = this.at(id);
+    for (const [path, text] of c.work) c.head.set(path, text);
+    c.work.clear();
+  }
+
+  /** What the checkout's branch has committed that main's files don't
+   * have, by path. */
+  committedChanges(id: string): Record<string, string> {
+    const c = this.at(id);
+    return Object.fromEntries([...c.head].filter(([path, text]) => MAIN[path] !== text));
+  }
+
+  /** The files `id`'s branch has committed, as they stand. */
+  head(id: string): Map<string, string> {
+    return new Map(this.at(id).head);
+  }
+
+  /** Sets the branch's committed files (a landing, or its undo). */
+  setHead(id: string, files: Map<string, string>): void {
+    this.at(id).head = new Map(files);
+  }
+
   compare(id: string, path: string, text: string): FileDiff {
     return fileDiff(path, this.text(id, path) ?? "", text);
   }
