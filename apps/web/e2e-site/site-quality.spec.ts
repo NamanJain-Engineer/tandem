@@ -9,7 +9,7 @@ import { SITE_PAGES } from "../lib/site";
 // for visitors who ask for reduced motion.
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
+const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/changelog/0.12.0/", "/no-such-page/", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
 
 test.beforeEach(async ({ context }) => {
   // The test server streams the product video in full (no Range support), and
