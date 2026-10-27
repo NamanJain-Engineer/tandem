@@ -336,6 +336,8 @@ export type * from "./Plan";
 export type * from "./PlanAccount";
 export type * from "./PlanEngine";
 export type * from "./PlanLaunch";
+export type * from "./PlanQuestion";
+export type * from "./PlanQuestionState";
 export type * from "./PlanRevision";
 export type * from "./PlanRun";
 export type * from "./PlanSkip";

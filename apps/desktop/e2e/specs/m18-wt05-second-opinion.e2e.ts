@@ -1,6 +1,6 @@
 import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addFolder,
@@ -104,6 +104,12 @@ describe("E2E-M18-WT-05 second opinion", function () {
       () => browser.execute(() => document.querySelectorAll('[data-testid="worktree-row"]').length === 2),
       { timeout: 20_000 },
     );
+  });
+
+  // Later specs run without this Codex: a task review would pick it.
+  after(async () => {
+    rmSync(join(home(), "fakebin", "codex"), { force: true });
+    await checkAgain().catch(() => undefined);
   });
 
   it("F-WT-05.1-3 Codex reviews read-only and its findings land in the review bar", async () => {

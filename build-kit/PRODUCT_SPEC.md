@@ -2096,6 +2096,49 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Plans are listed again after a restart with their tasks. A plan whose Lead was interrupted fails with its reason and offers Plan again.
 4. Land approved opens Land worktrees with only the approved tasks' worktrees chosen, in plan order.
 
+#### F-TK-08 Lead keeps a plan moving (P2)
+**Story:** My plan's tasks are running. When an agent needs a decision, I don't want to be asked every small thing: Lead answers routine questions from the repository's instructions, and anything that matters comes to me. I see every answer, and I can switch Lead's answers off at any time.
+
+**Behavior (bold bet B3's third slice: the supervisor loop):**
+- **Questions are explicit.** A plan run's first message (F-TK-04) tells its agent: when it needs a decision that the task and the repository don't settle, end the reply with one line `QUESTION-<code>: <the question>` and stop.
+  - The code is fresh for each run, so text the agent reads can't pass for a question.
+  - A run that ends its turn that way is asking. It waits for an answer instead of going to review, and keeps its place among the 4 runs at once, as a run waiting for an approval does.
+- **Lead answers routine questions** in a fresh session of its engine for each question, never in its plan thread.
+  - The session has every tool off: no MCP server, tasks tools, plugins, skills, commands, hooks or briefing, and nothing to resume or save. It runs in a fresh empty folder of Vibezeo's own made for it and removed after it, so it can't read a file, run a command or reach another question's session.
+  - Its one message is all it knows: the plan's own text of the task (not the live task, which a run can rewrite), the question, and the repository's instructions files (the ones the engine registry names, such as `AGENTS.md` and `CLAUDE.md`). The files are read as they are at the plan's base commit in the main checkout, never from the run's worktree, and git's replace refs are ignored, so an agent can't steer Lead by writing an instructions file or a ref.
+  - The question and the task are fenced as untrusted text, and the files as repository content. No `@` in them can name a file for the engine to attach.
+  - Only an engine that can turn every tool off answers: Claude Code 2.1.310 or newer today. With another engine or an older Claude Code as Lead, every question comes to you, and Execute all's check says so.
+  - Lead replies with an answer, or sends the question to you. A tool starting stops the session before the tool can run, an approval request ends it, and either gives no answer. A session ends after 5 minutes.
+  - An answer goes to the run's thread as its next message, fenced and labelled "Lead (automatic answer)", and onto the task as Lead's comment. Then the run goes on.
+  - An answer has no more authority than the plan's text, and the run's first message says so. It can't approve anything, change access or start a tool; the agent's own approvals and sandbox still apply.
+- **These always come to you.** Lead never answers a question about:
+  - approvals or permissions, access, or the sandbox;
+  - secrets or credentials;
+  - network calls;
+  - deploys or publishing;
+  - pushing, force-push included;
+  - deleting files or branches outside the worktree;
+  - changing the plan's scope.
+
+  Lead's message and the run's first message both say so, and a question that names one of these comes to you before it reaches Lead. Hidden characters, look-alike letters and full-width or styled letters don't hide a word.
+- **A question that comes to you.** The task's row in the plan says "Needs you", with the question and why it came to you, and a notification tells you in Vibezeo's words, never the agent's or Lead's. **Answer…** sends your answer to the run as its next message. A question whose run stopped waiting (Stop) is closed and takes no answer, and an answer reaches only the question it answers.
+- **No file comes from text a run wrote.** Any run can write a task's text and comments, and its worktree's diff. Each run's and each review's first message writes ＠ for every @ in them, so none attaches a file to the message (Claude Code reads `@path` as one).
+- **Approvals are never answered by Lead** (F-AU-01's rule). A run waiting for an approval shows "Waiting for your approval" in the plan and notifies you, and Lead does nothing.
+- **Limits.** Lead answers at most 3 questions per run and 10 per plan; after that every question comes to you. Nothing is answered while Vibezeo is closed: a question still waiting for Lead when Vibezeo closed comes to you after the restart.
+- **On by default, and stoppable.**
+  - Execute all's check has "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription", on by default.
+  - The plan has the same switch whenever a run can ask: while Execute all starts, once it has, and back at Created after a start that stopped partway. Turning it off stops Lead's answers at once: Lead's session stops, an answer it's still writing is dropped, not sent, and every later question comes to you. Execute all again starts from the switch as you left it, and turning answers off there works the same way.
+  - After a restart, a run Resume or Retry starts again is still its plan's.
+- **Shown.** Each task's row in the plan counts "Lead answered N", and each answer is on the task and in the run's thread.
+- **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
+
+**Acceptance:**
+1. A plan run whose reply ends with its `QUESTION-<code>` line asks Lead, in a fresh session of its engine with every tool off and no MCP server, customization or saved session, in an empty folder of its own outside the repository; a tool starting kills it. Lead's plan thread gets nothing, a `.env` beside the main checkout can't reach the answer, and each question's session knows nothing of another's. Lead's message has the question and the plan's own task text fenced as untrusted, with no `@` that names a file, and the instructions files from the plan's base commit in the main checkout; a `CLAUDE.md` written in the run's worktree, or a replace ref, has no effect. With a Lead engine that can't turn every tool off (Codex, an ACP agent, Claude Code before 2.1.310), every question comes to you. A run's or a review's first message attaches no file that a task's text, a comment or a diff names.
+2. Lead's answer reaches the run's thread labelled "Lead (automatic answer)" and the task as a comment, and the run goes on to review. Each plan row counts Lead's answers.
+3. These come to you without being answered: a question about any of the topics above (before it reaches Lead, hidden characters or look-alike letters notwithstanding), a question Lead sends on, a session that reaches for a tool, the 4th question of a run, and the 11th answer of a plan. The plan shows the question and why, and Answer… sends your answer to the run.
+4. A run waiting for an approval is never answered by Lead, and the plan shows "Waiting for your approval".
+5. The switch is there whenever a run can ask, and Execute all again keeps it. Turning it off, there or in Execute all's check, stops Lead's answers at once: Lead's session stops and an answer it's writing isn't sent. A question waiting for Lead when Vibezeo closed comes to you after the restart, and a run started again then is still its plan's.
+
 ### 4.9 RT: Routines
 
 #### F-RT-01 Routine model (P1)

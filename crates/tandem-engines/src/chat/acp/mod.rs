@@ -763,6 +763,13 @@ impl ChatAdapter for AcpAdapter {
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        // An agent's tools are its own.
+        if req.tools_off {
+            return Err(AdapterError::Unsupported(format!(
+                "{} can't run with every tool off",
+                self.label
+            )));
+        }
         let spec = self.launch(&req);
         let first = self.start_with(spec, req.clone(), events.clone()).await;
         match (first, &self.fallback) {
