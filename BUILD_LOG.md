@@ -2915,6 +2915,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - The runner now tells the plan each run it starts with the plan's code (`QuestionEvent::Started`, Execute all's and Retry's), and the plan keeps the attempt (`runs` in `plans.json`).
     - The lookup goes by attempt: a run you start of the same task has no code, and its questions come to you.
     - Tests: the runner reports Execute all's run and not yours, and after a restart Retry of yours has no code while Retry of the plan's does and is kept again; the plan keeps its runs through a restart, ignores a plan that's gone, and forgets them with Remove plan. The question tests now count questions, not events.
+  - **The instructions as Execute all found them (D-3021).** Lead's answers read the instructions files for every question, at the base commit. A changed engine catalog, or a history rewritten and collected, gave later questions other files, or none.
+    - Execute all now reads them once with its base commit and keeps them, in memory and in `plan-instructions/<id>.json` (0600, checked against the commit, removed with the plan). Every question uses those.
+    - A plan kept without one reads them at its first question and keeps them.
+    - `blocking()` is the off-the-worker file work `save()` already did, now shared.
+    - Tests: read once at Execute all, so a changed CLAUDE.md doesn't reach the next answer, and after a restart the plan's file gives the same, with no read; the file is 0600 and goes with Remove plan; a plan kept without one, or with another commit's, reads once at its commit and keeps it.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3076,6 +3081,10 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Every run started with a plan's code, by Execute all or a Retry of one, tells its plan (`QuestionEvent::Started`), and the plan keeps the attempt in `plans.json` (`runs`) before the run can ask.
   - After a restart, a run's code comes only from the plan that kept it. A run you start yourself of a plan's task is yours: its questions come to you, never to Lead.
   - Not a column on the attempt: `plans.json` already holds the codes, and a migration in this slice could meet another branch's in chain27.
+- D-3021: Lead answers from the instructions files as Execute all found them (F-TK-08, the re-review's later item).
+  - Execute all reads them once, at the plan's base commit, and keeps them in a file of the plan's own (`plan-instructions/<id>.json`, 0600), checked against that commit. They aren't in `plans.json`, which is written whole on every change, and they go with Remove plan.
+  - Every question in the plan is answered from those files: a later commit, a rewritten or collected history, or an engine catalog that names other files changes nothing.
+  - A plan kept before there were snapshots reads them at its base commit for its first question, and keeps them from then.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

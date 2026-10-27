@@ -560,6 +560,10 @@ struct Entry {
     /// they are its own after a restart, not a run you start of its task.
     #[serde(default)]
     runs: BTreeSet<String>,
+    /// The instructions files Lead answers from, as Execute all found them
+    /// (D-3021). Kept in a file of the plan's own, not in `plans.json`.
+    #[serde(skip)]
+    instructions: Option<Vec<(String, String)>>,
 }
 
 /// `plans.json` (F-TK-07): every plan and its reply code, so a plan
@@ -700,13 +704,7 @@ impl PlanService {
         if self.file.is_none() {
             return;
         }
-        let worker = tokio::runtime::Handle::try_current()
-            .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-        if worker {
-            tokio::task::block_in_place(|| self.write());
-        } else {
-            self.write();
-        }
+        blocking(|| self.write());
     }
 
     fn write(&self) {
@@ -725,6 +723,7 @@ impl PlanService {
                     launch: None,
                     codes: e.codes.clone(),
                     runs: e.runs.clone(),
+                    instructions: None,
                 })
                 .collect(),
         };
@@ -852,6 +851,7 @@ impl PlanService {
                 launch: None,
                 codes: HashMap::new(),
                 runs: BTreeSet::new(),
+                instructions: None,
             },
         );
         tracing::info!(code = "plan.started", "Lead is planning");
@@ -1156,6 +1156,8 @@ impl PlanService {
             let base = self.host.base_commit(&view.workspace_id).await;
             self.update(id, |v| v.base_commit = v.base_commit.take().or(base));
         }
+        // What Lead answers from, read once at that commit (D-3021).
+        self.keep_instructions(id).await;
         let back = |err: &IpcError, queued: Vec<String>, skipped: Vec<PlanSkip>| {
             self.update(id, |v| {
                 v.state = PlanState::Created;
@@ -1234,6 +1236,7 @@ impl PlanService {
     /// answer from it stops (F-TK-08).
     pub fn discard(&self, id: &str) -> Result<(), IpcError> {
         let gone = self.lock().remove(id).ok_or_else(not_found)?;
+        self.forget_instructions(id);
         self.stop_answering(id, None);
         self.turns
             .lock()
@@ -1369,6 +1372,19 @@ pub fn sweep_answer_folders(run: &Path, keep: Duration) {
                 tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer folder a crash left wasn't removed");
             }
         }
+    }
+}
+
+/// Runs blocking file work: on a multi-threaded runtime worker it steps
+/// aside from the worker's other tasks (`block_in_place`) rather than
+/// stalling them (D-2837); elsewhere it just runs.
+fn blocking<T>(f: impl FnOnce() -> T) -> T {
+    let worker = tokio::runtime::Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if worker {
+        tokio::task::block_in_place(f)
+    } else {
+        f()
     }
 }
 
@@ -1721,7 +1737,7 @@ mod tests {
         /// The main checkout's commit, when it moved from [`BASE`].
         head: Mutex<Option<String>>,
         /// The instructions files at the base commit, and who read them.
-        files: Vec<(String, String)>,
+        files: Mutex<Vec<(String, String)>>,
         read: Mutex<Vec<(WorkspaceId, String)>>,
         answers: Mutex<Vec<Answered>>,
         /// The run no longer waits for an answer.
@@ -1893,7 +1909,7 @@ mod tests {
                 .expect("l")
                 .push((ws.clone(), commit.to_string()));
             if commit == BASE {
-                self.files.clone()
+                self.files.lock().expect("l").clone()
             } else {
                 Vec::new()
             }
@@ -2814,7 +2830,7 @@ mod tests {
         lead: Lead,
     ) -> (tempfile::TempDir, Arc<Fake>, Arc<PlanService>) {
         rig_as(Fake {
-            files,
+            files: Mutex::new(files),
             lead: Mutex::new(lead),
             ..Fake::default()
         })
@@ -3682,6 +3698,82 @@ mod tests {
         assert_eq!(
             after.supervision_for(&AttemptId::from_db("at_1".to_string()), "TAN-1"),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_lead_answers_from_the_instructions_as_execute_all_found_them() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files, Lead::Answer("Vitest.".into()));
+        let view = running(&fake, &plans, true).await;
+        // Read once, as Execute all starts the runs.
+        assert_eq!(fake.read.lock().expect("l").len(), 1);
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        assert!(kept.is_file());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&kept).expect("meta").permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        // The repository's CLAUDE.md changes, or the catalog names another file.
+        *fake.files.lock().expect("l") = vec![("CLAUDE.md".into(), "Use jest.\n".into())];
+        plans
+            .ask(asks(&view, "TAN-1", "at_1", "Which test runner?"))
+            .await;
+        let asked = prompts(&fake);
+        assert!(asked[0].contains("Use vitest."), "{}", asked[0]);
+        assert!(!asked[0].contains("Use jest."));
+        assert_eq!(fake.read.lock().expect("l").len(), 1, "not read again");
+        // After a restart, the same files, from the plan's own file.
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        *fake2.lead.lock().expect("l") = Lead::Answer("Vitest.".into());
+        after
+            .ask(asks(&view, "TAN-2", "at_2", "Which test runner?"))
+            .await;
+        let asked = prompts(&fake2);
+        assert!(asked[0].contains("Use vitest."), "{}", asked[0]);
+        assert!(fake2.read.lock().expect("l").is_empty());
+        // Remove plan: they go with it.
+        after.discard(&view.id).expect("remove");
+        assert!(!kept.exists());
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_plan_kept_without_its_instructions_reads_them_once_at_its_commit() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files.clone(), Lead::Answer("Vitest.".into()));
+        let view = running(&fake, &plans, true).await;
+        // A plan kept before there were snapshots, or one whose file is
+        // another commit's.
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        std::fs::write(
+            &kept,
+            r#"{"version":1,"commit":"0000beef","files":[["CLAUDE.md","Use jest.\n"]]}"#,
+        )
+        .expect("edited");
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        *fake2.files.lock().expect("l") = files;
+        *fake2.lead.lock().expect("l") = Lead::Answer("Vitest.".into());
+        for (issue, run) in [("TAN-1", "at_1"), ("TAN-2", "at_2")] {
+            after
+                .ask(asks(&view, issue, run, "Which test runner?"))
+                .await;
+        }
+        let asked = prompts(&fake2);
+        assert!(asked
+            .iter()
+            .all(|m| m.contains("Use vitest.") && !m.contains("Use jest.")));
+        // Read at its base commit for the first question, then kept.
+        assert_eq!(
+            *fake2.read.lock().expect("l"),
+            vec![(WorkspaceId::from_db("ws_1".to_string()), BASE.to_string())]
         );
     }
 }
