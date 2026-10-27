@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plan-answer"
+description = "Enables the plan_answer command without any pre-configured scope."
+commands.allow = ["plan_answer"]
+
+[[permission]]
+identifier = "deny-plan-answer"
+description = "Denies the plan_answer command without any pre-configured scope."
+commands.deny = ["plan_answer"]

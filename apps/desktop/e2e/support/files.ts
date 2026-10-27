@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, mod } from "./app";
+import { addFolder, mod, waitFor } from "./app";
 
 /** Picks an item from the sidebar's "+" menu (opening the sidebar first). */
 export async function openFromPlus(label: string): Promise<void> {
@@ -56,10 +56,7 @@ export function treeRows(): Promise<string[]> {
 }
 
 export async function waitForRow(path: string, timeout = 10_000): Promise<void> {
-  await browser.waitUntil(async () => (await treeRows()).includes(path), {
-    timeout,
-    timeoutMsg: `no tree row ${path}; rows: ${JSON.stringify(await treeRows())}`,
-  });
+  await waitFor(treeRows, (rows) => rows.includes(path), `no tree row ${path}; rows`, { timeout });
 }
 
 export async function clickRow(path: string): Promise<void> {
@@ -116,10 +113,12 @@ export function changeRows(): Promise<string[]> {
 }
 
 export async function waitForChanges(rows: string[], timeout = 15_000): Promise<void> {
-  await browser.waitUntil(async () => JSON.stringify(await changeRows()) === JSON.stringify(rows), {
-    timeout,
-    timeoutMsg: `changes: ${JSON.stringify(await changeRows())}, wanted ${JSON.stringify(rows)}`,
-  });
+  await waitFor(
+    changeRows,
+    (now) => JSON.stringify(now) === JSON.stringify(rows),
+    `changes, wanted ${JSON.stringify(rows)}`,
+    { timeout },
+  );
 }
 
 /** The branch chip's branch, ahead and behind. */
@@ -159,10 +158,7 @@ export async function commitStaged(message: string): Promise<void> {
     if (i > 0) await browser.keys("Enter");
     if (line) await box.addValue(line);
   }
-  await browser.waitUntil(async () => (await box.getValue()) === message, {
-    timeout: 5_000,
-    timeoutMsg: `the message box holds ${JSON.stringify(await box.getValue())}`,
-  });
+  await waitFor(() => box.getValue(), (v) => v === message, "the message box holds", { timeout: 5_000 });
   await browser.waitUntil(async () => (await $('[data-testid="git-commit"]').getAttribute("disabled")) === null, {
     timeout: 5_000,
     timeoutMsg: "Commit stayed disabled",

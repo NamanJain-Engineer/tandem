@@ -173,14 +173,20 @@ pub fn user_home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// `mkdir -p` and, on Unix, chmod 0700.
+/// `mkdir -p`. On Unix each folder it makes is 0700 from the start (never
+/// briefly 0755), and `path` is chmod 0700 if it was already there.
 pub fn create_private_dir(path: &Path) -> io::Result<()> {
-    std::fs::create_dir_all(path)?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(path)?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(path)?;
     Ok(())
 }
 
@@ -208,5 +214,29 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o700);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tk_08_1_a_private_folder_and_the_folders_made_for_it_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let run = tmp.path().join("run");
+        std::fs::create_dir(&run).expect("run");
+        std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let session = run.join("answers").join("ans_1");
+        create_private_dir(&session).expect("create");
+        // Made 0700, not chmod'd afterwards: `answers` was never asked for.
+        assert_eq!(mode(&run.join("answers")), 0o700);
+        assert_eq!(mode(&session), 0o700);
+        // A folder that was there is left as it is, unless it's the one asked for.
+        assert_eq!(mode(&run), 0o755);
+        create_private_dir(&run).expect("again");
+        assert_eq!(mode(&run), 0o700);
+        // A file in the way is an error, not a folder.
+        let file = tmp.path().join("file");
+        std::fs::write(&file, "x").expect("file");
+        assert!(create_private_dir(&file).is_err());
     }
 }

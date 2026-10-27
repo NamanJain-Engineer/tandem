@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkAgain, fakeEngine, freshUser, home, invoke } from "../support/app";
 import { assistantTexts, composer, sendMessage, threadMode, waitForAssistant } from "../support/thread";
@@ -53,6 +53,13 @@ describe("E2E-M7-12 ACP", () => {
     await row.waitForExist({ timeout: 10_000 });
     await row.click();
     await composer().waitForDisplayed({ timeout: 10_000 });
+  });
+
+  // Later specs run without this OpenCode, and with no models set.
+  after(async () => {
+    rmSync(join(home(), "fakebin", "opencode"), { force: true });
+    rmSync(join(home(), "fake-models.txt"), { force: true });
+    await checkAgain().catch(() => undefined);
   });
 
   it("F-TH-06.1 a prompt streams, a command asks inline, and Stop cancels", async function () {

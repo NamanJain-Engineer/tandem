@@ -2535,6 +2535,7 @@ impl AppLauncher {
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
+                tools_off: false,
             },
         ))
     }
@@ -2655,6 +2656,7 @@ impl AppLauncher {
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
+                tools_off: false,
             },
         ))
     }
@@ -3227,6 +3229,7 @@ impl ChatLauncher for AppLauncher {
                 relocate: None,
                 briefing,
                 stdio_servers,
+                tools_off: false,
             },
         ))
     }
@@ -3553,6 +3556,7 @@ mod tests {
                     relocate: None,
                     briefing: None,
                     stdio_servers: Vec::new(),
+                    tools_off: false,
                 },
             ))
         }
@@ -5075,6 +5079,7 @@ mod tests {
                         relocate: None,
                         briefing: None,
                         stdio_servers: Vec::new(),
+                        tools_off: false,
                     },
                 ))
             }

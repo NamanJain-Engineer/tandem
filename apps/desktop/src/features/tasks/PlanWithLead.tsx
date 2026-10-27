@@ -3,13 +3,23 @@
 // description, engine). Create tasks writes them; Execute all shows each
 // run first, then runs them through F-TK-04's queue (D-2430). F-TK-07: the
 // plan then follows each task's latest run and lands the approved ones
-// through Land worktrees (F-WT-07).
+// through Land worktrees (F-WT-07). F-TK-08: Lead answers the runs' routine
+// questions; the rest come to you here, with Answer….
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type { AttemptView, PlanEngine, PlanLaunch, PlanTask, PlanView, TaskRunBlock } from "@tandem/protocol";
+import type {
+  AttemptView,
+  PlanEngine,
+  PlanLaunch,
+  PlanQuestion,
+  PlanTask,
+  PlanView,
+  TaskRunBlock,
+} from "@tandem/protocol";
 import {
   Button,
   Callout,
+  Checkbox,
   Dialog,
   IconButton,
   Input,
@@ -17,6 +27,7 @@ import {
   Skeleton,
   SkeletonGate,
   StatusDot,
+  Switch,
   Textarea,
   useToast,
   type Status,
@@ -122,11 +133,14 @@ export function runSummary(runs: Array<AttemptView | null>): string {
     .join(" · ");
 }
 
-/** A started plan's shape in the Tasks page's header: working while a run
- * is under way, an error when one failed, waiting while one waits on you,
- * else done (F-TK-07). */
+/** A started plan's shape in the Tasks page's header: waiting while a run
+ * waits on you (F-TK-08), working while one is under way, an error when one
+ * failed, waiting while one is in review or stopped, else done (F-TK-07). */
 export function startedStatus(plan: PlanView, attempts: AttemptView[]): Status {
-  const kinds = plan.issueIds.map((id) => kindOf(latestRun(attempts, id)));
+  const runs = plan.issueIds.map((id) => latestRun(attempts, id));
+  // A run waiting on you, for an approval or an answer (F-TK-08), first.
+  if (runs.some((r) => r?.waiting || openQuestion(plan, r)?.state === "escalated")) return "waiting";
+  const kinds = runs.map(kindOf);
   if (kinds.some((k) => k === "queued" || k === "running")) return "working";
   if (kinds.includes("failed")) return "error";
   if (kinds.some((k) => k === "approved" || k === "changes" || k === "review" || k === "stopped"))
@@ -141,6 +155,100 @@ export function approvedLanes(plan: PlanView, attempts: AttemptView[]): string[]
     .map((id) => latestRun(attempts, id))
     .filter((r): r is AttemptView => kindOf(r) === "approved" && !!r?.attempt.laneWorkspaceId)
     .map((r) => r.attempt.laneWorkspaceId ?? "");
+}
+
+/** The question a task's latest run waits on, if any (F-TK-08). */
+export function openQuestion(plan: PlanView, run: AttemptView | null): PlanQuestion | null {
+  if (!run) return null;
+  const mine = plan.questions.filter(
+    (q) => q.attemptId === run.attempt.id && (q.state === "answering" || q.state === "escalated"),
+  );
+  return mine[mine.length - 1] ?? null;
+}
+
+/** "Lead answered N": Lead's answers to a task's runs (F-TK-08). */
+export function leadAnswered(plan: PlanView, issueId: string): number {
+  return plan.questions.filter((q) => q.issueId === issueId && q.state === "answered").length;
+}
+
+/** A run's question: Lead answering it, or it came to you (F-TK-08). */
+function QuestionRow({ plan, question }: { plan: PlanView; question: PlanQuestion }) {
+  const { show: toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (question.state === "answering")
+    return (
+      <p className="flex items-center gap-2 pl-6 text-sm text-fg-muted" data-testid="plan-run-answering">
+        <StatusDot status="working" label={t("plan.question.answering")} />
+        {t("plan.question.answering")}
+      </p>
+    );
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await usePlans.getState().answer(plan.id, question.id, text);
+    setBusy(false);
+    if (isIpcError(r)) setError(r.message);
+    else toast({ tone: "success", title: t("plan.question.sent") });
+  };
+  return (
+    <div
+      className="ml-6 flex flex-col gap-2 rounded-md border border-border bg-surface-1 p-2"
+      data-testid="plan-run-needs-you"
+    >
+      <p className="flex items-center gap-2 text-sm font-medium text-fg">
+        <StatusDot status="waiting" label={t("plan.question.needsYou")} />
+        {t("plan.question.needsYou")}
+      </p>
+      <p className="whitespace-pre-wrap break-words text-sm text-fg" data-testid="plan-question">
+        {question.question}
+      </p>
+      {question.reason && (
+        <p className="text-sm text-fg-muted" data-testid="plan-question-why">
+          {question.reason}
+        </p>
+      )}
+      {open ? (
+        <>
+          <Textarea
+            label={t("plan.question.answerLabel")}
+            minRows={2}
+            maxRows={6}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            data-testid="plan-answer-text"
+          />
+          {error && (
+            <p className="text-sm text-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || text.trim().length === 0}
+              onClick={() => void send()}
+              data-testid="plan-answer-send"
+            >
+              {t("plan.question.send")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div>
+          <Button variant="secondary" size="sm" onClick={() => setOpen(true)} data-testid="plan-answer-open">
+            {t("plan.question.answer")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] }) {
@@ -201,26 +309,47 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
           const run = runs[i] ?? null;
           const task = plan.tasks[i];
           const kind = kindOf(run);
+          const question = openQuestion(plan, run);
+          const answered = leadAnswered(plan, id);
           return (
             <li
               key={id}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2"
+              className="flex flex-col gap-1 rounded-md px-2 py-1.5 hover:bg-surface-2"
               data-testid="plan-run"
               data-state={run?.attempt.state ?? "none"}
               data-verdict={run?.attempt.reviewVerdict ?? undefined}
+              data-question={question?.state ?? undefined}
             >
-              <StatusDot status={SHAPE[kind]} label={runLabel(run)} />
-              <button
-                type="button"
-                className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:underline"
-                onClick={() => openTask(id)}
-                data-testid="plan-run-open"
-              >
-                <span className="font-mono text-fg-muted">{id}</span> {task?.title ?? ""}
-              </button>
-              <span className="shrink-0 text-sm text-fg-muted">
-                {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {runLabel(run)}
-              </span>
+              <div className="flex items-center gap-2">
+                <StatusDot status={SHAPE[kind]} label={runLabel(run)} />
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:underline"
+                  onClick={() => openTask(id)}
+                  data-testid="plan-run-open"
+                >
+                  <span className="font-mono text-fg-muted">{id}</span> {task?.title ?? ""}
+                </button>
+                <span className="shrink-0 text-sm text-fg-muted">
+                  {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {runLabel(run)}
+                </span>
+              </div>
+              {(run?.waiting || answered > 0) && (
+                <p className="flex flex-wrap items-center gap-x-3 pl-6 text-sm text-fg-muted">
+                  {run?.waiting && (
+                    <span className="flex items-center gap-2" data-testid="plan-run-approval">
+                      <StatusDot status="waiting" label={t("plan.question.approval")} />
+                      {t("plan.question.approval")}
+                    </span>
+                  )}
+                  {answered > 0 && (
+                    <span data-testid="plan-run-answered">
+                      {t("plan.question.answered", { n: answered })}
+                    </span>
+                  )}
+                </p>
+              )}
+              {question && <QuestionRow key={question.id} plan={plan} question={question} />}
             </li>
           );
         })}
@@ -381,8 +510,17 @@ function Row({
   );
 }
 
-/** Execute all's check: every run it starts, before any does (F-TK-06 AC4). */
-function LaunchList({ launch }: { launch: PlanLaunch }) {
+/** Execute all's check: every run it starts, before any does (F-TK-06 AC4),
+ * and whether Lead answers their routine questions (F-TK-08). */
+function LaunchList({
+  launch,
+  supervise,
+  onSupervise,
+}: {
+  launch: PlanLaunch;
+  supervise: boolean;
+  onSupervise: (on: boolean) => void;
+}) {
   const runnable = launch.runs.filter((r) => !r.skip).length;
   return (
     <div className="flex flex-col gap-3" data-testid="plan-launch">
@@ -404,6 +542,7 @@ function LaunchList({ launch }: { launch: PlanLaunch }) {
             className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-3"
             data-testid="plan-launch-run"
             data-skip={r.skip ?? ""}
+            data-review-engine={r.reviewEngineId}
           >
             <span className="text-sm text-fg">
               {t("plan.confirm.task", { id: r.issueId, title: r.title })}
@@ -427,6 +566,48 @@ function LaunchList({ launch }: { launch: PlanLaunch }) {
           </li>
         ))}
       </ol>
+      {!launch.blocked &&
+        runnable > 0 &&
+        (launch.leadAnswers ? (
+          <div data-testid="plan-supervise-option">
+            <Checkbox
+              label={t("plan.supervise.option")}
+              description={t("plan.supervise.optionHint")}
+              checked={supervise}
+              onCheckedChange={onSupervise}
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-fg-muted" data-testid="plan-supervise-unavailable">
+            {t("plan.supervise.cantAnswer")}
+          </p>
+        ))}
+    </div>
+  );
+}
+
+/** Lead's answers on or off, shown while any of the plan's runs can ask:
+ * starting, started, or back at Created with runs queued (F-TK-08 AC5). */
+function SuperviseSwitch({ plan, onError }: { plan: PlanView; onError: (message: string | null) => void }) {
+  const [pending, setPending] = useState(false);
+  const flip = async (on: boolean) => {
+    setPending(true);
+    onError(null);
+    const r = await usePlans.getState().supervise(plan.id, on);
+    setPending(false);
+    if (isIpcError(r)) onError(r.message);
+  };
+  return (
+    <div className="flex flex-col gap-1" data-testid="plan-supervise" aria-busy={pending}>
+      <Switch
+        label={t("plan.supervise.switch")}
+        checked={plan.supervise}
+        disabled={pending}
+        onCheckedChange={(on) => void flip(on)}
+      />
+      <p className="text-sm text-fg-muted">
+        {pending ? t("plan.supervise.switching") : t("plan.supervise.switchHint")}
+      </p>
     </div>
   );
 }
@@ -438,6 +619,8 @@ function PlanDialog({ plan }: { plan: PlanView }) {
   const [error, setError] = useState<string | null>(null);
   /** Execute all's check, while it's shown. */
   const [launch, setLaunch] = useState<PlanLaunch | null>(null);
+  /** Lead answers the runs' routine questions: on unless you say (F-TK-08). */
+  const [supervise, setSupervise] = useState(true);
   // A draft arriving replaces the (empty) rows; later edits are the user's.
   useEffect(() => {
     if (plan.state === "ready") setTasks((cur) => (cur.length === 0 ? plan.tasks : cur));
@@ -472,12 +655,17 @@ function PlanDialog({ plan }: { plan: PlanView }) {
     const r = await usePlans.getState().prepare(plan.id);
     setBusy(false);
     if (isIpcError(r)) setError(r.message);
-    else setLaunch(r);
+    else {
+      // Again after a start that stopped partway: the switch as you left it.
+      setSupervise(plan.queued.length > 0 ? plan.supervise : true);
+      setLaunch(r);
+    }
   };
   const run = async () => {
     setBusy(true);
     setError(null);
-    const r = await usePlans.getState().execute(plan.id);
+    // An engine that can't answer with every tool off never answers.
+    const r = await usePlans.getState().execute(plan.id, supervise && (launch?.leadAnswers ?? false));
     setBusy(false);
     setLaunch(null);
     if (isIpcError(r)) setError(r.message);
@@ -644,13 +832,16 @@ function PlanDialog({ plan }: { plan: PlanView }) {
             </ol>
           </>
         )}
-        {plan.state === "created" && launch && <LaunchList launch={launch} />}
+        {plan.state === "created" && launch && (
+          <LaunchList launch={launch} supervise={supervise} onSupervise={setSupervise} />
+        )}
         {plan.state === "created" && !launch && (
           <>
             <p className="flex items-center gap-2 text-sm text-fg" data-testid="plan-created">
               <StatusDot status="done" label={t("plan.createdLabel")} />
               {t("plan.created", { n: plan.issueIds.length, ids: plan.issueIds.join(", ") })}
             </p>
+            {plan.queued.length > 0 && <SuperviseSwitch plan={plan} onError={setError} />}
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -660,6 +851,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               <StatusDot status="working" label={t("plan.starting")} />
               {t("plan.starting")}
             </p>
+            <SuperviseSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -676,6 +868,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
                 })}
               </p>
             )}
+            <SuperviseSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
