@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { checkout } from "./checkout";
+import { cartFor, guest, signedIn } from "../../tests/fixtures";
+
+describe("checkout", () => {
+  it("charges a signed-in customer the cart's total", async () => {
+    const res = await checkout(cartFor(2), signedIn("ana"));
+    expect(res.status).toBe(200);
+  });
+
+  it("applies the session's coupon", async () => {
+    const res = await checkout(cartFor(2), signedIn("ana", "SPRING10"));
+    expect(await res.json()).toMatchObject({ charged: 1800 });
+  });
+
+  it("sends a guest to sign in first", async () => {
+    const res = await checkout(cartFor(1), guest());
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+  });
+
+  it("keeps the cart when a guest is sent to sign in", async () => {
+    const cart = cartFor(3);
+    await checkout(cart, guest());
+    expect(cart.items).toHaveLength(3);
+  });
+});
