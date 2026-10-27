@@ -193,9 +193,11 @@ E2E lessons (each cost a debugging round):
   `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`. All three
   answer a task review with a verdict (`review_reply`), since a review runs on
   whichever other chat engine is installed.
-- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`
-  and calls `checkAgain()`, or later specs run with it installed: a leftover
-  Cursor Agent reviewed E2E-M18-TK-07's runs in a full run, though it passed alone.
+- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`,
+  calls `checkAgain()` and checks it's gone (no `.catch`), or later specs run with
+  it installed: a leftover Cursor Agent reviewed E2E-M18-TK-07's runs in a full
+  run, though it passed alone. The same goes for `fake-version.txt` and
+  `fake-models.txt`.
 - `waitUntil`'s `timeoutMsg` is built with its options, before the wait, so
   `` `…${JSON.stringify(await rows())}` `` shows the state at the start, and a
   variable the condition sets shows as `null`. Wait with `waitFor(read, ok, what,

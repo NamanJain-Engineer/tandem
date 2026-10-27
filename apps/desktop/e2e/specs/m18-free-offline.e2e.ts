@@ -37,7 +37,8 @@ describe("E2E-M18-FREE free offline", function () {
     // Later specs run without it: a task review runs on another installed
     // chat engine, and this one would be it (E2E-M18-TK-07).
     rmSync(join(home(), "fakebin", "cursor-agent"), { force: true });
-    await checkAgain().catch(() => undefined);
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("cursor-agent");
   });
 
   it("F-TH-06 a Cursor Agent thread streams its reply with no account", async () => {

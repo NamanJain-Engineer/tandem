@@ -216,6 +216,8 @@ fn f_tk_08_1_a_pre_release_of_2_1_310_cant_answer_with_every_tool_off() {
         "2.1.310-rc.1",
         "2.1.310-rc.1 (Claude Code)",
         "claude 2.1.310-beta",
+        // A run that isn't a version before it doesn't hide the suffix.
+        "v.9.9.9 2.1.310-rc.1",
     ] {
         assert!(!claude.answers_without_tools(Some(early)), "{early}");
     }
@@ -227,6 +229,28 @@ fn f_tk_08_1_a_pre_release_of_2_1_310_cant_answer_with_every_tool_off() {
     ] {
         assert!(claude.answers_without_tools(Some(ok)), "{ok}");
     }
+}
+
+#[test]
+fn f_tk_08_1_the_tools_off_check_reads_the_version_parse_version_reads() {
+    for version in [
+        "2.1.310",
+        "v.9.9.9 2.1.310-rc.1",
+        "1.2 3.4.5-beta",
+        "claude 2.1.310 (Claude Code) 9.9.9-rc",
+        "2.1.310.4-rc",
+        "garbled",
+        "",
+        "—2.1.310—",
+    ] {
+        assert_eq!(
+            claude_version(version).map(|(v, _)| v),
+            crate::chat::codex::protocol::parse_version(version),
+            "{version}"
+        );
+    }
+    assert_eq!(claude_version("1.2 3.4.5-beta"), Some(((3, 4, 5), true)));
+    assert_eq!(claude_version("—2.1.310—"), Some(((2, 1, 310), false)));
 }
 
 #[tokio::test]
