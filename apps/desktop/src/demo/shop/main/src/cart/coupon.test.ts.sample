@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { applyCoupon } from "./coupon";
+import { cartFor } from "../../tests/fixtures";
+
+describe("applyCoupon", () => {
+  it.each([
+    [1, "SPRING10", 900],
+    [2, "SPRING10", 1800],
+    [3, "SPRING10", 2700],
+    [5, "SPRING10", 4500],
+    [8, "SPRING10", 7200],
+    [10, "BIGBASKET", 8500],
+    [11, "BIGBASKET", 9350],
+    [12, "BIGBASKET", 10200],
+    [20, "BIGBASKET", 17000],
+    [40, "BIGBASKET", 34000],
+    [9, "BIGBASKET", 9000],
+    [1, "BIGBASKET", 1000],
+    [3, null, 3000],
+    [3, "NOPE", 3000],
+    [0, "SPRING10", 0],
+  ])("%i items with %s come to %i", (items, code, total) => {
+    expect(applyCoupon(cartFor(items), code)).toBe(total);
+  });
+
+  it("rounds to whole cents", () => {
+    const cart = { ...cartFor(1), items: [{ sku: "tea", name: "Tea", price: 454, qty: 1 }] };
+    expect(applyCoupon(cart, "SPRING10")).toBe(409);
+  });
+
+  it("counts quantities toward a coupon's minimum", () => {
+    const cart = { ...cartFor(1), items: [{ sku: "tea", name: "Tea", price: 2500, qty: 4 }] };
+    expect(applyCoupon(cart, "BIGBASKET")).toBe(8500);
+  });
+
+  it("leaves the cart itself alone", () => {
+    const cart = cartFor(2);
+    applyCoupon(cart, "SPRING10");
+    expect(cart.items).toHaveLength(2);
+  });
+
+  it("takes nothing off an empty cart", () => {
+    expect(applyCoupon(cartFor(0), "BIGBASKET")).toBe(0);
+  });
+});

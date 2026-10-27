@@ -1,0 +1,109 @@
+{
+  "repo": "shop",
+  "base": "main",
+  "check": "pnpm test",
+  "history": [
+    { "sha": "4f2c9e1", "subject": "Show the cart's total before checkout" },
+    { "sha": "91b07aa", "subject": "Keep the coupon on reload" },
+    { "sha": "0d5e3b2", "subject": "First commit" }
+  ],
+  "remote": "git@github.example:sample/shop.git",
+  "engines": {
+    "claude": { "label": "Claude Code", "version": "2.1.0-sample" },
+    "codex": { "label": "Codex", "version": "0.46.0-sample" },
+    "gemini": { "label": "Gemini CLI", "version": "0.9.0-sample" }
+  },
+  "worktrees": [
+    {
+      "slug": "checkout-fix",
+      "engine": "claude",
+      "task": "Find why checkout sends people back to /login",
+      "state": "done",
+      "steps": [
+        { "read": "src/auth/session.ts" },
+        { "read": "src/cart/checkout.ts" },
+        { "edit": "src/cart/checkout.ts", "add": 18, "del": 4 },
+        { "edit": "src/cart/coupon.ts", "add": 9, "del": 2 },
+        { "edit": "src/auth/session.ts", "add": 11, "del": 8 },
+        { "edit": "src/cart/checkout.test.ts", "add": 24, "del": 4 },
+        { "run": "pnpm test cart", "passed": 42 }
+      ],
+      "closing": "Sessions that had just expired were dropped, so a second tab bounced back to /login. They renew now, with tests.",
+      "commits": [
+        { "sha": "e5d2a90", "subject": "Test checkout's sign-in round trip" },
+        { "sha": "9c41f7b", "subject": "Keep coupons on renewed sessions" },
+        { "sha": "3b8f1d2", "subject": "Renew sessions that expired a moment ago" }
+      ],
+      "mergeCommit": "a41c9e2"
+    },
+    {
+      "slug": "coupon-rules",
+      "engine": "codex",
+      "task": "Stack coupons by priority",
+      "state": "working",
+      "steps": [
+        { "read": "src/cart/coupon.ts" },
+        { "edit": "src/cart/coupon.ts", "add": 31, "del": 12 },
+        { "edit": "src/cart/rules.ts", "add": 40, "del": 0 },
+        { "run": "pnpm test coupon" }
+      ],
+      "commits": [
+        { "sha": "b7e3c10", "subject": "Apply stacked coupons in priority order" },
+        { "sha": "f02a6d4", "subject": "Add stacking rules" },
+        { "sha": "4c9e2b8", "subject": "Give each coupon a priority" },
+        { "sha": "8d1f5a3", "subject": "Add STAFF30 and WELCOME5" },
+        { "sha": "2a7b9e6", "subject": "Read coupon codes as a list" }
+      ],
+      "mergeCommit": "7d03b5f"
+    },
+    {
+      "slug": "search-ui",
+      "engine": "gemini",
+      "task": "Make search results keyboard friendly",
+      "state": "waiting",
+      "steps": [
+        { "read": "src/search/results.tsx" },
+        { "edit": "src/search/results.tsx", "add": 22, "del": 6 }
+      ],
+      "ask": "pnpm test search",
+      "commits": [
+        { "sha": "6e4d8f1", "subject": "Open a search result with Enter" },
+        { "sha": "d93b2c5", "subject": "Move through search results with the arrow keys" }
+      ],
+      "mergeCommit": "c18e6a0"
+    }
+  ],
+  "dev": { "command": "pnpm dev", "port": 41003, "requests": ["GET /checkout 200", "GET /cart 200"] },
+  "overlap": { "symbol": "applyCoupon", "file": "src/cart/coupon.ts", "between": ["checkout-fix", "coupon-rules"] },
+  "secondOpinion": {
+    "worktree": "checkout-fix",
+    "engine": "codex",
+    "comments": [
+      {
+        "file": "src/cart/checkout.ts",
+        "line": 22,
+        "body": "req.url is the whole URL, host and all, so next= hands the login page an absolute address. Pass the path, or the login page has to check the host before it redirects."
+      },
+      { "file": "src/cart/checkout.ts", "line": 25, "body": "Add a test for an expired cart." }
+    ]
+  },
+  "pr": {
+    "number": 42,
+    "worktree": "checkout-fix",
+    "title": "Sample PR: Keep people on checkout after they sign in",
+    "url": "https://github.example/sample/shop/pull/42",
+    "checks": [
+      { "name": "lint", "bucket": "pass" },
+      { "name": "test", "bucket": "fail" },
+      { "name": "build", "bucket": "pass" }
+    ],
+    "comments": [
+      {
+        "author": "sample-reviewer",
+        "file": "src/auth/session.ts",
+        "line": 12,
+        "body": "15 min feels long for a shared computer. could we do 5? anyone who comes back later just signs in again, that's fine"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+import type { Cart } from "./cart";
+import { applyCoupon } from "./coupon";
+import { refreshSession } from "../auth/session";
+import { charge } from "../payments/charge";
+import { redirect } from "../http/redirect";
+
+/** The cart page's flag for a cart whose prices are no longer held. */
+export const EXPIRED = "expired";
+
+/** Back to the cart page, which shows the cart's new total first. */
+function expired(cart: Cart) {
+  return redirect(`/cart?${EXPIRED}=${encodeURIComponent(cart.id)}`);
+}
+
+/** Checkout: a signed-in customer pays for their cart, with its coupon. A
+ * guest signs in first and comes back here after, never to /login again:
+ * a session that expired a moment ago is renewed rather than dropped, and
+ * dropping it was what sent people round in a loop. */
+export async function checkout(cart: Cart, req: Request) {
+  const session = await refreshSession(req);
+  if (!session) {
+    return redirect(`/login?next=${encodeURIComponent(req.url)}`);
+  }
+  const total = applyCoupon(cart, session.coupon);
+  if (cart.expiresAt < Date.now()) return expired(cart);
+  return charge(session.customer, total);
+}

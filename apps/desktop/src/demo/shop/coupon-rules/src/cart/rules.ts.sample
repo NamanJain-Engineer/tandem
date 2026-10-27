@@ -1,0 +1,40 @@
+import type { Coupon } from "./coupon";
+
+/** How coupons stack on one cart, set per sale (see `stack`). Without any
+ * rules, every coupon the cart has applies, in priority order. */
+export type StackRule =
+  /** At most `max` coupons apply together. */
+  | { kind: "max"; max: number }
+  /** These codes never apply together: the first by priority wins. */
+  | { kind: "exclusive"; codes: string[] };
+
+/** The coupons that apply together, lowest priority number first. A coupon
+ * marked `alone` takes no other with it: when the cart has one, it's the
+ * only coupon that applies (the first by priority, if there are several). */
+export function stack(coupons: Coupon[], rules: StackRule[] = []): Coupon[] {
+  const sorted = [...coupons].sort((a, b) => a.priority - b.priority);
+  const alone = sorted.find((c) => c.alone);
+  if (alone) return [alone];
+  const taken: Coupon[] = [];
+  for (const coupon of sorted) {
+    if (taken.some((c) => c.code === coupon.code)) continue;
+    if (rules.some((rule) => excludes(rule, taken, coupon))) continue;
+    taken.push(coupon);
+  }
+  return taken.slice(0, limit(rules, taken.length));
+}
+
+/** The most coupons the rules let apply, out of `n`. */
+function limit(rules: StackRule[], n: number): number {
+  let max = n;
+  for (const rule of rules) if (rule.kind === "max") max = Math.min(max, rule.max);
+  return Math.max(max, 0);
+}
+
+/** Whether `rule` keeps `coupon` out, given the ones already taken. */
+function excludes(rule: StackRule, taken: Coupon[], coupon: Coupon): boolean {
+  if (rule.kind !== "exclusive" || !rule.codes.includes(coupon.code)) {
+    return false;
+  }
+  return taken.some((c) => rule.codes.includes(c.code));
+}

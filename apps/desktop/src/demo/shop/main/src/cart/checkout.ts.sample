@@ -1,0 +1,13 @@
+import type { Cart } from "./cart";
+import { applyCoupon } from "./coupon";
+import { getSession } from "../auth/session";
+import { charge } from "../payments/charge";
+import { redirect } from "../http/redirect";
+
+/** Checkout: a signed-in customer pays for their cart, with its coupon. */
+export async function checkout(cart: Cart, req: Request) {
+  const session = await getSession(req);
+  if (!session) return redirect("/login");
+  const total = applyCoupon(cart, session.coupon);
+  return charge(session.customer, total);
+}

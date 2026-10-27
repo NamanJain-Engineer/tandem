@@ -1,0 +1,19 @@
+import type { Product } from "../catalog/product";
+
+type Props = { results: Product[]; onOpen: (product: Product) => void };
+
+/** Search results: one row per product, each opening its page. */
+export function Results({ results, onOpen }: Props) {
+  if (results.length === 0) return <p className="empty">No products match.</p>;
+  return (
+    <ul className="results">
+      {results.map((product) => (
+        <li key={product.id}>
+          <button type="button" onClick={() => onOpen(product)}>
+            {product.name}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
