@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addFolder,
+  clickAllow,
   closeAllPanes,
   freshOffline,
   home,
@@ -73,9 +74,7 @@ describe("E2E-M18-EX07 activity ledger", function () {
     await sendToPane(agent, "/sh echo R1; vibezeo run -- printenv API_KEY\r");
     const banner = `[data-testid="pane"][data-pane-id="${agent}"] [data-testid="pane-approval"]`;
     await $(banner).waitForDisplayed({ timeout: 15_000 });
-    // Allow takes clicks once the question has been shown 500 ms.
-    await $(`${banner} [data-testid="pane-approval-once"]`).waitForEnabled();
-    await $(`${banner} [data-testid="pane-approval-once"]`).click();
+    await clickAllow(`${banner} [data-testid="pane-approval-once"]`);
     await browser.waitUntil(async () => /R1[\s\S]*sh exit: 0/.test(await paneText(agent)), {
       timeout: 20_000,
       timeoutMsg: "the run never finished",

@@ -1150,14 +1150,18 @@ pub fn run() {
                         record,
                         {
                             // Windows: the installer exits the process
-                            // without the exit event (F-TL-12).
+                            // without the exit event (F-TL-12), so this does
+                            // what the exit event would.
                             let terminals = state.terminals.clone();
+                            let remote = state.remote.clone();
                             let scrollback = state.data.scrollback();
                             std::sync::Arc::new(move || {
                                 services::agent_run::before_update_exit(
                                     &terminals,
                                     &scrollback,
-                                )
+                                );
+                                remote.shutdown();
+                                services::merge_queue::shutdown();
                             })
                         },
                     ),

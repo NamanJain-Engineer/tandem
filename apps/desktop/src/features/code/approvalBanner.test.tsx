@@ -342,4 +342,61 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     const guard = screen.getByTestId("guard-banner");
     expect(ask.compareDocumentPosition(guard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("F-TL-12.12 the pane's Allow ignores a click in the frame it moved, while hidden, or under an overlay", async () => {
+    const calls = fakeBackend({ approval_resolve: () => null });
+    let top = 0;
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(
+        () =>
+          ({
+            left: 0,
+            top,
+            width: 300,
+            height: 30,
+            right: 300,
+            bottom: top + 30,
+            x: 0,
+            y: top,
+            toJSON: () => ({}),
+          }) as DOMRect,
+      );
+    withApproval(approval);
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    await settled();
+    const once = () => screen.getByTestId("pane-approval-once") as HTMLButtonElement;
+    const answered = () => calls.some((c) => c.cmd === "approval_resolve");
+    // Moved (the banner scrolled) in the frame before the click.
+    top = 40;
+    fireEvent.click(once());
+    expect(answered()).toBe(false);
+    await waitFor(() => expect(once().disabled).toBe(true));
+    await settled();
+    // Something covers it (a menu, a dialog): the click goes nowhere.
+    const cover = document.createElement("div");
+    document.body.append(cover);
+    const point = vi.fn(() => cover);
+    Object.defineProperty(document, "elementFromPoint", { value: point, configurable: true });
+    fireEvent.click(once());
+    expect(answered()).toBe(false);
+    expect(point).toHaveBeenCalled();
+    Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
+    cover.remove();
+    // Hidden (the pane's tab isn't shown): it isn't sampled, and waits again.
+    const visible = vi.fn(() => false);
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", { value: visible, configurable: true });
+    await waitFor(() => expect(once().disabled).toBe(true));
+    fireEvent.click(once());
+    expect(answered()).toBe(false);
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", { value: undefined, configurable: true });
+    await settled();
+    fireEvent.click(once());
+    await waitFor(() => expect(answered()).toBe(true));
+    rect.mockRestore();
+  });
 });

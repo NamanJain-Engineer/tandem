@@ -1,6 +1,7 @@
 import { $, $$, browser } from "@wdio/globals";
 import {
   addFolder,
+  clickAllow,
   freshOffline,
   invoke,
   paneIds,
@@ -81,9 +82,7 @@ describe("E2E-M5-4 Dashboard", () => {
   });
 
   it("F-DB-01.3 Allow once on the waiting card resolves the approval and the agent proceeds", async () => {
-    // Allow takes clicks once the question has been shown 500 ms.
-    await $(`${card("fixture:q1")} [data-testid="card-allow"]`).waitForEnabled();
-    await $(`${card("fixture:q1")} [data-testid="card-allow"]`).click();
+    await clickAllow(`${card("fixture:q1")} [data-testid="card-allow"]`);
     await browser.waitUntil(
       async () => (await $(card("fixture:q1")).getAttribute("data-status")) === "working",
       { timeout: 5_000 },

@@ -1,6 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import {
   addFolder,
+  clickAllow,
   freshOffline,
   invoke,
   paneIds,
@@ -129,9 +130,7 @@ describe("E2E-M5-5 notifications", () => {
     )
       await $('[data-testid="sidebar-toggle"]').click();
     await $('[data-testid="sidebar-pill-dashboard"]').click();
-    // Allow takes clicks once the question has been shown 500 ms.
-    await $('[data-testid="agent-card"][data-key="fixture:ap"] [data-testid="card-allow"]').waitForEnabled();
-    await $('[data-testid="agent-card"][data-key="fixture:ap"] [data-testid="card-allow"]').click();
+    await clickAllow('[data-testid="agent-card"][data-key="fixture:ap"] [data-testid="card-allow"]');
     await browser.waitUntil(
       async () =>
         (await invoke<Page>("notifications_list", {})).items.find((n) => n.id === approval?.id)?.state ===

@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds } from "../support/app";
+import { addFolder, clickAllow, freshOffline, invoke, paneIds } from "../support/app";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 
 type Item = { key: string; status: string; pendingApproval: { summary: string } | null };
@@ -98,9 +98,7 @@ describe("E2E-M7-2 approvals", () => {
     await openDashboard();
     const card = `[data-testid="agent-card"][data-key="thread:${threadId}"]`;
     await $(card).waitForExist({ timeout: 5_000 });
-    // Allow takes clicks once the question has been shown 500 ms.
-    await $(`${card} [data-testid="card-allow"]`).waitForEnabled();
-    await $(`${card} [data-testid="card-allow"]`).click();
+    await clickAllow(`${card} [data-testid="card-allow"]`);
     await waitForAssistant("Ran npm ci.");
     expect(await pendingCount()).toBe(0);
   });

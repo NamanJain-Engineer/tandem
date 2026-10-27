@@ -35,10 +35,23 @@ pub struct NewActivity {
     pub summary: String,
     pub detail: serde_json::Value,
     pub checkpoint_id: Option<String>,
-    /// Out of the per-session and total counts (pruned by age, and at
-    /// [`KEEP_KEPT_PER_SOURCE`]): a run that started, an answer to a
-    /// question, a run the person answered that didn't start, a note.
-    pub kept: bool,
+    /// How it's pruned besides by age.
+    pub kept: Keep,
+}
+
+/// How a row is pruned besides by [`KEEP_DAYS`] (column `kept`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keep {
+    /// Counts toward [`KEEP_PER_SOURCE`] and [`KEEP_ROWS`]: what the agent
+    /// can write as often as its caps allow (tools, turns, refusals).
+    Counted = 0,
+    /// Out of the counts but under [`KEEP_KEPT_PER_SOURCE`]: rows an agent
+    /// can still drive (runs a rule or allowance started, answers it
+    /// caused by going away, notes), so they can't grow without end.
+    Ceiling = 1,
+    /// The person's own decisions (their answers, the runs they allowed or
+    /// declined): by age only, so nothing the agent does pushes them out.
+    Decision = 2,
 }
 
 pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> {
@@ -56,7 +69,7 @@ pub async fn insert(store: &Store, row: NewActivity) -> Result<i64, StoreError> 
                     row.summary,
                     detail,
                     row.checkpoint_id,
-                    row.kept
+                    row.kept as i64
                 ],
             )?;
             Ok(t.last_insert_rowid())
@@ -263,18 +276,19 @@ pub async fn approvals(
 /// push every other session's history out.
 pub const KEEP_PER_SOURCE: i64 = 10_000;
 
-/// Rows kept by age only (`kept`) still stop at this many per source, so no
-/// source grows without end within the retention.
+/// [`Keep::Ceiling`] rows stop at this many per source, so none grows
+/// without end within the retention. [`Keep::Decision`] rows have no
+/// ceiling.
 pub const KEEP_KEPT_PER_SOURCE: i64 = 20_000;
 
 /// Drops events older than [`KEEP_DAYS`], then each source's oldest past
 /// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`], counting only
-/// rows that aren't `kept`. `kept` rows (runs that started, answers, runs
-/// the person answered that didn't start, notes) go by age and at
-/// [`KEEP_KEPT_PER_SOURCE`] only: the agent can sign tool reports and
-/// trigger refusals, so a flood of those must not push its real runs out.
+/// [`Keep::Counted`] rows; [`Keep::Ceiling`] rows stop at
+/// [`KEEP_KEPT_PER_SOURCE`] per source, and [`Keep::Decision`] rows go by
+/// age only. The agent can sign tool reports, trigger refusals and drive
+/// rule runs, so no flood of those pushes the person's decisions out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
-    prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS).await
+    prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS, KEEP_KEPT_PER_SOURCE).await
 }
 
 async fn prune_to(
@@ -282,6 +296,7 @@ async fn prune_to(
     now: i64,
     per_source: i64,
     total: i64,
+    ceiling: i64,
 ) -> Result<usize, StoreError> {
     let cutoff = now - KEEP_DAYS * 24 * 60 * 60 * 1000;
     store
@@ -303,7 +318,7 @@ async fn prune_to(
                        PARTITION BY source_kind, source_id ORDER BY at DESC, id DESC) AS n
                      FROM activity WHERE kept = 1)
                    WHERE n > ?1)",
-                [KEEP_KEPT_PER_SOURCE],
+                [ceiling],
             )?;
             let over = t.execute(
                 "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kept = 0 ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
@@ -333,7 +348,7 @@ mod tests {
             summary: format!("{kind} at {at}"),
             detail: serde_json::json!({ "n": at }),
             checkpoint_id: None,
-            kept: false,
+            kept: Keep::Counted,
         }
     }
 
@@ -415,7 +430,7 @@ mod tests {
         }
         // Per session 4, 6 in all: the loop keeps its newest 4, the quiet
         // pane its 3 (it isn't pushed out by the loop's flood).
-        assert_eq!(prune_to(&store, now, 4, 6).await.expect("prune"), 7);
+        assert_eq!(prune_to(&store, now, 4, 6, 3).await.expect("prune"), 7);
         let looping = list(&store, "pane", "pn_loop", Page::ALL)
             .await
             .expect("list");
@@ -432,7 +447,7 @@ mod tests {
         let (_d, store) = store();
         let now = 1_000_000;
         let kept = |kind| NewActivity {
-            kept: true,
+            kept: Keep::Decision,
             ..event("pn_1", kind, now - 500)
         };
         insert(&store, kept("run")).await.expect("insert");
@@ -449,7 +464,7 @@ mod tests {
         // Per session 4, 6 in all: the other rows go down to 4 (the refused
         // run among the first out); the kept run and approval stay, however
         // many rows came after them.
-        prune_to(&store, now, 4, 6).await.expect("prune");
+        prune_to(&store, now, 4, 6, 3).await.expect("prune");
         let kinds: Vec<String> = list(&store, "pane", "pn_1", Page::ALL)
             .await
             .expect("list")
@@ -459,7 +474,7 @@ mod tests {
         assert_eq!(kinds, ["run", "approval", "tool", "tool", "tool", "tool"]);
         // Age still applies to them.
         let later = now + 15 * 24 * 60 * 60 * 1000;
-        prune_to(&store, later, 4, 6).await.expect("prune");
+        prune_to(&store, later, 4, 6, 3).await.expect("prune");
         assert!(list(&store, "pane", "pn_1", Page::ALL)
             .await
             .expect("list")
@@ -467,12 +482,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_ex_07_kept_rows_stop_at_their_own_ceiling_per_source() {
+    async fn f_ex_07_the_ceiling_drops_agent_driven_rows_never_the_persons_decisions() {
         let (_d, store) = store();
         let now = 1_000_000;
         let n = KEEP_KEPT_PER_SOURCE + 5;
         store
             .write(move |t| {
+                // The person's decisions come first, so they're the oldest.
+                for at in 0..7 {
+                    t.execute(
+                        "INSERT INTO activity (source_kind, source_id, kind, at, summary, kept)
+                         VALUES ('pane', 'pn_1', 'approval', ?1, 'answer', 2)",
+                        [now - n - 100 + at],
+                    )?;
+                }
+                // Then an agent's rule runs, past the ceiling.
                 for at in 0..n {
                     t.execute(
                         "INSERT INTO activity (source_kind, source_id, kind, at, summary, kept)
@@ -486,9 +510,12 @@ mod tests {
             .expect("rows");
         prune(&store, now).await.expect("prune");
         let left = list(&store, "pane", "pn_1", Page::ALL).await.expect("list");
-        assert_eq!(left.len() as i64, KEEP_KEPT_PER_SOURCE);
-        // The newest stay.
+        let runs = left.iter().filter(|r| r.kind == "run").count() as i64;
+        assert_eq!(runs, KEEP_KEPT_PER_SOURCE, "the ceiling");
+        // The newest runs stay.
         assert_eq!(left.last().map(|r| r.at), Some(now - 1));
+        // Every decision stays, however many runs came after.
+        assert_eq!(left.iter().filter(|r| r.kind == "approval").count(), 7);
     }
 
     #[tokio::test]

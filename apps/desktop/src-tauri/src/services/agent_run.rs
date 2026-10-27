@@ -235,6 +235,16 @@ pub fn install_crash_kill() {
     }));
 }
 
+/// Undoes [`shutdown_all`]'s quit, for an update whose installer didn't
+/// start after all: new runs are served again.
+pub fn resume_all() {
+    if let Ok(live) = LIVE.lock() {
+        for runs in live.iter().filter_map(std::sync::Weak::upgrade) {
+            runs.quit.send_replace(false);
+        }
+    }
+}
+
 /// The updater's `on_before_exit`. On Windows its installer ends the
 /// process with `exit(0)`, so neither the exit event nor `restart()`'s
 /// callers run: agent runs end here, then the terminals.
@@ -559,12 +569,7 @@ impl AgentRuns {
             }
         }
         let took = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        // Killed by the quit (no exit code) before its own `gone` was seen:
-        // still the quit. One that exited on its own as the app quit isn't.
-        let ended = match reply.error.as_deref().and_then(ended_code) {
-            None if *self.quit.borrow() && reply.exit_code.is_none() => Some("app_quit"),
-            e => e,
-        };
+        let ended = ended_after_run(reply.error.as_deref(), reply.exit_code, *self.quit.borrow());
         self.ledger(&checked, decided, true, Some(&reply), Some(took), ended)
             .await;
         reply
@@ -956,6 +961,20 @@ enum Ended {
     TimeLimit,
     /// The client went away, or the app quit ([`CLIENT_GONE`], [`APP_QUIT`]).
     Gone(&'static str),
+}
+
+/// A run's `ended`, from its reply and whether the app is quitting. Killed
+/// by the quit (no exit code) before its own `gone` was seen: still the
+/// quit. One that exited on its own as the app quit isn't.
+fn ended_after_run(
+    error: Option<&str>,
+    exit_code: Option<i32>,
+    quitting: bool,
+) -> Option<&'static str> {
+    match error.and_then(ended_code) {
+        None if quitting && exit_code.is_none() => Some("app_quit"),
+        e => e,
+    }
 }
 
 /// How a run ended other than by exiting, as its row stores it.
@@ -1847,5 +1866,48 @@ mod tests {
         assert!(TOO_MANY_RUNS.contains(&format!(" {UNASKED_RUNS_PER_MINUTE} ")));
         assert!(TOO_MANY_QUESTIONS.contains(&format!(" {QUESTIONS_PER_MINUTE} ")));
         assert!(fx.broker.pending().is_empty(), "nor asked");
+    }
+
+    #[test]
+    fn f_tl_12_8_app_quit_labels_only_a_run_the_quit_ended() {
+        // Exited on its own as the app quit: its exit code stands.
+        assert_eq!(ended_after_run(None, Some(0), true), None);
+        // Killed by the quit before its own `gone` was seen.
+        assert_eq!(ended_after_run(None, None, true), Some("app_quit"));
+        assert_eq!(
+            ended_after_run(Some(APP_QUIT), None, true),
+            Some("app_quit")
+        );
+        assert_eq!(
+            ended_after_run(Some(CLIENT_GONE), None, false),
+            Some("client_gone")
+        );
+        assert_eq!(ended_after_run(None, None, false), None);
+        assert_eq!(
+            ended_after_run(Some("Stopped after 10 minutes"), None, false),
+            Some("time_limit")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_a_command_that_exits_on_its_own_keeps_its_exit_code_as_the_app_quits() {
+        // The command exits before the quit arrives: its own exit code
+        // stands, with no error. (Which wins when both are ready at once is
+        // `biased;` in `run`'s select, which no test can time.)
+        let reply = run(
+            "exit 3",
+            &std::env::temp_dir(),
+            &[("PATH".into(), "/usr/bin:/bin".into())],
+            &[],
+            &[],
+            Duration::from_secs(20),
+            &|_| {},
+            async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                APP_QUIT
+            },
+        )
+        .await;
+        assert_eq!((reply.exit_code, reply.error), (Some(3), None));
     }
 }

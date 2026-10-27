@@ -39,7 +39,7 @@ import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
 import { useActivity } from "../../stores/activity";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -294,7 +294,9 @@ function AgentCard({
                 variant="primary"
                 data-testid="card-allow"
                 disabled={!canAllow}
-                title={canAllow ? undefined : t("approval.waiting")}
+                title={
+                  canAllow ? undefined : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
+                }
                 onClick={() => box.check() && decide(true)}
               >
                 {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
@@ -309,7 +311,11 @@ function AgentCard({
                   variant="secondary"
                   data-testid="card-allow-agent"
                   disabled={!canAllow}
-                  title={canAllow ? undefined : t("approval.waiting")}
+                  title={
+                    canAllow
+                      ? undefined
+                      : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
+                  }
                   onClick={() => box.check() && decide(true, "conversation")}
                 >
                   {t("dashboard.allowAgent")}
@@ -438,7 +444,11 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   const renderGroup = (g: Group) => {
     const open = !collapsed[g.id];
     const total = g.items.length + (g.children ?? []).reduce((n, c) => n + c.items.length, 0);
-    const label = g.status ? GROUP_LABEL[g.status](g.items.length) : `${g.label} · ${total}`;
+    const label = g.asking
+      ? t("dashboard.group.asking", { n: g.items.length })
+      : g.status
+        ? GROUP_LABEL[g.status](g.items.length)
+        : `${g.label} · ${total}`;
     return (
       <section key={g.id} aria-label={label} data-testid={`group-${g.id}`} className="flex flex-col gap-1.5">
         <div className="flex h-6 items-center gap-1">

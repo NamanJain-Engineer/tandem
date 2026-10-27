@@ -754,6 +754,9 @@ pub mod tauri_backend {
         /// Run before the installer exits the process (Windows), which
         /// skips the exit event: agent runs and terminals end first.
         before_exit: std::sync::Arc<dyn Fn() + Send + Sync>,
+        /// `before_exit` ran: an install that fails after it has already
+        /// stopped the terminals.
+        exited: std::sync::Arc<std::sync::atomic::AtomicBool>,
     }
 
     impl TauriUpdater {
@@ -771,6 +774,7 @@ pub mod tauri_backend {
                 last: tokio::sync::Mutex::new(None),
                 record_install,
                 before_exit,
+                exited: Default::default(),
             }
         }
     }
@@ -809,7 +813,11 @@ pub mod tauri_backend {
                 .timeout(Duration::from_secs(60))
                 .on_before_exit({
                     let before_exit = self.before_exit.clone();
-                    move || before_exit()
+                    let exited = self.exited.clone();
+                    move || {
+                        exited.store(true, std::sync::atomic::Ordering::SeqCst);
+                        before_exit()
+                    }
                 })
                 .build()
                 .map_err(|e| check(e.to_string()))?;
@@ -857,9 +865,24 @@ pub mod tauri_backend {
                 return std::fs::write(path, update.version.as_bytes())
                     .map_err(|e| UpdateError::new(UpdateStage::Install, e.to_string()));
             }
-            update
-                .install(bytes)
-                .map_err(|e| classify(e, UpdateStage::Install))
+            update.install(bytes).map_err(|e| {
+                let err = classify(e, UpdateStage::Install);
+                // The installer didn't start after the terminals were
+                // stopped for it: runs are served again, and the person is
+                // told to restart (F-TL-12).
+                if self.exited.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    crate::services::agent_run::resume_all();
+                    UpdateError::new(
+                        err.stage,
+                        format!(
+                            "{} Your terminals were stopped for the update: restart Vibezeo.",
+                            err.message
+                        ),
+                    )
+                } else {
+                    err
+                }
+            })
         }
     }
 }

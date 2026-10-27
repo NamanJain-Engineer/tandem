@@ -141,6 +141,21 @@ describe("the activity ledger (F-EX-07)", () => {
     expect((screen.getByTestId("activity-export") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("F-EX-07.4 a run allowed but stopped by a moved folder says why, and who allowed it", async () => {
+    const run = ev({
+      kind: "run",
+      summary: "A run that didn't start (its line isn't kept)",
+      decided: "once",
+      ended: "folder_moved",
+      secrets: ["API_KEY (stripe-test)"],
+    });
+    fakeBackend({ activity_list: () => ({ events: [run], more: false }) });
+    dialog();
+    const row = await screen.findByTestId("activity-row");
+    expect(row.textContent).toContain("didn't start: the folder changed after it was checked");
+    expect(row.textContent).toContain("You, once");
+  });
+
   it("names who decided", () => {
     expect(decidedLabel("agent")).toBe("You, for this agent");
     expect(decidedLabel("rule")).toBe("A repository rule");

@@ -6,7 +6,7 @@ import { useDashboard } from "../../stores/dashboard";
 import { answer } from "../dashboard/actions";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
-import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
+import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 
 /** A pane's pending approval, on the pane itself: what an agent's
  * `vibezeo run` wants (F-TL-12), then Allow once, Allow for this agent
@@ -60,7 +60,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               variant="primary"
               loading={busy}
               disabled={!canAllow}
-              title={canAllow ? undefined : t("approval.waiting")}
+              title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
               data-testid="pane-approval-once"
               onClick={() => box.check() && void decide(true)}
             >
@@ -72,7 +72,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               size="sm"
               variant="secondary"
               disabled={busy || !canAllow}
-              title={canAllow ? undefined : t("approval.waiting")}
+              title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
               data-testid="pane-approval-agent"
               onClick={() => box.check() && void decide(true, "conversation")}
             >

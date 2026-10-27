@@ -12,7 +12,7 @@ use ts_rs::TS;
 use tandem_core::clock::Clock;
 use tandem_core::redact::Redactor;
 use tandem_core::IpcError;
-use tandem_store::repo::activity::{self as repo, NewActivity};
+use tandem_store::repo::activity::{self as repo, Keep, NewActivity};
 use tandem_store::Store;
 
 /// One event of a session's ledger (`activity_list`).
@@ -272,7 +272,7 @@ impl ActivityService {
                 summary: note,
                 detail: serde_json::json!({}),
                 checkpoint_id: None,
-                kept: true,
+                kept: Keep::Ceiling,
             })
             .await;
         }
@@ -311,7 +311,7 @@ impl ActivityService {
             summary: "Turn sent".into(),
             detail: serde_json::json!({ "engine": engine.and_then(tool_name) }),
             checkpoint_id: checkpoint,
-            kept: false,
+            kept: Keep::Counted,
         };
         // A pane's turns come from reports the agent can sign.
         if source_kind == "pane" {
@@ -351,7 +351,7 @@ impl ActivityService {
                 },
                 detail: serde_json::json!({ "tool": tool }),
                 checkpoint_id: None,
-                kept: false,
+                kept: Keep::Counted,
             },
         )
         .await;
@@ -361,9 +361,15 @@ impl ActivityService {
     /// [`ActivityEvent::decided`]). A fixed summary: the question's text
     /// could carry what the agent typed before the redactor knew the values.
     ///
-    /// Every answer is kept for the full retention: each one follows a
-    /// question, and a pane opens at most 10 a minute (`agent_run`).
+    /// Every answer is out of the counts (each follows a question, at most
+    /// 10 a minute per pane). The person's own (Allow, Deny) and the
+    /// question running out or being cancelled are [`Keep::Decision`]; one
+    /// the agent caused by going away (`client_gone`, `app_quit`) is
+    /// [`Keep::Ceiling`].
     pub async fn approval(&self, pane: &str, decided: &str) {
+        let person = decided.starts_with("allowed")
+            || decided.starts_with("denied")
+            || matches!(decided, "expired" | "cancelled");
         self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
@@ -372,7 +378,11 @@ impl ActivityService {
             summary: APPROVAL_SUMMARY.into(),
             detail: serde_json::json!({ "decided": decided }),
             checkpoint_id: None,
-            kept: true,
+            kept: if person {
+                Keep::Decision
+            } else {
+                Keep::Ceiling
+            },
         })
         .await;
     }
@@ -384,16 +394,19 @@ impl ActivityService {
     /// cancelled. Anything else that didn't start (busy, too many, gone, a
     /// moved folder, unreadable secrets) is a [`Flood::Refusal`].
     pub async fn run(&self, pane: &str, run: RunRecord) {
-        let decided = if run.started {
-            matches!(run.decided, "once" | "agent" | "rule" | "allowed_before")
+        // The person decided it: their Allow (whether it then started or
+        // not), their Deny, or their question running out or cancelled.
+        let person = matches!(run.decided, "once" | "agent")
+            || (!run.started && matches!(run.decided, "declined" | "expired" | "cancelled"));
+        // Started without asking (a rule, an earlier allowance): the agent
+        // drives these, at most 30 a minute per pane.
+        let unasked = run.started && matches!(run.decided, "rule" | "allowed_before");
+        let kept = if person {
+            Keep::Decision
+        } else if unasked {
+            Keep::Ceiling
         } else {
-            // The person's own answer, Allow included (a run allowed but
-            // stopped before it started: gone, a moved folder, unreadable
-            // secrets). Each follows a question, at most 10 a minute.
-            matches!(
-                run.decided,
-                "once" | "agent" | "declined" | "expired" | "cancelled"
-            )
+            Keep::Counted
         };
         let row = NewActivity {
             source_kind: "pane",
@@ -409,12 +422,12 @@ impl ActivityService {
                 "ended": run.ended,
             }),
             checkpoint_id: None,
-            kept: decided,
+            kept,
         };
-        if decided {
-            self.record(row).await;
-        } else {
+        if kept == Keep::Counted {
             self.record_limited(Flood::Refusal, row).await;
+        } else {
+            self.record(row).await;
         }
     }
 
@@ -869,7 +882,7 @@ mod tests {
                     summary: format!("T{n}"),
                     detail: serde_json::json!({}),
                     checkpoint_id: None,
-                    kept: false,
+                    kept: Keep::Counted,
                 },
             )
             .await
@@ -1018,10 +1031,18 @@ mod tests {
             count("SELECT COUNT(*) FROM activity WHERE kept = 0 AND kind = 'run'").await,
             i64::from(Flood::Refusal.limit())
         );
+        // The person's decisions (their Allow, started or not, their Deny,
+        // expiry) are kept by age only; what the agent drove (a rule run, an
+        // answer it caused by going away) sits under the ceiling.
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kept = 2 AND kind IN ('run', 'approval')")
+                .await,
+            5 * i64::from(over)
+        );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kept = 1 AND kind IN ('run', 'approval')")
                 .await,
-            7 * i64::from(over)
+            2 * i64::from(over)
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kind = 'turn'").await,
@@ -1046,7 +1067,9 @@ mod tests {
     #[tokio::test]
     async fn f_ex_07_a_long_summary_is_stored_cut_to_1_kib() {
         let (_d, store, _clock, svc) = fixture();
-        let long = format!("echo {}é", "x".repeat(8 * 1024));
+        // "é" (2 bytes) sits across the cut at 1,021 bytes (1 KiB less the
+        // 3-byte "…"), so the cut walks back to the character's start.
+        let long = format!("echo {}é{}", "x".repeat(1015), "y".repeat(8 * 1024));
         svc.run(
             "pn_1",
             RunRecord {
@@ -1065,6 +1088,6 @@ mod tests {
             .await
             .expect("row");
         assert!(summary.len() <= MAX_SUMMARY_BYTES, "{}", summary.len());
-        assert!(summary.starts_with("echo xxx") && summary.ends_with('…'));
+        assert_eq!(summary, format!("echo {}…", "x".repeat(1015)));
     }
 }

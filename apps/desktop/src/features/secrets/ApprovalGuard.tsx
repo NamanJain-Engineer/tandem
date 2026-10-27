@@ -48,10 +48,28 @@ export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => voi
   return [setEl, key !== null && seen === change];
 }
 
-/** The box an element takes on screen, as a string to compare. */
+/** The box an element takes on the screen (the window's place included,
+ * so a window moved without resizing counts), as a string to compare. */
 function boxOf(el: HTMLElement): string {
   const r = el.getBoundingClientRect();
-  return `${r.left},${r.top},${r.width},${r.height}`;
+  return `${window.screenX},${window.screenY},${r.left},${r.top},${r.width},${r.height}`;
+}
+
+/** Not displayed: the pane or panel is `display: none`, or the window is.
+ * Without `checkVisibility` (older engines) it counts as shown: sampling
+ * just goes on. */
+function hidden(el: HTMLElement): boolean {
+  if (document.hidden) return true;
+  const visible = (el as HTMLElement & { checkVisibility?: () => boolean }).checkVisibility;
+  return typeof visible === "function" ? !visible.call(el) : false;
+}
+
+/** Something else (a menu, a dialog, a toast) covers the box's middle. */
+function covered(el: HTMLElement): boolean {
+  if (typeof document.elementFromPoint !== "function") return false;
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return hit !== null && !el.contains(hit);
 }
 
 /** Whether Allow's own place on screen has held still for
@@ -76,6 +94,12 @@ export function useSteadyBox(active: boolean): {
     if (last.current === null || last.current.box !== box) last.current = { box, since: now };
     return now - last.current.since >= SETTLE_MS;
   }, [el]);
+  // At the click: still, and nothing (an overlay that just closed or is
+  // closing) over it.
+  const check = useCallback((): boolean => {
+    if (el === null || hidden(el)) return false;
+    return sample() && !covered(el);
+  }, [el, sample]);
   useEffect(() => {
     last.current = null;
     setSteady(false);
@@ -87,15 +111,35 @@ export function useSteadyBox(active: boolean): {
     const cancel =
       typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (id: number) => clearTimeout(id);
     let id = 0;
+    let timer = 0;
     const tick = () => {
+      // Hidden (a pane in another tab, the panel closed): no per-frame work,
+      // a slow look for when it's shown, and the wait starts over then.
+      if (hidden(el)) {
+        last.current = null;
+        setSteady(false);
+        timer = window.setTimeout(tick, 250);
+        return;
+      }
       const now = sample();
       setSteady((was) => (was === now ? was : now));
       id = next(tick);
     };
     id = next(tick);
-    return () => cancel(id);
+    return () => {
+      cancel(id);
+      clearTimeout(timer);
+    };
   }, [active, el, sample]);
-  return { ref: setEl, steady, check: sample };
+  return { ref: setEl, steady, check };
+}
+
+/** Why Allow is waiting, for its title: the first reason that applies. */
+export function waitReason(w: { seenEnd: boolean; settled: boolean; steady: boolean }): string | undefined {
+  if (!w.seenEnd) return t("approval.waitingEnd");
+  if (!w.settled) return t("approval.waitingChanged");
+  if (!w.steady) return t("approval.waiting");
+  return undefined;
 }
 
 type BoundaryProps = { children: ReactNode; onDeny?: () => void };

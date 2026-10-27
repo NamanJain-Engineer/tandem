@@ -120,6 +120,7 @@ function facts(e: ActivityEvent): string[] {
   if (e.ended === "time_limit") out.push(t("activity.ended.timeLimit"));
   if (e.ended === "app_quit") out.push(t("activity.ended.appQuit"));
   if (e.ended === "secrets_unreadable") out.push(t("activity.ended.secretsUnreadable"));
+  if (e.ended === "folder_moved") out.push(t("activity.ended.folderMoved"));
   if (e.durationMs !== null) out.push(t("activity.took", { ms: e.durationMs }));
   if (e.secrets.length > 0) out.push(t("activity.uses", { names: e.secrets.join(", ") }));
   if (e.engine) out.push(t("activity.engine", { engine: e.engine }));

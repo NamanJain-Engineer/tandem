@@ -306,81 +306,135 @@ describe("Dashboard model", () => {
 });
 
 describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
-  /** Each card's box on screen, by key; the test moves them. */
-  let boxes: Record<string, { top: number; height: number }> = {};
+  /** Each card's height by key, and the list's scroll: a card's top is the
+   * heights of the cards before it in the page, less the scroll. */
+  let heights: Record<string, number> = {};
+  let scrolled = 0;
+  /** ResizeObserver callbacks, fired whenever a test changes a height (so a
+   * settle that listened to sizes would see every change). */
+  let resized: Array<() => void> = [];
   beforeEach(() => {
     resetStores();
-    boxes = {};
+    heights = {};
+    scrolled = 0;
+    resized = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          resized.push(cb);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const key = this.closest<HTMLElement>('[data-testid="agent-card"]')?.dataset.key ?? "";
-      const b = boxes[key] ?? { top: 0, height: 0 };
+      const card = this.closest<HTMLElement>('[data-testid="agent-card"]');
+      let top = -scrolled;
+      for (const c of Array.from(document.querySelectorAll<HTMLElement>('[data-testid="agent-card"]'))) {
+        if (c === card) break;
+        top += heights[c.dataset.key ?? ""] ?? 100;
+      }
+      const height = card ? (heights[card.dataset.key ?? ""] ?? 100) : 0;
       return {
         left: 0,
-        top: b.top,
+        top,
         width: 300,
-        height: b.height,
+        height,
         right: 300,
-        bottom: b.top + b.height,
+        bottom: top + height,
         x: 0,
-        y: b.top,
+        y: top,
         toJSON: () => ({}),
       } as DOMRect;
     });
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   const run = JSON.stringify({
     vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
   });
-  const asking = (key: string, id: string, source: DashboardItem["source"]) => ({
+  const asking = (id: string, source: DashboardItem["source"], createdAt = 1) => ({
     id,
     source,
     kind: "command" as const,
     summary: "run",
     detail: run,
     options: ["once" as const],
-    createdAt: 1,
+    createdAt,
     expiresAt: 2,
   });
+  const setHeight = (key: string, h: number) => {
+    heights[key] = h;
+    act(() => resized.forEach((cb) => cb()));
+  };
 
-  async function twoCards() {
+  async function cards() {
     const a = item("waiting", "alpha", { since: 1_000 });
-    const withAsk = { ...a, pendingApproval: asking(a.key, "ap_a", a.source) };
-    const b = item("waiting", "beta", { since: 2_000 });
-    boxes[a.key] = { top: 100, height: 120 };
-    boxes[b.key] = { top: 0, height: 90 };
-    const calls = setup([withAsk, b]);
+    const alpha = { ...a, pendingApproval: asking("ap_a", a.source) };
+    // beta reports "waiting" with the newest `since`, so without the pin it
+    // would sort above alpha.
+    const beta = item("waiting", "beta", { since: 9_000 });
+    const calls = setup([alpha, beta]);
     render(
       <UiProvider>
         <Dashboard />
       </UiProvider>,
     );
-    const card = () =>
-      screen.getAllByTestId("agent-card").find((c) => c.dataset.key === a.key) as HTMLElement;
-    const allow = () => within(card()).getByTestId("card-allow") as HTMLButtonElement;
+    const card = (key: string) =>
+      screen.getAllByTestId("agent-card").find((c) => c.dataset.key === key) as HTMLElement;
+    const allow = () => within(card(alpha.key)).getByTestId("card-allow") as HTMLButtonElement;
     await waitFor(() => expect(allow().disabled).toBe(false));
-    return { a, b, allow, calls };
+    return { alpha, beta, card, allow, calls };
   }
 
-  it("Allow waits until its own place has held still, whatever moved it", async () => {
-    const { a, allow } = await twoCards();
-    // A card above grows (an approval or a longer line), or the list
-    // scrolls, or reorders: alpha's Allow moves down.
-    boxes[a.key] = { top: 160, height: 120 };
+  it("a card with a question is pinned first, above a newer card that reports waiting", async () => {
+    const { alpha } = await cards();
+    const order = screen.getAllByTestId("agent-card").map((c) => c.dataset.key);
+    expect(order[0]).toBe(alpha.key);
+    expect(screen.getByText("Asking you · 1")).toBeTruthy();
+  });
+
+  it("another agent's card changing size or status never moves or holds this Allow", async () => {
+    const { beta, allow, calls } = await cards();
+    for (let n = 0; n < 8; n++) {
+      // beta flips its line's length and its status every 100 ms.
+      setHeight(beta.key, n % 2 === 0 ? 160 : 90);
+      act(() =>
+        useDashboard.setState((st) => ({
+          items: {
+            ...st.items,
+            [beta.key]: { ...beta, status: n % 2 === 0 ? "working" : "waiting", since: 9_000 + n },
+          },
+        })),
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      expect(allow().disabled).toBe(false);
+    }
+    fireEvent.click(allow());
+    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
+  });
+
+  it("Allow waits until its own place has held still: a scroll moves it", async () => {
+    const { allow } = await cards();
+    scrolled = 60;
     await waitFor(() => expect(allow().disabled).toBe(true));
     expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
     await new Promise((r) => setTimeout(r, 300));
     expect(allow().disabled).toBe(true);
     await waitFor(() => expect(allow().disabled).toBe(false));
-    // Back to where it was: it moved again, so it waits again (A → B → A).
-    boxes[a.key] = { top: 100, height: 120 };
+    // Back where it was: it moved again, so it waits again.
+    scrolled = 0;
     await waitFor(() => expect(allow().disabled).toBe(true));
     await waitFor(() => expect(allow().disabled).toBe(false));
   });
 
-  it("a click in the frame a card moves, before Allow looks disabled, does nothing", async () => {
-    const { a, allow, calls } = await twoCards();
-    boxes[a.key] = { top: 400, height: 120 };
+  it("a click in the frame Allow moves, before it looks disabled, does nothing", async () => {
+    const { allow, calls } = await cards();
+    scrolled = 200;
     // Still enabled: the next frame hasn't sampled the move yet.
     expect(allow().disabled).toBe(false);
     fireEvent.click(allow());
@@ -388,15 +442,17 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
     expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
   });
 
-  it("another card that keeps changing size doesn't hold this Allow disabled", async () => {
-    const { b, allow, calls } = await twoCards();
-    // beta, below the fold of alpha's own box, flips height every 100 ms.
-    for (let n = 0; n < 8; n++) {
-      boxes[b.key] = { top: 0, height: n % 2 === 0 ? 120 : 90 };
-      await new Promise((r) => setTimeout(r, 100));
-      expect(allow().disabled).toBe(false);
-    }
-    fireEvent.click(allow());
-    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
+  it("a newer question goes below an older one, so the older Allow doesn't move", async () => {
+    const { alpha, beta, card, allow } = await cards();
+    act(() =>
+      useDashboard.setState((st) => ({
+        items: { ...st.items, [beta.key]: { ...beta, pendingApproval: asking("ap_b", beta.source, 5) } },
+      })),
+    );
+    const order = screen.getAllByTestId("agent-card").map((c) => c.dataset.key);
+    expect(order.slice(0, 2)).toEqual([alpha.key, beta.key]);
+    expect(within(card(alpha.key)).getByTestId("card-allow")).toBe(allow());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(allow().disabled).toBe(false);
   });
 });
