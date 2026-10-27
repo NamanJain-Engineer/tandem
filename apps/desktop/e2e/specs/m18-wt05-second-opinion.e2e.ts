@@ -109,7 +109,8 @@ describe("E2E-M18-WT-05 second opinion", function () {
   // Later specs run without this Codex: a task review would pick it.
   after(async () => {
     rmSync(join(home(), "fakebin", "codex"), { force: true });
-    await checkAgain().catch(() => undefined);
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-WT-05.1-3 Codex reviews read-only and its findings land in the review bar", async () => {

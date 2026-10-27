@@ -2709,7 +2709,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 189, and protocol drift with 579 types (this line adds none).
     - E2E: m18-db04 6 of 6, m18-tk05 3 of 3, m18-tk06 1 of 1, m18-tk07 3 of 3 and m18-wt07 2 of 2.
 - [x] F-TK-07, E2E-M18-TK-07's failure in 0.12.0's E2E run on chain26 6c813365. On a line from origin/chain26 (`tk07-stall`).
-  - **Where it ships:** 0.13.0 (chain27), merged into `m16a-conductor` with F-TK-08, not 0.12.0. 0.12.0's packages were already built and gated, and chain26 fixes the E2E itself with test code only (60819dad: the shared `review_reply`, free-offline's cleanup and the spec's messages). With real engines the stale read below has a window of milliseconds, and a later event corrects it.
+  - **Where it ships:** 0.13.0 (chain27), merged into `m16a-conductor` with F-TK-08, not 0.12.0. 0.12.0's packages were already built and gated, and chain26 fixes the E2E itself with test code only (60819dad: the shared `review_reply`, free-offline's cleanup and the spec's messages). With real engines the stale read below has a window of milliseconds, but nothing corrects it after: no event follows a run's last state, so a run that ended in it stayed shown wrong until the plan was reopened. It shipped in 0.12.0, and the CHANGELOG's Unreleased lists the fix.
   - **What failed:** the plan's runs never reached Approve. They ended In review with no verdict. The `[setup, running]` in the message is a red herring: its `timeoutMsg` was built with the wait's options, so it showed the rows as the wait began.
   - **The cause, a reviewer another spec left installed** (found by the coordinator in the run's TANDEM_HOME):
     - E2E-M18-FREE puts a fake Cursor Agent in `fakebin` and never removed it.
@@ -2883,6 +2883,24 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - m18-tk08 1, m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2;
       - m11-3-routines 4, m10-5-mail 5, m16-1-conductor 15, m18-cn09 3, m5-1-restore 2, m9-1-editor 4, m9-2-git 3, m8-1-push-to-talk 7.
     - The first run, on a35a6077, was stopped in its clippy step after every test had passed, because the merge of 0.12.0 changed docs and TypeScript that tests read.
+- [x] F-TK-07 and F-TK-08, the coordinator's max-effort review of 7c6a4f1b (merged into chain27 as cdd8a8ca): APPROVED WITH NITS, no must-fix. One follow-up commit on chain27's head.
+  - **The first read of the runs waits for its listener (should-fix).** `listen` imports Tauri's event module, then registers over IPC, so `task_attempts_list` went out first. A run that moved in between lost its event and the old list was written: the case fd030eaa fixed for every later read. `loadAttempts` now awaits the listener before its read.
+    - A listener that can't start fails the read with its reason, and Retry listens again. It used to be an unhandled rejection, and the runs never stayed fresh.
+  - **Resetting the view makes a read under way stale (nit 1).** `resetTasks` moves the read counter on. Its test now resolves the old read with no read after the reset.
+  - **The save test proves the save steps aside (nit 2).** With one worker, a save waiting on another save still lets the worker's other tasks run. Checked: without `block_in_place` the test fails. The old test is renamed for what it shows: Execute all on the multi-threaded runtime keeps the plan.
+  - **One version parser (nit 3).** `claude_version` reads the version exactly as `parse_version` does and says whether a pre-release follows it, so `v.9.9.9 2.1.310-rc.1` can't answer. A test checks the two agree.
+  - **A link at a private folder's path (nit 4, optional): followed, on purpose.** A data folder moved to another disk is one. For anyone but root, chmod fails on a folder someone else owns, and the callers' parents are owner-only. `create_private_dir` says so, with a test. A session's own folder never follows a link (below).
+  - **What a crash leaves (nit 5).** `sweep_answer_folders` runs at start and removes answer folders older than twice a session's 5 minutes, so one a background pass is using stays. D-2838 says so.
+  - **AnswerFolder's other cases (nit 6).** It refuses a folder already there and a link, leaving both alone, and it goes when its session's future is dropped (an aborted task). E2E-M18-TK-08 checks the real session's folder is gone once Lead has answered.
+  - **E2E (nits 7, 8).** The five `after` hooks check their fake is gone instead of dropping `checkAgain()`'s errors. E2E-M10-1 and E2E-M10-6 detect again after removing Codex, and E2E-M18-TK-08 after resetting `fake-version.txt`. OPERATING says so.
+  - **Docs (nit 9).** The tk07-stall entry no longer says a later event corrects the stale read, and the CHANGELOG's Unreleased has a Fixed note for it (it shipped in 0.12.0). ARCHITECTURE §9.6 (the read, the folder).
+  - **Not done, and why.** `load()` has the same window for `tasks:changed`. It mends itself: the next change reloads everything.
+  - **Tests** (6 new Rust, one renamed and one with a new case; 2 new TypeScript and one changed):
+    - `stores/tasks.test.ts`: the first read goes out only once its listener is up, and a run that moved before it shows where it is; a listener that can't start fails the read, and Retry listens again. Both fail on the old store, as does the reset test.
+    - `plan` (4): the save beside a stalled worker; an answer folder is never one already there; it goes with its dropped future; the sweep takes a crash's folders and leaves recent ones.
+    - Claude adapter: the two parsers agree; `v.9.9.9 2.1.310-rc.1` can't answer.
+    - `paths`: a link to one of our folders is followed, and its folder made 0700.
+  - **Gate:** pending.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3034,7 +3052,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The first tool row or approval request drops the session's answer, so a tool a later Claude Code adds can't be used to answer.
   - It stops after 10 minutes: an answer needs no tools, so it needs no plan's 30.
   - Amended by the re-review (N1 to N4): the session has no built-in tool at all (`--tools ""`, over the denylist), no customization (`--safe-mode`), commands, saved session, cron or auto-memory, `dontAsk` with nobody to ask, and a folder of its own that's removed after it and never trusted. It runs only on Claude Code 2.1.310 or newer, the version checked. A tool block starting kills the process before the tool can run, and a session ends after 5 minutes.
-  - Amended by round 3: a pre-release of 2.1.310 doesn't count (it comes before 2.1.310), and the session's folder is 0700 from the moment it's made and removed however the session ends.
+  - Amended by round 3: a pre-release of 2.1.310 doesn't count (it comes before 2.1.310), and the session's folder is 0700 from the moment it's made and removed when the session ends, panics or is dropped. What a crash (`kill -9`) leaves is swept at the next start, once older than twice a session's time.
 - D-2839: What reaches Lead is read the way an attacker would write it (F-TK-08 AC1, AC3, the review).
   - Every `@` before a word becomes `＠` in the question, the task and the files Lead reads, and in Lead's answer, so none names a file for Claude Code to attach. Only F-TK-08's paths: elsewhere `@` is real text (`@types/node`).
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.

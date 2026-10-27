@@ -1297,16 +1297,21 @@ pub struct AppHost {
 }
 
 /// An answer session's folder under `run/answers/` (D-2838): new, made
-/// owner-only, for that session alone, and removed when this goes, however
-/// the session ends (a panic too, or its future dropped).
+/// owner-only, for that session alone, and removed when this goes: as the
+/// session ends, panics or has its future dropped. A crash's folders go at
+/// the next start ([`sweep_answer_folders`]).
 struct AnswerFolder(PathBuf);
 
 impl AnswerFolder {
     fn create(run: &Path) -> std::io::Result<Self> {
+        Self::create_named(run, &tandem_core::ids::new_id("ans"))
+    }
+
+    fn create_named(run: &Path, name: &str) -> std::io::Result<Self> {
         let answers = run.join("answers");
         tandem_core::paths::create_private_dir(&answers)?;
-        let path = answers.join(tandem_core::ids::new_id("ans"));
-        // Never one that's there already: both fail then.
+        let path = answers.join(name);
+        // Never a folder that's there already, or a link: both fail then.
         #[cfg(unix)]
         {
             use std::os::unix::fs::DirBuilderExt;
@@ -1326,6 +1331,37 @@ impl Drop for AnswerFolder {
     fn drop(&mut self) {
         if let Err(e) = std::fs::remove_dir_all(&self.0) {
             tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer session's folder wasn't removed");
+        }
+    }
+}
+
+/// How old an answer folder is before the start-up sweep removes it: twice
+/// the longest a session lasts.
+pub const ANSWER_FOLDER_KEEP: Duration =
+    Duration::from_secs(supervisor::ANSWER_TIMEOUT.as_secs() * 2);
+
+/// Removes the answer folders older than `keep`, which a crash (`kill -9`,
+/// a power cut) left behind. Every session ends within `ANSWER_TIMEOUT`, so
+/// a folder in use, by a background pass beside the app, stays.
+pub fn sweep_answer_folders(run: &Path, keep: Duration) {
+    let Ok(entries) = std::fs::read_dir(run.join("answers")) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with("ans_") {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age > keep);
+        if old {
+            if let Err(e) = std::fs::remove_dir_all(entry.path()) {
+                tracing::warn!(code = "plan.answer_folder_left", error = %e, "an answer folder a crash left wasn't removed");
+            }
         }
     }
 }
@@ -2347,10 +2383,10 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn f_tk_07_3_execute_all_saves_each_run_from_a_runtime_worker() {
-        // On the app's multi-threaded runtime each save steps aside from
-        // the worker (block_in_place, which a current-thread runtime would
-        // refuse), and the plan is kept as it goes.
+    async fn f_tk_07_3_execute_all_on_the_multi_threaded_runtime_keeps_the_plan() {
+        // On the app's runtime a save runs in block_in_place, which a
+        // current-thread runtime would refuse: Execute all's saves work
+        // there, and the plan is kept as it goes.
         let (dir, fake, plans, _bus) = rig(false);
         let view = created(&fake, &plans).await;
         plans.prepare(&view.id).await.expect("prepare");
@@ -2359,6 +2395,44 @@ mod tests {
         let kept = after.get(&view.id).expect("kept");
         assert_eq!(kept.state, PlanState::Started);
         assert_eq!(kept.queued, vec!["TAN-1".to_string(), "TAN-2".to_string()]);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn f_tk_07_3_a_save_on_the_runtime_worker_lets_its_other_tasks_run() {
+        // With one worker, a save that waits (here, for another save) would
+        // stall every other task if it held the worker. block_in_place hands
+        // them on. The checks use std channels: with the worker stalled,
+        // nothing would drive a tokio timer.
+        let (_dir, _fake, plans, _bus) = rig(false);
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let holder = {
+            let plans = plans.clone();
+            std::thread::spawn(move || {
+                let _turn = plans.saving.lock().expect("saving");
+                held_tx.send(()).expect("held");
+                let _ = release_rx.recv();
+            })
+        };
+        held_rx.recv().expect("held");
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let saver = {
+            let plans = plans.clone();
+            tokio::spawn(async move {
+                started_tx.send(()).expect("started");
+                plans.save();
+            })
+        };
+        started_rx.recv().expect("started");
+        let (ran_tx, ran_rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let _ = ran_tx.send(());
+        });
+        let ran = ran_rx.recv_timeout(Duration::from_secs(5));
+        release_tx.send(()).expect("release");
+        holder.join().expect("holder");
+        saver.await.expect("saver");
+        assert!(ran.is_ok(), "the worker's other tasks waited for the save");
     }
 
     #[tokio::test]
@@ -3487,5 +3561,63 @@ mod tests {
         drop(other);
         assert!(!kept.exists());
         assert!(answers.is_dir());
+    }
+
+    #[test]
+    fn f_tk_08_1_an_answer_folder_is_never_one_already_there() {
+        let run = tempfile::tempdir().expect("tempdir");
+        let answers = run.path().join("answers");
+        let taken = answers.join("ans_taken");
+        std::fs::create_dir_all(&taken).expect("taken");
+        std::fs::write(taken.join("notes.md"), "another question's").expect("write");
+        assert!(AnswerFolder::create_named(run.path(), "ans_taken").is_err());
+        assert!(taken.join("notes.md").exists(), "left as it was");
+        #[cfg(unix)]
+        {
+            let elsewhere = run.path().join("elsewhere");
+            std::fs::create_dir(&elsewhere).expect("elsewhere");
+            std::os::unix::fs::symlink(&elsewhere, answers.join("ans_link")).expect("link");
+            assert!(AnswerFolder::create_named(run.path(), "ans_link").is_err());
+            assert!(elsewhere.is_dir(), "a link there isn't followed or removed");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_an_answer_folder_goes_when_its_sessions_future_is_dropped() {
+        let run = tempfile::tempdir().expect("tempdir");
+        let (made_tx, made_rx) = tokio::sync::oneshot::channel();
+        let dir = run.path().to_path_buf();
+        // A session whose engine never answers, stopped by its plan.
+        let session = tokio::spawn(async move {
+            let folder = AnswerFolder::create(&dir).expect("folder");
+            let _ = made_tx.send(folder.path().to_path_buf());
+            std::future::pending::<()>().await;
+            drop(folder);
+        });
+        let path = made_rx.await.expect("made");
+        assert!(path.is_dir());
+        session.abort();
+        assert!(session.await.expect_err("aborted").is_cancelled());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn f_tk_08_1_answer_folders_a_crash_left_are_swept_and_recent_ones_stay() {
+        let run = tempfile::tempdir().expect("tempdir");
+        let answers = run.path().join("answers");
+        for name in ["ans_old", "keep-me"] {
+            std::fs::create_dir_all(answers.join(name)).expect("folder");
+        }
+        std::fs::write(answers.join("ans_old").join("left.md"), "x").expect("write");
+        // Recent: a session may still be using it.
+        sweep_answer_folders(run.path(), ANSWER_FOLDER_KEEP);
+        assert!(answers.join("ans_old").is_dir());
+        std::thread::sleep(Duration::from_millis(20));
+        sweep_answer_folders(run.path(), Duration::from_millis(10));
+        assert!(!answers.join("ans_old").exists());
+        assert!(answers.join("keep-me").is_dir(), "only answer folders go");
+        // No answers folder at all is fine.
+        sweep_answer_folders(&run.path().join("nowhere"), Duration::ZERO);
+        assert_eq!(ANSWER_FOLDER_KEEP, Duration::from_secs(600));
     }
 }

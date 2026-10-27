@@ -39,7 +39,8 @@ describe("E2E-M7-8 switch engine", () => {
   // Later specs run without this Codex.
   after(async () => {
     rmSync(join(home(), "fakebin", "codex"), { force: true });
-    await checkAgain().catch(() => undefined);
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-TH-16.1 Claude → Codex after 3 turns seeds Codex with the summary and shows the divider", async function () {

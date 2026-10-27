@@ -117,12 +117,22 @@ export const useTasks = create<TasksState>((set, get) => ({
   attemptsStatus: "idle",
   attemptsError: null,
   loadAttempts: async () => {
-    listeningAttempts ??= listen<AttemptView>("tasks:attempt", (v) => {
-      movedMeanwhile.set(v.attempt.id, v);
-      set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
-    }).then((u) => {
-      unlistenAttempts = u;
-    });
+    if (!listeningAttempts) {
+      const pending: Promise<void> = listen<AttemptView>("tasks:attempt", (v) => {
+        movedMeanwhile.set(v.attempt.id, v);
+        set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
+      }).then(
+        (u) => {
+          unlistenAttempts = u;
+        },
+        (e: unknown) => {
+          // A retry listens again.
+          if (listeningAttempts === pending) listeningAttempts = null;
+          throw e;
+        },
+      );
+      listeningAttempts = pending;
+    }
     // Several views read the runs; only the latest read writes them, so an
     // earlier one settling last can't bring back an error or an old list.
     const read = ++attemptsRead;
@@ -133,6 +143,9 @@ export const useTasks = create<TasksState>((set, get) => ({
       attemptsError: null,
     }));
     try {
+      // The read goes out once the listener is up: a run that moved in
+      // between would be missed, and no event comes after a run's last state.
+      await listeningAttempts;
       const listed = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
       if (read !== attemptsRead) return;
       // A run that moved while the list was read keeps its newer state.
@@ -270,7 +283,8 @@ export function resetTasks(): void {
   unlistenAttempts?.();
   unlistenAttempts = null;
   listeningAttempts = null;
-  // Not back to 0: a read still in flight from before stays stale.
+  // A read still in flight from before goes stale and never writes.
+  attemptsRead++;
   movedMeanwhile = new Map();
   useTasks.setState({
     meta: null,

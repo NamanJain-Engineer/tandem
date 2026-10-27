@@ -56,8 +56,11 @@ describe("E2E-M10-6 settings", () => {
     rhea = await makeTeammate("Rhea");
   });
 
-  after(() => {
+  // Later specs run without this Codex.
+  after(async () => {
     rmSync(join(home(), "fakebin", "codex"), { force: true });
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-AG-05 May message off: tandem__send_message is absent from the next turn's tools/list", async function () {
