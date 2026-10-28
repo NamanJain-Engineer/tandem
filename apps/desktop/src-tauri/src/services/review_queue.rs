@@ -962,10 +962,19 @@ pub fn spoken(step: &WalkStep, now: i64) -> String {
 }
 
 /// The prompt a spoken review sends back to the agent (F-CN-09). English,
-/// like F-WT-02's.
+/// like F-WT-02's. A workspace that isn't a worktree is on whatever branch
+/// its checkout has, named by whoever pushed it, so the branch goes through
+/// `untrusted::defang`, and the note ends the prompt when that wrote `＠`
+/// (D-3027).
 pub fn send_back_prompt(branch: &str, comment: &str) -> String {
+    let (branch, wrote) = tandem_core::untrusted::defang_marked(branch);
+    let note = if wrote {
+        format!("\n{}", tandem_core::untrusted::DEFANGED)
+    } else {
+        String::new()
+    };
     format!(
-        "Review of your changes on {branch}:\n\n{}\n\nAddress it, then say what you changed.",
+        "Review of your changes on {branch}:\n\n{}\n\nAddress it, then say what you changed.{note}",
         comment.trim()
     )
 }
@@ -1769,6 +1778,20 @@ mod tests {
         assert_eq!(
             send_back_prompt("tandem/x", " handle expired tokens too "),
             "Review of your changes on tandem/x:\n\nhandle expired tokens too\n\nAddress it, then say what you changed."
+        );
+    }
+
+    #[test]
+    fn f_cn_09_2_a_branch_named_like_a_path_names_no_file() {
+        // A workspace that isn't a worktree is on whatever branch its
+        // checkout has, and git takes `@/etc/passwd` from whoever pushed it
+        // (D-3027).
+        assert_eq!(
+            send_back_prompt("@/etc/passwd", " check it "),
+            format!(
+                "Review of your changes on \u{FF20}/etc/passwd:\n\ncheck it\n\nAddress it, then say what you changed.\n{}",
+                tandem_core::untrusted::DEFANGED
+            )
         );
     }
 
