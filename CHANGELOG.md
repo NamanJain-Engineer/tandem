@@ -73,15 +73,17 @@ release fails when its version has no section.
 
 ### Security
 
-- [lin] **Text from elsewhere can't hand an agent a file.** What Vibezeo passes
-  an agent from somewhere else can't make Claude Code read a file on your
-  computer: a worktree's diff and a second opinion's words, in the review you
-  send or for the second opinion itself, a pull request's review comments, a
-  failed check's log, Warn both agents' note, a teammate's mail, the terminal
-  selection or clipboard in a prompt, a web page's elements, the turn a teammate
-  learns from, a teammate's briefing for an ACP agent, and what Auto and
-  Conductor type. Any `@` there that could name a file is written ＠, and the
-  message says so.
+- [lin] **Text from elsewhere can't hand an agent a file or run a command.**
+  What Vibezeo passes an agent from somewhere else can't make Claude Code read a
+  file on your computer: a worktree's diff and a second opinion's words, in the
+  review you send or for the second opinion itself, a pull request's review
+  comments, a failed check's log, Warn both agents' note, a teammate's mail, the
+  terminal selection, clipboard, file name or branch name in a prompt, a web
+  page's elements, the turn a teammate learns from, a teammate's briefing for an
+  ACP agent, a handoff brief, and what Auto and Conductor send. Any `@` there
+  that could name a file is written ＠, and the message says so. A handoff brief,
+  or what Auto or Conductor sends an agent, that starts with `/` or `!` gets a
+  space first, so it runs no slash or shell command.
 
 ## 0.12.0
 
