@@ -3584,6 +3584,13 @@ The owner (20 October): the product and the site should feel premium, "not somet
 - D-1899: the demo catches up with the releases (`app-ui`'s 0.13.0 slice 2, REMAINING §0.2, D-868). The order is one sample world shared with the scenes, then Land worktrees, the intent radar, CI results, and the smaller features after. The opening frame moves into that world on a frame the app can reach: an agent launched into a worktree gets the worktree's own workspace and tab (`launch.rs`), and Code mode shows one at a time, so worktree agents never share a grid. It opens on `coupon-rules` with Codex at work, with `checkout-fix` (Done) and `search-ui` (Waiting, hint 1) in the rail under `shop`; the still and both alts that describe the frame change with it. Every addition follows these rules: only states the app can reach (a check passes only after a push; Execute stays refused); one source for the sample world's names, which the scenes and the demo both read; a first frame as calm as today, with the coach's three hints; Reset restores everything; data from the outside world is labelled as a sample in the data.
 
 - D-2700: rail marks (the radar mark, D-2613; the checks badge, D-2614) show a short form that fits, never a phrase cut off: the checks badge uses the status bar's own words ("CI failed", "CI running", "CI passed"), and the radar mark is its icon and the symbol (`applyCoupon`, or "3 symbols"). A long symbol may be cut at its end; a state or a verb never is. Beside a row's status, or when even the short form doesn't fit, a mark is its icon alone. The full sentence ("1 check failed: test", "Shares applyCoupon") is always its accessible name and tooltip. Marks stay on the row's one line.
+- D-2701: a rail row never runs past the rail. While a row overflows, it folds in this order: the radar mark to its icon, then the checks badge, then the status words to their dot, each keeping its words as accessible name and tooltip (D-2700). The name keeps its 10-character floor. The rail's minimum width is the measured width of a fully folded row at the deepest indent (the name's floor, its dot, the marks' icons and the pane count), likely about 230 px where it was 180; the collapsed rail stays for anyone who wants every pixel for panes. A mark's accessible name begins with its visible words (WCAG 2.5.3): "CI failed: 1 check failed: test".
+- D-2702: the hero is one Code-mode window as the app lays it out, with one worktree in view (D-1899). It is `site-motion`'s next slice, before 0.11.0's Claims. The window:
+  - the rail;
+  - Code mode on `checkout-fix`'s tab, with Ada's pane alone, since each worktree's tab holds its own agent;
+  - the sidebar's Dashboard tab on Review. Ada's card arrives there when she finishes ("Review · 0" and "Nothing to review", then "Review · 1"). It no longer floats over the grid, because finished work goes to the queue, not to a toast.
+
+  The rail is drawn as 0.12.0's WorkspaceSlot and WorktreeRow draw it: each worktree's branch icon, its name, its slot ("● 1 working"; `search-ui` turns to "Needs you" in amber at 2.2 s), the radar mark inline and the count badge, with the rail wide enough that nothing is cut. The radar notice and "Warned both agents" are toasts at the bottom right, and the status bar carries the agents segment ("◆ 1 waiting ● 1 working"). At 390, the rail's worktree rows sit as a strip above the pane, so the agent that needs you shows on a phone, and the sidebar floats over the pane as the app's does below 1,100 px. Caption: "Three agents work in one repository, each in its own worktree, and the rail shows the one that needs you." At release, a "scenes to 0.13.0" slice moves every scene's rail to D-2611, D-2613, D-2700 and D-2701, and the Dashboard to F-TL-12.12, gated on 0.13.0 as LANDS is gated on 0.9.0.
 
 ### Design direction log
 - Read the brief's sources, captured vibezeo.com and its live demo (Playwright, Chromium, 1440×900, dark and light), inventoried the journey as built (welcome, five-step wizard, launch grid, empty states, every upgrade prompt and its copy, raw colours and arbitrary values) and studied premium product sites for principles only.
@@ -3618,6 +3625,45 @@ The owner (20 October): the product and the site should feel premium, "not somet
 - Design QA of `app-ui`'s slice 2B frames (the demo's CI results and review comments, D-1899 (b), D-2614; frames before the commit): approved in design. Each state matches 0.12.0: the gh ask (UI-156), #42's checks with "Send failure to agent", the core's prompt and a fix turn that commits (6b2e9f4, 54 tests), "↑1 ↓0" with the real branch menu's Push, running then passed, and an imported "@sample-reviewer:" comment with Remove only. The 4.5 s check run is honest compression. D-2700 set the rail marks' short forms (the rows strip showed "Checks pas…"). Still owed before the demo ships: first names on its panes ("Send to Ada").
 - Corrections from the coordinating session's code review of `site-motion` 39601718, checked in 0.12.0. The queue card's second line is "{engine} · {workspace} · {branch} · {n}m" with the worktree's own workspace: `review_queue.rs` takes the worktree's workspace name and `ws.lane_branch`, and `time.minutes` is "{n}m". So the scenes read "Claude Code · checkout-fix · 4m", the bare branch name (D-1898) appearing once; the design lead's earlier OK of "· shop ·" was wrong. The theme control's selected-cell ring (site.css, the WCAG 1.4.11 marker) used the undefined `--tn-shadow-color`, which invalidates its whole `box-shadow`, so it never drew from 73b6a6b5 on; it was missed in that slice's QA, and `site-motion`'s undefined-token test is to cover every site stylesheet. The Review scene's `cut`/`show` effects started 67–83 ms ahead of the rest in real playback, which pausing the animations at exact times can't show, because it puts them all on one clock.
 - DESIGN §6 gains the pitfalls these reviews have met, to check every time: what a placeholder resolves to and each button's variant and place, not only the string; only states the app can reach; timing checked both with animations paused at set times and in real playback; an undefined custom property silently dropping its whole declaration; real-2× captures and element or viewport screenshots for scenes; one sample world from story.json.
+- Design QA of `app-ui` @ da034bf7 (D-2700 and the first names, before READY): approved in design.
+  - Marks: the checks badge reads "CI failed", "CI running", "CI passed" or "CI cancelled", and the radar mark is its icon and `applyCoupon` in code type.
+  - Folding: a row folds its marks while it overflows, the radar first. At 280 px, `checkout-fix` reads "CI failed" with the radar folded; at 360 px both show their words. No word is cut anywhere.
+  - First names are where 0.12.0 puts them: "Arlo" before "Stack coupons by priority", "Send to Ada", "Sent the failure to Ada", and the review item "Ada". The still was retaken with them.
+  - A pane's title keeps 10 characters before its branch chip gives way, and Undo landing is secondary.
+
+  `app-ui`'s two open calls were decided as D-2701.
+- Design QA of `site-motion` @ 54a05e0d, with e97cf660 (slice 2, D-3001: 0.9.0's CI scene and the home scenes in the story's states): two must-fixes, the rest approved. Checked on a build at 1440 and 390 on a real 2× screen, against chain26 (0.12.0) and `app-ui`'s be355620.
+  - Approved:
+    - The CI scene's beats and both final frames: the full-window scrim; "Sent the failure to Ada" with Close after it; pr_checks.rs's prompt word for word; "↑1 ↓0" and Push; "Pushed checkout-fix"; checks running, then passed; "Imported 1 comment" with "@sample-reviewer:" and Remove only; "1 comment · Copy review · Send to Ada". The scene sits above its own card, in a bezel that follows the theme.
+    - Real playback: every timeline effect starts on one clock on /, /changelog/0.9.0/ and /changelog/0.12.0/ (0.0 ms spread, three runs each).
+    - The queue's button variants, and both scrims over the whole window.
+    - The theme control's ring, in both themes: about 8:1 against the well in light and 7.9:1 in dark.
+    - design-shots, 24 of 24.
+  - Must-fix 1: Bea's ask was drawn as an approval answered in place: "Wants to: run pnpm test search" with Allow once and Deny in her pane, and Allow once, Deny and Open on her card. In 0.12.0:
+    - A pane approval comes only from `vibezeo run` (agent_run.rs), whose banner reads "The agent wants to run this with secrets:" over the command line.
+    - "Wants to: {summary}" with Allow once is only ever a Thread agent's.
+    - The fake agents' approvals belong to the E2E harness, which a release doesn't compile.
+    - An engine's own question is its prompt in the terminal. The demo draws story.json's ask that way: "Allow running pnpm test search? (y/n)", and "Allow running pnpm test search?" as the card's line, with no buttons.
+
+    The captions that claimed it ("with its answer in place", "with Allow once and Deny") go too.
+  - Must-fix 2: the hero rail's footer, "4 running sessions", isn't in 0.12.0's rail. The string is only the count badges' accessible name, and the rail ends with a ghost "Remote hosts" button.
+  - Polish, for D-2702 and the 0.13.0 slice:
+    - The Dashboard card as AgentCard draws it: the dot first, "Waiting for you · 0m" by the title, the line under the meta, and the demo's previews.
+    - DashboardPanel's switch above the count.
+    - The status bar's agents and checks segments.
+    - Toasts at the bottom right, with their tone bar.
+    - 0.12.0's worktree rows.
+  - `app-ui` is asked to export the ask's strings from story.ts, and to make plan.count.changes read right for one ("1 changes requested").
+  - `site-motion`'s questions:
+    - the hero (C.a, C.c) became D-2702;
+    - 0.13.0's Dashboard (C.b) goes to the 0.13.0 scenes slice;
+    - slice 3's Claims proposal is approved, with the governor after it if there's time.
+  - SAMPLE.pr's interim CI block must equal `app-ui`'s story.json when that lands. It doesn't yet: +9 −7 and 48 tests, against +12 −8, 54 tests and 6b2e9f4.
+- Corrections (the design lead's own, found in that round):
+  - Since slice 1, the Dashboard scene has drawn a pane agent's ask with Allow once and Deny on its card (Codex's `pnpm db:migrate`, then Bea's). 0.12.0 can't reach that state, and it was approved in slice 1, 1b and 39601718.
+  - The hero rail's "running sessions" footer has been there just as long.
+  - The 39601718 polish asked only that the radar notice clear the pane headers. It should have said that the app's toasts sit at the bottom right (`Toast.tsx`), and that the hero's review card belongs to the queue's Review view.
+  - DESIGN §6 now lists whose question it is and where the app shows it.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
