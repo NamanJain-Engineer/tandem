@@ -653,6 +653,23 @@ impl ThreadService {
             .map_err(store_err)
     }
 
+    /// The person has the thread on screen (F-TH-01 AC2): it's read. Only
+    /// the UI calls it, when a thread is opened or a turn ends on one that's
+    /// shown; reading a thread ([`Self::get`], the phone, Conductor) never
+    /// marks it read.
+    pub async fn mark_read(&self, id: &ThreadId) -> Result<(), IpcError> {
+        let thread = self.thread(id).await?;
+        if thread.unread {
+            repo::set_unread(&self.store, id, false)
+                .await
+                .map_err(store_err)?;
+            self.publish_threads().await;
+        }
+        Ok(())
+    }
+
+    /// A thread and what it needs on screen. Reads only: it doesn't mark the
+    /// thread read ([`Self::mark_read`] does).
     pub async fn get(&self, id: &ThreadId) -> Result<ThreadDetail, IpcError> {
         let thread = self.thread(id).await?;
         let turns = repo::turns(&self.store, id).await.map_err(store_err)?;
@@ -660,15 +677,6 @@ impl ThreadService {
         let attachments = attachments_repo::unsent(&self.store, id)
             .await
             .map_err(store_err)?;
-        // Opening a thread reads it (F-TH-01 AC2).
-        let mut thread = thread;
-        if thread.unread {
-            if let Err(e) = repo::set_unread(&self.store, id, false).await {
-                tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread read");
-            }
-            thread.unread = false;
-            self.publish_threads().await;
-        }
         let plan_revisions = repo::plan_revisions(&self.store, id)
             .await
             .map_err(store_err)?;
@@ -5537,8 +5545,15 @@ mod tests {
         send(&f, "hello", vec![]).await;
         ended(&f, 1).await;
         assert!(now(&f).await.unread);
+        // Reading it (the UI's reload on TurnEnd, the phone, Conductor)
+        // leaves it unread: only the person opening it marks it read.
         let detail = f.svc.get(&f.thread.id).await.expect("get");
-        assert!(!detail.thread.unread);
+        assert!(detail.thread.unread);
+        assert!(now(&f).await.unread);
+        f.svc.mark_read(&f.thread.id).await.expect("mark read");
+        assert!(!now(&f).await.unread);
+        // Marking a read thread read again changes nothing.
+        f.svc.mark_read(&f.thread.id).await.expect("again");
         assert!(!now(&f).await.unread);
     }
 

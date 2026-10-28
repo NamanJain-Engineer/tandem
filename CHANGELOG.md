@@ -64,6 +64,10 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **A finished chat stays unread until you look at it.** A chat you'd
+  opened earlier and left could lose its unread dot when its turn ended in the
+  background, and one you were looking at could get the dot back. Now a chat is
+  marked read only when it's on screen.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything

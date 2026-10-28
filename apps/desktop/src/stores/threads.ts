@@ -49,6 +49,9 @@ type ThreadsState = {
   open: (id: string) => Promise<void>;
   loadOlder: (id: string) => Promise<void>;
   reloadDetail: (id: string) => Promise<void>;
+  /** F-TH-01 AC2: the thread is on screen (opened, selected or in the grid),
+   * so it's read. Reading a thread never marks it read. */
+  markRead: (id: string) => Promise<void>;
   send: (
     id: string,
     text: string,
@@ -107,11 +110,23 @@ export const useThreads = create<ThreadsState>((set, get) => {
   const patch = (id: string, next: Partial<ThreadLive>) =>
     set((s) => ({ byId: { ...s.byId, [id]: { ...(s.byId[id] ?? blank()), ...next } } }));
 
+  /** Shown now: the selected thread, or a cell of the grid. Every thread
+   * opened this session stays subscribed, so a turn ending elsewhere must
+   * leave it unread. */
+  const onScreen = (id: string) => get().selectedId === id || get().grid.includes(id);
+
   const onEnvelope = (env: ThreadEventEnvelope) => {
     const cur = get().byId[env.threadId];
     if (!cur) return;
     // A new turn starting or ending changes the detail (running, queued).
-    if (env.event.type === "turn_end" || (env.event.type === "user" && env.seq === 0)) {
+    // A turn that ends on a thread the person is looking at is read already:
+    // marked first, so the reload shows it read.
+    if (env.event.type === "turn_end" && onScreen(env.threadId)) {
+      const id = env.threadId;
+      void get()
+        .markRead(id)
+        .then(() => get().reloadDetail(id));
+    } else if (env.event.type === "turn_end" || (env.event.type === "user" && env.seq === 0)) {
       void get().reloadDetail(env.threadId);
     }
     patch(env.threadId, { view: reduce(cur.view, env), live: [...cur.live, env] });
@@ -194,6 +209,8 @@ export const useThreads = create<ThreadsState>((set, get) => {
       }
     },
     open: async (id) => {
+      // Opened is on screen: read (F-TH-01 AC2), before the detail loads.
+      await get().markRead(id);
       const cur = get().byId[id];
       if (cur && cur.status !== "error") {
         void get().reloadDetail(id);
@@ -243,6 +260,14 @@ export const useThreads = create<ThreadsState>((set, get) => {
       // Older turns go first; live events since subscribing replay on top.
       const view = cur.live.reduce(reduce, fromHistory(history));
       patch(id, { history, view, nextBeforeId: page.nextBeforeId });
+    },
+    markRead: async (id) => {
+      try {
+        await invoke("thread_mark_read", { threadId: id });
+        set((s) => ({ list: s.list.map((t) => (t.id === id ? { ...t, unread: false } : t)) }));
+      } catch {
+        // The next open retries.
+      }
     },
     reloadDetail: async (id) => {
       try {

@@ -255,6 +255,7 @@ const COMMANDS: &[&str] = &[
     "thread_create",
     "thread_list",
     "thread_get",
+    "thread_mark_read",
     "thread_events",
     "thread_subscribe",
     "thread_send",
