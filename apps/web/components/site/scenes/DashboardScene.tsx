@@ -9,15 +9,17 @@ const { finished, working, waiting } = SAMPLE.worktrees;
 export const DASH_T = { ask: 2, done: 4.6 } as const;
 
 /** An agent's card as the Dashboard draws it (F-DB-01): its engine's tile,
- * its first name and, under it, its engine, workspace and branch (cardTitle
- * and cardMeta); its latest line, and its state. */
+ * its first name (cardTitle) and, under it, its engine and its worktree's
+ * name (cardMeta: a worktree's workspace is its own, and its branch,
+ * tandem/<name>, is shown as the name, so once: D-1898); its latest line,
+ * and its state. The story gives no account, so none shows. */
 function Card({ lane, status, line, wants }: { lane: typeof finished; status: ReactNode; line: ReactNode; wants?: ReactNode }) {
   return (
     <span className="sc-card">
       <Glyph engine={lane.engine} />
       <span className="sc-card-main">
         <span className="sc-card-title">{lane.name}</span>
-        <span className="sc-card-meta">{[lane.engine, SAMPLE.workspace, lane.branch].join(" · ")}</span>
+        <span className="sc-card-meta">{[lane.engine, lane.branch].join(" · ")}</span>
       </span>
       <span className="sc-card-line">{line}</span>
       <span className="sc-card-status">{status}</span>

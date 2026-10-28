@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DASH_T, DashboardScene } from "../components/site/scenes/DashboardScene";
 import { LandScene } from "../components/site/scenes/LandScene";
-import { ReviewScene } from "../components/site/scenes/ReviewScene";
+import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
 import { HERO_ASK, HERO_DONE, WORKSPACE_CAPTION, WorkspaceScene } from "../components/site/scenes/WorkspaceScene";
 import { Glyph } from "../components/site/scenes/parts";
@@ -34,25 +34,34 @@ const ALL = { workspace: <WorkspaceScene />, dashboard: <DashboardScene />, revi
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** A string as a regular expression matches it. */
 const re = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+type Row = readonly [string, string, number | null, number | null];
 /** git's own diff of `file` from main to `place` in the demo's sample
- * repository, as DiffView parses it, in the scenes' row form: what the app
- * shows, since its diffs are git's. */
-function gitDiff(place: string, file: string): Array<readonly [string, string, number | null, number | null]> {
+ * repository, as DiffView parses it: its hunks, each in the scenes' row form.
+ * It's what the app shows, since its diffs are git's. */
+function gitDiff(place: string, file: string): Row[][] {
   const shop = join(import.meta.dirname, "../../desktop/src/demo/shop");
+  const args = ["diff", "--no-index", "--no-color", "--no-ext-diff", "-U3", join(shop, "main", `${file}.sample`), join(shop, place, `${file}.sample`)];
   let patch = "";
   try {
-    execFileSync("git", ["diff", "--no-index", "--no-color", "-U3", join(shop, "main", `${file}.sample`), join(shop, place, `${file}.sample`)], { encoding: "utf8" });
+    execFileSync("git", args, { encoding: "utf8" });
   } catch (e) {
-    // git diff exits 1 when the files differ.
-    patch = (e as { stdout: string }).stdout;
+    const err = e as { code?: string; status?: number; stdout?: string; stderr?: string };
+    if (err.code === "ENOENT") throw new Error("scenes.test needs git: the scenes' diffs are checked against git's own diff of the sample files");
+    // git diff exits 1 when the files differ; anything else is a failure.
+    if (err.status !== 1) throw new Error(`git diff failed (${err.status}): ${err.stderr ?? ""}`);
+    patch = err.stdout ?? "";
   }
-  return parsePatch(patch).flatMap((l) =>
-    l.kind === "context" || l.kind === "add" || l.kind === "del" ? [[l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ", l.text, l.oldNo, l.newNo] as const] : [],
-  );
+  const hunks: Row[][] = [];
+  for (const l of parsePatch(patch)) {
+    if (l.kind === "hunk") hunks.push([]);
+    else if (l.kind === "context" || l.kind === "add" || l.kind === "del") hunks.at(-1)?.push([l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ", l.text, l.oldNo, l.newNo]);
+  }
+  return hunks;
 }
-/** True when `rows` run, in order and whole, somewhere in `all`. */
-const runsIn = (rows: ReadonlyArray<readonly unknown[]>, all: ReadonlyArray<readonly unknown[]>) =>
-  all.some((_, i) => rows.every((r, k) => JSON.stringify(all[i + k]) === JSON.stringify(r)));
+/** True when `rows` run, in order and whole, inside one of `hunks`: a run
+ * across two hunks would skip the lines between them. */
+const runsIn = (rows: ReadonlyArray<readonly unknown[]>, hunks: ReadonlyArray<ReadonlyArray<readonly unknown[]>>) =>
+  hunks.some((all) => all.some((_, i) => i + rows.length <= all.length && rows.every((r, k) => JSON.stringify(all[i + k]) === JSON.stringify(r))));
 /** HTML's text, tags dropped (entities kept). */
 const text = (h: string) => h.replace(/<[^>]+>/g, "");
 const versionHtml = async (version: string) => renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version }) }));
@@ -213,6 +222,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     const done = story.worktrees.find((w) => w.state === "done");
     const edits = (done?.steps ?? []).filter((st) => "edit" in st) as Array<{ edit: string; add: number; del: number }>;
     expect(SAMPLE.diff).toEqual({ files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) });
+    expect(SAMPLE.edited).toEqual(edits.map((e) => e.edit));
     // "Touches auth paths" is earned: one of those files is on an auth path (review_queue.rs is_auth).
     expect(edits.some((e) => e.edit.split("/").some((seg) => /auth|oauth|login|password|secret|crypto|permission/i.test(seg) && !/^author/i.test(seg)))).toBe(true);
     expect(SAMPLE.comments).toEqual(story.secondOpinion.comments.map((c) => ({ file: c.file, line: c.line, text: c.body })));
@@ -228,25 +238,53 @@ describe("F-WB-01 AC9 product scenes", () => {
     // and in every scene (D-3000).
     const dir = join(import.meta.dirname, "../components/site/scenes");
     const sources = [join(import.meta.dirname, "../lib/scenes.ts"), ...readdirSync(dir).filter((f) => f.endsWith(".tsx")).map((f) => join(dir, f))];
-    const copies = [
+    // Each name as a whole word, anywhere in the file: strings, JSX text, template strings and comments
+    // alike ("Bea" isn't found in "Beat"). Engines' names too, in every scene (D-3001).
+    const storyNames = [
       story.repo,
       story.overlap.symbol,
       ...story.worktrees.flatMap((w) => [w.slug, w.task, w.mergeCommit, w.agentName]),
       story.plan.goal,
       ...story.plan.tasks.map((x) => x.title),
-      `"${story.check}"`,
-      `>${story.check}<`,
+      story.check,
       story.pr.title,
       ...story.pr.comments.flatMap((c) => [c.author, c.body]),
       ...story.secondOpinion.comments.map((c) => c.body),
+      ...Object.values(story.engines).map((e) => e.label),
     ];
-    // Engines' names too, in every scene (D-3001).
-    const engines = Object.values(story.engines).map((e) => `"${e.label}"`);
+    const word = (name: string) => new RegExp(`(?<![\\w-])${re(name)}(?![\\w-])`);
+    expect(word("Bea").test("Beat")).toBe(false);
+    expect(word("Bea").test("{`Bea`}")).toBe(true);
+    // A diff's rows are the sample files' own lines, checked against git's diff of them: exempt in its own file only.
+    const diffs: Record<string, string> = { "ReviewScene.tsx": "REVIEW_DIFF", "ChecksScene.tsx": "SESSION_DIFF" };
     for (const f of sources) {
-      // A diff's rows are the sample files' own lines, checked against git's diff of them.
-      const source = readFileSync(f, "utf8").replace(/export const \w+_DIFF\b[\s\S]*?\n\];/g, "");
-      for (const name of [...copies, ...engines]) expect(source, `${name} in ${f}`).not.toContain(name);
+      const own = diffs[f.split("/").at(-1) ?? ""];
+      const source = own ? readFileSync(f, "utf8").replace(new RegExp(`export const ${own}\\b[\\s\\S]*?\\n\\];`), "") : readFileSync(f, "utf8");
+      if (own) expect(source, f).not.toContain(own + ": ");
+      for (const name of storyNames) expect(word(name).test(source), `${name} in ${f}`).toBe(false);
     }
+    expect(sources.length).toBeGreaterThan(8);
+  });
+
+  it("F-WB-01 AC9 D-3001 the shared sample world keeps what the scenes rely on: the sample's coupon code, and every agent's first name", () => {
+    // Not a real brand's name (CLAUDE.md, Never): a merge that took another copy of the samples can't bring one back unseen.
+    const shop = join(import.meta.dirname, "../../desktop/src/demo/shop");
+    const samples = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? samples(join(dir, e.name)) : e.name.endsWith(".sample") ? [join(dir, e.name)] : []));
+    const files = samples(shop);
+    expect(files.length).toBeGreaterThan(20);
+    // The 15% bulk code is BULK15 wherever it's defined, and in each of the four files that use it.
+    const fifteen = files.flatMap((f) => [...readFileSync(f, "utf8").matchAll(/(\w+): \{ code: "([A-Z0-9]+)", percent: 15,/g)].map((m) => `${m[1]}=${m[2]}`));
+    expect(fifteen.length).toBeGreaterThan(0);
+    expect([...new Set(fifteen)]).toEqual(["BULK15=BULK15"]);
+    for (const f of ["main/src/cart/coupon.ts", "main/src/cart/coupon.test.ts", "checkout-fix/src/cart/coupon.ts", "coupon-rules/src/cart/coupon.ts"])
+      expect(readFileSync(join(shop, `${f}.sample`), "utf8"), f).toContain("BULK15");
+    // Each worktree's agent has its first name, right after its engine, from the app's own list (F-CD-12).
+    for (const w of story.worktrees) {
+      expect(Object.keys(w).slice(0, 3), w.slug).toEqual(["slug", "engine", "agentName"]);
+      expect(names, w.slug).toContain(w.agentName);
+    }
+    expect(new Set(story.worktrees.map((w) => w.agentName)).size).toBe(story.worktrees.length);
   });
 
   it("F-WB-01 AC9 D-3000 an agent goes by its first name, and its pane by the first words of its task, as the app titles them", () => {
@@ -316,6 +354,10 @@ describe("F-WB-01 AC9 product scenes", () => {
     const done = story.worktrees.find((w) => w.state === "done");
     expect(REVIEW_FILE).toBe(story.secondOpinion.comments[0]?.file);
     expect(runsIn(REVIEW_DIFF, gitDiff(done?.slug ?? "", REVIEW_FILE))).toBe(true);
+    // Within one hunk: rows that end one hunk and start the next skip the lines between them.
+    const [h1, h2] = [[[" ", "a", 1, 1]], [[" ", "z", 9, 9]]];
+    expect(runsIn([...h1, ...h2], [h1, h2])).toBe(false);
+    expect(runsIn(h2, [h1, h2])).toBe(true);
     // Its header names that file.
     const h = renderToStaticMarkup(<ReviewScene />);
     expect(h).toContain(`<span class="sc-branch">${REVIEW_FILE}</span>`);
@@ -331,15 +373,24 @@ describe("F-WB-01 AC9 product scenes", () => {
     // One agent in the worktree: the bar names it by its first name (WorktreeReview's sendTo, agentName).
     expect(h).toContain(`>${esc(t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name }))}<`);
     expect(h).not.toContain(`>${t("worktree.review.send")}<`);
-    // The card is titled by its first name, with the engine, workspace and branch under it (ReviewQueue).
+    // The card is titled by its first name (ReviewQueue).
     expect(h).toContain(`<span class="sc-card-title">${SAMPLE.worktrees.finished.name}</span>`);
-    // …and how long ago it finished, as ReviewQueue's meta line ends (its ago(): "4m").
+    // Its meta line is ReviewQueue's: the engine, the workspace, the branch, how long ago it finished ("4m", its ago()).
     const queue = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/ReviewQueue.tsx"), "utf8");
     expect(queue).toContain('{[engine, item.workspace, item.branch, ago(item.finishedAt, now)].filter(Boolean).join(" · ")}');
     expect(queue).toContain('return m < 60 ? t("time.minutes", { n: m })');
-    expect(h).toContain(`<span class="sc-card-meta">${esc([SAMPLE.worktrees.finished.engine, SAMPLE.workspace, SAMPLE.worktrees.finished.branch, t("time.minutes", { n: REVIEW_T.finished })].join(" · "))}</span>`);
-    // The hero's card arrives as the work finishes: 0m.
-    expect(renderToStaticMarkup(<WorkspaceScene />)).toContain(`<span class="sc-card-meta">${esc([SAMPLE.worktrees.finished.engine, SAMPLE.workspace, SAMPLE.worktrees.finished.branch, t("time.minutes", { n: 0 })].join(" · "))}</span>`);
+    // A worktree's item has the worktree's own workspace, named for it, and its tandem/ branch (review_queue.rs, lanes.rs),
+    // which the site shows as the name (D-1898): so the name once, not the repository's (the coordinator's must-fix on 39601718).
+    const rq = readFileSync(join(import.meta.dirname, "../../desktop/src-tauri/src/services/review_queue.rs"), "utf8");
+    expect(rq).toMatch(/branch: ws\s*\.lane_branch\s*\.clone\(\)/);
+    expect(rq).toContain("workspace: ws.name,");
+    const lanesRs = readFileSync(join(import.meta.dirname, "../../desktop/src-tauri/src/services/lanes.rs"), "utf8");
+    expect(lanesRs).toContain("name: lane.slug.clone(),");
+    const fin = SAMPLE.worktrees.finished;
+    expect(h).toContain(`<span class="sc-card-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: REVIEW_T.finished })}`)}</span>`);
+    expect(h).not.toContain(`${esc(fin.engine)} · ${SAMPLE.workspace} ·`);
+    // The hero's card is the same line, arriving as the work finishes: 0m.
+    expect(renderToStaticMarkup(<WorkspaceScene />)).toContain(`<span class="sc-card-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: 0 })}`)}</span>`);
     expect(h).not.toContain(esc(t("review.diffTitle", { name: SAMPLE.worktrees.finished.engine })));
     // Only finished work waits for review: one card.
     expect(h.match(/class="sc-item[ "]/g)?.length).toBe(1);
@@ -360,6 +411,20 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(notesFor(REVIEW_FILE, REVIEW_DIFF, [])).toEqual(new Map());
     // The done line counts the comments with the app's words, and has a "none" for zero.
     expect(t("worktree.opinion.none", { engine: SAMPLE.reviewer })).toBe(`${SAMPLE.reviewer} had no comments`);
+    // Drawn with none: no notes and nothing swaps, the app's "none" toast, no count in the bar, still a file in the header
+    // (the first one the agent edited), and the text alternative doesn't count zero comments.
+    const none = renderToStaticMarkup(<ReviewScene comments={[]} />);
+    expect(none).not.toContain("sc-diff-note");
+    expect(none).not.toContain("sc-diff-swap");
+    expect(none).toContain(`<span class="sc-note-toast-title">${t("worktree.opinion.none", { engine: SAMPLE.reviewer })}</span>`);
+    expect(none).not.toContain("sc-review-count");
+    expect(reviewFile([], SAMPLE.edited)).toBe(SAMPLE.edited[0]);
+    expect(reviewFile([], SAMPLE.edited)).not.toBe("");
+    expect(reviewSceneText([])).toContain(`${SAMPLE.reviewer}, which reads the diff without editing anything and has no comments.`);
+    expect(reviewSceneText([])).not.toMatch(/0 line comments/);
+    // Two of the same words on one line are both drawn (their rows are keyed by place, not by text).
+    const same = c(REVIEW_FILE, 22, "Same words");
+    expect(renderToStaticMarkup(<ReviewScene comments={[same, same]} />).match(/<span class="sc-diff-note-text">Same words<\/span>/g)?.length).toBe(2);
   });
 
   it("F-WB-01 AC9 D-3000 Codex's comments arrive together, with its done toast, as review:second_opinion adds them, and no gap waits for them", () => {
@@ -381,8 +446,12 @@ describe("F-WB-01 AC9 product scenes", () => {
     // two stacks swap at once, with no fade to draw the rows twice (the
     // design lead's must-fix), and only the comment rows fade in.
     expect([wasFx, nowFx]).toEqual(["cut", "show"]);
-    expect(css).toMatch(/& \[data-fx-cut\]\s+\{ animation: sc-held var\(--at\) linear paused; \}/);
-    expect(css).toMatch(/& \[data-fx-show\]\s+\{ animation: sc-unseen var\(--at\) linear paused; \}/);
+    // Each takes no time and waits for its --at as every effect does, filled both ways, so it's on the same clock as the
+    // rest in real playback: run from the scene's start, it began a few frames early (the coordinator's SF-1, D-3001).
+    expect(css).toMatch(/& \[data-fx-cut\]\s+\{ animation: sc-gone 0s linear var\(--at\) both paused; \}/);
+    expect(css).toMatch(/& \[data-fx-show\]\s+\{ animation: sc-shown 0s linear var\(--at\) both paused; \}/);
+    expect(css).toMatch(/@keyframes sc-gone\s+\{ from \{ opacity: 1; \} to \{ opacity: 0; \} \}/);
+    expect(css).toMatch(/@keyframes sc-shown\s+\{ from \{ opacity: 0; \} to \{ opacity: 1; \} \}/);
     expect(css).toMatch(/\[data-fx-visit\], \[data-fx-out\], \[data-fx-cut\] \{ opacity: 0; \}/);
     for (const note of now.match(NOTE) ?? []) expect(note).toMatch(new RegExp(`^<span class="sc-diff-note" data-fx-in="" style="--at:${doneAt}s">`));
     expect(css).toMatch(/\.sc-diff-swap \{ display: grid;/);
@@ -474,8 +543,12 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(h).toContain(`<span class="sc-group-head">${esc(`${SAMPLE.workspace} · ${n}`)}</span><span class="sc-group-lanes">`);
     const lanes = [...h.matchAll(/<span class="sc-group"><span class="sc-group-head">([^<]*)<\/span>/g)].map((m) => m[1]);
     expect(lanes).toEqual(SAMPLE.order.map((w) => esc(`${w.branch} · 1`)));
-    // Each card: the first name, then "{engine} · {workspace} · {branch}" (cardTitle, cardMeta).
-    for (const w of SAMPLE.order) expect(h, w.branch).toContain(`<span class="sc-card-title">${w.name}</span><span class="sc-card-meta">${esc([w.engine, SAMPLE.workspace, w.branch].join(" · "))}</span>`);
+    // Each card: the first name, then cardMeta: the engine and the worktree's own workspace, whose tandem/ branch the site shows as
+    // the name, so once (D-1898). The story gives no account.
+    const model = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/model.ts"), "utf8");
+    expect(model).toContain("return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel]");
+    for (const w of SAMPLE.order) expect(h, w.branch).toContain(`<span class="sc-card-title">${w.name}</span><span class="sc-card-meta">${esc(`${w.engine} · ${w.branch}`)}</span>`);
+    expect(story.worktrees.some((w) => "account" in w)).toBe(false);
     expect(h.match(/<span class="sc-card">/g)?.length).toBe(n);
     for (const engine of Object.values(story.engines)) expect(h).not.toContain(`>${esc(t("pane.engine", { engine: engine.label, n: 1 }))}<`);
     // The waiting one asks to run its tests: "Wants to: run …", with Allow once, Deny and Open, as AgentCard draws a pending approval.
@@ -561,7 +634,8 @@ describe("F-WB-01 AC9 product scenes", () => {
 
   it("F-WB-01 AC9 scenes draw with the app's tokens, never literal colours (D-1883)", () => {
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-    for (const m of css.matchAll(/rgba?\(.{0,30}/g)) expect(m[0]).toMatch(/^rgb\(var\(--tn-shadow-color\) \//);
+    // Not even a shadow's: a scrim is the app's --tn-overlay, a raised surface its elevation (D-3001).
+    expect(css).not.toMatch(/rgba?\(/);
   });
 
   it("F-WB-01 AC9 D-3000 a terminal line is printed at once and only slides into place, so no reading of the page finds it half drawn", () => {
@@ -618,12 +692,32 @@ describe("F-WB-01 AC9 product scenes", () => {
     if (LANDS) expect(w).toMatch(new RegExp(`<span class="sc-status"[^>]*><span class="sc-dot">[\\s\\S]*?</span> ${t("radar.notice.warned")}</span>`));
   });
 
-  it("F-WB-01 AC9 D-3000 every token a scene draws with is one the app defines, and a dialog's scrim is the app's modal scrim", () => {
+  it("F-WB-01 AC9 D-3000 D-3001 every var() the site draws with is defined, in its stylesheets and inline in its pages, and a dialog's scrim is the app's modal scrim", () => {
+    // One undefined var() voids its whole declaration: a scrim with no backdrop, a box-shadow with no ring (D-3001).
     const styles = join(import.meta.dirname, "../../../packages/ui/src/styles");
-    const defined = new Set(["tokens.css", "brand.css", "site.css"].flatMap((f) => [...readFileSync(join(styles, f), "utf8").matchAll(/(--tn-[\w-]+)\s*:/g)].map((m) => m[1])));
-    const used = [...new Set([...css.matchAll(/var\((--tn-[\w-]+)/g)].map((m) => m[1]))];
-    expect(used.length).toBeGreaterThan(10);
-    expect(used.filter((v) => !defined.has(v))).toEqual([]);
+    const sheets = [...["tokens.css", "brand.css", "base.css", "site.css"].map((f) => join(styles, f)), join(import.meta.dirname, "globals.css"), join(import.meta.dirname, "../components/site/scenes/scenes.css")];
+    const globals = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
+    for (const f of ["tokens", "brand", "base", "site"]) expect(globals).toContain(`@import "@tandem/ui/${f}.css";`);
+    const source = (f: string) => readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    // Defined: in a stylesheet, by next/font (app/fonts.ts), or inline by a scene's effects (parts.tsx's --at, --stay and --to).
+    const defined = new Set(sheets.flatMap((f) => [...source(f).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])));
+    for (const m of readFileSync(join(import.meta.dirname, "fonts.ts"), "utf8").matchAll(/variable: "(--[\w-]+)"/g)) defined.add(m[1]);
+    const tsx = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? (["node_modules", "out", ".next"].includes(e.name) ? [] : tsx(join(dir, e.name))) : /\.tsx?$/.test(e.name) && !/\.(test|spec)\./.test(e.name) ? [join(dir, e.name)] : [],
+      );
+    const code = [...tsx(join(import.meta.dirname, "../components")), ...tsx(import.meta.dirname), ...tsx(join(import.meta.dirname, "../lib"))];
+    for (const f of code) for (const m of readFileSync(f, "utf8").matchAll(/"(--[\w-]+)":/g)) defined.add(m[1]);
+    expect([...defined].filter((v) => ["--at", "--stay", "--to", "--font-inter", "--font-jbm"].includes(v)).sort()).toEqual(["--at", "--font-inter", "--font-jbm", "--stay", "--to"]);
+    const missing: string[] = [];
+    for (const f of [...sheets, ...code]) {
+      const used = new Set([...source(f).matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+      for (const v of used) if (!defined.has(v)) missing.push(`${v} in ${f.split("/").slice(-2).join("/")}`);
+    }
+    expect(missing).toEqual([]);
+    // The scenes draw with plenty of the app's tokens, and the inline ones (the mark's rings, the engines' tints) count too.
+    expect([...css.matchAll(/var\((--tn-[\w-]+)/g)].length).toBeGreaterThan(10);
+    expect(code.some((f) => f.endsWith("scenes/parts.tsx") && readFileSync(f, "utf8").includes('stroke="var(--tn-accent)"'))).toBe(true);
     for (const cls of ["sc-plan-layer", "sc-ci-layer"]) expect(new RegExp(`\\.${cls} \\{[^}]*background: var\\(--tn-overlay\\)`).test(css), cls).toBe(true);
   });
 

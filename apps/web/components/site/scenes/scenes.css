@@ -372,10 +372,11 @@
 @keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
 /* A cut is there until its time, then gone at once; a show is the other way
    round. No fade, so two versions of the same rows are never drawn at once
-   (D-3000). Each lasts from the scene's start to its time, then the
-   element's own style holds. */
-@keyframes sc-held   { from, to { opacity: 1; } }
-@keyframes sc-unseen { from, to { opacity: 0; } }
+   (D-3000). Each takes no time and waits for its time as every other effect
+   does, so in real playback it starts on the same clock as the rest: run
+   from the scene's start instead, it began a few frames early (D-3001). */
+@keyframes sc-gone  { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sc-shown { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sc-spin   { to { rotate: 1turn; } }
 
 @media screen and (prefers-reduced-motion: no-preference) {
@@ -392,8 +393,8 @@
     & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-leave var(--dur-pop) var(--ease-exit) calc(var(--at) + var(--stay) - var(--dur-pop)) forwards paused; }
     & [data-fx-sweep] { animation: sc-sweep 1.6s var(--ease-io-site) var(--at) both paused; }
     & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
-    & [data-fx-cut]   { animation: sc-held var(--at) linear paused; }
-    & [data-fx-show]  { animation: sc-unseen var(--at) linear paused; }
+    & [data-fx-cut]   { animation: sc-gone 0s linear var(--at) both paused; }
+    & [data-fx-show]  { animation: sc-shown 0s linear var(--at) both paused; }
     /* A spinner turns from when its state comes in (the --at it inherits), twice. */
     & .sc-spin { animation: sc-spin 0.8s linear var(--at, 0s) 2 paused; }
     & [data-fx-count] .sc-sr { display: none; }

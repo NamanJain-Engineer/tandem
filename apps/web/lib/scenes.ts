@@ -202,8 +202,10 @@ export const SAMPLE = {
   },
   /** The command the waiting agent asks to run. */
   ask: waiting.ask ?? "",
-  /** The finished worktree's diff: the sum of its agent's edits. */
+  /** The finished worktree's diff: the sum of its agent's edits, and the
+   * files it edited, in order. */
   diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },
+  edited: edits.map((e) => e.edit),
   /** The engine that gives the second opinion, and its line comments. */
   reviewer: label(story.secondOpinion.engine),
   comments: story.secondOpinion.comments.map((c) => ({ file: c.file, line: c.line, text: c.body })),

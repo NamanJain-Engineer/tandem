@@ -2,8 +2,15 @@ import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
 import { AppWindow, Count, DiffRows, Glyph, StatusBar, Toast, fx, visit, type DiffRow } from "./parts";
 
-/** The file the second opinion comments on: the scene shows its diff. */
-export const REVIEW_FILE = SAMPLE.comments[0]?.file ?? "";
+/** A second opinion's line comment, in the story's words. */
+type Comment = { file: string; line: number; text: string };
+
+/** The file the scene shows: the one the second opinion comments on, or,
+ * with no comments, the first one the agent edited. */
+export function reviewFile(comments: ReadonlyArray<{ file: string }>, edited: readonly string[]): string {
+  return comments[0]?.file ?? edited[0] ?? "";
+}
+export const REVIEW_FILE = reviewFile(SAMPLE.comments, SAMPLE.edited);
 
 /** The diff the scene reviews: the finished worktree's change to
  * REVIEW_FILE, the checkout function's hunk with its old and new line
@@ -48,32 +55,35 @@ export function notesFor(
 export const REVIEW_T = { ask: 1.9, reviewing: 2.1, done: 3.8, send: 5.4, finished: 4 } as const;
 const { done: DONE } = REVIEW_T;
 
-/** Where the second opinion's comments land: under the rows at their lines,
- * each as DiffView's annotation row. They're the review's own, to edit or
- * remove, and only they fade in. */
-const NOTES = new Map<number, ReactNode>(
-  [...notesFor(REVIEW_FILE, REVIEW_DIFF, SAMPLE.comments)].map(([row, texts]) => [
-    row,
-    texts.map((text) => (
-      <span key={text} className="sc-diff-note" {...fx("in", DONE)}>
-        <span className="sc-diff-note-text">{text}</span>
-        <span className="sc-btn sc-btn-ghost">{t("worktree.review.edit")}</span>
-        <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
-      </span>
-    )),
-  ]),
-);
+/** Where the comments land: under the rows at their lines, each as
+ * DiffView's annotation row, two on one line both drawn. They're the
+ * review's own, to edit or remove, and only they fade in. */
+function notes(comments: readonly Comment[]): Map<number, ReactNode> {
+  return new Map(
+    [...notesFor(REVIEW_FILE, REVIEW_DIFF, comments)].map(([row, texts]) => [
+      row,
+      texts.map((text, k) => (
+        <span key={k} className="sc-diff-note" {...fx("in", DONE)}>
+          <span className="sc-diff-note-text">{text}</span>
+          <span className="sc-btn sc-btn-ghost">{t("worktree.review.edit")}</span>
+          <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
+        </span>
+      )),
+    ]),
+  );
+}
 
 /** "Review and a second opinion" (D-1880): the review queue (F-DB-04) with
  * the finished worktree's fix, the one piece of finished work, sorted by
  * risk; Second opinion asks another engine, which reads the diff without
  * editing anything (F-WT-05) while the review bar says so; its findings land
  * together as line comments under their lines, with a toast, and the bar
- * sends them to the agent. About 6 s, played once. */
-export function ReviewScene() {
+ * sends them to the agent. About 6 s, played once. The comments are the
+ * story's; a test draws it with none, too. */
+export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonly Comment[] }) {
   const done = SAMPLE.worktrees.finished;
   const reviewer = SAMPLE.reviewer;
-  const n = SAMPLE.comments.length;
+  const n = comments.length;
   return (
     <AppWindow className="sc-review">
       <div className="sc-rev">
@@ -88,10 +98,12 @@ export function ReviewScene() {
             <span className="sc-toast-row">
               <Glyph engine={done.engine} focused />
               {/* ReviewQueue's card: the agent's first name, then its engine,
-                  workspace and branch, and how long ago it finished. */}
+                  its workspace (a worktree's is its own, named for it) and
+                  branch (tandem/<name>, which the site shows as the name, so
+                  once: D-1898), and how long ago it finished. */}
               <span className="sc-card-main">
                 <span className="sc-card-title">{done.name}</span>
-                <span className="sc-card-meta">{[done.engine, SAMPLE.workspace, done.branch, t("time.minutes", { n: REVIEW_T.finished })].join(" · ")}</span>
+                <span className="sc-card-meta">{[done.engine, done.branch, t("time.minutes", { n: REVIEW_T.finished })].join(" · ")}</span>
               </span>
             </span>
             <span className="sc-stat">
@@ -131,7 +143,7 @@ export function ReviewScene() {
           </div>
           {/* The comments go in under their lines in one go: the rows below
               move down at once, and only the comments fade in (DiffRows). */}
-          <DiffRows rows={REVIEW_DIFF} notes={NOTES} at={DONE} />
+          <DiffRows rows={REVIEW_DIFF} notes={notes(comments)} at={DONE} />
           {/* WorktreeReview's bar: the reviewer at work, with Open thread,
               then the comments' count with Copy review and Send to the
               worktree's one agent, by its name. */}
@@ -169,8 +181,9 @@ export function ReviewScene() {
 
 export const REVIEW_CAPTION = "Finished work waits in one queue. Another engine reads it and leaves line comments.";
 
-export function reviewSceneText(): string {
+export function reviewSceneText(comments: readonly Comment[] = SAMPLE.comments): string {
   const done = SAMPLE.worktrees.finished;
-  const n = SAMPLE.comments.length;
-  return `The review queue, sorted by risk, with ${done.name}'s fix in ${done.engine}: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, labelled "Touches auth paths" with its check passed. Second opinion asks ${SAMPLE.reviewer}, which reads the diff without editing anything and leaves ${n === 1 ? "a line comment" : `${n} line comments`}, ready to send to ${done.name}.`;
+  const n = comments.length;
+  const found = n === 0 ? "has no comments" : `leaves ${n === 1 ? "a line comment" : `${n} line comments`}, ready to send to ${done.name}`;
+  return `The review queue, sorted by risk, with ${done.name}'s fix in ${done.engine}: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, labelled "Touches auth paths" with its check passed. Second opinion asks ${SAMPLE.reviewer}, which reads the diff without editing anything and ${found}.`;
 }

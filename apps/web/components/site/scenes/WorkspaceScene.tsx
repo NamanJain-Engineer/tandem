@@ -123,14 +123,15 @@ export function WorkspaceScene() {
         )}
 
         <div className="sc-toast sc-toast-bottom" {...fx("slide", 7.2)}>
-          {/* The review queue's card (ReviewQueue): the agent's first name, then
-              its engine, workspace and branch, and how long ago it finished:
-              just now, so 0m. */}
+          {/* The review queue's card (ReviewQueue), as the Review scene's: the
+              agent's first name, then its engine, its worktree's name (its
+              workspace and branch, shown once: D-1898) and how long ago it
+              finished, which is just now. */}
           <span className="sc-toast-row">
             <Glyph engine={finished.engine} />
             <span className="sc-card-main">
               <span className="sc-toast-title">{finished.name}</span>
-              <span className="sc-card-meta">{[finished.engine, SAMPLE.workspace, finished.branch, t("time.minutes", { n: 0 })].join(" · ")}</span>
+              <span className="sc-card-meta">{[finished.engine, finished.branch, t("time.minutes", { n: 0 })].join(" · ")}</span>
             </span>
           </span>
           <span className="sc-stat">

@@ -106,6 +106,32 @@ test("F-WB-01 AC9 D-3000 the Review scene's comments go in at once: no frame dra
   for (const [d, was, now] of frames) expect([was, now], `${d} s after the comments`).toEqual((d ?? 0) < 0 ? [1, 0] : [0, 1]);
 });
 
+test("F-WB-01 AC9 D-3001 in real playback every effect in a scene starts on one clock, so what must coincide does", async ({ page }) => {
+  // Seeking (the test above) puts every effect on one clock, so it can't see this: in Chrome the Review scene's cut and
+  // show once started two to five frames before the rest, and the rows moved before the comments came (SF-1).
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const [path, ids] of [
+    ["/", ["workspace", "dashboard", "review"]],
+    ["/changelog/0.9.0/", ["land", "checks"]],
+    ["/changelog/0.12.0/", ["plan"]],
+  ] as const) {
+    await page.goto(path);
+    for (const id of ids) {
+      await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
+      await expect.poll(() => states(page, id), { timeout: 10_000 }).toContain("running");
+      await page.waitForTimeout(100);
+      const starts = await page.evaluate((id) => {
+        const own = (document.querySelector(`[data-scene="${id}"]`) as Element)
+          .getAnimations({ subtree: true })
+          .filter((a) => String((a as CSSAnimation).animationName).startsWith("sc-") && a.timeline instanceof DocumentTimeline);
+        return [own.length, [...new Set(own.map((a) => Math.round(Number(a.startTime) * 10) / 10))]] as const;
+      }, id);
+      expect(starts[0], id).toBeGreaterThan(5);
+      expect(starts[1], `${id}: start times`).toHaveLength(1);
+    }
+  }
+});
+
 // The release pages' scenes (components/site/scenes/releaseScenes.tsx):
 // where each plays, and an element that only its final frame shows.
 const RELEASE_PAGES = [

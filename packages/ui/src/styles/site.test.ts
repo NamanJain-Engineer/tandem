@@ -235,7 +235,12 @@ describe("F-WB-01 site.css (D-1801)", () => {
   });
 
   it("F-WB-01 AC4 the theme control's selected cell is told apart at 3:1 or more, in both themes (WCAG 1.4.11)", () => {
-    expect(site).toContain("0 0 0 1px var(--tn-text-muted), 0 1px 2px rgb(var(--tn-shadow-color) / 0.18);");
+    // The ring is the declaration's own layer, and every var() in it is defined: one that isn't voids the whole
+    // box-shadow, which is how the ring went missing (it named --tn-shadow-color, D-3001).
+    const shadow = /:root\[data-theme-choice="dark"\] \.theme-switch \[data-choice="dark"\] \{[^}]*box-shadow: ([^;]+);/.exec(site)?.[1] ?? "";
+    expect(shadow).toBe("0 0 0 1px var(--tn-text-muted), var(--tn-elev-1)");
+    const defined = new Set([tokens, brand, site].flatMap((css) => [...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])));
+    for (const v of shadow.matchAll(/var\((--[\w-]+)/g)) expect(defined.has(v[1]), v[1]).toBe(true);
     for (const [name, theme] of Object.entries(themes))
       for (const bg of ["--site-glass", "--site-card"]) expect(ratio(theme, "--tn-text-muted", bg), `${name} ${bg}`).toBeGreaterThanOrEqual(3);
   });
