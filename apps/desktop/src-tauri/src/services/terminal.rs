@@ -124,6 +124,12 @@ pub struct TerminalService {
     resume_first: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Run with secrets: a pane's first spawn runs this (F-TL-12).
     runs: std::sync::Mutex<std::collections::HashMap<String, crate::services::secrets::PendingRun>>,
+    /// `vibezeo run` commands each agent pane may run without asking ("Allow
+    /// for this agent", F-TL-12): exact command lines, for the pane's life.
+    agent_runs:
+        std::sync::Mutex<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+    /// `$DATA/run/bin`, holding `vibezeo`, once it's installed.
+    run_bin: std::sync::OnceLock<PathBuf>,
     /// SSH hosts: panes of remote workspaces run there (F-RM-01).
     remote: std::sync::OnceLock<Arc<crate::services::remote::RemoteService>>,
     /// WSL distributions: panes of WSL workspaces run there (F-RM-02).
@@ -149,12 +155,20 @@ pub struct TerminalService {
     sandbox_alerted: std::sync::atomic::AtomicBool,
     /// Agent panes' scopes, usage and Freeze (F-EX-06).
     pub resources: Arc<crate::services::resources::ResourcesService>,
+    /// F-EX-07: each agent pane's and thread's ledger.
+    pub activity: Arc<crate::services::activity::ActivityService>,
 }
 
 /// Takes a checkpoint of an agent pane's folder (F-EX-01). The flag turns
 /// true when the prompt went ahead without waiting for it.
+/// Runs before a prompt goes to an agent pane: its checkpoint, and with
+/// `Some(at)` its turn in the ledger (F-EX-07), dated when Enter came.
 pub type PromptHook = Arc<
-    dyn Fn(PaneId, Arc<std::sync::atomic::AtomicBool>) -> futures::future::BoxFuture<'static, ()>
+    dyn Fn(
+            PaneId,
+            Arc<std::sync::atomic::AtomicBool>,
+            Option<i64>,
+        ) -> futures::future::BoxFuture<'static, ()>
         + Send
         + Sync,
 >;
@@ -287,6 +301,8 @@ impl TerminalService {
         } else {
             crate::services::resources::ResourcesService::new(store.clone(), status.bus().clone())
         };
+        let activity =
+            crate::services::activity::ActivityService::new(store.clone(), status.clock());
         Arc::new(Self {
             pty,
             engines,
@@ -303,6 +319,8 @@ impl TerminalService {
             agent_panes: Default::default(),
             resume_first: Default::default(),
             runs: Default::default(),
+            agent_runs: Default::default(),
+            run_bin: Default::default(),
             remote: std::sync::OnceLock::new(),
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
@@ -314,6 +332,7 @@ impl TerminalService {
             sandbox_alert: std::sync::OnceLock::new(),
             sandbox_alerted: std::sync::atomic::AtomicBool::new(false),
             resources,
+            activity,
         })
     }
 
@@ -488,12 +507,17 @@ impl TerminalService {
 
     /// Runs the prompt hook, waiting at most [`PROMPT_WAIT`]; the
     /// checkpoint carries on (marked late) if it takes longer.
-    pub async fn before_prompt(&self, pane: &PaneId) {
+    pub async fn before_prompt(&self, pane: &PaneId, turn: bool) {
         let Some(hook) = self.prompt_hook.get() else {
             return;
         };
+        let turn_at = if turn && self.typed_turns(pane).await {
+            Some(self.activity.now_ms())
+        } else {
+            None
+        };
         let late = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let task = tokio::spawn(hook(pane.clone(), late.clone()));
+        let task = tokio::spawn(hook(pane.clone(), late.clone(), turn_at));
         if tokio::time::timeout(PROMPT_WAIT, task).await.is_err() {
             late.store(true, std::sync::atomic::Ordering::SeqCst);
             tracing::info!(
@@ -501,6 +525,23 @@ impl TerminalService {
                 "a prompt went ahead before its checkpoint"
             );
         }
+    }
+
+    /// Whether the ledger counts this pane's turns at Enter (F-EX-07): its
+    /// engine runs (not handed back to a shell) and doesn't report prompts
+    /// through hooks (Claude-style hooks send UserPromptSubmit, which counts
+    /// them more exactly).
+    async fn typed_turns(&self, pane: &PaneId) -> bool {
+        if !self.status.is_watched(pane.as_str()) {
+            return false;
+        }
+        let engine = panes::get(&self.store, pane)
+            .await
+            .ok()
+            .and_then(|r| r.engine_id)
+            .and_then(|id| self.engines.get(&id));
+        !engine
+            .is_some_and(|e| e.hooks_support == tandem_engines::registry::HooksSupport::ClaudeHooks)
     }
 
     /// `pty_write`. Agent panes with a prompt hook get their input in order
@@ -522,9 +563,11 @@ impl TerminalService {
                 let this = self.clone();
                 let pane = pane.clone();
                 tauri::async_runtime::spawn(async move {
+                    let mut input = SubmitScan::default();
                     while let Some(data) = rx.recv().await {
+                        let submit = input.scan(&data);
                         if data.contains(&b'\r') {
-                            this.before_prompt(&pane).await;
+                            this.before_prompt(&pane, submit).await;
                         }
                         if this.pty.write(pane.as_str(), &data).is_err() {
                             break;
@@ -902,11 +945,40 @@ impl TerminalService {
         ended
     }
 
-    /// A closed pane's parked run goes, values and all.
+    /// A closed pane's parked run goes, values and all, and so do the
+    /// commands its agent was allowed to run.
     pub fn drop_run(&self, pane: &str) {
         if let Ok(mut runs) = self.runs.lock() {
             runs.remove(pane);
         }
+        if let Ok(mut allowed) = self.agent_runs.lock() {
+            allowed.remove(pane);
+        }
+    }
+
+    /// "Allow for this agent": `command` runs from `pane` without asking,
+    /// while `.env` gives it what it did (`fingerprint`), until the pane
+    /// closes.
+    pub fn allow_agent_run(&self, pane: &str, command: &str, fingerprint: &str) {
+        if let Ok(mut allowed) = self.agent_runs.lock() {
+            allowed
+                .entry(pane.to_string())
+                .or_default()
+                .insert(format!("{fingerprint}\n{command}"));
+        }
+    }
+
+    pub fn agent_run_allowed(&self, pane: &str, command: &str, fingerprint: &str) -> bool {
+        let key = format!("{fingerprint}\n{command}");
+        self.agent_runs
+            .lock()
+            .map(|a| a.get(pane).is_some_and(|c| c.contains(&key)))
+            .unwrap_or(false)
+    }
+
+    /// Agent panes started from now on find `vibezeo` in `dir` first.
+    pub fn set_run_bin(&self, dir: PathBuf) {
+        let _ = self.run_bin.set(dir);
     }
 
     /// Why Run with secrets can't start in this app's local panes, if it
@@ -1272,10 +1344,11 @@ impl TerminalService {
             let argv = self
                 .sandbox_argv(pane, &root, launch.home.as_deref(), inner)
                 .await;
-            let args = env::agent_wrapper(
+            let args = env::agent_wrapper_with(
                 &shell,
                 &argv,
                 integration.as_ref().map(|(_, dir)| dir.as_path()),
+                self.run_bin.get().map(PathBuf::as_path),
             )
             .map_err(|_| {
                 self.status.unwatch(pane.as_str());
@@ -1297,7 +1370,13 @@ impl TerminalService {
             let args = env::run_wrapper(&shell, &run.command, &names)
                 .ok_or_else(|| IpcError::new(ErrorCode::Invalid, RUN_NEEDS_SHELL))?;
             run_mask = Some(run.mask);
-            (args, run.env, None, None)
+            // The PTY's environment takes plain strings, for the spawn only.
+            let env = run
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+                .collect();
+            (args, env, None, None)
         } else if let Some((kind, dir)) = &integration {
             let launch =
                 integration::launch(*kind, dir, login.vars.get("ZDOTDIR").map(String::as_str))
@@ -1847,7 +1926,8 @@ impl TerminalService {
             .state(pane.as_str())
             .is_some_and(|s| s.bracketed_paste);
         let (body, enter) = typing::prompt_writes(text, bracketed, &newline);
-        self.before_prompt(pane).await;
+        // Typed without Enter (send: false) isn't a turn.
+        self.before_prompt(pane, send).await;
         self.status.quiet_window(pane.as_str());
         self.pty.write(pane.as_str(), &body)?;
         if send {
@@ -1976,6 +2056,47 @@ pub const RUN_IN_WSL: &str = "Run with secrets doesn't work in terminals that op
 
 /// Run with secrets needs a shell that can unset the variables after the command.
 pub const RUN_NEEDS_SHELL: &str = "Run with secrets needs a POSIX shell, fish or PowerShell";
+
+/// Finds the Enter that submits a prompt in an agent pane's input, across
+/// chunks: a carriage return that isn't Alt/Shift+Enter (`ESC CR`) and isn't
+/// inside a bracketed paste.
+#[derive(Debug, Default)]
+pub(crate) struct SubmitScan {
+    in_paste: bool,
+    after_esc: bool,
+}
+
+impl SubmitScan {
+    const PASTE_START: &'static [u8] = b"\x1b[200~";
+    const PASTE_END: &'static [u8] = b"\x1b[201~";
+
+    pub(crate) fn scan(&mut self, data: &[u8]) -> bool {
+        let mut submit = false;
+        let mut i = 0;
+        while i < data.len() {
+            let rest = &data[i..];
+            if rest.starts_with(Self::PASTE_START) {
+                self.in_paste = true;
+                self.after_esc = false;
+                i += Self::PASTE_START.len();
+                continue;
+            }
+            if rest.starts_with(Self::PASTE_END) {
+                self.in_paste = false;
+                self.after_esc = false;
+                i += Self::PASTE_END.len();
+                continue;
+            }
+            let b = data[i];
+            if b == b'\r' && !self.in_paste && !self.after_esc {
+                submit = true;
+            }
+            self.after_esc = b == 0x1b;
+            i += 1;
+        }
+        submit
+    }
+}
 
 /// The `wsl_default_distro` setting as a distro name `wsl.exe -d` can take.
 fn plain_distro(value: &serde_json::Value) -> Option<String> {
@@ -2761,6 +2882,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_ex_07_1_a_turn_is_counted_at_enter_only_when_sent_watched_and_hookless() {
+        use tandem_engines::registry::HooksSupport;
+        use tandem_store::repo::tabs;
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let root = dir.path().join("shop");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let ws = crate::services::workspaces::add(&store, root.to_str().expect("utf8"), Some(5))
+            .await
+            .expect("ws")
+            .workspace;
+        let tab = tabs::list(&store, &ws.id).await.expect("tabs").remove(0);
+        let svc = TerminalService::new(tandem_pty::PtyManager::new(), store.clone());
+        let reg = svc.engines.registry();
+        let hookless = reg
+            .all()
+            .iter()
+            .find(|e| e.hooks_support == HooksSupport::None)
+            .expect("an engine without hooks")
+            .id
+            .clone();
+        let pane = |engine: String| {
+            let store = store.clone();
+            let tab = tab.id.clone();
+            async move {
+                panes::create_with(&store, &tab, "agent", None, Some(engine))
+                    .await
+                    .expect("pane")
+                    .id
+            }
+        };
+        let plain = pane(hookless).await;
+        let claude = pane("claude".into()).await;
+        let seen: Arc<std::sync::Mutex<Vec<Option<i64>>>> = Arc::default();
+        let got = seen.clone();
+        svc.set_prompt_hook(Arc::new(move |_, _, turn_at| {
+            if let Ok(mut s) = got.lock() {
+                s.push(turn_at);
+            }
+            Box::pin(async {})
+        }));
+        let turn = |pane: PaneId, send: bool| {
+            let svc = svc.clone();
+            let seen = seen.clone();
+            async move {
+                svc.before_prompt(&pane, send).await;
+                seen.lock()
+                    .expect("lock")
+                    .pop()
+                    .expect("the hook ran")
+                    .is_some()
+            }
+        };
+        // Not watched (its engine handed back to the shell): no turn.
+        assert!(!turn(plain.clone(), true).await);
+        svc.status.watch(plain.as_str(), &[], &[], None);
+        svc.status.watch(claude.as_str(), &[], &[], None);
+        // Watched, without hooks: Enter is a turn, typing without it isn't.
+        assert!(turn(plain.clone(), true).await);
+        assert!(!turn(plain.clone(), false).await, "send: false");
+        // Claude-style hooks report UserPromptSubmit, so Enter isn't counted.
+        assert!(!turn(claude.clone(), true).await);
+    }
+
+    #[test]
+    fn f_ex_07_only_a_bare_enter_outside_a_paste_submits() {
+        let scan = |chunks: &[&[u8]]| {
+            let mut s = SubmitScan::default();
+            chunks.iter().map(|c| s.scan(c)).collect::<Vec<_>>()
+        };
+        assert_eq!(scan(&[b"fix the bug\r"]), [true]);
+        // Shift+Enter (ESC CR) adds a line, also when split across chunks.
+        assert_eq!(scan(&[b"line one\x1b\r", b"line two\r"]), [false, true]);
+        assert_eq!(scan(&[b"a\x1b", b"\r"]), [false, false]);
+        // A bracketed paste's lines aren't Enters, even over several chunks.
+        assert_eq!(
+            scan(&[b"\x1b[200~one\rtwo\r", b"three\r\x1b[201~", b"\r"]),
+            [false, false, true]
+        );
+        assert_eq!(scan(&[b"no enter"]), [false]);
+    }
+
+    #[tokio::test]
     async fn f_tl_12_a_closed_panes_parked_run_goes_with_it() {
         let dir = tempfile::tempdir().expect("tempdir");
         let data = DataDir::at(dir.path().join("data")).expect("data");
@@ -2771,7 +2976,7 @@ mod tests {
             &pane,
             crate::services::secrets::PendingRun {
                 command: "true".into(),
-                env: vec![("A".into(), "value-1".into())],
+                env: vec![("A".into(), zeroize::Zeroizing::new("value-1".into()))],
                 mask: Vec::new(),
             },
         );

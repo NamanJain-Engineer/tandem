@@ -82,35 +82,55 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
   expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
 });
 
-test("F-WB-01 AC9 the Land scene plays on 0.9.0's changelog page (D-1885)", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/changelog/0.9.0/");
-  await page.locator('[data-scene="land"]').scrollIntoViewIfNeeded();
-  await expect.poll(() => states(page, "land"), { timeout: 10_000 }).toContain("running");
-  // At the container's full width, as on the home page, not the notes' column (D-1886).
-  const [scene, container] = await page.evaluate(() => [
-    document.querySelector('[data-scene="land"]')?.getBoundingClientRect().width ?? 0,
-    document.querySelector("article .container-site")?.getBoundingClientRect().width ?? 1,
-  ]);
-  expect(scene / container).toBeGreaterThan(0.9);
-});
+// The release pages' scenes (components/site/scenes/releaseScenes.tsx):
+// where each plays, and an element that only its final frame shows.
+const RELEASE_PAGES = [
+  { id: "land", path: "/changelog/0.9.0/", final: '[data-scene="land"] .sc-dialog-done' },
+  { id: "plan", path: "/changelog/0.12.0/", final: '[data-scene="plan"] .sc-plan-foot > .sc-swap:last-child > [data-fx-pop]' },
+] as const;
 
-// The Land scene on its own page, without its player and under reduced
-// motion: no effects, and the finished queue showing (D-1885).
-for (const mode of ["player blocked", "reduced motion"] as const) {
-  test(`F-WB-01 AC8 AC9 on 0.9.0's changelog page with the ${mode}, the Land scene shows its final frame`, async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: mode === "reduced motion" ? "reduce" : "no-preference" });
-    if (mode === "player blocked") await context.route(/\/demo\/embed\.js$/, (route) => route.abort());
-    const page = await context.newPage();
-    await page.goto("/changelog/0.9.0/");
-    await page.waitForLoadState("load");
-    await page.locator('[data-scene="land"]').scrollIntoViewIfNeeded();
-    if (mode === "player blocked") expect(await page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(false);
-    expect(await states(page, "land")).not.toContain("running");
-    expect(await opacity(page, '[data-scene="land"] .sc-dialog-done')).toBe(1);
-    await context.close();
+for (const r of RELEASE_PAGES) {
+  test(`F-WB-01 AC9 the ${r.id} scene plays on ${r.path}, at the container's full width (D-1885, D-1888)`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(r.path);
+    await page.locator(`[data-scene="${r.id}"]`).scrollIntoViewIfNeeded();
+    await expect.poll(() => states(page, r.id), { timeout: 10_000 }).toContain("running");
+    // As on the home page, not the notes' column, so the app's text reads (D-1886, D-1898).
+    const [scene, container] = await page.evaluate((id) => [
+      document.querySelector(`[data-scene="${id}"]`)?.getBoundingClientRect().width ?? 0,
+      document.querySelector("article .container-site")?.getBoundingClientRect().width ?? 1,
+    ], r.id);
+    expect(scene / container).toBeGreaterThan(0.9);
   });
+
+  // Without its player and under reduced motion: no effects, and the end showing.
+  for (const mode of ["player blocked", "reduced motion"] as const) {
+    test(`F-WB-01 AC8 AC9 on ${r.path} with the ${mode}, the ${r.id} scene shows its final frame`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: mode === "reduced motion" ? "reduce" : "no-preference" });
+      if (mode === "player blocked") await context.route(/\/demo\/embed\.js$/, (route) => route.abort());
+      const page = await context.newPage();
+      await page.goto(r.path);
+      await page.waitForLoadState("load");
+      await page.locator(`[data-scene="${r.id}"]`).scrollIntoViewIfNeeded();
+      if (mode === "player blocked") expect(await page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(false);
+      expect(await states(page, r.id)).not.toContain("running");
+      expect(await opacity(page, r.final)).toBe(1);
+      await context.close();
+    });
+  }
 }
+
+test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/changelog/0.12.0/");
+  const scene = page.locator('[data-scene="plan"]');
+  await scene.scrollIntoViewIfNeeded();
+  await expect.poll(() => states(page, "plan"), { timeout: 20_000 }).toEqual(["finished"]);
+  const shown = (selector: string) =>
+    scene.locator(selector).evaluateAll((els) => els.filter((e) => getComputedStyle(e).opacity === "1").map((e) => e.textContent));
+  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 changes requested"]);
+  expect(await shown(".sc-plan-foot > .sc-swap:last-child > *")).toEqual(["Land 2 approved…"]);
+});
 
 test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and nothing moves", async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 900 } });

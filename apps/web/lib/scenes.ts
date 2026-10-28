@@ -116,4 +116,14 @@ export const SAMPLE = {
   ],
   commits: ["a41c9e2", "7d03b5f", "c18e6a0"],
   failedCheck: "test",
+  /** A plan from Lead in the same repository (0.12.0's F-TK-07): its goal,
+   * and the tasks Execute all ran, each in its own worktree. */
+  plan: {
+    goal: "Add gift cards to checkout, with tests",
+    tasks: [
+      { id: "TAN-31", title: "Add gift card balances", engine: "Codex" },
+      { id: "TAN-32", title: "Redeem gift cards at checkout", engine: "Claude Code" },
+      { id: "TAN-33", title: "Show gift cards in the cart", engine: "Gemini CLI" },
+    ],
+  },
 } as const;

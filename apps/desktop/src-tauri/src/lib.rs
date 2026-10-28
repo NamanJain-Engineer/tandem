@@ -316,6 +316,12 @@ macro_rules! app_commands {
             commands::secrets::secrets_delete,
             commands::secrets::secrets_run_plan,
             commands::secrets::secrets_run,
+            commands::secrets::secrets_agents_plan,
+            commands::secrets::secrets_agents_apply,
+            commands::secrets::run_rules_list,
+            commands::secrets::run_rules_set,
+            commands::activity::activity_list,
+            commands::activity::activity_export,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -733,18 +739,26 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(async move {
         let _ = tandem_store::repo::bestof::settle_checks(&store).await;
     });
-    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    // Command recall and the activity ledger keep their retention at
+    // startup and hourly (F-EX-02, F-EX-07).
     let recall = state.recall.clone();
+    let activity = state.terminals.activity.clone();
     tauri::async_runtime::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
             tick.tick().await;
             recall.prune().await;
+            activity.prune().await;
         }
     });
     let staging = state.data.staging();
     tauri::async_runtime::spawn_blocking(move || {
         services::staging::sweep(&staging, services::staging::KEEP_FOR)
+    });
+    // Answer sessions' folders a crash left behind (F-TK-08, D-2838).
+    let run = state.data.run();
+    tauri::async_runtime::spawn_blocking(move || {
+        services::plan::sweep_answer_folders(&run, services::plan::ANSWER_FOLDER_KEEP)
     });
     // Live panes' scrollback is snapshotted every 5 minutes so a crash keeps
     // something to show on restore (§5.4).
@@ -943,6 +957,7 @@ pub fn run() {
         }
     };
     services::telemetry::install_panic_hook(&state.data.crashes());
+    services::agent_run::install_crash_kill();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
     let initial_links = deeplink::from_args(std::env::args().skip(1));
     let window_state_file = state.data.window_state().to_string_lossy().into_owned();
@@ -1144,6 +1159,22 @@ pub fn run() {
                         feed.clone(),
                         key,
                         record,
+                        {
+                            // Windows: the installer exits the process
+                            // without the exit event (F-TL-12), so this does
+                            // what the exit event would.
+                            let terminals = state.terminals.clone();
+                            let remote = state.remote.clone();
+                            let scrollback = state.data.scrollback();
+                            std::sync::Arc::new(move || {
+                                services::agent_run::before_update_exit(
+                                    &terminals,
+                                    &scrollback,
+                                );
+                                remote.shutdown();
+                                services::merge_queue::shutdown();
+                            })
+                        },
                     ),
                 ));
             }
@@ -1297,6 +1328,25 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let state = engines_state.state::<AppState>();
                 state.terminals.status.start(&state.data.run()).await;
+                // `vibezeo run` (F-TL-12): agents find `vibezeo` first on
+                // their PATH, and its requests reach the app's handler.
+                if let Some(server) = state.terminals.status.server() {
+                    if let Some(hook) = services::engines::hook_bin() {
+                        match services::agent_run::install(&state.data.run(), &hook) {
+                            Ok(bin) => state.terminals.set_run_bin(bin),
+                            Err(err) => tracing::warn!(code = "secrets.vibezeo_install_failed", error = %err, "agents won't find vibezeo"),
+                        }
+                    }
+                    server.set_run_handler(std::sync::Arc::new(services::agent_run::Handler(
+                        services::agent_run::AgentRuns::new(
+                            state.store.clone(),
+                            state.keychain.clone(),
+                            state.approvals.broker.clone(),
+                            state.terminals.clone(),
+                            state.data.root().to_path_buf(),
+                        ),
+                    )));
+                }
                 state.terminals.engines.load_cached().await;
                 let config = state.config.refresh().await;
                 state.terminals.engines.apply_config(&config);
@@ -1429,6 +1479,9 @@ pub fn run() {
         // scrollback snapshot and every process tree is stopped.
         Ok(app) => app.run(|handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // F-TL-12: an agent's running `vibezeo run` ends with the app
+                // (its group killed, its row written), never left holding values.
+                services::agent_run::shutdown_all();
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();

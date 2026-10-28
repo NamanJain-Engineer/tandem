@@ -1,5 +1,5 @@
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Count, Dot, Glyph, fx } from "./parts";
+import { AppWindow, Count, Dot, Glyph, StatusBar, fx } from "./parts";
 
 /** The diff the scene reviews: src/cart/checkout.ts, as sample code. */
 const DIFF: ReadonlyArray<readonly [" " | "+" | "-", string]> = [
@@ -120,12 +120,7 @@ export function ReviewScene() {
           </div>
         </div>
       </div>
-      <div className="sc-statusbar">
-        <span>{t("status.branch", { name: claude.branch, counts: "" }).split(",")[0]}</span>
-        <span className="sc-statusbar-right">
-          <span>{t("status.online")}</span>
-        </span>
-      </div>
+      <StatusBar branch={claude.branch} />
     </AppWindow>
   );
 }

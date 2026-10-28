@@ -1,5 +1,5 @@
-import { LANDS, SAMPLE, SCENE_BUILD, t } from "../../../lib/scenes";
-import { AppWindow, Count, Dot, DotChange, Glyph, Lines, Pane, fx, visit } from "./parts";
+import { LANDS, SAMPLE, t } from "../../../lib/scenes";
+import { AppWindow, Count, Dot, DotChange, Glyph, Lines, Pane, StatusBar, fx, visit } from "./parts";
 
 const { claude, codex, gemini } = SAMPLE.worktrees;
 
@@ -135,13 +135,7 @@ export function WorkspaceScene() {
           </span>
         </div>
       </div>
-      <div className="sc-statusbar">
-        <span>{t("status.branch", { name: SAMPLE.base, counts: "" }).split(",")[0]}</span>
-        <span className="sc-statusbar-right">
-          <span>{t("status.online")}</span>
-          <span>{t("status.version", { version: SCENE_BUILD })}</span>
-        </span>
-      </div>
+      <StatusBar branch={SAMPLE.base} />
     </AppWindow>
   );
 }

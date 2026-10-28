@@ -1,7 +1,9 @@
 import { StatusDot, type Status } from "@tandem/ui/components/StatusDot";
+import { GitBranch } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { cx } from "../../../lib/cx";
-import { t } from "../../../lib/scenes";
+import { SCENE_BUILD, t } from "../../../lib/scenes";
+import { Icon } from "../Icon";
 import { engineTint } from "@tandem/ui/components/EngineGlyph";
 import { engineMark } from "../home/Engines";
 
@@ -61,9 +63,13 @@ export function DotChange({ from, to, seconds }: { from: Status; to: Status; sec
   );
 }
 
-/** The app's window: its title bar (the mark, the mode switch on Code) and
+/** The app's three modes, as the title bar's switch names them. */
+export type Mode = "code" | "thread" | "agent";
+const MODES: readonly Mode[] = ["code", "thread", "agent"];
+
+/** The app's window: its title bar (the mark, the mode switch on `mode`) and
  * what's inside. Always the dark theme, as the app's captures are (D-1801). */
-export function AppWindow({ children, className }: { children: ReactNode; className?: string }) {
+export function AppWindow({ children, className, mode = "code" }: { children: ReactNode; className?: string; mode?: Mode }) {
   return (
     <div data-theme="dark" className={cx("sc-window", className)}>
       <span className="sc-sheen" {...fx("sweep", 0.2)} />
@@ -75,13 +81,32 @@ export function AppWindow({ children, className }: { children: ReactNode; classN
           </svg>
         </span>
         <span className="sc-modes">
-          <span className="sc-mode sc-mode-on">{t("titlebar.mode.code")}</span>
-          <span className="sc-mode">{t("titlebar.mode.thread")}</span>
-          <span className="sc-mode">{t("titlebar.mode.agent")}</span>
+          {MODES.map((m) => (
+            <span key={m} className={cx("sc-mode", m === mode && "sc-mode-on")}>
+              {t(`titlebar.mode.${m}`)}
+            </span>
+          ))}
         </span>
         <span className="sc-omnibox">{t("titlebar.omnibox")}</span>
       </div>
       {children}
+    </div>
+  );
+}
+
+/** The app's status bar as the download draws it (D-2603): the branch with
+ * its icon, then the version. The early-access download has no hosted
+ * service, so it shows no connection (D-816). */
+export function StatusBar({ branch }: { branch: string }) {
+  return (
+    <div className="sc-statusbar">
+      <span className="sc-statusbar-branch">
+        <Icon icon={GitBranch} className="sc-statusbar-icon" />
+        {branch}
+      </span>
+      <span className="sc-statusbar-right">
+        <span>{t("status.version", { version: SCENE_BUILD })}</span>
+      </span>
     </div>
   );
 }

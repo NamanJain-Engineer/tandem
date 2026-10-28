@@ -32,8 +32,18 @@ fn invoked_as_vibezeo() -> bool {
 
 /// `vibezeo run [--] <command…>`: the app runs it with the folder's
 /// secrets and prints its masked output; exits with its code (F-TL-12).
+/// The arguments go as they are: one is a command line for the shell,
+/// several a program and its arguments, which the app quotes.
 fn vibezeo() -> i32 {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Arguments that aren't UTF-8 are refused, not a panic.
+    let Ok(mut args) = std::env::args_os()
+        .skip(1)
+        .map(|a| a.into_string())
+        .collect::<Result<Vec<String>, _>>()
+    else {
+        eprintln!("vibezeo: arguments must be UTF-8 text");
+        return 2;
+    };
     if args.first().map(String::as_str) != Some("run") {
         eprintln!("usage: vibezeo run [--] <command>");
         return 2;
@@ -42,8 +52,7 @@ fn vibezeo() -> i32 {
     if args.first().map(String::as_str) == Some("--") {
         args.remove(0);
     }
-    let command = args.join(" ");
-    if command.trim().is_empty() {
+    if args.iter().all(|a| a.trim().is_empty()) {
         eprintln!("usage: vibezeo run [--] <command>");
         return 2;
     }
@@ -62,7 +71,7 @@ fn vibezeo() -> i32 {
         cwd: std::env::current_dir()
             .map(|d| d.to_string_lossy().into_owned())
             .unwrap_or_default(),
-        command,
+        argv: args,
         ts: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -118,7 +127,10 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default();
-    let mut args = std::env::args().skip(1);
+    // args_os: an argument that isn't UTF-8 is dropped, never a panic.
+    let mut args = std::env::args_os()
+        .skip(1)
+        .map(|a| a.into_string().unwrap_or_default());
     let report = match (args.next().as_deref(), args.next()) {
         (Some("claude"), Some(event)) => {
             let stdin = hook::read_limited(std::io::stdin().lock());

@@ -57,7 +57,8 @@ describe("E2E-M7-5 Codex", () => {
   after(async () => {
     rmSync(join(home(), "fakebin", "codex"), { force: true });
     writeFileSync(versions(), "");
-    await checkAgain().catch(() => undefined);
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-TH-05.2 a killed idle app-server restarts on the next send, resumes, and keeps the history", async function () {

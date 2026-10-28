@@ -69,6 +69,8 @@ export type Group = {
   label: string;
   items: DashboardItem[];
   status?: AgentStatus;
+  /** The cards with a question open, pinned first (F-TL-12.12). */
+  asking?: true;
   /** Project grouping: the repository's worktrees, each with its branch. */
   children?: Group[];
 };
@@ -76,9 +78,37 @@ export type Group = {
 /** Worktrees by workspace id: the repository they belong to and their branch. */
 export type Lanes = Record<string, { parentId: string; parentName: string; branch: string }>;
 
+/** The cards with a question open, first, in the order the questions were
+ * asked, then the rest grouped by {@link groupRest}. Pinned this way, a
+ * question's card only moves when one asked before it is answered: no
+ * other agent's report (status, `since`, a longer line) can move it. */
+export function group(
+  items: DashboardItem[],
+  by: GroupBy,
+  workspaceOrder: string[],
+  noFolder: string,
+  lanes: Lanes = {},
+): Group[] {
+  const asking = items
+    .filter((i) => i.pendingApproval)
+    .sort(
+      (a, b) =>
+        (a.pendingApproval?.createdAt ?? 0) - (b.pendingApproval?.createdAt ?? 0) ||
+        (a.pendingApproval?.id ?? "").localeCompare(b.pendingApproval?.id ?? ""),
+    );
+  const rest = groupRest(
+    items.filter((i) => !i.pendingApproval),
+    by,
+    workspaceOrder,
+    noFolder,
+    lanes,
+  );
+  return asking.length > 0 ? [{ id: "asking", label: "asking", items: asking, asking: true }, ...rest] : rest;
+}
+
 /** Status groups in a fixed order, or workspaces in rail order with "No
  * folder" last. Empty groups are left out. Newest first within a group. */
-export function group(
+function groupRest(
   items: DashboardItem[],
   by: GroupBy,
   workspaceOrder: string[],

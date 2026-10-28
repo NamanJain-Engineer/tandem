@@ -193,9 +193,11 @@ E2E lessons (each cost a debugging round):
   `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`. All three
   answer a task review with a verdict (`review_reply`), since a review runs on
   whichever other chat engine is installed.
-- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`
-  and calls `checkAgain()`, or later specs run with it installed: a leftover
-  Cursor Agent reviewed E2E-M18-TK-07's runs in a full run, though it passed alone.
+- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`,
+  calls `checkAgain()` and checks it's gone (no `.catch`), or later specs run with
+  it installed: a leftover Cursor Agent reviewed E2E-M18-TK-07's runs in a full
+  run, though it passed alone. The same goes for `fake-version.txt` and
+  `fake-models.txt`.
 - `waitUntil`'s `timeoutMsg` is built with its options, before the wait, so
   `` `…${JSON.stringify(await rows())}` `` shows the state at the start, and a
   variable the condition sets shows as `null`. Wait with `waitFor(read, ok, what,
@@ -209,6 +211,17 @@ E2E lessons (each cost a debugging round):
 - Sign-up or `/__test/*` answering 500 or "No user owner@tandem.test" in many
   unrelated specs means the dev database is behind: `cd apps/api && pnpm db:migrate
   && pnpm db:seed` (with the infra up) after merging a branch that adds migrations.
+- The desktop app's activity-ledger migration (`0006_activity.sql` on
+  `product-research`, F-EX-07) changed in place before any release: round 4 added
+  the `kept` column and the `note` kind (D-2847), round 5 the `activity_kept` index
+  (D-2851). A dev database that ran an older copy needs resetting: delete
+  `~/.tandem` (or your `TANDEM_HOME`) and start the app again. Symptoms: before
+  round 4, every ledger insert logs `activity.store_failed`; a round-4 copy works but
+  silently lacks `activity_kept`. The chain27 merge kept it as #6 (D-872) and made
+  F-EN-11's `local_model` column #7 (`0007_local_models.sql`): a dev database that ran
+  `m16d-teammate-extras`' earlier `0006_local_models.sql` as #6 skips the ledger and
+  then fails at #7 (a duplicate column), so reset that one too. Released databases
+  never had either.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
@@ -453,7 +466,8 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   unused client runtime from the marketing pages and the docs (not the demo app;
   D-1843)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
-  and `/changelog/0.9.0/` (the Land scene, D-1885), `/download/detect.js` on
+  and the release pages with scenes (`SCENE_PAGES`: 0.9.0 and 0.12.0, D-1885,
+  D-1888), `/download/detect.js` on
   `/download/` and a blog post's two (`scripts/script-allowlist.mjs`). Site components stay server-only.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are

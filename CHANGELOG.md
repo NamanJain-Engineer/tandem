@@ -32,6 +32,20 @@ release fails when its version has no section.
   notification tells you, and Answer… sends your answer to the run. A run
   waiting for an approval shows "Waiting for your approval", and a question Lead
   hadn't answered when Vibezeo closed comes to you after the restart.
+- [lin] **Agents can run commands that need secrets.** An agent in an agent pane
+  runs `vibezeo run -- pnpm deploy`; the pane shows the whole command and every
+  secret it would get, and asks first (Allow once, Allow for this agent, Deny).
+  The command runs outside the agent, and the agent sees its output with each
+  secret's value hidden. Settings › Secrets can let a command run without asking
+  in a folder, and Run with secrets can tell agents about it in the folder's
+  `AGENTS.md`. You answer these on your computer: the phone and notifications
+  only say a run is waiting. Characters outside plain ASCII in the command are
+  marked, so a look-alike letter can't pass.
+- [lin] **Activity for each agent session.** **Activity…** in an agent pane's, a
+  thread's or a Dashboard card's menu lists what that session did, in order:
+  turns sent (never their words), files changed, commands, tools, approvals and
+  `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
+  for 14 days.
 - [lin] **Local models.** Settings › Engines › Local models finds Ollama,
   LM Studio and llama.cpp servers running on this computer and lists their
   models, with the size and parameter count each server reports. Vibezeo
@@ -43,6 +57,12 @@ release fails when its version has no section.
   your Codex account and never through a proxy, every time it starts, and
   each start checks that the server still offers the model on this computer.
   Your own Codex settings and accounts aren't touched.
+
+### Fixed
+
+- [lin] **A plan's runs show where they are.** When a plan started, a run that
+  finished while Plan with Lead was first reading the runs could stay shown as
+  in setup or running, with no verdict, until you opened the plan again.
 
 ## 0.12.0
 

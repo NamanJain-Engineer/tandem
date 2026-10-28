@@ -1,6 +1,6 @@
 // The scripts each exported marketing page may keep after strip-runtime
 // (F-WB-01 AC2, D-1813): the home page's demo loader (also the scene player
-// on 0.9.0's changelog page, D-1885), the download page's OS
+// on the release pages with scenes, D-1885, D-1888), the download page's OS
 // note, and on a blog post page its JSON-LD, which is data for search
 // engines, not code (F-WB-06, D-1852), and /blog/blog.js, which adds the
 // code blocks' copy buttons (D-1860). Before them, on every page, the
@@ -18,8 +18,12 @@ export function allowedScripts(rel) {
  * visitor's choice is applied before the first paint (F-WB-01 AC4, D-1871). */
 export const THEME_BOOT = '<script data-theme-boot="">';
 
+/** The release pages that play product scenes (D-1885, D-1888): the same
+ * versions as components/site/scenes/releaseScenes.tsx (a test checks). */
+export const SCENE_PAGES = ["changelog/0.9.0/index.html", "changelog/0.12.0/index.html"];
+
 function pageScripts(path) {
-  if (path === "index.html" || path === "changelog/0.9.0/index.html") return ['<script src="/demo/embed.js" defer="">'];
+  if (path === "index.html" || SCENE_PAGES.includes(path)) return ['<script src="/demo/embed.js" defer="">'];
   if (path === "download/index.html") return ['<script src="/download/detect.js" defer="">'];
   // /blog/<slug>/ only: not the index, the tag pages or the feed.
   if (/^blog\/(?!tags\/)[a-z0-9-]+\/index\.html$/.test(path)) return ['<script type="application/ld+json">', '<script src="/blog/blog.js" defer="">'];
