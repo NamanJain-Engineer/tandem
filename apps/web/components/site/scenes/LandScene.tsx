@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, Glyph, fx } from "./parts";
+import { AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
 
 const LANES = [
   { engine: "Claude Code", branch: SAMPLE.worktrees.claude.branch, commits: 3, commit: SAMPLE.commits[0] },
@@ -71,12 +71,7 @@ export function LandScene() {
           </span>
         </div>
       </div>
-      <div className="sc-statusbar">
-        <span>{t("status.branch", { name: SAMPLE.base, counts: "" }).split(",")[0]}</span>
-        <span className="sc-statusbar-right">
-          <span>{t("status.online")}</span>
-        </span>
-      </div>
+      <StatusBar branch={SAMPLE.base} />
     </AppWindow>
   );
 }

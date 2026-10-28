@@ -755,6 +755,11 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn_blocking(move || {
         services::staging::sweep(&staging, services::staging::KEEP_FOR)
     });
+    // Answer sessions' folders a crash left behind (F-TK-08, D-2838).
+    let run = state.data.run();
+    tauri::async_runtime::spawn_blocking(move || {
+        services::plan::sweep_answer_folders(&run, services::plan::ANSWER_FOLDER_KEEP)
+    });
     // Live panes' scrollback is snapshotted every 5 minutes so a crash keeps
     // something to show on restore (§5.4).
     let terminals = state.terminals.clone();

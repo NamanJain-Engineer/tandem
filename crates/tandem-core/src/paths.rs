@@ -174,7 +174,10 @@ pub fn user_home() -> Option<PathBuf> {
 }
 
 /// `mkdir -p`. On Unix each folder it makes is 0700 from the start (never
-/// briefly 0755), and `path` is chmod 0700 if it was already there.
+/// briefly 0755), and `path` is chmod 0700 if it was already there. A link
+/// at `path` is followed: a data folder moved to another disk is one. For
+/// anyone but root, chmod fails on a folder someone else owns, and the
+/// callers' parents are owner-only, so no one else can put a link there.
 pub fn create_private_dir(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -238,5 +241,27 @@ mod tests {
         let file = tmp.path().join("file");
         std::fs::write(&file, "x").expect("file");
         assert!(create_private_dir(&file).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_tk_08_1_a_private_folder_that_is_a_link_to_one_of_ours_is_followed() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // A data folder moved to another disk, linked from where it was.
+        let moved = tmp.path().join("disk").join("tandem");
+        std::fs::create_dir_all(&moved).expect("moved");
+        std::fs::set_permissions(&moved, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let link = tmp.path().join("tandem");
+        std::os::unix::fs::symlink(&moved, &link).expect("link");
+        create_private_dir(&link).expect("followed");
+        let link_meta = std::fs::symlink_metadata(&link).expect("link meta");
+        assert!(link_meta.file_type().is_symlink(), "the link stays a link");
+        let mode = std::fs::metadata(&moved)
+            .expect("meta")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 }

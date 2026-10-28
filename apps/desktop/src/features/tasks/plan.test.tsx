@@ -470,12 +470,16 @@ describe("Follow a plan through (F-TK-07)", () => {
     const before = useTasks.getState().loadAttempts();
     await waitFor(() => expect(held).toHaveLength(1));
     resetTasks();
+    // No read after the reset: the old one still doesn't write.
+    held[0]!([run("TAN-1", "failed", 1)]);
+    await before;
+    expect(useTasks.getState().attempts).toEqual([]);
+    expect(useTasks.getState().attemptsStatus).toBe("idle");
+    // A read after the reset writes as usual.
     const after = useTasks.getState().loadAttempts();
     await waitFor(() => expect(held).toHaveLength(2));
     held[1]!([run("TAN-2", "running", 2)]);
     await after;
-    held[0]!([run("TAN-1", "failed", 1)]);
-    await before;
     expect(useTasks.getState().attempts.map((a) => a.attempt.id)).toEqual(["atm_TAN-2_2"]);
   });
 
