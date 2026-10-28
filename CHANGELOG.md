@@ -46,6 +46,21 @@ release fails when its version has no section.
   turns sent (never their words), files changed, commands, tools, approvals and
   `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
   for 14 days.
+- [lin] **Code intelligence in the editor and diffs.** With the language
+  servers you already have (rust-analyzer, typescript-language-server, pyright,
+  gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
+  references (Shift+F12), shows hover text and underlines problems, and
+  worktree and review diffs jump from a changed name to its definition or
+  callers. No server runs until you trust the repository (each worktree on its
+  own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+- [lin] **jj workspaces.** With jj installed on this computer, in a trusted
+  repository co-located with jj, New worktree… makes a jj workspace
+  (`jj workspace add`) instead of a git worktree, with a git worktree one click
+  away and your choice remembered. Its diff and overlap check come from jj,
+  agents in it are told to use jj, and Discard forgets the workspace while its
+  commits stay. Folders on this computer only. Landing, pull requests,
+  previews, setup, second opinion, the intent radar and the git panel aren't
+  available for jj workspaces yet.
 
 ### Fixed
 

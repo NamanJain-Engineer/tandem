@@ -38,6 +38,14 @@ pub struct WorkspaceSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub repos_note: Option<String>,
+    /// F-CD-24: `jj` for a jj workspace; absent for a git worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lane_vcs: Option<String>,
+    /// F-CD-24: a repository with `.jj` and no `.git` (no jj workspaces).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub jj_only: Option<bool>,
 }
 
 /// `workspace_add` result.
@@ -179,6 +187,7 @@ pub async fn add_remote(
 
 pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummary>, IpcError> {
     let mut out = Vec::new();
+    let jj = tandem_store::repo::lane_vcs::jj_lanes(store).await?;
     for ws in workspaces::list(store).await? {
         let tabs = tabs::list(store, &ws.id).await?;
         let mut live = 0;
@@ -192,7 +201,14 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
         let root = Path::new(&ws.root);
         // A remote folder is checked when its host is reached.
         let local = ws.kind == "local";
-        let branch = if local { git_branch(root) } else { None };
+        let is_jj = jj.contains(&ws.id);
+        // A jj workspace has no `.git`: git would read the repository's.
+        let branch = if local && !is_jj {
+            git_branch(root)
+        } else {
+            None
+        };
+        let jj_only = local && ws.parent_id.is_none() && tandem_git::jj::jj_without_git(root);
         let mut repos_note = None;
         let repos = if !local {
             Vec::new()
@@ -221,6 +237,8 @@ pub async fn list(store: &Store, pty: &PtyManager) -> Result<Vec<WorkspaceSummar
             tabs,
             repos: (!repos.is_empty()).then_some(repos),
             repos_note,
+            lane_vcs: is_jj.then(|| tandem_store::repo::lane_vcs::JJ.to_string()),
+            jj_only: jj_only.then_some(true),
             workspace: ws,
         });
     }

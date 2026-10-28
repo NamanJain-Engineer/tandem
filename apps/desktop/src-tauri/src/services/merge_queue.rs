@@ -226,6 +226,8 @@ fn update_saved(data: &DataDir, f: impl FnOnce(&mut Saved)) -> Result<(), IpcErr
 /// local only.
 pub async fn repo_of(store: &Store, id: &WorkspaceId) -> Result<Workspace, IpcError> {
     let ws = workspaces::get(store, id).await?;
+    // F-CD-24: a jj workspace's own commands aren't available yet.
+    crate::services::jj_lanes::refuse_jj(store, &ws).await?;
     let repo = match &ws.parent_id {
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws,
@@ -300,11 +302,16 @@ pub async fn plan(
     let into = base.clone().unwrap_or_else(|| "HEAD".into());
     let mut lanes = workspaces::lanes(store, &repo.id).await?;
     lanes.sort_by_key(|l| l.created_at);
+    // F-CD-24: jj workspaces don't land yet (their name isn't a branch).
+    let jj = tandem_store::repo::lane_vcs::jj_lanes(store).await?;
     let mut candidates = Vec::new();
     for lane in lanes {
         let Some(branch) = lane.lane_branch.clone() else {
             continue;
         };
+        if jj.contains(&lane.id) {
+            continue;
+        }
         if lane.kind != "local" || queue::resolve(git, &root, &branch).await?.is_none() {
             continue;
         }
@@ -433,6 +440,7 @@ pub async fn start(
     let mut lanes = Vec::new();
     for lane_id in lane_ids {
         let lane = workspaces::get(store, lane_id).await?;
+        crate::services::jj_lanes::refuse_jj(store, &lane).await?;
         let Some(branch) = lane
             .lane_branch
             .clone()

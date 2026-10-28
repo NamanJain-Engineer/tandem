@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { axe } from "vitest-axe";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DiffView, LARGE_DIFF_LINES, parsePatch, type DiffFile } from "./DiffView";
 
 const PATCH = [
@@ -74,5 +74,42 @@ describe("DiffView (UI_SPEC §2.25)", () => {
   it("has no axe violations", async () => {
     const { container } = render(<DiffView files={[file()]} />);
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe("DiffView names (F-CD-23)", () => {
+  const file = {
+    path: "src/main.py",
+    change: "modified" as const,
+    additions: 1,
+    deletions: 1,
+    binary: false,
+    truncated: false,
+    patch: "diff --git a/src/main.py b/src/main.py\n@@ -1,2 +1,2 @@\n import util\n-old_call()\n+util.helper(1)\n",
+  };
+
+  it("F-CD-23.2 a name on a new-side line offers Go to definition and Find references", async () => {
+    const onDefinition = vi.fn();
+    const onReferences = vi.fn();
+    render(
+      <DiffView
+        files={[file]}
+        names={{ definition: "Go to definition", references: "Find references", onDefinition, onReferences }}
+      />,
+    );
+    // Removed lines have no names to click.
+    expect(screen.queryByText("old_call()")).not.toBeNull();
+    expect(document.querySelector('[data-testid="diff-name"][data-name="old_call"]')).toBeNull();
+    const helper = document.querySelector<HTMLElement>('[data-testid="diff-name"][data-name="helper"]');
+    expect(helper).not.toBeNull();
+    fireEvent.click(helper as HTMLElement);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Find references" }));
+    expect(onReferences).toHaveBeenCalledWith({ path: "src/main.py", line: 2, character: 5, name: "helper" });
+    fireEvent.click(document.querySelector('[data-testid="diff-name"][data-name="util"]') as HTMLElement);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Go to definition" }));
+    expect(onDefinition).toHaveBeenCalledWith({ path: "src/main.py", line: 1, character: 7, name: "util" });
+    // Names are buttons: the keyboard reaches them.
+    expect(helper?.tagName).toBe("BUTTON");
+    expect(screen.getAllByRole("button", { name: "helper" }).length).toBeGreaterThan(0);
   });
 });

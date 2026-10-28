@@ -299,7 +299,10 @@ pub async fn lane_setup(
         ));
     }
     // F-CD-22: setup doesn't apply to a multi-repo worktree yet.
-    if row.kind != "local" || crate::services::lanes::is_multi(store, &row).await? {
+    if row.kind != "local"
+        || crate::services::lanes::is_multi(store, &row).await?
+        || crate::services::jj_lanes::is_jj(store, &row).await?
+    {
         return Ok(None);
     }
     let copied = COPIES

@@ -228,6 +228,8 @@ pub fn set_allowed(data: &DataDir, repo_id: &str, allow: bool) -> Result<(), Ipc
 /// local only.
 pub async fn repo_of(store: &Store, id: &WorkspaceId) -> Result<Workspace, IpcError> {
     let ws = workspaces::get(store, id).await?;
+    // F-CD-24: a jj workspace's own commands aren't available yet.
+    crate::services::jj_lanes::refuse_jj(store, &ws).await?;
     let repo = match &ws.parent_id {
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws,

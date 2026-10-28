@@ -168,6 +168,7 @@ macro_rules! app_commands {
             commands::handoff::handoff_start,
             commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
+            commands::lanes::lane_kind_get,
             commands::lanes::lane_diff,
             commands::lanes::lane_second_opinion,
             commands::review::review_queue,
@@ -215,6 +216,13 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::lsp::lsp_sync,
+            commands::lsp::lsp_definition,
+            commands::lsp::lsp_references,
+            commands::lsp::lsp_hover,
+            commands::lsp::lsp_trust,
+            commands::lsp::lsp_close,
+            commands::lsp::lsp_files_changed,
             commands::checkpoints::checkpoints_list,
             commands::checkpoints::checkpoint_create,
             commands::checkpoints::checkpoint_diff,
@@ -707,6 +715,11 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-CD-23: language servers stop after ten idle minutes.
+    // Servers run in $DATA/lsp, not in the repository (D-2580).
+    crate::services::lsp::set_work_dir(state.data.root().join("lsp"));
+    crate::services::lsp::set_data_dir(state.data.clone());
+    tauri::async_runtime::spawn(crate::services::lsp::run_reaper());
     // F-WT-10: the intent radar follows checkpoints.
     tauri::async_runtime::spawn(crate::services::radar::run(
         state.store.clone(),
@@ -1392,8 +1405,10 @@ pub fn run() {
                     }
                 },
             ));
-            // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
-            // deletes anything; finished worktrees become one notification.
+            // Worktree sweep: at startup, then every 6 h (F-CD-15). It deletes
+            // nothing a person made: finished worktrees become one
+            // notification. Only a jj workspace whose making Vibezeo itself
+            // cut short is forgotten (F-CD-24, its commits kept).
             let sweep_state = handle.clone();
             tauri::async_runtime::spawn(supervisor::supervise_task(
                 "scheduler/worktree-sweep",
@@ -1485,6 +1500,12 @@ pub fn run() {
                 state.remote.shutdown();
                 // F-WT-07: a landing's check doesn't outlive the app.
                 services::merge_queue::shutdown();
+                // F-CD-23: language servers get shutdown and exit, all at
+                // once, and their trees are killed if they hang.
+                tauri::async_runtime::block_on(async {
+                    let stop = services::lsp::global().shutdown();
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(7), stop).await;
+                });
             }
         }),
         Err(err) => {
