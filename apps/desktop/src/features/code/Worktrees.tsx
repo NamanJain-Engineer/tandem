@@ -295,7 +295,7 @@ export function WorktreeRow({
               }`
         }
       >
-        <span data-testid="worktree-name" className="min-w-[min(10ch,100%)] flex-1 truncate">
+        <span data-testid="worktree-row-name" className="min-w-[min(10ch,100%)] flex-1 truncate">
           {wt.name}
         </span>
       </Tooltip>
