@@ -9,8 +9,9 @@ export const DEFANGED =
 
 /** `text` with every `@` that could start a mention made `＠`: Claude Code
  * attaches the file an `@path` in a message names, with no tool call
- * (D-2839). One before a space, a tab, a line break, another `@` or the end
- * stays; typing into a terminal drops every other control character. */
+ * (D-2839). A run of `@` stays, whole, only when a space, a tab or a line
+ * break follows it; any other run becomes `＠`, all of it, the end of the
+ * text included, since a run joins whatever follows it (D-3025). */
 export function defangMentions(text: string): string {
-  return text.replace(/@(?=[^@ \t\n\r])/g, "＠");
+  return text.replace(/@+(?![@ \t\n\r])/g, (run) => "\uFF20".repeat(run.length));
 }

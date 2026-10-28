@@ -1,5 +1,5 @@
 {
-  "about": "untrusted::defang_mentions and the app's defangMentions (D-3023): every @ becomes ＠ except one before a space, tab, LF or CR, another @ or the end. Typing into a terminal drops every other control character, form feed too, which would join the @ to what follows. Both suites read this file.",
+  "about": "untrusted::defang_mentions and the app's defangMentions (D-3025): every run of @ becomes ＠, the whole run, unless a space, tab, LF or CR follows it. A run joins whatever follows it, and the end of one text is the start of whatever comes next. Typing into a terminal drops every other control character, a form feed too. Both suites read this file.",
   "note": "Vibezeo wrote ＠ for each at sign in the text above, so none of it attaches a file; read ＠ as an at sign.",
   "cases": [
     { "in": "see @~/.ssh/id_rsa", "out": "see ＠~/.ssh/id_rsa" },
@@ -9,18 +9,28 @@
     { "in": "app/@modal/page.tsx", "out": "app/＠modal/page.tsx" },
     { "in": "@\"/a b/c.txt\"", "out": "＠\"/a b/c.txt\"" },
     { "in": "@@ -1,2 +1,3 @@ fn a", "out": "@@ -1,2 +1,3 @@ fn a" },
-    { "in": "@@/etc/passwd", "out": "@＠/etc/passwd" },
-    { "in": "at @ noon, or @", "out": "at @ noon, or @" },
+    { "in": "@@ -1 +1 @@\n+x", "out": "@@ -1 +1 @@\n+x" },
+    { "in": "@@k", "out": "＠＠k" },
+    { "in": "@@@k", "out": "＠＠＠k" },
+    { "in": "x @@/etc/passwd", "out": "x ＠＠/etc/passwd" },
+    { "in": "@@/etc/passwd", "out": "＠＠/etc/passwd" },
+    { "in": "@＠", "out": "＠＠" },
+    { "in": "at @ noon, or @", "out": "at @ noon, or ＠" },
+    { "in": "@", "out": "＠" },
+    { "in": "notes @", "out": "notes ＠" },
     { "in": "@\tx @\nx @\rx", "out": "@\tx @\nx @\rx" },
     { "in": "@\f~/.ssh/id_rsa", "out": "＠\f~/.ssh/id_rsa" },
     { "in": "@\u000b/etc/passwd", "out": "＠\u000b/etc/passwd" },
     { "in": "@\u00a0/etc/passwd", "out": "＠\u00a0/etc/passwd" },
     { "in": "@\u0085/etc/passwd", "out": "＠\u0085/etc/passwd" },
+    { "in": "@\u2028/etc/passwd", "out": "＠\u2028/etc/passwd" },
     { "in": "@\u3000/etc/passwd", "out": "＠\u3000/etc/passwd" },
+    { "in": "@\u0000/etc/passwd", "out": "＠\u0000/etc/passwd" },
+    { "in": "@\u0301/etc/passwd", "out": "＠\u0301/etc/passwd" },
+    { "in": "a\u0301@b", "out": "a\u0301＠b" },
     { "in": "@😀", "out": "＠😀" },
     { "in": "x@\n@y", "out": "x@\n＠y" },
     { "in": "＠/etc/passwd", "out": "＠/etc/passwd" },
-    { "in": "@", "out": "@" },
     { "in": "", "out": "" }
   ]
 }
