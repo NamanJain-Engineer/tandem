@@ -3198,6 +3198,16 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - two rule-8 invariants. Guarded text, typed as the app types it or sent, behind any of 15 leading characters, is never read as a command or an exit word by a port of the REPL's checks. Defanged text carries no word or paste marker the REPL acts on, after a clean-up of what nothing shows.
     - These failed on the old code: the core's three (vectors, guard, note), both invariants, the readiness re-check (checked by taking the re-check out), the fallback, Send back's branch and the review head's branch.
     - The keyword rule has no end-of-text case, unlike `@` (D-3025). Where the app joins fragments, its own text sits between them (`:`, a fence, a label), and none of that starts with code, plan, review or think. Two prompt variables written side by side are the one join it doesn't cover, and that's your template.
+  - **Gate:** passed on 848f78bf:
+    - 2,609 Rust tests (6 ignored) and 1,822 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 193, and protocol drift with 592 types (none added by this slice).
+    - E2E on 848f78bf, 21 specs and 75 tests in the suite's name order, all passing:
+      - what reaches an agent: m9-4-picker 4, m10-2-briefing-learning 4, m10-5-mail 5, m17-5-prompts 3, m17-wt-2-review 1, m18-wt05-second-opinion 2, m7-12-acp 4, m18-en10-acp-agents 5;
+      - what's typed or sent: m16-7-auto 5, m16-1-conductor 15, m6-5-handoff 2, m7-11-handoff-thread 1, m18-th17-library 4, m6-7-limits 1;
+      - launches: m6-1-launch 4, m4-1-launch-grid 3;
+      - plans, runs and the tracker: m11-1-tasks 3, m11-2-execute 4, m18-tk06 1, m18-tk07 3, m18-tk08 1.
+    - The run on 8c97f6e8 before this had m11-1-tasks fail because of my list's order. The plan specs ran first, and the reset archives tasks but keeps their numbers, so the `TAN-1` it read was theirs.
     - The sinks' tests moved to the new guard after the core changed. A continue elsewhere's brief test passes on the old desktop code once the fallback is fixed; the fallback's own test failed first.
 
 ### M18 · Review loop decisions
