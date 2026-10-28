@@ -3053,6 +3053,20 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - A review comment's author lost its @, so a plain comment needs no note.
     - A second-opinion finding on a path written with ＠ still lands on its line.
     - Tests: `fence_defanged`; each prompt names no file, keeps hunk headers and notes it; a finding on `app/＠modal/page.tsx`; radar's note for symbols parsed from `declare module "@~/.ssh/id_rsa"` and a method named `"@/etc/passwd"`; a rule-8 invariant over all five prompts. The review comment tests, the PR checks UI test's fixture and E2E-M18-WT-08 use the new author wording.
+  - **Not done, and why.** Rule 8's other messages to an agent still carry an `@` as written:
+    - the picker's brief (a picked element's HTML, from any page in the browser pane);
+    - teammate mail (another agent's words, delivered as a turn: a sandboxed teammate, F-TL-11, could name `@~/.ssh/id_rsa` for one that isn't);
+    - the prompt library's `{{selection}}` and `{{clipboard}}`;
+    - probably the learn prompt (the last turn's text, run headless).
+    - Each is another feature's message, and ＠ changes text an agent writes code from (`@click`, `@types/node`, decorators), so the coordinator decides; they're proposed as one follow-up. A teammate's briefing isn't one of them: it goes in as a system prompt (`--append-system-prompt-file`).
+  - **Gate:** passed on f113ef36, which e6092c8c re-signs with the same tree (filter-branch had dropped four commits' signatures):
+    - 2,495 Rust tests (6 ignored) and 1,794 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 191, and protocol drift with 585 types (none added by this slice).
+    - E2E on e6092c8c, 13 specs and 33 tests, all passing:
+      - the tracker's and the runs' reads: m11-1-tasks 3, m11-2-execute 4, m11-6-free 2;
+      - plans (D-3020, D-3021): m18-free-offline 2, m18-tk07 3, m18-tk08 1, m18-tk06 1, m18-tk05 3, m18-db04 6;
+      - the prompts that defang (D-3022): m18-wt05 2, m18-wt07 2, m18-wt08 3, m18-wt10 1.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
