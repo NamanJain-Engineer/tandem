@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UiProvider } from "../theme/ThemeProvider";
 import { ApprovalCard, type ApprovalCardProps } from "./ApprovalCard";
@@ -17,6 +18,12 @@ function card(props: Partial<ApprovalCardProps> = {}) {
     </UiProvider>,
   );
   return handlers;
+}
+
+/** A key pressed and released, as a person does (keydown, then keyup). */
+function key(el: Element, init: { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
+  fireEvent.keyDown(el, init);
+  fireEvent.keyUp(el, init);
 }
 
 /** A control that waits is still focusable: it says so with aria-disabled. */
@@ -46,25 +53,25 @@ describe("ApprovalCard (F-TH-11, UI-23)", () => {
     await steady();
     const el = screen.getByTestId("approval-card");
     el.focus();
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
-    fireEvent.keyDown(el, { key: "a" });
-    fireEvent.keyDown(el, { key: "d" });
+    key(el, { key: "Enter", ctrlKey: true });
+    key(el, { key: "Enter", ctrlKey: true, shiftKey: true });
+    key(el, { key: "a" });
+    key(el, { key: "d" });
     expect(h.onAllow).toHaveBeenCalledTimes(2);
     expect(h.onAllowThread).toHaveBeenCalledTimes(1);
     expect(h.onDeny).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(el, { key: "Escape" });
+    key(el, { key: "Escape" });
     expect(document.activeElement).toBe(screen.getByTestId("approval-deny"));
   });
 
   it("F-TH-11 Deny and explain sends the reason; typing in it never triggers the keys", () => {
     const h = card();
-    fireEvent.keyDown(screen.getByTestId("approval-card"), { key: "e" });
+    key(screen.getByTestId("approval-card"), { key: "e" });
     const reason = screen.getByLabelText("Tell the agent why");
     fireEvent.change(reason, { target: { value: "  use the staging db  " } });
-    fireEvent.keyDown(reason, { key: "d" });
+    key(reason, { key: "d" });
     expect(h.onDeny).not.toHaveBeenCalled();
-    fireEvent.keyDown(reason, { key: "Enter", metaKey: true });
+    key(reason, { key: "Enter", metaKey: true });
     expect(h.onDeny).toHaveBeenCalledWith("use the staging db");
   });
 
@@ -146,16 +153,16 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     expect(waiting(thread())).toBe(true);
     expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
     fireEvent.click(allow());
-    fireEvent.keyDown(el, { key: "a" });
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
+    key(el, { key: "a" });
+    key(el, { key: "Enter", ctrlKey: true });
+    key(el, { key: "Enter", ctrlKey: true, shiftKey: true });
     expect(h.onAllow).not.toHaveBeenCalled();
     expect(h.onAllowThread).not.toHaveBeenCalled();
     // Deny never waits.
-    fireEvent.keyDown(el, { key: "d" });
+    key(el, { key: "d" });
     expect(h.onDeny).toHaveBeenCalledWith(null);
     await steady();
-    fireEvent.keyDown(el, { key: "a" });
+    key(el, { key: "a" });
     expect(h.onAllow).toHaveBeenCalledTimes(1);
   });
 
@@ -167,8 +174,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     await steady();
     shift = 40;
     // The key measures on the spot: the move is seen before any frame.
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
+    key(el, { key: "Enter", ctrlKey: true });
+    key(el, { key: "Enter", ctrlKey: true, shiftKey: true });
     expect(h.onAllow).not.toHaveBeenCalled();
     expect(h.onAllowThread).not.toHaveBeenCalled();
     await waitFor(() => expect(waiting(allow())).toBe(true));
@@ -189,7 +196,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     await waitFor(() => expect(waiting(thread())).toBe(true));
     expect(waiting(allow())).toBe(true);
     fireEvent.click(thread());
-    fireEvent.keyDown(el, { key: "a" });
+    key(el, { key: "a" });
     expect(h.onAllow).not.toHaveBeenCalled();
     expect(h.onAllowThread).not.toHaveBeenCalled();
     act(() => covering?.remove());
@@ -205,10 +212,10 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     const el = screen.getByTestId("approval-card");
     // Focus elsewhere: a key event that reaches the card anyway is ignored.
     (document.activeElement as HTMLElement | null)?.blur();
-    fireEvent.keyDown(el, { key: "a" });
+    key(el, { key: "a" });
     expect(h.onAllow).not.toHaveBeenCalled();
     el.focus();
-    fireEvent.keyDown(el, { key: "a" });
+    key(el, { key: "a" });
     expect(h.onAllow).toHaveBeenCalledTimes(1);
   });
 
@@ -232,7 +239,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     rerender(view("apr_b", b));
     expect(waiting(allow())).toBe(true);
     fireEvent.click(allow());
-    fireEvent.keyDown(screen.getByTestId("approval-card"), { key: "a" });
+    key(screen.getByTestId("approval-card"), { key: "a" });
     expect(a).not.toHaveBeenCalled();
     expect(b).not.toHaveBeenCalled();
     await steady();
@@ -247,18 +254,21 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     expect(screen.getByTestId("approval-deny").hasAttribute("data-grant")).toBe(false);
   });
 
-  it("S3: a waiting Allow stays reachable by Tab, and Enter or a click on it does nothing", async () => {
+  it("S3: a waiting Allow stays reachable by Tab, and Enter, Space or a click on it does nothing", async () => {
     layout();
+    const user = userEvent.setup();
     const h = card();
     expect(waiting(allow())).toBe(true);
-    expect(allow().disabled).toBe(false);
-    allow().focus();
+    // Tab from the card reaches Allow, waiting or not.
+    screen.getByTestId("approval-card").focus();
+    await user.tab();
     expect(document.activeElement).toBe(allow());
-    fireEvent.click(allow());
-    fireEvent.keyDown(allow(), { key: "Enter" });
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    await user.click(allow());
     expect(h.onAllow).not.toHaveBeenCalled();
     await steady();
-    fireEvent.click(allow());
+    await user.keyboard("{Enter}");
     expect(h.onAllow).toHaveBeenCalledTimes(1);
   });
 
@@ -297,11 +307,77 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       // composer; focus is still on the card.
       intersecting = false;
       act(() => callbacks.forEach((cb) => cb([{ isIntersecting: false } as IntersectionObserverEntry], {} as never)));
-      fireEvent.keyDown(el, { key: "a" });
+      key(el, { key: "a" });
       await act(() => new Promise((r) => setTimeout(r, 600)));
-      fireEvent.keyDown(el, { key: "a" });
-      fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
+      key(el, { key: "a" });
+      key(el, { key: "Enter", ctrlKey: true });
       expect(h.onAllow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("S1: a press that began on one request never grants the one that replaced it", () => {
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard kind="command" title="run" requestKey={requestKey} onAllow={onAllow} onDeny={() => undefined} />
+      </UiProvider>
+    );
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("pressed on A, released 600 ms after B took its place: nothing is allowed", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      fireEvent.pointerDown(allow());
+      // A is withdrawn and B takes its place in the same card.
+      rerender(view("apr_b", b));
+      await wait(600);
+      expect(waiting(allow())).toBe(false);
+      fireEvent.pointerUp(allow());
+      fireEvent.click(allow());
+      expect(a).not.toHaveBeenCalled();
+      expect(b).not.toHaveBeenCalled();
+      // A press that begins on B, once B has held still, allows B.
+      fireEvent.pointerDown(allow());
+      fireEvent.pointerUp(allow());
+      fireEvent.click(allow());
+      expect(b).toHaveBeenCalledTimes(1);
+    });
+
+    it("keyboard: Space pressed on A and released over B, or Enter repeating across the change, allows nothing", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      allow().focus();
+      fireEvent.keyDown(allow(), { key: " " });
+      rerender(view("apr_b", b));
+      await wait(600);
+      // Space activates on release.
+      fireEvent.keyUp(allow(), { key: " " });
+      fireEvent.click(allow());
+      expect(a).not.toHaveBeenCalled();
+      expect(b).not.toHaveBeenCalled();
+      // A key held on C: its first press answers C (that's what was
+      // pressed), its repeats once D has taken C's place answer nothing.
+      const c = vi.fn();
+      const d = vi.fn();
+      rerender(view("apr_c", c));
+      await steady();
+      const card = screen.getByTestId("approval-card");
+      fireEvent.keyDown(card, { key: "a" });
+      expect(c).toHaveBeenCalledTimes(1);
+      rerender(view("apr_d", d));
+      await wait(600);
+      expect(waiting(allow())).toBe(false);
+      fireEvent.keyDown(card, { key: "a", repeat: true });
+      fireEvent.keyDown(allow(), { key: "Enter", repeat: true });
+      fireEvent.click(allow());
+      expect(d).not.toHaveBeenCalled();
+      expect(c).toHaveBeenCalledTimes(1);
+      fireEvent.keyUp(card, { key: "a" });
     });
   });
 });

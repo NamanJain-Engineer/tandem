@@ -11,6 +11,8 @@ export type CheckboxProps = {
   disabled?: boolean;
   /** Off for now but still focusable (`aria-disabled`), as Button's. */
   waiting?: boolean;
+  /** Why it's waiting, read out as its description while it waits. */
+  waitingReason?: string;
   description?: string;
   className?: string;
   id?: string;
@@ -22,6 +24,7 @@ export function Checkbox({
   onCheckedChange,
   disabled,
   waiting = false,
+  waitingReason,
   description,
   className,
   id,
@@ -36,11 +39,17 @@ export function Checkbox({
         disabled={disabled}
         aria-disabled={waiting || undefined}
         onCheckedChange={(v) => !waiting && onCheckedChange?.(v === true)}
-        aria-describedby={description ? `${cid}-desc` : undefined}
+        aria-describedby={
+          [description ? `${cid}-desc` : null, waiting && waitingReason ? `${cid}-wait` : null]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        title={waiting ? waitingReason : undefined}
         className={cx(
           "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface-4",
           "focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
-          waiting && "cursor-not-allowed opacity-40",
+          // Waiting stays focusable: the mark dims, the focus ring doesn't.
+          waiting && "cursor-not-allowed border-border [&>*]:opacity-40",
           "data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-fg",
           "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-fg",
         )}
@@ -50,9 +59,14 @@ export function Checkbox({
         </C.Indicator>
       </C.Root>
       <div className="flex flex-col">
-        <label htmlFor={cid} className={cx("text-base text-fg", disabled && "opacity-40")}>
+        <label htmlFor={cid} className={cx("text-base text-fg", (disabled || waiting) && "opacity-40")}>
           {label}
         </label>
+        {waiting && waitingReason && (
+          <span id={`${cid}-wait`} className="sr-only">
+            {waitingReason}
+          </span>
+        )}
         {description && (
           <span id={`${cid}-desc`} className="text-sm text-fg-subtle">
             {description}

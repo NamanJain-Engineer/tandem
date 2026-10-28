@@ -437,7 +437,9 @@ describe("F-PL-08 held actions", () => {
     // N3: the pick waits too.
     expect(waiting(pick13)).toBe(true);
     expect(pick13.closest("[data-grant]")).not.toBeNull();
-    expect(pick13.closest("[data-grant]")?.getAttribute("title")).toBe(
+    // Its reason is its accessible description, not just a hover title.
+    const reason = pick13.getAttribute("aria-describedby");
+    expect(reason && document.getElementById(reason)?.textContent).toBe(
       "You can pick this once it has been still on screen for a moment.",
     );
     fireEvent.click(pick13);

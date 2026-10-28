@@ -84,7 +84,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cx(
         buttonClass(variant, size),
         fullWidth && "w-full",
-        (disabled || waiting) && "pointer-events-auto cursor-not-allowed opacity-40 hover:bg-[inherit]",
+        disabled && "pointer-events-auto cursor-not-allowed opacity-40 hover:bg-[inherit]",
+        // Waiting stays focusable: its content dims, its focus ring doesn't.
+        waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40",
         loading && "cursor-progress",
         className,
       )}

@@ -13,6 +13,53 @@ export const COVER_EVERY_MS = 100;
  * doesn't count). */
 export const GRANT_ATTR = "data-grant";
 
+/** How long after its release a press still counts as the one a click
+ * belongs to (the click follows the release). */
+const PRESS_GRACE_MS = 250;
+/** A press with no release seen for this long is stale (a test, or a lost
+ * event), and no longer holds anything back. */
+const PRESS_STALE_MS = 2_000;
+
+/** The person's latest press: pointerdown, or a key that isn't a repeat,
+ * until its release. A held key's repeats keep it live but never start a
+ * new one. */
+let press: { at: number; seen: number; live: boolean } | null = null;
+let tracking = false;
+
+function trackPresses() {
+  if (tracking || typeof document === "undefined") return;
+  tracking = true;
+  const start = () => {
+    const now = performance.now();
+    press = { at: now, seen: now, live: true };
+  };
+  const end = () => {
+    if (press) {
+      press.live = false;
+      press.seen = performance.now();
+    }
+  };
+  document.addEventListener("pointerdown", start, true);
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (!e.repeat) start();
+      else if (press) press.seen = performance.now();
+    },
+    true,
+  );
+  document.addEventListener("pointerup", end, true);
+  document.addEventListener("pointercancel", end, true);
+  document.addEventListener("keyup", end, true);
+}
+
+/** When the press a click or key now belongs to began, if there is one. */
+function pressBegan(now: number): number | null {
+  if (press === null) return null;
+  const current = press.live ? now - press.seen < PRESS_STALE_MS : now - press.seen < PRESS_GRACE_MS;
+  return current ? press.at : null;
+}
+
 /** The box an element takes on the screen (the window's place included,
  * so a window moved without resizing counts), as a string to compare. */
 function boxOf(el: HTMLElement): string {
@@ -59,23 +106,30 @@ function covered(el: HTMLElement): boolean {
     const r = target.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
     return pointsOf(r).some(([x, y]) => {
+      // Past the window's edge nothing can be seen to be clicked.
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return true;
       const hit = document.elementFromPoint(x, y);
       return hit !== null && !target.contains(hit);
     });
   });
 }
 
-/** Whether the element is in view, by an IntersectionObserver (clipped by
- * its scroller or scrolled away counts as out). Without one (a test), it's
- * in view. */
+/** Whether the whole element is in view, by an IntersectionObserver
+ * (clipped by its scroller, scrolled partly or wholly away counts as out).
+ * Without one (a test), it's in view. */
 function useInView(el: HTMLElement | null): boolean {
   const [inView, setInView] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
     if (el === null || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((entries) => {
-      const last = entries[entries.length - 1];
-      if (last) setInView(last.isIntersecting);
-    });
+    // A new element starts out of view until the observer says otherwise.
+    setInView(false);
+    const io = new IntersectionObserver(
+      (entries) => {
+        const last = entries[entries.length - 1];
+        if (last) setInView(last.isIntersecting && (last.intersectionRatio ?? 1) >= 0.99);
+      },
+      { threshold: [0, 0.99, 1] },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [el]);
@@ -105,6 +159,7 @@ export function useSteadyBox(
   check: () => boolean;
 } {
   const [el, setEl] = useState<HTMLElement | null>(null);
+  useEffect(trackPresses, []);
   // A new token per request, even back to an earlier one (A → B → A).
   const token = useMemo(() => ({}), [key]);
   const inView = useInView(el);
@@ -130,9 +185,15 @@ export function useSteadyBox(
   );
   // Out of view answers no too: a focused card scrolled away can't be
   // allowed by a key typed into what the person thinks is the composer.
+  // And the press the click or key belongs to must have begun once this
+  // request had held still: a press that began on what was here before
+  // (pressed on request A, released after B took its place, or a key held
+  // across the change) grants nothing.
   const check = useCallback((): boolean => {
     if (!active || el === null || !inView || hidden(el)) return false;
-    return sample(true);
+    if (!sample(true) || last.current === null) return false;
+    const began = pressBegan(performance.now());
+    return began === null || began >= last.current.since + SETTLE_MS;
   }, [active, el, inView, sample]);
   useEffect(() => {
     last.current = null;

@@ -9,6 +9,7 @@ import type {
   TaskClaimOverlap,
 } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Button,
   Callout,
@@ -210,10 +211,20 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   // place) starts the wait over too, so Approve never sends a hash for a
   // diff that was on screen for less than a moment.
   const settled = useSettled(approved ? null : item.diffHash);
-  // "This diff just changed" only once it has: a card that just arrived
-  // waits with the plain reason.
-  const firstHash = useRef(item.diffHash);
-  const changed = item.diffHash !== firstHash.current;
+  // "This diff just changed" from a change of diff until its wait is over;
+  // a card that just arrived, or one approved and unapproved, waits with
+  // the plain reason.
+  const prevHash = useRef(item.diffHash);
+  const [changed, setChanged] = useState(false);
+  useEffect(() => {
+    if (item.diffHash !== prevHash.current) {
+      prevHash.current = item.diffHash;
+      setChanged(true);
+    }
+  }, [item.diffHash]);
+  useEffect(() => {
+    if (settled) setChanged(false);
+  }, [settled]);
   const box = useSteadyBox(!approved, item.diffHash);
   const canApprove = approved || (settled && box.steady);
   return (
@@ -222,7 +233,8 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
       data-key={item.key}
       data-state={item.state}
       // Off screen, a card skips layout, paint and hit tests.
-      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3 [content-visibility:auto] [contain-intrinsic-size:auto_200px]"
+      style={offscreenRow(272)}
+      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg" data-testid="review-item-title">

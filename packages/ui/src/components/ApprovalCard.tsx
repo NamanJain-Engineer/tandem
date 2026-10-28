@@ -139,6 +139,9 @@ export function ApprovalCard({
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
     if (busy || target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
+    // A held key repeats: only its first press can answer, never a repeat
+    // that lands on the request that replaced it.
+    if (e.repeat) return;
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
     if (e.key === "Enter" && mod && e.shiftKey) {

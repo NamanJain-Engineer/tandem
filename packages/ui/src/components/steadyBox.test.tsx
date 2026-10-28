@@ -198,6 +198,7 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     covering = document.createElement("div");
     document.body.append(covering);
     fireEvent.pointerDown(covering);
+    fireEvent.pointerUp(covering);
     covering.remove();
     covering = null;
     fireEvent.click(allow());

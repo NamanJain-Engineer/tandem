@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { RiskClass, HeldDraft, IpcError, ToolResultView } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Banner,
   Button,
@@ -180,19 +181,17 @@ function HeldRow({
       ref={box.ref}
       data-testid={`held-${d.displayNo}`}
       // Off screen, a row skips layout, paint and hit tests (up to 500 drafts).
-      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3 [content-visibility:auto] [contain-intrinsic-size:auto_220px]"
+      style={offscreenRow(220)}
+      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <div className="flex items-center gap-2">
         {/* Unpicking never waits; picking does. */}
-        <span
-          data-grant
-          className="flex"
-          title={!picked && !box.steady ? t("approval.waitingPick") : undefined}
-        >
+        <span data-grant className="flex">
           <Checkbox
             label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
             checked={picked}
             waiting={!picked && !box.steady}
+            waitingReason={t("approval.waitingPick")}
             onCheckedChange={(v) => (v ? box.check() && onPick(true) : onPick(false))}
           />
         </span>

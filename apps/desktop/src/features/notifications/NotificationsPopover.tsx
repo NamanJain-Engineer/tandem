@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Notification } from "@tandem/protocol";
 import {
+  offscreenRow,
   Button,
   EmptyState,
   IconButton,
@@ -68,7 +69,8 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
           onJump(n);
         }
       }}
-      className="flex cursor-pointer gap-2.5 rounded-sm px-2.5 py-2 outline-none hover:bg-surface-4 focus-visible:shadow-focus [content-visibility:auto] [contain-intrinsic-size:auto_64px]"
+      style={offscreenRow(64)}
+      className="flex cursor-pointer gap-2.5 rounded-sm px-2.5 py-2 outline-none hover:bg-surface-4 focus-visible:shadow-focus"
     >
       <span className="mt-1 inline-flex size-3 shrink-0 items-center justify-center">
         {status ? (

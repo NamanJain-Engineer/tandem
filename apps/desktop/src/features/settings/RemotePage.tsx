@@ -9,6 +9,7 @@ import type {
   QueuedPhoneAction,
 } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Button,
   Callout,
@@ -482,7 +483,8 @@ function QueueRow({
   return (
     <div
       ref={box.ref}
-      className="flex items-center gap-3 px-4 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_56px]"
+      style={offscreenRow(56)}
+      className="flex items-center gap-3 px-4 py-3"
       data-testid="remote-queue-item"
     >
       <span className="min-w-0 flex-1 text-base text-fg">
