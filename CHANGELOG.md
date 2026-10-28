@@ -46,6 +46,21 @@ release fails when its version has no section.
   turns sent (never their words), files changed, commands, tools, approvals and
   `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
   for 14 days.
+- [lin] **Code intelligence in the editor and diffs.** With the language
+  servers you already have (rust-analyzer, typescript-language-server, pyright,
+  gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
+  references (Shift+F12), shows hover text and underlines problems, and
+  worktree and review diffs jump from a changed name to its definition or
+  callers. No server runs until you trust the repository (each worktree on its
+  own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+- [lin] **jj workspaces.** With jj installed on this computer, in a trusted
+  repository co-located with jj, New worktree… makes a jj workspace
+  (`jj workspace add`) instead of a git worktree, with a git worktree one click
+  away and your choice remembered. Its diff and overlap check come from jj,
+  agents in it are told to use jj, and Discard forgets the workspace while its
+  commits stay. Folders on this computer only. Landing, pull requests,
+  previews, setup, second opinion, the intent radar and the git panel aren't
+  available for jj workspaces yet.
 - [lin] **Local models.** Settings › Engines › Local models finds Ollama,
   LM Studio and llama.cpp servers running on this computer and lists their
   models, with the size and parameter count each server reports. Vibezeo
@@ -63,6 +78,14 @@ release fails when its version has no section.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
+
+### Security
+
+- [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
+  for a second opinion, a pull request's review comments, a failed check's log
+  sent to an agent, and Warn both agents' note about another worktree's symbols
+  can't make Claude Code read a file on your computer: any `@` there that could
+  name one is written ＠, and the message says so.
 
 ## 0.12.0
 

@@ -27,6 +27,7 @@ import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { useEngines } from "../../stores/engines";
 import { focusSource } from "../../stores/focus";
+import { diffNames } from "../../stores/intel";
 import { sortItems, toReview, useReview } from "../../stores/review";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorktrees } from "../../stores/worktrees";
@@ -91,7 +92,11 @@ function ItemDiff({
         ) : files === null ? (
           <Skeleton height={96} />
         ) : (
-          <DiffView files={files} labels={{ empty: t("worktree.diffEmpty") }} />
+          <DiffView
+            files={files}
+            labels={{ empty: t("worktree.diffEmpty") }}
+            names={diffNames({ type: "workspace", workspaceId: item.laneId ?? item.workspaceId }, onClose)}
+          />
         )}
       </div>
     </Dialog>

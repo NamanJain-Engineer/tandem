@@ -52,3 +52,47 @@ describe("CodeEditor (F-CD-19)", () => {
     expect(languageFor("notes.unknownext")).toBeNull();
   });
 });
+
+describe("CodeEditor code intelligence (F-CD-23)", () => {
+  const press = (key: string, shiftKey = false) =>
+    screen
+      .getByLabelText("Editor")
+      .dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }));
+
+  it("F-CD-23.1 F12 asks for the definition at the cursor; Shift+F12 for references", () => {
+    const definition = vi.fn();
+    const references = vi.fn();
+    render(
+      <CodeEditor
+        docKey="i"
+        path="main.py"
+        label="Editor"
+        value={"import util\nutil.helper()\n"}
+        goto={{ line: 2, col: 7, nonce: 1 }}
+        intel={{ definition, references }}
+      />,
+    );
+    press("F12");
+    expect(definition).toHaveBeenCalledWith({ line: 1, character: 6 });
+    press("F12", true);
+    expect(references).toHaveBeenCalledWith({ line: 1, character: 6 });
+  });
+
+  it("F-CD-23.3 diagnostics underline their ranges and follow new ones", () => {
+    const value = "x = 1\nERROR here\n";
+    const diag = { line: 1, character: 0, endLine: 1, endCharacter: 5, severity: "error" as const, message: "fake: error here" };
+    const { rerender } = render(<CodeEditor docKey="d" path="a.py" label="Editor" value={value} intel={{ diagnostics: [diag] }} />);
+    const marks = () => Array.from(screen.getByTestId("code-editor").querySelectorAll(".cm-diag-error"));
+    expect(marks().map((m) => m.textContent)).toEqual(["ERROR"]);
+    rerender(<CodeEditor docKey="d" path="a.py" label="Editor" value={value} intel={{ diagnostics: [{ ...diag, severity: "warning" }] }} />);
+    expect(marks()).toEqual([]);
+    expect(screen.getByTestId("code-editor").querySelectorAll(".cm-diag-warning")).toHaveLength(1);
+    rerender(<CodeEditor docKey="d" path="a.py" label="Editor" value={value} intel={{ diagnostics: [] }} />);
+    expect(screen.getByTestId("code-editor").querySelectorAll(".cm-diag-warning")).toHaveLength(0);
+  });
+
+  it("F-CD-23.4 without intel, F12 does nothing special", () => {
+    render(<CodeEditor docKey="n" path="a.rs" label="Editor" value={"fn a() {}\n"} />);
+    expect(() => press("F12")).not.toThrow();
+  });
+});
