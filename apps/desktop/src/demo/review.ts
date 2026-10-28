@@ -1,6 +1,5 @@
-import type { FileDiff, IpcError, RepoReview, ReviewItem, ReviewQueueView } from "@tandem/protocol";
+import type { FileDiff, IpcError, RepoReview, ReviewItem, ReviewQueueView, ReviewRisk } from "@tandem/protocol";
 import { emitLocal } from "../ipc/events";
-import { DEMO_CHANGES, TEST_OUTPUT } from "./agent";
 
 const fail = (code: IpcError["code"], message: string): IpcError => ({
   code,
@@ -10,37 +9,75 @@ const fail = (code: IpcError["code"], message: string): IpcError => ({
   retryable: false,
 });
 
-/** The review queue in the browser demo (F-DB-04): Claude Code's finished
- * fix in `shop`, with the repository's check passing. Approve, Snooze and
- * Run check work in the page, and the queue updates as in the app. */
+/** The core's auth rule (review_queue.rs `is_auth`): a path with one of
+ * these words in a folder or file name. The sample's other paths fire no
+ * other rule (no migrations, CI, lockfiles, env files or deleted tests). */
+const AUTH_WORDS = ["auth", "oauth", "login", "password", "secret", "crypto", "permission"];
+
+function risksOf(files: FileDiff[]): ReviewRisk[] {
+  const auth = files
+    .map((f) => f.path)
+    .filter((p) =>
+      p.split("/").some((seg) => {
+        const s = seg.toLowerCase();
+        return !s.startsWith("author") && AUTH_WORDS.some((w) => s.includes(w));
+      }),
+    );
+  return auth.length ? [{ rule: "auth", files: auth.slice(0, 5) }] : [];
+}
+
+/** A finished agent's work waiting for review: where, by whom, its last
+ * words, its diff, and what the repository's check printed on it. */
+export type ReviewSeed = {
+  ws: { id: string; name: string };
+  /** The repository the worktree belongs to (its check and API paths). */
+  repo: { root: string; check: string };
+  branch: string;
+  paneId: string;
+  /** The item's title: its agent pane's first name. */
+  title: string;
+  engine: string;
+  closing: string;
+  files: FileDiff[];
+  checkOutput: string;
+};
+
+/** The review queue in the browser demo (F-DB-04): the finished agent's
+ * work in its worktree, with the repository's check passing. Approve,
+ * Snooze and Run check work in the page, and the queue updates as in the
+ * app. */
 export class DemoReview {
   private item: ReviewItem;
   private repo: RepoReview;
+  private files: FileDiff[];
+  private output: string;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(ws: { id: string; name: string; root: string }, paneId: string, now = Date.now()) {
+  constructor(seed: ReviewSeed, now = Date.now()) {
+    this.files = seed.files;
+    this.output = seed.checkOutput;
     this.item = {
-      key: `pane:${paneId}`,
-      source: { type: "pane", paneId },
-      title: "Claude Code",
-      engineId: "claude",
-      workspaceId: ws.id,
-      workspace: ws.name,
-      branch: "main",
-      laneId: null,
+      key: `pane:${seed.paneId}`,
+      source: { type: "pane", paneId: seed.paneId },
+      title: seed.title,
+      engineId: seed.engine,
+      workspaceId: seed.ws.id,
+      workspace: seed.ws.name,
+      branch: seed.branch,
+      laneId: seed.ws.id,
       finishedAt: now - 12 * 60_000,
-      closing: "Fixed, with a test. 13 tests pass.",
-      files: DEMO_CHANGES.length,
-      additions: DEMO_CHANGES.reduce((n, f) => n + f.additions, 0),
-      deletions: DEMO_CHANGES.reduce((n, f) => n + f.deletions, 0),
-      risks: [],
-      check: { state: "passed", exit: 0, output: TEST_OUTPUT },
-      diffHash: "demo-redirect-fix",
+      closing: seed.closing,
+      files: seed.files.length,
+      additions: seed.files.reduce((n, f) => n + f.additions, 0),
+      deletions: seed.files.reduce((n, f) => n + f.deletions, 0),
+      risks: risksOf(seed.files),
+      check: { state: "passed", exit: 0, output: seed.checkOutput },
+      diffHash: `demo-${seed.ws.name}`,
       state: "review",
       snoozedUntil: null,
       turnCheckpointId: null,
     };
-    this.repo = { root: ws.root, check: "npm test", apiPaths: [] };
+    this.repo = { root: seed.repo.root, check: seed.repo.check, apiPaths: [] };
   }
 
   view(): ReviewQueueView {
@@ -49,7 +86,7 @@ export class DemoReview {
 
   diff(key: string): FileDiff[] {
     this.must(key);
-    return DEMO_CHANGES;
+    return this.files;
   }
 
   approve(key: string, diffHash: string): ReviewItem {
@@ -76,9 +113,27 @@ export class DemoReview {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.set({ check: { state: "passed", exit: 0, output: TEST_OUTPUT } });
+      this.set({ check: { state: "passed", exit: 0, output: this.output } });
     }, 600);
     return this.set({ check: { state: "running", exit: null, output: "" } });
+  }
+
+  /** The worktree's diff changed (its agent committed more): the item shows
+   * the new diff and check, and goes back to review, since an approval
+   * holds only for the diff it saw. */
+  update(files: FileDiff[], checkOutput: string): void {
+    this.files = files;
+    this.output = checkOutput;
+    this.set({
+      files: files.length,
+      additions: files.reduce((n, f) => n + f.additions, 0),
+      deletions: files.reduce((n, f) => n + f.deletions, 0),
+      risks: risksOf(files),
+      check: { state: "passed", exit: 0, output: checkOutput },
+      diffHash: `${this.item.diffHash}+`,
+      state: "review",
+      snoozedUntil: null,
+    });
   }
 
   repoGet(): RepoReview {

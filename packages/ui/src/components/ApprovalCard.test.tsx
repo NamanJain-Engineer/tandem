@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UiProvider } from "../theme/ThemeProvider";
 import { ApprovalCard, type ApprovalCardProps } from "./ApprovalCard";
 
@@ -7,15 +7,29 @@ function card(props: Partial<ApprovalCardProps> = {}) {
   const handlers = { onAllow: vi.fn(), onAllowThread: vi.fn(), onDeny: vi.fn() };
   render(
     <UiProvider theme="dark">
-      <ApprovalCard kind="command" title="Claude Code wants to run a command" allowThread {...handlers} {...props} />
+      <ApprovalCard
+        kind="command"
+        title="Claude Code wants to run a command"
+        allowThread
+        {...handlers}
+        {...props}
+      />
     </UiProvider>,
   );
   return handlers;
 }
 
+/** Waits until Allow has held still long enough to take a click. */
+async function steady() {
+  await waitFor(() =>
+    expect((screen.getByTestId("approval-allow") as HTMLButtonElement).disabled).toBe(false),
+  );
+}
+
 describe("ApprovalCard (F-TH-11, UI-23)", () => {
-  it("F-TH-11 command actions: Allow once, Allow for this thread, Deny", () => {
+  it("F-TH-11 command actions: Allow once, Allow for this thread, Deny", async () => {
     const h = card();
+    await steady();
     fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
     fireEvent.click(screen.getByRole("button", { name: "Allow for this thread" }));
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
@@ -24,9 +38,11 @@ describe("ApprovalCard (F-TH-11, UI-23)", () => {
     expect(h.onDeny).toHaveBeenCalledWith(null);
   });
 
-  it("F-TH-11 keys: Mod+Enter allows, Mod+Shift+Enter allows for the thread, D denies, Esc focuses Deny", () => {
+  it("F-TH-11 keys: Mod+Enter allows, Mod+Shift+Enter allows for the thread, D denies, Esc focuses Deny", async () => {
     const h = card();
+    await steady();
     const el = screen.getByTestId("approval-card");
+    el.focus();
     fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
     fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
     fireEvent.keyDown(el, { key: "a" });
@@ -74,5 +90,150 @@ describe("ApprovalCard (F-TH-11, UI-23)", () => {
     card({ resolved: { tone: "denied", text: "Denied · you · 10:42" } });
     expect(screen.getByTestId("approval-resolved").textContent).toContain("Denied · you · 10:42");
     expect(screen.queryByTestId("approval-card")).toBeNull();
+  });
+});
+
+describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
+  // jsdom lays nothing out: give the buttons a row, 100 apart and 90 wide,
+  // and a cover that sits over part of it.
+  let covering: Element | null = null;
+  let coverX: [number, number] | null = null;
+  let shift = 0;
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  function layout() {
+    covering = null;
+    coverX = null;
+    shift = 0;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.tagName !== "BUTTON") return rect(0, shift, 400, 30);
+      const row = Array.from(this.parentElement?.children ?? []);
+      return rect(100 * row.indexOf(this), shift, 90, 30);
+    });
+    Object.defineProperty(document, "elementFromPoint", {
+      value: (x: number) =>
+        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : null,
+      configurable: true,
+    });
+  }
+  afterEach(() => {
+    vi.restoreAllMocks();
+    covering?.remove();
+    Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
+  });
+  const allow = () => screen.getByTestId("approval-allow") as HTMLButtonElement;
+  const thread = () => screen.getByTestId("approval-allow-thread") as HTMLButtonElement;
+
+  it("S4: a card that just appeared takes no click or key on Allow until it has been still a moment", async () => {
+    layout();
+    const h = card();
+    const el = screen.getByTestId("approval-card");
+    el.focus();
+    expect(allow().disabled).toBe(true);
+    expect(thread().disabled).toBe(true);
+    expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
+    fireEvent.click(allow());
+    fireEvent.keyDown(el, { key: "a" });
+    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
+    expect(h.onAllow).not.toHaveBeenCalled();
+    expect(h.onAllowThread).not.toHaveBeenCalled();
+    // Deny never waits.
+    fireEvent.keyDown(el, { key: "d" });
+    expect(h.onDeny).toHaveBeenCalledWith(null);
+    await steady();
+    fireEvent.keyDown(el, { key: "a" });
+    expect(h.onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  it("S4: a card that moves waits again, and a key the moment it moved does nothing", async () => {
+    layout();
+    const h = card();
+    const el = screen.getByTestId("approval-card");
+    el.focus();
+    await steady();
+    shift = 40;
+    // The key measures on the spot: the move is seen before any frame.
+    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
+    expect(h.onAllow).not.toHaveBeenCalled();
+    expect(h.onAllowThread).not.toHaveBeenCalled();
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    await steady();
+    fireEvent.click(thread());
+    expect(h.onAllowThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("S4: a cover over Allow for this thread alone turns both Allows and their keys off", async () => {
+    layout();
+    const h = card();
+    const el = screen.getByTestId("approval-card");
+    el.focus();
+    await steady();
+    covering = document.createElement("div");
+    document.body.append(covering);
+    coverX = [160, 200];
+    await waitFor(() => expect(thread().disabled).toBe(true));
+    expect(allow().disabled).toBe(true);
+    fireEvent.click(thread());
+    fireEvent.keyDown(el, { key: "a" });
+    expect(h.onAllow).not.toHaveBeenCalled();
+    expect(h.onAllowThread).not.toHaveBeenCalled();
+    act(() => covering?.remove());
+    covering = null;
+    await steady();
+    expect(thread().disabled).toBe(false);
+  });
+
+  it("S4: keys answer only the card that has focus", async () => {
+    layout();
+    const h = card();
+    await steady();
+    const el = screen.getByTestId("approval-card");
+    // Focus elsewhere: a key event that reaches the card anyway is ignored.
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.keyDown(el, { key: "a" });
+    expect(h.onAllow).not.toHaveBeenCalled();
+    el.focus();
+    fireEvent.keyDown(el, { key: "a" });
+    expect(h.onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  it("N2: the same card given another request waits again, and a click meant for the first doesn't answer the second", async () => {
+    layout();
+    const a = vi.fn();
+    const b = vi.fn();
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard
+          kind="command"
+          title="run"
+          requestKey={requestKey}
+          onAllow={onAllow}
+          onDeny={() => undefined}
+        />
+      </UiProvider>
+    );
+    const { rerender } = render(view("apr_a", a));
+    await steady();
+    rerender(view("apr_b", b));
+    expect(allow().disabled).toBe(true);
+    fireEvent.click(allow());
+    fireEvent.keyDown(screen.getByTestId("approval-card"), { key: "a" });
+    expect(a).not.toHaveBeenCalled();
+    expect(b).not.toHaveBeenCalled();
+    await steady();
+    fireEvent.click(allow());
+    expect(b).toHaveBeenCalledTimes(1);
   });
 });

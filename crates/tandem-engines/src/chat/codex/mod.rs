@@ -315,6 +315,8 @@ impl CodexParser {
                     diff,
                     detail,
                     paths,
+                    // The diff carries its lines.
+                    lines: None,
                 })
             }
             _ => None,

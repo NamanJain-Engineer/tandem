@@ -550,9 +550,10 @@ describe("F-WB-01 AC9 product scenes", () => {
     // 0.12.0 raises a pane's approval only for `vibezeo run`; an engine's own question is its prompt in its terminal, and
     // the Dashboard card shows it as the line (the design lead's must-fix on 54a05e0d). The demo draws it so (backend.ts).
     const backend = readFileSync(join(import.meta.dirname, "../../desktop/src/demo/backend.ts"), "utf8");
-    const asked = /"Allow running ([^"?]+)\? \(y\/n\)",/.exec(backend)?.[1];
-    expect(asked).toBeDefined();
-    expect(backend).toContain(`preview: "Allow running ${asked}?",`);
+    // The demo writes the waiting worktree's question from story.json's `ask`: its terminal's last line, and its card's.
+    expect(backend).toContain('else if (w.state === "waiting") lines.push(`Allow running ${w.ask ?? ""}? (y/n)`);');
+    expect(backend).toContain('if (w.state === "waiting") return `Allow running ${w.ask ?? ""}?`;');
+    expect(SAMPLE.ask).toBe(story.worktrees.find((w) => w.state === "waiting")?.ask);
     expect(SAMPLE.question).toEqual({ terminal: `Allow running ${SAMPLE.ask}? (y/n)`, preview: `Allow running ${SAMPLE.ask}?` });
     // The texts say so too: no answer in place, no Allow once and Deny.
     for (const s of [workspaceSceneText(), dashboardSceneText(), WORKSPACE_CAPTION, DASHBOARD_CAPTION]) {
@@ -930,9 +931,10 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(dialog).toContain('<Button variant="secondary" loading={loading} onClick={refresh} data-testid="checks-refresh">');
     const store = app("stores/worktrees.ts");
     for (const s of ["export const CHECKS_POLL_MS = 120_000;", "export const CHECKS_IDLE_MS = 15 * 60_000;"]) expect(store).toContain(s);
+    // The browser demo isn't the app: its harness (demo/main.tsx) reads when its simulated core says they changed.
     const files = (dir: string): string[] =>
       readdirSync(join(src, dir), { withFileTypes: true }).flatMap((e) =>
-        e.isDirectory() ? files(join(dir, e.name)) : /\.tsx?$/.test(e.name) && !/\.(test|spec)\./.test(e.name) ? [join(dir, e.name)] : [],
+        e.isDirectory() ? (e.name === "demo" ? [] : files(join(dir, e.name))) : /\.tsx?$/.test(e.name) && !/\.(test|spec)\./.test(e.name) ? [join(dir, e.name)] : [],
       );
     expect(files(".").filter((f) => /\bloadChecks\(/.test(app(f))).sort()).toEqual(["features/code/PullRequestChecks.tsx", "features/code/Worktrees.tsx", "stores/worktrees.ts"]);
     // In the scene: once pushed, the row's badge is pressed again, and the dialog rises again.

@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { getSession, signIn } from "./session";
+
+const request = (sid: string | null) =>
+  ({ url: "/", headers: new Headers(sid ? { cookie: `sid=${sid}` } : {}) }) as Request;
+
+describe("getSession", () => {
+  it("finds the session a cookie names", async () => {
+    expect(await getSession(request(signIn("ana")))).toMatchObject({ customer: "ana" });
+  });
+
+  it("keeps the coupon the customer applied", async () => {
+    expect((await getSession(request(signIn("ana", "SPRING10"))))?.coupon).toBe("SPRING10");
+  });
+
+  it("has none without a cookie", async () => {
+    expect(await getSession(request(null))).toBeNull();
+  });
+
+  it("has none for a cookie it doesn't know", async () => {
+    expect(await getSession(request("nope"))).toBeNull();
+  });
+
+  it("drops a session that expired", async () => {
+    expect(await getSession(request(signIn("ana", null, -60_000)))).toBeNull();
+  });
+});

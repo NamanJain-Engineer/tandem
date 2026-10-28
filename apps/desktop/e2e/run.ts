@@ -5,7 +5,10 @@
 // session bus (single-instance uses DBus on Linux):
 //   dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m2-*.e2e.ts'
 // After the run it enforces the M2 checks: no secret patterns in the logs and
-// no analytics or crash hosts in the network log (telemetry is off).
+// no analytics or crash hosts in the network log (telemetry is off). Then a
+// passing run's home is deleted; a failing run's stays for its logs, and only
+// the last KEEP_FAILED_HOMES failed homes are kept (TANDEM_E2E_KEEP_HOME=1
+// keeps a passing one too).
 //
 // Windows (D-1714): the same runner drives the app through tauri-driver and
 // msedgedriver (TANDEM_NATIVE_DRIVER, or msedgedriver on PATH).
@@ -29,6 +32,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Launcher } from "@wdio/cli";
 import { E2E_KNOWN_SENTENCE } from "./support/phone";
+import { KEEP_FAILED_HOMES, cleanHomes } from "./support/homes";
 
 const WIN = process.platform === "win32";
 /** Executables' suffix on this platform. */
@@ -494,7 +498,10 @@ async function main() {
   }
   const problems = checkArtifacts(home);
   for (const p of problems) console.error(`E2E check failed: ${p}`);
-  process.exit(problems.length ? 1 : code);
+  const failed = problems.length > 0 || code !== 0;
+  cleanHomes(home, failed, process.env.TANDEM_E2E_KEEP_HOME === "1");
+  if (failed) console.log(`E2E: kept ${home} for its logs (the last ${KEEP_FAILED_HOMES} failed runs' homes stay)`);
+  process.exit(failed ? 1 : code);
 }
 
 void main();

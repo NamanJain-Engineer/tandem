@@ -244,6 +244,7 @@ export type * from "./LimitKind";
 export type * from "./LimitSource";
 export type * from "./LimitView";
 export type * from "./Limits";
+export type * from "./LineCounts";
 export type * from "./LinkKind";
 export type * from "./ListeningPort";
 export type * from "./LogField";

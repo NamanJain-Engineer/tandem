@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectProgress, HeldDraft, PluginApprovalDetail, PluginCard } from "@tandem/protocol";
 import { ApprovalCard, UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
@@ -396,7 +396,9 @@ describe("F-PL-08 held actions", () => {
 
   it("F-PL-08 Approve & run runs a draft once", async () => {
     ui(<HeldActions />);
-    fireEvent.click(await screen.findByTestId("held-run-12"));
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    await waitFor(() => expect(run.disabled).toBe(false));
+    fireEvent.click(run);
     await waitFor(() => expect(screen.queryByTestId("held-12")).toBeNull());
     expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1);
     expect(calls.find((c) => c.cmd === "held_draft_run")?.args).toMatchObject({
@@ -408,12 +410,85 @@ describe("F-PL-08 held actions", () => {
   it("F-PL-08 discards in bulk", async () => {
     ui(<HeldActions />);
     await screen.findByTestId("held-12");
+    // N3: a pick waits for its row to hold still, like Approve & run.
+    const pick = (id: string) => screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
+    await waitFor(() => expect(pick("D-12").disabled || pick("D-13").disabled).toBe(false));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-12" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-13" }));
     fireEvent.click(screen.getByTestId("held-discard-selected"));
     await waitFor(() => expect(screen.getByText("Nothing held")).toBeTruthy());
     expect(calls.find((c) => c.cmd === "held_drafts_discard")?.args).toEqual({
       draftIds: ["hd_12", "hd_13"],
+    });
+  });
+
+  it("F-PL-08 S4: Approve & run and Approve & run {n} take no click until their row has held still", async () => {
+    ui(<HeldActions />);
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    // Just shown: a click meant for what was there before does nothing.
+    expect(run.disabled).toBe(true);
+    expect(run.title).toBe("Approve turns on once this has been still on screen for a moment.");
+    fireEvent.click(run);
+    const pick13 = screen.getByRole("checkbox", { name: "Select D-13" }) as HTMLButtonElement;
+    // N3: the pick waits too.
+    expect(pick13.disabled).toBe(true);
+    fireEvent.click(pick13);
+    expect(pick13.getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(pick13.disabled).toBe(false));
+    fireEvent.click(pick13);
+    const selected = screen.getByTestId("held-run-selected") as HTMLButtonElement;
+    expect(selected.disabled).toBe(true);
+    fireEvent.click(selected);
+    expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+    await waitFor(() => expect(selected.disabled).toBe(false));
+    fireEvent.click(selected);
+    await waitFor(() => expect(screen.queryByTestId("held-13")).toBeNull());
+    expect(calls.filter((c) => c.cmd === "held_draft_run").map((c) => c.args?.draftId)).toEqual(["hd_13"]);
+  });
+
+  describe("N3: a draft arriving on top", () => {
+    // Rows laid out top to bottom, 200 apart, in list order.
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        const li = this.closest("li");
+        const rows = li?.parentElement ? Array.from(li.parentElement.children) : [];
+        const top = li ? 200 * rows.indexOf(li) : 0;
+        return {
+          left: 0,
+          top,
+          width: 300,
+          height: 30,
+          right: 300,
+          bottom: top + 30,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("moves the rows below it: their pick and Approve & run wait again, so a pick can't land on the new draft's neighbour", async () => {
+      ui(<HeldActions />);
+      const pick = (id: string) =>
+        screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
+      const run = (n: number) => screen.getByTestId(`held-run-${n}`) as HTMLButtonElement;
+      await waitFor(() => expect(pick("D-12").disabled).toBe(false));
+      // An unattended run holds a new draft: it's listed first.
+      drafts = [draft(14), ...drafts];
+      act(() => emitLocal("held:changed", null));
+      await screen.findByTestId("held-14");
+      await waitFor(() => expect(pick("D-12").disabled).toBe(true));
+      expect(run(12).disabled).toBe(true);
+      fireEvent.click(pick("D-12"));
+      fireEvent.click(pick("D-14"));
+      expect(pick("D-12").getAttribute("aria-checked")).toBe("false");
+      expect(pick("D-14").getAttribute("aria-checked")).toBe("false");
+      expect((screen.getByTestId("held-run-selected") as HTMLButtonElement).disabled).toBe(true);
+      expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+      await waitFor(() => expect(pick("D-12").disabled).toBe(false));
     });
   });
 });
@@ -466,7 +541,10 @@ describe("F-PL-03 a build without plugins (the browser demo)", () => {
     resetStores();
     fakeBackend({
       plugins_catalog: () => {
-        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo." };
+        throw {
+          code: "unavailable",
+          message: "Plugins sign in to your own accounts, so they don't connect inside this demo.",
+        };
       },
       held_drafts_list: () => [],
     });

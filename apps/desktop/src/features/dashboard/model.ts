@@ -78,10 +78,11 @@ export type Group = {
 /** Worktrees by workspace id: the repository they belong to and their branch. */
 export type Lanes = Record<string, { parentId: string; parentName: string; branch: string }>;
 
-/** The cards with a question open, first, in the order the questions were
- * asked, then the rest grouped by {@link groupRest}. Pinned this way, a
- * question's card only moves when one asked before it is answered: no
- * other agent's report (status, `since`, a longer line) can move it. */
+/** {@link askingGroup} then {@link groupRest}, as one list: the order the
+ * Dashboard shows, which renders the two apart (the questions above its
+ * header). Used by the tests. A question's card moves only when one asked
+ * before it is answered or withdrawn, or an earlier question's card changes
+ * size; no other agent's report (status, `since`) moves it. */
 export function group(
   items: DashboardItem[],
   by: GroupBy,
@@ -89,13 +90,7 @@ export function group(
   noFolder: string,
   lanes: Lanes = {},
 ): Group[] {
-  const asking = items
-    .filter((i) => i.pendingApproval)
-    .sort(
-      (a, b) =>
-        (a.pendingApproval?.createdAt ?? 0) - (b.pendingApproval?.createdAt ?? 0) ||
-        (a.pendingApproval?.id ?? "").localeCompare(b.pendingApproval?.id ?? ""),
-    );
+  const asking = askingGroup(items);
   const rest = groupRest(
     items.filter((i) => !i.pendingApproval),
     by,
@@ -103,12 +98,27 @@ export function group(
     noFolder,
     lanes,
   );
-  return asking.length > 0 ? [{ id: "asking", label: "asking", items: asking, asking: true }, ...rest] : rest;
+  return asking ? [asking, ...rest] : rest;
+}
+
+/** The cards with a question open, in the order the questions were asked;
+ * `null` when there are none. Built from every card, whatever the filter or
+ * search: those follow what agents report, and a question dropping in and
+ * out would move every one after it (F-TL-12.12). */
+export function askingGroup(items: DashboardItem[]): Group | null {
+  const asking = items
+    .filter((i) => i.pendingApproval)
+    .sort(
+      (a, b) =>
+        (a.pendingApproval?.createdAt ?? 0) - (b.pendingApproval?.createdAt ?? 0) ||
+        (a.pendingApproval?.id ?? "").localeCompare(b.pendingApproval?.id ?? ""),
+    );
+  return asking.length > 0 ? { id: "asking", label: "asking", items: asking, asking: true } : null;
 }
 
 /** Status groups in a fixed order, or workspaces in rail order with "No
  * folder" last. Empty groups are left out. Newest first within a group. */
-function groupRest(
+export function groupRest(
   items: DashboardItem[],
   by: GroupBy,
   workspaceOrder: string[],

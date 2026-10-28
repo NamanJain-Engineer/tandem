@@ -62,8 +62,33 @@ release fails when its version has no section.
   previews, setup, second opinion, the intent radar and the git panel aren't
   available for jj workspaces yet.
 
+### Changed
+
+- [lin] **Claude Code threads summarise their edits too.** A finished Claude
+  Code turn says which files its edits changed, a subagent's and a
+  notebook's included, with the lines added and removed, and each edit's
+  row shows its own counts. When an edit's lines aren't known, the turn
+  lists its files without line counts rather than a partial total. An edit
+  that was refused or failed counts nothing, and files changed by shell
+  commands aren't counted.
+- [lin] **The rail's marks say it in a word.** A worktree's pull request
+  checks read as the status bar has them, CI running, CI passed or CI
+  failed, and hovering says which checks failed. The overlap mark shows the
+  symbol two worktrees share, such as `applyCoupon`. A row that's short of
+  room shows a mark's icon rather than cut its words, and a pane header's
+  branch gives way before the pane's title does.
+
 ### Fixed
 
+- [lin] **Allow can't move under your click.** A chat's Allow and Allow for
+  this thread, held actions' Approve & run and the review queue's Approve now
+  wait until they've held still on screen for half a second, and while anything
+  covers them, like the Dashboard's and the pane's Allow. So the next request
+  sliding into place, or a new held draft arriving on top, can't take a click
+  or a double-click meant for something else. A chat card's keys answer only
+  the card you're on, and only once its Allow would. A phone's queued Allow in
+  Settings › Remote and Trust and connect for a new SSH host key wait the same
+  way.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.

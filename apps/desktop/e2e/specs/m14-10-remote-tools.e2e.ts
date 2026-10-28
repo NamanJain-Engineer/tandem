@@ -1,5 +1,5 @@
 import { $, $$, browser } from "@wdio/globals";
-import { freshOffline, invoke, waitForPaneText } from "../support/app";
+import { clickAllow, freshOffline, invoke, waitForPaneText } from "../support/app";
 import { connectGithub, mockCalls, mockReset, mockState } from "../support/plugins";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 import {
@@ -71,7 +71,7 @@ describe("E2E-M14-10 plugins and task tools in a remote thread", () => {
       { timeout: 60_000, timeoutMsg: "no plugin card for the remote thread's write" },
     );
     expect(await mockCalls("create_issue")).toBe(0);
-    await $(`${pinned} [data-testid="approval-allow"]`).click();
+    await clickAllow(`${pinned} [data-testid="approval-allow"]`);
     await waitForAssistant("The tool said:", 60_000);
     expect(await mockCalls("create_issue")).toBe(1);
   });
