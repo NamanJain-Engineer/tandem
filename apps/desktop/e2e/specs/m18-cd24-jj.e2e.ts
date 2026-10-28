@@ -25,6 +25,16 @@ const JJ_ENV = { ...process.env, HOME: userHome() };
 const jj = (cwd: string, ...args: string[]) =>
   execFileSync("jj", ["--no-pager", "--color=never", ...args], { cwd, encoding: "utf8", env: JJ_ENV }).trim();
 
+/** jj from its release, as the Rust real-jj tests find it. */
+function jjInstalled(): boolean {
+  try {
+    execFileSync("jj", ["--version"], { stdio: "ignore", env: JJ_ENV });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type Ws = { id: string; root: string; laneBranch: string | null; laneVcs?: string };
 type Diff = { path: string; additions: number; deletions: number; patch: string };
 
@@ -70,7 +80,14 @@ describe("E2E-M18-CD24-1 jj workspaces", function () {
   const path = join(repo, ".tandem/worktrees/tidy");
   let lane: Ws;
 
-  before(async () => {
+  before(async function () {
+    // Without jj this spec says so and is skipped, as the Rust real-jj
+    // tests return; JJ_REQUIRED=1 makes that a failure.
+    if (!jjInstalled()) {
+      if (process.env.JJ_REQUIRED) throw new Error("JJ_REQUIRED is set but jj isn't installed");
+      console.log("E2E-M18-CD24-1: jj isn't installed here; skipped (JJ_REQUIRED=1 makes this a failure)");
+      this.skip();
+    }
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");
     writeFileSync(join(repo, "app.txt"), "one\nthree\n");
