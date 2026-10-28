@@ -178,8 +178,15 @@ pub const UNTRUSTED_VARIABLES: [(&str, &str); 2] = [
     ("clipboard", "the clipboard"),
 ];
 
-/// Labels and fences the untrusted values in place (see [`UNTRUSTED_VARIABLES`]),
-/// with no `@` in them that names a file for the agent to attach (D-3023).
+/// Names the repository holds, whoever made them: the open file's path and
+/// the branch. Git takes a branch named `@/etc/passwd`, and a folder named
+/// `@~` makes `@~/.ssh/id_rsa` a path in it, so they go in defanged, where
+/// they're written (D-3027).
+pub const NAMED_VARIABLES: [&str; 2] = ["file", "branch"];
+
+/// Labels and fences the untrusted values in place (see [`UNTRUSTED_VARIABLES`])
+/// and defangs the names ([`NAMED_VARIABLES`]), so no `@` in them names a
+/// file for the agent to attach (D-3023, D-3027).
 pub fn guard(values: &mut BTreeMap<String, String>) {
     for (name, source) in UNTRUSTED_VARIABLES {
         if let Some(v) = values.get_mut(name).filter(|v| !v.is_empty()) {
@@ -190,6 +197,32 @@ pub fn guard(values: &mut BTreeMap<String, String>) {
             );
         }
     }
+    for name in NAMED_VARIABLES {
+        if let Some(v) = values.get_mut(name) {
+            *v = crate::untrusted::defang_mentions(v);
+        }
+    }
+}
+
+/// The prompt as it's inserted: `values` through [`guard`], then
+/// [`render`]. A name the body uses that changed ends it with the note.
+pub fn fill(body: &str, values: &BTreeMap<String, String>) -> (String, Vec<String>) {
+    let mut guarded = values.clone();
+    guard(&mut guarded);
+    let (text, missing) = render(body, &guarded);
+    let used = variables(body);
+    let renamed = NAMED_VARIABLES
+        .into_iter()
+        .any(|n| used.iter().any(|u| u == n) && guarded.get(n) != values.get(n));
+    if !renamed {
+        return (text, missing);
+    }
+    let text = format!(
+        "{}\n{}",
+        text.trim_end_matches('\n'),
+        crate::untrusted::DEFANGED
+    );
+    (text, missing)
 }
 
 /// Fills `body` with `values`. Variables without a (non-empty) value stay
@@ -412,13 +445,48 @@ mod tests {
             assert!(got.contains(&format!("\u{FF20}{named}")), "{got}");
             assert!(got.ends_with(crate::untrusted::DEFANGED), "{got}");
         }
-        // What you typed, and the file you have open, stay as they are.
-        assert_eq!(v["file"], "src/@app/page.tsx");
+        // What you typed stays as it is; a file's name goes in defanged
+        // (D-3027).
+        assert_eq!(v["file"], "src/\u{FF20}app/page.tsx");
         assert_eq!(v["ticket"], "Keep @docs/style.md in mind");
         // Nothing to change: no note.
         let mut plain = values(&[("selection", "1 failed")]);
         guard(&mut plain);
         assert!(!plain["selection"].contains(crate::untrusted::DEFANGED));
+    }
+
+    #[test]
+    fn f_ex_05_2_a_file_or_branch_name_names_no_file_for_the_agent() {
+        // Names the repository holds, whoever made them: git takes a branch
+        // named `@/etc/passwd`, and a folder named `@~` makes
+        // `@~/.ssh/id_rsa` a path in it (D-3027).
+        let body = "On {{branch}}: write tests for {{file}}.";
+        let (text, missing) = fill(
+            body,
+            &values(&[("branch", "@/etc/passwd"), ("file", "@~/.ssh/id_rsa")]),
+        );
+        assert!(missing.is_empty());
+        assert_eq!(
+            text,
+            format!(
+                "On \u{FF20}/etc/passwd: write tests for \u{FF20}~/.ssh/id_rsa.\n{}",
+                crate::untrusted::DEFANGED
+            )
+        );
+        // Plain names, and a body's own `@`, stay as written, with no note.
+        let (text, _) = fill(
+            body,
+            &values(&[("branch", "feature/login"), ("file", "src/a.rs")]),
+        );
+        assert_eq!(text, "On feature/login: write tests for src/a.rs.");
+        let (text, _) = fill(
+            "Follow @docs/CONTRIBUTING.md for {{file}}",
+            &values(&[("file", "src/a.rs")]),
+        );
+        assert_eq!(text, "Follow @docs/CONTRIBUTING.md for src/a.rs");
+        // A name the body doesn't use adds no note.
+        let (text, _) = fill("Plain.", &values(&[("branch", "@x")]));
+        assert_eq!(text, "Plain.");
     }
 
     #[test]
