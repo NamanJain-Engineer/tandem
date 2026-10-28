@@ -538,7 +538,15 @@ impl PlanService {
         let Some((view, q)) = self.answering(plan_id, qid) else {
             return;
         };
-        let files = self.instructions_of(&view).await;
+        let files = match self.instructions_of(&view).await {
+            Ok(files) => files,
+            // Lead isn't told there are none: the question comes to you.
+            Err(_) => {
+                let why = "Lead couldn't read the repository's instructions files.";
+                self.escalate(plan_id, qid, why.into(), None).await;
+                return;
+            }
+        };
         // The plan's own text of the task: the run can rewrite the live one.
         let task = view
             .issue_ids
@@ -995,25 +1003,43 @@ impl PlanService {
             return;
         };
         if let Some(commit) = &view.base_commit {
-            self.instructions_at(&view, commit).await;
+            // A read that fails keeps nothing: the first question reads again.
+            let _ = self.instructions_at(&view, commit).await;
         }
     }
 
     /// The instructions Lead answers a question of `view` from: what
     /// Execute all kept, or, for a plan kept before there were snapshots,
-    /// what its base commit has now (kept from then on).
-    async fn instructions_of(&self, view: &PlanView) -> Vec<(String, String)> {
+    /// what its base commit has now (kept from then on). An error is a read
+    /// that failed: nothing is kept, so a later question reads again.
+    async fn instructions_of(&self, view: &PlanView) -> Result<Vec<(String, String)>, String> {
         match &view.base_commit {
             Some(commit) => self.instructions_at(view, commit).await,
-            None => Vec::new(),
+            None => Ok(Vec::new()),
         }
     }
 
-    async fn instructions_at(&self, view: &PlanView, commit: &str) -> Vec<(String, String)> {
+    async fn instructions_at(
+        &self,
+        view: &PlanView,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String> {
         if let Some(kept) = self.kept_instructions(&view.id, commit) {
-            return kept;
+            return Ok(kept);
         }
-        let files = within_max(self.host.instructions(&view.workspace_id, commit).await);
+        let files = match self.host.instructions(&view.workspace_id, commit).await {
+            Ok(files) => within_max(files),
+            Err(why) => {
+                tracing::warn!(code = "plan.instructions_unread", error = %why, "the instructions files couldn't be read");
+                return Err(why);
+            }
+        };
+        // Kept under the plans' lock, and only for a plan still there:
+        // Remove plan takes the plan first, then its file.
+        let mut plans = self.lock();
+        let Some(entry) = plans.get_mut(&view.id) else {
+            return Ok(files);
+        };
         if let Some(path) = self.instructions_file(&view.id) {
             let kept = Snapshot {
                 version: 1,
@@ -1034,10 +1060,8 @@ impl PlanService {
                 tracing::warn!(code = "plan.instructions_unkept", error = %e, "a plan's instructions weren't kept");
             }
         }
-        if let Some(e) = self.lock().get_mut(&view.id) {
-            e.instructions = Some(files.clone());
-        }
-        files
+        entry.instructions = Some(files.clone());
+        Ok(files)
     }
 
     /// The plan's kept instructions at `commit`, from memory or its file.

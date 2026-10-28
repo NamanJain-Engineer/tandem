@@ -516,8 +516,13 @@ pub trait PlanHost: Send + Sync {
     /// The commit the workspace's main checkout is on (F-TK-08).
     async fn base_commit(&self, ws: &WorkspaceId) -> Option<String>;
     /// The repository's instructions files as committed at `commit` in the
-    /// workspace's main checkout: never a run's worktree (F-TK-08).
-    async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)>;
+    /// workspace's main checkout: never a run's worktree (F-TK-08). An error
+    /// says why they couldn't be read; it's never kept as "none".
+    async fn instructions(
+        &self,
+        ws: &WorkspaceId,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String>;
     /// Lead's engine can answer in a session with every tool off (D-2838).
     fn can_answer(&self, engine: &str) -> bool;
     /// Lead's reply to `prompt` from a fresh session of its engine with
@@ -1566,26 +1571,24 @@ impl PlanHost for AppHost {
         repo.head().await.ok()?
     }
 
-    async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)> {
+    async fn instructions(
+        &self,
+        ws: &WorkspaceId,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String> {
         let state = self.state();
-        let Ok(w) = tandem_store::repo::workspaces::get(&state.store, ws).await else {
-            return Vec::new();
-        };
-        let Ok(root) = crate::services::instructions::root_of(&w) else {
-            return Vec::new();
-        };
+        let w = tandem_store::repo::workspaces::get(&state.store, ws)
+            .await
+            .map_err(|e| e.to_string())?;
+        let root = crate::services::instructions::root_of(&w).map_err(|e| e.to_string())?;
         let names =
             crate::services::instructions::file_names(state.terminals.engines.registry().all());
         let login = state.terminals.login_env().await;
-        let Ok(git) = crate::services::lanes::git_for(&state.data, &login) else {
-            return Vec::new();
-        };
+        let git =
+            crate::services::lanes::git_for(&state.data, &login).map_err(|e| e.to_string())?;
         tandem_git::instructions::at_commit(&git, &root, commit, &names, supervisor::FILE_MAX)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(code = "plan.instructions_unread", error = %e, "the instructions files couldn't be read");
-                Vec::new()
-            })
+            .map_err(|e| e.to_string())
     }
 
     fn can_answer(&self, engine: &str) -> bool {
@@ -1739,6 +1742,10 @@ mod tests {
         /// The instructions files at the base commit, and who read them.
         files: Mutex<Vec<(String, String)>>,
         read: Mutex<Vec<(WorkspaceId, String)>>,
+        /// git can't read them.
+        unreadable: Mutex<bool>,
+        /// The next read waits until the test lets it go.
+        hold: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
         answers: Mutex<Vec<Answered>>,
         /// The run no longer waits for an answer.
         gone: Mutex<bool>,
@@ -1903,16 +1910,27 @@ mod tests {
                     .unwrap_or_else(|| BASE.into()),
             )
         }
-        async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)> {
+        async fn instructions(
+            &self,
+            ws: &WorkspaceId,
+            commit: &str,
+        ) -> Result<Vec<(String, String)>, String> {
             self.read
                 .lock()
                 .expect("l")
                 .push((ws.clone(), commit.to_string()));
-            if commit == BASE {
+            let held = self.hold.lock().expect("l").take();
+            if let Some(held) = held {
+                let _ = held.await;
+            }
+            if *self.unreadable.lock().expect("l") {
+                return Err("git couldn't read them".into());
+            }
+            Ok(if commit == BASE {
                 self.files.lock().expect("l").clone()
             } else {
                 Vec::new()
-            }
+            })
         }
         fn can_answer(&self, engine: &str) -> bool {
             engine == "claude" && !self.no_answers
@@ -3740,6 +3758,75 @@ mod tests {
         // Remove plan: they go with it.
         after.discard(&view.id).expect("remove");
         assert!(!kept.exists());
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_failed_instructions_read_isnt_kept_and_its_question_comes_to_you() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files, Lead::Answer("Vitest.".into()));
+        // git can't read them as Execute all starts the runs.
+        *fake.unreadable.lock().expect("l") = true;
+        let view = running(&fake, &plans, true).await;
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        assert!(!kept.exists(), "a failed read isn't kept");
+        // A question meanwhile comes to you: Lead isn't told there are none.
+        plans
+            .ask(asks(&view, "TAN-1", "at_1", "Which test runner?"))
+            .await;
+        assert!(prompts(&fake).is_empty(), "no answer session");
+        let q = plans.get(&view.id).expect("plan").questions[0].clone();
+        assert_eq!(q.state, QuestionState::Escalated);
+        assert_eq!(
+            q.reason.as_deref(),
+            Some("Lead couldn't read the repository's instructions files.")
+        );
+        // Once they can be read, the next question is answered from them,
+        // and they're kept.
+        *fake.unreadable.lock().expect("l") = false;
+        plans
+            .ask(asks(&view, "TAN-2", "at_2", "Which test runner?"))
+            .await;
+        let asked = prompts(&fake);
+        assert!(asked[0].contains("Use vitest."), "{}", asked[0]);
+        assert!(kept.is_file());
+        assert_eq!(fake.read.lock().expect("l").len(), 3);
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_plan_removed_while_its_instructions_are_read_keeps_no_file() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files.clone(), Lead::Answer("Vitest.".into()));
+        let view = running(&fake, &plans, true).await;
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        // A plan kept before there were snapshots reads them at its first
+        // question.
+        std::fs::remove_file(&kept).expect("no snapshot");
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        *fake2.files.lock().expect("l") = files;
+        *fake2.lead.lock().expect("l") = Lead::Answer("Vitest.".into());
+        let (go, held) = tokio::sync::oneshot::channel();
+        *fake2.hold.lock().expect("l") = Some(held);
+        let asking = tokio::spawn({
+            let after = after.clone();
+            let q = asks(&view, "TAN-1", "at_1", "Which test runner?");
+            async move { after.ask(q).await }
+        });
+        // Remove plan while the read is under way.
+        until("the read starts", || {
+            !fake2.read.lock().expect("l").is_empty()
+        })
+        .await;
+        after.discard(&view.id).expect("remove");
+        go.send(()).expect("released");
+        asking.await.expect("asked");
+        assert!(!kept.exists(), "no file for a removed plan");
+        assert!(prompts(&fake2).is_empty());
     }
 
     #[tokio::test]
