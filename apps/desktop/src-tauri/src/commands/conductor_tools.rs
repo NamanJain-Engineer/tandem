@@ -33,6 +33,15 @@ fn s(args: &Value, k: &str) -> String {
     args[k].as_str().unwrap_or_default().trim().to_string()
 }
 
+/// The model's words a tool sends an agent: it read panes anyone can write
+/// to, so no `@` names a file (D-3023), it runs no slash or shell command
+/// (D-3026), and it's one line, as `prompt_pane` types.
+fn spoken(args: &Value, k: &str) -> String {
+    tandem_core::untrusted::no_command(&tandem_voice::conductor::exec::strip_controls(
+        &tandem_core::untrusted::defang_noted(&s(args, k)),
+    ))
+}
+
 fn ipc(e: tandem_core::IpcError) -> String {
     e.message
 }
@@ -125,7 +134,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
             } else {
                 Isolation::Shared
             };
-            let task = s(a, "task");
+            let task = spoken(a, "task");
             let report = crate::services::launch::launch(
                 &state,
                 &ws,
@@ -219,7 +228,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
             let t = crate::commands::threads::thread_create(state.clone(), args)
                 .await
                 .map_err(ipc)?;
-            let text = s(a, "text");
+            let text = spoken(a, "text");
             if !text.is_empty() {
                 crate::commands::threads::thread_send(
                     state.clone(),
@@ -249,7 +258,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
                     t.title
                 ));
             }
-            let text = tandem_voice::conductor::exec::strip_controls(&s(a, "text"));
+            let text = spoken(a, "text");
             if a["send"].as_bool().unwrap_or(false) {
                 crate::commands::threads::thread_send(
                     state.clone(),
@@ -356,7 +365,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
                         .id
                 }
             };
-            let text = tandem_voice::conductor::exec::strip_controls(&s(a, "text"));
+            let text = spoken(a, "text");
             crate::commands::threads::thread_send(state.clone(), chat, text, None, Some(true))
                 .await
                 .map_err(ipc)?;
@@ -488,7 +497,7 @@ pub async fn run(state: State<'_, AppState>, host: &dyn ToolWindow, name: &str, 
         "review_send_back" => {
             let q = review_queue(&state)?;
             let item = q.walk_heard_item().map_err(ipc)?;
-            let text = tandem_voice::conductor::exec::strip_controls(&s(a, "text"));
+            let text = spoken(a, "text");
             if text.trim().is_empty() {
                 return Err("Say what to send back.".into());
             }
