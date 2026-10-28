@@ -674,10 +674,24 @@ impl TaskExecService {
                 ))
             }
         };
-        let a = repo::insert(
+        // Its setup is in place before the attempt is: a pump that runs
+        // meanwhile (another run ending) launches it with its note and its
+        // plan's code.
+        let id = AttemptId::new();
+        if let Ok(mut n) = self.setup.lock() {
+            n.insert(
+                id.as_str().to_string(),
+                RunSetup {
+                    isolation: input.isolation,
+                    note: input.note.clone(),
+                    supervision: input.supervision.clone(),
+                },
+            );
+        }
+        let inserted = repo::insert(
             &self.store,
             NewAttempt {
-                id: AttemptId::new(),
+                id: id.clone(),
                 issue_id: issue.id.clone(),
                 workspace_id: input.workspace_id.clone(),
                 teammate_id: input.teammate_id.clone(),
@@ -688,19 +702,17 @@ impl TaskExecService {
             },
             self.now(),
         )
-        .await
-        .map_err(store_err)?;
+        .await;
+        let a = match inserted {
+            Ok(a) => a,
+            Err(e) => {
+                if let Ok(mut n) = self.setup.lock() {
+                    n.remove(id.as_str());
+                }
+                return Err(store_err(e));
+            }
+        };
         drop(starting);
-        if let Ok(mut n) = self.setup.lock() {
-            n.insert(
-                a.id.as_str().to_string(),
-                RunSetup {
-                    isolation: input.isolation,
-                    note: input.note.clone(),
-                    supervision: input.supervision.clone(),
-                },
-            );
-        }
         // The plan keeps its run, so it's still the plan's after a restart.
         if let (Some(s), Some(sink)) = (&input.supervision, self.questions.get()) {
             sink(QuestionEvent::Started {
@@ -744,6 +756,19 @@ impl TaskExecService {
                 let a = repo::get(&self.store, id).await.ok()?;
                 lookup(&a.id, &a.issue_id)
             }
+        }
+    }
+
+    /// The plan code a Retry carries (F-TK-08): its plan's, while that
+    /// plan keeps the run. A removed plan's run is yours from then on, even
+    /// in the launch that started it, so its question comes to you.
+    async fn retry_supervision(&self, id: &AttemptId) -> Option<Supervision> {
+        match self.supervision.get() {
+            Some(lookup) => {
+                let a = repo::get(&self.store, id).await.ok()?;
+                lookup(&a.id, &a.issue_id)
+            }
+            None => self.supervision_of(id).await,
         }
     }
 
@@ -1369,8 +1394,9 @@ impl TaskExecService {
             full_confirmed: a.access == Access::Full,
             review: a.review,
             note,
-            // A plan run's retry still asks its plan (F-TK-08).
-            supervision: self.supervision_of(id).await,
+            // A plan run's retry still asks its plan (F-TK-08), while the
+            // plan keeps the run.
+            supervision: self.retry_supervision(id).await,
         })
         .await
     }
@@ -2329,6 +2355,66 @@ pub(crate) mod tests {
             briefing.contains("`QUESTION-ab12cd34: <your question>`"),
             "{briefing}"
         );
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_5_retry_of_a_removed_plans_run_is_yours() {
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                instant: true,
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        let heard = asked(&f);
+        // The plan keeps its run until Remove plan.
+        let kept = Arc::new(StdMutex::new(true));
+        let plan = kept.clone();
+        f.svc
+            .set_supervision_lookup(Arc::new(move |_: &AttemptId, issue: &str| {
+                (*plan.lock().expect("lock") && issue == "TAN-1").then(|| Supervision {
+                    plan_id: "pl_1".into(),
+                    nonce: "ab12cd34".into(),
+                })
+            }));
+        let ours = f
+            .svc
+            .execute(supervised("TAN-1"))
+            .await
+            .expect("plan's run")
+            .attempt
+            .id;
+        for _ in 0..200 {
+            if repo::get(&f.svc.store, &ours)
+                .await
+                .expect("get")
+                .state
+                .ended()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        // Remove plan; in the same launch, Retry of its run is yours: its
+        // question comes to you, not to a plan that's gone.
+        *kept.lock().expect("lock") = false;
+        let before = f.host.sessions.lock().expect("lock").len();
+        let retried = f.svc.retry(&ours).await.expect("retry").attempt.id;
+        let host = f.host.clone();
+        until(move || {
+            host.sessions
+                .lock()
+                .map(|s| s.len() > before)
+                .unwrap_or(false)
+        })
+        .await;
+        let briefing = f.host.sessions.lock().expect("lock")[before].text.clone();
+        assert!(!briefing.contains("QUESTION-"), "{briefing}");
+        assert!(!heard.lock().expect("lock").iter().any(
+            |e| matches!(e, QuestionEvent::Started { attempt_id, .. } if *attempt_id == retried)
+        ));
     }
 
     #[tokio::test]
