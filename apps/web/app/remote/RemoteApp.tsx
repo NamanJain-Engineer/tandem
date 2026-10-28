@@ -381,9 +381,13 @@ function Approvals({
             ) : (
               grants.approvals && (
                 <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="primary" onClick={() => void decide(a.id, "allow")}>
-                    Allow
-                  </Button>
+                  {a.deskOnly ? (
+                    <Badge variant="waiting">Answer on your computer</Badge>
+                  ) : (
+                    <Button size="sm" variant="primary" onClick={() => void decide(a.id, "allow")}>
+                      Allow
+                    </Button>
+                  )}
                   <Button size="sm" variant="secondary" onClick={() => void decide(a.id, "deny")}>
                     Deny
                   </Button>

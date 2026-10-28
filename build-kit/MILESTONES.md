@@ -2182,6 +2182,30 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: activity ledger (M)
+
+**Goal.** The activity ledger `docs/NEXT_FEATURES.md` ranks (§1 F-EX-07): one timeline per agent pane or thread, joining what's already stored (commands, checkpoints, thread approvals) with the events only the ledger records (turns sent, tools, subagents, pane approvals, `vibezeo run`), with an export.
+
+**Owns:** F-EX-07 (P2)
+**Prerequisites.** F-EX-01 checkpoints, F-EX-02 command recall, F-TH-11 approvals, the status hooks (§6.6), F-TL-12's `vibezeo run`.
+
+**Ordered tasks**
+1. **Store.** Migration `0006_activity` and `repo::activity` (insert, list by source, prune by age and count, delete).
+2. **Recording.** `services::activity`: thread turns and agent-pane prompts, tool and subagent starts from status reports, pane approvals and `vibezeo run`; `activity_list` joins command history, checkpoints and thread approvals; `activity_export` writes JSON Lines.
+3. **UI and docs.** The Activity dialog (pane menu, thread menu, Dashboard card), and Extras › Activity in the docs.
+
+**Verification**
+```bash
+cargo test -p tandem-store activity && cargo test -p tandem-desktop --lib f_ex_07
+pnpm --filter desktop exec vitest run -t "F-EX-07"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ex07-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-EX07 Activity ledger** (`m18-ex07-activity.e2e.ts`). An agent pane on the fake engine: a prompt, a `vibezeo run` answered Allow once, then two commands typed in the pane after the agent exits; Activity lists the turn, the approval, the run with its secret's name and exit code, and both commands, in order, never the prompt's words or the secret's value; Export's file has the same events as JSON Lines.
+
+---
+
 ## M18 · Next features: agent-proof secrets (M)
 
 **Goal.** The first slice of bold bet B5 (`docs/NEXT_FEATURES.md`): named secrets in the OS keychain, `vibezeo-secret://` references in a folder's `.env`, resolved only for a command started with Run with secrets, and masked in that command's pane.
@@ -2245,7 +2269,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **190 features** (65 P0, 67 P1, 58 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 24 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **191 features** (65 P0, 67 P1, 59 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 25 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2269,6 +2293,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **190 features** (6
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
 | F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
+| F-EX-07 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |

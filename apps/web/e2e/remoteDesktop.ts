@@ -31,7 +31,7 @@ export class FakeDesktop {
   private session: SessionState | null = null;
   private ws: WebSocket | null = null;
   private approvals = [
-    { id: "ap_web1", summary: "Run `pnpm deploy`", detail: "pnpm deploy", source: "Agent pane", queued: false, createdAt: 1 },
+    { id: "ap_web1", summary: "Run `pnpm deploy`", detail: "pnpm deploy", source: "Thread", queued: false, deskOnly: false, createdAt: 1 },
   ];
 
   constructor(private readonly bearer: string) {}

@@ -273,6 +273,13 @@ impl ApprovalBroker {
             .ok_or(ApprovalError::NotFound)
     }
 
+    /// Cancels one pending request (its asker went away). False when it
+    /// wasn't pending.
+    pub fn cancel(&self, id: &ApprovalId) -> bool {
+        self.finish(id, ApprovalState::Cancelled, None, None)
+            .is_some()
+    }
+
     /// Cancels every pending request from `source` (it closed or stopped).
     pub fn cancel_source(&self, source: &SourceRef) -> Vec<ApprovalId> {
         let ids: Vec<ApprovalId> = self

@@ -2,6 +2,8 @@
 //! without a window (ARCHITECTURE §2.12).
 
 pub mod accounts;
+pub mod activity;
+pub mod agent_run;
 pub mod api;
 pub mod approvals;
 pub mod askpass;

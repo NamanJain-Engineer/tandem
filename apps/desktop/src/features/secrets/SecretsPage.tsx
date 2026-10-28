@@ -15,6 +15,7 @@ import { KeyRound, Plus } from "lucide-react";
 import { t } from "../../i18n";
 import { copyText } from "../../ipc/clipboard";
 import { reference, useSecrets, validName } from "../../stores/secrets";
+import { RunRules } from "./RunRules";
 
 function updated(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -259,6 +260,7 @@ export function SecretsPage() {
         </ul>
       )}
       <p className="text-sm text-fg-muted">{t("secrets.limits")}</p>
+      <RunRules />
       <SecretDialog open={open} replacing={replacing} onOpenChange={setOpen} />
     </section>
   );

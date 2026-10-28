@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { IpcError, PaneRecord, RunPlan, SecretInfo } from "@tandem/protocol";
+import type { AgentsMdPlan, IpcError, PaneRecord, RunPlan, RunRuleRepo, SecretInfo } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 
 /** Settings › Secrets (F-TL-12): names only; values never reach the webview
@@ -52,4 +52,23 @@ export function runPlan(paneId: string): Promise<RunPlan | null> {
 
 export function runWithSecrets(paneId: string, tabId: string, command: string): Promise<PaneRecord> {
   return invoke<PaneRecord>("secrets_run", { paneId, tabId, command }, { timeoutMs: 30_000 });
+}
+
+/** What "Tell agents in this folder" would write to the pane's folder's AGENTS.md. */
+export function agentsPlan(paneId: string): Promise<AgentsMdPlan> {
+  return invoke<AgentsMdPlan>("secrets_agents_plan", { paneId });
+}
+
+/** Writes it, if AGENTS.md is still `before`. */
+export function agentsApply(paneId: string, before: string): Promise<AgentsMdPlan> {
+  return invoke<AgentsMdPlan>("secrets_agents_apply", { paneId, before });
+}
+
+/** Commands agents may run with secrets without asking, per folder (F-TL-12). */
+export function runRulesList(): Promise<RunRuleRepo[]> {
+  return invoke<RunRuleRepo[] | null>("run_rules_list", {}).then((l) => l ?? []);
+}
+
+export function runRulesSet(repo: string, commands: string[]): Promise<RunRuleRepo> {
+  return invoke<RunRuleRepo>("run_rules_set", { repo, commands });
 }

@@ -717,7 +717,7 @@ mod tests {
         let done = Arc::new(AtomicBool::new(false));
         let seen_late = Arc::new(AtomicBool::new(false));
         let (d, l) = (done.clone(), seen_late.clone());
-        terminals.set_prompt_hook(Arc::new(move |_pane, late| {
+        terminals.set_prompt_hook(Arc::new(move |_pane, late, _turn| {
             let (d, l) = (d.clone(), l.clone());
             Box::pin(async move {
                 tokio::time::sleep(Duration::from_millis(2500)).await;
@@ -727,7 +727,7 @@ mod tests {
         }));
         let pane = tandem_core::ids::PaneId::new();
         let started = std::time::Instant::now();
-        terminals.before_prompt(&pane).await;
+        terminals.before_prompt(&pane, false).await;
         let waited = started.elapsed();
         assert!(
             waited >= Duration::from_millis(1900) && waited < Duration::from_millis(2400),
