@@ -1,6 +1,6 @@
-import { Fragment } from "react";
+import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Count, Dot, Glyph, StatusBar, fx, visit } from "./parts";
+import { AppWindow, Count, DiffRows, Glyph, StatusBar, Toast, fx, visit, type DiffRow } from "./parts";
 
 /** The file the second opinion comments on: the scene shows its diff. */
 export const REVIEW_FILE = SAMPLE.comments[0]?.file ?? "";
@@ -9,7 +9,7 @@ export const REVIEW_FILE = SAMPLE.comments[0]?.file ?? "";
  * REVIEW_FILE, the checkout function's hunk with its old and new line
  * numbers, as DiffView shows them. It's a run of git's own diff of the demo's
  * sample files (the base branch's and the worktree's; a test checks). */
-export const REVIEW_DIFF: ReadonlyArray<readonly [" " | "+" | "−", string, number | null, number | null]> = [
+export const REVIEW_DIFF: readonly DiffRow[] = [
   [" ", "export async function checkout(cart: Cart, req: Request) {", 8, 19],
   ["−", "  const session = await getSession(req);", 9, null],
   ["−", "  if (!session) return redirect(\"/login\");", 10, null],
@@ -40,52 +40,40 @@ export function notesFor(
   return out;
 }
 
-/** Where the second opinion's comments land: under the rows at their lines. */
-const NOTES = notesFor(REVIEW_FILE, REVIEW_DIFF, SAMPLE.comments);
-/** The first commented row: the rows under it move down as the comments
- * arrive. With no comments, nothing does. */
-const FIRST = NOTES.size > 0 ? Math.min(...NOTES.keys()) : REVIEW_DIFF.length;
-/** When the reviewer is done. Its comments arrive together then, with its
- * done line, as `review:second_opinion` adds them in the app (D-3000). */
-const DONE = 3.8;
+/** When Second opinion is pressed, when the reviewer starts, and when it's
+ * done: its comments arrive together then, as `review:second_opinion` adds
+ * them in the app (D-3000), and its toast says so. Send waits for the toast
+ * to go, as it covers the bar. `finished` is how many minutes ago the work
+ * finished, which the card's meta ends with. */
+export const REVIEW_T = { ask: 1.9, reviewing: 2.1, done: 3.8, send: 5.4, finished: 4 } as const;
+const { done: DONE } = REVIEW_T;
 
-/** Diff rows `from` to `to`, each commented one with its comment under it
- * when `comments` is on. */
-function Rows({ from, to, comments = false }: { from: number; to: number; comments?: boolean }) {
-  return REVIEW_DIFF.slice(from, to).map(([mark, code, oldNo, newNo], k) => (
-    <Fragment key={code}>
-      <span className={`sc-diff-line sc-diff-${mark === "+" ? "add" : mark === "−" ? "del" : "ctx"}`}>
-        <span className="sc-diff-no">{oldNo ?? ""}</span>
-        <span className="sc-diff-no">{newNo ?? ""}</span>
-        <span className="sc-diff-mark">{mark}</span>
-        <span className="sc-diff-code">{code}</span>
+/** Where the second opinion's comments land: under the rows at their lines,
+ * each as DiffView's annotation row. They're the review's own, to edit or
+ * remove, and only they fade in. */
+const NOTES = new Map<number, ReactNode>(
+  [...notesFor(REVIEW_FILE, REVIEW_DIFF, SAMPLE.comments)].map(([row, texts]) => [
+    row,
+    texts.map((text) => (
+      <span key={text} className="sc-diff-note" {...fx("in", DONE)}>
+        <span className="sc-diff-note-text">{text}</span>
+        <span className="sc-btn sc-btn-ghost">{t("worktree.review.edit")}</span>
+        <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
       </span>
-      {comments && <Notes row={from + k} />}
-    </Fragment>
-  ));
-}
-
-/** A row's comments under it, each as DiffView's annotation row: the
- * second opinion's comments are the review's own, to edit or remove. Only
- * they fade in (D-3000). */
-function Notes({ row }: { row: number }) {
-  return (NOTES.get(row) ?? []).map((text) => (
-    <span key={text} className="sc-diff-note" {...fx("in", DONE)}>
-      <span className="sc-diff-note-text">{text}</span>
-      <span className="sc-btn sc-btn-ghost">{t("worktree.review.edit")}</span>
-      <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
-    </span>
-  ));
-}
+    )),
+  ]),
+);
 
 /** "Review and a second opinion" (D-1880): the review queue (F-DB-04) with
  * the finished worktree's fix, the one piece of finished work, sorted by
  * risk; Second opinion asks another engine, which reads the diff without
- * editing anything (F-WT-05); its findings land together as line comments
- * under their lines, ready to send to the agent. About 5 s, played once. */
+ * editing anything (F-WT-05) while the review bar says so; its findings land
+ * together as line comments under their lines, with a toast, and the bar
+ * sends them to the agent. About 6 s, played once. */
 export function ReviewScene() {
   const done = SAMPLE.worktrees.finished;
   const reviewer = SAMPLE.reviewer;
+  const n = SAMPLE.comments.length;
   return (
     <AppWindow className="sc-review">
       <div className="sc-rev">
@@ -99,10 +87,11 @@ export function ReviewScene() {
           <div className="sc-item sc-item-on" {...fx("slide", 0.2)}>
             <span className="sc-toast-row">
               <Glyph engine={done.engine} focused />
-              {/* ReviewQueue's card: the agent's first name, then its engine, workspace and branch. */}
+              {/* ReviewQueue's card: the agent's first name, then its engine,
+                  workspace and branch, and how long ago it finished. */}
               <span className="sc-card-main">
                 <span className="sc-card-title">{done.name}</span>
-                <span className="sc-card-meta">{[done.engine, SAMPLE.workspace, done.branch].join(" · ")}</span>
+                <span className="sc-card-meta">{[done.engine, SAMPLE.workspace, done.branch, t("time.minutes", { n: REVIEW_T.finished })].join(" · ")}</span>
               </span>
             </span>
             <span className="sc-stat">
@@ -122,12 +111,16 @@ export function ReviewScene() {
                 {t("review.check.passed")}
               </span>
             </span>
-            <span className="sc-ask-actions">
-              <span className="sc-btn">{t("review.approve")}</span>
-              <span className="sc-btn">{t("review.openDiff")}</span>
-              <span className="sc-btn sc-btn-primary" {...fx("press", 1.9)}>
+            {/* ReviewQueue's actions, as it styles them: Approve the primary,
+                Open diff secondary, the worktree's own ghosts. */}
+            <span className="sc-ask-actions sc-item-actions">
+              <span className="sc-btn sc-btn-sm sc-btn-primary">{t("review.approve")}</span>
+              <span className="sc-btn sc-btn-sm">{t("review.openDiff")}</span>
+              <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("review.sendBack")}</span>
+              <span className="sc-btn sc-btn-sm sc-btn-ghost" {...fx("press", REVIEW_T.ask)}>
                 {t("review.secondOpinion")}
               </span>
+              <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("review.merge")}</span>
             </span>
           </div>
         </div>
@@ -135,43 +128,39 @@ export function ReviewScene() {
         <div className="sc-diff" {...fx("in", 0.4)}>
           <div className="sc-diff-head">
             <span className="sc-branch">{REVIEW_FILE}</span>
-            <span className="sc-swap sc-diff-state">
-              <span {...fx("out", 2.1)} />
-              {/* Reviewing until it's done. */}
-              <span {...visit(2.1, 1.7)}>
-                <Dot status="working" /> {t("worktree.opinion.reviewing", { engine: reviewer })}
-              </span>
-              <span {...fx("pop", DONE)}>
-                <Dot status="done" />{" "}
-                {SAMPLE.comments.length > 0 ? t("worktree.opinion.done", { engine: reviewer, n: SAMPLE.comments.length }) : t("worktree.opinion.none", { engine: reviewer })}
-              </span>
-            </span>
           </div>
-          <div className="sc-diff-body">
-            <Rows from={0} to={FIRST + 1} />
-            {/* Under the first commented line: the rows as they were until
-                the reviewer is done, then the same rows with its comments, in
-                one cell, so nothing waits for the comments as a gap. The app
-                inserts them in one go and the rows below just move down, so
-                the stacks swap at once and only the comments fade in. */}
-            {NOTES.size > 0 && (
-              <span className="sc-diff-swap">
-                <span className="sc-diff-rows" {...fx("cut", DONE)}>
-                  <Rows from={FIRST + 1} to={REVIEW_DIFF.length} />
+          {/* The comments go in under their lines in one go: the rows below
+              move down at once, and only the comments fade in (DiffRows). */}
+          <DiffRows rows={REVIEW_DIFF} notes={NOTES} at={DONE} />
+          {/* WorktreeReview's bar: the reviewer at work, with Open thread,
+              then the comments' count with Copy review and Send to the
+              worktree's one agent, by its name. */}
+          <span className="sc-review-bar" {...fx("in", REVIEW_T.reviewing)}>
+            <span className="sc-bar-states">
+              <span className="sc-bar-state" {...visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing)}>
+                <span className="sc-spin" />
+                <span className="sc-review-doing">{t("worktree.opinion.reviewing", { engine: reviewer })}</span>
+                <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("worktree.opinion.openThread")}</span>
+              </span>
+              {n > 0 && (
+                <span className="sc-bar-state" {...fx("in", DONE)}>
+                  <span className="sc-review-count">{t("worktree.review.count", { n })}</span>
+                  <span className="sc-btn sc-btn-sm">{t("worktree.review.copy")}</span>
+                  <span className="sc-btn sc-btn-sm sc-btn-primary" {...fx("pop", REVIEW_T.send)}>
+                    {t("worktree.review.sendTo", { name: done.name })}
+                  </span>
                 </span>
-                <span className="sc-diff-rows" {...fx("show", DONE)}>
-                  <Notes row={FIRST} />
-                  <Rows from={FIRST + 1} to={REVIEW_DIFF.length} comments />
-                </span>
-              </span>
-            )}
-          </div>
-          <div className="sc-diff-foot">
-            <span className="sc-btn sc-btn-primary" {...fx("pop", DONE + 0.5)}>
-              {t("worktree.review.sendTo", { name: done.name })}
+              )}
             </span>
-          </div>
+          </span>
         </div>
+        {/* The reviewer's done toast (SecondOpinion.tsx), with Show diff, or
+            its no-comments one. */}
+        {n > 0 ? (
+          <Toast title={t("worktree.opinion.done", { engine: reviewer, n })} action={t("worktree.opinion.showDiff")} at={DONE} stay={REVIEW_T.send - 0.1 - DONE} />
+        ) : (
+          <Toast title={t("worktree.opinion.none", { engine: reviewer })} at={DONE} />
+        )}
       </div>
       <StatusBar branch={done.branch} />
     </AppWindow>

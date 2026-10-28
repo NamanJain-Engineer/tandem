@@ -1,29 +1,23 @@
-import type { Status } from "@tandem/ui/components/StatusDot";
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
 import { AppWindow, Changes, Dot, DotChange, Glyph, StatusBar, fx } from "./parts";
 
-function Card({
-  engine,
-  n,
-  branch,
-  status,
-  line,
-  wants,
-}: {
-  engine: string;
-  n: number;
-  branch: string;
-  status: ReactNode;
-  line: ReactNode;
-  wants?: ReactNode;
-}) {
+const { finished, working, waiting } = SAMPLE.worktrees;
+
+/** When the waiting worktree's agent asks, and when the finished one is
+ * done: the cards, the filter counts and the Review count change then. */
+export const DASH_T = { ask: 2, done: 4.6 } as const;
+
+/** An agent's card as the Dashboard draws it (F-DB-01): its engine's tile,
+ * its first name and, under it, its engine, workspace and branch (cardTitle
+ * and cardMeta); its latest line, and its state. */
+function Card({ lane, status, line, wants }: { lane: typeof finished; status: ReactNode; line: ReactNode; wants?: ReactNode }) {
   return (
     <span className="sc-card">
-      <Glyph engine={engine} />
+      <Glyph engine={lane.engine} />
       <span className="sc-card-main">
-        <span className="sc-card-title">{t("pane.engine", { engine, n })}</span>
-        <span className="sc-card-meta">{branch}</span>
+        <span className="sc-card-title">{lane.name}</span>
+        <span className="sc-card-meta">{[lane.engine, SAMPLE.workspace, lane.branch].join(" · ")}</span>
       </span>
       <span className="sc-card-line">{line}</span>
       <span className="sc-card-status">{status}</span>
@@ -32,89 +26,101 @@ function Card({
   );
 }
 
-const still = (s: Status) => <Dot status={s} />;
+/** A line that changes once: `from` until `seconds`, then `to`. */
+function Line({ from, to, seconds }: { from: string; to: string; seconds: number }) {
+  return (
+    <span className="sc-swap">
+      <span {...fx("out", seconds)}>{from}</span>
+      <span {...fx("in", seconds)}>{to}</span>
+    </span>
+  );
+}
 
-/** "Who needs you" (D-1880): the Dashboard across three workspaces, grouped
- * by project. Codex asks to run a migration: its card turns to Waiting for
- * you and offers the answer in place; Claude Code finishes; the filter
- * counts follow. About 7 s, played once, resting with Codex waiting on you. */
+/** A pane's line as a card shows it: without the terminal's indent. */
+const last = (lines: readonly string[], back = 1) => (lines.at(-back) ?? "").trim();
+
+/** "Who needs you" (D-1880): the Dashboard over the story's repository,
+ * grouped by project, each worktree's agent under its branch, as the app
+ * groups a repository's worktrees. The waiting one asks to run its tests:
+ * its card turns to Waiting for you and offers the answer in place; the
+ * finished one finishes; the working one stays at work; the filter counts
+ * follow. About 7 s, played once, resting with the waiting agent on you. */
 export function DashboardScene() {
+  const n = SAMPLE.order.length;
+  const card = (branch: string) => {
+    if (branch === waiting.branch)
+      return (
+        <span className="sc-card-wrap sc-card-ask">
+          <Card
+            lane={waiting}
+            status={<DotChange from="working" to="waiting" seconds={DASH_T.ask} />}
+            line={<Line from={last(SAMPLE.lines.waiting)} to={t("dashboard.wants", { summary: `run ${SAMPLE.ask}` })} seconds={DASH_T.ask} />}
+            wants={
+              <span className="sc-card-actions" {...fx("rise", DASH_T.ask + 0.3)}>
+                <span className="sc-btn sc-btn-primary">{t("dashboard.allowOnce")}</span>
+                <span className="sc-btn">{t("dashboard.deny")}</span>
+                <span className="sc-btn sc-btn-ghost">{t("dashboard.open")}</span>
+              </span>
+            }
+          />
+          <span className="sc-ring" {...fx("pop", DASH_T.ask)} />
+        </span>
+      );
+    if (branch === finished.branch)
+      return (
+        <Card
+          lane={finished}
+          status={<DotChange from="working" to="done" seconds={DASH_T.done} />}
+          line={<Line from={last(SAMPLE.lines.finished, 2)} to={last(SAMPLE.lines.finished)} seconds={DASH_T.done} />}
+        />
+      );
+    return <Card lane={working} status={<Dot status="working" />} line={last(SAMPLE.lines.working)} />;
+  };
   return (
     <AppWindow className="sc-dashboard">
       <div className="sc-dash">
         <div className="sc-dash-head">
-          <span className="sc-dash-title">{t("dashboard.count", { n: 5 })}</span>
+          <span className="sc-dash-title">{t("dashboard.count", { n })}</span>
           <span className="sc-seg">
-            <span className="sc-mode sc-mode-on">{t("review.viewAgents", { n: 5 })}</span>
-            <span className="sc-mode">{t("review.viewReview", { n: 2 })}</span>
+            <span className="sc-mode sc-mode-on">{t("review.viewAgents", { n })}</span>
+            <span className="sc-mode">
+              <Changes steps={[[0, t("review.viewReview", { n: 0 })], [DASH_T.done, t("review.viewReview", { n: 1 })]]} />
+            </span>
           </span>
           <span className="sc-dash-group">
             {t("dashboard.groupBy")} <span className="sc-mode sc-mode-on">{t("dashboard.byProject")}</span>
           </span>
         </div>
         <div className="sc-chips sc-dash-chips">
-          <span className="sc-filter sc-filter-on">{t("dashboard.chip.all", { n: 5 })}</span>
+          <span className="sc-filter sc-filter-on">{t("dashboard.chip.all", { n })}</span>
           <span className="sc-filter">
-            <Changes steps={[[0, t("dashboard.chip.waiting", { n: 0 })], [2, t("dashboard.chip.waiting", { n: 1 })]]} />
+            <Changes steps={[[0, t("dashboard.chip.waiting", { n: 0 })], [DASH_T.ask, t("dashboard.chip.waiting", { n: 1 })]]} />
           </span>
           <span className="sc-filter">
             <Changes
               steps={[
-                [0, t("dashboard.chip.working", { n: 3 })],
-                [2, t("dashboard.chip.working", { n: 2 })],
-                [4.6, t("dashboard.chip.working", { n: 1 })],
+                [0, t("dashboard.chip.working", { n })],
+                [DASH_T.ask, t("dashboard.chip.working", { n: n - 1 })],
+                [DASH_T.done, t("dashboard.chip.working", { n: n - 2 })],
               ]}
             />
           </span>
           <span className="sc-filter">
-            <Changes steps={[[0, t("dashboard.chip.done", { n: 2 })], [4.6, t("dashboard.chip.done", { n: 3 })]]} />
+            <Changes steps={[[0, t("dashboard.chip.done", { n: 0 })], [DASH_T.done, t("dashboard.chip.done", { n: 1 })]]} />
           </span>
         </div>
 
+        {/* The repository's group, and in it each worktree's, by branch. */}
         <div className="sc-group" {...fx("in", 0.2)}>
-          <span className="sc-group-head">{SAMPLE.workspace}</span>
-          <span className="sc-card-wrap sc-card-ask">
-            <Card
-              engine="Codex"
-              n={2}
-              branch={SAMPLE.worktrees.working.branch}
-              status={<DotChange from="working" to="waiting" seconds={2} />}
-              line={
-                <span className="sc-swap">
-                  <span {...fx("out", 2)}>editing src/cart/rules.ts</span>
-                  <span {...fx("in", 2)}>{t("dashboard.wants", { summary: "run pnpm db:migrate" })}</span>
-                </span>
-              }
-              wants={
-                <span className="sc-card-actions" {...fx("rise", 2.3)}>
-                  <span className="sc-btn sc-btn-primary">{t("dashboard.allowOnce")}</span>
-                  <span className="sc-btn">{t("dashboard.deny")}</span>
-                </span>
-              }
-            />
-            <span className="sc-ring" {...fx("pop", 2)} />
-          </span>
-          <Card
-            engine="Claude Code"
-            n={1}
-            branch={SAMPLE.worktrees.finished.branch}
-            status={<DotChange from="working" to="done" seconds={4.6} />}
-            line={
-              <span className="sc-swap">
-                <span {...fx("out", 4.6)}>$ pnpm test cart</span>
-                <span {...fx("in", 4.6)}>Tests 42 passed</span>
+          <span className="sc-group-head">{`${SAMPLE.workspace} · ${n}`}</span>
+          <span className="sc-group-lanes">
+            {SAMPLE.order.map((w) => (
+              <span key={w.branch} className="sc-group">
+                <span className="sc-group-head">{`${w.branch} · 1`}</span>
+                {card(w.branch)}
               </span>
-            }
-          />
-          <Card engine="Gemini CLI" n={3} branch={SAMPLE.worktrees.waiting.branch} status={still("working")} line="editing src/search/results.tsx" />
-        </div>
-        <div className="sc-group" {...fx("in", 0.35)}>
-          <span className="sc-group-head">api</span>
-          <Card engine="Cursor Agent" n={1} branch="rate-limits" status={still("done")} line="All 118 tests pass" />
-        </div>
-        <div className="sc-group" {...fx("in", 0.5)}>
-          <span className="sc-group-head">docs</span>
-          <Card engine="OpenCode" n={1} branch="release-notes" status={still("done")} line="Wrote the release notes" />
+            ))}
+          </span>
         </div>
       </div>
       <StatusBar branch={SAMPLE.base} />
@@ -125,5 +131,5 @@ export function DashboardScene() {
 export const DASHBOARD_CAPTION = "Every agent across your workspaces, and the one waiting on you, with its answer in place.";
 
 export function dashboardSceneText(): string {
-  return "The Dashboard shows five agents across three workspaces, grouped by project. Codex asks to run a database migration: its card turns to Waiting for you, with Allow once and Deny on the card. Claude Code finishes its tests and turns Done, and the filter counts change to 1 waiting, 1 working and 3 done.";
+  return `The Dashboard shows ${SAMPLE.order.length} agents in ${SAMPLE.workspace}, grouped by project, each under its worktree's branch. ${waiting.name}, in ${waiting.engine}, asks to run ${SAMPLE.ask}: the card turns to Waiting for you, with Allow once and Deny on it. ${finished.name}, in ${finished.engine}, finishes its tests and turns Done, and ${working.name}, in ${working.engine}, keeps working. The filter counts change to 1 waiting, 1 working and 1 done.`;
 }

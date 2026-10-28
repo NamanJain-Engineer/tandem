@@ -1,19 +1,23 @@
 import { LANDS, SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Count, Dot, DotChange, Glyph, Lines, Pane, StatusBar, fx, visit } from "./parts";
+import { AppWindow, Changes, Count, Dot, DotChange, Glyph, Lines, Pane, StatusBar, fx } from "./parts";
 
 const { finished, working, waiting } = SAMPLE.worktrees;
 
 /** When the finished worktree's agent is done: its dot, its rail row and its
  * pane's header all change then. */
 export const HERO_DONE = 6.4;
+/** When the waiting worktree's agent asks to run its tests: it waits on you
+ * from then on, with its ask in its pane (D-3001). */
+export const HERO_ASK = 2.2;
 
-/** The hero's scene (D-1880): Code mode over one repository, four live panes,
- * each agent in its own worktree. The finished one fixes checkout; the
- * waiting one asks before running its tests and the approval is answered;
- * on 0.9.0 the intent radar sees the finished and the working one change
- * the same function and both are warned; the finished work arrives
- * in the review queue with its diff counting up. About 11 s, played once,
- * resting on the last frame. */
+/** The hero's scene (D-1880): Code mode over one repository, four live
+ * panes, each agent in its own worktree, in the states story.json gives
+ * them. The finished one fixes checkout; the waiting one asks before running
+ * its tests and waits on you; the working one stays at work. On 0.9.0 the
+ * intent radar sees the finished and the working one change the same
+ * function and both are warned; the finished work arrives in the review
+ * queue with its diff counting up. About 11 s, played once, resting on the
+ * last frame. */
 export function WorkspaceScene() {
   const radar = LANDS;
   return (
@@ -23,8 +27,16 @@ export function WorkspaceScene() {
           <span className="sc-rail-head">{t("rail.workspacesHeader")}</span>
           <span className="sc-ws">
             <span className="sc-ws-name">{SAMPLE.workspace}</span>
+            {/* Its agents at work: all three, then less the one that asks and the one that finishes. */}
             <span className="sc-ws-count">
-              <Dot status="working" />2
+              <Dot status="working" />
+              <Changes
+                steps={[
+                  [0, String(SAMPLE.order.length)],
+                  [HERO_ASK, String(SAMPLE.order.length - 1)],
+                  [HERO_DONE, String(SAMPLE.order.length - 2)],
+                ]}
+              />
             </span>
           </span>
           <span className="sc-lane">
@@ -46,7 +58,7 @@ export function WorkspaceScene() {
             )}
           </span>
           <span className="sc-lane">
-            <GeminiStatus />
+            <DotChange from="working" to="waiting" seconds={HERO_ASK} />
             <span className="sc-lane-name">{waiting.branch}</span>
           </span>
           <span className="sc-rail-foot">{t("rail.live", { n: 4 })}</span>
@@ -74,23 +86,16 @@ export function WorkspaceScene() {
             title={waiting.title}
             branch={waiting.branch}
             className="sc-hide-narrow"
-            status={
-              <GeminiStatus />
-            }
+            status={<DotChange from="working" to="waiting" seconds={HERO_ASK} />}
           >
-            <Lines lines={SAMPLE.lines.waiting} start={0.7} end={2.1} />
-            {/* The approval, answered: it arrives, Allow once is pressed, and it goes. */}
-            <span className="sc-ask" {...visit(2.2, 3.1)}>
+            <Lines lines={SAMPLE.lines.waiting} start={0.7} end={HERO_ASK - 0.1} />
+            {/* Its ask: it waits on you, with the answer in place. */}
+            <span className="sc-ask" {...fx("in", HERO_ASK)}>
               <span className="sc-ask-text">{t("dashboard.wants", { summary: `run ${SAMPLE.ask}` })}</span>
               <span className="sc-ask-actions">
-                <span className="sc-btn sc-btn-primary" {...fx("press", 4.7)}>
-                  {t("dashboard.allowOnce")}
-                </span>
+                <span className="sc-btn sc-btn-primary">{t("dashboard.allowOnce")}</span>
                 <span className="sc-btn">{t("dashboard.deny")}</span>
               </span>
-            </span>
-            <span className="sc-line" {...fx("line", 5.6)}>
-              {`  $ ${SAMPLE.ask}`}
             </span>
           </Pane>
           <Pane title={t("pane.shellIn", { folder: SAMPLE.workspace })} className="sc-hide-narrow" status={<Dot status="idle" />}>
@@ -119,12 +124,13 @@ export function WorkspaceScene() {
 
         <div className="sc-toast sc-toast-bottom" {...fx("slide", 7.2)}>
           {/* The review queue's card (ReviewQueue): the agent's first name, then
-              its engine, workspace and branch. */}
+              its engine, workspace and branch, and how long ago it finished:
+              just now, so 0m. */}
           <span className="sc-toast-row">
             <Glyph engine={finished.engine} />
             <span className="sc-card-main">
               <span className="sc-toast-title">{finished.name}</span>
-              <span className="sc-card-meta">{[finished.engine, SAMPLE.workspace, finished.branch].join(" · ")}</span>
+              <span className="sc-card-meta">{[finished.engine, SAMPLE.workspace, finished.branch, t("time.minutes", { n: 0 })].join(" · ")}</span>
             </span>
           </span>
           <span className="sc-stat">
@@ -151,31 +157,13 @@ export function WorkspaceScene() {
   );
 }
 
-/** The waiting agent's status: working, then waiting on its approval, then
- * working again once it's allowed. */
-function GeminiStatus() {
-  return (
-    <span className="sc-dot-swap">
-      <span {...fx("out", 2.2)}>
-        <Dot status="working" />
-      </span>
-      <span {...visit(2.2, 3)}>
-        <Dot status="waiting" />
-      </span>
-      <span {...fx("pop", 5.2)}>
-        <Dot status="working" />
-      </span>
-    </span>
-  );
-}
+/** The scene's short visible caption. */
+export const WORKSPACE_CAPTION = "Three agents in one repository, each in its own worktree, and the one that needs you.";
 
 /** What the scene shows, for people who can't see it (its figure's caption). */
-/** The scene's short visible caption. */
-export const WORKSPACE_CAPTION = "Four agents in one repository, each in its own worktree, and the one that needs you.";
-
 export function workspaceSceneText(): string {
   const radar = LANDS
     ? ` The intent radar marks ${finished.branch} and ${working.branch}, which both change ${SAMPLE.symbol}, and both agents are warned.`
     : "";
-  return `Code mode with four agents in their own worktrees of one repository. ${finished.name}, in ${finished.engine}, fixes checkout and turns Done; ${waiting.name}, in ${waiting.engine}, asks to run its tests, and the request is allowed once.${radar} ${finished.name}'s change arrives in the review queue: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, with its check passed.`;
+  return `Code mode with ${SAMPLE.order.length} agents in their own worktrees of one repository, and a shell. ${finished.name}, in ${finished.engine}, fixes checkout and turns Done; ${working.name}, in ${working.engine}, keeps working; ${waiting.name}, in ${waiting.engine}, asks to run ${SAMPLE.ask} and waits for you, with Allow once and Deny in its pane.${radar} ${finished.name}'s change arrives in the review queue: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, with its check passed.`;
 }

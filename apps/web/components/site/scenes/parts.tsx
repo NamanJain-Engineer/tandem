@@ -1,16 +1,20 @@
 import { StatusDot, type Status } from "@tandem/ui/components/StatusDot";
 import { GitBranch } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 import { cx } from "../../../lib/cx";
 import { SCENE_BUILD, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
 import { engineTint } from "@tandem/ui/components/EngineGlyph";
 import { engineMark } from "../home/Engines";
 
+/** `seconds` as CSS time, to the hundredth (a sum like 0.1 + 0.2 doesn't
+ * print as 0.30000000000000004s). */
+const secs = (seconds: number) => `${Math.round(seconds * 100) / 100}s`;
+
 /** When something happens in a scene, in seconds from its start. Drawn as
  * `--at`, which every scene effect reads as its delay (scenes.css). */
 export function at(seconds: number, extra?: Record<string, string | number>): CSSProperties {
-  return { "--at": `${seconds}s`, ...extra } as CSSProperties;
+  return { "--at": secs(seconds), ...extra } as CSSProperties;
 }
 
 /** The effects a scene element can have (scenes.css). The element's own
@@ -25,7 +29,7 @@ export function fx(kind: Fx, seconds: number, extra?: Record<string, string | nu
 /** Something that comes and goes: in at `seconds`, out `stay` seconds later.
  * Not in the final frame. */
 export function visit(seconds: number, stay: number) {
-  return { "data-fx-visit": "", style: at(seconds, { "--stay": `${stay}s` }) } as const;
+  return { "data-fx-visit": "", style: at(seconds, { "--stay": secs(stay) }) } as const;
 }
 
 /** An engine's monogram, as the app draws it (EngineGlyph, D-1895): the
@@ -153,17 +157,92 @@ export function Pane({
 
 /** Terminal lines arriving one after another from `start`, `step` apart,
  * or spread evenly so the last arrives at `end`, however many there are
- * (a pane printing story.json's steps, before what comes next in it). */
-export function Lines({ lines, start, step = 0.55, end }: { lines: readonly string[]; start: number; step?: number; end?: number }) {
+ * (a pane printing story.json's steps, before what comes next in it). An
+ * empty line is a little space, as a prompt's blank lines are; the lines
+ * `fold` picks are left out on a phone, where a pane has less room. */
+export function Lines({
+  lines,
+  start,
+  step = 0.55,
+  end,
+  className,
+  fold,
+}: {
+  lines: readonly string[];
+  start: number;
+  step?: number;
+  end?: number;
+  className?: string;
+  fold?: (line: string, i: number) => boolean;
+}) {
   const gap = end !== undefined && lines.length > 1 ? (end - start) / (lines.length - 1) : step;
   return (
     <>
-      {lines.map((l, i) => (
-        <span key={l} className="sc-line" {...fx("line", Math.round((start + i * gap) * 100) / 100)}>
-          {l}
-        </span>
-      ))}
+      {lines.map((l, i) => {
+        const narrow = fold?.(l, i) && "sc-hide-narrow";
+        return l === "" ? (
+          <span key={i} className={cx("sc-line-gap", narrow)} />
+        ) : (
+          <span key={i} className={cx("sc-line", className, narrow)} {...fx("line", start + i * gap)}>
+            {l}
+          </span>
+        );
+      })}
     </>
+  );
+}
+
+/** A diff row as DiffView draws it: the mark, the code, and its old and new
+ * line numbers (an added line has no old one, a removed one no new one). */
+export type DiffRow = readonly [" " | "+" | "−", string, number | null, number | null];
+
+/** A hunk's rows with notes under some of them (DiffView's annotation rows),
+ * which come in together at `at`. From the first noted row down the rows
+ * are drawn twice in one cell, as they were and with the notes: the two
+ * swap at once, as the app inserts the notes in one go and the rows below
+ * just move down, so no gap waits for a note and no rows are drawn twice;
+ * only the notes fade in (D-3000). With no notes, just the rows. */
+export function DiffRows({ rows, notes, at: arrive }: { rows: readonly DiffRow[]; notes: ReadonlyMap<number, ReactNode>; at: number }) {
+  const first = notes.size > 0 ? Math.min(...notes.keys()) : rows.length - 1;
+  const draw = (from: number, to: number, withNotes: boolean) =>
+    rows.slice(from, to).map(([mark, code, oldNo, newNo], k) => (
+      <Fragment key={from + k}>
+        <span className={`sc-diff-line sc-diff-${mark === "+" ? "add" : mark === "−" ? "del" : "ctx"}`}>
+          <span className="sc-diff-no">{oldNo ?? ""}</span>
+          <span className="sc-diff-no">{newNo ?? ""}</span>
+          <span className="sc-diff-mark">{mark}</span>
+          <span className="sc-diff-code">{code}</span>
+        </span>
+        {withNotes && notes.get(from + k)}
+      </Fragment>
+    ));
+  return (
+    <div className="sc-diff-body">
+      {draw(0, first + 1, false)}
+      {notes.size > 0 && (
+        <span className="sc-diff-swap">
+          <span className="sc-diff-rows" {...fx("cut", arrive)}>
+            {draw(first + 1, rows.length, false)}
+          </span>
+          <span className="sc-diff-rows" {...fx("show", arrive)}>
+            {notes.get(first)}
+            {draw(first + 1, rows.length, true)}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** A toast as the app draws it (UI_SPEC §2.12): bottom right, a bar in its
+ * tone, its title and, when it has one, its action (secondary) under it. It
+ * comes and goes. */
+export function Toast({ title, action, at: shown, stay = 1.5 }: { title: string; action?: string; at: number; stay?: number }) {
+  return (
+    <div className="sc-note-toast" {...visit(shown, stay)}>
+      <span className="sc-note-toast-title">{title}</span>
+      {action && <span className="sc-btn sc-btn-sm">{action}</span>}
+    </div>
   );
 }
 

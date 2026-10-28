@@ -60,7 +60,7 @@
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
   - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
-  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" is in, and the scenes' sample work is the in-app demo's `story.json` (D-3000), except the Dashboard scene's, which moves onto it in slice 2; 0.9.0's CI results and review comments, 0.11.0's claims and the governor follow.
+  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001); 0.11.0's claims and the governor follow.
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -2287,6 +2287,31 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - **A terminal line is printed at once:** it's at full opacity from the first percent of its effect, and only its 0.25em slide takes the 180 ms. Lighthouse's axe read the hero's lines at 2.9 s mid-fade as low contrast (2.48:1). That held `/`'s accessibility at 0.96 in two of three light runs; the threshold is 0.95. It was latent since D-1880: the check samples the page at a moment that lands on a fade only some of the time. A terminal prints whole lines anyway.
     - **Tests:** the Review diff is a run of git's own diff of the sample files (`git diff --no-index`), marks and both line numbers included, rather than rows checked one by one. No name from story.json is copied into any scene file. The engines' names are still in the Dashboard's, until slice 2.
   - **app-ui's work, taken ahead of its merge into `chain27`:** a0d4d1e8 (story.json, the demo's sample files and their tests) was cherry-picked as 140833f5; its BUILD_LOG conflicts were in app-ui's own sections, taken as theirs. From f47de661, only its three `plan` hunks (story.json, story.ts and one line of story.test.ts). The merges aren't clean: the files were cherry-picked, not merged, so git has no common version, and whichever branch reaches `chain27` second meets add/add conflicts in repo.ts, story.json, story.test.ts and story.ts, resolved with app-ui's side. From here, site-motion takes only what's in `chain27`, with an interim block in lib/scenes.ts until app-ui's work lands there (the coordinator's rule).
+- D-3001: 0.9.0's "CI results and review comments back to the agent" scene (F-WT-08), and the home scenes drawn where the app draws review and in the story's states (the design lead's should-fixes on 850bb6f9 and polish on 39601718).
+  - **Where:** on /changelog/0.9.0/, after the Land worktrees scene and directly above its own Added card. The scene player was already allowed on that page. Lighthouse CI covers the page now.
+  - **The story:** the finished worktree, checkout-fix (Ada, in Claude Code), has pull request #42, and its `test` check fails. checkout-fix renamed getSession to refreshSession and ran only `pnpm test cart`; CI runs everything, and main's session tests still call getSession (app-ui's story, agreed for its slice 2B). The failing check's workflow, link and log, and the fix's lines, are an interim block in lib/scenes.ts (`SAMPLE.pr`) until app-ui's data lands in `chain27`. The coordinator's rule is to depend only on what's in `chain27`.
+  - **What happens, about 12 s:**
+    - The rail row's ChecksBadge, "1 check failed: test", opens "Checks for checkout-fix", "Pull request #42": lint, test and build, each with its workflow and badge.
+    - Send failure to agent types the failure into Ada's pane, and the toast reads "Sent the failure to Ada" (`failure.sent` with `agentName`). The dialog stays: SendToAgent doesn't close it. Close is pressed after the toast.
+    - The prompt is pr_checks.rs's `failure_prompt` word for word: the instruction, the untrusted-data label and the fenced check, with its name, workflow, link and the failed steps' last lines. `chain27`'s D-3022 now fences it with `fence_defanged`, which writes ＠ for an `@` that would attach a file and adds a line saying so. The scene does the same, and since the sample log has no `@`, it reads as 0.12.0's.
+    - Ada reads and edits session.test.ts, runs `pnpm test`, commits, and says in one line what it changed. The Files panel shows the edit, then "No changes".
+    - The branch chip turns "↑1 ↓0". Its menu (Pull, Push, Switch branch, New branch…) opens, Push is pressed, and the toast reads "Pushed checkout-fix".
+    - The row reads "Checks running" with a spinner, then "Checks passed".
+    - Open diff, then Import review comments from #42: "Imported 1 comment", and the reviewer's comment arrives under session.ts line 12, with "@sample-reviewer:" and Remove only. The bar reads "1 comment · Copy review · Send to Ada", and Send pops once the toast has gone.
+  - **The final frame tells the story:** "Checks passed", the agent's one-line summary, the imported comment, and the bar, with Send the only teal.
+  - **Layout:** the rail, the agent's pane, and a right column with the Files panel, then the worktree's review in its place. In the app, Open diff is a dialog; the scene draws it in the column so the pane stays in view (the approved plan). At 390 there's no rail: a strip on top keeps the row and its badge, the review covers the pane once it opens, and the link line and the summary fold away.
+  - **Shared parts:** DiffRows (a hunk's rows with notes under them, swapped in at once, D-3000), a Toast (its title and an optional action), Lines' gaps and folds, and a spinner (UI_SPEC §2.18). The spinner's `rotate` is the one property a keyframe moves beyond opacity, translate and scale, and it turns only while its scene plays.
+  - **The home scenes draw review where the app does:**
+    - ReviewQueue's buttons as it styles them: Approve primary, Open diff secondary, and Send back, Second opinion and Merge as ghosts, with the press on Second opinion. The final frame has two primaries, one in each app view the scene combines (the design lead's call).
+    - "Codex is reviewing…" sits in WorktreeReview's bar, with a spinner and Open thread. "Codex left 2 comments" is a toast with Show diff (SecondOpinion.tsx), and then the bar reads "2 comments · Copy review · Send to Ada". The diff's header is just its file.
+    - The card's meta ends with how long ago the work finished, ReviewQueue's `ago()`: "· 4m", and "· 0m" on the hero's arriving card.
+  - **The hero and the Dashboard follow the story's states:**
+    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Her ask stays in her pane with Allow once and Deny, and her dot and rail row stay waiting. Arlo stays at work, and the repository's working count follows (3, 2, 1).
+    - The Dashboard has the story's one repository, with each worktree's agent under its branch, as the app groups a repository's worktrees by project. Each card has the first name, with "{engine} · {workspace} · {branch}" under it (`cardTitle`, `cardMeta`). Bea's card reads "Wants to: run pnpm test search", with Allow once, Deny and Open. The counts end at Waiting 1, Working 1 and Done 1, with Review · 1.
+    - The api and docs projects are gone, and no engine's name is written into any scene file now.
+    - The hero's caption counts three agents. It said four, counting the shell.
+  - **Polish on 39601718:** both dialogs' scrims cover the whole window, title bar and status bar too, as the app's fixed overlay does, and the hero's radar notice sits under the panes' headers instead of across one.
+  - **0.13.0:** `chain27`'s F-TL-12.12 pins a card with a question first, in its own group, and shows a pane's whole command line before Allow. The scenes show the release they name, 0.12.0 (D-128), so the Dashboard keeps 0.12.0's grouping until 0.13.0 ships.
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2404,6 +2429,36 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - TypeScript: 1,777 tests (web 155, ui 462, desktop 857, api 235, remote 33, mobile 21, protocol 14).
     - Rust: 2,420 passed.
     - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- Slice 2 (D-3001), on `chain27` 2de26391 (merged as dd27e797), with the design lead's two changes to the plan, its should-fixes on 850bb6f9 and its polish on 39601718, which it approved. No app-ui code is taken: the CI story's data is an interim block. Tests first:
+  - scenes.test:
+    - The CI scene plays on 0.9.0's page, after Land and above its own card, on the pull request's worktree, with Ada's name and first prompt in its pane header.
+    - Its prompt is pr_checks.rs's `failure_prompt` word for word. The test reads pr_checks.rs and untrusted.rs, including D-3022's `fence_defanged` and its ＠ case, and the pane prints the prompt a line at a time once it's sent.
+    - Send failure to agent leaves the dialog open, its toast names Ada, and Close closes it. The test reads SendToAgent.
+    - The fix is pushed before the checks run again, then they pass.
+    - The imported comment is the reviewer's own, under its line, with Remove only, and the diff is a run of git's diff of session.ts.
+    - The final frame's bar reads "1 comment · Copy review · Send to Ada".
+    - The Review queue's buttons are ReviewQueue's variants. "Reviewing" is in the bar, the done toast has Show diff (SecondOpinion read), the bar shows the count and Copy review, and the meta ends with `ago()` (ReviewQueue read).
+    - The hero's waiting agent ends on its ask, the working one stays at work, the working count follows, and the caption counts the story's agents.
+    - The Dashboard has one repository, worktree groups by branch, cards by first name with `cardMeta`, and the ask with Allow once, Deny and Open (Dashboard.tsx read). Its counts end on the story's states, with nothing from outside the story.
+    - The no-copies test covers engines' names in every scene now, and the pull request's and second opinion's words.
+    - The dialogs' scrims cover the whole window (Dialog.tsx's overlay read).
+    - The radar notice sits under the panes' headers, and the spinner's keyframes and gating are checked.
+  - scenes.spec:
+    - The CI scene on /changelog/0.9.0/ plays at full width.
+    - It shows its final frame with the player blocked and under reduced motion.
+    - It ends on "Checks passed", the agent's last line inside its pane, the imported comment and "1 comment · Copy review · Send to Ada".
+    - The final-frame tests now expect the hero's ask and the Review's bar.
+  - Checks: web lint, web vitest 167/167, `build:site` (58 pages), site Playwright 63/63. design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/: 24 captures, all ok, with teal unchanged (home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0, the CI scene being below the first viewport).
+  - Lighthouse CI on nine URLs, /changelog/0.9.0/ added, every assertion passing in both themes:
+    - /changelog/0.9.0/ 1.00 at 1.66 s in both themes.
+    - `/` 0.99, at 1.90 s light and 1.89 s dark.
+    - The rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,847 tests (web 167, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,566 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+    - Its first run stopped at the protocol check's `git status`, because the merge's generated protocol files were staged but not yet committed. Every earlier step had passed. With the merge committed, the whole gate ran again and passed.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

@@ -137,42 +137,43 @@ export function PlanScene() {
             </span>
           ))}
         </span>
-        <div className="sc-plan-layer">
-          <div className="sc-dialog sc-plan-dialog" {...fx("rise", 0.2)}>
-            <span className="sc-dash-title">{t("plan.titleOf", { goal })}</span>
-            <span className="sc-plan-line">
-              <Dot status="done" /> {t("plan.started", { n: tasks.length })}
-            </span>
-            <span className="sc-plan-summary">
-              <Changes steps={over((at) => planAt(at).summary)} />
-            </span>
-            <span className="sc-runs">
-              {PLAN_RUNS.map((r) => (
-                <span key={r.task.id} className="sc-run">
-                  <Changes steps={dots(over((at) => SHAPE[kindOf(stateAt(r, at), r.verdict)]))} />
-                  <span className="sc-run-title">
-                    <span className="sc-mono sc-run-id">{r.task.id}</span> {r.task.title}
-                  </span>
-                  <span className="sc-run-label">
-                    <Changes steps={r.steps.map((s) => [s.at, `${r.task.engine} · ${runLabel(s.state, r.verdict)}`] as const)} />
-                  </span>
-                </span>
-              ))}
-            </span>
-            <span className="sc-dialog-foot sc-plan-foot">
-              <span className="sc-btn sc-btn-ghost">{t("plan.removePlan")}</span>
-              <Changes
-                steps={[
-                  [0, <span key="primary" className="sc-btn sc-btn-primary">{t("common.close")}</span>],
-                  [firstApproved, <span key="ghost" className="sc-btn sc-btn-ghost">{t("common.close")}</span>],
-                ]}
-              />
-              <Changes steps={land} />
-            </span>
-          </div>
-        </div>
       </div>
       <StatusBar branch={SAMPLE.base} />
+      {/* Over the whole window, as the app's overlay is (fixed, inset 0). */}
+      <div className="sc-plan-layer">
+        <div className="sc-dialog sc-plan-dialog" {...fx("rise", 0.2)}>
+          <span className="sc-dash-title">{t("plan.titleOf", { goal })}</span>
+          <span className="sc-plan-line">
+            <Dot status="done" /> {t("plan.started", { n: tasks.length })}
+          </span>
+          <span className="sc-plan-summary">
+            <Changes steps={over((at) => planAt(at).summary)} />
+          </span>
+          <span className="sc-runs">
+            {PLAN_RUNS.map((r) => (
+              <span key={r.task.id} className="sc-run">
+                <Changes steps={dots(over((at) => SHAPE[kindOf(stateAt(r, at), r.verdict)]))} />
+                <span className="sc-run-title">
+                  <span className="sc-mono sc-run-id">{r.task.id}</span> {r.task.title}
+                </span>
+                <span className="sc-run-label">
+                  <Changes steps={r.steps.map((s) => [s.at, `${r.task.engine} · ${runLabel(s.state, r.verdict)}`] as const)} />
+                </span>
+              </span>
+            ))}
+          </span>
+          <span className="sc-dialog-foot sc-plan-foot">
+            <span className="sc-btn sc-btn-ghost">{t("plan.removePlan")}</span>
+            <Changes
+              steps={[
+                [0, <span key="primary" className="sc-btn sc-btn-primary">{t("common.close")}</span>],
+                [firstApproved, <span key="ghost" className="sc-btn sc-btn-ghost">{t("common.close")}</span>],
+              ]}
+            />
+            <Changes steps={land} />
+          </span>
+        </div>
+      </div>
     </AppWindow>
   );
 }

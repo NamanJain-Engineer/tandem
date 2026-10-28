@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SCENE_BUILD, atLeast } from "../../../lib/scenes";
+import { CI_CAPTION, ChecksScene, ciSceneText } from "./ChecksScene";
 import { LAND_CAPTION, LandScene, landSceneText } from "./LandScene";
 import { PLAN_CAPTION, PlanScene, planSceneText } from "./PlanScene";
 
@@ -14,11 +15,14 @@ export type ReleaseScene = {
   text: () => string;
 };
 
-/** The release pages' scenes, by version (D-1885, D-1888). A page with
+/** The release pages' scenes, by version (D-1885, D-1888, D-3001). A page with
  * scenes loads the scene player, so scripts/script-allowlist.mjs lists the
  * same pages (a test checks). */
 export const RELEASE_SCENES: Readonly<Record<string, readonly ReleaseScene[]>> = {
-  "0.9.0": [{ id: "land", card: "Land worktrees", scene: () => <LandScene />, caption: LAND_CAPTION, text: landSceneText }],
+  "0.9.0": [
+    { id: "land", card: "Land worktrees", scene: () => <LandScene />, caption: LAND_CAPTION, text: landSceneText },
+    { id: "checks", card: "CI results and review comments back to the agent", scene: () => <ChecksScene />, caption: CI_CAPTION, text: ciSceneText },
+  ],
   "0.12.0": [{ id: "plan", card: "Follow a plan through", scene: () => <PlanScene />, caption: PLAN_CAPTION, text: planSceneText }],
 };
 

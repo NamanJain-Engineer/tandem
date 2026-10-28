@@ -55,8 +55,9 @@ test("F-WB-01 AC9 with the scene player blocked, every scene shows its final fra
     expect(await states(page, id), id).toEqual([]);
   }
   expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(0);
-  expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
+  // The waiting agent's ask stays: it's still waiting on you (D-3001).
+  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(1);
+  expect(await opacity(page, '[data-scene="review"] .sc-review-bar .sc-btn-primary')).toBe(1);
   await context.close();
 });
 
@@ -79,7 +80,7 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
   });
   // It plays once and rests on its final frame.
   await expect.poll(() => states(page, "review"), { timeout: 20_000 }).toEqual(["finished"]);
-  expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
+  expect(await opacity(page, '[data-scene="review"] .sc-review-bar .sc-btn-primary')).toBe(1);
 });
 
 test("F-WB-01 AC9 D-3000 the Review scene's comments go in at once: no frame draws the rows under them twice", async ({ page }) => {
@@ -110,6 +111,7 @@ test("F-WB-01 AC9 D-3000 the Review scene's comments go in at once: no frame dra
 const RELEASE_PAGES = [
   { id: "land", path: "/changelog/0.9.0/", final: '[data-scene="land"] .sc-dialog-done' },
   { id: "plan", path: "/changelog/0.12.0/", final: '[data-scene="plan"] .sc-plan-foot > .sc-swap:last-child > [data-fx-pop]' },
+  { id: "checks", path: "/changelog/0.9.0/", final: '[data-scene="checks"] .sc-review-bar .sc-btn-primary' },
 ] as const;
 
 for (const r of RELEASE_PAGES) {
@@ -143,6 +145,39 @@ for (const r of RELEASE_PAGES) {
   }
 }
 
+test("F-WB-01 AC9 the CI scene ends with the checks passed, the agent's summary, the reviewer's comment imported and Send to Ada (D-3001)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/changelog/0.9.0/");
+  const scene = page.locator('[data-scene="checks"]');
+  await scene.scrollIntoViewIfNeeded();
+  await expect.poll(() => states(page, "checks"), { timeout: 25_000 }).toEqual(["finished"]);
+  // Shown: drawn at all, and opaque once its ancestors' opacity is counted
+  // (a finished fade can rest a hair above 0).
+  const shown = (selector: string) =>
+    scene.locator(selector).evaluateAll((els) =>
+      els
+        .filter((e) => {
+          let o = 1;
+          for (let n: Element | null = e; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+          return e.checkVisibility() && o > 0.5;
+        })
+        .map((e) => e.textContent?.trim()),
+    );
+  expect(await shown(".sc-rail .sc-checks > *")).toEqual(["Checks passed"]);
+  expect(await shown(".sc-files-head .sc-branch-chip")).toEqual([]);
+  // The agent's last line, what it changed, shows inside its pane.
+  const last = await scene.locator(".sc-pane .sc-term .sc-line").last().evaluate((e) => {
+    const term = e.closest(".sc-term") as Element;
+    return { text: e.textContent?.trim() ?? "", inside: e.getBoundingClientRect().bottom <= term.getBoundingClientRect().bottom + 0.5 };
+  });
+  expect(last.inside, last.text).toBe(true);
+  expect((await shown(".sc-pane .sc-term .sc-line")).at(-1)).toBe(last.text);
+  expect((await shown(".sc-ci-review .sc-diff-note")).join(" ")).toContain("@sample-reviewer:");
+  expect(await shown(".sc-review-bar > *")).toEqual(["1 comment", "Copy review", "Send to Ada"]);
+  // The Checks dialog and the toasts have come and gone.
+  expect(await shown(".sc-ci-layer, .sc-note-toast")).toEqual([]);
+});
+
 test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.12.0/");
@@ -171,9 +206,9 @@ test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and
     );
     expect(moving, id).toBe(0);
   }
-  // The final frame: the review item has arrived, the answered approval has gone.
+  // The final frame: the review item has arrived, and the waiting agent's ask is there to answer.
   expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(0);
+  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(1);
   expect(await opacity(page, '[data-scene="dashboard"] .sc-card-actions')).toBe(1);
   await context.close();
 });
