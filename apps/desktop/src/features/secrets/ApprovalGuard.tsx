@@ -64,12 +64,14 @@ function hidden(el: HTMLElement): boolean {
   return typeof visible === "function" ? !visible.call(el) : false;
 }
 
-/** Something else (a menu, a dialog, a toast) covers the box's middle. */
+/** Something else (a menu, a dialog, a toast) covers Allow: the first
+ * button in the box, at its own middle. */
 function covered(el: HTMLElement): boolean {
   if (typeof document.elementFromPoint !== "function") return false;
-  const r = el.getBoundingClientRect();
+  const target = el.querySelector("button") ?? el;
+  const r = target.getBoundingClientRect();
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-  return hit !== null && !el.contains(hit);
+  return hit !== null && !target.contains(hit);
 }
 
 /** Whether Allow's own place on screen has held still for
@@ -87,18 +89,18 @@ export function useSteadyBox(active: boolean): {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const last = useRef<{ box: string; since: number } | null>(null);
   const [steady, setSteady] = useState(false);
+  // Still for SETTLE_MS, and uncovered all that time: a cover (an overlay
+  // a double-click's first click closes) restarts the wait like a move.
   const sample = useCallback((): boolean => {
     if (el === null) return false;
-    const box = boxOf(el);
+    const box = covered(el) ? "covered" : boxOf(el);
     const now = performance.now();
     if (last.current === null || last.current.box !== box) last.current = { box, since: now };
-    return now - last.current.since >= SETTLE_MS;
+    return box !== "covered" && now - last.current.since >= SETTLE_MS;
   }, [el]);
-  // At the click: still, and nothing (an overlay that just closed or is
-  // closing) over it.
   const check = useCallback((): boolean => {
     if (el === null || hidden(el)) return false;
-    return sample() && !covered(el);
+    return sample();
   }, [el, sample]);
   useEffect(() => {
     last.current = null;

@@ -456,3 +456,141 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
     expect(allow().disabled).toBe(false);
   });
 });
+
+describe("Pinned questions hold still (F-TL-12.12)", () => {
+  /** Heights the page lays out: the subtitle wraps at 4 segments, the
+   * filter chips at 5, each card is 100 high. A card's top is everything
+   * before it in the page. */
+  const heightOf = (el: Element): number => {
+    if (el.matches('[data-testid="dashboard-subtitle"]'))
+      return 20 * Math.ceil(el.querySelectorAll("button").length / 4);
+    if (el.matches('[role="group"]')) return 30 * Math.ceil(el.querySelectorAll("button").length / 5);
+    if (el.matches('[data-testid="agent-card"]')) return 100;
+    return 0;
+  };
+  let covering: Element | null = null;
+  beforeEach(() => {
+    resetStores();
+    covering = null;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const card = this.closest<HTMLElement>('[data-testid="agent-card"]');
+      let top = 0;
+      const parts = document.querySelectorAll(
+        '[data-testid="dashboard-subtitle"], [role="group"], [data-testid="agent-card"]',
+      );
+      for (const el of Array.from(parts)) {
+        if (el === card) break;
+        top += heightOf(el);
+      }
+      return {
+        left: 0,
+        top,
+        width: 300,
+        height: 100,
+        right: 300,
+        bottom: top + 100,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    Object.defineProperty(document, "elementFromPoint", {
+      value: () => covering,
+      configurable: true,
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
+  });
+
+  const run = JSON.stringify({
+    vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
+  });
+  const ask = (id: string, source: DashboardItem["source"], createdAt: number) => ({
+    id,
+    source,
+    kind: "command" as const,
+    summary: "run",
+    detail: run,
+    options: ["once" as const],
+    createdAt,
+    expiresAt: 2,
+  });
+
+  async function three() {
+    const a = item("waiting", "alpha", { since: 1_000 });
+    const alpha = { ...a, pendingApproval: ask("ap_a", a.source, 1) };
+    const g = item("waiting", "gamma", { since: 2_000 });
+    const gamma = { ...g, pendingApproval: ask("ap_g", g.source, 5) };
+    const beta = item("working", "beta", { since: 3_000 });
+    const calls = setup([alpha, gamma, beta]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    const card = (key: string) =>
+      screen.queryAllByTestId("agent-card").find((c) => c.dataset.key === key) as HTMLElement | undefined;
+    const allow = () => within(card(gamma.key)!).getByTestId("card-allow") as HTMLButtonElement;
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    return { alpha, gamma, beta, card, allow, calls };
+  }
+  const flip = (it: DashboardItem, patch: Partial<DashboardItem>) =>
+    act(() => useDashboard.setState((st) => ({ items: { ...st.items, [it.key]: { ...it, ...patch } } })));
+
+  it("S7a: the Waiting filter or a search never takes a question out, so the next one doesn't move", async () => {
+    const { alpha, gamma, card, allow } = await three();
+    act(() => useDashboard.setState({ filter: "waiting" }));
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    for (let n = 0; n < 6; n++) {
+      // alpha's agent flips between working and waiting.
+      flip(alpha, { status: n % 2 === 0 ? "working" : "waiting" });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(card(alpha.key)).toBeTruthy();
+      expect(allow().disabled).toBe(false);
+    }
+    // A search that matches neither question still shows both.
+    act(() => useDashboard.setState({ query: "beta" }));
+    expect(card(alpha.key)).toBeTruthy();
+    expect(card(gamma.key)).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(allow().disabled).toBe(false);
+  });
+
+  it("S7b: nothing an agent reports above the questions: they come first, before the header", async () => {
+    const { beta, allow, calls } = await three();
+    const asking = screen.getByTestId("group-asking");
+    const subtitle = screen.getByTestId("dashboard-subtitle");
+    expect(asking.compareDocumentPosition(subtitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const box = () => JSON.stringify(allow().getBoundingClientRect());
+    const before = box();
+    for (const status of ["failed", "done", "idle", "waiting", "failed", "working"] as const) {
+      flip(beta, { status, since: Date.now() });
+      await new Promise((r) => setTimeout(r, 80));
+      expect(box()).toBe(before);
+      expect(allow().disabled).toBe(false);
+    }
+    fireEvent.click(allow());
+    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
+  });
+
+  it("nit 2: covered, Allow is off and says so; uncovered, it waits half a second again", async () => {
+    const { allow, calls } = await three();
+    covering = document.createElement("div");
+    document.body.append(covering);
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
+    await new Promise((r) => setTimeout(r, 700));
+    expect(allow().disabled).toBe(true);
+    // The overlay closes (a double-click's first click): the second click
+    // right after does nothing.
+    covering.remove();
+    covering = null;
+    fireEvent.click(allow());
+    expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+  });
+});

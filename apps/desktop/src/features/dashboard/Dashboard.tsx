@@ -42,11 +42,12 @@ import { parseRunApproval } from "../secrets/runApproval";
 import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
+  askingGroup,
   cardMeta,
   cardTitle,
   closeIdleTargets,
   counts,
-  group,
+  groupRest,
   visible,
   type Group,
   type Lanes,
@@ -410,7 +411,16 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
       ),
     [workspaces],
   );
-  const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
+  // Questions first, from every card (no filter or search) and above the
+  // header, so nothing an agent reports can move them (F-TL-12.12).
+  const asking = askingGroup(all);
+  const groups = groupRest(
+    shown.filter((i) => !i.pendingApproval),
+    groupBy,
+    order,
+    t("dashboard.noFolder"),
+    lanes,
+  );
 
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
@@ -511,6 +521,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
 
   return (
     <div data-testid="dashboard" className="flex flex-col gap-3 p-3">
+      {asking && renderGroup(asking)}
       <header className="flex flex-col gap-1.5">
         <h2 data-testid="dashboard-count" className="text-xl font-semibold text-fg">
           {t("dashboard.count", { n: c.total })}
@@ -600,7 +611,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
             );
           })}
       </div>
-      {groups.length === 0 ? (
+      {groups.length === 0 && !asking ? (
         <EmptyState
           title={t("dashboard.noMatch", { q: query })}
           primary={

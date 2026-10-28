@@ -16,11 +16,11 @@ CREATE TABLE activity (
   -- per-session and total counts. 1: under a per-source ceiling instead
   -- (what an agent can still drive: rule runs, answers it caused by going
   -- away, notes). 2: never by count (the person's own decisions).
-  kept          INTEGER NOT NULL DEFAULT 0
+  kept          INTEGER NOT NULL DEFAULT 0 CHECK (kept IN (0, 1, 2))
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);
 CREATE INDEX activity_at ON activity(at);
--- Pruning by count reads only the rows that aren't kept.
+-- Pruning by count and by ceiling reads each tier on its own.
 CREATE INDEX activity_kept ON activity(kept, source_kind, source_id, at);
 
 -- The ledger reads these by pane or thread, newest first.

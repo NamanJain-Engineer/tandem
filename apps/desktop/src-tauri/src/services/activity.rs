@@ -83,6 +83,22 @@ pub struct RunRecord {
     pub ended: Option<&'static str>,
     /// The command was spawned.
     pub started: bool,
+    /// Who decided it: sets the row's tier.
+    pub by: Decider,
+}
+
+/// Who made a run's or an answer's decision, as `agent_run` knows it. It
+/// sets the row's [`Keep`] tier, so no string decides what's pruned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decider {
+    /// The person: their Allow or Deny, or their question running out or
+    /// being cancelled.
+    Person,
+    /// A rule or an earlier "Allow for this agent", without asking.
+    Unasked,
+    /// Nobody: refused before asking, or ended by the agent going away or
+    /// the app quitting.
+    Nobody,
 }
 
 /// `activity_list`: a window of a session's events, oldest first.
@@ -259,7 +275,7 @@ impl ActivityService {
         Admit { keep: false, notes }
     }
 
-    /// `row` if `flood` allows it, and its notes: kept by age only, so a
+    /// `row` if `flood` allows it, and its notes: [`Keep::Ceiling`], so a
     /// later flood can't prune them.
     async fn record_limited(&self, flood: Flood, row: NewActivity) {
         let admit = self.admit(&row.source_id, flood);
@@ -362,14 +378,11 @@ impl ActivityService {
     /// could carry what the agent typed before the redactor knew the values.
     ///
     /// Every answer is out of the counts (each follows a question, at most
-    /// 10 a minute per pane). The person's own (Allow, Deny) and the
-    /// question running out or being cancelled are [`Keep::Decision`]; one
-    /// the agent caused by going away (`client_gone`, `app_quit`) is
-    /// [`Keep::Ceiling`].
-    pub async fn approval(&self, pane: &str, decided: &str) {
-        let person = decided.starts_with("allowed")
-            || decided.starts_with("denied")
-            || matches!(decided, "expired" | "cancelled");
+    /// 10 a minute per pane): the person's ([`Decider::Person`]) is a
+    /// [`Keep::Decision`]; one the agent caused by going away or the app's
+    /// quit is [`Keep::Ceiling`].
+    pub async fn approval(&self, pane: &str, decided: &str, by: Decider) {
+        let person = by == Decider::Person;
         self.record(NewActivity {
             source_kind: "pane",
             source_id: pane.to_string(),
@@ -387,26 +400,23 @@ impl ActivityService {
         .await;
     }
 
-    /// A `vibezeo run` ended, or was refused after its decision. Kept for
-    /// the full retention: a run that started (asked runs are bounded by the
-    /// questions a pane may open, unasked ones by their own cap in
-    /// `agent_run`), and the person's Deny or a question that expired or was
-    /// cancelled. Anything else that didn't start (busy, too many, gone, a
-    /// moved folder, unreadable secrets) is a [`Flood::Refusal`].
+    /// A `vibezeo run` ended, or was refused after its decision. Its tier
+    /// comes from [`RunRecord::by`]: the person's decision (their Allow,
+    /// started or not, their Deny, a question run out or cancelled) is a
+    /// [`Keep::Decision`], by age only; a run a rule or allowance started
+    /// is a [`Keep::Ceiling`] (also capped at 30 a minute in `agent_run`);
+    /// anything else that didn't start (busy, too many, gone without an
+    /// answer) is a [`Flood::Refusal`].
     pub async fn run(&self, pane: &str, run: RunRecord) {
-        // The person decided it: their Allow (whether it then started or
-        // not), their Deny, or their question running out or cancelled.
-        let person = matches!(run.decided, "once" | "agent")
-            || (!run.started && matches!(run.decided, "declined" | "expired" | "cancelled"));
-        // Started without asking (a rule, an earlier allowance): the agent
-        // drives these, at most 30 a minute per pane.
-        let unasked = run.started && matches!(run.decided, "rule" | "allowed_before");
-        let kept = if person {
-            Keep::Decision
-        } else if unasked {
-            Keep::Ceiling
-        } else {
-            Keep::Counted
+        let kept = match (run.by, run.started) {
+            // The person's Allow (started or not), Deny, or question run
+            // out or cancelled.
+            (Decider::Person, _) => Keep::Decision,
+            // Started without asking: the agent drives these, at most 30 a
+            // minute per pane.
+            (Decider::Unasked, true) => Keep::Ceiling,
+            // Didn't start, and nobody decided: a refusal.
+            _ => Keep::Counted,
         };
         let row = NewActivity {
             source_kind: "pane",
@@ -696,7 +706,8 @@ mod tests {
         svc.turn("pane", "pn_1", Some("claude"), None, t4, false)
             .await;
         tick(&clock);
-        svc.approval("pn_1", "allowed:inline").await;
+        svc.approval("pn_1", "allowed:inline", Decider::Person)
+            .await;
         // Another pane's events stay out.
         command(&store, "pn_2", "ls", t0, 0).await;
 
@@ -817,6 +828,7 @@ mod tests {
                 duration_ms: Some(840),
                 ended: None,
                 started: true,
+                by: Decider::Person,
             },
         )
         .await;
@@ -838,6 +850,7 @@ mod tests {
                 duration_ms: Some(1),
                 ended: None,
                 started: true,
+                by: Decider::Person,
             },
         )
         .await;
@@ -959,7 +972,8 @@ mod tests {
                 .len(),
             1
         );
-        // Notes are kept by age only: a later flood can't prune them.
+        // Notes are out of the counts (`Keep::Ceiling`): a later flood of
+        // counted rows can't prune them.
         let pinned: i64 = store
             .read(|c| {
                 Ok(c.query_row(
@@ -984,6 +998,11 @@ mod tests {
             duration_ms: None,
             ended: None,
             started,
+            by: match decided {
+                "once" | "agent" | "declined" | "expired" | "cancelled" => Decider::Person,
+                "rule" | "allowed_before" => Decider::Unasked,
+                _ => Decider::Nobody,
+            },
         };
         let over = Flood::Refusal.limit() + 20;
         // What the agent triggers at will: refused before asking, or allowed
@@ -1003,8 +1022,8 @@ mod tests {
             svc.run("pn_1", record("once", false)).await;
             svc.run("pn_1", record("declined", false)).await;
             svc.run("pn_1", record("expired", false)).await;
-            svc.approval("pn_1", "denied:inline").await;
-            svc.approval("pn_1", "client_gone").await;
+            svc.approval("pn_1", "denied:inline", Decider::Person).await;
+            svc.approval("pn_1", "client_gone", Decider::Nobody).await;
         }
         // Runs that started.
         for _ in 0..over {
@@ -1080,6 +1099,7 @@ mod tests {
                 duration_ms: Some(1),
                 ended: None,
                 started: true,
+                by: Decider::Unasked,
             },
         )
         .await;
@@ -1089,5 +1109,60 @@ mod tests {
             .expect("row");
         assert!(summary.len() <= MAX_SUMMARY_BYTES, "{}", summary.len());
         assert_eq!(summary, format!("echo {}…", "x".repeat(1015)));
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_through_the_service_a_flood_past_the_ceiling_leaves_every_decision() {
+        let (_d, store, clock, svc) = fixture();
+        let record = |decided: &'static str, by: Decider| RunRecord {
+            command: "x".into(),
+            secrets: Vec::new(),
+            decided,
+            exit_code: Some(0),
+            duration_ms: Some(1),
+            ended: None,
+            started: true,
+            by,
+        };
+        // The person's decisions, first and so the oldest.
+        for _ in 0..5 {
+            svc.run("pn_1", record("once", Decider::Person)).await;
+            svc.approval("pn_1", "denied:inline", Decider::Person).await;
+        }
+        // Then what an agent drives: rule runs and answers it caused by going
+        // away, well past the ceiling, and a flood of tool rows.
+        for _ in 0..40 {
+            clock.advance(Duration::from_secs(2));
+            svc.run("pn_1", record("rule", Decider::Unasked)).await;
+            svc.approval("pn_1", "client_gone", Decider::Nobody).await;
+            svc.tool("pn_1", "Read", false, clock.now_ms()).await;
+        }
+        let limits = repo::Limits {
+            per_source: 3,
+            total: 3,
+            ceiling: 5,
+            ceiling_total: 5,
+        };
+        repo::prune_with(&store, clock.now_ms(), limits)
+            .await
+            .expect("prune");
+        let count = |sql: &'static str| {
+            let store = store.clone();
+            async move {
+                store
+                    .read(move |c| Ok(c.query_row(sql, [], |r| r.get::<_, i64>(0))?))
+                    .await
+                    .expect("count")
+            }
+        };
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kept = 2").await,
+            10
+        );
+        assert_eq!(
+            count("SELECT COUNT(*) FROM activity WHERE kept = 1").await,
+            5
+        );
+        assert!(count("SELECT COUNT(*) FROM activity WHERE kept = 0").await <= 3);
     }
 }

@@ -288,16 +288,42 @@ pub const KEEP_KEPT_PER_SOURCE: i64 = 20_000;
 /// age only. The agent can sign tool reports, trigger refusals and drive
 /// rule runs, so no flood of those pushes the person's decisions out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
-    prune_to(store, now, KEEP_PER_SOURCE, KEEP_ROWS, KEEP_KEPT_PER_SOURCE).await
+    prune_with(store, now, Limits::DEFAULT).await
 }
 
-async fn prune_to(
-    store: &Store,
-    now: i64,
-    per_source: i64,
-    total: i64,
-    ceiling: i64,
-) -> Result<usize, StoreError> {
+/// [`Keep::Ceiling`] rows stop at this many across every source too.
+pub const KEEP_KEPT_ROWS: i64 = 100_000;
+
+/// What [`prune`] keeps; smaller in tests.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// [`Keep::Counted`] rows per source.
+    pub per_source: i64,
+    /// [`Keep::Counted`] rows in all.
+    pub total: i64,
+    /// [`Keep::Ceiling`] rows per source.
+    pub ceiling: i64,
+    /// [`Keep::Ceiling`] rows in all.
+    pub ceiling_total: i64,
+}
+
+impl Limits {
+    pub const DEFAULT: Limits = Limits {
+        per_source: KEEP_PER_SOURCE,
+        total: KEEP_ROWS,
+        ceiling: KEEP_KEPT_PER_SOURCE,
+        ceiling_total: KEEP_KEPT_ROWS,
+    };
+}
+
+/// [`prune`] with other limits.
+pub async fn prune_with(store: &Store, now: i64, limits: Limits) -> Result<usize, StoreError> {
+    let Limits {
+        per_source,
+        total,
+        ceiling,
+        ceiling_total,
+    } = limits;
     let cutoff = now - KEEP_DAYS * 24 * 60 * 60 * 1000;
     store
         .write(move |t| {
@@ -324,7 +350,11 @@ async fn prune_to(
                 "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kept = 0 ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
                 [total],
             )?;
-            Ok(old + crowded + kept + over)
+            let kept_over = t.execute(
+                "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE kept = 1 ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)",
+                [ceiling_total],
+            )?;
+            Ok(old + crowded + kept + over + kept_over)
         })
         .await
 }
@@ -430,7 +460,21 @@ mod tests {
         }
         // Per session 4, 6 in all: the loop keeps its newest 4, the quiet
         // pane its 3 (it isn't pushed out by the loop's flood).
-        assert_eq!(prune_to(&store, now, 4, 6, 3).await.expect("prune"), 7);
+        assert_eq!(
+            prune_with(
+                &store,
+                now,
+                Limits {
+                    per_source: 4,
+                    total: 6,
+                    ceiling: 3,
+                    ceiling_total: i64::MAX
+                }
+            )
+            .await
+            .expect("prune"),
+            7
+        );
         let looping = list(&store, "pane", "pn_loop", Page::ALL)
             .await
             .expect("list");
@@ -464,7 +508,18 @@ mod tests {
         // Per session 4, 6 in all: the other rows go down to 4 (the refused
         // run among the first out); the kept run and approval stay, however
         // many rows came after them.
-        prune_to(&store, now, 4, 6, 3).await.expect("prune");
+        prune_with(
+            &store,
+            now,
+            Limits {
+                per_source: 4,
+                total: 6,
+                ceiling: 3,
+                ceiling_total: i64::MAX,
+            },
+        )
+        .await
+        .expect("prune");
         let kinds: Vec<String> = list(&store, "pane", "pn_1", Page::ALL)
             .await
             .expect("list")
@@ -474,7 +529,18 @@ mod tests {
         assert_eq!(kinds, ["run", "approval", "tool", "tool", "tool", "tool"]);
         // Age still applies to them.
         let later = now + 15 * 24 * 60 * 60 * 1000;
-        prune_to(&store, later, 4, 6, 3).await.expect("prune");
+        prune_with(
+            &store,
+            later,
+            Limits {
+                per_source: 4,
+                total: 6,
+                ceiling: 3,
+                ceiling_total: i64::MAX,
+            },
+        )
+        .await
+        .expect("prune");
         assert!(list(&store, "pane", "pn_1", Page::ALL)
             .await
             .expect("list")

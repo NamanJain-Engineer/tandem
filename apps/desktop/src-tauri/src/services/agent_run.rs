@@ -31,6 +31,7 @@ use tandem_store::Store;
 use tokio::io::AsyncReadExt;
 use zeroize::Zeroizing;
 
+use crate::services::activity::Decider;
 use crate::services::secrets;
 use crate::services::terminal::TerminalService;
 
@@ -235,9 +236,22 @@ pub fn install_crash_kill() {
     }));
 }
 
+/// The app is exiting (or restarting): set at the exit event and before
+/// each `restart()`, so [`resume_all`] can't undo a real exit.
+static EXITING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the app as exiting; see [`EXITING`].
+pub fn mark_exiting() {
+    EXITING.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Undoes [`shutdown_all`]'s quit, for an update whose installer didn't
-/// start after all: new runs are served again.
+/// start after all: new runs are served again. Not once the app is really
+/// exiting (a quit during the failed install's unwind).
 pub fn resume_all() {
+    if EXITING.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     if let Ok(live) = LIVE.lock() {
         for runs in live.iter().filter_map(std::sync::Weak::upgrade) {
             runs.quit.send_replace(false);
@@ -611,6 +625,7 @@ impl AgentRuns {
                     duration_ms,
                     ended,
                     started: ran,
+                    by: decider(decided),
                 },
             )
             .await;
@@ -751,7 +766,10 @@ impl AgentRuns {
             why = gone => {
                 self.broker.cancel(&view.id);
                 let code = ended_code(why).unwrap_or("client_gone");
-                self.terminals.activity.approval(c.pane.as_str(), code).await;
+                self.terminals
+                    .activity
+                    .approval(c.pane.as_str(), code, Decider::Nobody)
+                    .await;
                 return Err((code, why.into()));
             }
         };
@@ -770,9 +788,11 @@ impl AgentRuns {
             ApprovalOutcome::Expired => ("expired", "expired".into()),
             ApprovalOutcome::Cancelled => ("cancelled", "cancelled".into()),
         };
+        // Allowed, denied, run out or cancelled: the person's question,
+        // answered by them or by its time.
         self.terminals
             .activity
-            .approval(c.pane.as_str(), &answer)
+            .approval(c.pane.as_str(), &answer, Decider::Person)
             .await;
         match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
@@ -974,6 +994,36 @@ fn ended_after_run(
     match error.and_then(ended_code) {
         None if quitting && exit_code.is_none() => Some("app_quit"),
         e => e,
+    }
+}
+
+/// Every code `decide` and `serve` record for a run's `decided` (the test
+/// that each has its [`Decider`]).
+#[cfg(test)]
+const DECIDED_CODES: &[&str] = &[
+    "once",
+    "agent",
+    "declined",
+    "expired",
+    "cancelled",
+    "rule",
+    "allowed_before",
+    "busy",
+    "too_many",
+    "client_gone",
+    "app_quit",
+];
+
+/// Who decided, for a run's `decided` code (one of [`DECIDED_CODES`]).
+fn decider(decided: &str) -> Decider {
+    match decided {
+        "once" | "agent" | "declined" | "expired" | "cancelled" => Decider::Person,
+        "rule" | "allowed_before" => Decider::Unasked,
+        "busy" | "too_many" | "client_gone" | "app_quit" => Decider::Nobody,
+        other => {
+            debug_assert!(false, "a run decided by `{other}` has no Decider");
+            Decider::Nobody
+        }
     }
 }
 
@@ -1909,5 +1959,31 @@ mod tests {
         )
         .await;
         assert_eq!((reply.exit_code, reply.error), (Some(3), None));
+    }
+
+    #[test]
+    fn f_ex_07_every_decided_code_has_its_decider() {
+        for code in DECIDED_CODES {
+            let _ = decider(code);
+        }
+        assert_eq!(decider("once"), Decider::Person);
+        assert_eq!(decider("declined"), Decider::Person);
+        assert_eq!(decider("rule"), Decider::Unasked);
+        assert_eq!(decider("busy"), Decider::Nobody);
+        assert_eq!(decider("client_gone"), Decider::Nobody);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_a_failed_install_resumes_runs_but_never_a_real_exit() {
+        let fx = fixture("").await;
+        fx.runs.shutdown(Duration::from_millis(10));
+        // The installer didn't start: runs are served again.
+        resume_all();
+        assert!(!*fx.runs.quit.borrow());
+        // Quitting for real meanwhile: resume does nothing.
+        fx.runs.shutdown(Duration::from_millis(10));
+        mark_exiting();
+        resume_all();
+        assert!(*fx.runs.quit.borrow());
     }
 }
