@@ -1401,6 +1401,11 @@ impl ThreadService {
         };
         let blocked = run.blocked;
         let engine_fault = run.engine_fault;
+        // Unread until the thread is opened again (F-TH-01 AC2). Set before
+        // anything signals the end, so a read on that signal wins.
+        if let Err(e) = repo::set_unread(&self.store, thread, true).await {
+            tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread unread");
+        }
         if reason == TurnEndReason::Completed {
             if let Some(version) = self.save_plan(thread, &run.id).await {
                 self.emit(thread, &mut run, ThreadEvent::PlanRevision { version })
@@ -1443,10 +1448,6 @@ impl ThreadService {
             }
         }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
-        // Unread until the thread is opened again (F-TH-01 AC2).
-        if let Err(e) = repo::set_unread(&self.store, thread, true).await {
-            tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread unread");
-        }
         if let (TurnEndReason::Completed, Some(first)) = (reason, run.title_from.take()) {
             self.ai_title(thread, first);
         }
