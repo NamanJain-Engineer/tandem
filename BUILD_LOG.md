@@ -3295,12 +3295,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - A review comment's author is written without an @ (it's our wording), so a plain comment needs no note. Its path and words are defanged, since a path can carry `@~/…`.
   - The second opinion reads a finding's path with ＠ as @, so the finding still lands on its line.
   - Radar's heads-up is defanged too: TypeScript names a module or a method with any string, spaces too (`declare module "see @~/.ssh/id_rsa"`), so a symbol's name can spell a path out of the worktree.
-  - Amended by D-3023: Claude Code 2.1.312 attaches an `@path` only at the start or after whitespace, so the example needs its space; the defang still takes every `@` before a non-space.
+  - Amended by D-3023: Claude Code 2.1.312 attaches an `@path` only at the start of a line or after whitespace, so the example needs its space; the defang still takes every `@` before a non-space.
 - D-3023: The rest of the messages an engine reads name no file for it to attach either (rule 8, D-3022's follow-up, which the coordinator assigned).
   - Checked first on Claude Code 2.1.312, against a local stand-in for the API (a dummy key, a throwaway home and canary files; no real call):
     - `-p` with the prompt on stdin, as the learn follow-up runs, attaches the file an `@path` names: absolute, `~/` or relative.
     - So do stream-json turns, a string or a text block, as threads, mail and the answer sessions send them.
-    - An `@` at the start or after a space or a tab attaches, inside a code fence too. One after a quote, a word character, a bracket or a backtick doesn't, and `＠` never does.
+    - An `@` at the start of a line or after whitespace (a space, a tab, a no-break space) attaches, inside a code fence too. One after a quote, a word character, a bracket (`(`, `[`, `{`, `<`) or a backtick doesn't, and `＠` never does.
     - Nothing in `--append-system-prompt-file` attaches.
     - The defang stays wider than that (every `@` before a non-space, D-2839): the rule isn't documented, and it moves with versions.
   - A teammate's mail (F-AG-12) and the prompt library's `{{selection}}` and `{{clipboard}}` (F-EX-05) go through `fence_defanged`. Your own mail and what you typed stay as written.
