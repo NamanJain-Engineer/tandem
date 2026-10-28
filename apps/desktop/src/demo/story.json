@@ -17,6 +17,7 @@
     {
       "slug": "checkout-fix",
       "engine": "claude",
+      "agentName": "Ada",
       "task": "Find why checkout sends people back to /login",
       "state": "done",
       "steps": [
@@ -39,6 +40,7 @@
     {
       "slug": "coupon-rules",
       "engine": "codex",
+      "agentName": "Arlo",
       "task": "Stack coupons by priority",
       "state": "working",
       "steps": [
@@ -59,6 +61,7 @@
     {
       "slug": "search-ui",
       "engine": "gemini",
+      "agentName": "Bea",
       "task": "Make search results keyboard friendly",
       "state": "waiting",
       "steps": [

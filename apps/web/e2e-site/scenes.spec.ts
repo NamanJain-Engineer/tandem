@@ -82,6 +82,29 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
   expect(await opacity(page, '[data-scene="review"] .sc-diff-foot .sc-btn')).toBe(1);
 });
 
+test("F-WB-01 AC9 D-3000 the Review scene's comments go in at once: no frame draws the rows under them twice", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const scene = page.locator('[data-scene="review"]');
+  await scene.scrollIntoViewIfNeeded();
+  await expect.poll(() => states(page, "review"), { timeout: 10_000 }).toContain("running");
+  // Just before the comments arrive, then through what would be any fade.
+  const frames = await page.evaluate(() => {
+    const root = document.querySelector('[data-scene="review"]') as Element;
+    const [was, now] = [...root.querySelectorAll(".sc-diff-swap > .sc-diff-rows")];
+    const at = Number.parseFloat(getComputedStyle(was as Element).getPropertyValue("--at"));
+    return [-0.02, 0.02, 0.09, 0.18, 0.3].map((d) => {
+      // The scene's own effects (a scroll reveal around it runs on the scroll, not the clock).
+      for (const a of root.getAnimations({ subtree: true }).filter((x) => x.timeline instanceof DocumentTimeline)) {
+        a.pause();
+        a.currentTime = (at + d) * 1000;
+      }
+      return [d, Number(getComputedStyle(was as Element).opacity), Number(getComputedStyle(now as Element).opacity)];
+    });
+  });
+  for (const [d, was, now] of frames) expect([was, now], `${d} s after the comments`).toEqual((d ?? 0) < 0 ? [1, 0] : [0, 1]);
+});
+
 // The release pages' scenes (components/site/scenes/releaseScenes.tsx):
 // where each plays, and an element that only its final frame shows.
 const RELEASE_PAGES = [

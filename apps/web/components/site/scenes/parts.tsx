@@ -16,7 +16,7 @@ export function at(seconds: number, extra?: Record<string, string | number>): CS
 /** The effects a scene element can have (scenes.css). The element's own
  * styles are its final frame: that's what reduced motion, a page without
  * the scene script and a finished scene all show. */
-export type Fx = "in" | "line" | "pop" | "out" | "press" | "rise" | "slide" | "sweep";
+export type Fx = "in" | "line" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show";
 
 export function fx(kind: Fx, seconds: number, extra?: Record<string, string | number>) {
   return { [`data-fx-${kind}`]: "", style: at(seconds, extra) } as const;
@@ -111,9 +111,11 @@ export function StatusBar({ branch }: { branch: string }) {
   );
 }
 
-/** A pane: its header (glyph, title, branch, status) over a terminal. */
+/** A pane: its header (glyph, its agent's first name and the title, branch,
+ * status) over a terminal. */
 export function Pane({
   engine,
+  name,
   title,
   branch,
   status,
@@ -123,6 +125,8 @@ export function Pane({
   className,
 }: {
   engine?: string;
+  /** The agent's first name (F-CD-12), shown before the title (PaneChrome). */
+  name?: string;
   title: string;
   branch?: string;
   status: ReactNode;
@@ -137,6 +141,7 @@ export function Pane({
       {doneAt !== undefined && <span className="sc-flash" {...visit(doneAt, 1.4)} />}
       <div className="sc-pane-head">
         {engine ? <Glyph engine={engine} focused={focused} /> : <span className="sc-glyph sc-glyph-shell">$</span>}
+        {name && <span className="sc-pane-name">{name}</span>}
         <span className="sc-pane-title">{title}</span>
         {branch && <span className="sc-branch">{branch}</span>}
         <span className="sc-pane-status">{status}</span>

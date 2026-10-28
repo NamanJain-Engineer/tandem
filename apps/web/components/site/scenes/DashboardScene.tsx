@@ -77,7 +77,7 @@ export function DashboardScene() {
             <Card
               engine="Codex"
               n={2}
-              branch={SAMPLE.worktrees.codex.branch}
+              branch={SAMPLE.worktrees.working.branch}
               status={<DotChange from="working" to="waiting" seconds={2} />}
               line={
                 <span className="sc-swap">
@@ -97,7 +97,7 @@ export function DashboardScene() {
           <Card
             engine="Claude Code"
             n={1}
-            branch={SAMPLE.worktrees.claude.branch}
+            branch={SAMPLE.worktrees.finished.branch}
             status={<DotChange from="working" to="done" seconds={4.6} />}
             line={
               <span className="sc-swap">
@@ -106,7 +106,7 @@ export function DashboardScene() {
               </span>
             }
           />
-          <Card engine="Gemini CLI" n={3} branch={SAMPLE.worktrees.gemini.branch} status={still("working")} line="editing src/search/results.tsx" />
+          <Card engine="Gemini CLI" n={3} branch={SAMPLE.worktrees.waiting.branch} status={still("working")} line="editing src/search/results.tsx" />
         </div>
         <div className="sc-group" {...fx("in", 0.35)}>
           <span className="sc-group-head">api</span>

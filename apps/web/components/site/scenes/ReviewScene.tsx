@@ -2,10 +2,13 @@ import { Fragment } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
 import { AppWindow, Count, Dot, Glyph, StatusBar, fx, visit } from "./parts";
 
-/** The diff the scene reviews: checkout-fix's change to src/cart/checkout.ts,
- * the checkout function's hunk with its old and new line numbers, as
- * DiffView shows them. Each row is the demo's sample file's line at that
- * number (shop/main and shop/checkout-fix, a test checks). */
+/** The file the second opinion comments on: the scene shows its diff. */
+export const REVIEW_FILE = SAMPLE.comments[0]?.file ?? "";
+
+/** The diff the scene reviews: the finished worktree's change to
+ * REVIEW_FILE, the checkout function's hunk with its old and new line
+ * numbers, as DiffView shows them. It's a run of git's own diff of the demo's
+ * sample files (the base branch's and the worktree's; a test checks). */
 export const REVIEW_DIFF: ReadonlyArray<readonly [" " | "+" | "−", string, number | null, number | null]> = [
   [" ", "export async function checkout(cart: Cart, req: Request) {", 8, 19],
   ["−", "  const session = await getSession(req);", 9, null],
@@ -19,17 +22,31 @@ export const REVIEW_DIFF: ReadonlyArray<readonly [" " | "+" | "−", string, num
   [" ", "  return charge(session.customer, total);", 12, 26],
   [" ", "}", 13, 27],
 ];
-/** Where the second opinion's comments land: under the rows at their lines.
- * A comment on a line the diff doesn't show fails the build. */
-const COMMENTED = SAMPLE.comments.map((c) => {
-  const row = REVIEW_DIFF.findIndex(([, , , newNo]) => newNo === c.line);
-  if (row < 0) throw new Error(`scenes: the Review scene's diff has no line ${c.line} to comment on`);
-  return row;
-});
-/** The first commented row: the rows under it move down as the comments arrive. */
-const FIRST = Math.min(...COMMENTED);
-/** When Codex is done. Its comments arrive together then, with its done line,
- * as `review:second_opinion` adds them in the app (D-3000). */
+
+/** Which rows of `rows` (a hunk of `file`) the comments sit under, each
+ * row's in order. A comment on another file, or on a line the hunk doesn't
+ * show, fails the build rather than be drawn somewhere else. */
+export function notesFor(
+  file: string,
+  rows: ReadonlyArray<readonly [string, string, number | null, number | null]>,
+  comments: ReadonlyArray<{ file: string; line: number; text: string }>,
+): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  for (const c of comments) {
+    const row = rows.findIndex(([, , , newNo]) => newNo === c.line);
+    if (c.file !== file || row < 0) throw new Error(`scenes: the Review scene's diff of ${file} has nowhere for a comment on ${c.file} line ${c.line}`);
+    out.set(row, [...(out.get(row) ?? []), c.text]);
+  }
+  return out;
+}
+
+/** Where the second opinion's comments land: under the rows at their lines. */
+const NOTES = notesFor(REVIEW_FILE, REVIEW_DIFF, SAMPLE.comments);
+/** The first commented row: the rows under it move down as the comments
+ * arrive. With no comments, nothing does. */
+const FIRST = NOTES.size > 0 ? Math.min(...NOTES.keys()) : REVIEW_DIFF.length;
+/** When the reviewer is done. Its comments arrive together then, with its
+ * done line, as `review:second_opinion` adds them in the app (D-3000). */
 const DONE = 3.8;
 
 /** Diff rows `from` to `to`, each commented one with its comment under it
@@ -43,30 +60,32 @@ function Rows({ from, to, comments = false }: { from: number; to: number; commen
         <span className="sc-diff-mark">{mark}</span>
         <span className="sc-diff-code">{code}</span>
       </span>
-      {comments && COMMENTED.includes(from + k) && <Note row={from + k} />}
+      {comments && <Notes row={from + k} />}
     </Fragment>
   ));
 }
 
-/** A comment under its line, as DiffView's annotation row: the second
- * opinion's comments are the review's own, to edit or remove. */
-function Note({ row }: { row: number }) {
-  return (
-    <span className="sc-diff-note">
-      <span className="sc-diff-note-text">{SAMPLE.comments[COMMENTED.indexOf(row)]?.text}</span>
+/** A row's comments under it, each as DiffView's annotation row: the
+ * second opinion's comments are the review's own, to edit or remove. Only
+ * they fade in (D-3000). */
+function Notes({ row }: { row: number }) {
+  return (NOTES.get(row) ?? []).map((text) => (
+    <span key={text} className="sc-diff-note" {...fx("in", DONE)}>
+      <span className="sc-diff-note-text">{text}</span>
       <span className="sc-btn sc-btn-ghost">{t("worktree.review.edit")}</span>
       <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
     </span>
-  );
+  ));
 }
 
 /** "Review and a second opinion" (D-1880): the review queue (F-DB-04) with
- * Claude Code's finished fix on top, sorted by risk; Second opinion asks
- * Codex, which reads the diff without editing anything (F-WT-05); its
- * findings land together as line comments under their lines, ready to send
- * to the agent. About 5 s, played once. */
+ * the finished worktree's fix, the one piece of finished work, sorted by
+ * risk; Second opinion asks another engine, which reads the diff without
+ * editing anything (F-WT-05); its findings land together as line comments
+ * under their lines, ready to send to the agent. About 5 s, played once. */
 export function ReviewScene() {
-  const claude = SAMPLE.worktrees.claude;
+  const done = SAMPLE.worktrees.finished;
+  const reviewer = SAMPLE.reviewer;
   return (
     <AppWindow className="sc-review">
       <div className="sc-rev">
@@ -79,12 +98,11 @@ export function ReviewScene() {
           </div>
           <div className="sc-item sc-item-on" {...fx("slide", 0.2)}>
             <span className="sc-toast-row">
-              <Glyph engine={claude.engine} focused />
+              <Glyph engine={done.engine} focused />
+              {/* ReviewQueue's card: the agent's first name, then its engine, workspace and branch. */}
               <span className="sc-card-main">
-                <span className="sc-card-title">{t("review.diffTitle", { name: claude.engine })}</span>
-                <span className="sc-card-meta">
-                  {SAMPLE.workspace} · {claude.branch}
-                </span>
+                <span className="sc-card-title">{done.name}</span>
+                <span className="sc-card-meta">{[done.engine, SAMPLE.workspace, done.branch].join(" · ")}</span>
               </span>
             </span>
             <span className="sc-stat">
@@ -112,58 +130,50 @@ export function ReviewScene() {
               </span>
             </span>
           </div>
-          <div className="sc-item" {...fx("slide", 0.35)}>
-            <span className="sc-toast-row">
-              <Glyph engine="Cursor Agent" />
-              <span className="sc-card-main">
-                <span className="sc-card-title">{t("review.diffTitle", { name: "Cursor Agent" })}</span>
-                <span className="sc-card-meta">api · rate-limits</span>
-              </span>
-            </span>
-            <span className="sc-stat">
-              {t("review.stat", { n: 2, adds: 0, dels: 0 }).split(" · ")[0]} · <span className="sc-add">+24</span>{" "}
-              <span className="sc-del">−3</span>
-            </span>
-          </div>
         </div>
 
         <div className="sc-diff" {...fx("in", 0.4)}>
           <div className="sc-diff-head">
-            <span className="sc-branch">src/cart/checkout.ts</span>
+            <span className="sc-branch">{REVIEW_FILE}</span>
             <span className="sc-swap sc-diff-state">
               <span {...fx("out", 2.1)} />
               {/* Reviewing until it's done. */}
               <span {...visit(2.1, 1.7)}>
-                <Dot status="working" /> {t("worktree.opinion.reviewing", { engine: "Codex" })}
+                <Dot status="working" /> {t("worktree.opinion.reviewing", { engine: reviewer })}
               </span>
               <span {...fx("pop", DONE)}>
-                <Dot status="done" /> {t("worktree.opinion.done", { engine: "Codex", n: COMMENTED.length })}
+                <Dot status="done" />{" "}
+                {SAMPLE.comments.length > 0 ? t("worktree.opinion.done", { engine: reviewer, n: SAMPLE.comments.length }) : t("worktree.opinion.none", { engine: reviewer })}
               </span>
             </span>
           </div>
           <div className="sc-diff-body">
             <Rows from={0} to={FIRST + 1} />
             {/* Under the first commented line: the rows as they were until
-                Codex is done, then the same rows with its comments, in one
-                cell, so nothing waits for the comments as a gap. */}
-            <span className="sc-diff-swap">
-              <span className="sc-diff-rows" {...fx("out", DONE)}>
-                <Rows from={FIRST + 1} to={REVIEW_DIFF.length} />
+                the reviewer is done, then the same rows with its comments, in
+                one cell, so nothing waits for the comments as a gap. The app
+                inserts them in one go and the rows below just move down, so
+                the stacks swap at once and only the comments fade in. */}
+            {NOTES.size > 0 && (
+              <span className="sc-diff-swap">
+                <span className="sc-diff-rows" {...fx("cut", DONE)}>
+                  <Rows from={FIRST + 1} to={REVIEW_DIFF.length} />
+                </span>
+                <span className="sc-diff-rows" {...fx("show", DONE)}>
+                  <Notes row={FIRST} />
+                  <Rows from={FIRST + 1} to={REVIEW_DIFF.length} comments />
+                </span>
               </span>
-              <span className="sc-diff-rows" {...fx("in", DONE)}>
-                <Note row={FIRST} />
-                <Rows from={FIRST + 1} to={REVIEW_DIFF.length} comments />
-              </span>
-            </span>
+            )}
           </div>
           <div className="sc-diff-foot">
             <span className="sc-btn sc-btn-primary" {...fx("pop", DONE + 0.5)}>
-              {t("worktree.review.sendTo", { name: claude.engine })}
+              {t("worktree.review.sendTo", { name: done.name })}
             </span>
           </div>
         </div>
       </div>
-      <StatusBar branch={claude.branch} />
+      <StatusBar branch={done.branch} />
     </AppWindow>
   );
 }
@@ -171,5 +181,7 @@ export function ReviewScene() {
 export const REVIEW_CAPTION = "Finished work waits in one queue. Another engine reads it and leaves line comments.";
 
 export function reviewSceneText(): string {
-  return `The review queue, sorted by risk: Claude Code's fix on top, ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, labelled "Touches auth paths" with its check passed. Second opinion asks Codex, which reads the diff without editing anything and leaves two line comments, ready to send to the agent.`;
+  const done = SAMPLE.worktrees.finished;
+  const n = SAMPLE.comments.length;
+  return `The review queue, sorted by risk, with ${done.name}'s fix in ${done.engine}: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, labelled "Touches auth paths" with its check passed. Second opinion asks ${SAMPLE.reviewer}, which reads the diff without editing anything and leaves ${n === 1 ? "a line comment" : `${n} line comments`}, ready to send to ${done.name}.`;
 }

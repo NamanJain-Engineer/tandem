@@ -85,10 +85,20 @@ type Step = { read: string } | { edit: string; add: number; del: number } | { ru
 type Edit = Extract<Step, { edit: string }>;
 type EngineId = keyof typeof story.engines;
 
-/** The story's worktree an engine works in. */
-function worktree(engine: EngineId) {
-  const w = story.worktrees.find((x) => x.engine === engine);
-  if (!w) throw new Error(`scenes: no ${engine} worktree in story.json`);
+/** The first eight words of a prompt: how the app titles an agent's pane
+ * until its engine names the work (promptTitle, features/code/titles.ts). */
+export function promptTitle(prompt: string): string {
+  const words = prompt.trim().split(/\s+/).filter(Boolean);
+  const head = words.slice(0, 8).join(" ");
+  return words.length > 8 ? `${head}…` : head;
+}
+
+/** The story's worktree in `state`: one is done, one working and one
+ * waiting on you, whichever engines run them. */
+function worktree(state: "done" | "working" | "waiting") {
+  const all = story.worktrees.filter((x) => x.state === state);
+  const w = all[0];
+  if (!w || all.length > 1) throw new Error(`scenes: story.json needs one ${state} worktree, not ${all.length}`);
   return { ...w, steps: w.steps as readonly Step[] };
 }
 
@@ -104,15 +114,25 @@ function terminal(w: { task: string; steps: readonly Step[] }): string[] {
   ];
 }
 
-const claude = worktree("claude");
-const codex = worktree("codex");
-const gemini = worktree("gemini");
-const edits = claude.steps.filter((s): s is Edit => "edit" in s);
-const label = (engine: EngineId) => story.engines[engine].label;
-const lane = (w: ReturnType<typeof worktree>) => ({
-  engine: label(w.engine as EngineId),
+const finished = worktree("done");
+const working = worktree("working");
+const waiting = worktree("waiting");
+const edits = finished.steps.filter((s): s is Edit => "edit" in s);
+const label = (engine: string) => {
+  const e = story.engines[engine as EngineId];
+  if (!e) throw new Error(`scenes: story.json has no engine ${engine}`);
+  return e.label;
+};
+/** A worktree as the scenes draw it: its engine, its agent's first name
+ * (F-CD-12), its pane's title, its branch, and its commits and the merge
+ * commit it lands as. */
+const lane = (w: { engine: string; agentName: string; task: string; slug: string; commits: readonly unknown[]; mergeCommit: string }) => ({
+  engine: label(w.engine),
+  name: w.agentName,
+  title: promptTitle(w.task),
   branch: w.slug,
   commits: w.commits.length,
+  merge: w.mergeCommit,
 });
 
 /** The sample work the scenes show: one repository and its worktrees. It's
@@ -122,29 +142,33 @@ const lane = (w: ReturnType<typeof worktree>) => ({
 export const SAMPLE = {
   workspace: story.repo,
   base: story.base,
-  worktrees: { claude: lane(claude), codex: lane(codex), gemini: lane(gemini) },
+  /** The repository's check command, which Land worktrees runs. */
+  check: story.check,
+  /** The worktrees by what they're doing (D-3000). */
+  worktrees: { finished: lane(finished), working: lane(working), waiting: lane(waiting) },
+  /** All of them, in the story's order (the order they land in). */
+  order: story.worktrees.map(lane),
   symbol: story.overlap.symbol,
   /** What each agent's terminal prints, in order: the story's steps. */
   lines: {
-    claude: terminal(claude),
-    codex: terminal(codex),
-    gemini: terminal(gemini),
+    finished: terminal(finished),
+    working: terminal(working),
+    waiting: terminal(waiting),
     shell: [`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)],
   },
   /** The command the waiting agent asks to run. */
-  ask: gemini.ask ?? "",
+  ask: waiting.ask ?? "",
   /** The finished worktree's diff: the sum of its agent's edits. */
   diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },
-  /** Second opinion's line comments on it. */
-  comments: story.secondOpinion.comments.map((c) => ({ line: c.line, file: c.file, text: c.body })),
-  /** Each worktree's merge commit once it lands, in the story's order. */
-  commits: story.worktrees.map((w) => w.mergeCommit),
+  /** The engine that gives the second opinion, and its line comments. */
+  reviewer: label(story.secondOpinion.engine),
+  comments: story.secondOpinion.comments.map((c) => ({ file: c.file, line: c.line, text: c.body })),
   failedCheck: story.pr.checks.find((c) => c.bucket === "fail")?.name ?? "",
   /** A plan from Lead in the same repository (0.12.0's F-TK-07): its goal,
    * and the tasks Execute all ran, each in its own worktree, numbered as the
    * tracker numbers them (`ISSUE_PREFIX`, crates/tandem-tasks/src/model.rs). */
   plan: {
     goal: story.plan.goal,
-    tasks: story.plan.tasks.map((x, i) => ({ id: `TAN-${31 + i}`, title: x.title, engine: label(x.engine as EngineId) })),
+    tasks: story.plan.tasks.map((x, i) => ({ id: `TAN-${31 + i}`, title: x.title, engine: label(x.engine) })),
   },
 } as const;

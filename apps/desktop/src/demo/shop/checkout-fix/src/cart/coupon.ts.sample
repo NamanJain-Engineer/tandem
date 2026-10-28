@@ -5,7 +5,7 @@ export type Coupon = { code: string; percent: number; minimum: number };
 
 const COUPONS: Record<string, Coupon> = {
   SPRING10: { code: "SPRING10", percent: 10, minimum: 0 },
-  BIGBASKET: { code: "BIGBASKET", percent: 15, minimum: 10_000 },
+  BULK15: { code: "BULK15", percent: 15, minimum: 10_000 },
 };
 
 /** A coupon code the way COUPONS keys it: a renewed session keeps the code

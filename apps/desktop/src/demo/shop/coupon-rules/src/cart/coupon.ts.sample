@@ -14,7 +14,7 @@ export type Coupon = {
 
 const COUPONS: Record<string, Coupon> = {
   STAFF30: { code: "STAFF30", percent: 30, minimum: 0, priority: 0, alone: true },
-  BIGBASKET: { code: "BIGBASKET", percent: 15, minimum: 10_000, priority: 1 },
+  BULK15: { code: "BULK15", percent: 15, minimum: 10_000, priority: 1 },
   SPRING10: { code: "SPRING10", percent: 10, minimum: 0, priority: 2 },
   WELCOME5: { code: "WELCOME5", percent: 5, minimum: 0, priority: 3 },
 };
