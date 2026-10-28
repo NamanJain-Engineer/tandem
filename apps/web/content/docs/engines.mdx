@@ -25,18 +25,20 @@ Vibezeo shows what each agent reports over ACP: messages, tool calls, approvals 
 
 ## Local models
 
-If you run models on your own computer with Ollama or LM Studio, Codex can use one of them, so prompts and code stay on this computer. Open **Settings › Engines › Local models**:
+If you run models on your own computer with Ollama or LM Studio, Codex can use one of them: its prompts, and the code they carry, then go only to that server at `127.0.0.1`. Open **Settings › Engines › Local models**:
 
 - Vibezeo asks `127.0.0.1` for model servers when you open the page or choose **Check again**: Ollama at port 11434, LM Studio at 1234 and llama.cpp's `llama-server` at 8080. It never asks another computer, and never on a timer. **Add a port…** adds another port on this computer.
 - Each running server lists its models with the size and parameter count the server reports. Vibezeo doesn't download or install anything, and doesn't vouch for how well a model handles an agent's tools.
 - **Start in Codex** opens a Codex pane in the open local folder. Codex runs in a provider home of its own for that server and model, under `providers/codex/`, whose `config.toml` points it at `http://127.0.0.1:<port>/v1` and turns off its update check. Your own `~/.codex` and your Codex accounts aren't touched, and no sign-in is needed. The pane says **On this computer**.
-- Every start of that pane, including Restart and after you reopen Vibezeo, runs the same way: never on your Codex account, and with no proxy. Of your Codex arguments in Settings › Engines, only the sandbox, approval and reasoning ones apply.
-- Ollama's cloud models run on ollama.com, so they aren't listed.
+- Every start of that pane, including Restart and after you reopen Vibezeo, runs the same way: never on your Codex account or an OpenAI key, and with no proxy. The model and server are also set on Codex's command line, so a project's own Codex settings can't change them. Of your Codex arguments in Settings › Engines, only the sandbox, approval and reasoning ones apply.
+- Each start first asks the server again. If it's stopped, or no longer offers the model as one that runs on this computer (say the name now points at a cloud model), the pane says so and Codex doesn't start.
+- Ollama's cloud models run on ollama.com, so they aren't listed, also when you add Ollama's port as another kind. If a server answers like Ollama but doesn't say which of its models are cloud models, none of them are listed.
 - What the pane shows stays on this computer unless you send it on: a handoff's brief to another engine, or Conductor reading the pane when you ask it to, can carry its output to that engine.
+- Some things are outside Vibezeo's control: what the server does with a prompt (a gateway or a port-forward on that port could pass it on), MCP servers a project sets up for Codex, and settings an administrator manages (below).
 - llama.cpp servers are listed, but Codex can't start on them yet.
 - Start works on Linux and macOS for now. On Windows the servers and models are listed, and Start says local models run on Linux and macOS for now.
 - A resumed local pane uses Codex's default sandbox and approvals: `codex resume` takes no extra arguments.
-- Settings an administrator manages for Codex on this computer (such as `/etc/codex/managed_config.toml`, a device management profile, or requirements that name model providers) come before the pane's own home. If your organization sets a model provider there, it applies to local panes too.
+- Settings an administrator manages for Codex on this computer (such as `/etc/codex/managed_config.toml`, a device management profile, or requirements that name model providers) can override the pane's own settings, including those on its command line. If your organization sets a model provider there, it applies to local panes too.
 
 ## One instructions file for every engine
 

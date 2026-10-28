@@ -25,7 +25,11 @@ const options = async () =>
     ),
   )) as string[];
 
-type Found = { matches: Array<{ label: string; score: number }>; clear: boolean; ranking: "local" | "hosted" };
+type Found = {
+  matches: Array<{ label: string; score: number }>;
+  clear: boolean;
+  ranking: "local" | "hosted" | "mixed";
+};
 
 /** Three panes, "auth tests", "billing UI" and "docs", in a new folder. */
 async function threePanes(tag: string): Promise<{ auth: string; docs: string }> {

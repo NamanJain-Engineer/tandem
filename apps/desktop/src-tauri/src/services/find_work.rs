@@ -59,6 +59,9 @@ pub enum FindRanking {
     Local,
     /// Vibezeo's hosted ranking (`/v1/voice/resolve`), with the opt-in on.
     Hosted,
+    /// The hosted ranking, with local model panes, which aren't sent to it,
+    /// ranked on this machine among its answer (F-EN-11).
+    Mixed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -351,13 +354,14 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
     let mut ranked = local.clone();
     if !candidates.is_empty() && !query.trim().is_empty() {
         let sent = hosted_candidates(&candidates, &by_id, &local, &stay_here);
+        let offered: HashSet<&str> = sent.iter().map(|c| c.id.as_str()).collect();
         match host.hosted_rank(query, &sent).await {
             None => {}
             Some(Ok(matches)) => {
                 // Only ids it was offered, each once.
                 let mut hosted: Vec<find_work::Ranked> = Vec::new();
                 for (id, score) in matches {
-                    if by_id.contains_key(&id)
+                    if offered.contains(id.as_str())
                         && score.is_finite()
                         && score > 0.0
                         && !hosted.iter().any(|r| r.id == id)
@@ -368,14 +372,14 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
                         });
                     }
                 }
+                let mut mixed = false;
                 if !hosted.is_empty() {
                     // A local model's pane wasn't sent: it keeps its place
                     // from the local ranking among the hosted answer
                     // (F-EN-11).
-                    for r in &local {
-                        if stay_here.contains(&r.id) && !hosted.iter().any(|h| h.id == r.id) {
-                            hosted.push(r.clone());
-                        }
+                    for r in local.iter().filter(|r| stay_here.contains(&r.id)) {
+                        hosted.push(r.clone());
+                        mixed = true;
                     }
                 }
                 hosted.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -386,7 +390,11 @@ pub async fn find(host: &dyn FindHost, query: &str) -> FindWorkResult {
                     );
                 } else {
                     ranked = hosted;
-                    ranking = FindRanking::Hosted;
+                    ranking = if mixed {
+                        FindRanking::Mixed
+                    } else {
+                        FindRanking::Hosted
+                    };
                 }
             }
             Some(Err(reason)) => {
@@ -721,8 +729,8 @@ mod tests {
         assert!(sent.iter().all(|c| c.id != "pan_auth"), "{sent:?}");
         assert_eq!(sent.len(), 2);
         // The hosted ranking answered, and the local pane is still found,
-        // ranked here.
-        assert_eq!(r.ranking, FindRanking::Hosted);
+        // ranked here, and the list says both ranked it.
+        assert_eq!(r.ranking, FindRanking::Mixed);
         let labels: Vec<&str> = r.matches.iter().map(|m| m.label.as_str()).collect();
         assert!(labels.contains(&"auth tests"), "{labels:?}");
         assert!(labels.contains(&"docs"), "{labels:?}");
@@ -731,6 +739,58 @@ mod tests {
         off.panes[0].local_model = Some("qwen3:8b · Ollama".into());
         let r = find(&off, "login testing").await;
         assert_eq!(r.matches[0].label, "auth tests");
+    }
+
+    /// F-EN-11 review: the hosted answer counts only for what it was sent;
+    /// a local model's pane is placed by its local score, best first, and
+    /// one clear match is decided over the merged list.
+    #[tokio::test]
+    async fn f_en_11_3_a_hosted_answer_and_local_panes_merge_by_score() {
+        let mut h = host();
+        h.panes[0].local_model = Some("qwen3:8b · Ollama".into());
+        let local = find(&host(), "login testing").await.matches[0].score;
+        // It names the local pane too, which it was never sent: ignored.
+        h.hosted = Some(Ok(vec![
+            ("pan_auth".into(), 1.0),
+            ("pan_docs".into(), 0.95),
+            ("pan_billing".into(), 0.1),
+        ]));
+        let r = find(&h, "login testing").await;
+        assert_eq!(r.ranking, FindRanking::Mixed);
+        let order: Vec<(&str, f32)> = r
+            .matches
+            .iter()
+            .map(|m| (m.label.as_str(), m.score))
+            .collect();
+        assert_eq!(order.len(), 3, "{order:?}");
+        let auth = order
+            .iter()
+            .find(|(l, _)| *l == "auth tests")
+            .expect("auth");
+        assert_eq!(auth.1, local, "the local pane keeps its local score");
+        assert!(
+            order.windows(2).all(|w| w[0].1 >= w[1].1),
+            "best first: {order:?}"
+        );
+        assert_eq!(order[0], ("docs", 0.95 * HOSTED_SCALE));
+        assert_eq!(order[2], ("billing UI", 0.1 * HOSTED_SCALE));
+        // Docs (2.85) and the local pane are close, so it isn't clear.
+        assert!(!r.clear);
+        // Only the hosted answer, no local pane found: hosted, and clear.
+        let mut solo = host();
+        solo.panes[0].local_model = Some("qwen3:8b · Ollama".into());
+        solo.hosted = Some(Ok(vec![("pan_docs".into(), 0.95)]));
+        let r = find(&solo, "docs").await;
+        assert_eq!(r.ranking, FindRanking::Hosted);
+        assert!(r.clear);
+        assert_eq!(r.matches.len(), 1);
+        // An answer naming only what it wasn't sent ranks here.
+        let mut stray = host();
+        stray.panes[0].local_model = Some("qwen3:8b · Ollama".into());
+        stray.hosted = Some(Ok(vec![("pan_auth".into(), 1.0)]));
+        let r = find(&stray, "login testing").await;
+        assert_eq!(r.ranking, FindRanking::Local);
+        assert_eq!(r.matches[0].score, local);
     }
 
     #[tokio::test]

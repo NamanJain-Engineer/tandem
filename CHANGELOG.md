@@ -40,8 +40,9 @@ release fails when its version has no section.
 - [lin] **Start Codex on a local model.** On an Ollama or LM Studio model,
   Start in Codex opens a Codex pane in your open folder that says "On this
   computer". It runs in a provider home of its own for that model, never on
-  your Codex account and never through a proxy, every time it starts. Your
-  own Codex settings and accounts aren't touched.
+  your Codex account and never through a proxy, every time it starts, and
+  each start checks that the server still offers the model on this computer.
+  Your own Codex settings and accounts aren't touched.
 
 ## 0.12.0
 

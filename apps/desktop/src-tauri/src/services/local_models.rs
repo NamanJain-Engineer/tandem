@@ -140,15 +140,24 @@ pub async fn ask(http: &dyn LocalHttp, kind: ServerKind, port: u16, added: bool)
     let mut models = body.as_ref().and_then(|b| local_models::parse(kind, b));
     // An OpenAI-style list doesn't say which models run elsewhere. When the
     // server is Ollama under another kind, its tags do: those models aren't
-    // listed (F-EN-11).
+    // listed. A server that answers Ollama's version but not its tags lists
+    // nothing, since which of its models are remote can't be known
+    // (D-2517). Both are asked at once: up to 1 s more.
     if kind != ServerKind::Ollama {
         if let Some(list) = models.as_mut() {
-            let tags = http
-                .get_json(&local_models::url(port, ServerKind::Ollama.models_path()))
-                .await;
-            if let Some(tags) = tags {
-                let remote = local_models::ollama_remote_ids(&tags);
-                list.retain(|m| !remote.contains(&m.id));
+            let version_url = local_models::url(port, "/api/version");
+            let tags_url = local_models::url(port, ServerKind::Ollama.models_path());
+            let (version, tags) =
+                futures::join!(http.get_json(&version_url), http.get_json(&tags_url));
+            match tags {
+                Some(tags) => {
+                    let remote = local_models::ollama_remote_ids(&tags);
+                    list.retain(|m| !remote.contains(&m.id));
+                }
+                None if version.as_ref().is_some_and(local_models::ollama_version) => {
+                    list.clear();
+                }
+                None => {}
             }
         }
     }
@@ -336,11 +345,7 @@ pub fn refresh_config(
     home: &std::path::Path,
     local: &LocalLaunch,
 ) -> Result<(), IpcError> {
-    let kind = ServerKind::ALL
-        .into_iter()
-        .find(|k| k.slug() == local.kind)
-        .filter(|k| k.startable())
-        .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))?;
+    let kind = kind_of(local)?;
     let own = providers
         .join("codex")
         .join(local_models::home_name(kind, local.port, &local.model));
@@ -352,6 +357,65 @@ pub fn refresh_config(
         .with_stage("launch_config"));
     }
     write_config(home, kind, local.port, &local.model)
+}
+
+/// A saved launch's server kind, one Codex can start on.
+fn kind_of(local: &LocalLaunch) -> Result<ServerKind, IpcError> {
+    ServerKind::ALL
+        .into_iter()
+        .find(|k| k.slug() == local.kind)
+        .filter(|k| k.startable())
+        .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))
+}
+
+/// The command-line settings every launch of a local pane carries (D-2519):
+/// the model and the local provider, above any project's configuration.
+pub fn launch_overrides(local: &LocalLaunch) -> Result<Vec<String>, IpcError> {
+    let kind = kind_of(local)?;
+    local_models::codex_overrides(kind, local.port, &local.model).ok_or_else(|| {
+        IpcError::new(
+            ErrorCode::Unavailable,
+            crate::services::engines::LAUNCH_CONFIG_UNAVAILABLE,
+        )
+        .with_stage("launch_config")
+    })
+}
+
+/// Before every start of a local pane: the server still offers the model,
+/// and as one that runs on this computer (D-2519). A name re-pointed since
+/// Start (`ollama cp` of a cloud model) or a server that's gone refuses,
+/// rather than sending prompts elsewhere.
+pub async fn still_offered(local: &LocalLaunch) -> Result<(), IpcError> {
+    let kind = kind_of(local)?;
+    let server = ask(http()?.as_ref(), kind, local.port, false).await;
+    check_offered(&server, &local.model)
+}
+
+/// [`still_offered`]'s answer for a server already asked.
+pub fn check_offered(server: &LocalServer, model: &str) -> Result<(), IpcError> {
+    if !server.running {
+        return Err(IpcError::new(
+            ErrorCode::Unavailable,
+            format!(
+                "{} isn't running on port {}. Start it, then try again.",
+                server.kind.label(),
+                server.port
+            ),
+        )
+        .with_stage("local_model"));
+    }
+    if !server.models.iter().any(|m| m.id == model) {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            format!(
+                "{} on port {} no longer offers {model} as a model on this computer.",
+                server.kind.label(),
+                server.port
+            ),
+        )
+        .with_stage("local_model"));
+    }
+    Ok(())
 }
 
 /// `local_model_start`: a Codex pane in `tab` for `model` on that server.
@@ -665,6 +729,91 @@ mod tests {
             .expect("lock")
             .iter()
             .all(|u| u.starts_with("http://127.0.0.1:1234/")));
+    }
+
+    /// F-EN-11 review: a server that answers Ollama's version but not its
+    /// tags can't say which of its models run elsewhere, so none are listed.
+    #[tokio::test]
+    async fn f_en_11_1_ollama_without_its_tags_lists_no_models_under_another_kind() {
+        let fake = Fake {
+            answers: vec![
+                (
+                    "http://127.0.0.1:11700/v1/models".into(),
+                    json!({"data": [{"id": "my-alias:latest"}, {"id": "gemma3:4b"}]}),
+                ),
+                (
+                    "http://127.0.0.1:11700/api/version".into(),
+                    json!({"version": "0.12.6"}),
+                ),
+            ],
+            asked: Default::default(),
+        };
+        let server = ask(&fake, ServerKind::LlamaCpp, 11700, true).await;
+        assert!(server.running);
+        assert!(server.models.is_empty(), "{:?}", server.models);
+        // Something else that happens to answer a version-shaped body
+        // without one isn't taken for Ollama.
+        let other = Fake {
+            answers: vec![
+                (
+                    "http://127.0.0.1:11701/v1/models".into(),
+                    json!({"data": [{"id": "gemma3:4b"}]}),
+                ),
+                (
+                    "http://127.0.0.1:11701/api/version".into(),
+                    json!({"version": ""}),
+                ),
+            ],
+            asked: Default::default(),
+        };
+        let server = ask(&other, ServerKind::LlamaCpp, 11701, true).await;
+        assert_eq!(server.models.len(), 1);
+        // Only this computer was asked, and only the three paths.
+        let asked = fake.asked.lock().expect("lock").clone();
+        assert_eq!(asked.len(), 3, "{asked:?}");
+        assert!(asked
+            .iter()
+            .all(|u| u.starts_with("http://127.0.0.1:11700/")));
+    }
+
+    fn server(running: bool, models: &[&str]) -> LocalServer {
+        LocalServer {
+            kind: ServerKind::Ollama,
+            port: 11434,
+            added: false,
+            running,
+            models: models
+                .iter()
+                .map(|id| local_models::LocalModel {
+                    id: (*id).to_string(),
+                    size: None,
+                    parameters: None,
+                })
+                .collect(),
+            startable: true,
+            start_reason: None,
+        }
+    }
+
+    /// F-EN-11 review (S2): every start asks again; a model gone, re-pointed
+    /// to one that runs elsewhere, or a server that's stopped refuses.
+    #[test]
+    fn f_en_11_2_a_start_needs_the_model_still_offered_here() {
+        assert!(check_offered(&server(true, &["qwen3:8b"]), "qwen3:8b").is_ok());
+        let err = check_offered(&server(true, &["gemma3:4b"]), "qwen3:8b").expect_err("gone");
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(
+            err.message,
+            "Ollama on port 11434 no longer offers qwen3:8b as a model on this computer."
+        );
+        let err = check_offered(&server(false, &[]), "qwen3:8b").expect_err("stopped");
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        assert_eq!(
+            err.message,
+            "Ollama isn't running on port 11434. Start it, then try again."
+        );
+        // A name that differs only in case is another model.
+        assert!(check_offered(&server(true, &["Qwen3:8b"]), "qwen3:8b").is_err());
     }
 
     #[test]

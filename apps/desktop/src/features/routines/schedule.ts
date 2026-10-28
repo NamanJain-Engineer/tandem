@@ -63,8 +63,16 @@ export function formatRun(ms: number, timeZone: string): string {
 
 /** One offset formatter per zone: building one is far slower than using
  * it, and `clockChange` asks a zone up to 84 times. `null` for a zone the
- * runtime doesn't know. */
+ * runtime doesn't know. It holds at most `OFFSET_FORMATS_MAX` zones and
+ * then starts again, so zone names typed one letter at a time can't grow
+ * it for good. */
+export const OFFSET_FORMATS_MAX = 256;
 const offsetFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+/** How many zones the cache holds (for tests). */
+export function cachedOffsetFormats(): number {
+  return offsetFormats.size;
+}
 
 function offsetFormat(timeZone: string): Intl.DateTimeFormat | null {
   let format = offsetFormats.get(timeZone);
@@ -74,6 +82,7 @@ function offsetFormat(timeZone: string): Intl.DateTimeFormat | null {
     } catch {
       format = null;
     }
+    if (offsetFormats.size >= OFFSET_FORMATS_MAX) offsetFormats.clear();
     offsetFormats.set(timeZone, format);
   }
   return format;

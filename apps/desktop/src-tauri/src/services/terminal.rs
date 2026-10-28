@@ -1045,7 +1045,11 @@ impl TerminalService {
         // every time: never on the user's account (F-EN-11, D-2519).
         let local = if record.kind == "agent" && record.local_model.is_some() {
             match panes::launch_config(&self.store, pane).await? {
-                Some(Ok(config)) if local_ready(self.engines.homes.root(), &config)? => {
+                Some(Ok(mut config)) if local_ready(self.engines.homes.root(), &config)? => {
+                    // Held to the allowlist again: a saved row can't carry a
+                    // model, provider or profile (D-2519).
+                    config.extra_args =
+                        tandem_engines::local_models::local_args(&config.extra_args);
                     Some(config)
                 }
                 _ => {
@@ -1076,6 +1080,12 @@ impl TerminalService {
             }
             _ => None,
         };
+        // Every start asks the server again: a model it no longer offers, or
+        // offers from elsewhere, isn't started (D-2519). After the restore
+        // card's check, and before Start fresh moves the conversation.
+        if let Some(saved) = local.as_ref().and_then(|c| c.local.as_ref()) {
+            crate::services::local_models::still_offered(saved).await?;
+        }
         if mode == LaunchMode::Fresh && record.kind == "agent" {
             // The old conversation stays under Saved sessions.
             sessions::save_on_handback(&self.store, pane, None).await?;
@@ -1223,20 +1233,41 @@ impl TerminalService {
                 login.vars.get("no_proxy").map(String::as_str),
             );
             let inner = match (&local, &launch.home) {
-                // Set inside the command, after the shell's startup files.
-                (Some(_), Some(home)) => tandem_engines::local_models::env_argv(
-                    launch.spec.argv(),
-                    &home.to_string_lossy(),
-                    &no_proxy,
-                )
-                .ok_or_else(|| {
-                    self.status.unwatch(pane.as_str());
-                    IpcError::new(
-                        ErrorCode::Invalid,
-                        "Codex's path has an = in it, so a local model can't start it",
+                // The model and provider on the command line, above every
+                // configuration file; the environment set inside the
+                // command, after the shell's startup files (D-2517, D-2519).
+                (Some(config), Some(home)) => {
+                    let overrides = config
+                        .local
+                        .as_ref()
+                        .ok_or_else(|| {
+                            IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
+                                .with_stage("launch_config")
+                        })
+                        .and_then(crate::services::local_models::launch_overrides)
+                        .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
+                    tandem_engines::local_models::env_argv(
+                        tandem_engines::local_models::with_overrides(launch.spec.argv(), overrides),
+                        &home.to_string_lossy(),
+                        &no_proxy,
                     )
-                })?,
-                _ => launch.spec.argv(),
+                    .ok_or_else(|| {
+                        self.status.unwatch(pane.as_str());
+                        IpcError::new(
+                            ErrorCode::Invalid,
+                            "Codex's path has an = in it, so a local model can't start it",
+                        )
+                    })?
+                }
+                // Never unwrapped: a local pane without its home doesn't start.
+                (Some(_), None) => {
+                    self.status.unwatch(pane.as_str());
+                    return Err(
+                        IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
+                            .with_stage("launch_config"),
+                    );
+                }
+                (None, _) => launch.spec.argv(),
             };
             let argv = self
                 .sandbox_argv(pane, &root, launch.home.as_deref(), inner)
@@ -1305,8 +1336,11 @@ impl TerminalService {
                 child_env.get("NO_PROXY").map(String::as_str),
                 child_env.get("no_proxy").map(String::as_str),
             );
-            for var in tandem_engines::local_models::PROXY_VARS {
-                child_env.remove(var);
+            for var in tandem_engines::local_models::PROXY_VARS
+                .iter()
+                .chain(tandem_engines::local_models::ACCOUNT_VARS.iter())
+            {
+                child_env.remove(*var);
             }
             child_env.insert("NO_PROXY".into(), no_proxy.clone());
             child_env.insert("no_proxy".into(), no_proxy);
@@ -2283,14 +2317,14 @@ mod tests {
         let codex = bin.join("codex");
         std::fs::write(
             &codex,
-            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME PX=[$HTTP_PROXY$HTTPS_PROXY] ARGS=$*\"\nsleep 30\n",
+            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME PX=[$HTTP_PROXY$HTTPS_PROXY] OA=[$OPENAI_API_KEY] ARGS=$*\"\nsleep 30\n",
         )
         .expect("fake codex");
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         // The login shell's own startup file tries to undo the pane's setup.
         std::fs::write(
             dir.path().join(".profile"),
-            "export NO_PROXY=.corp.example\nexport HTTP_PROXY=http://proxy.corp:3128\nexport CODEX_HOME=/elsewhere\n",
+            "export NO_PROXY=.corp.example\nexport HTTP_PROXY=http://proxy.corp:3128\nexport CODEX_HOME=/elsewhere\nexport OPENAI_API_KEY=from-profile\n",
         )
         .expect("profile");
         settings::set(
@@ -2310,22 +2344,70 @@ mod tests {
         let pane = panes::create_with(&store, &tab.id, "agent", None, Some("codex".into()))
             .await
             .expect("pane");
+        // A stand-in Ollama: every start asks it again. `remote` turns the
+        // model into one that runs on ollama.com; `down` stops answering.
+        let remote = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let down = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        {
+            let (remote, down) = (remote.clone(), down.clone());
+            tokio::spawn(async move {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                while let Ok((mut sock, _)) = listener.accept().await {
+                    if down.load(std::sync::atomic::Ordering::SeqCst) {
+                        drop(sock);
+                        continue;
+                    }
+                    let remote = remote.load(std::sync::atomic::Ordering::SeqCst);
+                    tokio::spawn(async move {
+                        let mut buf = [0u8; 2048];
+                        let n = sock.read(&mut buf).await.unwrap_or(0);
+                        let tags = String::from_utf8_lossy(&buf[..n]).starts_with("GET /api/tags ");
+                        let body = match (tags, remote) {
+                            (true, false) => r#"{"models":[{"name":"qwen3:8b","size":1}]}"#,
+                            (true, true) => {
+                                r#"{"models":[{"name":"qwen3:8b","remote_host":"https://ollama.com:443"}]}"#
+                            }
+                            (false, _) => "",
+                        };
+                        let answer = if body.is_empty() {
+                            "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_string()
+                        } else {
+                            format!(
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                                body.len()
+                            )
+                        };
+                        let _ = sock.write_all(answer.as_bytes()).await;
+                    });
+                }
+            });
+        }
         let home =
             data.root()
                 .join("providers/codex")
                 .join(tandem_engines::local_models::home_name(
                     tandem_engines::local_models::ServerKind::Ollama,
-                    11434,
+                    port,
                     "qwen3:8b",
                 ));
         std::fs::create_dir_all(&home).expect("home");
         let config = LaunchConfig {
-            extra_args: vec!["--sandbox".into(), "read-only".into()],
+            // A row edited to name another model: the allowlist drops it.
+            extra_args: vec![
+                "--sandbox".into(),
+                "read-only".into(),
+                "-c".into(),
+                "model=\"evil:cloud\"".into(),
+            ],
             home: Some(home.display().to_string()),
             own_home: false,
             local: Some(LocalLaunch {
                 kind: "ollama".into(),
-                port: 11434,
+                port,
                 model: "qwen3:8b".into(),
             }),
         };
@@ -2345,6 +2427,7 @@ mod tests {
                 "HTTPS_PROXY".to_string(),
                 "http://proxy.corp:3128".to_string(),
             );
+            vars.insert("OPENAI_API_KEY".to_string(), "test-not-a-key".to_string());
             LoginEnv {
                 vars,
                 shell: "/bin/sh".into(),
@@ -2375,6 +2458,22 @@ mod tests {
             );
             assert!(out.contains(&format!("HOME={} ", home.display())), "{out}");
             assert!(out.contains("PX=[]"), "{out}");
+            assert!(out.contains("OA=[]"), "{out}");
+            // The model and provider on the command line, first, on every
+            // start, Resume included; never the edited row's model.
+            assert!(
+                out.contains(
+                    "ARGS=-c model=\"qwen3:8b\" -c model_provider=\"vibezeo-local\" -c model_providers.vibezeo-local."
+                ),
+                "{out}"
+            );
+            assert!(
+                out.contains(&format!(
+                    "-c model_providers.vibezeo-local.base_url=\"http://127.0.0.1:{port}/v1\""
+                )),
+                "{out}"
+            );
+            assert!(!out.contains("evil"), "{out}");
             // `codex resume <id>` takes no extra arguments (launch.rs), as
             // for any Codex pane.
             if fresh {
@@ -2429,6 +2528,36 @@ mod tests {
                 assert!(record.env_keys.iter().any(|k| k == var), "{var}");
             }
         }
+        // A login with neither NO_PROXY nor no_proxy: the pane still gets
+        // both, naming this computer (S4: the fixture above has its own).
+        let mut bare = TerminalService::new(PtyManager::new(), store.clone());
+        Arc::get_mut(&mut bare).expect("unique").spawn_log = Some(dir.path().join("bare.jsonl"));
+        let mut bare_login = login();
+        bare_login.vars.remove("NO_PROXY");
+        bare_login.vars.remove("no_proxy");
+        bare.set_login_env(bare_login);
+        let sink = start(&bare, &pane.id, LaunchMode::Normal)
+            .await
+            .expect("bare start");
+        let text = || String::from_utf8_lossy(&sink.data()).into_owned();
+        assert!(
+            wait_until(Duration::from_secs(10), || text().contains("NP=")),
+            "{}",
+            text()
+        );
+        assert!(text().contains("NP=127.0.0.1,localhost,::1 "), "{}", text());
+        let records = bare.spawn_records();
+        assert_eq!(records.len(), 1, "{records:?}");
+        for var in ["NO_PROXY", "no_proxy"] {
+            assert!(records[0].env_keys.iter().any(|k| k == var), "{var}");
+        }
+        for var in tandem_engines::local_models::PROXY_VARS
+            .iter()
+            .chain(tandem_engines::local_models::ACCOUNT_VARS.iter())
+        {
+            assert!(!records[0].env_keys.iter().any(|k| k == var), "{var}");
+        }
+        bare.pty.kill(pane.id.as_str()).expect("kill");
         // Resume: the saved conversation, in the same home.
         sessions::set_engine_session(&store, &pane.id, "thread-1")
             .await
@@ -2491,8 +2620,64 @@ mod tests {
         };
         assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
         assert!(!again.pty.is_live(pane.id.as_str()));
-        // A folder off this computer: refused.
+        // The name now points at a model on ollama.com (`ollama cp`): asked
+        // again at this start, and refused (S2).
         std::fs::create_dir_all(&home).expect("home again");
+        remote.store(true, std::sync::atomic::Ordering::SeqCst);
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("started a model that runs elsewhere");
+        };
+        assert!(
+            err.message.contains("no longer offers qwen3:8b"),
+            "{}",
+            err.message
+        );
+        assert!(!again.pty.is_live(pane.id.as_str()));
+        remote.store(false, std::sync::atomic::Ordering::SeqCst);
+        // The server stopped: refused, saying so.
+        down.store(true, std::sync::atomic::Ordering::SeqCst);
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("started with its server stopped");
+        };
+        assert!(
+            err.message
+                .contains(&format!("Ollama isn't running on port {port}")),
+            "{}",
+            err.message
+        );
+        assert!(!again.pty.is_live(pane.id.as_str()));
+        // Start fresh is refused before the conversation moves to Saved
+        // sessions.
+        let before = sessions::latest_for_pane(&store, &pane.id)
+            .await
+            .expect("latest");
+        assert!(
+            before.as_ref().is_some_and(|s| s.ended_at.is_none()),
+            "{before:?}"
+        );
+        let Err(err) = start(&again, &pane.id, LaunchMode::Fresh).await else {
+            panic!("started fresh with its server stopped");
+        };
+        assert!(err.message.contains("isn't running"), "{}", err.message);
+        assert_eq!(
+            sessions::latest_for_pane(&store, &pane.id)
+                .await
+                .expect("latest"),
+            before
+        );
+        // A paused pane still waits on its card.
+        tandem_store::repo::restore::set_state(&store, &pane.id, "paused")
+            .await
+            .expect("paused");
+        let Err(err) = start(&again, &pane.id, LaunchMode::Normal).await else {
+            panic!("a paused pane started");
+        };
+        assert_eq!(err.message, AGENT_PAUSED);
+        tandem_store::repo::restore::set_state(&store, &pane.id, "none")
+            .await
+            .expect("none");
+        down.store(false, std::sync::atomic::Ordering::SeqCst);
+        // A folder off this computer: refused.
         let (wsl, _) = tandem_store::repo::workspaces::add(
             &store,
             tandem_store::repo::workspaces::NewWorkspace {

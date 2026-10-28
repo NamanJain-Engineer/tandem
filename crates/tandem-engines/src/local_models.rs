@@ -151,7 +151,7 @@ fn cloud_name(name: &str) -> bool {
 /// The models an Ollama `/api/tags` answer says run on Ollama's servers, by
 /// the names its OpenAI-style list uses: a server added as another kind may
 /// be Ollama, and `/v1/models` doesn't say which models are remote.
-pub fn ollama_remote_ids(tags: &Value) -> Vec<String> {
+pub fn ollama_remote_ids(tags: &Value) -> std::collections::HashSet<String> {
     tags.get("models")
         .and_then(Value::as_array)
         .map(|models| {
@@ -163,6 +163,15 @@ pub fn ollama_remote_ids(tags: &Value) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Whether an answer is Ollama's `/api/version` (`{"version": "0.12.6"}`):
+/// a server added as another kind that answers it is Ollama, and its tags
+/// must be read before its models are listed (D-2517).
+pub fn ollama_version(v: &Value) -> bool {
+    v.get("version")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.trim().is_empty())
 }
 
 /// An OpenAI-style `/v1/models`: `{"data": [{"id"}]}`.
@@ -281,6 +290,51 @@ pub const PROXY_VARS: [&str; 6] = [
     "all_proxy",
 ];
 
+/// The variables that would point Codex at an OpenAI account or endpoint: a
+/// local pane runs without them too.
+pub const ACCOUNT_VARS: [&str; 3] = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"];
+
+/// Codex's command-line settings for a local pane, on every launch, fresh
+/// or `codex resume` (D-2519): command-line settings come before every
+/// configuration file, a trusted project's `.codex/config.toml` included,
+/// so no project can name another model or provider. The same as the
+/// home's `config.toml`. `None` for a model name that can't be written.
+pub fn codex_overrides(kind: ServerKind, port: u16, model: &str) -> Option<Vec<String>> {
+    if !model_ok(model) {
+        return None;
+    }
+    let base = format!("{}/v1", url(port, "").trim_end_matches('/'));
+    Some(
+        [
+            format!("model=\"{model}\""),
+            format!("model_provider=\"{PROVIDER_ID}\""),
+            format!(
+                "model_providers.{PROVIDER_ID}.name=\"{} on this computer\"",
+                kind.label()
+            ),
+            format!("model_providers.{PROVIDER_ID}.base_url=\"{base}\""),
+            format!("model_providers.{PROVIDER_ID}.wire_api=\"responses\""),
+            "check_for_update_on_startup=false".to_string(),
+        ]
+        .into_iter()
+        .flat_map(|kv| ["-c".to_string(), kv])
+        .collect(),
+    )
+}
+
+/// The provider id a local home and its overrides name.
+pub const PROVIDER_ID: &str = "vibezeo-local";
+
+/// `argv` with `overrides` right after its program: before a subcommand
+/// (`resume`) and before the user's own arguments.
+pub fn with_overrides(argv: Vec<String>, overrides: Vec<String>) -> Vec<String> {
+    let mut it = argv.into_iter();
+    let mut out: Vec<String> = it.next().into_iter().collect();
+    out.extend(overrides);
+    out.extend(it);
+    out
+}
+
 /// A local pane's command with its environment set inside it (unix): the
 /// login shell's startup files run before the command, so a variable they
 /// export (a proxy, `NO_PROXY`, `CODEX_HOME`) can't reach Codex (D-2517).
@@ -291,9 +345,9 @@ pub fn env_argv(argv: Vec<String>, codex_home: &str, no_proxy: &str) -> Option<V
         return None;
     }
     let mut out = vec![ENV_PROGRAM.to_string()];
-    for var in PROXY_VARS {
+    for var in PROXY_VARS.iter().chain(ACCOUNT_VARS.iter()) {
         out.push("-u".into());
-        out.push(var.into());
+        out.push((*var).into());
     }
     out.push(format!("NO_PROXY={no_proxy}"));
     out.push(format!("no_proxy={no_proxy}"));
@@ -432,7 +486,7 @@ pub fn codex_config(
     // A profile could name another provider: none in a local home.
     doc.remove("profile");
     doc.remove("profiles");
-    doc["model_provider"] = toml_edit::value("vibezeo-local");
+    doc["model_provider"] = toml_edit::value(PROVIDER_ID);
     let mut provider = toml_edit::Table::new();
     provider["name"] = toml_edit::value(format!("{} on this computer", kind.label()));
     provider["base_url"] = toml_edit::value(format!("{}/v1", url(port, "").trim_end_matches('/')));
@@ -444,7 +498,7 @@ pub fn codex_config(
         return Err(ConfigError::Providers);
     };
     table.set_implicit(true);
-    table.insert("vibezeo-local", toml_edit::Item::Table(provider));
+    table.insert(PROVIDER_ID, toml_edit::Item::Table(provider));
     Ok(doc.to_string())
 }
 
@@ -505,9 +559,9 @@ mod tests {
         // An `=` in the path would make env print the environment.
         assert_eq!(env_argv(vec!["/opt/a=b/codex".into()], "/h", "x"), None);
         assert_eq!(argv[0], "/usr/bin/env");
-        for var in PROXY_VARS {
+        for var in PROXY_VARS.iter().chain(ACCOUNT_VARS.iter()) {
             assert!(
-                argv.windows(2).any(|w| w[0] == "-u" && w[1] == var),
+                argv.windows(2).any(|w| w[0] == "-u" && w[1] == *var),
                 "{var}"
             );
         }
@@ -535,14 +589,19 @@ mod tests {
         assert_eq!(ids, vec!["gemma3:4b", "qwen3:8b"]);
         assert_eq!(
             ollama_remote_ids(&tags),
-            vec![
-                "gpt-oss:120b-cloud",
+            [
                 "gpt-oss:120b-cloud",
                 "deepseek-v3.1:671b-cloud",
                 "kimi-k2:cloud",
                 "glm-4.6:CLOUD"
             ]
+            .into_iter()
+            .map(String::from)
+            .collect()
         );
+        assert!(ollama_version(&json!({"version": "0.12.6"})));
+        assert!(!ollama_version(&json!({"data": []})));
+        assert!(!ollama_version(&json!({"version": ""})));
         // Ollama's OpenAI-style list has them too, as another kind would ask.
         let v1 = json!({"object": "list", "data": [
             {"id": "gpt-oss:120b-cloud", "object": "model", "owned_by": "library"},
@@ -560,6 +619,45 @@ mod tests {
                 .collect();
             assert_eq!(ids, vec!["gemma3:4b"], "{kind:?}");
         }
+    }
+
+    /// F-EN-11 review: every launch names the model and the local provider
+    /// on the command line, before a subcommand and the user's arguments.
+    #[test]
+    fn f_en_11_2_every_launch_names_the_model_and_provider_on_the_command_line() {
+        let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b").expect("overrides");
+        let pairs: Vec<&str> = o
+            .chunks(2)
+            .map(|c| {
+                assert_eq!(c[0], "-c");
+                c[1].as_str()
+            })
+            .collect();
+        assert_eq!(
+            pairs,
+            vec![
+                "model=\"qwen3:8b\"",
+                "model_provider=\"vibezeo-local\"",
+                "model_providers.vibezeo-local.name=\"Ollama on this computer\"",
+                "model_providers.vibezeo-local.base_url=\"http://127.0.0.1:11434/v1\"",
+                "model_providers.vibezeo-local.wire_api=\"responses\"",
+                "check_for_update_on_startup=false",
+            ]
+        );
+        // Each value is TOML, as Codex reads it.
+        for kv in &pairs {
+            let doc: toml_edit::DocumentMut = kv.parse().expect("toml");
+            assert_eq!(doc.len(), 1, "{kv}");
+        }
+        let resume = with_overrides(
+            vec!["/bin/codex".into(), "resume".into(), "t1".into()],
+            o.clone(),
+        );
+        assert_eq!(resume[0], "/bin/codex");
+        assert_eq!(&resume[1..3], ["-c", "model=\"qwen3:8b\""]);
+        assert_eq!(&resume[resume.len() - 2..], ["resume", "t1"]);
+        assert_eq!(codex_overrides(ServerKind::Ollama, 1, "-m"), None);
+        assert_eq!(codex_overrides(ServerKind::Ollama, 1, "a\"b"), None);
     }
 
     #[test]

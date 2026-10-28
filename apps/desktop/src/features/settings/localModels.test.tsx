@@ -4,6 +4,7 @@ import type { LocalServer } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { LocalModelChip } from "../code/LocalModelChip";
+import { PrivacyFlows } from "./extras";
 import { LocalModels, modelLine } from "./LocalModels";
 
 const OLLAMA: LocalServer = {
@@ -146,5 +147,20 @@ describe("UI-164 Local models (F-EN-11)", () => {
       </UiProvider>,
     );
     expect(screen.getByTestId("local-model-chip").textContent).toBe("On this computer");
+  });
+
+  it("F-EN-11.3 the Privacy page says where a local model's prompts go, and what Vibezeo doesn't control", () => {
+    fakeBackend({});
+    render(
+      <UiProvider>
+        <PrivacyFlows />
+      </UiProvider>,
+    );
+    const line = screen.getByTestId("privacy-local-models").textContent ?? "";
+    expect(line).toContain("go only to its model server at 127.0.0.1");
+    expect(line).toContain(
+      "What that server does with them (it could be a gateway or a port-forward), a project's MCP servers and settings an administrator manages for Codex are outside Vibezeo's control.",
+    );
+    expect(line).not.toMatch(/nothing leaves/i);
   });
 });

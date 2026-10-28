@@ -223,4 +223,17 @@ describe("Find work in the palette (F-CN-05)", () => {
     expect(useUi.getState().mode).toBe("agent");
     expect(useTeammates.getState().selectedId).toBe("tm_rel");
   });
+
+  it("F-EN-11.3 a hosted answer with local model panes ranked on this computer says both", async () => {
+    setup(() => ({ ...AUTH, ranking: "mixed" }));
+    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => runCommand("work.find"));
+    type("login testing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(await screen.findByRole("option", { name: /auth tests/ })).toBeTruthy();
+    expect(screen.getByText("Find work · ranked by Vibezeo's AI and on this computer")).toBeTruthy();
+    expect(screen.queryByText("Find work · ranked by Vibezeo's AI")).toBeNull();
+  });
 });

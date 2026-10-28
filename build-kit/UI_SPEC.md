@@ -1127,7 +1127,7 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
   - States: loading (`Spinner`), error (`Banner` with Try again), empty ("No model servers are running on this computer. Start Ollama or LM Studio, then check again.").
   - **Add a port** (dialog, `sm`): description "Another port on this computer to ask for models." Fields: Kind (`Select`), Host (`Input`, `127.0.0.1`; only `127.0.0.1` and `localhost` are accepted), Port (`Input`, numeric; "Ports run from 1 to 65535"). Footer: Cancel, **Add** (primary). A refused host shows the error in a `Banner`.
   - A pane started from a local model shows the chip "On this computer" (`Cpu` icon, `surface-3`) in its header where an account chip would be; its tooltip is "{model} · {kind}".
-  - Settings › Privacy, under "What leaves this machine": "Local models: nothing leaves this computer. Prompts and code go to the model server at 127.0.0.1."
+  - Settings › Privacy, under "What leaves this machine": "Local models: a local model's prompts, and the code they carry, go only to its model server at 127.0.0.1. What that server does with them (it could be a gateway or a port-forward), a project's MCP servers and settings an administrator manages for Codex are outside Vibezeo's control."
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2190,7 +2190,7 @@ Conductor operates Tandem by voice through a closed tool catalog that mirrors th
   - Voice or screen: closing panes, executing tasks, creating a teammate, other plugin writes.
   - If the target changes first, the row expires: "Expired — {pane} changed."
 - **Errors:** "Couldn't connect to Conductor. [Try again]" · "You're offline. Conductor needs a connection." · "Your microphone isn't delivering audio. [Switch mic]" · "This call reached its 30-minute limit. [Start a new call]" · "Out of credits." (UI-122; nothing to buy, no action, D-2914) · "Sign in to use Conductor. [Sign in]". Startup errors always show; nothing pops up after hang-up.
-- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search.
+- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search. Its results' heading is "Find work · ranked by Vibezeo's AI" when the hosted ranking ordered them, and "Find work · ranked by Vibezeo's AI and on this computer" when local model panes, which it's never sent, were ranked here among its answer (F-EN-11).
 - **Ending:** hang-up, sign-out, an unrecoverable mic, the 30-minute cap or 0 credits. Audio stops at once, pending deliveries are cancelled and queued actions never run. A 3s receipt replaces the HUD: "Call ended · 4:12 · 520 credits · 6 actions [Call log]".
 - **Acceptance:** a voice "yes" never confirms a shell command; hang-up during a pending prompt delivers nothing; a waiting pane never receives Conductor input; after 5 actions the HUD shows 3 chips and "+2"; a hidden window stops the ring's animation loop.
 
