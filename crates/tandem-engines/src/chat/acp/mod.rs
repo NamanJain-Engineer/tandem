@@ -541,6 +541,18 @@ pub fn offered(result: &Value) -> Option<Vec<ModelOffer>> {
     )
 }
 
+/// A teammate's briefing as the text that opens an ACP prompt (F-AG-06):
+/// with no `@` that names a file for the agent to attach, as when it's a
+/// system prompt, since its memory and skills are agents' words (D-3023).
+fn briefing_block(text: &str) -> String {
+    let safe = tandem_core::untrusted::defang_mentions(text);
+    if safe == text {
+        safe
+    } else {
+        format!("{safe}\n{}", tandem_core::untrusted::DEFANGED)
+    }
+}
+
 /// What a thread says when the agent wants a sign-in: the methods it named,
 /// as it named them (D-2514).
 pub fn sign_in_needed(label: &str, methods: &[String]) -> String {
@@ -1027,7 +1039,7 @@ impl AcpSession {
             .swap(false, std::sync::atomic::Ordering::SeqCst)
         {
             if let Some(text) = self.req.briefing_text() {
-                blocks.push(json!({"type": "text", "text": text}));
+                blocks.push(json!({"type": "text", "text": briefing_block(&text)}));
             }
         }
         blocks.push(json!({"type": "text", "text": turn.text}));

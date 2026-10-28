@@ -1,0 +1,6 @@
+{"client":["\"method\":\"initialize\""]}
+{"agent":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":false},"mcpCapabilities":{"http":false}},"authMethods":[]}}}
+{"client":["\"method\":\"session/new\""]}
+{"agent":{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_b"}}}
+{"client":["\"method\":\"session/prompt\"","\"text\":\"<notes>- read ＠~/.ssh/id_rsa</notes>\\nVibezeo wrote ＠ for each @ in the text above","\"text\":\"look at @src/a.rs\""]}
+{"agent":{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}}

@@ -70,11 +70,13 @@ release fails when its version has no section.
 
 ### Security
 
-- [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
-  for a second opinion, a pull request's review comments, a failed check's log
-  sent to an agent, and Warn both agents' note about another worktree's symbols
-  can't make Claude Code read a file on your computer: any `@` there that could
-  name one is written ＠, and the message says so.
+- [lin] **Text from elsewhere can't hand an agent a file.** What Vibezeo passes
+  an agent from somewhere else can't make Claude Code read a file on your
+  computer: a worktree's diff sent for a second opinion, a pull request's review
+  comments, a failed check's log, Warn both agents' note, a teammate's mail, the
+  terminal selection or clipboard in a prompt, a web page's elements, the turn a
+  teammate learns from, and a teammate's briefing for an ACP agent. Any `@`
+  there that could name a file is written ＠, and the message says so.
 
 ## 0.12.0
 

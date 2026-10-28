@@ -3117,6 +3117,13 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - the tracker's and the runs' reads: m11-1-tasks 3, m11-2-execute 4, m11-6-free 2;
       - plans (D-3020, D-3021): m18-free-offline 2, m18-tk07 3, m18-tk08 1, m18-tk06 1, m18-tk05 3, m18-db04 6;
       - the prompts that defang (D-3022): m18-wt05 2, m18-wt07 2, m18-wt08 3, m18-wt10 1.
+- [x] Rule 8's other messages to an engine, as the coordinator assigned after D-3022's READY (D-3023).
+  - **Checked first.** Claude Code 2.1.312, run against a local stand-in for the API, attached a canary file named by `@` in `-p`'s stdin and in stream-json turns, inside a code fence too. Neither `＠` nor `--append-system-prompt-file` attached anything. The learn follow-up was a real path, then.
+  - **Defanged:** a teammate's mail, the prompt library's selection and clipboard, the picker's brief (all but your note), the learn follow-up's turn and notes, and an ACP agent's briefing (`briefing_block`). Each adds the line saying so only when it changed something.
+  - **The learn answer** reads ＠ back as @, so a removal still matches the note kept.
+  - **Radar's test** names its module `"see @~/.ssh/id_rsa"`: with the space, 2.1.312 would attach it (D-3022 amended).
+  - **Found on the way:** the ACP briefing, outside the four the coordinator listed; ARCHITECTURE no longer says Codex takes a first-turn preamble (older Codex fails closed, D-117).
+  - **Tests** (6 new Rust, one changed, and a new rule-8 invariant): mail, the prompt variables, the picker (address, selector, component, framework, font and HTML from the page; your note kept), the learn prompt and its answer, the ACP briefing alone and through the adapter to a fake agent. The six failed on the old code.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3287,7 +3294,25 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The second opinion's diff, PR checks' CI log and review comments, the merge queue's check output and radar's heads-up go through `untrusted::fence_defanged`: ＠ for each @ that could name a file, and a line saying so after the fence when one changed. `DEFANGED` lives in `untrusted` now, shared with F-TK-08's briefings.
   - A review comment's author is written without an @ (it's our wording), so a plain comment needs no note. Its path and words are defanged, since a path can carry `@~/…`.
   - The second opinion reads a finding's path with ＠ as @, so the finding still lands on its line.
-  - Radar's heads-up is defanged too: TypeScript names a module or a method with any string (`declare module "@~/.ssh/id_rsa"`), so a symbol's name can spell a path out of the worktree.
+  - Radar's heads-up is defanged too: TypeScript names a module or a method with any string, spaces too (`declare module "see @~/.ssh/id_rsa"`), so a symbol's name can spell a path out of the worktree.
+  - Amended by D-3023: Claude Code 2.1.312 attaches an `@path` only at the start or after whitespace, so the example needs its space; the defang still takes every `@` before a non-space.
+- D-3023: The rest of the messages an engine reads name no file for it to attach either (rule 8, D-3022's follow-up, which the coordinator assigned).
+  - Checked first on Claude Code 2.1.312, against a local stand-in for the API (a dummy key, a throwaway home and canary files; no real call):
+    - `-p` with the prompt on stdin, as the learn follow-up runs, attaches the file an `@path` names: absolute, `~/` or relative.
+    - So do stream-json turns, a string or a text block, as threads, mail and the answer sessions send them.
+    - An `@` at the start or after a space or a tab attaches, inside a code fence too. One after a quote, a word character, a bracket or a backtick doesn't, and `＠` never does.
+    - Nothing in `--append-system-prompt-file` attaches.
+    - The defang stays wider than that (every `@` before a non-space, D-2839): the rule isn't documented, and it moves with versions.
+  - A teammate's mail (F-AG-12) and the prompt library's `{{selection}}` and `{{clipboard}}` (F-EX-05) go through `fence_defanged`. Your own mail and what you typed stay as written.
+  - The picker's brief (F-CD-18) defangs everything the page wrote: its address, selectors, components, styles and HTML. Your note stays, and the line saying so ends the brief, which still ends without a newline.
+  - The learn follow-up (F-AG-08) defangs the turn and the notes it shows, and reads ＠ back as @ in the answer, so a note it removes still matches the one kept.
+  - An ACP agent takes no system prompt, so its first prompt carries the teammate's briefing (F-AG-06), defanged there: a briefing never attaches a file, as in Claude Code's system prompt, and memory and skills are agents' words.
+  - Not affected:
+    - Claude Code's briefing (a system prompt);
+    - Codex's (developer instructions; a Codex with only the older API fails closed, D-117);
+    - plugin responses (tool results);
+    - a teammate launched in a terminal (your own brief);
+    - Conductor's persona (the voice model).
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

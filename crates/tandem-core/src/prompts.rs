@@ -178,14 +178,15 @@ pub const UNTRUSTED_VARIABLES: [(&str, &str); 2] = [
     ("clipboard", "the clipboard"),
 ];
 
-/// Labels and fences the untrusted values in place (see [`UNTRUSTED_VARIABLES`]).
+/// Labels and fences the untrusted values in place (see [`UNTRUSTED_VARIABLES`]),
+/// with no `@` in them that names a file for the agent to attach (D-3023).
 pub fn guard(values: &mut BTreeMap<String, String>) {
     for (name, source) in UNTRUSTED_VARIABLES {
         if let Some(v) = values.get_mut(name).filter(|v| !v.is_empty()) {
             *v = format!(
                 "{}\n{}",
                 crate::untrusted::label(source),
-                crate::untrusted::fence("", v)
+                crate::untrusted::fence_defanged("", v)
             );
         }
     }
@@ -389,6 +390,35 @@ mod tests {
             render("a {{ two words }} b {{", &BTreeMap::new()).0,
             "a {{ two words }} b {{"
         );
+    }
+
+    #[test]
+    fn f_ex_05_2_the_selection_and_the_clipboard_name_no_file_for_the_agent() {
+        // Program output and whatever was copied: Claude Code attaches the
+        // file an `@path` in the sent text names (D-3023).
+        let mut v = values(&[
+            ("selection", "npm ERR! see @/home/u/.npm/_logs/x.log"),
+            ("clipboard", "copied from a page: @~/.ssh/id_rsa"),
+            ("file", "src/@app/page.tsx"),
+            ("ticket", "Keep @docs/style.md in mind"),
+        ]);
+        guard(&mut v);
+        for (name, named) in [
+            ("selection", "/home/u/.npm/_logs/x.log"),
+            ("clipboard", "~/.ssh/id_rsa"),
+        ] {
+            let got = &v[name];
+            assert!(!got.contains(&format!("@{named}")), "{got}");
+            assert!(got.contains(&format!("\u{FF20}{named}")), "{got}");
+            assert!(got.ends_with(crate::untrusted::DEFANGED), "{got}");
+        }
+        // What you typed, and the file you have open, stay as they are.
+        assert_eq!(v["file"], "src/@app/page.tsx");
+        assert_eq!(v["ticket"], "Keep @docs/style.md in mind");
+        // Nothing to change: no note.
+        let mut plain = values(&[("selection", "1 failed")]);
+        guard(&mut plain);
+        assert!(!plain["selection"].contains(crate::untrusted::DEFANGED));
     }
 
     #[test]
