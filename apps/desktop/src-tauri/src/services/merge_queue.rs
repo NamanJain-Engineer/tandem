@@ -226,6 +226,8 @@ fn update_saved(data: &DataDir, f: impl FnOnce(&mut Saved)) -> Result<(), IpcErr
 /// local only.
 pub async fn repo_of(store: &Store, id: &WorkspaceId) -> Result<Workspace, IpcError> {
     let ws = workspaces::get(store, id).await?;
+    // F-CD-24: a jj workspace's own commands aren't available yet.
+    crate::services::jj_lanes::refuse_jj(store, &ws).await?;
     let repo = match &ws.parent_id {
         Some(parent) => workspaces::get(store, parent).await?,
         None => ws,
@@ -248,7 +250,8 @@ pub fn order(candidates: &mut [LandingCandidate]) {
     });
 }
 
-/// "Send failure to agent": what failed, then the output as data.
+/// "Send failure to agent": what failed, then the output as data, with no
+/// `@` that names a file for the agent to attach (D-3022).
 pub fn failure_prompt(branch: &str, command: &str, exit: Option<i32>, output: &str) -> String {
     let how = match exit {
         Some(code) => format!("failed with exit code {code}"),
@@ -258,7 +261,7 @@ pub fn failure_prompt(branch: &str, command: &str, exit: Option<i32>, output: &s
         "The merge queue stopped at this worktree ({branch}): its check `{command}` {how}. \
          Find the cause, fix it, commit, and say when it's done.\n\n{}\n{}",
         untrusted::label("the check's output"),
-        untrusted::fence("text", output)
+        untrusted::fence_defanged("text", output)
     )
 }
 
@@ -299,11 +302,16 @@ pub async fn plan(
     let into = base.clone().unwrap_or_else(|| "HEAD".into());
     let mut lanes = workspaces::lanes(store, &repo.id).await?;
     lanes.sort_by_key(|l| l.created_at);
+    // F-CD-24: jj workspaces don't land yet (their name isn't a branch).
+    let jj = tandem_store::repo::lane_vcs::jj_lanes(store).await?;
     let mut candidates = Vec::new();
     for lane in lanes {
         let Some(branch) = lane.lane_branch.clone() else {
             continue;
         };
+        if jj.contains(&lane.id) {
+            continue;
+        }
         if lane.kind != "local" || queue::resolve(git, &root, &branch).await?.is_none() {
             continue;
         }
@@ -432,6 +440,7 @@ pub async fn start(
     let mut lanes = Vec::new();
     for lane_id in lane_ids {
         let lane = workspaces::get(store, lane_id).await?;
+        crate::services::jj_lanes::refuse_jj(store, &lane).await?;
         let Some(branch) = lane
             .lane_branch
             .clone()
@@ -1008,6 +1017,13 @@ mod tests {
         assert!(p.contains("`pnpm test` failed with exit code 1"));
         assert!(p.contains(&untrusted::label("the check's output")));
         assert!(p.contains(&untrusted::fence("text", out)));
+        // A check prints whatever the code under test does (D-3022).
+        let named = failure_prompt("tandem/x", "npm test", Some(1), "see @/home/u/.npmrc");
+        assert!(
+            !named.contains("@/home") && named.contains("\u{FF20}/home/u/.npmrc"),
+            "{named}"
+        );
+        assert!(named.contains(untrusted::DEFANGED) && !p.contains(untrusted::DEFANGED));
         assert!(p.ends_with("````"), "the output can't close its fence: {p}");
         assert!(failure_prompt("b", "c", None, "").contains("was stopped before it finished"));
     }

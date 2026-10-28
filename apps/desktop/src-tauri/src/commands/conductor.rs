@@ -252,7 +252,7 @@ impl ToolHost for AppHost {
                     }
                 }
                 for a in state.approvals.broker.pending() {
-                    items.push(json!({"approval": a.summary}));
+                    items.push(json!({"approval": waiting_approval(&a)}));
                 }
                 Ok(Value::Array(items).to_string())
             }
@@ -783,4 +783,46 @@ pub fn test_mic_owner(
         ));
     }
     Ok(state.mic.current())
+}
+
+/// What Conductor hears about a pending approval. A pane's is an agent's
+/// `vibezeo run` (F-TL-12): only the fixed text, never the line or the
+/// secret names, since Conductor's words go to the voice service.
+fn waiting_approval(a: &tandem_core::approvals::ApprovalView) -> String {
+    if matches!(a.source, SourceRef::Pane { .. }) {
+        crate::services::notifications::PANE_APPROVAL_BODY.to_string()
+    } else {
+        a.summary.clone()
+    }
+}
+
+#[cfg(test)]
+mod waiting_tests {
+    use super::*;
+
+    #[test]
+    fn f_tl_12_7_conductor_hears_only_the_fixed_text_for_a_pane_run() {
+        let view = tandem_core::approvals::ApprovalView {
+            id: tandem_core::ids::ApprovalId::new(),
+            source: SourceRef::Pane {
+                pane_id: "pn_1".into(),
+            },
+            kind: tandem_core::approvals::ApprovalKind::Command,
+            summary: "run `pnpm deploy` with API_KEY (stripe-test)".into(),
+            detail: "{}".into(),
+            options: vec![tandem_core::approvals::ApprovalScope::Once],
+            created_at: 1,
+            expires_at: 2,
+        };
+        let heard = waiting_approval(&view);
+        assert_eq!(heard, crate::services::notifications::PANE_APPROVAL_BODY);
+        assert!(!heard.contains("pnpm") && !heard.contains("stripe-test"));
+        let thread = tandem_core::approvals::ApprovalView {
+            source: SourceRef::Thread {
+                thread_id: "th_1".into(),
+            },
+            ..view
+        };
+        assert_eq!(waiting_approval(&thread), thread.summary);
+    }
 }

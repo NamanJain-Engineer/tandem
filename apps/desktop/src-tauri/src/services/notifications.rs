@@ -59,6 +59,29 @@ fn type_key(kind: NotificationKind) -> &'static str {
     }
 }
 
+/// An approval's notification body and dedupe key. A pane's (`vibezeo
+/// run`) carries no command or secret names, and its key isn't
+/// `approval:<id>`, so the list offers no Allow for it.
+pub fn approval_notice(
+    view: &tandem_core::approvals::ApprovalView,
+    line: Option<String>,
+) -> (String, String) {
+    if matches!(view.source, SourceRef::Pane { .. }) {
+        return (
+            PANE_APPROVAL_BODY.to_string(),
+            format!("pane-approval:{}", view.id.as_str()),
+        );
+    }
+    (
+        line.unwrap_or_else(|| view.summary.clone()),
+        format!("approval:{}", view.id.as_str()),
+    )
+}
+
+/// A pane approval's notification body: never the command or the secrets.
+pub const PANE_APPROVAL_BODY: &str =
+    "Wants to run a command with secrets. Open the pane to see it and answer.";
+
 pub struct NotificationService {
     store: Store,
     bus: EventBus,
@@ -233,24 +256,16 @@ impl NotificationService {
                     .as_ref()
                     .map(display_name)
                     .unwrap_or_else(|| "An agent".into());
-                let body = match &item {
-                    Some(i) => source_line(i, Some(&view.summary)),
-                    None => view.summary.clone(),
-                };
-                let key =
-                    key.unwrap_or_else(|| SessionKey(format!("approval:{}", view.id.as_str())));
-                self.raise(
-                    NotificationKind::Approval,
-                    format!("{name} needs approval"),
-                    body,
-                    view.source.clone(),
-                    &key,
-                    Some(format!("approval:{}", view.id.as_str())),
-                )
-                .await;
+                let line = item.as_ref().map(|i| source_line(i, Some(&view.summary)));
+                self.approval_requested(&view, name, line).await;
             }
             ApprovalEvent::Resolved { view, .. } => {
-                self.resolve(&format!("approval:{}", view.id.as_str()))
+                let prefix = if matches!(view.source, SourceRef::Pane { .. }) {
+                    "pane-approval"
+                } else {
+                    "approval"
+                };
+                self.resolve(&format!("{prefix}:{}", view.id.as_str()))
                     .await;
             }
         }
@@ -402,6 +417,33 @@ impl NotificationService {
             Ok(_) => {}
             Err(err) => tracing::warn!(error = %err, "couldn't resolve notifications"),
         }
+    }
+
+    /// An approval's notification, stored and raised. A pane's approval is
+    /// an agent's `vibezeo run` (F-TL-12): its line and secret names stay
+    /// out of the stored notification and the OS one (the session's
+    /// Activity keeps the redacted line, F-EX-07), and it's answered on the
+    /// pane or its card, where the whole line shows (no Allow in the list).
+    async fn approval_requested(
+        &self,
+        view: &tandem_core::approvals::ApprovalView,
+        name: String,
+        line: Option<String>,
+    ) {
+        let (body, dedupe) = approval_notice(view, line);
+        let key = view
+            .source
+            .session_key()
+            .unwrap_or_else(|| SessionKey(dedupe.clone()));
+        self.raise(
+            NotificationKind::Approval,
+            format!("{name} needs approval"),
+            body,
+            view.source.clone(),
+            &key,
+            Some(dedupe),
+        )
+        .await;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -589,6 +631,49 @@ fn notification_for(
 
 #[cfg(test)]
 mod tests {
+
+    #[tokio::test]
+    async fn f_tl_12_7_a_vibezeo_run_notification_carries_no_command_or_secret_names() {
+        use tandem_core::approvals::{ApprovalKind, ApprovalScope, ApprovalView};
+        let view = ApprovalView {
+            id: tandem_core::ids::ApprovalId::new(),
+            source: SourceRef::Pane {
+                pane_id: "pn_1".into(),
+            },
+            kind: ApprovalKind::Command,
+            summary: "run `pnpm deploy` with API_KEY (stripe-test)".into(),
+            detail: "{}".into(),
+            options: vec![ApprovalScope::Once],
+            created_at: 1,
+            expires_at: 2,
+        };
+        // What's stored, as the app raises it.
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let svc = NotificationService::new(store.clone(), EventBus::new());
+        svc.approval_requested(
+            &view,
+            "Claude".into(),
+            Some("Claude in shop: run `pnpm deploy`".into()),
+        )
+        .await;
+        let stored = repo::list(&store, None).await.expect("list").items;
+        assert_eq!(stored.len(), 1, "{stored:?}");
+        assert_eq!(stored[0].body, PANE_APPROVAL_BODY);
+        assert!(!stored[0].title.contains("pnpm") && !stored[0].body.contains("stripe-test"));
+        let key = stored[0].dedupe_key.clone().unwrap_or_default();
+        assert!(key.starts_with("pane-approval:"), "{key}");
+        let thread = ApprovalView {
+            source: SourceRef::Thread {
+                thread_id: "th_1".into(),
+            },
+            ..view
+        };
+        let (body, key) = approval_notice(&thread, None);
+        assert_eq!(body, thread.summary);
+        assert!(key.starts_with("approval:"));
+    }
     use super::*;
 
     fn prefs(types: Value) -> Prefs {

@@ -92,6 +92,23 @@ pub async fn list(store: &Store) -> Result<Vec<Workspace>, StoreError> {
         .await
 }
 
+/// Whether a workspace's row is soft-removed (or gone).
+pub async fn is_removed(store: &Store, id: &WorkspaceId) -> Result<bool, StoreError> {
+    let id = id.as_str().to_string();
+    store
+        .read(move |c| {
+            let live: Option<i64> = c
+                .query_row(
+                    "SELECT 1 FROM workspaces WHERE id = ?1 AND removed_at IS NULL",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            Ok(live.is_none())
+        })
+        .await
+}
+
 pub async fn get(store: &Store, id: &WorkspaceId) -> Result<Workspace, StoreError> {
     let id = id.as_str().to_string();
     store
@@ -251,6 +268,7 @@ pub(crate) fn add_lane_in(
                 params![id, ws.name, parent.id.as_str(), ws.lane_branch, ws.lane_base, ws.sort_key, ws.kind, ws.wsl_distro],
             )?;
             t.execute("DELETE FROM lane_repos WHERE lane_id = ?1", [id.as_str()])?;
+            t.execute("DELETE FROM lane_vcs WHERE lane_id = ?1", [id.as_str()])?;
             Ok(Workspace {
                 id: WorkspaceId::from_db(id),
                 ..ws

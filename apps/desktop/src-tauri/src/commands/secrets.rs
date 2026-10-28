@@ -6,7 +6,7 @@ use tandem_core::ids::{PaneId, TabId};
 use tandem_core::IpcError;
 use tandem_store::repo::panes::{self, PaneRecord};
 
-use crate::services::secrets::{self, RunPlan, SecretInfo};
+use crate::services::secrets::{self, AgentsMdPlan, RunPlan, RunRuleRepo, SecretInfo};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -77,4 +77,39 @@ pub async fn secrets_run(
     state.terminals.set_pending_run(&pane.id, run);
     tracing::info!(code = "secrets.run", "a run with secrets started");
     Ok(pane)
+}
+
+/// What "Tell agents in this folder" would write to the pane's folder's
+/// `AGENTS.md` (F-TL-12 slice 2), for the person to look at first.
+#[tauri::command]
+pub async fn secrets_agents_plan(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+) -> Result<AgentsMdPlan, IpcError> {
+    secrets::agents_plan(&state.store, &pane_id).await
+}
+
+/// Writes it, if `AGENTS.md` is still what the plan showed (`before`).
+#[tauri::command]
+pub async fn secrets_agents_apply(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    before: String,
+) -> Result<AgentsMdPlan, IpcError> {
+    secrets::agents_apply(&state.store, &pane_id, &before).await
+}
+
+/// Each folder's commands agents may run with secrets without asking.
+#[tauri::command]
+pub async fn run_rules_list(state: State<'_, AppState>) -> Result<Vec<RunRuleRepo>, IpcError> {
+    secrets::rules_list(&state.store, state.data.root()).await
+}
+
+#[tauri::command]
+pub async fn run_rules_set(
+    state: State<'_, AppState>,
+    repo: String,
+    commands: Vec<String>,
+) -> Result<RunRuleRepo, IpcError> {
+    secrets::rules_set(&state.store, state.data.root(), &repo, &commands).await
 }

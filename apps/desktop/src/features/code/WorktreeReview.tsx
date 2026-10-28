@@ -24,6 +24,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { useWorktrees } from "../../stores/worktrees";
+import { diffNames } from "../../stores/intel";
 import { useEngines } from "../../stores/engines";
 import { switchMode } from "../shell/actions";
 import { useThreads } from "../../stores/threads";
@@ -283,6 +284,11 @@ export function ReviewDiff({
   const [sending, setSending] = useState(false);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
+  // F-CD-23: names on the new side, in the worktree; results open in Files.
+  const names = useMemo(
+    () => diffNames({ type: "workspace", workspaceId: wt.id }, () => useWorktrees.setState({ ask: null })),
+    [wt.id],
+  );
   const chosen = agents.find((a) => a.key === target) ?? agents[0] ?? null;
   // F-WT-08: once its repository is allowed and it has a pull request.
   const pr = useWorktrees((s) => (s.checks[wt.id]?.state === "ready" ? s.checks[wt.id]?.pr : null));
@@ -445,6 +451,7 @@ export function ReviewDiff({
       <DiffView
         files={files}
         labels={labels}
+        names={names}
         comments={{
           label: (tg) =>
             t(tg.side === "new" ? "worktree.review.commentOn" : "worktree.review.commentOnRemoved", {

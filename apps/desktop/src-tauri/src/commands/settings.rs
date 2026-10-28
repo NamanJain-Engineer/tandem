@@ -39,6 +39,12 @@ pub async fn store_and_apply(
 ) -> Result<(), IpcError> {
     store(state, key, &value).await?;
     apply(app, state, key, &value).await?;
+    // F-CD-23 (D-2591): with the sandbox on, worktrees need their own
+    // trust, so servers started under the repository's stop and start again
+    // only past the new check.
+    if key == SettingKey::AgentSandbox {
+        crate::services::lsp::global().shutdown().await;
+    }
     state.bus.publish(BusEvent::new(
         Topic::App,
         "settings:changed",

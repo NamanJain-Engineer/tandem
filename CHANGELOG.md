@@ -32,6 +32,35 @@ release fails when its version has no section.
   notification tells you, and Answer… sends your answer to the run. A run
   waiting for an approval shows "Waiting for your approval", and a question Lead
   hadn't answered when Vibezeo closed comes to you after the restart.
+- [lin] **Agents can run commands that need secrets.** An agent in an agent pane
+  runs `vibezeo run -- pnpm deploy`; the pane shows the whole command and every
+  secret it would get, and asks first (Allow once, Allow for this agent, Deny).
+  The command runs outside the agent, and the agent sees its output with each
+  secret's value hidden. Settings › Secrets can let a command run without asking
+  in a folder, and Run with secrets can tell agents about it in the folder's
+  `AGENTS.md`. You answer these on your computer: the phone and notifications
+  only say a run is waiting. Characters outside plain ASCII in the command are
+  marked, so a look-alike letter can't pass.
+- [lin] **Activity for each agent session.** **Activity…** in an agent pane's, a
+  thread's or a Dashboard card's menu lists what that session did, in order:
+  turns sent (never their words), files changed, commands, tools, approvals and
+  `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
+  for 14 days.
+- [lin] **Code intelligence in the editor and diffs.** With the language
+  servers you already have (rust-analyzer, typescript-language-server, pyright,
+  gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
+  references (Shift+F12), shows hover text and underlines problems, and
+  worktree and review diffs jump from a changed name to its definition or
+  callers. No server runs until you trust the repository (each worktree on its
+  own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+- [lin] **jj workspaces.** With jj installed on this computer, in a trusted
+  repository co-located with jj, New worktree… makes a jj workspace
+  (`jj workspace add`) instead of a git worktree, with a git worktree one click
+  away and your choice remembered. Its diff and overlap check come from jj,
+  agents in it are told to use jj, and Discard forgets the workspace while its
+  commits stay. Folders on this computer only. Landing, pull requests,
+  previews, setup, second opinion, the intent radar and the git panel aren't
+  available for jj workspaces yet.
 
 ### Changed
 
@@ -54,6 +83,14 @@ release fails when its version has no section.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
+
+### Security
+
+- [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
+  for a second opinion, a pull request's review comments, a failed check's log
+  sent to an agent, and Warn both agents' note about another worktree's symbols
+  can't make Claude Code read a file on your computer: any `@` there that could
+  name one is written ＠, and the message says so.
 
 ## 0.12.0
 

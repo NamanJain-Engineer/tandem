@@ -447,6 +447,8 @@ export const useFiles = create<FilesStore>((set, get) => {
       if (!key || !c) return;
       const at = c.tabs.findIndex((f) => f.path === path);
       if (at < 0) return;
+      // F-CD-23: the language server reads it from disk again.
+      void invoke("lsp_close", { context: c.context, path }).catch(() => undefined);
       const id = `${key}\n${path}`;
       clearTimeout(autosave.get(id));
       autosave.delete(id);
@@ -590,6 +592,9 @@ export const useFiles = create<FilesStore>((set, get) => {
       const c = get().byKey[key];
       if (!c) return;
       patchCtx(key, (x) => ({ batches: x.batches + 1 }));
+      // F-CD-23: the folder's language servers hear what changed on disk.
+      if (change.paths.length > 0)
+        void invoke("lsp_files_changed", { context: c.context, paths: change.paths }).catch(() => undefined);
       const touched = new Set(change.paths);
       // Open files: a clean one follows the disk; a dirty one keeps its text
       // and says the file changed (saving it raises the conflict prompt).

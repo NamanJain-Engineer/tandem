@@ -2,6 +2,8 @@
 //! without a window (ARCHITECTURE §2.12).
 
 pub mod accounts;
+pub mod activity;
+pub mod agent_run;
 pub mod api;
 pub mod approvals;
 pub mod askpass;
@@ -35,11 +37,13 @@ pub mod git_panel;
 pub mod handoff;
 pub mod hosted;
 pub mod instructions;
+pub mod jj_lanes;
 pub mod lanes;
 pub mod launch;
 pub mod learn;
 pub mod library;
 pub mod limits;
+pub mod lsp;
 pub mod mail;
 pub mod merge_queue;
 pub mod models;

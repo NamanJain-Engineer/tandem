@@ -77,7 +77,7 @@ const COMMENTS: ImportedComment[] = [
     author: "ana",
     body: "Rename this",
     fenced:
-      "> Untrusted content from a pull request review comment\n```text\n@ana on a.ts:2:\nRename this\n```",
+      "> Untrusted content from a pull request review comment\n```text\nana on a.ts:2:\nRename this\n```",
   },
 ];
 
@@ -312,7 +312,7 @@ describe("CI results and review comments (F-WT-08)", () => {
     expect(prompt).toContain(
       "1. Imported review comment:\n   > Untrusted content from a pull request review comment",
     );
-    expect(prompt).toContain("   ```text\n   @ana on a.ts:2:\n   Rename this\n   ```");
+    expect(prompt).toContain("   ```text\n   ana on a.ts:2:\n   Rename this\n   ```");
     expect(prompt).not.toContain("1. a.ts:2");
     // Importing again adds nothing new, even once it was removed (or sent).
     act(() => useReviews.getState().remove("wt_1", list[0]!.id));

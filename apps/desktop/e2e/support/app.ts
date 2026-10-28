@@ -936,3 +936,15 @@ export async function closeAllPanes(): Promise<void> {
 export async function stopOrphansAutomatically(on: boolean): Promise<void> {
   await invoke("settings_set", { key: "orphan_policy", value: on ? "always" : "ask" });
 }
+
+/** Clicks an approval's Allow (F-TL-12.12). Allow ignores a click until its
+ * place on screen has held still for half a second, and WebDriver scrolls a
+ * button into view before clicking, which moves it: so scroll first, give it
+ * the half second, then click once it's enabled. */
+export async function clickAllow(selector: string): Promise<void> {
+  const button = $(selector);
+  await button.scrollIntoView({ block: "center" });
+  await browser.pause(700);
+  await button.waitForEnabled();
+  await button.click();
+}

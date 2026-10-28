@@ -142,6 +142,25 @@ async fn invariant_rule_5_live_phone_allow_is_queued_until_the_main_window_confi
         *rig.host.resolved.lock().expect("lock"),
         vec![(id, PhoneDecision::Allow)]
     );
+    // A pane's `vibezeo run` is answered on the computer only (F-TL-12):
+    // the phone's Allow is refused, armed or not, and nothing is queued.
+    let pane = tandem_core::approvals::ApprovalView {
+        id: tandem_core::ids::ApprovalId::new(),
+        source: tandem_core::source::SourceRef::Pane {
+            pane_id: "pn_1".into(),
+        },
+        ..phone::approval()
+    };
+    let pane_id = pane.id.to_string();
+    rig.host.approvals.lock().expect("lock").push(pane);
+    let reply = p
+        .send(
+            &rig.svc,
+            json!({"t": "cmd", "id": 2, "cmd": "approval.decide", "args": {"approvalId": pane_id, "decision": "allow"}}),
+        )
+        .await;
+    assert_eq!(reply[0]["error"]["code"], "desk_only", "{reply:?}");
+    assert!(rig.svc.queue_list().await.expect("queue").is_empty());
 }
 
 /// The app as Conductor sees it: one shell pane; what ran is recorded.

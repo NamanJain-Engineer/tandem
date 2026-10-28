@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RunPlan, SecretInfo } from "@tandem/protocol";
+import type { AgentsMdPlan, RunPlan, RunRuleRepo, SecretInfo } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useSecrets } from "../../stores/secrets";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { RunDialog } from "./RunDialog";
 import { SecretsPage } from "./SecretsPage";
+import { TellAgents } from "./TellAgents";
 
 beforeEach(() => {
   resetStores();
@@ -186,5 +187,101 @@ describe("agent-proof secrets (F-TL-12)", () => {
     expect((await screen.findByTestId("run-no-env")).textContent).toBe(
       "No .env in this folder. The command runs as typed.",
     );
+  });
+});
+
+describe("vibezeo run for agents (F-TL-12 slice 2)", () => {
+  it("F-TL-12.9 a folder's rules are listed, added and removed; a refused rule says why", async () => {
+    let repo: RunRuleRepo = { repo: "/w/shop", name: "shop", commands: ["pnpm deploy"] };
+    const calls = fakeBackend({
+      secrets_list: () => [],
+      run_rules_list: () => [repo],
+      run_rules_set: (a) => {
+        const commands = (a?.commands as string[]) ?? [];
+        if (commands.some((c) => c.includes(";")))
+          throw { code: "invalid", message: "A rule can't hold ; & | < > $ ` ( ) or line breaks" };
+        repo = { ...repo, commands };
+        return repo;
+      },
+    });
+    render(
+      <UiProvider>
+        <SecretsPage />
+      </UiProvider>,
+    );
+    const row = await screen.findByTestId("run-rules-repo");
+    expect(row.textContent).toContain("shop");
+    expect(row.textContent).toContain("pnpm deploy");
+    fireEvent.change(screen.getByTestId("run-rules-input"), { target: { value: "make; ls" } });
+    fireEvent.click(screen.getByTestId("run-rules-add"));
+    expect(await screen.findByText("A rule can't hold ; & | < > $ ` ( ) or line breaks")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("run-rules-input"), { target: { value: "pnpm test" } });
+    fireEvent.click(screen.getByTestId("run-rules-add"));
+    await waitFor(() => expect(screen.getByTestId("run-rules-commands").textContent).toContain("pnpm test"));
+    expect(calls.filter((c) => c.cmd === "run_rules_set").pop()?.args).toEqual({
+      repo: "/w/shop",
+      commands: ["pnpm deploy", "pnpm test"],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove pnpm deploy" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-rules-commands").textContent).not.toContain("pnpm deploy"),
+    );
+  });
+
+  it("without folders, the rules say how to get one", async () => {
+    fakeBackend({ secrets_list: () => [], run_rules_list: () => [] });
+    render(
+      <UiProvider>
+        <SecretsPage />
+      </UiProvider>,
+    );
+    expect((await screen.findByTestId("run-rules-empty")).textContent).toBe(
+      "Add a folder to Vibezeo to set rules for it.",
+    );
+  });
+
+  const tell = () =>
+    render(
+      <UiProvider>
+        <TellAgents paneId="pn_1" open onOpenChange={() => undefined} />
+      </UiProvider>,
+    );
+
+  it("Tell agents shows the AGENTS.md change first and writes what was shown", async () => {
+    const plan: AgentsMdPlan = {
+      path: "/w/shop/AGENTS.md",
+      before: "# Mine\n",
+      after: "# Mine\n\n<!-- vibezeo:run -->\nCommands that need secrets…\n<!-- /vibezeo:run -->\n",
+      patch:
+        "diff --git a/AGENTS.md b/AGENTS.md\n--- a/AGENTS.md\n+++ b/AGENTS.md\n@@ -1,1 +1,5 @@\n # Mine\n+\n+<!-- vibezeo:run -->\n+Commands that need secrets…\n+<!-- /vibezeo:run -->\n",
+      unchanged: false,
+    };
+    const calls = fakeBackend({
+      secrets_agents_plan: () => plan,
+      secrets_agents_apply: () => ({ ...plan, before: plan.after, patch: "", unchanged: true }),
+    });
+    tell();
+    expect((await screen.findByTestId("diff-view")).textContent).toContain("Commands that need secrets…");
+    fireEvent.click(screen.getByTestId("tell-agents-apply"));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "secrets_agents_apply")).toBe(true));
+    expect(calls.find((c) => c.cmd === "secrets_agents_apply")?.args).toEqual({
+      paneId: "pn_1",
+      before: "# Mine\n",
+    });
+  });
+
+  it("Tell agents says so when AGENTS.md already has it, and a changed file is refused", async () => {
+    fakeBackend({
+      secrets_agents_plan: () => ({
+        path: "/w/AGENTS.md",
+        before: "x",
+        after: "x",
+        patch: "",
+        unchanged: true,
+      }),
+    });
+    tell();
+    expect(await screen.findByTestId("tell-agents-unchanged")).toBeTruthy();
+    expect((screen.getByTestId("tell-agents-apply") as HTMLButtonElement).disabled).toBe(true);
   });
 });

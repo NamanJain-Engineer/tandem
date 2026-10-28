@@ -6,4 +6,8 @@ export type ReportPayload = { tool?: string | null, session_id?: string | null, 
  * The file an edit tool is about to change (`PreToolUse`), for
  * inferred claims (F-TK-05). Paths only, never the edit.
  */
-paths?: Array<string>, };
+paths?: Array<string>, 
+/**
+ * The person submitted a prompt (UserPromptSubmit): one turn (F-EX-07).
+ */
+prompt?: boolean, };

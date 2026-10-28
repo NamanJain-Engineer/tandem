@@ -18,10 +18,12 @@ use tokio_util::sync::CancellationToken;
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
+use serde::{Deserialize, Serialize};
+
 use super::answer::AnswerFailed;
 use super::{
-    block_body, clean, cut, hidden, nonce, not_found, PlanQuestion, PlanService, PlanView,
-    QuestionState, REPLY_MAX,
+    block_body, blocking, clean, cut, hidden, nonce, not_found, PlanQuestion, PlanService,
+    PlanView, QuestionState, REPLY_MAX,
 };
 use crate::services::tasks_exec::{Question, QuestionEvent, Supervision, QUESTION_MAX};
 
@@ -447,6 +449,16 @@ impl PlanService {
     /// Lead answers or you do, in the background, or one it stopped
     /// waiting for.
     pub fn on_question_event(self: &Arc<Self>, event: QuestionEvent) {
+        // Kept before the run can ask anything, and saved at once.
+        if let QuestionEvent::Started {
+            plan_id,
+            attempt_id,
+            ..
+        } = &event
+        {
+            self.keep_run(plan_id, attempt_id);
+            return;
+        }
         let me = self.clone();
         tokio::spawn(async move {
             match event {
@@ -455,8 +467,20 @@ impl PlanService {
                     plan_id,
                     question_id,
                 } => me.close(&plan_id, &question_id),
+                QuestionEvent::Started { .. } => {}
             }
         });
+    }
+
+    /// A run started with this plan's code is the plan's own (F-TK-08).
+    fn keep_run(&self, plan_id: &str, attempt: &AttemptId) {
+        let added = self
+            .lock()
+            .get_mut(plan_id)
+            .is_some_and(|e| e.runs.insert(attempt.as_str().to_string()));
+        if added {
+            self.save();
+        }
     }
 
     /// Keeps the question on its plan, then Lead answers it or it comes to
@@ -514,10 +538,7 @@ impl PlanService {
         let Some((view, q)) = self.answering(plan_id, qid) else {
             return;
         };
-        let files = match &view.base_commit {
-            Some(c) => within_max(self.host.instructions(&view.workspace_id, c).await),
-            None => Vec::new(),
-        };
+        let files = self.instructions_of(&view).await;
         // The plan's own text of the task: the run can rewrite the live one.
         let task = view
             .issue_ids
@@ -953,20 +974,123 @@ impl PlanService {
         Ok(view)
     }
 
-    /// The question code of a task's plan run, for a run this launch didn't
-    /// start (F-TK-08): from the newest kept plan whose Execute all queued
-    /// the task.
-    pub fn supervision_for(&self, issue_id: &str) -> Option<Supervision> {
+    /// The question code of a run this launch didn't start (F-TK-08): its
+    /// plan's, when a kept plan started it (Execute all, or a Retry of its
+    /// run). A run you started yourself of the same task has none.
+    pub fn supervision_for(&self, attempt: &AttemptId, issue_id: &str) -> Option<Supervision> {
         let plans = self.lock();
-        let e = plans
-            .values()
-            .filter(|e| e.view.queued.iter().any(|i| i == issue_id))
-            .max_by_key(|e| e.view.created_at)?;
+        let e = plans.values().find(|e| e.runs.contains(attempt.as_str()))?;
         e.codes.get(issue_id).map(|code| Supervision {
             plan_id: e.view.id.clone(),
             nonce: code.clone(),
         })
     }
+
+    /// Reads the instructions files at the plan's base commit once, as
+    /// Execute all starts its runs (D-3021): every later question is
+    /// answered from exactly these, whatever the repository or the engine
+    /// catalog does next.
+    pub(super) async fn keep_instructions(&self, id: &str) {
+        let Ok(view) = self.get(id) else {
+            return;
+        };
+        if let Some(commit) = &view.base_commit {
+            self.instructions_at(&view, commit).await;
+        }
+    }
+
+    /// The instructions Lead answers a question of `view` from: what
+    /// Execute all kept, or, for a plan kept before there were snapshots,
+    /// what its base commit has now (kept from then on).
+    async fn instructions_of(&self, view: &PlanView) -> Vec<(String, String)> {
+        match &view.base_commit {
+            Some(commit) => self.instructions_at(view, commit).await,
+            None => Vec::new(),
+        }
+    }
+
+    async fn instructions_at(&self, view: &PlanView, commit: &str) -> Vec<(String, String)> {
+        if let Some(kept) = self.kept_instructions(&view.id, commit) {
+            return kept;
+        }
+        let files = within_max(self.host.instructions(&view.workspace_id, commit).await);
+        if let Some(path) = self.instructions_file(&view.id) {
+            let kept = Snapshot {
+                version: 1,
+                commit: commit.to_string(),
+                files: files.clone(),
+            };
+            let written = serde_json::to_vec(&kept)
+                .map_err(std::io::Error::other)
+                .and_then(|bytes| {
+                    blocking(|| {
+                        if let Some(dir) = path.parent() {
+                            tandem_core::paths::create_private_dir(dir)?;
+                        }
+                        tandem_core::atomic::atomic_write(&path, &bytes, Some(0o600))
+                    })
+                });
+            if let Err(e) = written {
+                tracing::warn!(code = "plan.instructions_unkept", error = %e, "a plan's instructions weren't kept");
+            }
+        }
+        if let Some(e) = self.lock().get_mut(&view.id) {
+            e.instructions = Some(files.clone());
+        }
+        files
+    }
+
+    /// The plan's kept instructions at `commit`, from memory or its file.
+    fn kept_instructions(&self, id: &str, commit: &str) -> Option<Vec<(String, String)>> {
+        if let Some(files) = self.lock().get(id).and_then(|e| e.instructions.clone()) {
+            return Some(files);
+        }
+        let path = self.instructions_file(id)?;
+        let bytes = blocking(|| std::fs::read(&path)).ok()?;
+        let kept: Snapshot = serde_json::from_slice(&bytes).ok()?;
+        // Another commit's (an edited file): not this plan's.
+        if kept.version != 1 || kept.commit != commit {
+            return None;
+        }
+        let files = within_max(kept.files);
+        if let Some(e) = self.lock().get_mut(id) {
+            e.instructions = Some(files.clone());
+        }
+        Some(files)
+    }
+
+    /// Remove plan: its instructions go with it.
+    pub(super) fn forget_instructions(&self, id: &str) {
+        if let Some(path) = self.instructions_file(id) {
+            match blocking(|| std::fs::remove_file(&path)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    tracing::warn!(code = "plan.instructions_left", error = %e, "a removed plan's instructions weren't deleted")
+                }
+            }
+        }
+    }
+
+    /// `plan-instructions/<id>.json` beside `plans.json`; none in memory, or
+    /// for an id that isn't a plan id.
+    fn instructions_file(&self, id: &str) -> Option<std::path::PathBuf> {
+        let plain = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !plain {
+            return None;
+        }
+        let dir = self.file.as_ref()?.with_file_name("plan-instructions");
+        Some(dir.join(format!("{id}.json")))
+    }
+}
+
+/// A plan's instructions files as Execute all read them (D-3021).
+#[derive(Serialize, Deserialize)]
+struct Snapshot {
+    version: u32,
+    /// The base commit they were read at.
+    commit: String,
+    files: Vec<(String, String)>,
 }
 
 #[cfg(test)]
