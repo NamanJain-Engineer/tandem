@@ -3191,7 +3191,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the guard's cases: control characters, U+FEFF, exit words, mid-turn ` /exit`;
     - the note only for an `@`;
     - the app's invisible list against its engine's table, over every code point;
-    - per sink, with `\u{1}!x`, `\u{7f}/x`, `\u{9b}!x` and an exit word: Conductor's `prompt_pane`, Auto (as the PTY gets it), `deliver` and a Thread's brief;
+    - per sink, with `\u{1}!x`, `\u{7f}/x`, `\u{9b}!x` and an exit word: Conductor's `prompt_pane` and `spoken`, Auto (as the PTY gets it), `deliver` and a Thread's brief;
     - Auto's readiness re-check;
     - the fallback (engines) and a continue elsewhere's brief;
     - Send back's branch and the review head's branch;

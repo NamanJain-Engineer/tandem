@@ -634,6 +634,25 @@ async fn f_cn_03_what_conductor_sends_a_thread_names_no_file_and_runs_no_command
 }
 
 #[test]
+fn f_cn_03_spoken_words_run_no_command_whatever_comes_first() {
+    // Typing drops a control character in front, the REPL trims, and an
+    // exit word alone quits it (D-3028).
+    for (text, sent) in [
+        ("\u{1}!x", "\u{FF01}x"),
+        ("\u{7f}/x", "\u{FF0F}x"),
+        ("\u{9b}!x", "\u{FF01}x"),
+        (" /exit", "\u{FF0F}exit"),
+        ("exit", "\u{FF45}xit"),
+    ] {
+        assert_eq!(
+            super::spoken(&json!({ "text": text }), "text"),
+            sent,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
 fn f_cn_03_every_tool_sends_the_models_words_through_spoken() {
     // launch_agents' task, new_thread, send_to_thread, message_teammate and
     // review_send_back: none reads the text raw (D-3023, D-3026).
