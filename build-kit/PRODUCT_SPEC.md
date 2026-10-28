@@ -807,7 +807,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Merge into base, via `git merge --no-ff` in the parent checkout with a conflict report. If there are conflicts, it stops and shows the files; it never auto-resolves.
   - Create PR, which opens `gh pr create` in a shell pane if gh is present.
   - Remove lane. This stops the lane's agents, then runs `git worktree remove`. Uncommitted changes need a **forced remove**, which needs an explicit local confirmation dialog and can't be approved by Conductor or the phone.
-- **Background sweep:** at startup and every 6 h, it prunes worktrees whose directories are gone (`git worktree prune`) and lists stale lanes (merged and idle >7 days) in a "Clean up lanes" notification. It never deletes automatically.
+- **Background sweep:** at startup and every 6 h, it prunes worktrees whose directories are gone (`git worktree prune`) and lists stale lanes (merged and idle >7 days) in a "Clean up lanes" notification. It never deletes a worktree automatically; the one exception is a jj workspace whose making Vibezeo cut short before it was added to the rail (F-CD-24), which is forgotten with its commits kept.
 
 **Acceptance:**
 1. Creating 2 lanes for the task "fix auth" yields branches `tandem/fix-auth` and `tandem/fix-auth-2`, and `.git/info/exclude` contains `.tandem/` exactly once.
@@ -926,6 +926,50 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Open diff on a multi-repo worktree lists a section per repository with its changed files; a comment on `web/src/app.ts` line 3 reaches the review prompt as `web/src/app.ts:3`.
 4. With a fake `gh` and local bare remotes, Create pull requests pushes the branch in both repositories, opens one pull request in each, and each body links the other; nothing is pushed before the confirm.
 5. Discard removes both repositories' worktrees and the parent folder, and keeps both branches.
+
+#### F-CD-23 Code intelligence in the editor and diffs (P2)
+**Story:** I'm reviewing what an agent changed. I want to jump from a changed function to its definition and its callers, and see type errors, without leaving Vibezeo for an IDE.
+
+**Behavior:**
+- **Language servers you already have.** Vibezeo uses the language server for a file's language when it's on the login PATH: `rust-analyzer` (Rust), `typescript-language-server --stdio` (TypeScript, TSX, JavaScript), `pyright-langserver --stdio` (Python) and `gopls` (Go). It never installs one. A server starts on first use for a folder and language (the workspace or worktree the file is in), with the login environment, and stops after 10 minutes without a request, or when the folder is removed or the app quits. At most 4 run at once; the one used longest ago stops first. Local folders only: on SSH hosts and in WSL the editor works as today, and nothing is downloaded or installed.
+- **Trust first.** Language servers can run the repository's own code when they load it (build scripts and proc macros, tsserver plugins and the repository's own TypeScript, toolchain switches, the Python interpreter a config names), so every server starts only for a repository the person trusted for language servers. Until then the status line says "rust-analyzer is off until you trust this repository" with **Trust repository…**, which asks with the native confirm from the main window; the trust covers the repository's worktrees and is kept on this computer. When agents run in the sandbox (F-TL-11), a worktree isn't covered: it asks for its own trust ("rust-analyzer is off until you trust this worktree", **Trust worktree…**), warning that the agent's code will run outside its sandbox. Go to definition uses the same-file fallback meanwhile. Servers run from a folder of Vibezeo's own, not the repository, and Go servers never switch toolchains (`GOTOOLCHAIN=local`); a trusted rust-analyzer or gopls may still fetch the dependencies the project declares, as in any editor, and typescript-language-server's automatic type acquisition is off. A discarded worktree's own trust goes with it, and turning the sandbox on stops servers started under a repository's trust.
+- **In the Files editor (F-CD-19):**
+  - **Go to definition:** F12, or Mod+click on a name, opens the definition (in a new tab when it's another file in the folder).
+  - **Find references:** Shift+F12 lists every reference with its file, line and text; choosing one opens it.
+  - **Hover:** resting the pointer on a name shows the server's hover text (types, signatures) in a tooltip, as plain text.
+  - **Diagnostics:** the server's errors and warnings underline their ranges, with the message on hover, and the editor's status line counts them ("2 errors, 1 warning").
+  - The editor sends the server the text as it is in the editor, unsaved edits included.
+- **In diffs (F-WT-02's worktree diff and the review queue's):** clicking a name on a line of the new side offers **Go to definition** and **Find references** for it, in the worktree; the results open in the Files editor.
+- **Without a server** for the language, the editor works as today and its status line says "No language server for Python" (with the server's name to install). Go to definition still finds a definition of the same name in the same file for TypeScript, Rust and Python, from F-WT-10's tree-sitter index. A server that fails to start or crashes says so in the status line ("rust-analyzer stopped: …") and is tried again on the next request, at most 3 times in 10 minutes.
+- Every request has a 10-second limit; a slow answer is cancelled and says "rust-analyzer didn't answer". Closing a tab and files changing on disk (an agent, git) reach the server, so its answers follow the disk. A definition outside the folder (a dependency's source) opens read only without code intelligence. Vibezeo sends nothing anywhere; servers reach the network only as they do in any editor.
+
+**Acceptance:**
+1. With a language server on the login PATH (a fake one in tests), go to definition on a name in a Python file opens its definition at the right line, and in another file of the folder in a new tab.
+2. Find references on a diff line's name lists each reference in the worktree with its file and line, and choosing one opens it in the Files editor.
+3. Hover shows the server's text; the server's diagnostics underline their ranges and the status line counts them.
+4. Without a server for the language, the editor works as today with "No language server for Rust" in its status line, and go to definition still finds a definition of the same name in the file.
+5. A server unused for 10 minutes is stopped; the next request starts it again.
+6. In a repository not yet trusted, no language server starts and the status line says so; after Trust repository… (and the native confirm) servers start for it and its worktrees.
+
+#### F-CD-24 jj (Jujutsu) workspaces (P2)
+**Story:** My repository is co-located with jj. I want each agent's lane to be a jj workspace, so I keep working the way jj works, while diffs and the overlap check still show what changed.
+
+**Behavior:**
+- **Co-located repositories only.** A repository whose root holds both `.jj` and `.git`, with a `jj` binary on the login PATH or in the usual install places (`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.nix-profile/bin`). Vibezeo shows jj's version, never installs jj and never writes the user's jj config. jj reads the repository's own config, so it runs only in a repository the person trusts (F-CD-23's Trust repository…, offered in the New worktree dialog), whose `.jj` isn't committed to git and whose store points at this repository's `.git`, and every jj command carries fixed settings that turn off anything that would run a program (the filesystem monitor, signing, a pager). A repository with `.jj` and no `.git` says "This repository uses jj without git. Vibezeo works with jj in repositories co-located with git." Folders on SSH hosts and in WSL offer no jj workspace and say "jj workspaces work on folders on this computer".
+- **New worktree.** In a co-located repository the New worktree dialog offers **jj workspace** and preselects it; **git worktree** is one click away, and the choice is remembered per repository. A jj workspace is made with `jj workspace add <repo>/.tandem/worktrees/<slug> --name <slug>` (the slug rules as for git worktrees). Its rail row is marked **jj**. A new worktree made from a jj workspace (New worktree on it, a handoff or a launch into a new worktree) is a jj workspace that starts from its working-copy commit. From the repository itself, launch-sheet lanes, Best of N, task runs and handoffs make git worktrees in this slice.
+- **Diff and overlap.** A jj workspace's diff against its base (the commit it started from) comes from `jj diff --git --from <base> --to @` and shows the same files and hunks as a git worktree holding the same changes. The overlap check compares its files with its siblings' (`jj diff --name-only`), jj or git; the merge forecast says "No forecast for jj workspaces yet".
+- **Not yet for jj workspaces**, refused before anything runs with "Not available for jj workspaces yet": Merge into, Land worktrees, pull request checks, Create pull request, previews, worktree setup, second opinion, the intent radar and the git panel (Files › Changes). Code intelligence (F-CD-23) works as in any worktree.
+- **Agents.** A jj workspace has no `.git`, so the lane briefing Vibezeo writes for its agents says so in one line: use `jj`, not `git`. Nothing else engines receive changes.
+- **Discard** asks as for any worktree, then stops its panes and language servers, runs `jj workspace forget <slug>` and removes the folder. The workspace's commits stay in the repository (jj's version of keeping the branch): Vibezeo never runs `jj abandon`, `jj rebase`, `jj git push` or anything else that rewrites or publishes history.
+- jj runs with an argument list (no shell), `--no-pager --color=never`, the login environment and a time limit, with no `--config` that changes the user's settings. Free.
+
+**Acceptance:**
+1. In a co-located repository (jj found), New worktree preselects jj workspace and makes `<repo>/.tandem/worktrees/<slug>` with `jj workspace add`; the rail row is marked jj, an agent pane runs in it, and the choice is remembered for the repository.
+2. The same changes in a jj workspace and a git worktree give the same diff files, counts and hunks, and the same overlap files.
+3. Landing, pull request checks, previews, second opinion, setup, the radar and the git panel say "Not available for jj workspaces yet" before running anything.
+4. Discard runs `jj workspace forget` and removes the folder; the workspace's commit is still in `jj log`, and no history was rewritten or pushed.
+5. A repository with `.jj` and no `.git`, and folders on SSH hosts or in WSL, offer no jj workspace and say why.
+6. A jj workspace's agents are told to use jj, not git.
 
 ### 4.3 TH: Thread mode
 
@@ -2082,7 +2126,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - A run that ends its turn that way is asking. It waits for an answer instead of going to review, and keeps its place among the 4 runs at once, as a run waiting for an approval does.
 - **Lead answers routine questions** in a fresh session of its engine for each question, never in its plan thread.
   - The session has every tool off: no MCP server, tasks tools, plugins, skills, commands, hooks or briefing, and nothing to resume or save. It runs in a fresh empty folder of Vibezeo's own made for it and removed after it, so it can't read a file, run a command or reach another question's session.
-  - Its one message is all it knows: the plan's own text of the task (not the live task, which a run can rewrite), the question, and the repository's instructions files (the ones the engine registry names, such as `AGENTS.md` and `CLAUDE.md`). The files are read as they are at the plan's base commit in the main checkout, never from the run's worktree, and git's replace refs are ignored, so an agent can't steer Lead by writing an instructions file or a ref.
+  - Its one message is all it knows: the plan's own text of the task (not the live task, which a run can rewrite), the question, and the repository's instructions files (the ones the engine registry names, such as `AGENTS.md` and `CLAUDE.md`). The files are read once, as Execute all starts the runs, as they are at the plan's base commit in the main checkout, never from the run's worktree, and git's replace refs are ignored, so an agent can't steer Lead by writing an instructions file or a ref. Every answer in the plan uses those same files, whatever changes later.
   - The question and the task are fenced as untrusted text, and the files as repository content. No `@` in them can name a file for the engine to attach.
   - Only an engine that can turn every tool off answers: Claude Code 2.1.310 or newer today. With another engine or an older Claude Code as Lead, every question comes to you, and Execute all's check says so.
   - Lead replies with an answer, or sends the question to you. A tool starting stops the session before the tool can run, an approval request ends it, and either gives no answer. A session ends after 5 minutes.
@@ -2105,7 +2149,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **On by default, and stoppable.**
   - Execute all's check has "Lead answers routine questions from the plan's task and the repository's instructions, using your engine and subscription", on by default.
   - The plan has the same switch whenever a run can ask: while Execute all starts, once it has, and back at Created after a start that stopped partway. Turning it off stops Lead's answers at once: Lead's session stops, an answer it's still writing is dropped, not sent, and every later question comes to you. Execute all again starts from the switch as you left it, and turning answers off there works the same way.
-  - After a restart, a run Resume or Retry starts again is still its plan's.
+  - After a restart, a run Resume or Retry starts again is still its plan's. A run you start yourself, even of a plan's task, is yours: its questions come to you.
 - **Shown.** Each task's row in the plan counts "Lead answered N", and each answer is on the task and in the run's thread.
 - **Not in this slice:** answering approvals, runs not started by Execute all, and Auto's terminal panes (F-AU-01).
 

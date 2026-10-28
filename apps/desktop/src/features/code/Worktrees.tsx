@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, GitBranch, MoreHorizontal } from "lucide-react";
-import type { FileDiff, MergeReport, WorkspaceSummary } from "@tandem/protocol";
+import type { FileDiff, LaneKind, LaneKinds, MergeReport, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
+  Banner,
   Button,
   ConfirmDialog,
   Dialog,
   IconButton,
   Input,
   Menu,
+  SegmentedControl,
   Skeleton,
   Tooltip,
   cx,
@@ -24,6 +26,9 @@ import {
   createPullRequest,
   createPullRequests,
   createWorktree,
+  isJj,
+  laneKinds,
+  trustRepository,
   PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
@@ -85,8 +90,23 @@ async function openPullRequests(wt: WorkspaceSummary, show: Show): Promise<void>
   else if (out.error.code !== "cancelled") show({ tone: "error", title: out.error.message });
 }
 
+/** What a jj workspace's menu keeps (F-CD-24); the rest need git. */
+const JJ_KEEPS = new Set(["wt-diff", "wt-files", "wt-overlap", "wt-sep", "wt-discard"]);
+
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
   const entries = singleRepoMenu(wt, base, show);
+  if (isJj(wt)) {
+    const kept = entries.map((e): MenuEntry => {
+      if (JJ_KEEPS.has(e.id) || e.type === "separator" || e.type === "label") return e;
+      return { ...e, disabled: true } as MenuEntry;
+    });
+    const at = kept.findIndex((e) => e.id === "wt-files") + 1;
+    return [
+      ...kept.slice(0, at),
+      { id: "wt-jj-note", type: "label", label: t("worktree.jj.notYet") },
+      ...kept.slice(at),
+    ];
+  }
   if ((wt.repos?.length ?? 0) === 0) return entries;
   const kept = entries.map((e): MenuEntry => {
     if (MULTI_KEEPS.has(e.id) || e.type === "separator" || e.type === "label") return e;
@@ -291,6 +311,11 @@ export function WorktreeRow({
       >
         <span className="min-w-0 flex-1 truncate">{branch}</span>
       </Tooltip>
+      {isJj(wt) ? (
+        <span data-testid="worktree-jj" aria-label={t("worktree.jj.badgeLabel")}>
+          <Badge variant="outline">{t("worktree.jj.badge")}</Badge>
+        </span>
+      ) : null}
       {slot}
       {preview?.status === "ready" && preview.url ? (
         <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
@@ -354,11 +379,43 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // F-CD-24: whether a jj workspace is offered; `undefined` while loading.
+  const [kinds, setKinds] = useState<LaneKinds | null | undefined>(undefined);
+  const [kind, setKind] = useState<LaneKind>("git");
+  const asked = useRef<Promise<LaneKinds | null> | null>(null);
+  const [asking, setAsking] = useState(0);
   const { show } = useToast();
+  useEffect(() => {
+    let live = true;
+    // Unknown (an error, or no answer): a git worktree, as before.
+    const answer = laneKinds(ws.id).then((out) => (out.ok && out.value ? out.value : null));
+    asked.current = answer;
+    void answer.then((k) => {
+      if (!live) return;
+      setKinds(k);
+      if (k) setKind(k.preferred);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ws.id, asking]);
+  // From a jj workspace, the new one is a jj workspace (F-CD-24); jj runs
+  // only in a trusted repository.
+  const offers = (k: LaneKinds | null | undefined) => k?.colocated === true && k.trusted && !isJj(ws);
+  const trustNeeded = kinds?.colocated === true && !kinds.trusted && !isJj(ws);
+  const trust = async () => {
+    const out = await trustRepository(ws.id);
+    if (out.ok) setAsking((n) => n + 1);
+    else if (out.error.code !== "cancelled") setError(out.error.message);
+  };
+  const choose = offers(kinds);
   const submit = async () => {
     setBusy(true);
     setError(null);
-    const out = await createWorktree(ws.id, text);
+    // Create before the answer came: wait for it, and make what it prefers.
+    const known = kinds === undefined ? await asked.current : kinds;
+    const chosen = kinds === undefined ? known?.preferred : kind;
+    const out = await createWorktree(ws.id, text, offers(known) ? chosen : undefined);
     setBusy(false);
     if (out.ok) {
       show({ tone: "success", title: t("worktree.created", { branch: out.value.laneBranch ?? "" }) });
@@ -393,7 +450,32 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
           e.preventDefault();
           void submit();
         }}
+        className="flex flex-col gap-3"
       >
+        {kinds?.jjOnly ? <Banner tone="info">{t("worktree.jj.only")}</Banner> : null}
+        {kinds?.refused ? <Banner tone="warning">{kinds.refused}</Banner> : null}
+        {trustNeeded ? (
+          <Banner tone="info" action={{ label: t("worktree.jj.trust"), onClick: () => void trust() }}>
+            {t("worktree.jj.untrusted")}
+          </Banner>
+        ) : null}
+        {choose ? (
+          <div data-testid="worktree-kind">
+            <SegmentedControl
+              label={t("worktree.jj.make")}
+              value={kind}
+              onValueChange={(id) => setKind(id === "jj" ? "jj" : "git")}
+              items={[
+                {
+                  id: "jj",
+                  label: t("worktree.jj.workspace"),
+                  tooltip: t("worktree.jj.version", { version: kinds?.jjVersion ?? "" }),
+                },
+                { id: "git", label: t("worktree.jj.git") },
+              ]}
+            />
+          </div>
+        ) : null}
         <Input
           label={t("worktree.newField")}
           placeholder={t("worktree.newPlaceholder")}

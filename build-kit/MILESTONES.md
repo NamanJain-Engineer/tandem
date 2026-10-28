@@ -2077,6 +2077,58 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: code intelligence (M)
+
+**Goal.** Definitions, references, hover and diagnostics in the Files editor and the worktree diffs, from the language servers the user already has (F-CD-23). From `docs/NEXT_FEATURES.md` (§1 #19). Built on branch `competitive-gaps`; decisions D-2536–D-2539.
+
+**Owns:** F-CD-23 (P2)
+**Prerequisites.** F-CD-19 (the Files editor), F-WT-02 (the worktree diff), F-WT-10 (the tree-sitter index, for the fallback).
+
+**Ordered tasks**
+1. **Client.** `services::lsp`: a JSON-RPC client over stdio (Content-Length framing) behind a transport, the server registry (rust-analyzer, typescript-language-server, pyright-langserver, gopls), start on first use per folder and language, idle stop after 10 minutes, at most 4, restarts bounded; `didOpen`/`didChange`, `definition`, `references`, `hover`, `publishDiagnostics`. A `fake-lsp` fixture binary in `tandem-engines` (feature `fixtures`) for tests and E2E.
+2. **Commands.** `lsp_sync`, `lsp_definition`, `lsp_references`, `lsp_hover`; the tree-sitter fallback for definitions.
+3. **UI.** The editor's keys, hover, diagnostics and status line; the References panel; the diff's name menu.
+
+**Verification**
+```bash
+cargo test -p tandem-desktop --lib f_cd_23
+pnpm --filter desktop exec vitest run -t "F-CD-23"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd23*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD23-1 Code intelligence.** A Python folder with the fake language server on PATH as `pyright-langserver`. Expected: the status line says pyright is off until the repository is trusted, and Trust repository… (native confirm: yes) starts it; F12 on a call opens the definition in the other file; Shift+F12 lists the references; the status line counts a diagnostic; a Rust file says "No language server for Rust"; with the fake server also as `typescript-language-server`, a TypeScript file's server starts without asking again.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+
+## M18 · Next features: jj workspaces (M)
+
+**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599 and D-2660–D-2679 (D-874).
+
+**Owns:** F-CD-24 (P2)
+**Prerequisites.** F-CD-15 (worktrees), F-WT-02 (the worktree diff), F-WT-03 (the overlap check), F-CD-22's single-repository guard.
+
+**Ordered tasks**
+1. **jj runner.** `tandem_git::jj`: finding `jj` (login PATH and the usual install places) and its version, co-location detection, a `JjRunner` seam (argv, `--no-pager --color=never`, a time limit) with a fake for unit tests; `workspace add`, the base commit, `diff --git` fed to the git diff parser, `diff --name-only`, `workspace forget`.
+2. **Lanes.** `lane_create`'s `kind`, the remembered choice per repository, `lane_kind_get`, jj lanes' diff, overlap and Discard, the guard for what still needs git, the briefing line.
+3. **UI.** The New worktree dialog's jj / git choice, the rail's jj mark, the jj-only and remote notes.
+
+**Verification**
+```bash
+cargo test -p tandem-git jj
+cargo test -p tandem-desktop --lib f_cd_24
+pnpm --filter desktop exec vitest run -t "F-CD-24"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd24*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD24-1 jj workspaces.** A git repository co-located with jj (`jj git init --colocate`), the real `jj` on PATH. Expected: New worktree preselects jj workspace and makes `.tandem/worktrees/<slug>` with `jj workspace add`; the rail row is marked jj; an agent pane runs there; a change there gives the same diff as the same change in a git worktree; Discard forgets the workspace and removes the folder, and its commit is still in `jj log`.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
@@ -2269,7 +2321,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **191 features** (65 P0, 67 P1, 59 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 25 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **193 features** (65 P0, 67 P1, 61 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 27 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2293,7 +2345,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **191 features** (6
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
 | F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
-| F-EX-07 | P2 | M18 | | | | | | | | | |
+| F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2320,7 +2372,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **191 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 24 = 190 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 27 = 193 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

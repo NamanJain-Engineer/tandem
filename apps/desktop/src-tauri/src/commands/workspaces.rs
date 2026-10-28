@@ -137,7 +137,43 @@ pub async fn workspace_rename(
 
 #[tauri::command]
 pub async fn workspace_remove(state: State<'_, AppState>, id: WorkspaceId) -> Result<(), IpcError> {
-    let removed = workspaces::remove(&state.store, &state.terminals, &id).await?;
+    remove_workspace(&state, &id).await
+}
+
+/// Tests: whether worktree trust was left when servers began to stop.
+#[cfg(test)]
+pub(crate) static TRUST_AT_STOP: std::sync::Mutex<Vec<(std::path::PathBuf, bool)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// `workspace_remove`'s work (tests call it with a test state).
+pub(crate) async fn remove_workspace(state: &AppState, id: &WorkspaceId) -> Result<(), IpcError> {
+    let root = repo::get(&state.store, id)
+        .await
+        .ok()
+        .map(|ws| crate::services::files::local_root(&ws));
+    // F-CD-23: its worktrees' own trust goes first (as a sandbox switch
+    // stores the setting before stopping servers), so a folder made again
+    // at one of their paths asks again and a start waiting meanwhile is
+    // decided without it. The repository keeps its own.
+    if let Some(root) = &root {
+        crate::services::lsp::untrust(&state.data, &root.join(tandem_git::lanes::WORKTREES_DIR));
+    }
+    // Then its language servers stop (and any starting), and none starts
+    // there until the removal has finished.
+    let _closing = match &root {
+        Some(root) => Some(crate::services::lsp::global().begin_removal(root).await),
+        None => None,
+    };
+    #[cfg(test)]
+    if let Some(root) = &root {
+        // What a start waiting meanwhile would find: no worktree trust.
+        let dir = root.join(tandem_git::lanes::WORKTREES_DIR);
+        let left = crate::services::lsp::trusted_under(&state.data, &dir);
+        if let Ok(mut seen) = TRUST_AT_STOP.lock() {
+            seen.push((dir, left));
+        }
+    }
+    let removed = workspaces::remove(&state.store, &state.terminals, id).await?;
     // Its agents' sessions end and its claims go (F-TK-05): file IO.
     let (terminals, tasks) = (state.terminals.clone(), state.tasks.clone());
     let ended = tauri::async_runtime::spawn_blocking(move || {

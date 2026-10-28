@@ -14,6 +14,7 @@ pub mod editor_tabs;
 pub mod held_drafts;
 pub mod hosts;
 pub mod lane_repos;
+pub mod lane_vcs;
 pub mod layouts;
 pub mod mail;
 pub mod memory_changes;

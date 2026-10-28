@@ -177,15 +177,28 @@ export const useTasks = create<TasksState>((set, get) => ({
     }
   },
   load: async () => {
-    listening ??= listen<{ ids: string[] }>("tasks:changed", (e) => {
-      void get().load();
-      const sel = get().selectedId;
-      if (sel && (e.ids.length === 0 || e.ids.includes(sel))) void get().refreshDetail();
-    }).then((u) => {
-      unlisten = u;
-    });
+    if (!listening) {
+      const pending: Promise<void> = listen<{ ids: string[] }>("tasks:changed", (e) => {
+        void get().load();
+        const sel = get().selectedId;
+        if (sel && (e.ids.length === 0 || e.ids.includes(sel))) void get().refreshDetail();
+      }).then(
+        (u) => {
+          unlisten = u;
+        },
+        (e: unknown) => {
+          // A retry listens again.
+          if (listening === pending) listening = null;
+          throw e;
+        },
+      );
+      listening = pending;
+    }
     if (get().status !== "ready") set({ status: "loading" });
     try {
+      // The read goes out once the listener is up: a change in between
+      // would otherwise show only with the next one.
+      await listening;
       const [meta, issues] = await Promise.all([
         invoke<TasksMeta>("tasks_meta"),
         allIssues(get().showArchived),

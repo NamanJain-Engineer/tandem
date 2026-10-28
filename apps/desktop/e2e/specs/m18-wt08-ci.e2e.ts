@@ -189,6 +189,6 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     const prompt = pastes(mark).find((p) => p.startsWith("Review of your changes")) ?? "";
     expect(prompt).toContain("1. Imported review comment:");
     expect(prompt).toContain("   > Untrusted content from a pull request review comment");
-    expect(prompt).toContain("   ```text\n   @ana on a.ts:2:\n   Keep two as 2.\n   ```");
+    expect(prompt).toContain("   ```text\n   ana on a.ts:2:\n   Keep two as 2.\n   ```");
   });
 });
