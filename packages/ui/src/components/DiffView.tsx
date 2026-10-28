@@ -1,6 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, MessageSquarePlus } from "lucide-react";
 import { cx } from "../cx";
+import { Menu } from "./Menu";
 
 /** One file of a diff (the shape of `FileDiff` in @tandem/protocol). */
 export type DiffFile = {
@@ -107,6 +108,77 @@ export type DiffComments = {
   annotations?: Record<string, ReactNode>;
 };
 
+/** A name on a new-side line (F-CD-23): its line (1-based) and the
+ * UTF-16 offset of its first character in the line. */
+export type DiffNameTarget = { path: string; line: number; character: number; name: string };
+
+/** Optional code intelligence: a click on a name of a new-side line opens
+ * a menu with Go to definition and Find references. */
+export type DiffNames = {
+  definition: string;
+  references: string;
+  onDefinition: (target: DiffNameTarget) => void;
+  onReferences: (target: DiffNameTarget) => void;
+};
+
+const NAME = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+
+/** The line's text, with each name a click target. */
+function NamedText({
+  path,
+  line,
+  text,
+  names,
+}: {
+  path: string;
+  line: number;
+  text: string;
+  names: DiffNames;
+}) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const m of text.matchAll(NAME)) {
+    const start = m.index;
+    if (start > at) parts.push(text.slice(at, start));
+    const name = m[0];
+    const target: DiffNameTarget = { path, line, character: start, name };
+    // A button, so the keyboard reaches it (Tab, then Enter or Space).
+    const span = (
+      <button
+        type="button"
+        key={start}
+        data-testid="diff-name"
+        data-name={name}
+        aria-haspopup="menu"
+        onClick={() => setPicked(start)}
+        className="m-0 inline cursor-pointer rounded-xs border-0 bg-transparent p-0 text-inherit [font:inherit] hover:bg-surface-3 hover:underline focus-visible:shadow-focus focus-visible:outline-none"
+      >
+        {name}
+      </button>
+    );
+    parts.push(
+      picked === start ? (
+        <Menu
+          key={start}
+          open
+          onOpenChange={(o) => !o && setPicked(null)}
+          trigger={span}
+          entries={[
+            { id: "definition", label: names.definition, onSelect: () => names.onDefinition(target) },
+            { id: "references", label: names.references, onSelect: () => names.onReferences(target) },
+          ]}
+        />
+      ) : (
+        span
+      ),
+    );
+    at = start + name.length;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return <>{parts}</>;
+}
+
 function lineTarget(
   path: string,
   l: Extract<DiffLine, { kind: "context" | "add" | "del" }>,
@@ -119,10 +191,12 @@ function FileBlock({
   file,
   labels,
   comments,
+  names,
 }: {
   file: DiffFile;
   labels: DiffViewLabels;
   comments?: DiffComments;
+  names?: DiffNames;
 }) {
   const lines = parsePatch(file.patch);
   const large = lines.length > LARGE_DIFF_LINES;
@@ -232,7 +306,11 @@ function FileBlock({
                       {l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}
                     </span>
                     <span role="cell" className="whitespace-pre pr-3 text-fg">
-                      {l.text}
+                      {names && l.kind !== "del" && l.newNo !== null && !file.binary ? (
+                        <NamedText path={file.path} line={l.newNo} text={l.text} names={names} />
+                      ) : (
+                        l.text
+                      )}
                     </span>
                   </div>
                   {(() => {
@@ -273,18 +351,27 @@ export function DiffView({
   labels,
   className,
   comments,
+  names,
 }: {
   files: DiffFile[];
   labels?: Partial<DiffViewLabels>;
   className?: string;
   comments?: DiffComments;
+  /** F-CD-23: Go to definition and Find references on new-side names. */
+  names?: DiffNames;
 }) {
   const l = { ...DEFAULT_LABELS, ...labels };
   if (files.length === 0) return <p className={cx("text-sm text-fg-muted", className)}>{l.empty}</p>;
   return (
     <div data-testid="diff-view" className={cx("flex flex-col gap-2", className)}>
       {files.map((f) => (
-        <FileBlock key={`${f.oldPath ?? ""}:${f.path}`} file={f} labels={l} comments={comments} />
+        <FileBlock
+          key={`${f.oldPath ?? ""}:${f.path}`}
+          file={f}
+          labels={l}
+          comments={comments}
+          names={names}
+        />
       ))}
     </div>
   );

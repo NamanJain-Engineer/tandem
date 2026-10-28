@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-kind-get"
+description = "Enables the lane_kind_get command without any pre-configured scope."
+commands.allow = ["lane_kind_get"]
+
+[[permission]]
+identifier = "deny-lane-kind-get"
+description = "Denies the lane_kind_get command without any pre-configured scope."
+commands.deny = ["lane_kind_get"]

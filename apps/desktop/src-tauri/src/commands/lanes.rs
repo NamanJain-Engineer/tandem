@@ -11,6 +11,7 @@ use tandem_git::{FileDiff, ForceConfirm, MergeReport, WorktreeSetup};
 use tandem_store::repo::panes::PaneRecord;
 use tandem_store::repo::workspaces::{self as repo, Workspace};
 
+use crate::services::jj_lanes::{self, LaneKind, LaneKinds};
 use crate::services::lanes::{self, OverlapReport, StaleLanes};
 use crate::services::merge_queue::{self, LandingPlan, LandingRun};
 use crate::services::multi_prs::{self, PrsRun};
@@ -24,10 +25,35 @@ pub async fn lane_create(
     state: State<'_, AppState>,
     workspace_id: WorkspaceId,
     slug_source: String,
+    kind: Option<LaneKind>,
 ) -> Result<Workspace, IpcError> {
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    lanes::create(&state.store, &git, &workspace_id, &slug_source).await
+    let lane = lanes::create_kind(
+        &state.store,
+        &git,
+        &workspace_id,
+        &slug_source,
+        kind.unwrap_or_default(),
+    )
+    .await?;
+    // F-CD-24: New worktree's choice, remembered for the repository.
+    if let (Some(kind), Some(parent)) = (kind, &lane.parent_id) {
+        let top = repo::get(&state.store, parent).await?;
+        if top.kind == "local" {
+            jj_lanes::remember(&state.data, std::path::Path::new(&top.root), kind);
+        }
+    }
+    Ok(lane)
+}
+
+/// F-CD-24: whether New worktree offers a jj workspace here.
+#[tauri::command]
+pub async fn lane_kind_get(
+    state: State<'_, AppState>,
+    workspace_id: WorkspaceId,
+) -> Result<LaneKinds, IpcError> {
+    jj_lanes::kinds(&state.store, &state.data, &workspace_id).await
 }
 
 #[tauri::command]
