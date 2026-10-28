@@ -71,7 +71,8 @@ release fails when its version has no section.
   computer". It runs in a provider home of its own for that model, never on
   your Codex account and never through a proxy, every time it starts, and
   each start checks that the server still offers the model on this computer.
-  Your own Codex settings and accounts aren't touched.
+  It needs Codex 0.129.0 or newer. Your own Codex settings and accounts aren't
+  touched.
 
 ### Fixed
 

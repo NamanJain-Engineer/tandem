@@ -3,7 +3,7 @@
 //! own provider home. Every request goes to `127.0.0.1` (D-2517).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +13,8 @@ use ts_rs::TS;
 use tandem_core::ids::TabId;
 use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
-use tandem_engines::local_models::{self, LocalModel, ServerKind};
+use tandem_engines::local_models::{self, CodexVersion, LocalModel, ServerKind};
+use tandem_engines::{EngineSpec, FoundEngine};
 use tandem_store::repo::panes;
 use tandem_store::repo::sessions::{LaunchConfig, LocalLaunch};
 use tandem_store::repo::settings;
@@ -24,6 +25,9 @@ use crate::state::AppState;
 
 /// How long one server has to answer.
 pub const PROBE_WAIT: Duration = Duration::from_secs(1);
+
+/// How long `codex --version` has at a local start.
+const VERSION_WAIT: Duration = Duration::from_secs(5);
 
 /// One server, as UI-164 lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -149,6 +153,9 @@ pub async fn ask(http: &dyn LocalHttp, kind: ServerKind, port: u16, added: bool)
             let tags_url = local_models::url(port, ServerKind::Ollama.models_path());
             let (version, tags) =
                 futures::join!(http.get_json(&version_url), http.get_json(&tags_url));
+            // Tags without a `models` list say nothing about which models
+            // are remote: no answer.
+            let tags = tags.filter(|t| t.get("models").is_some_and(serde_json::Value::is_array));
             match tags {
                 Some(tags) => {
                     let remote = local_models::ollama_remote_ids(&tags);
@@ -242,7 +249,30 @@ pub async fn list(state: &AppState) -> Result<Vec<LocalServer>, IpcError> {
         running = found.iter().filter(|s| s.running).count(),
         "local model servers checked"
     );
-    Ok(found)
+    let codex = state
+        .terminals
+        .engines
+        .report()
+        .and_then(|r| r.get("codex").cloned());
+    Ok(with_codex_reason(found, codex.as_ref()))
+}
+
+/// Start is off, saying why, where Codex was found at a version a local
+/// pane can't run (D-3062). Not found, the page says to install it.
+pub fn with_codex_reason(
+    mut servers: Vec<LocalServer>,
+    codex: Option<&FoundEngine>,
+) -> Vec<LocalServer> {
+    let Some(found) = codex else {
+        return servers;
+    };
+    if let Err(reason) = local_models::check_codex(found.version.as_deref()) {
+        for s in servers.iter_mut().filter(|s| s.startable) {
+            s.startable = false;
+            s.start_reason = Some(reason.clone());
+        }
+    }
+    servers
 }
 
 /// `local_models_add_port`: loopback hosts only.
@@ -368,16 +398,26 @@ fn kind_of(local: &LocalLaunch) -> Result<ServerKind, IpcError> {
         .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))
 }
 
-/// The command-line settings every launch of a local pane carries (D-2519):
-/// the model and the local provider, above any project's configuration.
-pub fn launch_overrides(local: &LocalLaunch) -> Result<Vec<String>, IpcError> {
+/// The command-line settings every launch of a local pane carries, for the
+/// Codex it runs (D-2519, D-3063): the model and the local provider, above
+/// any project's configuration.
+pub fn launch_overrides(local: &LocalLaunch, codex: CodexVersion) -> Result<Vec<String>, IpcError> {
     let kind = kind_of(local)?;
-    local_models::codex_overrides(kind, local.port, &local.model).ok_or_else(|| {
+    local_models::codex_overrides(kind, local.port, &local.model, codex).ok_or_else(|| {
         IpcError::new(
             ErrorCode::Unavailable,
             crate::services::engines::LAUNCH_CONFIG_UNAVAILABLE,
         )
         .with_stage("launch_config")
+    })
+}
+
+/// The Codex a local pane would run, read from that program at this start
+/// (D-3062): 0.129.0 or newer, or refused saying what's needed.
+pub async fn codex_for_local(engine: &EngineSpec, path: &Path) -> Result<CodexVersion, IpcError> {
+    let shown = tandem_engines::detect::version_of(engine, path, VERSION_WAIT).await;
+    local_models::check_codex(shown.as_deref()).map_err(|reason| {
+        IpcError::new(ErrorCode::EngineUnsupported, reason).with_stage("local_model")
     })
 }
 
@@ -449,12 +489,13 @@ pub async fn start(
     let codex = engines
         .get("codex")
         .ok_or_else(|| IpcError::new(ErrorCode::NotFound, "Codex isn't known to Vibezeo"))?;
-    if state.terminals.resolve_engine(&codex).await.is_none() {
+    let Some(program) = state.terminals.resolve_engine(&codex).await else {
         return Err(IpcError::new(
             ErrorCode::EngineMissing,
             "Install Codex to use a local model",
         ));
-    }
+    };
+    codex_for_local(&codex, &program).await?;
     let added = added_ports(state).await.get(&port) == Some(&kind);
     let server = ask(http()?.as_ref(), kind, port, added).await;
     if !server.models.iter().any(|m| m.id == model) {
@@ -768,6 +809,48 @@ mod tests {
         };
         let server = ask(&other, ServerKind::LlamaCpp, 11701, true).await;
         assert_eq!(server.models.len(), 1);
+        // Review N8: Ollama's version with a tags answer that has no list
+        // of models is no answer either.
+        let listless = Fake {
+            answers: vec![
+                (
+                    "http://127.0.0.1:11702/v1/models".into(),
+                    json!({"data": [{"id": "my-alias:latest"}]}),
+                ),
+                (
+                    "http://127.0.0.1:11702/api/version".into(),
+                    json!({"version": "0.12.6"}),
+                ),
+                (
+                    "http://127.0.0.1:11702/api/tags".into(),
+                    json!({"error": "busy"}),
+                ),
+            ],
+            asked: Default::default(),
+        };
+        let server = ask(&listless, ServerKind::LmStudio, 11702, true).await;
+        assert!(server.models.is_empty(), "{:?}", server.models);
+        // Not Ollama (no version) with the same tags answer: nothing hidden.
+        let lm = Fake {
+            answers: vec![
+                (
+                    "http://127.0.0.1:11703/v1/models".into(),
+                    json!({"data": [{"id": "gemma3:4b"}]}),
+                ),
+                (
+                    "http://127.0.0.1:11703/api/tags".into(),
+                    json!({"error": "Unexpected endpoint"}),
+                ),
+            ],
+            asked: Default::default(),
+        };
+        assert_eq!(
+            ask(&lm, ServerKind::LmStudio, 11703, true)
+                .await
+                .models
+                .len(),
+            1
+        );
         // Only this computer was asked, and only the three paths.
         let asked = fake.asked.lock().expect("lock").clone();
         assert_eq!(asked.len(), 3, "{asked:?}");
@@ -793,6 +876,44 @@ mod tests {
             startable: true,
             start_reason: None,
         }
+    }
+
+    /// F-EN-11 review (N3): with a Codex too old to keep a local pane's
+    /// model, Start is off on every server that had it, saying why; servers
+    /// already off keep their own reason, and no Codex leaves the page's.
+    #[test]
+    fn f_en_11_2_start_is_off_with_the_reason_for_an_old_codex() {
+        let codex = |version: Option<&str>| FoundEngine {
+            engine_id: "codex".into(),
+            path: "/usr/bin/codex".into(),
+            version: version.map(str::to_string),
+            source: tandem_engines::FoundSource::Shell,
+        };
+        let llama = LocalServer {
+            kind: ServerKind::LlamaCpp,
+            startable: false,
+            start_reason: Some("Codex can't use llama.cpp servers yet".into()),
+            ..server(true, &["gpt-oss-20b"])
+        };
+        let both = || vec![server(true, &["qwen3:8b"]), llama.clone()];
+        let old = with_codex_reason(both(), Some(&codex(Some("0.128.0"))));
+        assert!(!old[0].startable);
+        assert_eq!(
+            old[0].start_reason.as_deref(),
+            Some("Local models need Codex 0.129.0 or newer, and this computer has Codex 0.128.0. Update Codex, then try again.")
+        );
+        assert_eq!(old[1].start_reason, llama.start_reason);
+        let unknown = with_codex_reason(both(), Some(&codex(None)));
+        assert!(unknown[0]
+            .start_reason
+            .as_deref()
+            .is_some_and(|r| r.contains("couldn't tell")));
+        // Recent enough, or not installed: as asked.
+        assert_eq!(
+            with_codex_reason(both(), Some(&codex(Some("0.165.0")))),
+            both()
+        );
+        assert_eq!(with_codex_reason(both(), None), both());
     }
 
     /// F-EN-11 review (S2): every start asks again; a model gone, re-pointed

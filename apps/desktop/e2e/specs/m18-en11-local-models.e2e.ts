@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { Key } from "webdriverio";
@@ -24,6 +24,8 @@ type LocalServer = {
   added: boolean;
   running: boolean;
   models: Array<{ id: string }>;
+  startable: boolean;
+  startReason: string | null;
 };
 type Spawn = { argv: string[]; envKeys: string[]; providerHome: string | null; cwd: string };
 
@@ -81,8 +83,8 @@ async function press(selector: string): Promise<void> {
 // host off this computer is refused; Start in Codex opens a Codex pane in a
 // provider home of its own whose config.toml points at 127.0.0.1, and the
 // pane says "On this computer". Every start names the model and the local
-// provider on Codex's command line, and a restore after the app restarts
-// asks the server again.
+// provider on Codex's command line, last; a Codex older than 0.129.0 is
+// refused; and a restore after the app restarts asks the server again.
 describe("E2E-M18-EN11 local models", function () {
   this.timeout(180_000);
   const repo = `/tmp/tandem-e2e-en11-${Date.now()}`;
@@ -175,6 +177,30 @@ describe("E2E-M18-EN11 local models", function () {
     await browser.keys(Key.Escape);
   });
 
+  it("F-EN-11.2 a Codex older than 0.129.0 doesn't start a local model, and the page says why", async () => {
+    const versions = join(home(), "fake-version.txt");
+    const [ws] = await invoke<Array<{ tabs: Array<{ id: string }> }>>("workspace_list");
+    const tabId = ws!.tabs[0]!.id;
+    const before = (await invoke<Spawn[]>("test_spawn_log")).length;
+    writeFileSync(versions, "codex 0.128.0\n");
+    try {
+      await expect(
+        invoke("local_model_start", { tabId, kind: "ollama", port: ollama.port, model: "qwen3-coder:30b" }),
+      ).rejects.toThrow(/Local models need Codex 0\.129\.0 or newer, and this computer has Codex 0\.128\.0/);
+      expect((await invoke<Spawn[]>("test_spawn_log")).length).toBe(before);
+      // Detected again, the page turns Start off with the same reason.
+      await checkAgain();
+      const ours = (await invoke<LocalServer[]>("local_models_list")).find((s) => s.port === ollama.port);
+      expect(ours?.startable).toBe(false);
+      expect(ours?.startReason).toMatch(/^Local models need Codex 0\.129\.0 or newer/);
+    } finally {
+      rmSync(versions, { force: true });
+      await checkAgain();
+    }
+    const ours = (await invoke<LocalServer[]>("local_models_list")).find((s) => s.port === ollama.port);
+    expect(ours?.startable).toBe(true);
+  });
+
   it("F-EN-11.2 every start names the model and provider on Codex's command line, and a restore asks the server again", async () => {
     const port = ollama.port;
     const homes = join(home(), "providers", "codex");
@@ -184,14 +210,25 @@ describe("E2E-M18-EN11 local models", function () {
     );
     const local = async () =>
       (await invoke<Spawn[]>("test_spawn_log")).filter((s) => s.providerHome === homeDir);
-    // Right after the program, each after -c, in the wrapped command.
-    const named = (s: Spawn) => {
-      const script = s.argv.join(" ");
-      return (
-        script.includes(`codex' '-c' 'model="qwen3-coder:30b"' '-c' 'model_provider="vibezeo-local"'`) &&
-        script.includes(`'-c' 'model_providers.vibezeo-local.base_url="http://127.0.0.1:${port}/v1"'`)
-      );
-    };
+    // Last in the wrapped command, where it ends: the model (for /review and
+    // memories too), the provider and sub-agents off, for the fake's 1.2.3.
+    const overrides = [
+      'model="qwen3-coder:30b"',
+      'review_model="qwen3-coder:30b"',
+      'memories.extract_model="qwen3-coder:30b"',
+      'memories.consolidation_model="qwen3-coder:30b"',
+      'model_provider="vibezeo-local"',
+      'model_providers.vibezeo-local.name="Ollama on this computer"',
+      `model_providers.vibezeo-local.base_url="http://127.0.0.1:${port}/v1"`,
+      'model_providers.vibezeo-local.wire_api="responses"',
+      "features.multi_agent=false",
+      "features.multi_agent_v2=false",
+      "agents.enabled=false",
+      "check_for_update_on_startup=false",
+    ]
+      .map((kv) => `'-c' '${kv}'`)
+      .join(" ");
+    const named = (s: Spawn) => s.argv.join(" ").includes(`${overrides}; c=$?`);
     const started = await local();
     expect(started.length).toBeGreaterThan(0);
     expect(started.every(named)).toBe(true);

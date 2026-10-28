@@ -1152,22 +1152,42 @@ impl TerminalService {
             }
             _ => None,
         };
-        // Every start asks the server again: a model it no longer offers, or
-        // offers from elsewhere, isn't started (D-2519). After the restore
-        // card's check, and before Start fresh moves the conversation.
-        if let Some(saved) = local.as_ref().and_then(|c| c.local.as_ref()) {
-            crate::services::local_models::still_offered(saved).await?;
-        }
+        let ws = workspaces::get(&self.store, &record.workspace_id).await?;
+        // A local pane's checks, after the restore card's and before Start
+        // fresh moves the conversation (D-2519, D-3062): a folder on this
+        // computer; a Codex, read now, that keeps the model; and the server
+        // still offering the model, as one that runs here.
+        let local_codex = match local.as_ref().and_then(|c| c.local.as_ref()) {
+            Some(saved) => {
+                if ws.kind != "local" {
+                    return Err(IpcError::new(
+                        ErrorCode::EngineUnsupported,
+                        "A local model runs in a folder on this computer",
+                    ));
+                }
+                let engine = record
+                    .engine_id
+                    .as_deref()
+                    .and_then(|id| self.engines.get(id))
+                    .ok_or_else(|| {
+                        IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
+                    })?;
+                let program = self.resolve_engine(&engine).await.ok_or_else(|| {
+                    IpcError::new(
+                        ErrorCode::EngineMissing,
+                        format!("{} isn't installed on this machine.", engine.label),
+                    )
+                })?;
+                let codex =
+                    crate::services::local_models::codex_for_local(&engine, &program).await?;
+                crate::services::local_models::still_offered(saved).await?;
+                Some((program, codex))
+            }
+            None => None,
+        };
         if mode == LaunchMode::Fresh && record.kind == "agent" {
             // The old conversation stays under Saved sessions.
             sessions::save_on_handback(&self.store, pane, None).await?;
-        }
-        let ws = workspaces::get(&self.store, &record.workspace_id).await?;
-        if local.is_some() && ws.kind != "local" {
-            return Err(IpcError::new(
-                ErrorCode::EngineUnsupported,
-                "A local model runs in a folder on this computer",
-            ));
         }
         if ws.kind == "wsl" {
             return self
@@ -1238,12 +1258,16 @@ impl TerminalService {
                 .ok_or_else(|| {
                     IpcError::new(ErrorCode::NotFound, "This pane's engine isn't known")
                 })?;
-            let path = self.resolve_engine(&engine).await.ok_or_else(|| {
-                IpcError::new(
-                    ErrorCode::EngineMissing,
-                    format!("{} isn't installed on this machine.", engine.label),
-                )
-            })?;
+            // A local pane runs the Codex whose version was just read.
+            let path = match &local_codex {
+                Some((program, _)) => program.clone(),
+                None => self.resolve_engine(&engine).await.ok_or_else(|| {
+                    IpcError::new(
+                        ErrorCode::EngineMissing,
+                        format!("{} isn't installed on this machine.", engine.label),
+                    )
+                })?,
+            };
             // Status hooks report with this launch's secret (§6.6).
             let status = self
                 .status
@@ -1305,18 +1329,22 @@ impl TerminalService {
                 login.vars.get("no_proxy").map(String::as_str),
             );
             let inner = match (&local, &launch.home) {
-                // The model and provider on the command line, above every
-                // configuration file; the environment set inside the
-                // command, after the shell's startup files (D-2517, D-2519).
+                // The model and provider on the command line, last, above
+                // every configuration file but an administrator's; the
+                // environment set inside the command, after the shell's
+                // startup files (D-2517, D-2519, D-3061).
                 (Some(config), Some(home)) => {
                     let overrides = config
                         .local
                         .as_ref()
+                        .zip(local_codex.as_ref().map(|(_, codex)| *codex))
                         .ok_or_else(|| {
                             IpcError::new(ErrorCode::Unavailable, LAUNCH_CONFIG_UNAVAILABLE)
                                 .with_stage("launch_config")
                         })
-                        .and_then(crate::services::local_models::launch_overrides)
+                        .and_then(|(saved, codex)| {
+                            crate::services::local_models::launch_overrides(saved, codex)
+                        })
                         .inspect_err(|_| self.status.unwatch(pane.as_str()))?;
                     tandem_engines::local_models::env_argv(
                         tandem_engines::local_models::with_overrides(launch.spec.argv(), overrides),
@@ -2436,11 +2464,16 @@ mod tests {
         let bin = dir.path().join("bin");
         std::fs::create_dir_all(&bin).expect("bin");
         let codex = bin.join("codex");
+        // `--version` answers from the file beside it.
         std::fs::write(
             &codex,
-            "#!/bin/sh\necho \"NP=$NO_PROXY HOME=$CODEX_HOME PX=[$HTTP_PROXY$HTTPS_PROXY] OA=[$OPENAI_API_KEY] ARGS=$*\"\nsleep 30\n",
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then cat \"$(dirname \"$0\")/version\"; exit 0; fi\necho \"NP=$NO_PROXY HOME=$CODEX_HOME PX=[$HTTP_PROXY$HTTPS_PROXY] OA=[$OPENAI_API_KEY] ARGS=$*\"\nsleep 30\n",
         )
         .expect("fake codex");
+        let codex_is = |version: &str| {
+            std::fs::write(bin.join("version"), format!("codex-cli {version}\n")).expect("version")
+        };
+        codex_is("0.165.0");
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         // The login shell's own startup file tries to undo the pane's setup.
         std::fs::write(
@@ -2565,7 +2598,10 @@ mod tests {
                 .await
                 .map(|_| sink)
         }
-        let expect_local = |sink: Arc<VecSink>, fresh: bool| {
+        // The arguments Codex got: what comes before the local settings
+        // (the user's, `resume <id>`, a pin's), then exactly those settings,
+        // last (D-3061), for the Codex the start read.
+        let expect_local = |sink: Arc<VecSink>, before: &str, version: &str| {
             let text = || String::from_utf8_lossy(&sink.data()).into_owned();
             assert!(
                 wait_until(Duration::from_secs(10), || text().contains("NP=")),
@@ -2580,26 +2616,23 @@ mod tests {
             assert!(out.contains(&format!("HOME={} ", home.display())), "{out}");
             assert!(out.contains("PX=[]"), "{out}");
             assert!(out.contains("OA=[]"), "{out}");
-            // The model and provider on the command line, first, on every
-            // start, Resume included; never the edited row's model.
-            assert!(
-                out.contains(
-                    "ARGS=-c model=\"qwen3:8b\" -c model_provider=\"vibezeo-local\" -c model_providers.vibezeo-local."
-                ),
-                "{out}"
-            );
-            assert!(
-                out.contains(&format!(
-                    "-c model_providers.vibezeo-local.base_url=\"http://127.0.0.1:{port}/v1\""
-                )),
-                "{out}"
-            );
+            let overrides = tandem_engines::local_models::codex_overrides(
+                tandem_engines::local_models::ServerKind::Ollama,
+                port,
+                "qwen3:8b",
+                tandem_engines::local_models::CodexVersion::parse(version).expect("version"),
+            )
+            .expect("overrides")
+            .join(" ");
+            let args = out
+                .split("ARGS=")
+                .nth(1)
+                .and_then(|rest| rest.lines().next())
+                .expect("args")
+                .trim_end();
+            assert_eq!(args, format!("{before}{overrides}").trim_start(), "{out}");
+            // Never the edited row's model.
             assert!(!out.contains("evil"), "{out}");
-            // `codex resume <id>` takes no extra arguments (launch.rs), as
-            // for any Codex pane.
-            if fresh {
-                assert!(out.contains("--sandbox read-only"), "{out}");
-            }
             // The provider settings are there, whatever happened to the file.
             let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
             assert!(
@@ -2628,7 +2661,7 @@ mod tests {
             // Deleted between starts: written again before Codex runs.
             let _ = std::fs::remove_file(home.join("config.toml"));
             let sink = start(&svc, &pane.id, mode).await.expect("start");
-            expect_local(sink, true);
+            expect_local(sink, "--sandbox read-only ", "0.165.0");
             session_is_local().await;
             svc.pty.kill(pane.id.as_str()).expect("kill");
         }
@@ -2686,16 +2719,88 @@ mod tests {
         let sink = start(&svc, &pane.id, LaunchMode::Resume)
             .await
             .expect("resume");
-        expect_local(sink, false);
+        // `codex resume <id>` takes no extra arguments (launch.rs).
+        expect_local(sink, "resume thread-1 ", "0.165.0");
         session_is_local().await;
         svc.pty.kill(pane.id.as_str()).expect("kill");
+        // Pinned (F-EN-08): the pin's own `-c` comes before the local
+        // settings, so a Codex before 0.164.0, which keeps only the
+        // subcommand's, keeps them all (N1).
+        settings::set(
+            &store,
+            SettingKey::EnginePins,
+            serde_json::json!({"codex": true}),
+        )
+        .await
+        .expect("pin");
+        let sink = start(&svc, &pane.id, LaunchMode::Resume)
+            .await
+            .expect("pinned resume");
+        expect_local(
+            sink,
+            "resume thread-1 -c check_for_update_on_startup=false ",
+            "0.165.0",
+        );
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+        let sink = start(&svc, &pane.id, LaunchMode::Fresh)
+            .await
+            .expect("pinned fresh");
+        expect_local(
+            sink,
+            "--sandbox read-only -c check_for_update_on_startup=false ",
+            "0.165.0",
+        );
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+        settings::set(&store, SettingKey::EnginePins, serde_json::json!({}))
+            .await
+            .expect("unpin");
+        // A Codex before 0.145.0 gets no `agents.enabled`, which it would
+        // read as a role and not start.
+        codex_is("0.140.0");
+        let sink = start(&svc, &pane.id, LaunchMode::Normal)
+            .await
+            .expect("older codex");
+        expect_local(sink, "--sandbox read-only ", "0.140.0");
+        svc.pty.kill(pane.id.as_str()).expect("kill");
+        // Below 0.129.0, or a version it can't read: refused, saying what's
+        // needed, and Start fresh leaves the conversation where it is (N3).
+        let before = sessions::latest_for_pane(&store, &pane.id)
+            .await
+            .expect("latest");
+        for (version, says) in [
+            ("0.128.0", "this computer has Codex 0.128.0"),
+            ("dev build", "couldn't tell which Codex version"),
+        ] {
+            codex_is(version);
+            for mode in [LaunchMode::Normal, LaunchMode::Fresh] {
+                let Err(err) = start(&svc, &pane.id, mode).await else {
+                    panic!("started on Codex {version}");
+                };
+                assert_eq!(err.code, ErrorCode::EngineUnsupported);
+                assert!(
+                    err.message
+                        .starts_with("Local models need Codex 0.129.0 or newer, and "),
+                    "{}",
+                    err.message
+                );
+                assert!(err.message.contains(says), "{}", err.message);
+                assert!(!svc.pty.is_live(pane.id.as_str()));
+            }
+        }
+        assert_eq!(
+            sessions::latest_for_pane(&store, &pane.id)
+                .await
+                .expect("latest"),
+            before
+        );
+        codex_is("0.165.0");
         // A new run of the app: nothing in memory, the pane still knows.
         let again = Arc::new(TerminalService::new(PtyManager::new(), store.clone()));
         again.set_login_env(login());
         let sink = start(&again, &pane.id, LaunchMode::Normal)
             .await
             .expect("restart");
-        expect_local(sink, true);
+        expect_local(sink, "--sandbox read-only ", "0.165.0");
         again.pty.kill(pane.id.as_str()).expect("kill");
         // A saved row pointing at another folder: refused, nothing written.
         let elsewhere = dir.path().join("elsewhere");
@@ -2826,6 +2931,23 @@ mod tests {
             err.message,
             "A local model runs in a folder on this computer"
         );
+        // Start fresh there: refused before its conversation moves to Saved
+        // sessions (N10).
+        sessions::start_with_config(&store, &far.id, &wsl.id, "codex", None, &config)
+            .await
+            .expect("far session");
+        let Err(err) = start(&again, &far.id, LaunchMode::Fresh).await else {
+            panic!("started fresh in WSL");
+        };
+        assert_eq!(
+            err.message,
+            "A local model runs in a folder on this computer"
+        );
+        let far_session = sessions::latest_for_pane(&store, &far.id)
+            .await
+            .expect("latest")
+            .expect("session");
+        assert_eq!(far_session.ended_at, None, "moved to Saved sessions");
     }
 
     /// F-EN-10 review: an added agent whose saved program is gone isn't

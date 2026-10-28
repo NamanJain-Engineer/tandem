@@ -294,45 +294,118 @@ pub const PROXY_VARS: [&str; 6] = [
 /// local pane runs without them too.
 pub const ACCOUNT_VARS: [&str; 3] = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"];
 
+/// The oldest Codex a local pane runs (D-3062). From 0.129.0 a project's
+/// `.codex/config.toml` can't set a profile, a provider or providers, and
+/// command-line settings sit above every configuration file but an
+/// administrator's; before it a project's profile outranks them.
+pub const MIN_CODEX: (u64, u64, u64) = (0, 129, 0);
+
+/// From 0.145.0 Codex has `agents.enabled`, and a model's own catalog entry
+/// can turn sub-agents on unless it's false. Before it, an unknown key under
+/// `[agents]` is read as a role, and Codex doesn't start (D-3063).
+pub const AGENTS_ENABLED_SINCE: (u64, u64, u64) = (0, 145, 0);
+
+/// A Codex version as `codex --version` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CodexVersion {
+    pub number: (u64, u64, u64),
+    /// `0.129.0-alpha.1`: it comes before 0.129.0.
+    pub pre_release: bool,
+}
+
+impl CodexVersion {
+    /// The first `x.y.z` in `text`, and whether a pre-release follows it.
+    pub fn parse(text: &str) -> Option<Self> {
+        let start = text.find(|c: char| c.is_ascii_digit())?;
+        let run = &text[start..];
+        let len = run
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(run.len());
+        let mut parts = run[..len].split('.').map(|p| p.parse::<u64>().ok());
+        let number = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(Some(a)), Some(Some(b)), Some(Some(c)), None) => (a, b, c),
+            _ => return None,
+        };
+        Some(Self {
+            number,
+            pre_release: run[len..].starts_with('-'),
+        })
+    }
+
+    /// This version is `release` or later: a pre-release of `release` isn't.
+    pub fn at_least(&self, release: (u64, u64, u64)) -> bool {
+        self.number > release || (self.number == release && !self.pre_release)
+    }
+}
+
+/// The Codex a local pane may run, or why not, said plainly (D-3062).
+pub fn check_codex(version: Option<&str>) -> Result<CodexVersion, String> {
+    let (a, b, c) = MIN_CODEX;
+    match version.map(|v| (v, CodexVersion::parse(v))) {
+        Some((_, Some(v))) if v.at_least(MIN_CODEX) => Ok(v),
+        Some((shown, Some(_))) => Err(format!(
+            "Local models need Codex {a}.{b}.{c} or newer, and this computer has Codex {}. Update Codex, then try again.",
+            shown.trim()
+        )),
+        _ => Err(format!(
+            "Local models need Codex {a}.{b}.{c} or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again."
+        )),
+    }
+}
+
 /// Codex's command-line settings for a local pane, on every launch, fresh
-/// or `codex resume` (D-2519): command-line settings come before every
-/// configuration file, a trusted project's `.codex/config.toml` included,
-/// so no project can name another model or provider. The same as the
-/// home's `config.toml`. `None` for a model name that can't be written.
-pub fn codex_overrides(kind: ServerKind, port: u16, model: &str) -> Option<Vec<String>> {
+/// or `codex resume` (D-2519, D-3063): the model, for `/review` and
+/// memories too; the local provider; sub-agents off, since a sub-agent can
+/// name its own model or a role's configuration file; no update check.
+/// From Codex 0.129.0 they sit above every configuration file but an
+/// administrator's. `None` for a model name that can't be written.
+pub fn codex_overrides(
+    kind: ServerKind,
+    port: u16,
+    model: &str,
+    codex: CodexVersion,
+) -> Option<Vec<String>> {
     if !model_ok(model) {
         return None;
     }
     let base = format!("{}/v1", url(port, "").trim_end_matches('/'));
+    let mut settings = vec![
+        format!("model=\"{model}\""),
+        format!("review_model=\"{model}\""),
+        format!("memories.extract_model=\"{model}\""),
+        format!("memories.consolidation_model=\"{model}\""),
+        format!("model_provider=\"{PROVIDER_ID}\""),
+        format!(
+            "model_providers.{PROVIDER_ID}.name=\"{} on this computer\"",
+            kind.label()
+        ),
+        format!("model_providers.{PROVIDER_ID}.base_url=\"{base}\""),
+        format!("model_providers.{PROVIDER_ID}.wire_api=\"responses\""),
+        "features.multi_agent=false".to_string(),
+        "features.multi_agent_v2=false".to_string(),
+    ];
+    if codex.at_least(AGENTS_ENABLED_SINCE) {
+        settings.push("agents.enabled=false".to_string());
+    }
+    settings.push("check_for_update_on_startup=false".to_string());
     Some(
-        [
-            format!("model=\"{model}\""),
-            format!("model_provider=\"{PROVIDER_ID}\""),
-            format!(
-                "model_providers.{PROVIDER_ID}.name=\"{} on this computer\"",
-                kind.label()
-            ),
-            format!("model_providers.{PROVIDER_ID}.base_url=\"{base}\""),
-            format!("model_providers.{PROVIDER_ID}.wire_api=\"responses\""),
-            "check_for_update_on_startup=false".to_string(),
-        ]
-        .into_iter()
-        .flat_map(|kv| ["-c".to_string(), kv])
-        .collect(),
+        settings
+            .into_iter()
+            .flat_map(|kv| ["-c".to_string(), kv])
+            .collect(),
     )
 }
 
 /// The provider id a local home and its overrides name.
 pub const PROVIDER_ID: &str = "vibezeo-local";
 
-/// `argv` with `overrides` right after its program: before a subcommand
-/// (`resume`) and before the user's own arguments.
-pub fn with_overrides(argv: Vec<String>, overrides: Vec<String>) -> Vec<String> {
-    let mut it = argv.into_iter();
-    let mut out: Vec<String> = it.next().into_iter().collect();
-    out.extend(overrides);
-    out.extend(it);
-    out
+/// `argv` with `overrides` last: after a subcommand (`resume <id>`), a pin's
+/// arguments and the user's own (D-3061). The last `-c` for a key wins in
+/// every Codex, and before 0.164.0 Codex keeps only the subcommand's `-c`
+/// when both levels have some.
+pub fn with_overrides(mut argv: Vec<String>, overrides: Vec<String>) -> Vec<String> {
+    argv.extend(overrides);
+    argv
 }
 
 /// A local pane's command with its environment set inside it (unix): the
@@ -621,11 +694,17 @@ mod tests {
         }
     }
 
-    /// F-EN-11 review: every launch names the model and the local provider
-    /// on the command line, before a subcommand and the user's arguments.
+    fn v(text: &str) -> CodexVersion {
+        CodexVersion::parse(text).expect("version")
+    }
+
+    /// F-EN-11 review: every launch names the model (for `/review` and
+    /// memories too) and the local provider, turns sub-agents off, and puts
+    /// it all last: after `resume <id>`, a pin's `-c` and the user's own.
     #[test]
     fn f_en_11_2_every_launch_names_the_model_and_provider_on_the_command_line() {
-        let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b").expect("overrides");
+        let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b", v("0.165.0"))
+            .expect("overrides");
         let pairs: Vec<&str> = o
             .chunks(2)
             .map(|c| {
@@ -637,10 +716,16 @@ mod tests {
             pairs,
             vec![
                 "model=\"qwen3:8b\"",
+                "review_model=\"qwen3:8b\"",
+                "memories.extract_model=\"qwen3:8b\"",
+                "memories.consolidation_model=\"qwen3:8b\"",
                 "model_provider=\"vibezeo-local\"",
                 "model_providers.vibezeo-local.name=\"Ollama on this computer\"",
                 "model_providers.vibezeo-local.base_url=\"http://127.0.0.1:11434/v1\"",
                 "model_providers.vibezeo-local.wire_api=\"responses\"",
+                "features.multi_agent=false",
+                "features.multi_agent_v2=false",
+                "agents.enabled=false",
                 "check_for_update_on_startup=false",
             ]
         );
@@ -649,15 +734,69 @@ mod tests {
             let doc: toml_edit::DocumentMut = kv.parse().expect("toml");
             assert_eq!(doc.len(), 1, "{kv}");
         }
-        let resume = with_overrides(
-            vec!["/bin/codex".into(), "resume".into(), "t1".into()],
+        // Before 0.145.0 `agents.enabled` would be read as a role and stop
+        // Codex starting, so it isn't there; nor for a pre-release of 0.145.0.
+        for older in ["0.129.0", "0.144.9", "0.145.0-alpha.2"] {
+            let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b", v(older))
+                .expect("overrides");
+            assert!(!o.iter().any(|a| a.starts_with("agents.")), "{older}");
+            assert!(o.contains(&"features.multi_agent=false".to_string()));
+        }
+        // Last, after the subcommand, its id and a pin's own `-c`.
+        let pinned = vec![
+            "/bin/codex".to_string(),
+            "resume".into(),
+            "t1".into(),
+            "-c".into(),
+            "check_for_update_on_startup=false".into(),
+        ];
+        let resume = with_overrides(pinned.clone(), o.clone());
+        assert_eq!(&resume[..5], pinned.as_slice());
+        assert_eq!(&resume[5..], o.as_slice());
+        let fresh = with_overrides(
+            vec!["/bin/codex".into(), "--sandbox".into(), "read-only".into()],
             o.clone(),
         );
-        assert_eq!(resume[0], "/bin/codex");
-        assert_eq!(&resume[1..3], ["-c", "model=\"qwen3:8b\""]);
-        assert_eq!(&resume[resume.len() - 2..], ["resume", "t1"]);
-        assert_eq!(codex_overrides(ServerKind::Ollama, 1, "-m"), None);
-        assert_eq!(codex_overrides(ServerKind::Ollama, 1, "a\"b"), None);
+        assert_eq!(&fresh[..3], ["/bin/codex", "--sandbox", "read-only"]);
+        assert_eq!(&fresh[3..], o.as_slice());
+        assert_eq!(
+            codex_overrides(ServerKind::Ollama, 1, "-m", v("0.165.0")),
+            None
+        );
+        assert_eq!(
+            codex_overrides(ServerKind::Ollama, 1, "a\"b", v("0.165.0")),
+            None
+        );
+    }
+
+    /// F-EN-11 review: below 0.129.0 a project's profile outranks the
+    /// command line, so that Codex, a pre-release of 0.129.0 or one whose
+    /// version can't be read is refused, saying what's needed (D-3062).
+    #[test]
+    fn f_en_11_2_codex_below_0_129_0_or_unknown_is_refused() {
+        assert_eq!(
+            check_codex(Some("0.129.0")).map(|v| v.number),
+            Ok((0, 129, 0))
+        );
+        assert_eq!(
+            check_codex(Some("0.165.0")).map(|v| v.number),
+            Ok((0, 165, 0))
+        );
+        assert_eq!(check_codex(Some("1.2.3")).map(|v| v.number), Ok((1, 2, 3)));
+        assert_eq!(
+            check_codex(Some("0.128.0")),
+            Err("Local models need Codex 0.129.0 or newer, and this computer has Codex 0.128.0. Update Codex, then try again.".into())
+        );
+        assert!(check_codex(Some("0.129.0-alpha.1")).is_err());
+        let unknown = "Local models need Codex 0.129.0 or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again.";
+        assert_eq!(check_codex(None), Err(unknown.into()));
+        assert_eq!(check_codex(Some("codex-cli dev")), Err(unknown.into()));
+        assert_eq!(check_codex(Some("1.2")), Err(unknown.into()));
+        // What `codex --version` prints, parsed as detection does.
+        assert_eq!(v("codex-cli 0.165.0").number, (0, 165, 0));
+        assert!(v("0.145.0-alpha.1").pre_release);
+        assert!(v("0.145.1").at_least(AGENTS_ENABLED_SINCE));
+        assert!(!v("0.145.0-rc.1").at_least(AGENTS_ENABLED_SINCE));
     }
 
     #[test]

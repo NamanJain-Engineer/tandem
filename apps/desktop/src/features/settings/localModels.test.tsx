@@ -159,7 +159,7 @@ describe("UI-164 Local models (F-EN-11)", () => {
     const line = screen.getByTestId("privacy-local-models").textContent ?? "";
     expect(line).toContain("go only to its model server at 127.0.0.1");
     expect(line).toContain(
-      "What that server does with them (it could be a gateway or a port-forward), a project's MCP servers and settings an administrator manages for Codex are outside Vibezeo's control.",
+      "What that server does with them (it could be a gateway or a port-forward), a project's MCP servers and hooks, and settings an administrator manages for Codex are outside Vibezeo's control.",
     );
     expect(line).not.toMatch(/nothing leaves/i);
   });
