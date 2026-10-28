@@ -64,6 +64,13 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **Allow can't move under your click.** A chat's Allow and Allow for
+  this thread, held actions' Approve & run and the review queue's Approve now
+  wait until they've held still on screen for half a second, and while anything
+  covers them, like the Dashboard's and the pane's Allow. So the next request
+  sliding into place, or a new held draft arriving on top, can't take a click
+  or a double-click meant for something else. A chat card's keys answer only
+  the card you're on, and only once its Allow would.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.

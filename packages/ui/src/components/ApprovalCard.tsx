@@ -2,6 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "rea
 import { Check, Diamond, TriangleAlert, X } from "lucide-react";
 import { cx } from "../cx";
 import { Button } from "./Button";
+import { useSteadyBox } from "./steadyBox";
 
 /** ARCHITECTURE §6.9 `ApprovalKind`. */
 export type ApprovalCardKind =
@@ -29,6 +30,8 @@ export type ApprovalCardLabels = {
   /** "View diff" for file kinds; "Show details" otherwise. */
   showDetail: string;
   hideDetail: string;
+  /** Allow's title while it waits for the card to hold still. */
+  steadying: string;
 };
 
 export const APPROVAL_LABELS: ApprovalCardLabels = {
@@ -42,6 +45,7 @@ export const APPROVAL_LABELS: ApprovalCardLabels = {
   cancel: "Cancel",
   showDetail: "Show details",
   hideDetail: "Hide details",
+  steadying: "Allow turns on once this has been still on screen for a moment.",
 };
 
 export type ApprovalCardProps = {
@@ -74,7 +78,10 @@ export type ApprovalCardProps = {
 
 /** UI_SPEC §2.24 / UI-23. Keys while the card has focus: A or Mod+Enter
  * allow, Mod+Shift+Enter allow for this thread, D deny, E deny and explain,
- * Esc focuses Deny. */
+ * Esc focuses Deny. The Allow buttons and keys answer only once the card's
+ * buttons have held still and uncovered on screen for a moment, measured
+ * again on the click or key itself, so a card that slid in, moved or was
+ * covered under the pointer can't take a click meant for something else. */
 export function ApprovalCard({
   kind,
   title,
@@ -101,6 +108,7 @@ export function ApprovalCard({
   const denyRef = useRef<HTMLButtonElement>(null);
   const reasonId = useId();
   const titleId = useId();
+  const box = useSteadyBox(!resolved && !explaining);
 
   if (resolved) {
     const Icon = resolved.tone === "allowed" ? Check : X;
@@ -121,6 +129,9 @@ export function ApprovalCard({
   }
 
   const offerThread = allowThread && !!onAllowThread && kind !== "spend";
+  // A key answers only the card that has focus, and only once it's steady.
+  const allowNow = (e: KeyboardEvent<HTMLElement>) =>
+    e.currentTarget.contains(document.activeElement) && box.check();
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
     if (busy || target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
@@ -129,11 +140,11 @@ export function ApprovalCard({
     if (e.key === "Enter" && mod && e.shiftKey) {
       if (offerThread) {
         e.preventDefault();
-        onAllowThread?.();
+        if (allowNow(e)) onAllowThread?.();
       }
     } else if ((e.key === "Enter" && mod) || (key === "a" && !mod && !e.altKey)) {
       e.preventDefault();
-      onAllow();
+      if (allowNow(e)) onAllow();
     } else if (key === "d" && !mod && !e.altKey) {
       e.preventDefault();
       onDeny(null);
@@ -177,7 +188,13 @@ export function ApprovalCard({
       {!compact && detail && (
         <>
           {detailCollapsed && (
-            <Button size="sm" variant="ghost" className="self-start" onClick={() => setShowDetail(!showDetail)} aria-expanded={showDetail}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="self-start"
+              onClick={() => setShowDetail(!showDetail)}
+              aria-expanded={showDetail}
+            >
               {showDetail ? labels.hideDetail : labels.showDetail}
             </Button>
           )}
@@ -229,19 +246,46 @@ export function ApprovalCard({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" onClick={onAllow} disabled={busy} data-testid="approval-allow">
+        <div ref={box.ref} className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => box.check() && onAllow()}
+            disabled={busy || !box.steady}
+            title={box.steady ? undefined : labels.steadying}
+            data-testid="approval-allow"
+          >
             {labels.allow}
           </Button>
           {offerThread && (
-            <Button size="sm" variant="secondary" onClick={onAllowThread} disabled={busy} data-testid="approval-allow-thread">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => box.check() && onAllowThread?.()}
+              disabled={busy || !box.steady}
+              title={box.steady ? undefined : labels.steadying}
+              data-testid="approval-allow-thread"
+            >
               {labels.allowThread}
             </Button>
           )}
-          <Button ref={denyRef} size="sm" variant="secondary" onClick={() => onDeny(null)} disabled={busy} data-testid="approval-deny">
+          <Button
+            ref={denyRef}
+            size="sm"
+            variant="secondary"
+            onClick={() => onDeny(null)}
+            disabled={busy}
+            data-testid="approval-deny"
+          >
             {labels.deny}
           </Button>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setExplaining(true)} disabled={busy}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => setExplaining(true)}
+            disabled={busy}
+          >
             {labels.denyExplain}
           </Button>
         </div>

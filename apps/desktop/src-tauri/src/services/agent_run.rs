@@ -249,13 +249,21 @@ pub fn mark_exiting() {
 /// start after all: new runs are served again. Not once the app is really
 /// exiting (a quit during the failed install's unwind).
 pub fn resume_all() {
-    if EXITING.load(std::sync::atomic::Ordering::SeqCst) {
+    let live: Vec<Arc<AgentRuns>> = LIVE
+        .lock()
+        .map(|l| l.iter().filter_map(std::sync::Weak::upgrade).collect())
+        .unwrap_or_default();
+    resume(&EXITING, &live);
+}
+
+/// [`resume_all`] for `live`, unless `exiting` is set: the globals passed
+/// in, so a test can use its own.
+fn resume(exiting: &std::sync::atomic::AtomicBool, live: &[Arc<AgentRuns>]) {
+    if exiting.load(std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    if let Ok(live) = LIVE.lock() {
-        for runs in live.iter().filter_map(std::sync::Weak::upgrade) {
-            runs.quit.send_replace(false);
-        }
+    for runs in live {
+        runs.quit.send_replace(false);
     }
 }
 
@@ -595,7 +603,7 @@ impl AgentRuns {
     async fn ledger(
         &self,
         c: &Checked,
-        decided: &'static str,
+        decided: Decided,
         ran: bool,
         reply: Option<&RunReply>,
         duration_ms: Option<i64>,
@@ -620,12 +628,12 @@ impl AgentRuns {
                             None => v.name.clone(),
                         })
                         .collect(),
-                    decided,
+                    decided: decided.code(),
                     exit_code: reply.and_then(|r| r.exit_code),
                     duration_ms,
                     ended,
                     started: ran,
-                    by: decider(decided),
+                    by: decided.by(),
                 },
             )
             .await;
@@ -703,21 +711,21 @@ impl AgentRuns {
         &self,
         c: &Checked,
         gone: impl Future<Output = &'static str>,
-    ) -> Result<&'static str, (&'static str, String)> {
+    ) -> Result<Decided, (Decided, String)> {
         let rules = RunRules::load(&self.data);
         let unasked = if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
-            Some("rule")
+            Some(Decided::Rule)
         } else if self
             .terminals
             .agent_run_allowed(c.pane.as_str(), &c.allow_key(), &c.fingerprint)
         {
-            Some("allowed_before")
+            Some(Decided::AllowedBefore)
         } else {
             None
         };
         if let Some(by) = unasked {
             if !per_minute(&self.unasked, c.pane.as_str(), UNASKED_RUNS_PER_MINUTE) {
-                return Err(("too_many", TOO_MANY_RUNS.into()));
+                return Err((Decided::TooMany, TOO_MANY_RUNS.into()));
             }
             return Ok(by);
         }
@@ -725,14 +733,14 @@ impl AgentRuns {
             let mut panes = self
                 .asking
                 .lock()
-                .map_err(|_| ("busy", ONE_AT_A_TIME.to_string()))?;
+                .map_err(|_| (Decided::Busy, ONE_AT_A_TIME.to_string()))?;
             if !panes.insert(c.pane.as_str().to_string()) {
-                return Err(("busy", ONE_AT_A_TIME.into()));
+                return Err((Decided::Busy, ONE_AT_A_TIME.into()));
             }
             Asking(self, c.pane.as_str().to_string())
         };
         if !self.may_ask(c.pane.as_str()) {
-            return Err(("too_many", TOO_MANY_QUESTIONS.into()));
+            return Err((Decided::TooMany, TOO_MANY_QUESTIONS.into()));
         }
         let with = if c.vars.is_empty() {
             "with no secrets".to_string()
@@ -765,10 +773,14 @@ impl AgentRuns {
             outcome = ticket.outcome() => outcome,
             why = gone => {
                 self.broker.cancel(&view.id);
-                let code = ended_code(why).unwrap_or("client_gone");
+                let code = if why == APP_QUIT {
+                    Decided::AppQuit
+                } else {
+                    Decided::ClientGone
+                };
                 self.terminals
                     .activity
-                    .approval(c.pane.as_str(), code, Decider::Nobody)
+                    .approval(c.pane.as_str(), code.code(), Decider::Nobody)
                     .await;
                 return Err((code, why.into()));
             }
@@ -776,17 +788,17 @@ impl AgentRuns {
         let (decided, answer) = match &outcome {
             ApprovalOutcome::Allowed { scope, via } => {
                 let who = if *scope == ApprovalScope::Conversation {
-                    "agent"
+                    Decided::Agent
                 } else {
-                    "once"
+                    Decided::Once
                 };
                 (who, format!("allowed:{}", via_name(*via)))
             }
             ApprovalOutcome::Denied { via, .. } => {
-                ("declined", format!("denied:{}", via_name(*via)))
+                (Decided::Declined, format!("denied:{}", via_name(*via)))
             }
-            ApprovalOutcome::Expired => ("expired", "expired".into()),
-            ApprovalOutcome::Cancelled => ("cancelled", "cancelled".into()),
+            ApprovalOutcome::Expired => (Decided::Expired, "expired".into()),
+            ApprovalOutcome::Cancelled => (Decided::Cancelled, "cancelled".into()),
         };
         // Allowed, denied, run out or cancelled: the person's question,
         // answered by them or by its time.
@@ -997,32 +1009,76 @@ fn ended_after_run(
     }
 }
 
-/// Every code `decide` and `serve` record for a run's `decided` (the test
-/// that each has its [`Decider`]).
-#[cfg(test)]
-const DECIDED_CODES: &[&str] = &[
-    "once",
-    "agent",
-    "declined",
-    "expired",
-    "cancelled",
-    "rule",
-    "allowed_before",
-    "busy",
-    "too_many",
-    "client_gone",
-    "app_quit",
-];
+/// Who decided a run, or why nobody did: its ledger row's `decided` code
+/// and tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Decided {
+    /// The person: Allow once.
+    Once,
+    /// The person: Allow for this agent.
+    Agent,
+    /// The person declined, or their question ran out or was cancelled.
+    Declined,
+    Expired,
+    Cancelled,
+    /// A repository rule, without asking.
+    Rule,
+    /// This agent's earlier "Allow for this agent", without asking.
+    AllowedBefore,
+    /// Refused before anyone was asked: another question open, too many
+    /// runs or questions, the client gone, the app quitting.
+    Busy,
+    TooMany,
+    ClientGone,
+    AppQuit,
+}
 
-/// Who decided, for a run's `decided` code (one of [`DECIDED_CODES`]).
-fn decider(decided: &str) -> Decider {
-    match decided {
-        "once" | "agent" | "declined" | "expired" | "cancelled" => Decider::Person,
-        "rule" | "allowed_before" => Decider::Unasked,
-        "busy" | "too_many" | "client_gone" | "app_quit" => Decider::Nobody,
-        other => {
-            debug_assert!(false, "a run decided by `{other}` has no Decider");
-            Decider::Nobody
+impl Decided {
+    #[cfg(test)]
+    const ALL: [Decided; 11] = [
+        Decided::Once,
+        Decided::Agent,
+        Decided::Declined,
+        Decided::Expired,
+        Decided::Cancelled,
+        Decided::Rule,
+        Decided::AllowedBefore,
+        Decided::Busy,
+        Decided::TooMany,
+        Decided::ClientGone,
+        Decided::AppQuit,
+    ];
+
+    /// As the ledger stores it.
+    fn code(self) -> &'static str {
+        match self {
+            Decided::Once => "once",
+            Decided::Agent => "agent",
+            Decided::Declined => "declined",
+            Decided::Expired => "expired",
+            Decided::Cancelled => "cancelled",
+            Decided::Rule => "rule",
+            Decided::AllowedBefore => "allowed_before",
+            Decided::Busy => "busy",
+            Decided::TooMany => "too_many",
+            Decided::ClientGone => "client_gone",
+            Decided::AppQuit => "app_quit",
+        }
+    }
+
+    /// Who decided: sets the row's tier, so the person's decisions are
+    /// never pruned by count.
+    fn by(self) -> Decider {
+        match self {
+            Decided::Once
+            | Decided::Agent
+            | Decided::Declined
+            | Decided::Expired
+            | Decided::Cancelled => Decider::Person,
+            Decided::Rule | Decided::AllowedBefore => Decider::Unasked,
+            Decided::Busy | Decided::TooMany | Decided::ClientGone | Decided::AppQuit => {
+                Decider::Nobody
+            }
         }
     }
 }
@@ -1963,27 +2019,33 @@ mod tests {
 
     #[test]
     fn f_ex_07_every_decided_code_has_its_decider() {
-        for code in DECIDED_CODES {
-            let _ = decider(code);
-        }
-        assert_eq!(decider("once"), Decider::Person);
-        assert_eq!(decider("declined"), Decider::Person);
-        assert_eq!(decider("rule"), Decider::Unasked);
-        assert_eq!(decider("busy"), Decider::Nobody);
-        assert_eq!(decider("client_gone"), Decider::Nobody);
+        // The match is exhaustive; the codes are distinct and as stored.
+        let codes: std::collections::HashSet<&str> =
+            Decided::ALL.iter().map(|d| d.code()).collect();
+        assert_eq!(codes.len(), Decided::ALL.len());
+        assert_eq!(Decided::Once.by(), Decider::Person);
+        assert_eq!(Decided::Declined.by(), Decider::Person);
+        assert_eq!(Decided::Rule.by(), Decider::Unasked);
+        assert_eq!(Decided::Busy.by(), Decider::Nobody);
+        assert_eq!(Decided::ClientGone.by(), Decider::Nobody);
+        assert_eq!(Decided::AllowedBefore.code(), "allowed_before");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn f_tl_12_8_a_failed_install_resumes_runs_but_never_a_real_exit() {
+        // Its own exit flag and runs: the process-wide ones stay untouched,
+        // so no other test's runs are resumed or its app marked exiting.
         let fx = fixture("").await;
+        let exiting = std::sync::atomic::AtomicBool::new(false);
+        let live = [fx.runs.clone()];
         fx.runs.shutdown(Duration::from_millis(10));
         // The installer didn't start: runs are served again.
-        resume_all();
+        resume(&exiting, &live);
         assert!(!*fx.runs.quit.borrow());
         // Quitting for real meanwhile: resume does nothing.
         fx.runs.shutdown(Duration::from_millis(10));
-        mark_exiting();
-        resume_all();
+        exiting.store(true, std::sync::atomic::Ordering::SeqCst);
+        resume(&exiting, &live);
         assert!(*fx.runs.quit.borrow());
     }
 }

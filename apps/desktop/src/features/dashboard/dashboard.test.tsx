@@ -469,11 +469,19 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     return 0;
   };
   let covering: Element | null = null;
+  // Where the cover sits across the row (null: everywhere).
+  let coverX: [number, number] | null = null;
   beforeEach(() => {
     resetStores();
     covering = null;
+    coverX = null;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const card = this.closest<HTMLElement>('[data-testid="agent-card"]');
+      // Buttons sit side by side, 100 apart and 90 wide, so a cover can
+      // sit over one and not another.
+      const row = this.tagName === "BUTTON" ? Array.from(this.parentElement?.children ?? []) : [];
+      const left = row.length > 0 ? 100 * row.indexOf(this) : 0;
+      const width = row.length > 0 ? 90 : 300;
       let top = 0;
       const parts = document.querySelectorAll(
         '[data-testid="dashboard-subtitle"], [role="group"], [data-testid="agent-card"]',
@@ -483,19 +491,19 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
         top += heightOf(el);
       }
       return {
-        left: 0,
+        left,
         top,
-        width: 300,
+        width,
         height: 100,
-        right: 300,
+        right: left + width,
         bottom: top + 100,
-        x: 0,
+        x: left,
         y: top,
         toJSON: () => ({}),
       } as DOMRect;
     });
     Object.defineProperty(document, "elementFromPoint", {
-      value: () => covering,
+      value: (x: number) => (coverX === null || (x >= coverX[0] && x < coverX[1]) ? covering : null),
       configurable: true,
     });
   });
@@ -507,22 +515,27 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
   const run = JSON.stringify({
     vibezeoRun: { command: "pnpm test", cwd: "/w", vars: [], envChanged: false },
   });
-  const ask = (id: string, source: DashboardItem["source"], createdAt: number) => ({
+  const ask = (
+    id: string,
+    source: DashboardItem["source"],
+    createdAt: number,
+    options: ("once" | "conversation")[] = ["once"],
+  ) => ({
     id,
     source,
     kind: "command" as const,
     summary: "run",
     detail: run,
-    options: ["once" as const],
+    options,
     createdAt,
     expiresAt: 2,
   });
 
-  async function three() {
+  async function three(options?: ("once" | "conversation")[]) {
     const a = item("waiting", "alpha", { since: 1_000 });
     const alpha = { ...a, pendingApproval: ask("ap_a", a.source, 1) };
     const g = item("waiting", "gamma", { since: 2_000 });
-    const gamma = { ...g, pendingApproval: ask("ap_g", g.source, 5) };
+    const gamma = { ...g, pendingApproval: ask("ap_g", g.source, 5, options) };
     const beta = item("working", "beta", { since: 3_000 });
     const calls = setup([alpha, gamma, beta]);
     render(
@@ -563,12 +576,21 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     const asking = screen.getByTestId("group-asking");
     const subtitle = screen.getByTestId("dashboard-subtitle");
     expect(asking.compareDocumentPosition(subtitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const box = () => JSON.stringify(allow().getBoundingClientRect());
+    // nit 6: the view's one heading still comes before the questions.
+    const heading = screen.getByRole("heading", { level: 2 });
+    expect(heading.textContent).toBe("3 agents");
+    expect(heading.compareDocumentPosition(asking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Field by field: a DOMRect's toJSON is not its geometry.
+    const box = () => {
+      const r = allow().getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    };
     const before = box();
+    expect(before.top).toBeGreaterThan(0);
     for (const status of ["failed", "done", "idle", "waiting", "failed", "working"] as const) {
       flip(beta, { status, since: Date.now() });
       await new Promise((r) => setTimeout(r, 80));
-      expect(box()).toBe(before);
+      expect(box()).toEqual(before);
       expect(allow().disabled).toBe(false);
     }
     fireEvent.click(allow());
@@ -592,5 +614,36 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     await new Promise((r) => setTimeout(r, 250));
     expect(allow().disabled).toBe(true);
     await waitFor(() => expect(allow().disabled).toBe(false));
+  });
+
+  it("M1: a cover over Allow for this agent alone turns both Allows off, and a click on it does nothing", async () => {
+    const { gamma, card, allow, calls } = await three(["once", "conversation"]);
+    const agent = () => within(card(gamma.key)!).getByTestId("card-allow-agent") as HTMLButtonElement;
+    await waitFor(() => expect(agent().disabled).toBe(false));
+    // Over the second button's right half only: Allow once's middle and
+    // corners, and the second button's middle, are all clear.
+    covering = document.createElement("div");
+    document.body.append(covering);
+    coverX = [160, 200];
+    await waitFor(() => expect(agent().disabled).toBe(true));
+    expect(allow().disabled).toBe(true);
+    fireEvent.click(agent());
+    fireEvent.click(allow());
+    expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
+    covering.remove();
+    covering = null;
+    coverX = null;
+    await waitFor(() => expect(agent().disabled).toBe(false));
+  });
+
+  it("S1: a search that matches nothing says so, with Clear search, while questions stay pinned above", async () => {
+    const { alpha, gamma, card } = await three();
+    act(() => useDashboard.setState({ query: "zzz-nothing" }));
+    expect(card(alpha.key)).toBeTruthy();
+    expect(card(gamma.key)).toBeTruthy();
+    expect(screen.getByText("Nothing matches “zzz-nothing”")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(useDashboard.getState().query).toBe("");
+    expect(screen.queryByText(/Nothing matches/)).toBeNull();
   });
 });

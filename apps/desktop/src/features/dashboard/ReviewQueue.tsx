@@ -31,6 +31,7 @@ import { diffNames } from "../../stores/intel";
 import { sortItems, toReview, useReview } from "../../stores/review";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorktrees } from "../../stores/worktrees";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { Dashboard } from "./Dashboard";
 
 const RULE: Record<ReviewRiskRule, () => string> = {
@@ -203,6 +204,9 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   const open = useWorktrees.getState().open;
   const lane = item.laneId;
   const approved = item.state === "approved";
+  // Approve waits for its place to hold still: the queue re-sorts as agents
+  // finish, so another item's Approve could slide under the pointer.
+  const box = useSteadyBox(!approved);
   return (
     <article
       data-testid="review-item"
@@ -257,11 +261,14 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
           )}
         </details>
       )}
-      <div className="flex flex-wrap gap-1.5">
+      <div ref={box.ref} className="flex flex-wrap gap-1.5">
         <Button
           size="sm"
           variant={approved ? "ghost" : "primary"}
+          disabled={!approved && !box.steady}
+          title={!approved && !box.steady ? t("approval.waiting") : undefined}
           onClick={() =>
+            (approved || box.check()) &&
             act(
               approved
                 ? invoke("review_unapprove", { key: item.key })

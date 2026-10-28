@@ -520,12 +520,17 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   };
 
   return (
-    <div data-testid="dashboard" className="flex flex-col gap-3 p-3">
+    // No scroll anchoring: the browser would scroll to keep a card below in
+    // place, moving the pinned questions under the pointer (F-TL-12.12).
+    <div data-testid="dashboard" className="flex flex-col gap-3 p-3 [overflow-anchor:none]">
+      {/* The view's heading comes first for a screen reader, though the
+          questions are drawn above the visible count. */}
+      <h2 className="sr-only">{t("dashboard.count", { n: c.total })}</h2>
       {asking && renderGroup(asking)}
       <header className="flex flex-col gap-1.5">
-        <h2 data-testid="dashboard-count" className="text-xl font-semibold text-fg">
+        <p data-testid="dashboard-count" aria-hidden="true" className="text-xl font-semibold text-fg">
           {t("dashboard.count", { n: c.total })}
-        </h2>
+        </p>
         <p data-testid="dashboard-subtitle" className="flex flex-wrap gap-x-1 text-sm text-fg-muted">
           {segments.map((x, i) => (
             <span key={x.status}>
@@ -611,7 +616,9 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
             );
           })}
       </div>
-      {groups.length === 0 && !asking ? (
+      {/* Nothing the filter or search would show, questions included: the
+          questions stay pinned above, and this says why nothing else is. */}
+      {shown.length === 0 ? (
         <EmptyState
           title={t("dashboard.noMatch", { q: query })}
           primary={

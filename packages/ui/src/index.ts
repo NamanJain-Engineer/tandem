@@ -5,6 +5,7 @@ export {
   type ApprovalCardLabels,
   type ApprovalCardProps,
 } from "./components/ApprovalCard";
+export { SETTLE_MS, useSteadyBox } from "./components/steadyBox";
 export {
   AVATAR_HUES,
   Avatar,

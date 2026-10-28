@@ -875,7 +875,7 @@ pub mod tauri_backend {
                     UpdateError::new(
                         err.stage,
                         format!(
-                            "{} Vibezeo stopped your terminals, SSH and WSL connections and any landing in progress for the update: restart Vibezeo.",
+                            "{} Vibezeo stopped your terminals, SSH and WSL connections, any landing in progress and any running `vibezeo run` commands for the update: restart Vibezeo.",
                             err.message
                         ),
                     )

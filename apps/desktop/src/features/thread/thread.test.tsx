@@ -201,7 +201,13 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(await screen.findByText("The loop comes from the guard.")).toBeTruthy();
     expect(screen.getByTestId("thread-working")).toBeTruthy();
     const pinned = await screen.findByTestId("thread-pending");
-    fireEvent.click(within(pinned).getByRole("button", { name: "Allow for this thread" }));
+    const allowThread = within(pinned).getByRole("button", {
+      name: "Allow for this thread",
+    }) as HTMLButtonElement;
+    // S4: Allow waits for the card to have held still a moment.
+    expect(allowThread.disabled).toBe(true);
+    await waitFor(() => expect(allowThread.disabled).toBe(false));
+    fireEvent.click(allowThread);
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
     expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
       approvalId: "apr_1",

@@ -276,7 +276,8 @@ impl ActivityService {
     }
 
     /// `row` if `flood` allows it, and its notes: [`Keep::Ceiling`], so a
-    /// later flood can't prune them.
+    /// later flood of counted rows (tools, turns) can't prune them; they
+    /// stop at their own ceiling instead, per source and in all.
     async fn record_limited(&self, flood: Flood, row: NewActivity) {
         let admit = self.admit(&row.source_id, flood);
         for note in admit.notes {
@@ -1129,19 +1130,24 @@ mod tests {
             svc.run("pn_1", record("once", Decider::Person)).await;
             svc.approval("pn_1", "denied:inline", Decider::Person).await;
         }
-        // Then what an agent drives: rule runs and answers it caused by going
-        // away, well past the ceiling, and a flood of tool rows.
+        // Then what agents drive, in two panes: rule runs and answers they
+        // caused by going away, well past the ceiling, and a flood of tool
+        // rows.
         for _ in 0..40 {
             clock.advance(Duration::from_secs(2));
-            svc.run("pn_1", record("rule", Decider::Unasked)).await;
-            svc.approval("pn_1", "client_gone", Decider::Nobody).await;
-            svc.tool("pn_1", "Read", false, clock.now_ms()).await;
+            for pane in ["pn_1", "pn_2"] {
+                svc.run(pane, record("rule", Decider::Unasked)).await;
+                svc.approval(pane, "client_gone", Decider::Nobody).await;
+                svc.tool(pane, "Read", false, clock.now_ms()).await;
+            }
         }
+        // Each pane's ceiling (5) under the total (7), and the two panes
+        // together over it: both bind.
         let limits = repo::Limits {
             per_source: 3,
             total: 3,
             ceiling: 5,
-            ceiling_total: 5,
+            ceiling_total: 7,
         };
         repo::prune_with(&store, clock.now_ms(), limits)
             .await
@@ -1161,7 +1167,17 @@ mod tests {
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM activity WHERE kept = 1").await,
-            5
+            7,
+            "the total ceiling"
+        );
+        assert!(
+            count(
+                "SELECT MAX(n) FROM (SELECT COUNT(*) AS n FROM activity
+                 WHERE kept = 1 GROUP BY source_id)"
+            )
+            .await
+                <= 5,
+            "each pane's ceiling"
         );
         assert!(count("SELECT COUNT(*) FROM activity WHERE kept = 0").await <= 3);
     }

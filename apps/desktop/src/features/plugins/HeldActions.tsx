@@ -16,6 +16,7 @@ import {
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { listen } from "../../ipc/events";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { riskLabel, riskVariant } from "./model";
 
 /** F-PL-08 "Held actions": what unattended runs wanted to do, waiting for
@@ -27,6 +28,10 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
   const [picked, setPicked] = useState<string[]>([]);
   const [editing, setEditing] = useState<HeldDraft | null>(null);
   const [busy, setBusy] = useState(false);
+  // Approve & run waits until its place has held still, like Allow
+  // (F-TL-12.12): a row above that runs or goes can't slide another under
+  // the pointer.
+  const selectedBox = useSteadyBox(picked.length > 0);
   const { show } = useToast();
   const load = useCallback(() => {
     void invoke<HeldDraft[]>("held_drafts_list", { state: "held", originId: originId ?? null }).then(
@@ -90,19 +95,23 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
       <div className="flex items-center gap-2">
         <h3 className="text-base font-medium text-fg">{t("held.titleN", { n: drafts.length })}</h3>
         <span className="flex-1" />
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={busy || chosen.length === 0}
-          onClick={() =>
-            void act(async () => {
-              for (const d of chosen) await run(d);
-            })
-          }
-          data-testid="held-run-selected"
-        >
-          {t("held.runSelected", { n: chosen.length })}
-        </Button>
+        <span ref={selectedBox.ref} className="flex">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy || chosen.length === 0 || !selectedBox.steady}
+            title={chosen.length > 0 && !selectedBox.steady ? t("approval.waiting") : undefined}
+            onClick={() =>
+              selectedBox.check() &&
+              void act(async () => {
+                for (const d of chosen) await run(d);
+              })
+            }
+            data-testid="held-run-selected"
+          >
+            {t("held.runSelected", { n: chosen.length })}
+          </Button>
+        </span>
         <Button
           size="sm"
           variant="ghost"
@@ -115,56 +124,16 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
       </div>
       <ul className="flex flex-col gap-2">
         {drafts.map((d) => (
-          <li
+          <HeldRow
             key={d.id}
-            data-testid={`held-${d.displayNo}`}
-            className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
-          >
-            <div className="flex items-center gap-2">
-              <Checkbox
-                label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
-                checked={picked.includes(d.id)}
-                onCheckedChange={(v) => setPicked((p) => (v ? [...p, d.id] : p.filter((x) => x !== d.id)))}
-              />
-              <EngineGlyph letters={d.logo} size={16} />
-              <span className="text-sm font-medium text-fg">{t("held.id", { n: d.displayNo })}</span>
-              <span className="min-w-0 flex-1 truncate text-sm text-fg">
-                {t("held.action", { plugin: d.pluginLabel, action: d.action })}
-              </span>
-              <Badge variant={riskVariant(d.riskClass as RiskClass)}>
-                {riskLabel(d.riskClass as RiskClass)}
-              </Badge>
-            </div>
-            <p className="text-sm text-fg-muted">{t(`held.from.${d.originKind}`, { id: d.originId })}</p>
-            <CodeBlock
-              code={JSON.stringify(d.args, null, 2)}
-              copyLabel={t("thread.copy")}
-              copiedLabel={t("thread.copied")}
-            />
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={busy}
-                onClick={() => void act(() => run(d))}
-                data-testid={`held-run-${d.displayNo}`}
-              >
-                {t("held.approveRun")}
-              </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEditing(d)}>
-                {t("held.editRun")}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => void act(() => invoke("held_drafts_discard", { draftIds: [d.id] }))}
-                data-testid={`held-discard-${d.displayNo}`}
-              >
-                {t("held.discard")}
-              </Button>
-            </div>
-          </li>
+            draft={d}
+            busy={busy}
+            picked={picked.includes(d.id)}
+            onPick={(v) => setPicked((p) => (v ? [...p, d.id] : p.filter((x) => x !== d.id)))}
+            onRun={() => void act(() => run(d))}
+            onEdit={() => setEditing(d)}
+            onDiscard={() => void act(() => invoke("held_drafts_discard", { draftIds: [d.id] }))}
+          />
         ))}
       </ul>
       {editing && (
@@ -179,6 +148,77 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
         />
       )}
     </section>
+  );
+}
+
+/** One held draft. Its Approve & run waits for the row to hold still. */
+function HeldRow({
+  draft: d,
+  busy,
+  picked,
+  onPick,
+  onRun,
+  onEdit,
+  onDiscard,
+}: {
+  draft: HeldDraft;
+  busy: boolean;
+  picked: boolean;
+  onPick: (v: boolean) => void;
+  onRun: () => void;
+  onEdit: () => void;
+  onDiscard: () => void;
+}) {
+  const box = useSteadyBox(true);
+  return (
+    <li
+      data-testid={`held-${d.displayNo}`}
+      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+    >
+      <div className="flex items-center gap-2">
+        <Checkbox
+          label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
+          checked={picked}
+          onCheckedChange={(v) => onPick(v === true)}
+        />
+        <EngineGlyph letters={d.logo} size={16} />
+        <span className="text-sm font-medium text-fg">{t("held.id", { n: d.displayNo })}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-fg">
+          {t("held.action", { plugin: d.pluginLabel, action: d.action })}
+        </span>
+        <Badge variant={riskVariant(d.riskClass as RiskClass)}>{riskLabel(d.riskClass as RiskClass)}</Badge>
+      </div>
+      <p className="text-sm text-fg-muted">{t(`held.from.${d.originKind}`, { id: d.originId })}</p>
+      <CodeBlock
+        code={JSON.stringify(d.args, null, 2)}
+        copyLabel={t("thread.copy")}
+        copiedLabel={t("thread.copied")}
+      />
+      <div ref={box.ref} className="flex gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={busy || !box.steady}
+          title={box.steady ? undefined : t("approval.waiting")}
+          onClick={() => box.check() && onRun()}
+          data-testid={`held-run-${d.displayNo}`}
+        >
+          {t("held.approveRun")}
+        </Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={onEdit}>
+          {t("held.editRun")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={onDiscard}
+          data-testid={`held-discard-${d.displayNo}`}
+        >
+          {t("held.discard")}
+        </Button>
+      </div>
+    </li>
   );
 }
 

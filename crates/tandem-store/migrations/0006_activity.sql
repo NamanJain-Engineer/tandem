@@ -13,9 +13,10 @@ CREATE TABLE activity (
   detail_json   TEXT NOT NULL DEFAULT '{}',
   checkpoint_id TEXT,
   -- How it's pruned besides by age (repo::activity::Keep). 0: by the
-  -- per-session and total counts. 1: under a per-source ceiling instead
-  -- (what an agent can still drive: rule runs, answers it caused by going
-  -- away, notes). 2: never by count (the person's own decisions).
+  -- per-session and total counts. 1: under a per-source and a total
+  -- ceiling instead (what an agent can still drive: rule runs, answers it
+  -- caused by going away, notes). 2: never by count (the person's own
+  -- decisions).
   kept          INTEGER NOT NULL DEFAULT 0 CHECK (kept IN (0, 1, 2))
 );
 CREATE INDEX activity_source ON activity(source_kind, source_id, at);

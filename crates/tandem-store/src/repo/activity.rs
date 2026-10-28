@@ -45,9 +45,11 @@ pub enum Keep {
     /// Counts toward [`KEEP_PER_SOURCE`] and [`KEEP_ROWS`]: what the agent
     /// can write as often as its caps allow (tools, turns, refusals).
     Counted = 0,
-    /// Out of the counts but under [`KEEP_KEPT_PER_SOURCE`]: rows an agent
-    /// can still drive (runs a rule or allowance started, answers it
-    /// caused by going away, notes), so they can't grow without end.
+    /// Out of the counts but under their own ceiling,
+    /// [`KEEP_KEPT_PER_SOURCE`] per source and [`KEEP_KEPT_ROWS`] in all:
+    /// rows an agent can still drive (runs a rule or allowance started,
+    /// answers it caused by going away, notes), so they can't grow without
+    /// end.
     Ceiling = 1,
     /// The person's own decisions (their answers, the runs they allowed or
     /// declined): by age only, so nothing the agent does pushes them out.
@@ -276,16 +278,16 @@ pub async fn approvals(
 /// push every other session's history out.
 pub const KEEP_PER_SOURCE: i64 = 10_000;
 
-/// [`Keep::Ceiling`] rows stop at this many per source, so none grows
-/// without end within the retention. [`Keep::Decision`] rows have no
-/// ceiling.
+/// [`Keep::Ceiling`] rows stop at this many per source, and at
+/// [`KEEP_KEPT_ROWS`] in all, so none grows without end within the
+/// retention. [`Keep::Decision`] rows have no ceiling.
 pub const KEEP_KEPT_PER_SOURCE: i64 = 20_000;
 
 /// Drops events older than [`KEEP_DAYS`], then each source's oldest past
 /// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`], counting only
 /// [`Keep::Counted`] rows; [`Keep::Ceiling`] rows stop at
-/// [`KEEP_KEPT_PER_SOURCE`] per source, and [`Keep::Decision`] rows go by
-/// age only. The agent can sign tool reports, trigger refusals and drive
+/// [`KEEP_KEPT_PER_SOURCE`] per source and [`KEEP_KEPT_ROWS`] in all, the
+/// oldest going first, and [`Keep::Decision`] rows go by age only. The agent can sign tool reports, trigger refusals and drive
 /// rule runs, so no flood of those pushes the person's decisions out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
     prune_with(store, now, Limits::DEFAULT).await
@@ -582,6 +584,54 @@ mod tests {
         assert_eq!(left.last().map(|r| r.at), Some(now - 1));
         // Every decision stays, however many runs came after.
         assert_eq!(left.iter().filter(|r| r.kind == "approval").count(), 7);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_s2_the_total_ceiling_holds_across_sources_each_under_their_own() {
+        let (_d, store) = store();
+        let now = 1_000_000;
+        store
+            .write(move |t| {
+                // pn_1's runs are older than pn_2's; each source has 6, under
+                // its own ceiling of 8, and together 12, over the total of 9.
+                for (source, from) in [("pn_1", 0), ("pn_2", 100)] {
+                    for at in 0..6 {
+                        t.execute(
+                            "INSERT INTO activity (source_kind, source_id, kind, at, summary, kept)
+                             VALUES ('pane', ?1, 'run', ?2, 'x', 1)",
+                            rusqlite::params![source, now - 1_000 + from + at],
+                        )?;
+                    }
+                }
+                // A decision older than all of them.
+                t.execute(
+                    "INSERT INTO activity (source_kind, source_id, kind, at, summary, kept)
+                     VALUES ('pane', 'pn_1', 'approval', ?1, 'answer', 2)",
+                    [now - 5_000],
+                )?;
+                Ok(())
+            })
+            .await
+            .expect("rows");
+        let limits = Limits {
+            per_source: 100,
+            total: 100,
+            ceiling: 8,
+            ceiling_total: 9,
+        };
+        let dropped = prune_with(&store, now, limits).await.expect("prune");
+        assert_eq!(dropped, 3, "only the total's overflow");
+        let one = list(&store, "pane", "pn_1", Page::ALL).await.expect("list");
+        let two = list(&store, "pane", "pn_2", Page::ALL).await.expect("list");
+        // The oldest three go, all pn_1's: the newest nine across both stay.
+        assert_eq!(one.iter().filter(|r| r.kind == "run").count(), 3);
+        assert_eq!(two.iter().filter(|r| r.kind == "run").count(), 6);
+        assert_eq!(
+            one.iter().filter(|r| r.kind == "run").map(|r| r.at).min(),
+            Some(now - 1_000 + 3)
+        );
+        // The decision outlives the total too.
+        assert_eq!(one.iter().filter(|r| r.kind == "approval").count(), 1);
     }
 
     #[tokio::test]

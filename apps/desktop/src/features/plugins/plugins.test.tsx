@@ -396,7 +396,9 @@ describe("F-PL-08 held actions", () => {
 
   it("F-PL-08 Approve & run runs a draft once", async () => {
     ui(<HeldActions />);
-    fireEvent.click(await screen.findByTestId("held-run-12"));
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    await waitFor(() => expect(run.disabled).toBe(false));
+    fireEvent.click(run);
     await waitFor(() => expect(screen.queryByTestId("held-12")).toBeNull());
     expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1);
     expect(calls.find((c) => c.cmd === "held_draft_run")?.args).toMatchObject({
@@ -415,6 +417,24 @@ describe("F-PL-08 held actions", () => {
     expect(calls.find((c) => c.cmd === "held_drafts_discard")?.args).toEqual({
       draftIds: ["hd_12", "hd_13"],
     });
+  });
+
+  it("F-PL-08 S4: Approve & run and Approve & run {n} take no click until their row has held still", async () => {
+    ui(<HeldActions />);
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    // Just shown: a click meant for what was there before does nothing.
+    expect(run.disabled).toBe(true);
+    expect(run.title).toBe("Allow turns on once this has been still on screen for a moment.");
+    fireEvent.click(run);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select D-13" }));
+    const selected = screen.getByTestId("held-run-selected") as HTMLButtonElement;
+    expect(selected.disabled).toBe(true);
+    fireEvent.click(selected);
+    expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+    await waitFor(() => expect(selected.disabled).toBe(false));
+    fireEvent.click(selected);
+    await waitFor(() => expect(screen.queryByTestId("held-13")).toBeNull());
+    expect(calls.filter((c) => c.cmd === "held_draft_run").map((c) => c.args?.draftId)).toEqual(["hd_13"]);
   });
 });
 
@@ -466,7 +486,10 @@ describe("F-PL-03 a build without plugins (the browser demo)", () => {
     resetStores();
     fakeBackend({
       plugins_catalog: () => {
-        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo." };
+        throw {
+          code: "unavailable",
+          message: "Plugins sign in to your own accounts, so they don't connect inside this demo.",
+        };
       },
       held_drafts_list: () => [],
     });

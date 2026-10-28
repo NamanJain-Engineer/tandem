@@ -501,6 +501,7 @@ function approvalLabels(kind: string) {
     cancel: t("thread.approval.cancel"),
     showDetail: file ? t("thread.approval.viewDiff") : t("thread.approval.showDetail"),
     hideDetail: file ? t("thread.approval.hideDiff") : t("thread.approval.hideDetail"),
+    steadying: t("approval.waiting"),
   };
 }
 export { approvalLabels };

@@ -78,10 +78,11 @@ export type Group = {
 /** Worktrees by workspace id: the repository they belong to and their branch. */
 export type Lanes = Record<string, { parentId: string; parentName: string; branch: string }>;
 
-/** The cards with a question open, first, in the order the questions were
- * asked, then the rest grouped by {@link groupRest}. Pinned this way, a
- * question's card only moves when one asked before it is answered: no
- * other agent's report (status, `since`, a longer line) can move it. */
+/** {@link askingGroup} then {@link groupRest}, as one list: the order the
+ * Dashboard shows, which renders the two apart (the questions above its
+ * header). Used by the tests. A question's card moves only when one asked
+ * before it is answered or withdrawn, or an earlier question's card changes
+ * size; no other agent's report (status, `since`) moves it. */
 export function group(
   items: DashboardItem[],
   by: GroupBy,

@@ -122,7 +122,13 @@ describe("Review queue (F-DB-04)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("review-changed").textContent).toBe("Changed since you approved"),
     );
-    fireEvent.click(screen.getByTestId("review-approve"));
+    // S4: Approve waits for the item to have held still a moment.
+    const approve = screen.getByTestId("review-approve") as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(approve);
+    expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
+    await waitFor(() => expect(approve.disabled).toBe(false));
+    fireEvent.click(approve);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h1" }),
     );
