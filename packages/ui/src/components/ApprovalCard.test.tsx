@@ -208,4 +208,32 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     fireEvent.keyDown(el, { key: "a" });
     expect(h.onAllow).toHaveBeenCalledTimes(1);
   });
+
+  it("N2: the same card given another request waits again, and a click meant for the first doesn't answer the second", async () => {
+    layout();
+    const a = vi.fn();
+    const b = vi.fn();
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard
+          kind="command"
+          title="run"
+          requestKey={requestKey}
+          onAllow={onAllow}
+          onDeny={() => undefined}
+        />
+      </UiProvider>
+    );
+    const { rerender } = render(view("apr_a", a));
+    await steady();
+    rerender(view("apr_b", b));
+    expect(allow().disabled).toBe(true);
+    fireEvent.click(allow());
+    fireEvent.keyDown(screen.getByTestId("approval-card"), { key: "a" });
+    expect(a).not.toHaveBeenCalled();
+    expect(b).not.toHaveBeenCalled();
+    await steady();
+    fireEvent.click(allow());
+    expect(b).toHaveBeenCalledTimes(1);
+  });
 });

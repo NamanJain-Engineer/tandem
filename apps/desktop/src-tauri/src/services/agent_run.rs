@@ -1009,78 +1009,63 @@ fn ended_after_run(
     }
 }
 
-/// Who decided a run, or why nobody did: its ledger row's `decided` code
-/// and tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Decided {
-    /// The person: Allow once.
-    Once,
-    /// The person: Allow for this agent.
-    Agent,
-    /// The person declined, or their question ran out or was cancelled.
-    Declined,
-    Expired,
-    Cancelled,
-    /// A repository rule, without asking.
-    Rule,
-    /// This agent's earlier "Allow for this agent", without asking.
-    AllowedBefore,
-    /// Refused before anyone was asked: another question open, too many
-    /// runs or questions, the client gone, the app quitting.
-    Busy,
-    TooMany,
-    ClientGone,
-    AppQuit,
-}
-
-impl Decided {
-    #[cfg(test)]
-    const ALL: [Decided; 11] = [
-        Decided::Once,
-        Decided::Agent,
-        Decided::Declined,
-        Decided::Expired,
-        Decided::Cancelled,
-        Decided::Rule,
-        Decided::AllowedBefore,
-        Decided::Busy,
-        Decided::TooMany,
-        Decided::ClientGone,
-        Decided::AppQuit,
-    ];
-
-    /// As the ledger stores it.
-    fn code(self) -> &'static str {
-        match self {
-            Decided::Once => "once",
-            Decided::Agent => "agent",
-            Decided::Declined => "declined",
-            Decided::Expired => "expired",
-            Decided::Cancelled => "cancelled",
-            Decided::Rule => "rule",
-            Decided::AllowedBefore => "allowed_before",
-            Decided::Busy => "busy",
-            Decided::TooMany => "too_many",
-            Decided::ClientGone => "client_gone",
-            Decided::AppQuit => "app_quit",
+/// Declares [`Decided`] from one list: each variant with the code its
+/// ledger row stores and its [`Decider`], so the enum, `code()`, `by()` and
+/// the tests' `ALL` can't drift apart.
+macro_rules! decided {
+    ($($(#[$doc:meta])* $variant:ident => $code:literal, $by:ident;)+) => {
+        /// Who decided a run, or why nobody did: its ledger row's `decided`
+        /// code and tier.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Decided {
+            $($(#[$doc])* $variant,)+
         }
-    }
 
-    /// Who decided: sets the row's tier, so the person's decisions are
-    /// never pruned by count.
-    fn by(self) -> Decider {
-        match self {
-            Decided::Once
-            | Decided::Agent
-            | Decided::Declined
-            | Decided::Expired
-            | Decided::Cancelled => Decider::Person,
-            Decided::Rule | Decided::AllowedBefore => Decider::Unasked,
-            Decided::Busy | Decided::TooMany | Decided::ClientGone | Decided::AppQuit => {
-                Decider::Nobody
+        impl Decided {
+            #[cfg(test)]
+            const ALL: &'static [Decided] = &[$(Decided::$variant,)+];
+
+            /// As the ledger stores it.
+            fn code(self) -> &'static str {
+                match self {
+                    $(Decided::$variant => $code,)+
+                }
+            }
+
+            /// Who decided: sets the row's tier, so the person's decisions
+            /// are never pruned by count.
+            fn by(self) -> Decider {
+                match self {
+                    $(Decided::$variant => Decider::$by,)+
+                }
             }
         }
-    }
+    };
+}
+
+decided! {
+    /// The person: Allow once.
+    Once => "once", Person;
+    /// The person: Allow for this agent.
+    Agent => "agent", Person;
+    /// The person declined.
+    Declined => "declined", Person;
+    /// The person's question ran out.
+    Expired => "expired", Person;
+    /// The person's question was cancelled.
+    Cancelled => "cancelled", Person;
+    /// A repository rule, without asking.
+    Rule => "rule", Unasked;
+    /// This agent's earlier "Allow for this agent", without asking.
+    AllowedBefore => "allowed_before", Unasked;
+    /// Refused before anyone was asked: another question was open.
+    Busy => "busy", Nobody;
+    /// Refused: too many runs or questions.
+    TooMany => "too_many", Nobody;
+    /// The client went away.
+    ClientGone => "client_gone", Nobody;
+    /// The app was quitting.
+    AppQuit => "app_quit", Nobody;
 }
 
 /// How a run ended other than by exiting, as its row stores it.

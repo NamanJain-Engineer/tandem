@@ -49,7 +49,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
   const status = dot(n);
   // New items arrive on top and push this one down: Allow once waits until
   // its own place has held still, and checks again at the click (F-TL-12.12).
-  const box = useSteadyBox(approvalId !== null);
+  const box = useSteadyBox(approvalId !== null, approvalId);
   const decide = (allow: boolean) =>
     approvalId &&
     void answer(approvalId, allow, "notification").then(
@@ -108,6 +108,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
             <Button
               size="sm"
               variant="primary"
+              data-grant
               data-testid="notification-allow"
               disabled={!box.steady}
               title={box.steady ? undefined : t("approval.waiting")}

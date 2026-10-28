@@ -153,8 +153,16 @@ describe("F-RM-03 Settings › Remote", () => {
       phone_arm_approvals: () => ({ armedUntil: Date.now() + 8 * 3_600_000 }),
     });
     expect(await screen.findByText("iPhone · Safari asked to allow: Run pnpm test")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
-    await waitFor(() => expect(named("phone_queue_decide")[0]?.args).toEqual({ itemId: item.id, apply: true }));
+    // The list reloads after each answer: Allow waits for its row first.
+    const allow = screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement;
+    expect(allow.disabled).toBe(true);
+    fireEvent.click(allow);
+    expect(named("phone_queue_decide")).toEqual([]);
+    await waitFor(() => expect(allow.disabled).toBe(false));
+    fireEvent.click(allow);
+    await waitFor(() =>
+      expect(named("phone_queue_decide")[0]?.args).toEqual({ itemId: item.id, apply: true }),
+    );
     fireEvent.click(screen.getByRole("switch", { name: "Allow approvals from phone for the next 8 hours" }));
     await waitFor(() => expect(named("phone_arm_approvals")[0]?.args).toEqual({ hours: 8 }));
     expect(await screen.findByText(/On until/)).toBeTruthy();

@@ -287,8 +287,9 @@ pub const KEEP_KEPT_PER_SOURCE: i64 = 20_000;
 /// [`KEEP_PER_SOURCE`], then the oldest past [`KEEP_ROWS`], counting only
 /// [`Keep::Counted`] rows; [`Keep::Ceiling`] rows stop at
 /// [`KEEP_KEPT_PER_SOURCE`] per source and [`KEEP_KEPT_ROWS`] in all, the
-/// oldest going first, and [`Keep::Decision`] rows go by age only. The agent can sign tool reports, trigger refusals and drive
-/// rule runs, so no flood of those pushes the person's decisions out.
+/// oldest going first, and [`Keep::Decision`] rows go by age only. The
+/// agent can sign tool reports, trigger refusals and drive rule runs, so no
+/// flood of those pushes the person's decisions out.
 pub async fn prune(store: &Store, now: i64) -> Result<usize, StoreError> {
     prune_with(store, now, Limits::DEFAULT).await
 }

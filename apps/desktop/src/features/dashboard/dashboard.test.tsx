@@ -636,6 +636,30 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     await waitFor(() => expect(agent().disabled).toBe(false));
   });
 
+  it("N5: a toast over Deny alone leaves Allow on; covers count only over what grants", async () => {
+    const { gamma, card, allow, calls } = await three();
+    covering = document.createElement("div");
+    document.body.append(covering);
+    // card-allow sits at 0-90, card-deny at 100-190.
+    coverX = [100, 200];
+    await new Promise((r) => setTimeout(r, 400));
+    expect(within(card(gamma.key)!).getByTestId("card-deny")).toBeTruthy();
+    expect(allow().disabled).toBe(false);
+    fireEvent.click(allow());
+    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
+    covering.remove();
+    covering = null;
+    coverX = null;
+  });
+
+  it("N11: a filter alone that leaves nothing says so in its own words", async () => {
+    await three();
+    act(() => useDashboard.setState({ filter: "failed" }));
+    expect(screen.getByText("No agents match this filter")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show all agents" }));
+    expect(useDashboard.getState().filter).toBe("all");
+  });
+
   it("S1: a search that matches nothing says so, with Clear search, while questions stay pinned above", async () => {
     const { alpha, gamma, card } = await three();
     act(() => useDashboard.setState({ query: "zzz-nothing" }));

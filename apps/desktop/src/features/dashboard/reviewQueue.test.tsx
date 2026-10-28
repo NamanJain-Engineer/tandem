@@ -139,6 +139,29 @@ describe("Review queue (F-DB-04)", () => {
     stop();
   });
 
+  it("N4: a diff that changes in place starts Approve's wait over, so the hash sent is one that was on screen", async () => {
+    const calls = fakeBackend({
+      review_queue: () => ({ items: [item({})] }),
+      review_approve: () => item({ state: "approved" }),
+    });
+    const stop = followReview();
+    wrap(<ReviewQueue />);
+    const approve = () => screen.getByTestId("review-approve") as HTMLButtonElement;
+    await waitFor(() => expect(approve().disabled).toBe(false));
+    // Same item, same place, a new diff.
+    act(() => emitLocal("review:queue", { items: [item({ diffHash: "h2" })] }));
+    expect(approve().disabled).toBe(true);
+    expect(approve().title).toBe("This diff just changed: Approve turns on in a moment.");
+    fireEvent.click(approve());
+    expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
+    await waitFor(() => expect(approve().disabled).toBe(false));
+    fireEvent.click(approve());
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h2" }),
+    );
+    stop();
+  });
+
   it("F-DB-04.4 a worktree item's Send back opens its diff and review bar, Merge its confirm", async () => {
     fakeBackend({ review_queue: () => ({ items: [item({}), risky] }) });
     wrap(<ReviewQueue />);

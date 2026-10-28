@@ -139,7 +139,7 @@ function AgentCard({
   const unreadable = !!approval && approval.source.type === "pane" && !run;
   // Cards sort and size by what agents report, so Allow can move under the
   // pointer: it waits until its own place has held still (F-TL-12.12).
-  const box = useSteadyBox(!!approval);
+  const box = useSteadyBox(!!approval, key);
   const canAllow = settled && box.steady && (!run || seenEnd) && !unreadable;
   const close = () =>
     busy
@@ -293,6 +293,7 @@ function AgentCard({
               <Button
                 size="sm"
                 variant="primary"
+                data-grant
                 data-testid="card-allow"
                 disabled={!canAllow}
                 title={
@@ -310,6 +311,7 @@ function AgentCard({
                 <Button
                   size="sm"
                   variant="secondary"
+                  data-grant
                   data-testid="card-allow-agent"
                   disabled={!canAllow}
                   title={
@@ -620,14 +622,14 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
           questions stay pinned above, and this says why nothing else is. */}
       {shown.length === 0 ? (
         <EmptyState
-          title={t("dashboard.noMatch", { q: query })}
+          title={query.trim() ? t("dashboard.noMatch", { q: query }) : t("dashboard.noMatchFilter")}
           primary={
             <Button
               size="sm"
               variant="secondary"
               onClick={() => useDashboard.setState({ query: "", filter: "all" })}
             >
-              {t("dashboard.clearSearch")}
+              {query.trim() ? t("dashboard.clearSearch") : t("dashboard.clearFilter")}
             </Button>
           }
         />

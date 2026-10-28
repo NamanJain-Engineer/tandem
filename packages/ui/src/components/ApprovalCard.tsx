@@ -64,6 +64,9 @@ export type ApprovalCardProps = {
   age?: ReactNode;
   /** Offers "Allow for this thread" (the request's options include it). */
   allowThread?: boolean;
+  /** What's being asked (the request's id, with its detail when that can
+   * change): a new one starts Allow's wait over, even on the same card. */
+  requestKey?: string;
   onAllow: () => void;
   onAllowThread?: () => void;
   onDeny: (reason: string | null) => void;
@@ -92,6 +95,7 @@ export function ApprovalCard({
   riskText,
   age,
   allowThread = false,
+  requestKey,
   onAllow,
   onAllowThread,
   onDeny,
@@ -108,7 +112,7 @@ export function ApprovalCard({
   const denyRef = useRef<HTMLButtonElement>(null);
   const reasonId = useId();
   const titleId = useId();
-  const box = useSteadyBox(!resolved && !explaining);
+  const box = useSteadyBox(!resolved && !explaining, requestKey ?? null);
 
   if (resolved) {
     const Icon = resolved.tone === "allowed" ? Check : X;
@@ -253,6 +257,7 @@ export function ApprovalCard({
             onClick={() => box.check() && onAllow()}
             disabled={busy || !box.steady}
             title={box.steady ? undefined : labels.steadying}
+            data-grant
             data-testid="approval-allow"
           >
             {labels.allow}
@@ -264,6 +269,7 @@ export function ApprovalCard({
               onClick={() => box.check() && onAllowThread?.()}
               disabled={busy || !box.steady}
               title={box.steady ? undefined : labels.steadying}
+              data-grant
               data-testid="approval-allow-thread"
             >
               {labels.allowThread}

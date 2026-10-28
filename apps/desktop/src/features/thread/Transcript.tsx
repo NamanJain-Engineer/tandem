@@ -394,6 +394,7 @@ const RowView = memo(function RowView({
             risk={plugin.riskClass === "spend" ? "high" : "low"}
             riskText={plugin.cost ? t("plugins.approval.spendNote", { cost: plugin.cost }) : undefined}
             allowThread={r.options.includes("conversation")}
+            requestKey={`${r.id}\n${r.detail}`}
             onAllow={() => actions.approve(r.id, "once")}
             onAllowThread={() => actions.approve(r.id, "conversation")}
             onDeny={(reason) => actions.deny(r.id, reason)}
@@ -414,6 +415,7 @@ const RowView = memo(function RowView({
           }
           context={r.summary}
           allowThread={r.options.includes("thread")}
+          requestKey={`${r.id}\n${r.detail}`}
           onAllow={() => actions.approve(r.id, "once")}
           onAllowThread={() => actions.approve(r.id, "thread")}
           onDeny={(reason) => actions.deny(r.id, reason)}

@@ -100,13 +100,14 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
             size="sm"
             variant="secondary"
             disabled={busy || chosen.length === 0 || !selectedBox.steady}
-            title={chosen.length > 0 && !selectedBox.steady ? t("approval.waiting") : undefined}
+            title={chosen.length > 0 && !selectedBox.steady ? t("approval.waitingApprove") : undefined}
             onClick={() =>
               selectedBox.check() &&
               void act(async () => {
                 for (const d of chosen) await run(d);
               })
             }
+            data-grant
             data-testid="held-run-selected"
           >
             {t("held.runSelected", { n: chosen.length })}
@@ -169,18 +170,26 @@ function HeldRow({
   onEdit: () => void;
   onDiscard: () => void;
 }) {
-  const box = useSteadyBox(true);
+  // The whole row: a draft arriving on top moves it, and both its pick and
+  // its Approve & run wait for it to hold still again (a pick feeds
+  // Approve & run {n}).
+  const box = useSteadyBox(true, `${d.id}\n${JSON.stringify(d.args)}`);
   return (
     <li
+      ref={box.ref}
       data-testid={`held-${d.displayNo}`}
       className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <div className="flex items-center gap-2">
-        <Checkbox
-          label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
-          checked={picked}
-          onCheckedChange={(v) => onPick(v === true)}
-        />
+        {/* Unpicking never waits; picking does. */}
+        <span data-grant className="flex">
+          <Checkbox
+            label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
+            checked={picked}
+            disabled={!picked && !box.steady}
+            onCheckedChange={(v) => (v ? box.check() && onPick(true) : onPick(false))}
+          />
+        </span>
         <EngineGlyph letters={d.logo} size={16} />
         <span className="text-sm font-medium text-fg">{t("held.id", { n: d.displayNo })}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">
@@ -194,13 +203,14 @@ function HeldRow({
         copyLabel={t("thread.copy")}
         copiedLabel={t("thread.copied")}
       />
-      <div ref={box.ref} className="flex gap-2">
+      <div className="flex gap-2">
         <Button
           size="sm"
           variant="primary"
           disabled={busy || !box.steady}
-          title={box.steady ? undefined : t("approval.waiting")}
+          title={box.steady ? undefined : t("approval.waitingApprove")}
           onClick={() => box.check() && onRun()}
+          data-grant
           data-testid={`held-run-${d.displayNo}`}
         >
           {t("held.approveRun")}

@@ -2,7 +2,7 @@ import { browser } from "@wdio/globals";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { home, invoke, paneIds, settled, workspaceRoots } from "./app";
+import { clickAllow, home, invoke, paneIds, settled, workspaceRoots } from "./app";
 
 /** Remote workspaces (E2E-M14): the `sshd` compose service on :2222
  * (infra/docker-compose.yml, profile `remote`), user `tandem`, key
@@ -213,10 +213,11 @@ export async function ensureConnected(): Promise<string> {
  * dialog that just opened can be dropped under load, D-52). */
 export async function approveHostKey(): Promise<void> {
   await settled();
-  await $('[data-testid="remote-hostkey-accept"]').click();
+  // It waits until the dialog has held still (F-TL-12.12).
+  await clickAllow('[data-testid="remote-hostkey-accept"]');
   const gone = await browser
     .waitUntil(async () => !(await $('[data-testid="remote-hostkey"]').isExisting()), { timeout: 3_000 })
     .catch(() => false);
   if (!gone && (await $('[data-testid="remote-hostkey-accept"]').isExisting()))
-    await $('[data-testid="remote-hostkey-accept"]').click();
+    await clickAllow('[data-testid="remote-hostkey-accept"]');
 }
