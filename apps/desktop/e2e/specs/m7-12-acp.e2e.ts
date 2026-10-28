@@ -59,7 +59,8 @@ describe("E2E-M7-12 ACP", () => {
   after(async () => {
     rmSync(join(home(), "fakebin", "opencode"), { force: true });
     rmSync(join(home(), "fake-models.txt"), { force: true });
-    await checkAgain().catch(() => undefined);
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("opencode");
   });
 
   it("F-TH-06.1 a prompt streams, a command asks inline, and Stop cancels", async function () {

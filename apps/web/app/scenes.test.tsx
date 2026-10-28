@@ -8,22 +8,28 @@ import { ReviewScene } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
 import { WorkspaceScene } from "../components/site/scenes/WorkspaceScene";
 import { Glyph } from "../components/site/scenes/parts";
+import { PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
+import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
+import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE } from "../lib/release";
 import { LANDS, SAMPLE, SCENE_BUILD, atLeast, t } from "../lib/scenes";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
-import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
+import { SCENE_PAGES, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 
 // The animated product scenes (F-WB-01 AC9, D-1880, D-1881).
 
 const home = renderToStaticMarkup(<HomePage />);
 const v090 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.9.0" }) }));
 const css = readFileSync(join(import.meta.dirname, "../components/site/scenes/scenes.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-const ALL = { workspace: <WorkspaceScene />, dashboard: <DashboardScene />, review: <ReviewScene />, land: <LandScene /> };
+const ALL = { workspace: <WorkspaceScene />, dashboard: <DashboardScene />, review: <ReviewScene />, land: <LandScene />, plan: <PlanScene /> };
+/** Text as React writes it into HTML. */
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const versionHtml = async (version: string) => renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version }) }));
 
 describe("F-WB-01 AC9 product scenes", () => {
-  it("F-WB-01 AC9 a scene is decorative, sits in the bezel and says what happens in it", () => {
+  it("F-WB-01 AC9 a scene is decorative, sits in the bezel and says what happens in it", async () => {
     const h = renderToStaticMarkup(
       <Scene id="x" text="What happens." caption="Short.">
         <WorkspaceScene />
@@ -33,14 +39,105 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(h).toMatch(/<div data-stage="" aria-hidden="true" class="frame-screen scene-box">/);
     expect(h).toContain(`Scene from Vibezeo ${SCENE_BUILD}, simplified`);
     expect(h).toContain('<span class="sr-only">What happens.</span>');
-    // The home page's scenes, and the Land scene on 0.9.0's page (D-1885).
+    // The home page's scenes, and each release page's (D-1885, D-1888).
     const pages: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
-    if (LANDS) pages.push(["land", v090]);
+    for (const version of Object.keys(RELEASE_SCENES)) {
+      const h = await versionHtml(version);
+      for (const s of releaseScenes(version)) pages.push([s.id, h]);
+    }
     for (const [id, page] of pages) {
       const fig = new RegExp(`<figure data-scene="${id}"[\\s\\S]*?</figure>`).exec(page)?.[0] ?? "";
       expect(fig, id).toContain('aria-hidden="true"');
       expect(fig, id).toMatch(/<span class="sr-only">[^<]{80,}<\/span>/);
     }
+  });
+
+  it("F-WB-01 AC9 D-1898 a release page plays each of its scenes full width, directly above its own Added card", async () => {
+    expect(Object.keys(RELEASE_SCENES).length).toBeGreaterThan(0);
+    for (const version of Object.keys(RELEASE_SCENES)) {
+      const h = await versionHtml(version);
+      const titles = (RELEASES.find((r) => r.version === version)?.entries ?? [])
+        .filter((e) => e.category === "Added")
+        .map((e) => addedCard(e.text).title.replace(/\.$/, ""));
+      for (const s of releaseScenes(version)) {
+        const i = titles.indexOf(s.card);
+        expect(i, `${version}: no Added card "${s.card}"`).toBeGreaterThanOrEqual(0);
+        const fig = h.indexOf(`<figure data-scene="${s.id}"`);
+        const card = h.indexOf(`>${esc(s.card)}.</strong>`);
+        expect(fig, `${version} ${s.id}`).toBeGreaterThan(-1);
+        expect(fig, `${version} ${s.id} above its card`).toBeLessThan(card);
+        // Nothing between the card before it (or the summary) and the scene,
+        // and only its own card's opening between the scene and its title.
+        const before = i > 0 ? h.indexOf(`>${esc(titles[i - 1] ?? "")}.</strong>`) : h.indexOf("</h1>");
+        expect(before).toBeLessThan(fig);
+        expect(h.slice(before, fig).match(/<li class="reveal surface/g) ?? []).toEqual([]);
+        expect(h.slice(fig, card).match(/<li class="reveal surface/g)?.length).toBe(1);
+        const cls = /<figure data-scene="[^"]+" class="([^"]*)"/.exec(h.slice(fig))?.[1] ?? "";
+        expect(cls, "full width").toContain("lg:col-span-12");
+        // Near the first screen's fold: no scroll reveal to leave it half faded at load.
+        expect(cls.split(" "), "no rise").not.toContain("rise");
+      }
+    }
+  });
+
+  it("F-WB-01 AC2 AC9 the scene player loads on exactly the release pages with scenes", async () => {
+    expect([...SCENE_PAGES].sort()).toEqual(Object.keys(RELEASE_SCENES).map((v) => `changelog/${v}/index.html`).sort());
+    for (const page of SCENE_PAGES) expect(allowedScripts(page), page).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
+    for (const r of RELEASES) {
+      const h = await versionHtml(r.version);
+      expect(h.includes('<script src="/demo/embed.js" defer=""'), r.version).toBe(releaseScenes(r.version).length > 0);
+    }
+  });
+
+  it("F-WB-01 AC9 the 0.12.0 scene follows a plan through: each run reviewed, two approved, one sent back, Land 2 approved… (D-1888)", () => {
+    const h = renderToStaticMarkup(<PlanScene />);
+    const { goal, tasks } = SAMPLE.plan;
+    // In the shop world, not the goal field's own example (design lead).
+    expect(goal).not.toBe(t("plan.goalPlaceholder"));
+    // Agent mode's Tasks page, and the app's own words.
+    expect(h).toContain(`<span class="sc-mode sc-mode-on">${t("titlebar.mode.agent")}</span>`);
+    for (const s of [
+      t("tasks.title"),
+      t("plan.open"),
+      t("tasks.refresh"),
+      t("plan.chip", { goal }),
+      t("plan.titleOf", { goal }),
+      t("plan.started", { n: tasks.length }),
+      t("plan.removePlan"),
+      t("common.close"),
+      `${t("tasks.runs.state.in_review")} · ${t("plan.verdict.approve")}`,
+      `${t("tasks.runs.state.in_review")} · ${t("plan.verdict.changes")}`,
+      t("tasks.runs.state.running"),
+      t("tasks.runs.state.reviewing"),
+    ])
+      expect(h, s).toContain(esc(s));
+    for (const task of tasks) expect(h).toContain(`<span class="sc-mono sc-run-id">${task.id}</span>`);
+    // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
+    expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => ["queued", "running", "reviewing", "in_review"]));
+    expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
+    // It ends on 2 approved · 1 changes requested, with Land 2 approved…
+    // primary and Close ghost (PlanWithLead's started footer).
+    const end = planAt(Infinity);
+    expect(end.summary).toBe(`${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`);
+    expect(end.chip).toBe("waiting");
+    expect(h).toMatch(new RegExp(`<span data-fx-pop=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 2 })}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-visit=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 1 })}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-out=""[^>]*><span class="sc-btn sc-btn-primary">${t("common.close")}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-pop=""[^>]*><span class="sc-btn sc-btn-ghost">${t("common.close")}</span></span>`));
+    // The count line and the button agree at every moment: both come from the runs.
+    for (const at of planTimes()) {
+      const s = planAt(at);
+      if (s.approved > 0) expect(s.summary, `${at}s`).toContain(t("plan.count.approved", { n: s.approved }));
+      else expect(s.summary, `${at}s`).not.toContain(t("plan.verdict.approve").toLowerCase());
+      expect(s.chip, `${at}s`).toBe(s.summary.includes(t("plan.count.running", { n: 1 }).slice(2)) || s.summary.includes(t("plan.count.queued", { n: 1 }).slice(2)) ? "working" : "waiting");
+      expect(h, `${at}s`).toContain(esc(s.summary));
+    }
+    // The header chip truncates at 12rem, as TasksPanel's max-w-48: one of
+    // the scene's em is the app's rem, and the chip has its own font size.
+    const chipFont = Number(/\.sc-plan-chip \{[^}]*font-size: ([\d.]+)em;/.exec(css)?.[1]);
+    const goalMax = Number(/\.sc-plan-chip-goal \{[^}]*max-width: ([\d.]+)em;/.exec(css)?.[1]);
+    expect(chipFont * goalMax).toBeCloseTo(12, 1);
+    expect(css).toMatch(/\.sc-plan-chip-goal \{[^}]*text-overflow: ellipsis;/);
   });
 
   it("F-WB-01 AC9 the app's own words come from its catalog, with plurals, and a missing one fails the build", () => {
@@ -145,6 +242,16 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(css).not.toContain(".sc-btn-done");
     const w = renderToStaticMarkup(<WorkspaceScene />);
     if (LANDS) expect(w).toMatch(new RegExp(`<span class="sc-status"[^>]*><span class="sc-dot">[\\s\\S]*?</span> ${t("radar.notice.warned")}</span>`));
+  });
+
+  it("F-WB-01 AC9 a scene's status bar is the download's: the branch, then the version, and no connection (D-816, D-1888)", () => {
+    for (const [id, el] of Object.entries(ALL)) {
+      const h = renderToStaticMarkup(el);
+      const bar = /<div class="sc-statusbar">[\s\S]*?<\/div>/.exec(h)?.[0] ?? "";
+      expect(bar, id).toContain(t("status.version", { version: SCENE_BUILD }));
+      expect(bar, id).toMatch(/<span class="sc-statusbar-branch"><svg[^>]*>[\s\S]*?<\/svg>[\w-]+<\/span>/);
+      for (const s of [t("status.online"), "Branch ", t("dashboard.barLabel")]) expect(h, `${id}: ${s}`).not.toContain(s);
+    }
   });
 
   it("F-WB-01 AC9 every scene renders, always in the app's dark theme", () => {

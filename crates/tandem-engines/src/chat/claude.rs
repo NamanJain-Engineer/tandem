@@ -60,32 +60,28 @@ pub const TOOLS_OFF_ENV: &[(&str, &str)] = &[
 /// pre-release of [`TOOLS_OFF_MIN`] itself (`2.1.310-rc.1`) comes before
 /// it, so it can't; one of a later version can.
 pub fn tools_off_supported(version: Option<&str>) -> bool {
-    let Some(version) = version else {
-        return false;
-    };
-    match super::codex::protocol::parse_version(version) {
-        Some(v) if v == TOOLS_OFF_MIN => !pre_release(version),
-        Some(v) => v > TOOLS_OFF_MIN,
+    match version.and_then(claude_version) {
+        Some((v, pre_release)) if v == TOOLS_OFF_MIN => !pre_release,
+        Some((v, _)) => v > TOOLS_OFF_MIN,
         None => false,
     }
 }
 
-/// Whether the first `x.y.z` in `version` has a pre-release after it
-/// (`-rc.1`); build metadata (`+5`) isn't one.
-fn pre_release(version: &str) -> bool {
+/// The version in `version` as `parse_version` reads it (the first run of
+/// digits and dots that starts `x.y.z`), and whether a pre-release (`-rc.1`)
+/// follows that run. Build metadata (`+5`) isn't one.
+fn claude_version(version: &str) -> Option<((u64, u64, u64), bool)> {
+    let in_run = |c: char| c.is_ascii_digit() || c == '.';
     let mut rest = version;
-    while let Some(start) = rest.find(|c: char| c.is_ascii_digit()) {
-        let run = &rest[start..];
-        let len = run
-            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
-            .unwrap_or(run.len());
+    loop {
+        let run = &rest[rest.find(in_run)?..];
+        let len = run.find(|c: char| !in_run(c)).unwrap_or(run.len());
         let (number, after) = run.split_at(len);
-        if super::codex::protocol::parse_version(number).is_some() {
-            return after.starts_with('-');
+        if let Some(v) = super::codex::protocol::parse_version(number) {
+            return Some((v, after.starts_with('-')));
         }
         rest = after;
     }
-    false
 }
 const PROMPT_TOO_LONG_HINT: &str =
     "The conversation is too long. Start a new thread with a summary?";

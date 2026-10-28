@@ -1,6 +1,6 @@
 import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addFolder, checkAgain, fakeLog, freshOffline, home, invoke, mod, userHome } from "../support/app";
 
@@ -92,7 +92,10 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
   // The fake Claude Code says it's 2.1.310, the first that answers with
   // every tool off; the next spec gets the default back.
   const versions = () => join(home(), "fake-version.txt");
-  after(() => writeFileSync(versions(), ""));
+  after(async () => {
+    writeFileSync(versions(), "");
+    await checkAgain();
+  });
 
   it("F-TK-08.1 F-TK-08.2 F-TK-08.3 Lead answers the routine question from CLAUDE.md, and the push question comes to you", async () => {
     await freshOffline();
@@ -157,6 +160,9 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     );
     // Exactly the committed rule: nothing from the `.env` beside it.
     expect([answered.question, answered.answer]).toEqual([ROUTINE, RULE]);
+    // The session's own folder went with it.
+    const answers = join(home(), "run", "answers");
+    expect(existsSync(answers) ? readdirSync(answers).filter((n) => n.startsWith("ans_")) : []).toEqual([]);
     // Never in Lead's plan chat: a session with no tool at all (and every
     // one denied besides), no customization, MCP server or command, nothing
     // saved, nobody to ask, and nothing to resume.
