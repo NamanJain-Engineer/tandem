@@ -3037,6 +3037,36 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - then m18-tk07 3, which checks that Claude Code reviews;
       - m18-tk08 1, which checks the answer session's folder is gone;
       - m18-tk06 1, m18-tk05 3, m11-2-execute 4, m18-db04 6, m18-wt07 2.
+- [x] F-TK-01, the tracker's first read waits for its listener too, as the coordinator asked after the review of 7c6a4f1b. `load()` had the same window as `loadAttempts`: a `tasks:changed` before the listener was up was lost until the next change. It now awaits the listener before reading, and a listener that can't start fails the read with its reason, after which Retry listens again. Tests in `stores/tasks.test.ts` (2 new TypeScript; both fail on the old store). ARCHITECTURE §9.6.
+- [x] F-TK-08, the re-review's three later items (the coordinator assigned them for chain27; D-3020 on).
+  - **Only the runs a plan started are its own (D-3020).** After a restart, `supervision_for` found a run's code by its task, so a run you started yourself of a plan's task got Lead's answers too.
+    - The runner now tells the plan each run it starts with the plan's code (`QuestionEvent::Started`, Execute all's and Retry's), and the plan keeps the attempt (`runs` in `plans.json`).
+    - The lookup goes by attempt: a run you start of the same task has no code, and its questions come to you.
+    - Tests: the runner reports Execute all's run and not yours, and after a restart Retry of yours has no code while Retry of the plan's does and is kept again; the plan keeps its runs through a restart, ignores a plan that's gone, and forgets them with Remove plan. The question tests now count questions, not events.
+  - **The instructions as Execute all found them (D-3021).** Lead's answers read the instructions files for every question, at the base commit. A changed engine catalog, or a history rewritten and collected, gave later questions other files, or none.
+    - Execute all now reads them once with its base commit and keeps them, in memory and in `plan-instructions/<id>.json` (0600, checked against the commit, removed with the plan). Every question uses those.
+    - A plan kept without one reads them at its first question and keeps them.
+    - `blocking()` is the off-the-worker file work `save()` already did, now shared.
+    - Tests: read once at Execute all, so a changed CLAUDE.md doesn't reach the next answer, and after a restart the plan's file gives the same, with no read; the file is 0600 and goes with Remove plan; a plan kept without one, or with another commit's, reads once at its commit and keeps it.
+  - **No file reaches an agent through an `@` (D-3022).** F-TK-08 defanged its own briefings; rule 8's other agent prompts didn't.
+    - The second opinion's diff, PR checks' CI log and review comments, the merge queue's check output and radar's heads-up now go through `untrusted::fence_defanged`, which adds the note only when something changed. Radar's too: a TypeScript module or method named by a string puts any path in a symbol's name.
+    - A review comment's author lost its @, so a plain comment needs no note.
+    - A second-opinion finding on a path written with ＠ still lands on its line.
+    - Tests: `fence_defanged`; each prompt names no file, keeps hunk headers and notes it; a finding on `app/＠modal/page.tsx`; radar's note for symbols parsed from `declare module "@~/.ssh/id_rsa"` and a method named `"@/etc/passwd"`; a rule-8 invariant over all five prompts. The review comment tests, the PR checks UI test's fixture and E2E-M18-WT-08 use the new author wording.
+  - **Not done, and why.** Rule 8's other messages to an agent still carry an `@` as written:
+    - the picker's brief (a picked element's HTML, from any page in the browser pane);
+    - teammate mail (another agent's words, delivered as a turn: a sandboxed teammate, F-TL-11, could name `@~/.ssh/id_rsa` for one that isn't);
+    - the prompt library's `{{selection}}` and `{{clipboard}}`;
+    - probably the learn prompt (the last turn's text, run headless).
+    - Each is another feature's message, and ＠ changes text an agent writes code from (`@click`, `@types/node`, decorators), so the coordinator decides; they're proposed as one follow-up. A teammate's briefing isn't one of them: it goes in as a system prompt (`--append-system-prompt-file`).
+  - **Gate:** passed on f113ef36, which e6092c8c re-signs with the same tree (filter-branch had dropped four commits' signatures):
+    - 2,495 Rust tests (6 ignored) and 1,794 TypeScript;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 191, and protocol drift with 585 types (none added by this slice).
+    - E2E on e6092c8c, 13 specs and 33 tests, all passing:
+      - the tracker's and the runs' reads: m11-1-tasks 3, m11-2-execute 4, m11-6-free 2;
+      - plans (D-3020, D-3021): m18-free-offline 2, m18-tk07 3, m18-tk08 1, m18-tk06 1, m18-tk05 3, m18-db04 6;
+      - the prompts that defang (D-3022): m18-wt05 2, m18-wt07 2, m18-wt08 3, m18-wt10 1.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3194,6 +3224,20 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.
   - The instructions files are read by size first, without replace refs, so a ref a run writes can't swap their text and a huge file is never read whole.
   - Amended by the re-review (N6): a run's first message and its review's are read the same way, with ＠ for @ in the task's text, its comments and the diff. Checked on Claude Code 2.1.310: `@/path` attaches the file even with every tool off, and `＠/path` doesn't.
+  - Amended by D-3022: the second opinion, PR checks, the merge queue and radar's heads-up defang the untrusted text they send an agent the same way.
+- D-3020: A plan's runs are the ones it started, kept by attempt, not by task (F-TK-08, the re-review's later item).
+  - Every run started with a plan's code, by Execute all or a Retry of one, tells its plan (`QuestionEvent::Started`), and the plan keeps the attempt in `plans.json` (`runs`) before the run can ask.
+  - After a restart, a run's code comes only from the plan that kept it. A run you start yourself of a plan's task is yours: its questions come to you, never to Lead.
+  - Not a column on the attempt: `plans.json` already holds the codes, and a migration in this slice could meet another branch's in chain27.
+- D-3021: Lead answers from the instructions files as Execute all found them (F-TK-08, the re-review's later item).
+  - Execute all reads them once, at the plan's base commit, and keeps them in a file of the plan's own (`plan-instructions/<id>.json`, 0600), checked against that commit. They aren't in `plans.json`, which is written whole on every change, and they go with Remove plan.
+  - Every question in the plan is answered from those files: a later commit, a rewritten or collected history, or an engine catalog that names other files changes nothing.
+  - A plan kept before there were snapshots reads them at its base commit for its first question, and keeps them from then.
+- D-3022: A diff, a review comment, a check's output or a radar note that an agent gets names no file for it to attach (rule 8, D-2839's later item).
+  - The second opinion's diff, PR checks' CI log and review comments, the merge queue's check output and radar's heads-up go through `untrusted::fence_defanged`: ＠ for each @ that could name a file, and a line saying so after the fence when one changed. `DEFANGED` lives in `untrusted` now, shared with F-TK-08's briefings.
+  - A review comment's author is written without an @ (it's our wording), so a plain comment needs no note. Its path and words are defanged, since a path can carry `@~/…`.
+  - The second opinion reads a finding's path with ＠ as @, so the finding still lands on its line.
+  - Radar's heads-up is defanged too: TypeScript names a module or a method with any string (`declare module "@~/.ssh/id_rsa"`), so a symbol's name can spell a path out of the worktree.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

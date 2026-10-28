@@ -101,7 +101,8 @@ pub fn diff_text(files: &[FileDiff]) -> (String, bool) {
 }
 
 /// The reviewer's first message. The words are the engine's instructions,
-/// so they stay in English like F-WT-02's prompt.
+/// so they stay in English like F-WT-02's prompt. No `@` in the diff names
+/// a file for the reviewer to attach (D-3022).
 pub fn prompt(branch: &str, task: Option<&str>, diff: &str, cut: bool) -> String {
     let task = task
         .map(str::trim)
@@ -116,7 +117,7 @@ pub fn prompt(branch: &str, task: Option<&str>, diff: &str, cut: bool) -> String
     format!(
         "You are giving a second opinion on another coding agent's changes on the branch {branch}. Review them. Don't change any files.\n\n{task}{label}\n{diff}{note}\n\nReply in this format:\n## Findings\nOne line per finding: path:line: comment (the path as the diff shows it, the line number on the new side).\n## Overall\nA few sentences on the change as a whole.",
         label = untrusted::label("the worktree's diff"),
-        diff = untrusted::fence("diff", diff),
+        diff = untrusted::fence_defanged("diff", diff),
     )
 }
 
@@ -182,6 +183,9 @@ fn split_finding(line: &str) -> Option<(&str, u32, &str)> {
 pub fn parse(reply: &str, files: &[FileDiff]) -> (Vec<OpinionComment>, Option<String>) {
     let shown = shown_lines(files);
     let resolve = |p: &str| -> Option<&str> {
+        // The diff it read had ＠ for @ (D-3022).
+        let p = p.replace('\u{FF20}', "@");
+        let p = p.as_str();
         if shown.contains_key(p) {
             return shown.get_key_value(p).map(|(k, _)| *k);
         }
@@ -485,6 +489,39 @@ mod tests {
         assert!(!p.contains("cut at"));
         assert!(prompt("b", None, "+x", true).contains("cut at 150,000"));
         assert!(!prompt("b", Some("  "), "+x", false).contains("task they were given"));
+    }
+
+    #[test]
+    fn f_wt_05_1_no_at_in_the_diff_names_a_file_for_the_reviewer() {
+        // An agent's diff can name any file; Claude Code would attach it.
+        let diff =
+            "@@ -1 +1,2 @@\n+// see @~/.ssh/id_rsa and @/etc/passwd\n+import x from \"@/lib/x\";\n";
+        let p = prompt("b", None, diff, false);
+        assert!(
+            !p.contains("@~/") && !p.contains("@/etc") && !p.contains("\"@/lib"),
+            "{p}"
+        );
+        assert!(p.contains("\u{FF20}~/.ssh/id_rsa") && p.contains("\"\u{FF20}/lib/x\""));
+        // Hunk headers keep theirs, and the reviewer is told to read ＠ as @.
+        assert!(p.contains("@@ -1 +1,2 @@"));
+        assert!(p.contains(untrusted::DEFANGED));
+        assert!(!prompt("b", None, "+x", false).contains(untrusted::DEFANGED));
+    }
+
+    #[test]
+    fn f_wt_05_2_a_finding_on_a_path_with_an_at_still_lands_on_its_line() {
+        // The reviewer read ＠ for @ (D-3022) and may write the path that way.
+        let routes = vec![file(
+            "app/@modal/page.tsx",
+            "--- a/app/@modal/page.tsx\n+++ b/app/@modal/page.tsx\n@@ -1 +1,2 @@\n one\n+two\n",
+        )];
+        let reply = "## Findings\napp/\u{FF20}modal/page.tsx:2: say why\n";
+        let (comments, general) = parse(reply, &routes);
+        assert_eq!(comments.len(), 1, "{general:?}");
+        assert_eq!(
+            (comments[0].path.as_str(), comments[0].line),
+            ("app/@modal/page.tsx", 2)
+        );
     }
 
     #[test]
