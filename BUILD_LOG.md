@@ -3124,6 +3124,21 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - **Radar's test** names its module `"see @~/.ssh/id_rsa"`: with the space, 2.1.312 would attach it (D-3022 amended).
   - **Found on the way:** the ACP briefing, outside the four the coordinator listed; ARCHITECTURE no longer says Codex takes a first-turn preamble (older Codex fails closed, D-117).
   - **Tests** (6 new Rust, one changed, and a new rule-8 invariant): mail, the prompt variables, the picker (address, selector, component, framework, font and HTML from the page; your note kept), the learn prompt and its answer, the ACP briefing alone and through the adapter to a fake agent. The six failed on the old code.
+- [x] The review of 07b33fc3 (approved and merged into chain27 as 2de26391), the coordinator's next items: S1, the rest of D-3023, S2 and S3 (D-3024), N1 to N7. chain27 2de26391 merged in first.
+  - **S1, the review prompt (F-WT-02).** Send to agent's prompt is built in the app and carried the diff's lines, their paths and the second opinion's comments and General text as written. They go through `defangMentions` now, and the second opinion's comments are marked (`opinion`) so yours stay as you wrote them.
+  - **One rule (N2), with one change.** The core and the app read the same vectors (`crates/tandem-core/tests/fixtures/defang.json`). An `@` stays only before a space, tab, LF, CR, another `@` or the end. Form feed isn't kept: `sanitize_prompt` drops it when typing, which would join the `@` to the path after it. A rule-8 invariant types every control character between an `@` and a path, bracketed and not.
+  - **N1.** The note holds no `@` ("read ＠ as an at sign").
+  - **Auto and Conductor** type through `untrusted::defang_noted`; Conductor's note stays on its one line.
+  - **S2 and S3 (D-3024).** A failed instructions read is never kept and its question comes to you; Remove plan during the read leaves no snapshot.
+  - **N3.** The second opinion reads a finding's path as written first, then with @ for ＠.
+  - **N4.** D-3020 says plans kept before `runs` lose Lead for Resume and Retry after the first restart, the safe direction.
+  - **N5.** Retry carries a plan's code only while the plan keeps the run, so a removed plan's retried run asks you, in the same launch too.
+  - **N6.** `start` records a run's setup before its attempt row, and drops it if the insert fails. A pump running meanwhile could launch it without its note or code. Fixed by order; the window can't be forced in a test without a store hook, so no test reproduces the race itself.
+  - **N7.** The tracker's reads are numbered like the runs': only the latest writes the list and the status.
+  - **Tests:**
+    - Rust (9 new; the ACP fake's expected note updated): the shared vectors and `defang_noted` (core), Auto's prompt, Conductor's, the two instructions reads (failed, and a plan removed during one), a finding's path as written, a removed plan's Retry, and the typing invariant;
+    - TypeScript (4 new): the vectors, the review prompt with the coordinator's scenario, a second opinion's words through the store, and overlapping tracker reads.
+    - Each failed on the old code first, but the typing invariant: it was written after the rule changed. The form-feed vector it covers failed on the old TypeScript rule.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3286,10 +3301,14 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Every run started with a plan's code, by Execute all or a Retry of one, tells its plan (`QuestionEvent::Started`), and the plan keeps the attempt in `plans.json` (`runs`) before the run can ask.
   - After a restart, a run's code comes only from the plan that kept it. A run you start yourself of a plan's task is yours: its questions come to you, never to Lead.
   - Not a column on the attempt: `plans.json` already holds the codes, and a migration in this slice could meet another branch's in chain27.
+  - Amended after the review of 07b33fc3:
+    - Retry carries a code only while the plan keeps the run, in the launch that started it too: a removed plan's retried run is yours, and its question comes to you instead of stopping it.
+    - A plan kept before `runs` existed has none, so after the first restart on this version Resume and Retry of its runs carry no code and their questions come to you. That's the safe direction: Lead never answers a run it can't tell is the plan's.
 - D-3021: Lead answers from the instructions files as Execute all found them (F-TK-08, the re-review's later item).
   - Execute all reads them once, at the plan's base commit, and keeps them in a file of the plan's own (`plan-instructions/<id>.json`, 0600), checked against that commit. They aren't in `plans.json`, which is written whole on every change, and they go with Remove plan.
   - Every question in the plan is answered from those files: a later commit, a rewritten or collected history, or an engine catalog that names other files changes nothing.
   - A plan kept before there were snapshots reads them at its base commit for its first question, and keeps them from then.
+  - Amended by D-3024: only a read that worked is kept.
 - D-3022: A diff, a review comment, a check's output or a radar note that an agent gets names no file for it to attach (rule 8, D-2839's later item).
   - The second opinion's diff, PR checks' CI log and review comments, the merge queue's check output and radar's heads-up go through `untrusted::fence_defanged`: ＠ for each @ that could name a file, and a line saying so after the fence when one changed. `DEFANGED` lives in `untrusted` now, shared with F-TK-08's briefings.
   - A review comment's author is written without an @ (it's our wording), so a plain comment needs no note. Its path and words are defanged, since a path can carry `@~/…`.
@@ -3302,7 +3321,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - So do stream-json turns, a string or a text block, as threads, mail and the answer sessions send them.
     - An `@` at the start of a line or after whitespace (a space, a tab, a no-break space) attaches, inside a code fence too. One after a quote, a word character, a bracket (`(`, `[`, `{`, `<`) or a backtick doesn't, and `＠` never does.
     - Nothing in `--append-system-prompt-file` attaches.
-    - The defang stays wider than that (every `@` before a non-space, D-2839): the rule isn't documented, and it moves with versions.
+    - The defang stays wider than that: the rule isn't documented, and it moves with versions.
+  - The rule, one for the core and the app (`untrusted::defang_mentions`, `defangMentions`, pinned by `crates/tandem-core/tests/fixtures/defang.json`): every `@` becomes ＠ except one before a space, a tab, a line break, another `@` or the end.
+    - Not "any whitespace": Rust's and JavaScript's differ (U+0085), and typing into a terminal drops every other control character, a form feed too, which would join the `@` to what follows.
+    - The note says "read ＠ as an at sign" and holds no `@`: "@." after a space could name the current folder.
+  - The review prompt Send to agent types (F-WT-02, built in the app) defangs the diff's lines and paths and the second opinion's words. Your own comments stay as you wrote them.
+  - Auto (F-AU-01) and Conductor (F-CN-03) type a model's reading of anyone's scrollback: `untrusted::defang_noted`. Conductor keeps the note on its one line.
   - A teammate's mail (F-AG-12) and the prompt library's `{{selection}}` and `{{clipboard}}` (F-EX-05) go through `fence_defanged`. Your own mail and what you typed stay as written.
   - The picker's brief (F-CD-18) defangs everything the page wrote: its address, selectors, components, styles and HTML. Your note stays, and the line saying so ends the brief, which still ends without a newline.
   - The learn follow-up (F-AG-08) defangs the turn and the notes it shows, and reads ＠ back as @ in the answer, so a note it removes still matches the one kept.
@@ -3313,6 +3337,10 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - plugin responses (tool results);
     - a teammate launched in a terminal (your own brief);
     - Conductor's persona (the voice model).
+- D-3024: A failed read of a plan's instructions files is no answer, and isn't kept (F-TK-08, the review of 07b33fc3).
+  - `PlanHost::instructions` returns why it couldn't read them. Before, every error read as "no instructions files", and the snapshot kept that for the plan's whole life.
+  - The question comes to you ("Lead couldn't read the repository's instructions files."), nothing is kept, and a later question reads again.
+  - The snapshot is written under the plans' lock and only for a plan still there, so Remove plan during the read leaves no file.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.
