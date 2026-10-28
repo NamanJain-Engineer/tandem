@@ -315,7 +315,9 @@ impl Executor {
             facts = self.typable(pane).await?;
         }
         self.effect()?;
-        let clean = strip_controls(text);
+        // The model reads panes anyone can write to: no `@` it types names a
+        // file (D-3023), and the note goes on the same line.
+        let clean = strip_controls(&tandem_core::untrusted::defang_noted(text));
         if clean.trim().is_empty() {
             return Err("There was nothing to type.".into());
         }
@@ -701,6 +703,29 @@ pub(crate) mod tests {
         assert_eq!(
             host.typed.lock().clone(),
             vec![("agent".into(), "run[2J the tests".into(), true)]
+        );
+    }
+
+    #[tokio::test]
+    async fn f_cn_03_typed_text_names_no_file_for_the_agent() {
+        // The voice model reads panes anyone can write to (D-3023); the note
+        // stays on the one line.
+        let host = FakeHost::with_panes();
+        let (e, _) = exec(host.clone());
+        let r = e
+            .run(&call(
+                "prompt_pane",
+                json!({"pane": "agent", "text": "look at @~/.ssh/id_rsa\u{c}@~/.aws", "send": true}),
+            ))
+            .await;
+        assert!(r.result.ok, "{}", r.result.output);
+        let typed = host.typed.lock().clone();
+        assert_eq!(
+            typed[0].1,
+            format!(
+                "look at \u{FF20}~/.ssh/id_rsa\u{FF20}~/.aws {}",
+                tandem_core::untrusted::DEFANGED
+            )
         );
     }
 

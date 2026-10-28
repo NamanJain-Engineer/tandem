@@ -28,16 +28,19 @@ import { diffNames } from "../../stores/intel";
 import { useEngines } from "../../stores/engines";
 import { switchMode } from "../shell/actions";
 import { useThreads } from "../../stores/threads";
+import { DEFANGED, defangMentions } from "./untrusted";
 
 /** One review comment on a worktree's diff (F-WT-02). A General one (a
  * second opinion's lines that aren't on a shown line, F-WT-05) has no line.
  * `imported` when it came from the pull request (F-WT-08): someone else's
- * text, so the prompt carries the core's fenced copy, not the words. */
+ * text, so the prompt carries the core's fenced copy, not the words.
+ * `opinion` when the second opinion wrote it: another engine's words. */
 export type ReviewComment = DiffLineTarget & {
   id: number;
   comment: string;
   general?: boolean;
   imported?: { id: string; author: string; fenced: string };
+  opinion?: boolean;
 };
 
 const QUOTE_MAX = 200;
@@ -58,7 +61,9 @@ function quote(text: string): string {
 
 /** The one prompt "Send to agent" types (F-WT-02). The words are the
  * agent's instructions, so they stay in English like the app's other
- * prompts to engines. */
+ * prompts to engines. The paths and lines are the worktree agent's, and the
+ * second opinion's words another engine's: no `@` in them names a file for
+ * the agent to attach (D-3023). Your own comments stay as you wrote them. */
 export function buildReviewPrompt(branch: string, comments: ReviewComment[]): string {
   const sorted = [...comments].sort(byPlace);
   const n = sorted.length;
@@ -68,6 +73,12 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
       .split("\n")
       .map((l) => `   ${l}`)
       .join("\n");
+  let defanged = false;
+  const safe = (text: string) => {
+    const out = defangMentions(text);
+    defanged ||= out !== text;
+    return out;
+  };
   const items = sorted.map((c, i) => {
     // An imported comment's place and words are GitHub's: the core's
     // fenced copy carries both, and nothing of it goes outside the fence.
@@ -75,12 +86,14 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
     const where = c.general
       ? "General"
       : c.side === "new"
-        ? `${c.path}:${c.line}`
-        : `${c.path} (removed line ${c.line})`;
-    const q = quote(c.text);
-    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(c.comment.trim())}`;
+        ? `${safe(c.path)}:${c.line}`
+        : `${safe(c.path)} (removed line ${c.line})`;
+    const q = safe(quote(c.text));
+    const words = c.opinion ? safe(c.comment.trim()) : c.comment.trim();
+    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(words)}`;
   });
-  return `${head}\n\n${items.join("\n\n")}\n\nAddress each comment, then say what you changed.`;
+  const note = defanged ? `${DEFANGED}\n\n` : "";
+  return `${head}\n\n${items.join("\n\n")}\n\n${note}Address each comment, then say what you changed.`;
 }
 
 type ReviewsState = {
@@ -155,10 +168,20 @@ export const useReviews = create<ReviewsState>((set, get) => ({
       line: c.line,
       text: c.text,
       comment: c.comment,
+      opinion: true,
       id: id++,
     }));
     if (op.general)
-      added.push({ path: "", side: "new", line: 0, text: "", comment: op.general, general: true, id: id++ });
+      added.push({
+        path: "",
+        side: "new",
+        line: 0,
+        text: "",
+        comment: op.general,
+        general: true,
+        opinion: true,
+        id: id++,
+      });
     const list = get().byLane[op.laneId] ?? [];
     set({ next: id, byLane: { ...get().byLane, [op.laneId]: [...list, ...added] } });
   },

@@ -1,0 +1,26 @@
+{
+  "about": "untrusted::defang_mentions and the app's defangMentions (D-3023): every @ becomes ＠ except one before a space, tab, LF or CR, another @ or the end. Typing into a terminal drops every other control character, form feed too, which would join the @ to what follows. Both suites read this file.",
+  "note": "Vibezeo wrote ＠ for each at sign in the text above, so none of it attaches a file; read ＠ as an at sign.",
+  "cases": [
+    { "in": "see @~/.ssh/id_rsa", "out": "see ＠~/.ssh/id_rsa" },
+    { "in": "@/etc/passwd", "out": "＠/etc/passwd" },
+    { "in": "// cfg: see @~/.aws/credentials", "out": "// cfg: see ＠~/.aws/credentials" },
+    { "in": "a@b.com", "out": "a＠b.com" },
+    { "in": "app/@modal/page.tsx", "out": "app/＠modal/page.tsx" },
+    { "in": "@\"/a b/c.txt\"", "out": "＠\"/a b/c.txt\"" },
+    { "in": "@@ -1,2 +1,3 @@ fn a", "out": "@@ -1,2 +1,3 @@ fn a" },
+    { "in": "@@/etc/passwd", "out": "@＠/etc/passwd" },
+    { "in": "at @ noon, or @", "out": "at @ noon, or @" },
+    { "in": "@\tx @\nx @\rx", "out": "@\tx @\nx @\rx" },
+    { "in": "@\f~/.ssh/id_rsa", "out": "＠\f~/.ssh/id_rsa" },
+    { "in": "@\u000b/etc/passwd", "out": "＠\u000b/etc/passwd" },
+    { "in": "@\u00a0/etc/passwd", "out": "＠\u00a0/etc/passwd" },
+    { "in": "@\u0085/etc/passwd", "out": "＠\u0085/etc/passwd" },
+    { "in": "@\u3000/etc/passwd", "out": "＠\u3000/etc/passwd" },
+    { "in": "@😀", "out": "＠😀" },
+    { "in": "x@\n@y", "out": "x@\n＠y" },
+    { "in": "＠/etc/passwd", "out": "＠/etc/passwd" },
+    { "in": "@", "out": "@" },
+    { "in": "", "out": "" }
+  ]
+}

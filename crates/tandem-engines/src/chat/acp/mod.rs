@@ -545,12 +545,7 @@ pub fn offered(result: &Value) -> Option<Vec<ModelOffer>> {
 /// with no `@` that names a file for the agent to attach, as when it's a
 /// system prompt, since its memory and skills are agents' words (D-3023).
 fn briefing_block(text: &str) -> String {
-    let safe = tandem_core::untrusted::defang_mentions(text);
-    if safe == text {
-        safe
-    } else {
-        format!("{safe}\n{}", tandem_core::untrusted::DEFANGED)
-    }
+    tandem_core::untrusted::defang_noted(text)
 }
 
 /// What a thread says when the agent wants a sign-in: the methods it named,

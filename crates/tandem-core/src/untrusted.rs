@@ -27,8 +27,11 @@ fn longest_tick_run(text: &str) -> usize {
 /// Claude Code reads a file a message names as `@<path>` into its context
 /// with no tool call and no permission check, so a path in untrusted text
 /// mustn't reach a Claude message that way (F-TK-08, D-2839). An `@` before
-/// whitespace, another `@` or the end stays, so diff hunk headers keep
-/// theirs.
+/// a space, a tab, a line break, another `@` or the end stays, so diff hunk
+/// headers keep theirs. Those are the only ones (D-3023): typing into a
+/// terminal drops every other control character, a form feed too, which
+/// would join the `@` to what follows, and the app's TypeScript, whose
+/// whitespace isn't Rust's, makes the same text (`tests/fixtures/defang.json`).
 pub fn defang_mentions(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -36,15 +39,27 @@ pub fn defang_mentions(text: &str) -> String {
         let mention = c == '@'
             && chars
                 .peek()
-                .is_some_and(|n| !n.is_whitespace() && *n != '@');
+                .is_some_and(|n| !matches!(n, ' ' | '\t' | '\n' | '\r' | '@'));
         out.push(if mention { '\u{FF20}' } else { c });
     }
     out
 }
 
 /// The line a message adds after untrusted text `defang_mentions` changed.
-pub const DEFANGED: &str =
-    "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
+/// It holds no `@` itself, so it names nothing (D-3023).
+pub const DEFANGED: &str = "Vibezeo wrote ＠ for each at sign in the text above, so none of it attaches a file; read ＠ as an at sign.";
+
+/// `text` an engine reads as typed: no `@` in it names a file for it to
+/// attach ([`defang_mentions`]), and [`DEFANGED`] follows on a line of its
+/// own when one was changed (D-3023).
+pub fn defang_noted(text: &str) -> String {
+    let safe = defang_mentions(text);
+    if safe == text {
+        safe
+    } else {
+        format!("{safe}\n{DEFANGED}")
+    }
+}
 
 /// [`fence`] for untrusted text a message to an engine carries: no `@` in it
 /// names a file for the engine to attach ([`defang_mentions`]), and
@@ -109,5 +124,36 @@ mod tests {
             fence_defanged("diff", "+a = b\n"),
             fence("diff", "+a = b\n")
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_typed_text_names_no_file_and_says_so_after_it() {
+        assert_eq!(
+            defang_noted("look at @~/.ssh/id_rsa"),
+            format!("look at \u{FF20}~/.ssh/id_rsa\n{DEFANGED}")
+        );
+        assert_eq!(defang_noted("run the tests"), "run the tests");
+    }
+
+    #[test]
+    fn f_tk_08_1_the_defang_matches_the_vectors_the_app_shares() {
+        // The app's TypeScript reads the same file, so both make the same
+        // text of the same input (D-3023).
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/defang.json")).expect("vectors");
+        assert_eq!(v["note"], DEFANGED);
+        let cases = v["cases"].as_array().expect("cases");
+        assert!(cases.len() >= 15, "{}", cases.len());
+        for c in cases {
+            let input = c["in"].as_str().expect("in");
+            assert_eq!(
+                defang_mentions(input),
+                c["out"].as_str().expect("out"),
+                "{input:?}"
+            );
+        }
+        // The note names nothing itself, even read again.
+        assert!(!DEFANGED.contains('@'), "{DEFANGED}");
+        assert_eq!(defang_mentions(DEFANGED), DEFANGED);
     }
 }
