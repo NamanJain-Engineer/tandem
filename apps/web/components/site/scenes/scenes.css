@@ -161,6 +161,39 @@
 .sc-dialog-done { display: inline-flex; align-items: center; gap: 0.75em; font-size: 0.8125em; color: var(--tn-status-done-text); }
 .sc-dialog-done .sc-btn { font-size: 0.9em; }
 
+/* The status bar as the download draws it (D-2603): the branch with its
+   icon, then the version; no connection (D-816). */
+.sc-statusbar-branch { display: inline-flex; align-items: center; gap: 0.375em; }
+.sc-statusbar-icon { width: 1.1em; height: 1.1em; }
+.sc-btn-ghost { background: none; box-shadow: none; }
+
+/* Agent mode's Tasks page, with Plan with Lead's dialog over it (D-1888).
+   The header's plan chip truncates at 12rem, as TasksPanel's max-w-48:
+   12 of the scene's em, which is the app's rem. */
+.sc-plan-body { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sc-tasks-head { display: flex; align-items: center; gap: 0.5em; height: 2.75em; flex: none; padding-inline: 0.75em; border-bottom: 1px solid var(--tn-divider); }
+.sc-tasks-title { margin-right: auto; font-size: 0.9375em; font-weight: 600; }
+.sc-plan-chip { display: inline-flex; align-items: center; gap: 0.4em; padding-inline: 0.5em; font-size: 0.8125em; font-weight: 500; }
+.sc-plan-chip-goal { max-width: 14.77em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-tasks-add { display: flex; align-items: center; gap: 1em; flex: none; padding: 0.5em; border-bottom: 1px solid var(--tn-divider); }
+.sc-tasks-input { flex: 1; font-family: var(--font-sans); color: var(--tn-text-subtle); }
+.sc-check { display: inline-flex; align-items: center; gap: 0.5em; font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-checkbox { width: 1em; height: 1em; border-radius: 0.25em; box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-tasks-list { display: flex; flex-direction: column; gap: 0.125em; padding: 0.375em; }
+.sc-task-row { display: flex; align-items: center; gap: 0.5em; padding: 0.375em 0.5em; font-size: 0.8125em; }
+.sc-task-id { width: 4.5em; font-size: 0.85em; color: var(--tn-text-subtle); }
+.sc-plan-layer { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.5em; background: rgb(var(--tn-shadow-color) / 0.55); }
+.sc-plan-dialog { width: 45em; }
+.sc-plan-line { display: inline-flex; align-items: center; gap: 0.5em; font-size: 0.8125em; }
+.sc-plan-summary { font-size: 0.8125em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
+.sc-runs { display: flex; flex-direction: column; gap: 0.125em; }
+.sc-run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0.5em; padding: 0.375em 0.5em; font-size: 0.8125em; }
+.sc-run-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-run-id { color: var(--tn-text-muted); }
+.sc-run-label { white-space: nowrap; color: var(--tn-text-muted); }
+.sc-run-label .sc-swap { justify-items: end; }
+.sc-plan-foot { gap: 0.5em; }
+
 /* A count's final number is text; while it counts, a CSS counter shows. */
 @property --sc-n { syntax: "<integer>"; inherits: false; initial-value: 0; }
 .sc-count { --sc-n: var(--to); }
@@ -189,6 +222,11 @@
   .sc-lane-row { grid-template-columns: auto 1fr; }
   .sc-lane-row .sc-tick { display: none; }
   .sc-lane-row .sc-step { grid-column: 1 / -1; }
+  .sc-plan-layer { padding: 0.75em; }
+  .sc-plan-dialog { width: 100%; }
+  .sc-run { grid-template-columns: auto minmax(0, 1fr); }
+  .sc-run-label { grid-column: 2; }
+  .sc-run-label .sc-swap { justify-items: start; }
 }
 
 /* Final frame: things that come and go, and things that leave, aren't in it. */
@@ -209,7 +247,10 @@
 @keyframes sc-press { 0%, 100% { scale: 1; } 40% { scale: 0.92; } }
 @keyframes sc-rise  { from { opacity: 0; translate: 0 1em; } }
 @keyframes sc-slide { from { opacity: 0; translate: 2em 0; scale: 0.98; } }
-@keyframes sc-visit { 0% { opacity: 0; translate: 0 0.5em; } 10%, 90% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: 0 0; } }
+/* A visit comes in, stays and leaves, with fades of a fixed length at each
+   end, so a long stay doesn't fade for a tenth of it (D-1888). */
+@keyframes sc-visit { from { opacity: 0; translate: 0 0.5em; } to { opacity: 1; translate: 0 0; } }
+@keyframes sc-leave { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sc-count { from { --sc-n: 0; } }
 @keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
 
@@ -224,7 +265,7 @@
     & [data-fx-press] { animation: sc-press 260ms var(--ease-io-site) var(--at) both paused; }
     & [data-fx-rise]  { animation: sc-rise var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-slide] { animation: sc-slide var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
-    & [data-fx-visit] { animation: sc-visit var(--stay) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-leave var(--dur-pop) var(--ease-exit) calc(var(--at) + var(--stay) - var(--dur-pop)) forwards paused; }
     & [data-fx-sweep] { animation: sc-sweep 1.6s var(--ease-io-site) var(--at) both paused; }
     & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
     & [data-fx-count] .sc-sr { display: none; }

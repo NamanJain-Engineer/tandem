@@ -69,20 +69,28 @@ for (const [width, height] of SIZES)
         const vw = document.documentElement.clientWidth;
         const vh = window.innerHeight;
         const accents = [];
+        // Each teal thing once, with whatever teal is inside it (a badge and
+        // its dot are one), as e2e-site/accent.spec.ts counts (DESIGN §4.2).
+        const counted = [];
         for (const el of document.body.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw)
             continue;
+          if (counted.some((c) => c.contains(el))) continue;
           const s = getComputedStyle(el);
-          if (s.visibility === "hidden" || Number(s.opacity) === 0) continue;
+          // Only what the capture shows: an element inside a transparent or
+          // hidden one (a scene's earlier states, D-1888) isn't seen.
+          if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
           const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
           // The rings' blooms are radial gradients: the page's light (§4.5), not an accent.
           const fill =
             isTeal(s.backgroundColor) ||
             (isTeal(s.backgroundImage) && !s.backgroundImage.startsWith("radial-gradient"));
           const ink = ownText && (isTeal(s.color) || isTeal(s.backgroundImage));
-          if (fill || ink)
+          if (fill || ink) {
+            counted.push(el);
             accents.push(`${el.tagName.toLowerCase()} "${(el.textContent ?? "").trim().slice(0, 24)}"`);
+          }
         }
         const root = document.documentElement;
         return {
