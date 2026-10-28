@@ -280,6 +280,8 @@ pub async fn create(
     crate::services::lsp::untrust_missing_under(&root.join(tandem_git::lanes::WORKTREES_DIR));
     // One at a time per repository, with the sweep: held until the row
     // exists and the record is gone.
+    #[cfg(test)]
+    lock_probe::waiting(&root);
     let _repo = repo_lock(&root).lock_owned().await;
     let lane = jj::add_workspace(
         runner.clone(),
@@ -328,7 +330,8 @@ pub async fn create(
 /// Nothing half-made stays behind.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
     // The record stays when the forget failed, so the sweep tries again.
-    if jj::forget_workspace(runner, root, &lane.path, &lane.slug)
+    // Forced: the workspace was made just now, and nothing in it is anyone's.
+    if jj::forget_workspace(runner, root, &lane.path, &lane.slug, true)
         .await
         .is_ok()
     {
@@ -350,7 +353,9 @@ pub async fn diff(lane: &Workspace, parent: &Workspace) -> Result<Vec<FileDiff>,
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
     let base = lane.lane_base.clone().unwrap_or_default();
-    jj::diff(runner, &root, &base).await.map_err(jj_err)
+    jj::diff(runner, Path::new(&parent.root), &root, &base)
+        .await
+        .map_err(jj_err)
 }
 
 /// A jj lane's changed files since its base (the overlap check).
@@ -360,14 +365,39 @@ pub async fn changed_files(lane: &Workspace, parent: &Workspace) -> Result<Vec<S
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
     let base = lane.lane_base.clone().unwrap_or_default();
-    jj::changed_files(runner, Path::new(&lane.root), &base)
+    jj::changed_files(
+        runner,
+        Path::new(&parent.root),
+        Path::new(&lane.root),
+        &base,
+    )
+    .await
+    .map_err(jj_err)
+}
+
+/// Whether Discard would lose something only on disk in a jj lane: jj
+/// couldn't snapshot its working copy whole (it failed, timed out, was
+/// locked or stale, or refused or left out a file). A folder already gone
+/// has nothing to lose.
+pub async fn dirty(lane: &Workspace, parent: &Workspace) -> Result<bool, IpcError> {
+    gate(Path::new(&parent.root))?;
+    let root = PathBuf::from(&lane.root);
+    if !root.is_dir() {
+        return Ok(false);
+    }
+    let Some(runner) = runner().await else {
+        return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
+    };
+    tokio::task::spawn_blocking(move || !jj::snapshotted_whole(runner.as_ref(), &root))
         .await
-        .map_err(jj_err)
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()).with_stage("jj"))
 }
 
 /// Discard's last step for a jj lane: `jj workspace forget` and the folder.
-/// The workspace's commits stay in the repository.
-pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError> {
+/// The workspace's commits stay in the repository. Without `force`, a
+/// working copy jj couldn't snapshot whole is Conflict ("Uncommitted
+/// changes"), so Discard asks for the force as for a git lane.
+pub async fn forget(lane: &Workspace, parent: &Workspace, force: bool) -> Result<(), IpcError> {
     gate(Path::new(&parent.root))?;
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
@@ -381,6 +411,7 @@ pub async fn forget(lane: &Workspace, parent: &Workspace) -> Result<(), IpcError
         Path::new(&parent.root),
         Path::new(&lane.root),
         &name,
+        force,
     )
     .await
     .map_err(jj_err)
@@ -431,8 +462,12 @@ async fn row_names(
     let dir = canon(&root.join(tandem_git::lanes::WORKTREES_DIR));
     let mut rows = Vec::new();
     for id in lane_vcs::jj_lanes(store).await? {
-        if let Ok(ws) = workspaces::get(store, &id).await {
-            rows.push(ws);
+        // Only a row that's gone is skipped: one that can't be read fails
+        // the sweep, which then forgets nothing.
+        match workspaces::get(store, &id).await {
+            Ok(ws) => rows.push(ws),
+            Err(tandem_store::StoreError::NotFound(_)) => {}
+            Err(e) => return Err(e.into()),
         }
     }
     for top in workspaces::list(store).await? {
@@ -448,21 +483,15 @@ async fn row_names(
         .collect())
 }
 
-/// Records for repositories no longer on the rail go (nothing is forgotten
-/// for them).
-pub async fn prune_pending(store: &Store) -> usize {
+/// Records older than [`PRUNE_AGE`] go, whatever they name: the sweep acts
+/// on a record within minutes, so one that old is for a repository it
+/// never reaches (removed from the rail, untrusted, without jj) or from an
+/// older version. Nothing is forgotten for them.
+pub fn prune_pending() -> usize {
     let Some(pending) = pending_dir() else {
         return 0;
     };
-    let Ok(all) = workspaces::list(store).await else {
-        return 0;
-    };
-    let known = all
-        .iter()
-        .filter(|w| w.parent_id.is_none() && w.kind == "local")
-        .map(|w| std::fs::canonicalize(&w.root).unwrap_or_else(|_| PathBuf::from(&w.root)))
-        .collect();
-    jj::prune_pending(&pending, &known, PRUNE_AGE)
+    jj::prune_pending(&pending, PRUNE_AGE)
 }
 
 /// Where records of jj workspaces being made are kept: `$DATA/jj-pending`,
@@ -484,4 +513,30 @@ pub(crate) fn repo_lock(root: &Path) -> Arc<tokio::sync::Mutex<()>> {
         .entry(key)
         .or_default()
         .clone()
+}
+
+/// Tests see a create reach the repository's lock (and wait there) without
+/// sleeping: one signal per repository.
+#[cfg(test)]
+pub(crate) mod lock_probe {
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    static WAITING: std::sync::Mutex<BTreeMap<PathBuf, Arc<tokio::sync::Notify>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+
+    pub(crate) fn signal(root: &Path) -> Arc<tokio::sync::Notify> {
+        let key = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        WAITING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(key)
+            .or_default()
+            .clone()
+    }
+
+    pub(super) fn waiting(root: &Path) {
+        signal(root).notify_one();
+    }
 }
