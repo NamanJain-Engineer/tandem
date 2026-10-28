@@ -301,7 +301,7 @@
 
   /* layout constants */
   --titlebar-h: 40px;
-  --rail-w: 248px;        --rail-min: 180px; --rail-max: 360px; --rail-collapsed: 52px;
+  --rail-w: 248px;        --rail-min: 246px; --rail-max: 360px; --rail-collapsed: 52px;
   --sidebar-w: 470px;     --sidebar-min: 320px; --sidebar-max: 900px;
   --pane-header-h: 30px;
   --statusbar-h: 22px;

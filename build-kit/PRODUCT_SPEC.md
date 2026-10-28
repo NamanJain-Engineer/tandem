@@ -251,7 +251,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Appearance toggle (cycles Dark, Light, System).
   - Settings button.
   - An **Update ready** row appears only when an update is staged.
-- The rail can be resized (180–360 px), and its width persists.
+- The rail can be resized from the width of a fully folded worktree row (246 px, D-2701) to 360 px, and its width persists. A row never runs past the rail: while it's too narrow for its contents, its marks fold to their icons and its status words to their dot.
 
 **Data:** SQLite `rail_items` (mode, item_id, pinned, sort_key).
 

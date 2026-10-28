@@ -77,6 +77,11 @@ release fails when its version has no section.
   symbol two worktrees share, such as `applyCoupon`. A row that's short of
   room shows a mark's icon rather than cut its words, and a pane header's
   branch gives way before the pane's title does.
+- [lin] **The rail never cuts a row off.** A row too narrow for everything it
+  shows folds it: a worktree's Preview to its globe, its marks to their icons,
+  and last its agents' status to a dot that still says Needs you or 2 working
+  when you hover it. The rail stops at the width of a fully folded row, 246 px
+  rather than 180.
 
 ### Fixed
 

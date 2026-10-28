@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import type { Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
@@ -9,7 +9,7 @@ import { useSettings } from "../../stores/settings";
 import { useStatus } from "../../stores/status";
 import { reordered, useWorkspaces } from "../../stores/workspaces";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
-import { CodeRail } from "../code/CodeRail";
+import { CodeRail, RAIL_MIN } from "../code/CodeRail";
 import { placement } from "./RailList";
 
 function ws(id: string, over: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
@@ -195,11 +195,13 @@ describe("rail (F-SH-03)", () => {
     expect(useWorkspaces.getState().activeId).toBe("c");
   });
 
-  it("F-SH-03 the rail resizes between 180 and 360 px and the width persists", async () => {
+  it("F-SH-03 D-2701 the rail resizes between a fully folded row's width and 360 px, and the width persists", async () => {
     setup([ws("a")]);
     const nav = screen.getByRole("navigation", { name: "Workspaces" });
     const edge = screen.getByRole("separator", { name: "Resize the rail" });
     expect(nav.style.width).toBe("248px");
+    expect(edge.getAttribute("aria-valuemin")).toBe(String(RAIL_MIN));
+    expect(edge.getAttribute("aria-valuemax")).toBe("360");
     fireEvent.keyDown(edge, { key: "ArrowRight" });
     await waitFor(() =>
       expect(named("settings_set").at(-1)?.args).toEqual({ key: "rail_width", value: 256 }),
@@ -210,6 +212,83 @@ describe("rail (F-SH-03)", () => {
       expect(named("settings_set").at(-1)?.args).toEqual({ key: "rail_width", value: 360 }),
     );
     expect(nav.style.width).toBe("360px");
+    // A width saved under the minimum (the old 180) shows at the minimum, and
+    // narrowing from there stays at it.
+    act(() => useSettings.setState({ values: { rail_width: 180 } }));
+    expect(nav.style.width).toBe(`${RAIL_MIN}px`);
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    await waitFor(() =>
+      expect(named("settings_set").at(-1)?.args).toEqual({ key: "rail_width", value: RAIL_MIN }),
+    );
+    expect(nav.style.width).toBe(`${RAIL_MIN}px`);
+  });
+
+  it("F-SH-03 D-2603 D-2701 a workspace row too narrow for its status words folds them to their dot, keeping them as its name and tooltip", () => {
+    // The row's contents: 150 px, and 80 more while the status shows its words.
+    let room = 400;
+    const row = (el: Element) => el instanceof HTMLElement && el.dataset.testid === "workspace-row";
+    const scroll = vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (
+      this: Element,
+    ) {
+      return row(this) ? 150 + 80 * this.querySelectorAll("[data-words]").length : 0;
+    });
+    const client = vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (
+      this: Element,
+    ) {
+      return row(this) ? room : 0;
+    });
+    const working = (key: string) => ({
+      key,
+      status: "working" as const,
+      reason: null,
+      since: 1,
+      ts: 1,
+      tool: null,
+      title: null,
+      preview: null,
+    });
+    // Two agents working in it, one of them finished unseen once.
+    const show = () => {
+      const view = setup([ws("a", { liveCount: 2 })]);
+      act(() => {
+        useLayout.setState({
+          tabs: {
+            tb_a: {
+              tree: null,
+              active: null,
+              maximized: null,
+              panes: { p1: {} as never, p2: {} as never },
+              keepEmpty: false,
+            },
+          },
+        });
+        useStatus.setState({
+          records: { "pane:p1": working("pane:p1"), "pane:p2": working("pane:p2") },
+          unread: { "pane:p2": true },
+        });
+      });
+      return view;
+    };
+    try {
+      let view = show();
+      const slot = () => within(rows()[0] as HTMLElement).getByTestId("workspace-status");
+      expect(slot().textContent).toBe("2 working");
+      expect(slot().hasAttribute("data-folded")).toBe(false);
+      view.unmount();
+      room = 200;
+      view = show();
+      expect(slot().hasAttribute("data-folded")).toBe(true);
+      expect(slot().textContent).toBe("");
+      expect(slot().title).toBe("2 working");
+      expect(within(slot()).getByRole("img", { name: "2 working" })).toBeTruthy();
+      // The unread dot sits on the status dot; the count keeps its place.
+      expect(within(slot()).getByTestId("workspace-unread")).toBeTruthy();
+      expect(within(rows()[0] as HTMLElement).getByText("2")).toBeTruthy();
+      view.unmount();
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
   });
 
   it("F-SH-03 expanding a workspace lists its open panes", async () => {

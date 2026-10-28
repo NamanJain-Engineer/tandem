@@ -353,7 +353,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
   /* layout constants */
   --titlebar-h: 40px;
-  --rail-w: 248px;        --rail-min: 180px; --rail-max: 360px; --rail-collapsed: 52px;
+  --rail-w: 248px;        --rail-min: 246px; --rail-max: 360px; --rail-collapsed: 52px;
   --sidebar-w: 470px;     --sidebar-min: 320px; --sidebar-max: 900px;
   --pane-header-h: 30px;
   --statusbar-h: 22px;
@@ -793,7 +793,9 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 > **D-2603:** a workspace row's status is quiet: amber "Needs you", or a working dot with "n working", or "Failed" in rose, never a boxed chip. The name keeps at least 10 characters; the branch gives way to a status, and live panes are a `Count` pill. Teammate rows (UI-70) are two lines: name with Failed > Needs you > n working > age, then the latest activity.
 
 > **D-2611:** a worktree's row (F-CD-15) is named as its workspace is, `coupon-rules` rather than `tandem/coupon-rules`: a worktree's branch is always `tandem/` and that name, so the prefix said nothing and took the room. The branch is in the row's tooltip, before the path, and in the pane header's chip and the status bar. Beside a status the name keeps at least 10 characters, as a workspace row's does, and ⋯ takes no room: it covers the row's end while the row is hovered or holds focus.
-- **Width:** default 248px, drag-resizable between 180 and 360px (F-SH-03); the width persists per mode.
+
+> **D-2701:** a row never runs past the rail. While a worktree row's contents are wider than the row, it folds them, in order: the Preview button's word, the radar mark's symbol, the checks badge's words, then its status words to their dot (the `StatusDot` of the state, with the words as its accessible name and tooltip; the unread dot sits on it, as on a pane row's dot). A workspace row folds its status words the same way. The name keeps its 10 characters, so the rail's minimum is a fully folded worktree row at the deepest indent: the name's 10 characters, the status dot, the checks and radar icons and a two-digit count.
+- **Width:** default 248px, drag-resizable between 246 and 360px (F-SH-03); the width persists per mode. 246px is a fully folded worktree row at the deepest indent (D-2701); where scrollbars take room (Windows), the minimum adds a scrollbar's width.
 - **Collapse** with Mod+\ (§5), or by dragging below 160px. Collapsed it is a 52px icon rail showing avatars/glyphs with tooltips.
 - **Background** surface-1, with a 1px right border.
 - **Structure (all modes):** a header row (section title plus a "+" action), a scrollable list, and a footer row (mode-specific quick actions).
@@ -1083,7 +1085,7 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
 - **UI-158 Create pull requests** (dialog; "Create pull requests" in a multi-repo worktree's ⋯ menu, after the native confirm; F-CD-22). Title "Pull requests for {branch}". One row per repository: its name and step ("Pushing…", "Opening the pull request…", "Linking…", "Opened" with the link, "Skipped: no new commits", "Skipped: GitLab isn't supported yet", "Failed: {reason}"). "Open" (ghost) opens a pull request in the system browser. Footer: Close. Loading: the rows in their waiting state with a `Spinner`. Error: an error `Banner` "Couldn't read the pull requests' progress: {reason}"; spinners stop. No run (the app restarted): "This run isn't running any more. Create pull requests again to finish it; open pull requests are kept."
 
-- **Radar mark** (a worktree's rail row; F-WT-10). A `Badge` (`waiting`, amber) while the worktree shares symbols with a sibling; it opens UI-153. It leads with the radar icon, then the symbol in code type (`applyCoupon`), or "{n} symbols" for several (D-2700); a long symbol is cut at its end, the count never. Its accessible name is "Shares {symbol}" (or "Shares {n} symbols"), its title "Shares {symbols}" with every symbol. Beside the row's status ("● 1 working", "Needs you", "Failed") it's the icon alone, so the row's name keeps its room (D-2613, as D-2603 hides the branch). A rail row's marks show their words whole or not at all: while the row's contents are wider than the row, its marks fold to their icons, the radar mark first, then the checks badge (D-2700).
+- **Radar mark** (a worktree's rail row; F-WT-10). A `Badge` (`waiting`, amber) while the worktree shares symbols with a sibling; it opens UI-153. It leads with the radar icon, then the symbol in code type (`applyCoupon`), or "{n} symbols" for several (D-2700); a long symbol is cut at its end, the count never. Its accessible name is "Shares {symbol}" (or "Shares {n} symbols"), its title "Shares {symbols}" with every symbol. Beside the row's status ("● 1 working", "Needs you", "Failed") it's the icon alone, so the row's name keeps its room (D-2613, as D-2603 hides the branch). A rail row's marks show their words whole or not at all: while the row's contents are wider than the row, its marks fold to their icons, the Preview button first, then the radar mark, then the checks badge, and last the row's status words fold to their dot (D-2700, D-2701).
 
 - **Radar notice** (a toast; F-WT-10). Title "{branchA} and {branchB} both touch {symbols}". Body: "Their rail rows show it; Check overlap… has the details." Action: **Warn both agents** (types the note into each worktree's agent, then "Warned both agents"; when a worktree has no agent, "No agent is running in {branch}"). Warning tone.
 - **UI-160 Instructions** (dialog, `lg`; "Instructions…" in a local folder's rail menu; F-EN-07). Title "Instructions"; description "Which instructions file each engine reads in {folder}, and how they differ from AGENTS.md."
@@ -2740,4 +2742,4 @@ All items below were fixed at the source during the consistency pass (see CONSIS
 5. **Title-bar credits** (a hosted build, signed in) open Settings › Account (UI-114); there is no "Billing" page.
 6. **Onboarding model size.** Resolved: UI-04 shows the manifest size (670 MB, F-DI-04 and ARCHITECTURE §12.4 `approx_mb`).
 7. **Light accent contrast.** Resolved: §1.2 now uses teal-700 (#0f766e) as the light-theme accent, `#7d8ba0` for dark `text-subtle`, and adds `status-*-text` tokens (§7.3). DECISIONS "Visual identity" records the light accent.
-8. **Sidebar and rail sizes.** Resolved to PRODUCT_SPEC: sidebar 470px (320–900, or full-window), rail 180–360px (§1.2 layout constants, §3.3, §3.5).
+8. **Sidebar and rail sizes.** Resolved to PRODUCT_SPEC: sidebar 470px (320–900, or full-window), rail 246–360px (§1.2 layout constants, §3.3, §3.5; the minimum was 180px until D-2701).

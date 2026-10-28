@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, GitBranch, MoreHorizontal } from "lucide-react";
+import { AlertTriangle, GitBranch, Globe, MoreHorizontal } from "lucide-react";
 import type { FileDiff, LaneKind, LaneKinds, MergeReport, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
@@ -48,13 +48,14 @@ import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
 import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
 import { RadarMark } from "./IntentRadar";
-import { useMarkFolds } from "./markFolds";
+import { folded, useMarkFolds } from "./markFolds";
 import { PullRequestsDialog } from "./MultiPullRequests";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
+import { WorkspaceSlot } from "./WorkspaceSlot";
 import { useWorkspaceStatus } from "./workspaceStatus";
 
 type Show = ReturnType<typeof useToast>["show"];
@@ -247,20 +248,38 @@ function singleRepoMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEnt
   ];
 }
 
+/** F-WT-09: the row's preview, while it answers; it opens in a browser tab.
+ * It leads with a globe, as a browser pane's rail row does, and it's the
+ * first part to fold to its icon (D-2701): its word says least. */
+function PreviewMark({ url, branch, fold }: { url: string; branch: string; fold: boolean }) {
+  const name = t("worktree.preview.openLabel", { branch });
+  return (
+    <button
+      type="button"
+      data-testid="worktree-preview"
+      data-compact={fold ? "" : undefined}
+      aria-label={name}
+      title={name}
+      onClick={(e) => {
+        e.stopPropagation();
+        openPreview(url);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1 text-sm font-medium text-fg hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
+    >
+      <Globe size={12} aria-hidden="true" className="shrink-0" />
+      {!fold && <span data-words="">{t("worktree.preview.open")}</span>}
+    </button>
+  );
+}
+
 /** A worktree under its repository in the Code rail (F-CD-15 AC4). It's
  * named as its workspace is (a worktree's branch is `tandem/` and that
  * name), so beside a status the name keeps its room: at least 10
  * characters, as a workspace row's does (D-2603). The branch is in its
- * tooltip, and ⋯ covers the row's end only while it's hovered or focused. */
-export function WorktreeRow({
-  wt,
-  base,
-  slot,
-}: {
-  wt: WorkspaceSummary;
-  base: string;
-  slot?: React.ReactNode;
-}) {
+ * tooltip, and ⋯ covers the row's end only while it's hovered or focused.
+ * The rail is never narrower than a fully folded row (D-2701). */
+export function WorktreeRow({ wt, base }: { wt: WorkspaceSummary; base: string }) {
   const activeId = useWorkspaces((s) => s.activeId);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
@@ -273,7 +292,8 @@ export function WorktreeRow({
   }, [wt.id, wt.missing, wt.kind]);
   const block = useWorktrees((s) => s.runtimes[wt.id]);
   const preview = useWorktrees((s) => s.previews[wt.id]);
-  // D-2700: the marks fold to their icons while the row's contents don't fit.
+  // D-2700, D-2701: the marks fold to their icons, and the status words to
+  // their dot, while the row's contents don't fit.
   const status = useWorkspaceStatus(wt);
   const checks = useWorktrees((s) => s.checks[wt.id]);
   const radar = useWorktrees((s) => s.radar[wt.id]);
@@ -344,24 +364,14 @@ export function WorktreeRow({
           <Badge variant="outline">{t("worktree.jj.badge")}</Badge>
         </span>
       ) : null}
-      {slot}
+      <WorkspaceSlot ws={wt} fold={folded(folds, "status")} />
       {preview?.status === "ready" && preview.url ? (
-        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="worktree-preview"
-            aria-label={t("worktree.preview.openLabel", { branch })}
-            onClick={() => openPreview(preview.url ?? "")}
-          >
-            {t("worktree.preview.open")}
-          </Button>
-        </span>
+        <PreviewMark url={preview.url} branch={branch} fold={folded(folds, "preview")} />
       ) : null}
-      <ChecksBadge wt={wt} fold={folds >= 2} />
-      <RadarMark wt={wt} fold={folds >= 1} />
+      <ChecksBadge wt={wt} fold={folded(folds, "checks")} />
+      <RadarMark wt={wt} fold={folded(folds, "radar")} />
       {wt.liveCount > 0 && (
-        <span aria-label={t("rail.live", { n: wt.liveCount })}>
+        <span data-testid="worktree-live" aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>
         </span>
       )}

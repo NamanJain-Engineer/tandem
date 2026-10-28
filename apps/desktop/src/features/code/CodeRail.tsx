@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
   Cloud,
@@ -11,7 +18,6 @@ import {
 } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
-  Badge,
   Button,
   ConfirmDialog,
   Count,
@@ -38,21 +44,54 @@ import { RailList } from "../rail/RailList";
 import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { useChecksPolling } from "./PullRequestChecks";
 import { useIntentRadar } from "./IntentRadar";
+import { useMarkFolds } from "./markFolds";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
+import { WorkspaceSlot } from "./WorkspaceSlot";
 import { useWorkspaceStatus } from "./workspaceStatus";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { useBoot } from "../shell/useBoot";
 
-export const RAIL_MIN = 180;
+/** D-2701: the rail is never narrower than its rows. Its minimum is a fully
+ * folded worktree row at the deepest indent, measured in the app's own CSS
+ * (Inter, UI_SPEC §1.2): the rail's border (1), the list's padding (6 + 6),
+ * a worktree's indent (24) and the row's padding (8 + 8); in the row, the
+ * branch icon (12), the name's 10 characters (75.7 at 12 px), the status dot
+ * (6), the checks badge's icon (20), the radar mark's (24) and a two-digit
+ * count (24.9), with the five gaps between them (6 each). railFold.test.tsx
+ * holds the row to those parts. */
+export const RAIL_MIN = Math.ceil(1 + 12 + 24 + 16 + 12 + 75.7 + 6 + 20 + 24 + 24.9 + 5 * 6);
 export const RAIL_MAX = 360;
 /** Dragging the edge below this collapses the rail to icons (UI_SPEC §3.3). */
 const COLLAPSE_BELOW = 160;
 
-/** The rail's right edge: drag or arrow keys resize it (180–360 px); the
- * width persists (F-SH-03). */
-function RailResizer({ width, onWidth }: { width: number; onWidth: (w: number, done: boolean) => void }) {
+/** The room a scrollbar takes from the rail's rows: none where scrollbars
+ * float over the content (macOS, most Linux desktops), a thin one's width
+ * where they don't (Windows); the rail's minimum adds it (D-2701). */
+function useScrollbarWidth(): number {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100px;height:100px;overflow-y:scroll";
+    document.body.appendChild(probe);
+    setWidth(probe.offsetWidth - probe.clientWidth);
+    probe.remove();
+  }, []);
+  return width;
+}
+
+/** The rail's right edge: drag or arrow keys resize it (its minimum to 360
+ * px); the width persists (F-SH-03). */
+function RailResizer({
+  width,
+  min,
+  onWidth,
+}: {
+  width: number;
+  min: number;
+  onWidth: (w: number, done: boolean) => void;
+}) {
   const start = useRef<{ x: number; w: number } | null>(null);
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -66,7 +105,7 @@ function RailResizer({ width, onWidth }: { width: number; onWidth: (w: number, d
       role="separator"
       aria-orientation="vertical"
       aria-label={t("rail.resize")}
-      aria-valuemin={RAIL_MIN}
+      aria-valuemin={min}
       aria-valuemax={RAIL_MAX}
       aria-valuenow={width}
       tabIndex={0}
@@ -136,41 +175,28 @@ function SessionDot({ paneId }: { paneId: string }) {
   );
 }
 
-/** Quiet, never a box (D-2603): amber "Needs you", a working dot and its
- * count, or "Failed". */
-function WorkspaceSlot({ ws }: { ws: WorkspaceSummary }) {
+/** A workspace row's end: its branch (or repository count), its status and
+ * its live panes. The status words fold to their dot while the row is too
+ * narrow for them (D-2701), so the row never runs past the rail. */
+function WorkspaceTrailing({ ws, selected }: { ws: WorkspaceSummary; selected: boolean }) {
   const s = useWorkspaceStatus(ws);
-  const slot = s.waiting ? (
-    <Badge variant="waiting" quiet>
-      {t("rail.waiting")}
-    </Badge>
-  ) : s.working > 0 ? (
-    <span className="inline-flex items-center gap-1 text-xs tabular-nums text-fg-muted">
-      <span aria-hidden="true" className="inline-flex">
-        <StatusDot status="working" size={6} />
-      </span>
-      {t("rail.working", { n: s.working })}
-    </span>
-  ) : s.failed ? (
-    <Badge variant="error" quiet>
-      {t("rail.failed")}
-    </Badge>
-  ) : null;
+  const { ref, folds } = useMarkFolds<HTMLSpanElement>(
+    JSON.stringify([ws.name, s, ws.branch, ws.repos?.length ?? null, ws.liveCount]),
+    1,
+    (el) => el.closest<HTMLElement>('[role="treeitem"]'),
+  );
   return (
-    <>
-      {slot && (
-        <span data-testid="workspace-status" className="inline-flex shrink-0">
-          {slot}
-        </span>
+    <span ref={ref} className="flex min-w-0 items-center justify-end gap-1.5">
+      {isMultiRepo(ws) ? (
+        <BranchChip ws={ws} selected={selected} testId="workspace-repos">
+          {t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}
+        </BranchChip>
+      ) : (
+        ws.branch && <BranchChip ws={ws} selected={selected} />
       )}
-      {s.unread && (
-        <span
-          data-testid="workspace-unread"
-          aria-label={t("rail.unread")}
-          className="size-1.5 shrink-0 rounded-full bg-accent"
-        />
-      )}
-    </>
+      <WorkspaceSlot ws={ws} fold={folds >= 1} />
+      {ws.liveCount > 0 && <Count value={ws.liveCount} label={t("rail.live", { n: ws.liveCount })} />}
+    </span>
   );
 }
 
@@ -324,7 +350,8 @@ export function CodeRail() {
   const saved = useSetting("rail_width", 248);
   const [width, setWidth] = useState<number | null>(null);
   const { show } = useToast();
-  const shown = Math.min(RAIL_MAX, Math.max(RAIL_MIN, width ?? saved));
+  const min = RAIL_MIN + useScrollbarWidth();
+  const shown = Math.min(RAIL_MAX, Math.max(min, width ?? saved));
   const localWorktrees = list
     .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
     .map((w) => w.id);
@@ -341,7 +368,7 @@ export function CodeRail() {
       if (!useUi.getState().railCollapsed) useUi.getState().toggleRail();
       return;
     }
-    const clamped = Math.round(Math.min(RAIL_MAX, Math.max(RAIL_MIN, w)));
+    const clamped = Math.round(Math.min(RAIL_MAX, Math.max(min, w)));
     setWidth(done ? null : clamped);
     if (done) void useSettings.getState().set("rail_width", clamped);
   };
@@ -456,31 +483,12 @@ export function CodeRail() {
           ) : (
             <Folder size={14} aria-hidden="true" className="text-fg-muted" />
           ),
-          trailing: (
-            <>
-              {isMultiRepo(ws) ? (
-                <BranchChip ws={ws} selected={ws.id === activeId} testId="workspace-repos">
-                  {t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}
-                </BranchChip>
-              ) : (
-                ws.branch && <BranchChip ws={ws} selected={ws.id === activeId} />
-              )}
-              <WorkspaceSlot ws={ws} />
-              {ws.liveCount > 0 && (
-                <Count value={ws.liveCount} label={t("rail.live", { n: ws.liveCount })} />
-              )}
-            </>
-          ),
+          trailing: <WorkspaceTrailing ws={ws} selected={ws.id === activeId} />,
           children: (
             <>
               <WorkspaceSessions ws={ws} />
               {worktreesOf(list, ws.id).map((wt) => (
-                <WorktreeRow
-                  key={wt.id}
-                  wt={wt}
-                  base={ws.branch ?? "HEAD"}
-                  slot={<WorkspaceSlot ws={wt} />}
-                />
+                <WorktreeRow key={wt.id} wt={wt} base={ws.branch ?? "HEAD"} />
               ))}
             </>
           ),
@@ -507,7 +515,7 @@ export function CodeRail() {
           </Button>
         </div>
       )}
-      {!collapsed && <RailResizer width={shown} onWidth={onWidth} />}
+      {!collapsed && <RailResizer width={shown} min={min} onWidth={onWidth} />}
       <ConfirmDialog
         open={confirmRemove !== null}
         onOpenChange={(o) => !o && askRemove(null)}

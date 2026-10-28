@@ -18,7 +18,8 @@ import { pick } from "../support/worktrees";
 // PATH answers for the worktree's pull request. Nothing calls it before the
 // repository is allowed; then the row shows the failed check, Send failure
 // to agent types the fenced log tail into the worktree's agent, and Import
-// review comments fills the review bar.
+// review comments fills the review bar. At the rail's minimum, the rows
+// with those marks fold and stay inside the rail (D-2701).
 
 const GIT_ENV = {
   ...process.env,
@@ -173,7 +174,9 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     await button.waitForExist({ timeout: 15_000 });
     await button.click();
     const comment = $('[data-testid="review-comment"][data-imported="true"]');
-    await comment.waitForExist({ timeout: 15_000 });
+    // Displayed, not only there: Open diff's dialog fades in, and while it's
+    // at opacity 0 WebDriver reads none of its text.
+    await comment.waitForDisplayed({ timeout: 15_000 });
     expect(await comment.getAttribute("data-line")).toBe("a.ts:new:2");
     expect(await comment.getText()).toContain("@ana:");
     expect(String(await $('[data-testid="review-bar"]').getProperty("textContent"))).toContain("1 comment");
@@ -194,5 +197,62 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     expect(prompt).toContain("1. Imported review comment:");
     expect(prompt).toContain("   > Untrusted content from a pull request review comment");
     expect(prompt).toContain("   ```text\n   ana on a.ts:2:\n   Keep two as 2.\n   ```");
+  });
+
+  it("F-SH-03 D-2701 at the rail's minimum every row folds what it must, keeps its name's 10 characters and stays inside the rail", async () => {
+    await browser.keys("Escape");
+    const edge = $('[data-testid="rail-resizer"]');
+    await edge.waitForExist({ timeout: 10_000 });
+    const min = Number(await edge.getAttribute("aria-valuemin"));
+    // A fully folded row at the deepest indent (246 px), and a scrollbar's
+    // width where scrollbars take room.
+    expect(min).toBeGreaterThanOrEqual(246);
+    await browser.execute(() => document.querySelector<HTMLElement>('[data-testid="rail-resizer"]')?.focus());
+    // Arrow keys move the edge 8 px: from 248 down to the minimum, and no further.
+    for (let i = 0; i < 4; i++) await browser.keys("ArrowLeft");
+    await browser.waitUntil(async () => Number(await edge.getAttribute("aria-valuenow")) === min, {
+      timeout: 5_000,
+      timeoutMsg: `the rail stopped at ${await edge.getAttribute("aria-valuenow")}, not ${min}`,
+    });
+    await browser.pause(500);
+    const rows = await browser.execute(() => {
+      const nav = document.querySelector('nav[aria-label="Workspaces"]');
+      // The rail's right border is the last pixel a row may reach.
+      const edge = (nav?.getBoundingClientRect().right ?? 0) - 1;
+      return Array.from(
+        document.querySelectorAll<HTMLElement>('[data-testid="worktree-row"], [data-testid="workspace-row"]'),
+      ).map((row) => {
+        const name = row.querySelector<HTMLElement>(
+          '[data-testid="worktree-row-name"], [data-testid="rail-row-name"]',
+        );
+        const floor = document.createElement("span");
+        floor.style.cssText = "position:absolute;visibility:hidden;width:10ch";
+        name?.parentElement?.appendChild(floor);
+        const ch10 = floor.getBoundingClientRect().width;
+        floor.remove();
+        // ⋯ shows only on hover, over the row's end.
+        const parts = Array.from(row.querySelectorAll<HTMLElement>("*")).filter(
+          (e) => !e.closest(".pointer-events-none"),
+        );
+        return {
+          row: row.dataset.branch ?? name?.textContent ?? "",
+          overflow: row.scrollWidth - row.clientWidth,
+          past: Math.max(...parts.map((e) => e.getBoundingClientRect().right)) - edge,
+          name: (name?.getBoundingClientRect().width ?? 0) - ch10,
+          folded: Array.from(row.querySelectorAll("[data-compact], [data-folded]")).map((e) =>
+            e.getAttribute("data-testid"),
+          ),
+        };
+      });
+    });
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    // Rows that run past the rail, cut their name short or overflow: none.
+    expect(JSON.stringify(rows.filter((r) => r.overflow > 1 || r.past > 0.5 || r.name < -0.5))).toBe("[]");
+    // The failed check shows its words whole or its icon alone, never cut.
+    const badge = $(
+      '[data-testid="worktree-row"][data-branch="tandem/tidy"] [data-testid="worktree-checks"]',
+    );
+    expect(["CI failed", ""]).toContain(String(await badge.getProperty("textContent")));
+    expect(await badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
   });
 });

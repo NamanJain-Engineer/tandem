@@ -1,25 +1,39 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { flushSync } from "react-dom";
 
-/** How many marks a rail row can fold, in the order they fold: the radar
- * mark (its symbol), then the checks badge (CI's state). */
-export const MARK_FOLDS = 2;
+/** What a worktree's rail row folds while its contents are wider than the
+ * row, in order (D-2700, D-2701): the preview's word (it says least), the
+ * radar mark's symbol, the checks badge's words, then the status words to
+ * their dot. */
+export const FOLDS = ["preview", "radar", "checks", "status"] as const;
+export type Fold = (typeof FOLDS)[number];
 
-/** D-2700: a rail row's marks show their words whole or not at all. While the
- * row's contents are wider than the row, one more mark folds to its icon:
- * the radar mark first, then the checks badge. `contents` names what the row
- * shows (its name, status, marks' words and count); when it changes, or the
- * row's width does (the rail is 180–360 px), nothing is folded and the row is
- * measured again, all before it's drawn. */
-export function useMarkFolds(contents: string): {
-  ref: RefObject<HTMLDivElement | null>;
+/** Whether `part` is folded once a row has folded `folds` parts. */
+export function folded(folds: number, part: Fold): boolean {
+  return folds > FOLDS.indexOf(part);
+}
+
+/** D-2700, D-2701: a rail row's parts show their words whole or not at all,
+ * and the row never runs past the rail. While the row's contents are wider
+ * than the row, one more part folds, up to `max`. `contents` names what the
+ * row shows (its name, status, marks' words and count); when it changes, or
+ * the row's width does, nothing is folded and the row is measured again, all
+ * before it's drawn. `row` finds the row from the element `ref` is on, for a
+ * part that folds inside a row it doesn't draw (a workspace row's status). */
+export function useMarkFolds<T extends HTMLElement = HTMLDivElement>(
+  contents: string,
+  max: number = FOLDS.length,
+  row?: (el: T) => HTMLElement | null,
+): {
+  ref: RefObject<T | null>;
   folds: number;
 } {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<T | null>(null);
   const [folds, setFolds] = useState(0);
   // A new width is measured even when nothing was folded: a render forces it.
   const [, setRound] = useState(0);
   const measured = useRef(contents);
+  const target = (): HTMLElement | null => (ref.current && row ? row(ref.current) : ref.current);
   useLayoutEffect(() => {
     if (measured.current !== contents) {
       measured.current = contents;
@@ -28,23 +42,24 @@ export function useMarkFolds(contents: string): {
         return;
       }
     }
-    const row = ref.current;
-    if (row && folds < MARK_FOLDS && row.scrollWidth > row.clientWidth + 1) setFolds(folds + 1);
+    const el = target();
+    if (el && folds < max && el.scrollWidth > el.clientWidth + 1) setFolds(folds + 1);
   });
   useLayoutEffect(() => {
-    const row = ref.current;
-    if (!row || typeof ResizeObserver === "undefined") return;
-    let width = row.clientWidth;
+    const el = target();
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let width = el.clientWidth;
     const observer = new ResizeObserver(() => {
-      if (row.clientWidth === width) return;
-      width = row.clientWidth;
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
       flushSync(() => {
         setFolds(0);
         setRound((n) => n + 1);
       });
     });
-    observer.observe(row);
+    observer.observe(el);
     return () => observer.disconnect();
+    // The row is the same element for the life of the part.
   }, []);
   return { ref, folds };
 }
