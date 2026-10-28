@@ -232,6 +232,15 @@ E2E lessons (each cost a debugging round):
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- A run's temp `TANDEM_HOME` (`/tmp/tandem-e2e-XXXXXX`, up to 810 MB with the
+  voice models) is deleted when the run passes. A failing run keeps it for its
+  logs, marked `e2e-failed` (the runner prints the path, and
+  `test-results/e2e-last-home` names it), and only the last 3 failed homes stay
+  (`e2e/support/homes.ts`). `TANDEM_E2E_KEEP_HOME=1` keeps a passing run's home,
+  for a grep after the run. Homes from before this rule carry no mark and are
+  never pruned: clearing them is the owner's call. The specs' own
+  `/tmp/tandem-e2e-<spec>-<time>` folders still stay behind (about 77 MB after
+  a thousand of them).
 - Conductor specs (`m16-1-*`) talk to `scripts/mock-realtime.ts` on :8794 (the runner
   starts it and starts the API with `REALTIME_MOCK_URL=ws://127.0.0.1:8794/realtime`;
   an API already running from elsewhere lacks it, so stop it first). The mock's

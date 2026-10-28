@@ -1,4 +1,5 @@
 import type { FileDiff, ThreadEvent } from "@tandem/protocol";
+import { MAIN, changedIn, diffsOf, grep, lineCount, testRun } from "./repo";
 
 /** One step of a simulated turn: an event after a pause, or a stop that
  * waits for the visitor to answer an approval. */
@@ -24,70 +25,19 @@ const tool = (
   ...extra,
 });
 
-/** The edit the simulated agent makes, as a unified diff. */
-export const CHECKOUT_PATCH = [
-  "diff --git a/src/checkout/redirect.ts b/src/checkout/redirect.ts",
-  "--- a/src/checkout/redirect.ts",
-  "+++ b/src/checkout/redirect.ts",
-  "@@ -12,7 +12,9 @@ export function nextStep(session: Session): string {",
-  "   if (!session.user) {",
-  "-    return `/login?next=${encodeURIComponent(session.path)}`;",
-  "+    // Don't send the login page back to itself.",
-  "+    const next = session.path.startsWith(\"/login\") ? \"/checkout\" : session.path;",
-  "+    return `/login?next=${encodeURIComponent(next)}`;",
-  "   }",
-  "   return session.cart.empty ? \"/cart\" : \"/checkout/pay\";",
-  " }",
-  "",
-].join("\n");
+/** The first thread's fix, in `shop` itself on main (`shop/thread/`):
+ * `getSession` renews a session that expired a moment ago, and its tests
+ * say so. */
+export const THREAD_CHANGES: FileDiff[] = diffsOf("thread");
 
-export const TEST_PATCH = [
-  "diff --git a/src/checkout/redirect.test.ts b/src/checkout/redirect.test.ts",
-  "--- a/src/checkout/redirect.test.ts",
-  "+++ b/src/checkout/redirect.test.ts",
-  "@@ -20,3 +20,9 @@ describe(\"nextStep\", () => {",
-  "     expect(nextStep(guest(\"/cart\"))).toBe(\"/login?next=%2Fcart\");",
-  "   });",
-  "+",
-  "+  it(\"never redirects the login page to itself\", () => {",
-  "+    expect(nextStep(guest(\"/login?next=%2Flogin\"))).toBe(\"/login?next=%2Fcheckout\");",
-  "+  });",
-  " });",
-  "",
-].join("\n");
+const SESSION = "src/auth/session.ts";
+const SESSION_TEST = "src/auth/session.test.ts";
+const patchOf = (path: string) => THREAD_CHANGES.find((f) => f.path === path)?.patch ?? "";
 
-/** What the Changes panel lists once the simulated fix is in. */
-export const DEMO_CHANGES: FileDiff[] = [
-  {
-    path: "src/checkout/redirect.test.ts",
-    change: "modified",
-    additions: 4,
-    deletions: 0,
-    binary: false,
-    patch: TEST_PATCH,
-    truncated: false,
-  },
-  {
-    path: "src/checkout/redirect.ts",
-    change: "modified",
-    additions: 3,
-    deletions: 1,
-    binary: false,
-    patch: CHECKOUT_PATCH,
-    truncated: false,
-  },
-];
-
-export const TEST_OUTPUT = [
-  "> shop@1.4.0 test",
-  "> vitest run src/checkout",
-  "",
-  " ✓ src/checkout/redirect.test.ts (4 tests) 12ms",
-  " ✓ src/checkout/cart.test.ts (9 tests) 31ms",
-  "",
-  " Test Files  2 passed (2)",
-  "      Tests  13 passed (13)",
-].join("\n");
+/** The command the fix asks to run, and what it prints once the fix is in. */
+export const TEST_COMMAND = "pnpm test auth";
+export const TEST_OUTPUT = testRun({ ...MAIN, ...changedIn("thread") }, "auth").join("\n");
+const TESTS_PASSED = /Tests {2}(\d+) passed/.exec(TEST_OUTPUT)?.[1] ?? "0";
 
 const usage = (input: number, output: number, fill: number): ThreadEvent => ({
   type: "usage",
@@ -107,25 +57,25 @@ export function fixTurn(approvalId: string, expiresAt: number): Step[] {
       wait: 500,
       event: {
         type: "reasoning",
-        text: "The loop starts when a guest lands on /login with next=/login: the guard sends them back to the login page it came from.",
+        text: "The loop starts when a session expires while another tab still holds its cookie: getSession drops it, checkout sends that tab to /login, and signing in again only fixes the tab you sign in from.",
         durationMs: 1800,
       },
     },
-    { wait: 600, event: tool("t1", "grep", "nextStep src/", "running") },
-    { wait: 500, event: tool("t1", "grep", "nextStep src/", "ok", { output: "src/checkout/redirect.ts:12\nsrc/checkout/redirect.test.ts:3" }) },
-    { wait: 300, event: tool("t2", "read", "src/checkout/redirect.ts", "running") },
-    { wait: 500, event: tool("t2", "read", "src/checkout/redirect.ts", "ok", { output: "(24 lines)" }) },
-    { wait: 700, event: tool("t3", "edit", "src/checkout/redirect.ts", "running") },
-    { wait: 500, event: tool("t3", "edit", "src/checkout/redirect.ts", "ok", { diff: CHECKOUT_PATCH }) },
-    { wait: 400, event: tool("t4", "edit", "src/checkout/redirect.test.ts", "running") },
-    { wait: 500, event: tool("t4", "edit", "src/checkout/redirect.test.ts", "ok", { diff: TEST_PATCH }) },
+    { wait: 600, event: tool("t1", "grep", "getSession src/", "running") },
+    { wait: 500, event: tool("t1", "grep", "getSession src/", "ok", { output: grep(MAIN, "getSession").join("\n") }) },
+    { wait: 300, event: tool("t2", "read", SESSION, "running") },
+    { wait: 500, event: tool("t2", "read", SESSION, "ok", { output: `(${lineCount(MAIN[SESSION] ?? "")} lines)` }) },
+    { wait: 700, event: tool("t3", "edit", SESSION, "running") },
+    { wait: 500, event: tool("t3", "edit", SESSION, "ok", { diff: patchOf(SESSION) }) },
+    { wait: 400, event: tool("t4", "edit", SESSION_TEST, "running") },
+    { wait: 500, event: tool("t4", "edit", SESSION_TEST, "ok", { diff: patchOf(SESSION_TEST) }) },
     {
       approval: {
         type: "approval_request",
         id: approvalId,
         kind: "command",
-        summary: "Run `npm test -- src/checkout`",
-        detail: "npm test -- src/checkout",
+        summary: `Run \`${TEST_COMMAND}\``,
+        detail: TEST_COMMAND,
         options: ["once", "thread"],
         expiresAt,
       },
@@ -136,8 +86,8 @@ export function fixTurn(approvalId: string, expiresAt: number): Step[] {
 /** After Allow: the tests run and the agent wraps up. */
 export function afterAllow(): Step[] {
   return [
-    { wait: 300, event: tool("t5", "bash", "npm test -- src/checkout", "running") },
-    { wait: 1400, event: tool("t5", "bash", "npm test -- src/checkout", "ok", { output: TEST_OUTPUT }) },
+    { wait: 300, event: tool("t5", "bash", TEST_COMMAND, "running") },
+    { wait: 1400, event: tool("t5", "bash", TEST_COMMAND, "ok", { output: TEST_OUTPUT }) },
     {
       wait: 600,
       event: {
@@ -145,9 +95,9 @@ export function afterAllow(): Step[] {
         markdown: [
           "Fixed the redirect loop.",
           "",
-          "- **Cause:** a guest on `/login?next=/login` was sent back to `/login`, forever.",
-          "- **Fix:** `nextStep` now sends them to `/checkout` instead (`src/checkout/redirect.ts`).",
-          "- **Test:** added *never redirects the login page to itself*; all 13 checkout tests pass.",
+          "- **Cause:** a session that expired while another tab still had its cookie was dropped, so checkout sent that tab to `/login`, again and again.",
+          `- **Fix:** \`getSession\` now renews a session that expired less than 15 minutes ago (\`${SESSION}\`).`,
+          `- **Tests:** \`${SESSION_TEST}\` covers the renewal now; all ${TESTS_PASSED} tests pass.`,
           "",
           "Open **Changes** to review the diff.",
         ].join("\n"),
@@ -164,8 +114,7 @@ export function afterDeny(): Step[] {
       wait: 500,
       event: {
         type: "assistant",
-        markdown:
-          "Understood, I won't run the tests. The fix is in `src/checkout/redirect.ts` with a new test beside it; run `npm test -- src/checkout` when you're ready.",
+        markdown: `Understood, I won't run the tests. The fix is in \`${SESSION}\`, with its tests in \`${SESSION_TEST}\`; run \`${TEST_COMMAND}\` when you're ready.`,
       },
     },
     { wait: 100, event: usage(16_900, 640, 8.4) },

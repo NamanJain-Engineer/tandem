@@ -62,6 +62,22 @@ release fails when its version has no section.
   previews, setup, second opinion, the intent radar and the git panel aren't
   available for jj workspaces yet.
 
+### Changed
+
+- [lin] **Claude Code threads summarise their edits too.** A finished Claude
+  Code turn says which files its edits changed, a subagent's and a
+  notebook's included, with the lines added and removed, and each edit's
+  row shows its own counts. When an edit's lines aren't known, the turn
+  lists its files without line counts rather than a partial total. An edit
+  that was refused or failed counts nothing, and files changed by shell
+  commands aren't counted.
+- [lin] **The rail's marks say it in a word.** A worktree's pull request
+  checks read as the status bar has them, CI running, CI passed or CI
+  failed, and hovering says which checks failed. The overlap mark shows the
+  symbol two worktrees share, such as `applyCoupon`. A row that's short of
+  room shows a mark's icon rather than cut its words, and a pane header's
+  branch gives way before the pane's title does.
+
 ### Fixed
 
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for

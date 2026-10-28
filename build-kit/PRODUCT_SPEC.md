@@ -1204,12 +1204,15 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - `note`: a muted status line. `error`: a red-tinted block with ⓘ, message, stage and action buttons.
 - **Streaming:** only the last block re-parses while streaming. Whitespace and code fences are preserved. Markdown parsing has a 50 ms time budget per frame; oversized or malformed input degrades to plain text instead of stalling.
 - A running indicator shows "Working for 5s" with elapsed time.
+- **Turn summary:** a finished turn that edited files or ran tests closes with one line, "Changed 2 files +14 −6 · 18 passed · 0 failed": the files it changed with the lines added and removed, and its last test run (D-2604). It comes only from the tool events the engine sent: the diffs Codex and ACP agents send, and, since Claude Code sends none, the patch its result carries or else the lines its Edit, MultiEdit and Write inputs describe (D-2608). Every tool that names the files it edited counts them, a notebook edit and a subagent's edits (on its Task) too; files a shell command changes aren't counted. A refused or failed edit counts nothing. Each successful edit's own row shows its "+n −m" too, read out as "n lines added, m removed". Where an edit can't say its lines (without the result's patch, a Write over an existing file or an Edit with `replace_all`; a notebook edit), its files count and the summary shows no line counts, never a partial total.
 - Virtualized list: threads with 5,000 events scroll at 60 fps.
 
 **Acceptance:**
 1. A 5,000-event thread renders, and scrolling to the top takes <100 ms per page (performance test).
 2. A 2 MB assistant message with unclosed fences renders without blocking input for >50 ms.
 3. Five consecutive tool calls render as "+4 tool calls" (latest visible).
+4. A Claude Code turn that changes two lines of one file with Edit, two more with a MultiEdit of another, and creates a third with a three-line Write closes with "Changed 3 files +7 −4"; each of those rows shows its own counts.
+5. An edit Claude Code was refused, or that failed, adds no file and no lines to the summary.
 
 #### F-TH-13 Changes panel and thread inspector (P1)
 **Behavior:**

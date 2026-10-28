@@ -122,6 +122,7 @@ mod tests {
             diff: None,
             detail: None,
             paths: None,
+            lines: None,
         }
     }
 

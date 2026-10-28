@@ -1,0 +1,12 @@
+{
+  "name": "shop",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 41003",
+    "build": "vite build",
+    "lint": "eslint src",
+    "test": "vitest run"
+  }
+}

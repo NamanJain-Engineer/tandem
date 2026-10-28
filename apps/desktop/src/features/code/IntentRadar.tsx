@@ -1,37 +1,56 @@
 import { useEffect } from "react";
+import { Radar } from "lucide-react";
 import type { WorkspaceSummary } from "@tandem/protocol";
-import { Badge, Button, useToast } from "@tandem/ui";
+import { Badge, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { listen } from "../../ipc/events";
 import { useDashboard } from "../../stores/dashboard";
 import { loadRadar, radarNote, useWorktrees } from "../../stores/worktrees";
 import { worktreeAgents } from "./WorktreeReview";
+import { useWorkspaceStatus } from "./workspaceStatus";
 
 type Side = { laneId: string; branch: string | null };
 type Overlap = { a: Side; b: Side; symbols: string[] };
 
 /** The rail row's radar mark (F-WT-10): what the worktree shares with a
- * sibling; it opens Check overlap. */
-export function RadarMark({ wt }: { wt: WorkspaceSummary }) {
+ * sibling; it opens Check overlap. Its words are the symbol, in code type and
+ * cut at its end if it's long, or how many there are (D-2700); its name says
+ * what it shares, and its title every symbol. Beside the row's status ("● 1
+ * working", "Needs you", "Failed"), or when the row folds it, it's the radar
+ * alone, so the row's name keeps its room (D-2603, D-2611, D-2613). */
+export function RadarMark({ wt, fold = false }: { wt: WorkspaceSummary; fold?: boolean }) {
   const symbols = useWorktrees((s) => s.radar[wt.id]);
+  const status = useWorkspaceStatus(wt);
   if (!symbols || symbols.length === 0) return null;
-  const label =
-    symbols.length === 1
-      ? t("radar.mark.one", { symbol: symbols[0] })
-      : t("radar.mark.many", { n: symbols.length });
+  const one = symbols.length === 1 ? symbols[0] : undefined;
+  const compact = fold || status.waiting || status.working > 0 || status.failed;
   return (
-    <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className="shrink-0">
-      <Button
-        size="sm"
-        variant="ghost"
-        data-testid="worktree-radar"
-        title={symbols.join(", ")}
-        onClick={() => useWorktrees.getState().open({ kind: "overlap", worktreeId: wt.id })}
-      >
-        <Badge variant="waiting">{label}</Badge>
-      </Button>
-    </span>
+    <button
+      type="button"
+      data-testid="worktree-radar"
+      data-compact={compact ? "" : undefined}
+      aria-label={one ? t("radar.mark.one", { symbol: one }) : t("radar.mark.many", { n: symbols.length })}
+      title={t("radar.mark.title", { symbols: symbols.join(", ") })}
+      onClick={(e) => {
+        e.stopPropagation();
+        useWorktrees.getState().open({ kind: "overlap", worktreeId: wt.id });
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="flex shrink-0 rounded-xs focus-visible:shadow-focus focus-visible:outline-none"
+    >
+      <Badge variant="waiting" className="whitespace-nowrap">
+        <Radar size={10} aria-hidden="true" className="shrink-0" />
+        {!compact &&
+          (one ? (
+            <span data-words="" className="max-w-[16ch] truncate font-mono">
+              {one}
+            </span>
+          ) : (
+            <span data-words="">{t("radar.mark.count", { n: symbols.length })}</span>
+          ))}
+      </Badge>
+    </button>
   );
 }
 

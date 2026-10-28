@@ -1,0 +1,9 @@
+/** A cookie's value from the request, if it has one. */
+export function readCookie(req: Request, name: string): string | null {
+  const header = req.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const [key, ...value] = part.trim().split("=");
+    if (key === name) return value.join("=");
+  }
+  return null;
+}

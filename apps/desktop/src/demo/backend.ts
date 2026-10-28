@@ -12,6 +12,7 @@ import type {
   EngineSpec,
   EngineView,
   EntitlementView,
+  FileContext,
   FileText,
   LayoutNode,
   ModelEntry,
@@ -29,7 +30,11 @@ import type {
   ThreadEventPage,
   ThreadsChanged,
   PlanTask,
+  OverlapReport,
+  RadarMark,
   SaveIssue,
+  SharedSymbol,
+  SiblingOverlap,
   Turn,
   WorkspaceSummary,
 } from "@tandem/protocol";
@@ -38,7 +43,7 @@ import { emitLocal } from "../ipc/events";
 import { setInvokeBackend } from "../ipc/invoke";
 import { FrameKind, encodeFrame, type FrameChannel } from "../ipc/pty";
 import {
-  DEMO_CHANGES,
+  THREAD_CHANGES,
   afterAllow,
   afterDeny,
   chatTurn,
@@ -47,20 +52,23 @@ import {
   planTurn,
   type Step,
 } from "./agent";
-import { DemoFiles, NO_GIT } from "./files";
+import { DemoChecks, fenceDefanged, untrustedLabel } from "./ci";
+import { DemoFiles, NO_GIT, type CheckoutSeed } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
+import { DemoLanding } from "./landing";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
-import { DemoShell, agentScreen } from "./shell";
+import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
+import { STORY, branchOf, engineLabel, worktree, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
+import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
 import { version } from "../../package.json";
 
 type Args = Record<string, unknown> | undefined;
 
+/** The sample repository's workspace and tab (`story.json`, D-2609). */
 const WS = "ws_demo";
 const TAB = "tb_demo";
-const WS_API = "ws_api";
-const WS_DOCS = "ws_docs";
 
 /** Messages a visit can send, and their length (the page's limits). */
 export const DEMO_MESSAGE_LIMIT = 12;
@@ -246,13 +254,17 @@ function demoTeammates(now: number): TeammateSummary[] {
   ];
 }
 
-const ENGINES: EngineView[] = [
-  ["claude", "Claude Code", "Anthropic", "C", "claude", "2.1.0"],
-  ["codex", "Codex", "OpenAI", "X", "codex", "0.46.0"],
-  ["gemini", "Gemini CLI", "Google", "G", null, "0.9.0"],
-].map(([id, label, vendor, logo, adapter, version]) => ({
-  spec: spec(id ?? "", label ?? "", vendor ?? "", logo ?? "", adapter ?? null),
-  install: { path: `/usr/local/bin/${id}`, version: version ?? null, source: "shell" },
+/** The engines the demo has "installed": their names and sample versions
+ * come from the story (D-2609), the rest from the registry. */
+const ENGINES: EngineView[] = (
+  [
+    ["claude", "Anthropic", "C", "claude"],
+    ["codex", "OpenAI", "X", "codex"],
+    ["gemini", "Google", "G", null],
+  ] satisfies Array<[string, string, string, string | null]>
+).map(([id, vendor, logo, adapter]) => ({
+  spec: spec(id, engineLabel(id), vendor, logo, adapter),
+  install: { path: `/usr/local/bin/${id}`, version: STORY.engines[id]?.version ?? null, source: "shell" },
   chatCapable: adapter !== null,
   unsupportedReason: null,
   extraArgs: [],
@@ -302,62 +314,35 @@ const MODELS: Record<string, ModelEntry[]> = {
   ],
 };
 
-const TAB_RECORD: Tab = { id: TAB, workspaceId: WS, name: "checkout", sortKey: "a0", createdAt: START };
+/** A worktree's workspace and tab ids. */
+const wsOf = (slug: string) => `ws_${slug.replace(/-/g, "_")}`;
+const tabOf = (slug: string) => `tb_${slug.replace(/-/g, "_")}`;
+const ROOT = `/home/you/${STORY.repo}`;
+/** Where the core puts a worktree: `<repo>/.tandem/worktrees/<slug>`. */
+const rootOf = (slug: string) => `${ROOT}/.tandem/worktrees/${slug}`;
+
+/** Each worktree has a tab of its own, as `lanes::create` makes it. */
 const TABS: Tab[] = [
-  TAB_RECORD,
-  { id: "tb_api", workspaceId: WS_API, name: "docs", sortKey: "a0", createdAt: START },
-  { id: "tb_docs", workspaceId: WS_DOCS, name: "main", sortKey: "a0", createdAt: START },
+  { id: TAB, workspaceId: WS, name: "Tab 1", sortKey: "a0", createdAt: START },
+  ...STORY.worktrees.map(
+    (w): Tab => ({ id: tabOf(w.slug), workspaceId: wsOf(w.slug), name: "Tab 1", sortKey: "a0", createdAt: START }),
+  ),
 ];
 
-function workspace(
-  id: string,
-  name: string,
-  branch: string,
-  liveCount: number,
-  sortKey: string,
-): WorkspaceSummary {
+/** Each worktree's agent pane, named for the engine (one engine a worktree). */
+const AGENT_PANE: Record<string, string> = { claude: "pn_claude", codex: "pn_codex", gemini: "pn_gemini" };
+const agentPane = (w: StoryWorktree) => AGENT_PANE[w.engine] ?? `pn_${w.engine}`;
+const WORKING = worktreeIn("working");
+const WAITING = worktreeIn("waiting");
+
+/** A pane as the core keeps it; an agent pane has its first name (F-CD-12). */
+function pane(id: string, kind: string, engineId: string | null, slug: string, humanName: string | null = null): PaneRecord {
   return {
     id,
-    kind: "local",
-    hostId: "local",
-    root: `/home/you/${name}`,
-    wslDistro: null,
-    name,
-    parentId: null,
-    laneBranch: null,
-    laneBase: null,
-    sortKey,
-    pinned: false,
-    collapsed: false,
-    sessionsCollapsed: false,
-    createdAt: START,
-    missing: false,
-    branch,
-    liveCount,
-    tabs: TABS.filter((t) => t.workspaceId === id),
-  };
-}
-
-const WORKSPACE = workspace(WS, "shop", "main", 3, "a0");
-const WORKSPACES: WorkspaceSummary[] = [
-  WORKSPACE,
-  workspace(WS_API, "api", "main", 1, "a1"),
-  workspace(WS_DOCS, "docs-site", "main", 0, "a2"),
-];
-
-function pane(
-  id: string,
-  kind: string,
-  engineId: string | null,
-  humanName: string | null,
-  ws = WORKSPACE,
-): PaneRecord {
-  return {
-    id,
-    tabId: ws.tabs[0]?.id ?? TAB,
-    workspaceId: ws.id,
+    tabId: tabOf(slug),
+    workspaceId: wsOf(slug),
     kind,
-    cwd: ws.root,
+    cwd: rootOf(slug),
     engineId,
     accountId: null,
     humanName,
@@ -368,83 +353,164 @@ function pane(
   };
 }
 
-const API_WS = WORKSPACES[1] ?? WORKSPACE;
+/** The story's three agents, each in its own worktree, and a shell beside
+ * the working one (D-1899: worktree agents never share a grid). */
+const PANES: PaneRecord[] = [
+  ...STORY.worktrees.map((w) => pane(agentPane(w), "agent", w.engine, w.slug, w.agentName)),
+  pane("pn_shell", "terminal", null, WORKING.slug),
+];
+
+function workspace(
+  id: string,
+  name: string,
+  root: string,
+  branch: string,
+  sortKey: string,
+  lane: { parentId: string; base: string } | null = null,
+): WorkspaceSummary {
+  return {
+    id,
+    kind: "local",
+    hostId: "local",
+    root,
+    wslDistro: null,
+    name,
+    parentId: lane?.parentId ?? null,
+    laneBranch: lane ? branch : null,
+    laneBase: lane?.base ?? null,
+    sortKey,
+    pinned: false,
+    collapsed: false,
+    sessionsCollapsed: false,
+    createdAt: START,
+    missing: false,
+    branch,
+    liveCount: PANES.filter((p) => p.workspaceId === id).length,
+    tabs: TABS.filter((t) => t.workspaceId === id),
+  };
+}
+
+/** One repository and its worktrees, nothing else (D-1899). */
+const WORKSPACE = workspace(WS, STORY.repo, ROOT, STORY.base, "a0");
+const WORKSPACES: WorkspaceSummary[] = [
+  WORKSPACE,
+  ...STORY.worktrees.map((w, i) =>
+    workspace(wsOf(w.slug), w.slug, rootOf(w.slug), branchOf(w.slug), `a${i + 1}`, {
+      parentId: WS,
+      base: STORY.base,
+    }),
+  ),
+];
+
+/** Each checkout of the sample repository (repo.ts): `shop` on main, and
+ * each worktree on its branch. A finished agent's changes are committed; a
+ * working or waiting agent's aren't yet. */
+const CHECKOUTS: CheckoutSeed[] = [
+  { id: WS, root: ROOT, branch: STORY.base, committed: {}, uncommitted: {} },
+  ...STORY.worktrees.map(
+    (w): CheckoutSeed => ({
+      id: wsOf(w.slug),
+      root: rootOf(w.slug),
+      branch: branchOf(w.slug),
+      committed: w.state === "done" ? changedIn(w.slug) : {},
+      uncommitted: w.state === "done" ? {} : changedIn(w.slug),
+    }),
+  ),
+];
+
+/** The worktree Code mode opens on: the working agent's, for the motion. */
+export const DEMO_ACTIVE = wsOf(WORKING.slug);
+
+/** Every worktree's workspace, in the rail's order. */
+export const DEMO_WORKTREES = STORY.worktrees.map((w) => wsOf(w.slug));
 
 /** The agent waiting on the visitor when the demo opens, for the coach's
  * first hint (DESIGN §5.2.2). */
-export const DEMO_WAITING = { workspaceId: API_WS.id, root: API_WS.root, paneId: "pn_gemini", engine: "Gemini CLI" };
-
-/** Four live panes, as a busy morning might have. */
-const PANES: PaneRecord[] = [
-  pane("pn_claude", "agent", "claude", "Fixer"),
-  pane("pn_codex", "agent", "codex", "Reviewer"),
-  pane("pn_shell", "terminal", null, null),
-  pane("pn_gemini", "agent", "gemini", "Docs", API_WS),
-];
-
-const TREE: LayoutNode = {
-  type: "split",
-  dir: "row",
-  ratio: 0.55,
-  a: { type: "leaf", paneId: "pn_claude" },
-  b: {
-    type: "split",
-    dir: "col",
-    ratio: 0.5,
-    a: { type: "leaf", paneId: "pn_codex" },
-    b: { type: "leaf", paneId: "pn_shell" },
-  },
+export const DEMO_WAITING = {
+  workspaceId: wsOf(WAITING.slug),
+  branch: branchOf(WAITING.slug),
+  /** Its repository's rail row, which holds it. */
+  repoRoot: ROOT,
+  paneId: agentPane(WAITING),
+  engine: engineLabel(WAITING.engine),
 };
 
 function layoutOf(workspaceId: unknown): TabLayout[] {
   const tab = TABS.find((t) => t.workspaceId === workspaceId);
   if (!tab) return [];
-  if (tab.id === TAB) return [{ tab, tree: TREE, activePaneId: "pn_claude", maximizedPaneId: null }];
-  if (tab.id === "tb_api")
-    return [
-      { tab, tree: { type: "leaf", paneId: "pn_gemini" }, activePaneId: "pn_gemini", maximizedPaneId: null },
-    ];
-  return [{ tab, tree: null, activePaneId: null, maximizedPaneId: null }];
+  const panes = PANES.filter((p) => p.tabId === tab.id);
+  const [first, second] = panes;
+  const tree: LayoutNode | null = !first
+    ? null
+    : second
+      ? { type: "split", dir: "row", ratio: 0.6, a: { type: "leaf", paneId: first.id }, b: { type: "leaf", paneId: second.id } }
+      : { type: "leaf", paneId: first.id };
+  return [{ tab, tree, activePaneId: first?.id ?? null, maximizedPaneId: null }];
 }
 
-const AGENT_SCREENS: Record<string, string> = {
-  pn_claude: agentScreen("Claude Code", "Fix the redirect loop after login", [
-    "● Read src/checkout/redirect.ts",
-    "● Update src/checkout/redirect.ts (+3 -1)",
-    "● Bash npm test -- src/checkout",
-    "  ✓ 13 tests passed",
-    "",
-    "The loop came from sending /login back to itself. Fixed, with a test.",
-  ]),
-  pn_codex: agentScreen("Codex", "Review the open diff for edge cases", [
-    "• Reading the diff in src/checkout…",
-    "• Checking callers of nextStep()",
-    "",
-    "Working…",
-  ]),
-  pn_gemini: agentScreen("Gemini CLI", "Update the API docs for the new rate limit", [
-    "✦ Read docs/orders.md",
-    '✦ Drafted the "Rate limits" section (20 requests a minute per user)',
-    "",
-    "Allow running npm run docs:build? (y/n)",
-  ]),
+/** "Send failure to agent" as the agent's input shows it: the prompt's
+ * first line, and what follows it summed up (the log is long). */
+function ciEcho(pr: number): string {
+  const log = STORY.pr.checks.find((c) => c.bucket === "fail")?.log?.length ?? 0;
+  return `\n> A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\x1b[2m  (Then the check's name, its link and its log's last ${log} lines, behind an untrusted label.)\x1b[0m\n\n`;
+}
+
+/** What a story step looks like in each engine's terminal. */
+const STYLE: Record<string, { mark: string; read: string; edit: string; run: string }> = {
+  claude: { mark: "●", read: "Read", edit: "Update", run: "Bash" },
+  codex: { mark: "•", read: "Reading", edit: "Editing", run: "Running" },
+  gemini: { mark: "✦", read: "Read", edit: "Edit", run: "Shell" },
 };
 
-const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = {
-  pn_claude: {
-    status: "done",
-    title: "Fix the redirect loop after login",
-    preview: "Fixed, with a test. 13 tests pass.",
-  },
-  pn_codex: { status: "working", title: "Review the open diff", preview: "Checking callers of nextStep()" },
-  pn_gemini: {
-    status: "waiting",
-    title: "Update the API docs",
-    preview: "Allow running npm run docs:build?",
-  },
-};
+/** An agent's still frame from its story: what it read, edited and ran,
+ * then where it is now (done, working, or asking). */
+function screenOf(w: StoryWorktree): string {
+  const st = STYLE[w.engine] ?? { mark: "•", read: "Read", edit: "Edit", run: "Run" };
+  const lines: string[] = [];
+  for (const step of w.steps) {
+    if ("read" in step) lines.push(`${st.mark} ${st.read} ${step.read}`);
+    else if ("edit" in step) lines.push(`${st.mark} ${st.edit} ${step.edit} (+${step.add} -${step.del})`);
+    else {
+      lines.push(`${st.mark} ${st.run} ${step.run}`);
+      if (step.passed !== undefined) lines.push(`  ✓ ${step.passed} tests passed`);
+    }
+  }
+  lines.push("");
+  if (w.state === "done") lines.push(w.closing ?? "Done.");
+  else if (w.state === "waiting") lines.push(`Allow running ${w.ask ?? ""}? (y/n)`);
+  else lines.push("Working…");
+  return agentScreen(engineLabel(w.engine), w.task, lines);
+}
 
-type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null };
+const AGENT_SCREENS: Record<string, string> = Object.fromEntries(
+  STORY.worktrees.map((w) => [agentPane(w), screenOf(w)]),
+);
+
+/** The Dashboard's line for each agent: done with its closing words,
+ * running its last command, or asking to run one. */
+function previewOf(w: StoryWorktree): string {
+  if (w.state === "done") return w.closing ?? "Done.";
+  if (w.state === "waiting") return `Allow running ${w.ask ?? ""}?`;
+  const run = [...w.steps].reverse().find((s): s is { run: string } => "run" in s);
+  return run ? `Running ${run.run}` : "Working";
+}
+
+const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = Object.fromEntries(
+  STORY.worktrees.map((w) => [agentPane(w), { status: w.state, title: w.task, preview: previewOf(w) }]),
+);
+
+type Pty = {
+  channel: FrameChannel;
+  seq: number;
+  screen: string;
+  shell: DemoShell | null;
+  typed?: string;
+  /** Its terminal's width, once the pane has said (pty_resize). */
+  cols?: number;
+  /** An agent's text before it's wrapped, which its terminal UI draws again
+   * at each new width. */
+  logical?: string;
+};
 
 type DemoThread = {
   thread: Thread;
@@ -454,6 +520,8 @@ type DemoThread = {
   running: string | null;
   /** Steps waiting on the visitor's answer. */
   awaiting: { approvalId: string; turnId: string } | null;
+  /** The turn that makes the demo's fix, and whether its edits are in. */
+  fixTurn: string | null;
   fixed: boolean;
   divider: string | null;
   /** The composer's draft (`{text, attachmentIds}` JSON). */
@@ -474,20 +542,86 @@ function base64(text: string): string {
   return btoa(bin);
 }
 
+const DONE = worktreeIn("done");
+/** The worktree with the pull request (F-WT-08). */
+const PR_LANE = wsOf(STORY.pr.worktree);
+
+/** The finished agent's work, as the review queue holds it (F-DB-04). */
+const REVIEW_SEED = {
+  ws: { id: wsOf(DONE.slug), name: DONE.slug },
+  repo: { root: ROOT, check: STORY.check },
+  branch: branchOf(DONE.slug),
+  paneId: agentPane(DONE),
+  // The core titles an item with its pane's first name (review_queue.rs).
+  title: DONE.agentName,
+  engine: DONE.engine,
+  closing: DONE.closing ?? "",
+  files: diffsOf(DONE.slug),
+  checkOutput: testRun({ ...MAIN, ...changedIn(DONE.slug) }).join("\n"),
+};
+
 /** The simulated core. One per page. */
 export class DemoCore {
   private ptys = new Map<string, Pty>();
   private threads = new Map<string, DemoThread>();
-  private settings: Record<string, unknown> = { theme: "dark" };
-  /** The Files tab's made-up project (in memory). */
-  readonly files = new DemoFiles();
+  /** The rail starts a little wider than its default (a width anyone can
+   * drag to), so each worktree's name shows in full beside its status. */
+  private settings: Record<string, unknown> = { theme: "dark", rail_width: 280 };
+  /** The sample repository's checkouts, for Files, git and the shell (in memory). */
+  readonly files = new DemoFiles(CHECKOUTS);
   readonly notes = new DemoNotes();
   /** The Tasks tab, kept in the page (F-TK-03). */
   readonly tasks = new DemoTasks();
   /** Plan with Lead (F-TK-06), simulated. */
   readonly plans = new DemoPlans(this.tasks, (ms, fn) => this.later(ms, fn));
-  /** The review queue (F-DB-04): Claude Code's finished fix in `shop`. */
-  private readonly review = new DemoReview(WORKSPACE, "pn_claude");
+  /** The review queue (F-DB-04): the finished agent's work in its worktree. */
+  private readonly review = new DemoReview(REVIEW_SEED);
+  /** Each agent pane's state; the waiting one can finish in the page. */
+  private status: Record<string, (typeof STATUS)[string]> = structuredClone(STATUS);
+  private since: Record<string, number> = {};
+  /** Worktrees whose agent has committed its work: the finished ones, then
+   * any that finish here. */
+  private committed = new Set(STORY.worktrees.filter((w) => w.state === "done").map((w) => w.slug));
+  /** Commits made here, by worktree, newest first (the CI fix), and how
+   * many of them are pushed. */
+  private madeHere: Record<string, StoryCommit[]> = {};
+  private pushedHere: Record<string, number> = {};
+  /** Worktrees landed in main, and main's commits, newest first. */
+  private landed = new Set<string>();
+  private mainLog: StoryCommit[] = [...STORY.history];
+  /** main as each landing found it, by its commit, for Undo landing. */
+  private beforeLanding = new Map<string, { head: Map<string, string>; log: StoryCommit[]; landed: Set<string> }>();
+  /** Land worktrees (F-WT-07), on this repository's checkouts. */
+  private readonly landing = new DemoLanding(
+    {
+      repoId: WS,
+      repoName: STORY.repo,
+      base: STORY.base,
+      head: () => this.mainLog[0]?.sha ?? "",
+      dirty: (id) => this.files.dirty(id),
+      lanes: () =>
+        STORY.worktrees
+          .filter((w) => this.committed.has(w.slug) && !this.landed.has(w.slug))
+          .map((w) => ({ id: wsOf(w.slug), branch: branchOf(w.slug), ahead: this.commitsOf(w.slug).length })),
+      check: (id, command) => this.check(id, command),
+      land: (id) => this.land(id),
+      undo: (before) => this.undoLanding(before),
+    },
+    (ms, fn) => this.later(ms, fn),
+    // Used here before, by a landing since undone: Undo keeps the check.
+    STORY.check,
+  );
+  /** A worktree's checks changed: the page's rail reads them again, as
+   * the app's polling would within two minutes (main.tsx). */
+  onChecks: (laneId: string) => void = () => undefined;
+  /** The pull request's checks and review comments (F-WT-08). */
+  private readonly ci = new DemoChecks(
+    PR_LANE,
+    (ms, fn) => this.later(ms, fn),
+    (id) => this.onChecks(id),
+  );
+  /** Whether checkout-fix's agent has fixed what CI found. */
+  private ciFixed = false;
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -547,6 +681,7 @@ export class DemoCore {
       channels: new Set(),
       running: null,
       awaiting: null,
+      fixTurn: null,
       fixed: false,
       divider: null,
       draft: "{}",
@@ -556,71 +691,43 @@ export class DemoCore {
     return t;
   }
 
-  /** A finished thread to look at, and an empty one to try. */
+  /** Two finished threads to look at, whose work is in main's history,
+   * and an empty one to try. */
   private seed(): void {
-    const done = this.newThread("Add rate limiting to the API", "codex", WS, START);
-    const turn = this.startTurn(
-      done,
-      "Add rate limiting to POST /api/orders: 20 requests a minute per user.",
-    );
+    const tool = (id: string, verb: Extract<ThreadEvent, { type: "tool" }>["verb"], argSummary: string, extra: Partial<Extract<ThreadEvent, { type: "tool" }>> = {}): ThreadEvent => ({
+      type: "tool",
+      id,
+      verb,
+      argSummary,
+      status: "ok",
+      output: null,
+      outputTruncated: false,
+      outputFile: null,
+      diff: null,
+      detail: null,
+      ...extra,
+    });
+    const before = changedIn("before");
+    const diff = (path: string) => fileDiff(path, before[path] ?? null, MAIN[path] ?? "").patch;
+
+    const CART = "src/cart/cart.ts";
+    const CART_TEST = "src/cart/cart.test.ts";
+    const done = this.newThread("Show the cart's total before checkout", "codex", WS, START);
+    const turn = this.startTurn(done, "The cart page should show the total before checkout. Add it to the cart, with tests.");
+    const run = testRun({ [CART_TEST]: MAIN[CART_TEST] ?? "" }, "src/cart/cart");
     const steps: ThreadEvent[] = [
       {
         type: "reasoning",
-        text: "There's already a token bucket in src/api/limits.ts; reuse it rather than adding a dependency.",
+        text: "The cart has its items and prices but nothing adds them up. A subtotal beside the Cart type can serve the cart page and checkout both.",
         durationMs: 2400,
       },
-      {
-        type: "tool",
-        id: "s1",
-        verb: "read",
-        argSummary: "src/api/limits.ts",
-        status: "ok",
-        output: "(48 lines)",
-        outputTruncated: false,
-        outputFile: null,
-        diff: null,
-        detail: null,
-      },
-      {
-        type: "tool",
-        id: "s2",
-        verb: "edit",
-        argSummary: "src/api/orders.ts",
-        status: "ok",
-        output: null,
-        outputTruncated: false,
-        outputFile: null,
-        diff: null,
-        detail: null,
-      },
-      {
-        type: "tool",
-        id: "s3",
-        verb: "write",
-        argSummary: "src/api/rate-limit.test.ts",
-        status: "ok",
-        output: null,
-        outputTruncated: false,
-        outputFile: null,
-        diff: null,
-        detail: null,
-      },
-      {
-        type: "tool",
-        id: "s4",
-        verb: "bash",
-        argSummary: "npm test -- src/api",
-        status: "ok",
-        output: "Tests  6 passed (6)",
-        outputTruncated: false,
-        outputFile: null,
-        diff: null,
-        detail: null,
-      },
+      tool("s1", "read", CART, { output: `(${lineCount(before[CART] ?? "")} lines)` }),
+      tool("s2", "edit", CART, { diff: diff(CART) }),
+      tool("s3", "write", CART_TEST, { diff: diff(CART_TEST) }),
+      tool("s4", "bash", "pnpm test src/cart/cart", { output: run.join("\n") }),
       {
         type: "assistant",
-        markdown:
-          "Added a per-user limit of **20 requests a minute** to `POST /api/orders`, reusing the token bucket in `src/api/limits.ts`. Over the limit, the API answers `429` with a `Retry-After` header.\n\nSix new tests cover the limit, the reset and the header.",
+        markdown: `Added \`subtotal\` to \`${CART}\`: the items' total in cents, which the cart page shows before checkout. ${testsIn(MAIN[CART_TEST] ?? "")} tests in \`${CART_TEST}\` cover it.`,
       },
       {
         type: "usage",
@@ -638,45 +745,24 @@ export class DemoCore {
     done.thread.updatedAt = START + 20 * 60_000;
 
     // A thread moved from Claude Code to Codex (F-TH-16).
+    const QUERY = "src/search/query.ts";
+    const slow = (before[QUERY] ?? "").split("\n").findIndex((l) => l.includes("db.all")) + 1;
     const moved = this.newThread("Speed up the product search", "claude", WS, START + 30_000);
     const first = this.startTurn(moved, "Product search takes two seconds. Find the slow part.");
-    this.push(moved, first, {
-      type: "tool",
-      id: "m1",
-      verb: "read",
-      argSummary: "src/search/query.ts",
-      status: "ok",
-      output: "(61 lines)",
-      outputTruncated: false,
-      outputFile: null,
-      diff: null,
-      detail: null,
-    });
+    this.push(moved, first, tool("m1", "read", QUERY, { output: `(${lineCount(before[QUERY] ?? "")} lines)` }));
     this.push(moved, first, {
       type: "assistant",
-      markdown:
-        "The search loads every product and filters in memory (`src/search/query.ts`, line 18). A `LIKE` query with an index on `name` would let the database do it.",
+      markdown: `The search loads every product and filters them in memory (\`${QUERY}\`, line ${slow}). Asking the database for names that start with the text would let it use its index on \`name\`.`,
     });
     this.endTurn(moved, first, "completed");
     moved.thread.engineId = "codex";
     moved.divider = "Continued on Codex (Default) with a summary";
     const second = this.startTurn(moved, "Make that change and measure it.");
-    this.push(moved, second, {
-      type: "tool",
-      id: "m2",
-      verb: "edit",
-      argSummary: "src/search/query.ts",
-      status: "ok",
-      output: null,
-      outputTruncated: false,
-      outputFile: null,
-      diff: null,
-      detail: null,
-    });
+    this.push(moved, second, tool("m2", "edit", QUERY, { diff: diff(QUERY) }));
     this.push(moved, second, {
       type: "assistant",
       markdown:
-        "Search now filters in the database with an index on `name`. The same query takes **40 ms** instead of two seconds on the sample data.",
+        "Search now asks the database for names that start with the text, so it uses the index on `name`. The same query takes **40 ms** instead of two seconds on the sample data.",
     });
     this.endTurn(moved, second, "completed");
     moved.thread.updatedAt = START + 35 * 60_000;
@@ -763,6 +849,8 @@ export class DemoCore {
       return this.endTurn(t, turnId, "completed");
     }
     if ("approval" in step) {
+      // The fix's edits are in the folder by the time it asks to run the tests.
+      if (t.fixTurn === turnId) this.applyFix(t);
       t.awaiting = { approvalId: step.approval.id, turnId };
       t.thread.state = "waiting";
       this.push(t, turnId, step.approval);
@@ -774,6 +862,317 @@ export class DemoCore {
       this.push(t, turnId, step.event);
       this.play(t, turnId, rest, atEnd);
     });
+  }
+
+  private record(paneId: string): StatusRecord {
+    const s = this.status[paneId];
+    const at = this.since[paneId] ?? START;
+    return {
+      key: `pane:${paneId}`,
+      status: s?.status ?? "idle",
+      reason: null,
+      since: at,
+      ts: at,
+      tool: null,
+      title: s?.title ?? null,
+      preview: s?.preview ?? null,
+    };
+  }
+
+  /** Every file in a checkout now, by path. */
+  private filesOf(id: string): Record<string, string> {
+    return Object.fromEntries(this.files.paths(id).map((p) => [p, this.files.text(id, p) ?? ""]));
+  }
+
+  /** A landing's check in a worktree, with main merged in: the demo runs
+   * `pnpm test` (with or without a filter) and nothing else. */
+  private check(id: string, command: string): { output: string } | { refused: string } {
+    const run = /^(?:pnpm|npm) (?:run )?test(?: (\S+))?$/.exec(command.trim());
+    if (!run) {
+      return {
+        refused: `The demo can run only ${STORY.check} as a check. In Vibezeo the check runs in each worktree's folder, whatever it is.`,
+      };
+    }
+    return { output: testRun({ ...Object.fromEntries(this.files.head(WS)), ...this.filesOf(id) }, run[1] ?? "").join("\n") };
+  }
+
+  /** Lands a worktree: main is merged into it, then it into main, as its
+   * merge commit. The worktrees keep main merged into them. */
+  private land(id: string): string {
+    const w = STORY.worktrees.find((x) => wsOf(x.slug) === id);
+    if (!w) throw { code: "not_found", message: "That worktree isn't in this repository" };
+    const head = this.mainLog[0]?.sha ?? "";
+    if (!this.beforeLanding.has(head))
+      this.beforeLanding.set(head, { head: this.files.head(WS), log: [...this.mainLog], landed: new Set(this.landed) });
+    const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
+    this.files.setHead(id, merged);
+    this.files.setHead(WS, merged);
+    this.mainLog = [{ sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` }, ...this.commitsOf(w.slug), ...this.mainLog];
+    this.landed.add(w.slug);
+    return w.mergeCommit;
+  }
+
+  /** A worktree's commits, newest first: its story's, then any made here. */
+  private commitsOf(slug: string): StoryCommit[] {
+    return [...(this.madeHere[slug] ?? []), ...(STORY.worktrees.find((w) => w.slug === slug)?.commits ?? [])];
+  }
+
+  /** Send failure to agent in the pull request's worktree (F-WT-08): its
+   * agent reads the failing test file, fixes it, runs every test and
+   * commits. The commit waits for a push; the checks run again after it. */
+  private fixCi(pty: Pty, paneId: string): void {
+    const w = worktree(STORY.pr.worktree);
+    const { fix, number } = STORY.pr;
+    const st = STYLE[w.engine] ?? { mark: "•", read: "Read", edit: "Edit", run: "Run" };
+    const id = wsOf(w.slug);
+    this.ciFixed = true;
+    this.say(pty, ciEcho(number));
+    this.setStatus(paneId, "working", "Working");
+    let at = 0;
+    for (const step of fix.steps) {
+      if ("read" in step) {
+        at += 700;
+        this.later(at, () => this.say(pty, `${st.mark} ${st.read} ${step.read}\n`));
+      } else if ("edit" in step) {
+        at += 900;
+        this.later(at, () => {
+          this.say(pty, `${st.mark} ${st.edit} ${step.edit} (+${step.add} -${step.del})\n`);
+          this.files.edit(id, step.edit, changedIn("ci-fix")[step.edit] ?? "");
+        });
+      } else {
+        at += 700;
+        this.later(at, () => {
+          this.say(pty, `${st.mark} ${st.run} ${step.run}\n`);
+          this.setStatus(paneId, "working", `Running ${step.run}`);
+        });
+        at += 1400;
+        this.later(at, () => {
+          const passed = /Tests {2}(\d+) passed/.exec(testRun(this.filesOf(id)).at(-1) ?? "")?.[1] ?? "0";
+          this.say(pty, `  ✓ ${passed} tests passed\n`);
+        });
+      }
+    }
+    this.later(at + 600, () => {
+      this.say(pty, `${st.mark} ${st.run} git commit\n  [${branchOf(w.slug)} ${fix.commit.sha}] ${fix.commit.subject}\n\n${fix.closing}\n`);
+      this.files.commit(id);
+      this.madeHere[w.slug] = [fix.commit, ...(this.madeHere[w.slug] ?? [])];
+      // The review queue's item is the worktree's diff: it has the fix now.
+      this.review.update(
+        Object.entries(this.files.committedChanges(id))
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([path, text]) => fileDiff(path, MAIN[path] ?? null, text)),
+        testRun(this.filesOf(id)).join("\n"),
+      );
+      this.setStatus(paneId, "done", fix.closing);
+    });
+  }
+
+  private undoLanding(before: string): void {
+    const was = this.beforeLanding.get(before);
+    if (!was) return;
+    this.files.setHead(WS, was.head);
+    this.mainLog = was.log;
+    this.landed = was.landed;
+    this.beforeLanding.clear();
+  }
+
+  /** The waiting agent's question, answered in its terminal: yes runs its
+   * tests and commits its work, which can then land; no leaves it as is. */
+  private answerWaiting(pty: Pty, yes: boolean): void {
+    const w = WAITING;
+    const paneId = agentPane(w);
+    const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
+    if (!yes) {
+      this.say(pty, `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`);
+      this.setStatus(paneId, "done", "Didn't run the tests");
+      return;
+    }
+    const id = wsOf(w.slug);
+    const filter = (w.ask ?? "").replace(/^pnpm test ?/, "");
+    const run = testRun(this.filesOf(id), filter);
+    const passed = /Tests {2}(\d+) passed/.exec(run.at(-1) ?? "")?.[1] ?? "0";
+    const lines = [
+      `${st.mark} ${st.run} ${w.ask ?? ""}`,
+      `  ✓ ${passed} tests passed`,
+      `${st.mark} ${st.run} git commit`,
+      ...[...w.commits].reverse().map((c) => `  [${branchOf(w.slug)} ${c.sha}] ${c.subject}`),
+      "",
+      w.closing ?? "Done.",
+    ];
+    this.later(600, () => {
+      this.say(pty, `\n${lines.join("\n")}\n`);
+      this.files.commit(id);
+      this.committed.add(w.slug);
+      this.setStatus(paneId, "done", w.closing ?? "Done.");
+    });
+  }
+
+  private setStatus(paneId: string, status: StatusRecord["status"], preview: string): void {
+    const s = this.status[paneId];
+    if (!s) return;
+    this.status[paneId] = { ...s, status, preview };
+    this.since[paneId] = Date.now();
+    emitLocal("status:changed", { records: [this.record(paneId)], removed: [] });
+  }
+
+  /** The radar's indexes (F-WT-10): the worktrees parsed since their agent's
+   * last edits. coupon-rules' is from the checkpoint before Codex's turn,
+   * so its overlap with checkout-fix shows once Check overlap or a new
+   * turn's checkpoint parses it again. */
+  private parsed = new Set(STORY.worktrees.filter((w) => w.state !== "working").map((w) => w.slug));
+  /** Pairs and symbols already announced (radar.rs WARNED). */
+  private warned = new Set<string>();
+
+  private slugOf(id: string): string | undefined {
+    return STORY.worktrees.find((w) => wsOf(w.slug) === id)?.slug;
+  }
+
+  /** What `a` shares with `b`, from their parsed indexes: both changed the
+   * story's symbol. */
+  private shared(a: string, b: string): SharedSymbol[] {
+    const o = STORY.overlap;
+    if (a === b || !o.between.includes(a) || !o.between.includes(b)) return [];
+    if (!this.parsed.has(a) || !this.parsed.has(b)) return [];
+    return [{ name: o.symbol, qualified: o.symbol, here: "changed", there: "changed" }];
+  }
+
+  private radarMarks(laneIds: string[]): RadarMark[] {
+    return laneIds.flatMap((id) => {
+      const slug = this.slugOf(id);
+      if (!slug) return [];
+      const symbols = [...new Set(STORY.worktrees.flatMap((w) => this.shared(slug, w.slug).map((x) => x.qualified)))].sort();
+      return symbols.length ? [{ laneId: id, symbols }] : [];
+    });
+  }
+
+  /** UI-153 (F-WT-03, F-WT-10): the check parses this worktree and its
+   * siblings again, then reports the files and symbols they share. */
+  private overlap(laneId: string): OverlapReport {
+    const slug = this.slugOf(laneId);
+    if (!slug) throw { code: "not_found", message: "That worktree isn't open in the demo." };
+    for (const w of STORY.worktrees) this.parsed.add(w.slug);
+    const changed = (s: string) => [...new Set([...Object.keys(this.files.committedChanges(wsOf(s))), ...this.files.changes(wsOf(s)).map((f) => f.path)])];
+    const mine = changed(slug);
+    const siblings: SiblingOverlap[] = STORY.worktrees
+      .filter((w) => w.slug !== slug)
+      .flatMap((w) => {
+        const files = changed(w.slug).filter((f) => mine.includes(f)).sort();
+        const symbols = this.shared(slug, w.slug);
+        return files.length || symbols.length ? [{ laneId: wsOf(w.slug), branch: branchOf(w.slug), files, symbols }] : [];
+      });
+    return { files: mine.length, siblings, forecast: { kind: "clean" }, uncommitted: this.files.dirty(laneId), unparsed: 0 };
+  }
+
+  /** The note Warn both agents types into `laneId`'s agent (radar.rs `note_text`). */
+  private radarNote(laneId: string, otherId: string): string {
+    const a = this.slugOf(laneId);
+    const b = this.slugOf(otherId);
+    if (!a || !b || a === b) throw { code: "invalid", message: "Those aren't two worktrees of one repository" };
+    const found = this.shared(a, b);
+    if (found.length === 0) throw { code: "not_found", message: "These worktrees don't share symbols any more" };
+    const what: Record<SharedSymbol["here"], string> = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" };
+    const data = [`Other worktree: ${branchOf(b)}`, ...found.map((s) => `- ${s.qualified}: ${what[s.here]} here, ${what[s.there]} there`)].join("\n");
+    // radar.rs `note_text`: the symbols behind the label and fence (D-3022).
+    return [
+      "Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository, is changing code that your changes also touch. Check that your work still fits theirs (a renamed or changed symbol you use, or the same one changed twice), and adjust before you finish.",
+      "",
+      untrustedLabel("the overlapping symbols"),
+      fenceDefanged("text", data),
+    ].join("\n");
+  }
+
+  /** A new turn in an agent pane takes a checkpoint (F-EX-01), after which
+   * the radar parses its worktree again and announces a pair that newly
+   * shares symbols, once (radar.rs `on_checkpoint`). True, so a caller can
+   * go on to answer the prompt. */
+  private checkpoint(paneId: string): boolean {
+    const pane = PANES.find((p) => p.id === paneId);
+    const slug = pane ? this.slugOf(pane.workspaceId) : undefined;
+    if (!slug) return true;
+    this.parsed.add(slug);
+    for (const w of STORY.worktrees) {
+      const found = this.shared(slug, w.slug);
+      if (found.length === 0) continue;
+      const names = found.map((x) => x.qualified);
+      const key = [[slug, w.slug].sort().join("|"), names.join(",")].join("|");
+      if (this.warned.has(key)) continue;
+      this.warned.add(key);
+      emitLocal("radar:overlap", {
+        repoId: WS,
+        a: { laneId: wsOf(slug), branch: branchOf(slug) },
+        b: { laneId: wsOf(w.slug), branch: branchOf(w.slug) },
+        symbols: names,
+      });
+    }
+    return true;
+  }
+
+  /** Keys typed at the waiting agent's question: y or n, then Enter. */
+  private answer(pty: Pty, data: string): void {
+    for (const ch of data) {
+      if (ch === "\r") {
+        const said = (pty.typed ?? "").trim().toLowerCase();
+        pty.typed = "";
+        if (said === "y" || said === "yes") this.answerWaiting(pty, true);
+        else if (said === "n" || said === "no") this.answerWaiting(pty, false);
+        else this.say(pty, "\nType y or n, then Enter.\n");
+      } else if (ch === "\x7f" || ch === "\b") {
+        if (pty.typed) {
+          pty.typed = pty.typed.slice(0, -1);
+          if (pty.logical !== undefined) pty.logical = pty.logical.slice(0, -1);
+          this.frame(pty, "\b \b");
+        }
+      } else if (ch >= " " && ch !== "\x1b") {
+        pty.typed = (pty.typed ?? "") + ch;
+        this.say(pty, ch);
+      }
+    }
+  }
+
+  /** The thread's fix lands in its workspace's folder: `shop/thread/`'s
+   * files, uncommitted, as an agent leaves them. */
+  private applyFix(t: DemoThread): void {
+    if (t.fixed) return;
+    t.fixed = true;
+    for (const [path, text] of Object.entries(changedIn("thread"))) this.files.edit(t.thread.workspaceId ?? WS, path, text);
+  }
+
+  /** The checkout a Files or git request is about: its workspace's, or
+   * its thread's workspace's. */
+  private checkout(args: Args): string {
+    const c = args?.context as FileContext | undefined;
+    if (c?.type === "thread") return this.threads.get(c.threadId)?.thread.workspaceId ?? "scratch";
+    return c?.type === "workspace" ? c.workspaceId : WS;
+  }
+
+  /** The repository a landing command is about: the one asked, or a
+   * worktree's (every worktree's ⋯ opens its repository's landing). */
+  private repoOf(args: Args): string {
+    const id = String(args?.workspaceId ?? "");
+    const ws = WORKSPACES.find((w) => w.id === id);
+    if (!ws) throw { code: "not_found", message: "That folder isn't open in the demo." };
+    return ws.parentId ?? ws.id;
+  }
+
+  /** What a shell in `workspaceId`'s folder can see of its checkout. */
+  private place(workspaceId: string): ShellPlace {
+    const ws = WORKSPACES.find((w) => w.id === workspaceId) ?? WORKSPACE;
+    const story = STORY.worktrees.find((w) => wsOf(w.slug) === ws.id);
+    const files = () => Object.fromEntries(this.files.paths(ws.id).map((p) => [p, this.files.text(ws.id, p) ?? ""]));
+    return {
+      dir: ws.root.replace(/^\/home\/you/, "~"),
+      path: ws.root,
+      branch: ws.branch ?? STORY.base,
+      paths: () => this.files.paths(ws.id),
+      text: (path) => this.files.text(ws.id, path),
+      changes: () => this.files.changes(ws.id),
+      diff: (path) => this.files.gitDiff(ws.id, path).patch,
+      log: () => [
+        ...(story && this.committed.has(story.slug) && !this.landed.has(story.slug) ? this.commitsOf(story.slug) : []),
+        ...this.mainLog,
+      ],
+      test: (filter) => testRun(files(), filter),
+    };
   }
 
   private thread(args: Args): DemoThread {
@@ -816,6 +1215,7 @@ export class DemoCore {
         this.push(t, turnId, { type: "plan_revision", version });
       });
     } else {
+      if (first) t.fixTurn = turnId;
       this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000) : chatTurn(text));
     }
     return { turnId, queued: false };
@@ -842,6 +1242,31 @@ export class DemoCore {
     for (const fn of this.listeners) fn();
   }
 
+  /** A pane's terminal: a shell's once its pane spawned it, an agent's from
+   * the start, since its agent runs whether or not its tab was opened (what
+   * it prints is replayed when its pane attaches). */
+  private ptyOf(paneId: string): Pty | undefined {
+    const pty = this.ptys.get(paneId);
+    if (pty || AGENT_SCREENS[paneId] === undefined) return pty;
+    const logical = (AGENT_SCREENS[paneId] ?? "").replace(/\r\n/g, "\n");
+    const agent: Pty = { channel: { onmessage: () => undefined }, seq: 0, screen: "", shell: null, logical };
+    agent.screen = this.rendered(agent);
+    this.ptys.set(paneId, agent);
+    return agent;
+  }
+
+  /** An agent's text as its terminal UI lays it out at its width. */
+  private rendered(pty: Pty): string {
+    return wrapWords(pty.logical ?? "", pty.cols ?? 80).replace(/\n/g, "\r\n");
+  }
+
+  /** An agent's words in its pane, wrapped at its width as an agent's
+   * terminal UI wraps them (a shell's output isn't: a terminal cuts it). */
+  private say(pty: Pty, text: string): void {
+    if (pty.logical !== undefined) pty.logical += text;
+    this.frame(pty, wrapWords(text, pty.cols ?? 80).replace(/\n/g, "\r\n"));
+  }
+
   private frame(pty: Pty, text: string): void {
     pty.seq += 1;
     pty.screen += text;
@@ -849,8 +1274,8 @@ export class DemoCore {
   }
 
   private dashboard(): DashboardItem[] {
-    const panes = PANES.filter((p) => STATUS[p.id]).map((p): DashboardItem => {
-      const s = STATUS[p.id] ?? { status: "idle", title: "", preview: "" };
+    const panes = PANES.filter((p) => this.status[p.id]).map((p): DashboardItem => {
+      const s = this.status[p.id] ?? { status: "idle", title: "", preview: "" };
       const engine = ENGINES.find((e) => e.spec.id === p.engineId);
       return {
         key: `pane:${p.id}`,
@@ -866,7 +1291,7 @@ export class DemoCore {
         accountLabel: null,
         workspaceId: p.workspaceId,
         workspace: WORKSPACES.find((w) => w.id === p.workspaceId)?.name ?? null,
-        branch: "main",
+        branch: WORKSPACES.find((w) => w.id === p.workspaceId)?.branch ?? null,
         preview: s.preview,
         pendingApproval: null,
       };
@@ -894,8 +1319,8 @@ export class DemoCore {
         engineLogo: engine?.spec.logo ?? null,
         accountLabel: null,
         workspaceId: t.thread.workspaceId,
-        workspace: t.thread.workspaceId ? WORKSPACE.name : null,
-        branch: null,
+        workspace: WORKSPACES.find((w) => w.id === t.thread.workspaceId)?.name ?? null,
+        branch: WORKSPACES.find((w) => w.id === t.thread.workspaceId)?.branch ?? null,
         preview: null,
         pendingApproval: null,
       };
@@ -958,20 +1383,11 @@ export class DemoCore {
       case "models_list":
         return MODELS[String(args?.engineId)] ?? [];
       case "status_list":
-        return PANES.filter((p) => STATUS[p.id]).map((p): StatusRecord => ({
-          key: `pane:${p.id}`,
-          status: STATUS[p.id]?.status ?? "idle",
-          reason: null,
-          since: START,
-          ts: START,
-          tool: null,
-          title: STATUS[p.id]?.title ?? null,
-          preview: STATUS[p.id]?.preview ?? null,
-        }));
+        return PANES.filter((p) => this.status[p.id]).map((p) => this.record(p.id));
       case "status_snapshot":
         return this.dashboard();
       case "pty_attach": {
-        const pty = this.ptys.get(String(args?.paneId));
+        const pty = this.ptyOf(String(args?.paneId));
         if (!pty) throw { code: "not_found", message: "Not running" };
         pty.channel = args?.channel as FrameChannel;
         const snap: AttachSnapshot = {
@@ -984,21 +1400,45 @@ export class DemoCore {
       }
       case "pty_spawn": {
         const id = String(args?.paneId);
-        const shell = id === "pn_shell" ? new DemoShell() : null;
+        // A shell answers from its worktree's checkout; an agent pane shows its still.
+        const record = PANES.find((p) => p.id === id);
+        const shell = record?.kind === "terminal" ? new DemoShell(this.place(record.workspaceId)) : null;
+        const agent = shell ? undefined : this.ptyOf(id);
+        if (agent) {
+          // Its agent has been running: the pane shows all it printed.
+          agent.channel = args?.channel as FrameChannel;
+          this.later(80, () => {
+            agent.seq += 1;
+            agent.channel.onmessage(encodeFrame(FrameKind.Data, agent.seq, encoder.encode(agent.screen)));
+          });
+          return { pid: 4000 + Object.keys(AGENT_SCREENS).indexOf(id), startedAt: START };
+        }
         const pty: Pty = { channel: args?.channel as FrameChannel, seq: 0, screen: "", shell };
         this.ptys.set(id, pty);
-        this.later(80, () => this.frame(pty, shell ? shell.greeting() : (AGENT_SCREENS[id] ?? "")));
+        this.later(80, () => this.frame(pty, shell ? shell.greeting() : ""));
         return { pid: 4000 + this.ptys.size, startedAt: Date.now() };
       }
       case "pty_write": {
-        const pty = this.ptys.get(String(args?.paneId));
+        const paneId = String(args?.paneId);
+        const pty = this.ptyOf(paneId);
         const data = String(args?.data ?? "");
         if (pty?.shell) this.frame(pty, pty.shell.write(data));
-        else if (pty && data.includes("\r"))
-          this.frame(
-            pty,
-            "\r\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\r\n",
-          );
+        else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
+          this.answer(pty, data);
+        else if (pty && data.includes("\r") && this.checkpoint(paneId))
+          this.say(pty, "\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\n");
+        return null;
+      }
+      case "pty_resize": {
+        const pty = this.ptyOf(String(args?.paneId));
+        if (!pty || typeof args?.cols !== "number" || args.cols === pty.cols) return null;
+        pty.cols = args.cols;
+        // An agent's terminal UI draws itself again at the new width.
+        if (pty.logical !== undefined) {
+          pty.screen = this.rendered(pty);
+          pty.seq += 1;
+          pty.channel.onmessage(encodeFrame(FrameKind.Data, pty.seq, encoder.encode(`\x1b[2J\x1b[3J\x1b[H${pty.screen}`)));
+        }
         return null;
       }
       case "thread_list":
@@ -1096,33 +1536,29 @@ export class DemoCore {
         const t = this.thread(args);
         const changes: ThreadChanges = {
           source: t.turns.length ? "git" : "not_started",
-          files: t.fixed ? DEMO_CHANGES : [],
+          files: t.fixed ? THREAD_CHANGES : [],
         };
         return changes;
       }
       case "thread_file_read": {
-        const file = DEMO_CHANGES.find((f) => f.path === args?.path);
+        const t = this.thread(args);
+        const path = String(args?.path ?? "");
         const text: FileText = {
-          path: String(args?.path ?? ""),
-          content: file
-            ? file.patch
-                .split("\n")
-                .filter((l) => !l.startsWith("-") && !l.startsWith("@@") && !l.startsWith("diff"))
-                .map((l) => l.replace(/^[+ ]/, ""))
-                .join("\n")
-            : "",
+          path,
+          content: (t.thread.workspaceId && this.files.text(t.thread.workspaceId, path)) || "",
           binary: false,
           truncated: false,
         };
         return text;
       }
-      case "thread_mention_search":
-        return [
-          "src/checkout/redirect.ts",
-          "src/checkout/redirect.test.ts",
-          "src/api/orders.ts",
-          "package.json",
-        ].map((path) => ({ path, kind: "file" }));
+      case "thread_mention_search": {
+        const t = this.thread(args);
+        const query = String(args?.query ?? "").toLowerCase();
+        return (t.thread.workspaceId ? this.files.paths(t.thread.workspaceId) : [])
+          .filter((path) => path.toLowerCase().includes(query))
+          .slice(0, 8)
+          .map((path) => ({ path, kind: "file" }));
+      }
       case "thread_implement_plan": {
         const t = this.thread(args);
         const plan = t.plans.find((p) => p.version === Number(args?.version));
@@ -1141,34 +1577,54 @@ export class DemoCore {
           window.open(args.url, "_blank", "noopener");
         return null;
       case "fs_list":
-        return this.files.list(String(args?.dir ?? ""));
+        return this.files.list(this.checkout(args), String(args?.dir ?? ""));
       case "fs_read":
-        return this.files.read(String(args?.path ?? ""));
+        return this.files.read(this.checkout(args), String(args?.path ?? ""));
       case "fs_write":
         return this.files.write(
+          this.checkout(args),
           String(args?.path ?? ""),
           String(args?.text ?? ""),
           (args?.expectedHash as string | null | undefined) ?? null,
         );
       case "fs_compare":
-        return this.files.compare(String(args?.path ?? ""), String(args?.text ?? ""));
+        return this.files.compare(this.checkout(args), String(args?.path ?? ""), String(args?.text ?? ""));
       case "fs_create":
       case "fs_rename":
       case "fs_delete":
         throw { code: "unavailable", message: "The browser demo doesn't create, rename or delete files." };
       case "fs_watch":
         return "demo-watch";
-      case "git_status":
-        return this.files.gitStatus();
+      case "git_status": {
+        const id = this.checkout(args);
+        const panel = this.files.gitStatus(id);
+        // The pull request's branch is on the remote: what's committed here
+        // since is ahead of it until it's pushed (F-WT-08).
+        if (id !== PR_LANE) return panel;
+        const slug = STORY.pr.worktree;
+        const ahead = (this.madeHere[slug]?.length ?? 0) - (this.pushedHere[slug] ?? 0);
+        return { ...panel, status: { ...panel.status, upstream: `origin/${branchOf(slug)}`, ahead } };
+      }
       case "git_diff":
-        return this.files.gitDiff(String(args?.path ?? ""));
+        return this.files.gitDiff(this.checkout(args), String(args?.path ?? ""));
       case "git_branches":
-        return this.files.gitBranches();
+        return this.files.gitBranches(this.checkout(args));
+      case "git_push": {
+        // Only the pull request's branch has a remote here: pushing the
+        // fix starts CI on it (F-WT-08).
+        if (this.checkout(args) !== PR_LANE) throw { code: "unavailable", message: NO_GIT };
+        const slug = STORY.pr.worktree;
+        const made = this.madeHere[slug]?.length ?? 0;
+        if (made > (this.pushedHere[slug] ?? 0)) {
+          this.pushedHere[slug] = made;
+          this.ci.pushed();
+        }
+        return null;
+      }
       case "git_stage":
       case "git_unstage":
       case "git_discard":
       case "git_commit":
-      case "git_push":
       case "git_pull":
       case "git_switch":
       case "git_create_branch":
@@ -1201,6 +1657,77 @@ export class DemoCore {
             "Find work searches the terminals, threads and teammates running on your computer, so the demo has nothing to search.",
         };
       // The review queue (F-DB-04): Claude Code's finished fix, kept in the page.
+      // Worktrees as the app shows them before any pull request, overlap
+      // or landing (F-WT-04, F-WT-10, F-WT-07; D-2609).
+      // A worktree's diff (F-WT-02): what it changed since main as the
+      // story starts, uncommitted work included.
+      case "lane_diff": {
+        const files = this.filesOf(String(args?.laneId ?? ""));
+        return Object.keys(files)
+          .filter((path) => files[path] !== MAIN[path])
+          .sort()
+          .map((path) => fileDiff(path, MAIN[path] ?? null, files[path] ?? ""));
+      }
+      // CI results and review comments back to the agent (F-WT-08).
+      case "lane_checks":
+        return this.ci.get(String(args?.laneId ?? ""));
+      case "pr_checks_allow":
+        this.ci.allow(Boolean(args?.allow));
+        return null;
+      case "lane_check_failure":
+        return this.ci.failure(String(args?.laneId ?? ""), String(args?.name ?? ""));
+      case "lane_review_comments":
+        return this.ci.comments(String(args?.laneId ?? ""), (args?.seen as string[] | undefined) ?? []);
+      case "merge_queue_plan":
+        this.repoOf(args);
+        return this.landing.plan();
+      case "merge_queue_start":
+        this.repoOf(args);
+        return this.landing.start(
+          (args?.laneIds as string[] | undefined) ?? [],
+          (args?.check as string | null | undefined) ?? null,
+        );
+      case "merge_queue_get":
+        this.repoOf(args);
+        return this.landing.get();
+      case "merge_queue_stop":
+        this.repoOf(args);
+        this.landing.stop();
+        return null;
+      case "merge_queue_undo":
+        this.repoOf(args);
+        this.landing.undo();
+        return null;
+      case "lane_radar":
+        return this.radarMarks((args?.laneIds as string[] | undefined) ?? DEMO_WORKTREES);
+      case "lane_overlap":
+        return this.overlap(String(args?.laneId ?? ""));
+      case "lane_radar_note":
+        return this.radarNote(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
+      case "pty_type_prompt": {
+        const paneId = String(args?.paneId ?? "");
+        const pty = this.ptyOf(paneId);
+        const text = String(args?.text ?? "");
+        if (pty && !pty.shell && text.startsWith("A CI check failed")) {
+          this.checkpoint(paneId);
+          if (paneId === agentPane(DONE) && !this.ciFixed) this.fixCi(pty, paneId);
+          else {
+            // Sent again, the fix is already in and waits for a push.
+            const then = this.ciFixed
+              ? "it reads the failure again; here its fix is committed and waits for a push"
+              : "it reads the failure and gets to work on it";
+            this.say(pty, `${ciEcho(STORY.pr.number)}\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`);
+          }
+        } else if (pty && !pty.shell) {
+          // The radar's note, or a review (F-WT-02): typed in, and simulated from there.
+          const then = text.startsWith("Heads-up from Vibezeo")
+            ? "it reads the note and fits its work to the other worktree's"
+            : "it reads what you sent and gets to work on it";
+          this.say(pty, `\n${text}\n\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`);
+          this.checkpoint(paneId);
+        }
+        return null;
+      }
       case "review_queue":
         return this.review.view();
       case "review_item_diff":
@@ -1294,9 +1821,9 @@ export class DemoCore {
           message: "Web pages don't open inside this demo. In the app they open right here.",
         };
       case "editor_tabs_get":
-        return this.files.savedTabs();
+        return this.files.savedTabs(String(args?.contextKey ?? ""));
       case "editor_tabs_save":
-        this.files.saveTabs(args?.state as EditorTabs);
+        this.files.saveTabs(String(args?.contextKey ?? ""), args?.state as EditorTabs);
         return null;
       // Tasks are a feature of the download, so the demo keeps them in the
       // page. Running one starts an agent in a worktree on your computer,

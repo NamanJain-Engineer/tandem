@@ -48,12 +48,14 @@ import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
 import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
 import { RadarMark } from "./IntentRadar";
+import { useMarkFolds } from "./markFolds";
 import { PullRequestsDialog } from "./MultiPullRequests";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
+import { useWorkspaceStatus } from "./workspaceStatus";
 
 type Show = ReturnType<typeof useToast>["show"];
 
@@ -245,7 +247,11 @@ function singleRepoMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEnt
   ];
 }
 
-/** A worktree under its repository in the Code rail (F-CD-15 AC4). */
+/** A worktree under its repository in the Code rail (F-CD-15 AC4). It's
+ * named as its workspace is (a worktree's branch is `tandem/` and that
+ * name), so beside a status the name keeps its room: at least 10
+ * characters, as a workspace row's does (D-2603). The branch is in its
+ * tooltip, and ⋯ covers the row's end only while it's hovered or focused. */
 export function WorktreeRow({
   wt,
   base,
@@ -267,12 +273,30 @@ export function WorktreeRow({
   }, [wt.id, wt.missing, wt.kind]);
   const block = useWorktrees((s) => s.runtimes[wt.id]);
   const preview = useWorktrees((s) => s.previews[wt.id]);
+  // D-2700: the marks fold to their icons while the row's contents don't fit.
+  const status = useWorkspaceStatus(wt);
+  const checks = useWorktrees((s) => s.checks[wt.id]);
+  const radar = useWorktrees((s) => s.radar[wt.id]);
+  const { ref, folds } = useMarkFolds(
+    JSON.stringify([
+      wt.name,
+      wt.missing,
+      // F-CD-24's jj badge takes room in the row too.
+      wt.laneVcs ?? null,
+      status,
+      checks?.state === "ready" ? checks.checks.map((c) => c.bucket) : null,
+      radar ?? null,
+      preview?.status === "ready",
+      wt.liveCount,
+    ]),
+  );
   const openIt = () => {
     useWorkspaces.getState().select(wt.id);
     switchMode("code");
   };
   return (
     <div
+      ref={ref}
       role="treeitem"
       aria-level={2}
       aria-selected={activeId === wt.id}
@@ -287,7 +311,7 @@ export function WorktreeRow({
         }
       }}
       className={cx(
-        "group/wt flex h-7 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm outline-none hover:bg-surface-4 focus-visible:shadow-focus",
+        "group/wt relative flex h-7 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm outline-none hover:bg-surface-4 focus-visible:shadow-focus",
         activeId === wt.id ? "bg-surface-4 text-fg" : "text-fg-muted hover:text-fg",
       )}
     >
@@ -300,16 +324,20 @@ export function WorktreeRow({
         label={
           wt.missing
             ? t("rail.missing")
-            : block
-              ? t("worktree.runtime.tooltip", {
-                  root: wt.root,
-                  start: String(block.start),
-                  end: String(block.end),
-                })
-              : wt.root
+            : `${branch} · ${
+                block
+                  ? t("worktree.runtime.tooltip", {
+                      root: wt.root,
+                      start: String(block.start),
+                      end: String(block.end),
+                    })
+                  : wt.root
+              }`
         }
       >
-        <span className="min-w-0 flex-1 truncate">{branch}</span>
+        <span data-testid="worktree-row-name" className="min-w-[min(10ch,100%)] flex-1 truncate">
+          {wt.name}
+        </span>
       </Tooltip>
       {isJj(wt) ? (
         <span data-testid="worktree-jj" aria-label={t("worktree.jj.badgeLabel")}>
@@ -330,15 +358,15 @@ export function WorktreeRow({
           </Button>
         </span>
       ) : null}
-      <ChecksBadge wt={wt} />
-      <RadarMark wt={wt} />
+      <ChecksBadge wt={wt} fold={folds >= 2} />
+      <RadarMark wt={wt} fold={folds >= 1} />
       {wt.liveCount > 0 && (
         <span aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>
         </span>
       )}
       <span
-        className="opacity-0 group-hover/wt:opacity-100 group-focus-within/wt:opacity-100"
+        className="pointer-events-none absolute inset-y-0 right-1 flex items-center rounded-sm bg-surface-4 opacity-0 group-hover/wt:pointer-events-auto group-hover/wt:opacity-100 group-focus-within/wt:pointer-events-auto group-focus-within/wt:opacity-100"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
@@ -358,14 +386,16 @@ export function WorktreeRow({
   );
 }
 
-/** The pane header chip "⎇ tandem/{slug}"; hovering shows the path. */
+/** The pane header chip "⎇ tandem/{slug}"; hovering shows the path. It
+ * gives way before the pane's title, down to its icon (26 px; PaneChrome
+ * leaves it that room), so the title keeps its 10 characters (D-2611). */
 export function WorktreeChip({ wt }: { wt: WorkspaceSummary }) {
   return (
     <Tooltip label={wt.root}>
       <span
         data-testid="worktree-chip"
         tabIndex={0}
-        className="inline-flex max-w-[160px] shrink-0 items-center gap-0.5 rounded-xs text-xs text-fg-subtle focus-visible:shadow-focus focus-visible:outline-none"
+        className="inline-flex min-w-[26px] max-w-[160px] items-center gap-0.5 overflow-hidden rounded-xs text-xs text-fg-subtle focus-visible:shadow-focus focus-visible:outline-none"
       >
         <GitBranch size={11} aria-hidden="true" className="shrink-0" />
         <span className="truncate">{wt.laneBranch}</span>

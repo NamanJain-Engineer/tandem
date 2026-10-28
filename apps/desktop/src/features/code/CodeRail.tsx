@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   Cloud,
@@ -39,6 +39,7 @@ import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { useChecksPolling } from "./PullRequestChecks";
 import { useIntentRadar } from "./IntentRadar";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
+import { useWorkspaceStatus } from "./workspaceStatus";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
@@ -133,29 +134,6 @@ function SessionDot({ paneId }: { paneId: string }) {
       )}
     </span>
   );
-}
-
-/** The right slot of a workspace row (F-SH-03): n working, Needs you,
- * Failed, or nothing; and the unread dot when something finished unseen. */
-function useWorkspaceStatus(ws: WorkspaceSummary): {
-  working: number;
-  waiting: boolean;
-  failed: boolean;
-  unread: boolean;
-} {
-  const tabs = useLayout((s) => s.tabs);
-  const records = useStatus((s) => s.records);
-  const unread = useStatus((s) => s.unread);
-  return useMemo(() => {
-    const keys = ws.tabs.flatMap((tab) => Object.keys(tabs[tab.id]?.panes ?? {})).map(paneKey);
-    const statuses = keys.map((k) => records[k]?.status);
-    return {
-      working: statuses.filter((x) => x === "working").length,
-      waiting: statuses.includes("waiting"),
-      failed: statuses.includes("failed"),
-      unread: keys.some((k) => unread[k]),
-    };
-  }, [ws.tabs, tabs, records, unread]);
 }
 
 /** Quiet, never a box (D-2603): amber "Needs you", a working dot and its
