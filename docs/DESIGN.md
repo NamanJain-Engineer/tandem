@@ -422,6 +422,14 @@ The checklist per review:
 - Copy against §4.8, and every product claim against the shipped build (D-128).
 - The journey change it implements, against §5's wording.
 
+Things these reviews have missed before, so check them every time:
+- **Check what a placeholder resolves to, not just the string.** A scene or the demo drawing the app must match its code. "Send to {name}" is the agent's first name (`agentName`, F-CD-12), not the engine. A worktree's review card says the worktree's own name, not its repository's. Check each button's variant (the app's primary, not the story's), and where a state is shown (the review bar, the header or a toast).
+- **Only states the app can reach** (D-1899). Two worktree agents never share a grid. A check passes only after a push. A notice comes when the core raises it.
+- **Timing needs two checks.** Pausing animations at exact times (`getAnimations()` with set times) shows each frame, but it puts every effect on one clock. Effects that must coincide also need real playback: compare their `startTime`s, or take frames timed on `requestAnimationFrame`.
+- **An undefined custom property silently kills its whole declaration.** One missing `var()` in a multi-layer `box-shadow` or a scrim draws nothing at all. Check computed styles, and keep the test that every `var()` in the site's stylesheets resolves.
+- **Captures.** Use a real 2× screen (`--force-device-scale-factor=2` with `viewport: null`, `devicePixelRatio === 2` asserted). Playwright's emulated scale draws terminals wrong. Capture scenes as element or viewport screenshots, because full-page mode resizes the viewport and re-lays them.
+- **One sample world.** Names and states come from `apps/desktop/src/demo/story.json` for both the scenes and the demo. The site never shows the placeholder branch prefix (D-1898).
+
 ---
 
 ## 7. Who does what, in order
