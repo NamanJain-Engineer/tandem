@@ -14,7 +14,7 @@ use ts_rs::TS;
 use tandem_core::ids::WorkspaceId;
 use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_git::jj::{self, Jj, JjRunner};
-use tandem_git::{FileDiff, Repo};
+use tandem_git::{FileDiff, ForceConfirm, Repo};
 use tandem_store::repo::lane_vcs;
 use tandem_store::repo::tabs;
 use tandem_store::repo::workspaces::{self, NewLane, Workspace};
@@ -34,8 +34,9 @@ pub const JJ_UNTRUSTED: &str =
 /// A jj workspace being made that never got its row is forgotten by the
 /// sweep after this long.
 pub const ORPHAN_AGE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-/// A record for a repository no longer on the rail goes after this long
-/// (nothing waits on it; a repository added back meanwhile keeps it).
+/// Every pending record goes after this long, whatever it names: the sweep
+/// acts on one within minutes, so an older one is for a repository it
+/// never reaches.
 pub const PRUNE_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 /// The choice New worktree remembers per repository.
 pub const KINDS_FILE: &str = "lane-kinds.json";
@@ -99,7 +100,35 @@ pub async fn runner() -> Option<Arc<dyn JjRunner>> {
     let home = Some(get("HOME"))
         .filter(|h| !h.is_empty())
         .map(PathBuf::from);
+    #[cfg(test)]
+    let vars = isolated(vars);
     Jj::locate(&path, home.as_deref(), vars).map(|j| Arc::new(j) as Arc<dyn JjRunner>)
+}
+
+/// Tests' jj never reads the developer's config: a home and a config of
+/// its own (an identity only), the same for the whole run.
+#[cfg(test)]
+fn isolated(mut vars: Vec<(String, String)>) -> Vec<(String, String)> {
+    static HOME: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let home = HOME.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("tandem-jj-home-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok()?;
+        std::fs::write(
+            dir.join("jj-config.toml"),
+            "[user]\nname = \"Test\"\nemail = \"test@example.invalid\"\n",
+        )
+        .ok()?;
+        Some(dir)
+    });
+    vars.retain(|(k, _)| k != "HOME" && !k.starts_with("JJ_"));
+    if let Some(dir) = home {
+        vars.push(("HOME".into(), dir.to_string_lossy().into_owned()));
+        vars.push((
+            "JJ_CONFIG".into(),
+            dir.join("jj-config.toml").to_string_lossy().into_owned(),
+        ));
+    }
+    vars
 }
 
 /// Whether a worktree is a jj workspace.
@@ -330,8 +359,7 @@ pub async fn create(
 /// Nothing half-made stays behind.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
     // The record stays when the forget failed, so the sweep tries again.
-    // Forced: the workspace was made just now, and nothing in it is anyone's.
-    if jj::forget_workspace(runner, root, &lane.path, &lane.slug, true)
+    if jj::forget_workspace(runner, root, &lane.path, &lane.slug, None)
         .await
         .is_ok()
     {
@@ -375,42 +403,52 @@ pub async fn changed_files(lane: &Workspace, parent: &Workspace) -> Result<Vec<S
     .map_err(jj_err)
 }
 
-/// Whether Discard would lose something only on disk in a jj lane: jj
-/// couldn't snapshot its working copy whole (it failed, timed out, was
-/// locked or stale, or refused or left out a file). A folder already gone
-/// has nothing to lose.
-pub async fn dirty(lane: &Workspace, parent: &Workspace) -> Result<bool, IpcError> {
+fn lane_name(lane: &Workspace) -> String {
+    lane.lane_branch
+        .clone()
+        .unwrap_or_else(|| lane.name.clone())
+}
+
+/// Discard's checks for a jj lane, before anything stops: everything
+/// [`jj::forget_checks`] refuses (even forced), and without `force`
+/// anything jj didn't keep whole ([`jj::kept_whole`]: Conflict, so the
+/// dialog asks for the force as for a git lane's uncommitted changes).
+pub async fn preflight(lane: &Workspace, parent: &Workspace, force: bool) -> Result<(), IpcError> {
     gate(Path::new(&parent.root))?;
-    let root = PathBuf::from(&lane.root);
-    if !root.is_dir() {
-        return Ok(false);
+    let (main, root, name) = (
+        PathBuf::from(&parent.root),
+        PathBuf::from(&lane.root),
+        lane_name(lane),
+    );
+    if jj::forget_checks(&main, &root, &name).map_err(jj_err)? == jj::Folder::Gone || force {
+        return Ok(());
     }
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
-    tokio::task::spawn_blocking(move || !jj::snapshotted_whole(runner.as_ref(), &root))
+    tokio::task::spawn_blocking(move || jj::kept_whole(runner.as_ref(), &main, &root, &name))
         .await
-        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()).with_stage("jj"))
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()).with_stage("jj"))?
+        .map_err(jj_err)
 }
 
-/// Discard's last step for a jj lane: `jj workspace forget` and the folder.
-/// The workspace's commits stay in the repository. Without `force`, a
-/// working copy jj couldn't snapshot whole is Conflict ("Uncommitted
-/// changes"), so Discard asks for the force as for a git lane.
-pub async fn forget(lane: &Workspace, parent: &Workspace, force: bool) -> Result<(), IpcError> {
+/// Discard's last step for a jj lane: `jj workspace forget` and the folder,
+/// checked again now its panes have stopped. The workspace's commits stay
+/// in the repository.
+pub async fn forget(
+    lane: &Workspace,
+    parent: &Workspace,
+    force: Option<ForceConfirm>,
+) -> Result<(), IpcError> {
     gate(Path::new(&parent.root))?;
     let Some(runner) = runner().await else {
         return Err(IpcError::new(ErrorCode::EngineMissing, JJ_MISSING).with_stage("jj"));
     };
-    let name = lane
-        .lane_branch
-        .clone()
-        .unwrap_or_else(|| lane.name.clone());
     jj::forget_workspace(
         runner,
         Path::new(&parent.root),
         Path::new(&lane.root),
-        &name,
+        &lane_name(lane),
         force,
     )
     .await

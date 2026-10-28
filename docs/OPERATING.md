@@ -59,7 +59,8 @@ apt-get install -y zsh fish                      # the shell-integration E2E spe
 apt-get install -y bubblewrap                    # E2E-M18-TL11 and the real-sandbox Rust tests need bwrap (F-TL-11)
 curl -sSL https://github.com/jj-vcs/jj/releases/download/v0.34.0/jj-v0.34.0-x86_64-unknown-linux-musl.tar.gz \
   | tar -xz -C /usr/local/bin ./jj               # jj for F-CD-24's real-jj tests and E2E-M18-CD24 (without it they say so and
-                                                 # return; JJ_REQUIRED=1 makes that a failure)
+                                                 # return; JJ_REQUIRED=1 makes that a failure; CI's checks job
+                                                 # installs the same binary, sha256-checked, with JJ_REQUIRED=1)
 rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
 pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked

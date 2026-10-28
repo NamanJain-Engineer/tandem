@@ -804,11 +804,13 @@ pub async fn remove_with_teardown(
 }
 
 /// F-CD-24: Discard for a jj workspace. jj keeps the working copy in its
-/// commit, but only what it can snapshot: without `force`, a working copy
-/// it couldn't snapshot whole (jj failed, or refused or left out a file)
-/// refuses with Conflict before anything stops, as a git lane's uncommitted
-/// changes do. Then its panes stop, then its language servers, then
-/// `jj workspace forget` and the folder go. Its commits stay.
+/// commit, but only what it can snapshot: every refusal
+/// ([`jj_lanes::preflight`]: a folder git tracks or that isn't this
+/// repository's workspace, and, without `force`, anything jj didn't keep
+/// whole) comes before anything stops, as a git lane's uncommitted changes
+/// do. Then its panes stop, then its language servers, then
+/// `jj workspace forget` and the folder go (checked again). Its commits
+/// stay.
 async fn remove_jj(
     store: &Store,
     terms: &TerminalService,
@@ -819,16 +821,14 @@ async fn remove_jj(
     // jj must be allowed to run here before anything stops: nothing fails
     // halfway.
     jj_lanes::gate(Path::new(&parent.root))?;
-    if force.is_none() && jj_lanes::dirty(lane, parent).await? {
-        return Err(IpcError::new(ErrorCode::Conflict, "Uncommitted changes").with_stage("jj"));
-    }
+    jj_lanes::preflight(lane, parent, force.is_some()).await?;
     stop_panes(store, terms, &lane.id).await?;
     let _closing =
         crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
     let lane_path = Path::new(&lane.root);
     let claimed_in =
         tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
-    jj_lanes::forget(lane, parent, force.is_some()).await?;
+    jj_lanes::forget(lane, parent, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
     crate::services::radar::forget(lane.id.as_str());
@@ -966,8 +966,8 @@ pub async fn sweep(
             Err(err) => tracing::warn!(error = %err, "worktree sweep failed for one workspace"),
         }
     }
-    // F-CD-24: records of jj workspaces being made in repositories no
-    // longer on the rail.
+    // F-CD-24: pending records old enough that the sweep will never act
+    // on them, whatever they name.
     jj_lanes::prune_pending();
     // Repositories on SSH hosts, by their helper (D-1602): only hosts
     // connected now, so the sweep never opens a connection (or a password
@@ -1800,8 +1800,12 @@ mod tests {
             tokio::spawn(
                 async move { create_kind(&store, &git, &id, "waits", LaneKind::Jj).await },
             );
-        // The create reached the lock (it signals just before waiting on it).
-        reached.notified().await;
+        // The create reached the lock (it signals just before waiting on
+        // it); one that failed before then fails the test instead of hanging.
+        tokio::select! {
+            _ = reached.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(60)) => panic!("the create never reached the lock"),
+        }
         tokio::task::yield_now().await;
         assert!(
             !task.is_finished(),

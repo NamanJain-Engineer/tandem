@@ -25,7 +25,7 @@ use tandem_core::lanes::exclude::ensure_tandem_excluded;
 use tandem_core::lanes::slug::dedupe;
 
 use crate::error::GitError;
-use crate::lanes::{LaneManager, WORKTREES_DIR};
+use crate::lanes::{ForceConfirm, LaneManager, WORKTREES_DIR};
 use crate::repo::{files_of, Repo};
 use crate::slug::slugify;
 use crate::types::FileDiff;
@@ -230,7 +230,7 @@ impl JjRunner for Jj {
 
 /// jj's version line ("0.34.0"), if it runs.
 pub fn version(jj: &dyn JjRunner) -> Option<String> {
-    let out = jj.run(Path::new("."), &["--version"]).ok()?;
+    let out = checked(jj, Path::new("."), &["--version"]).ok()?;
     if !out.success() {
         return None;
     }
@@ -274,7 +274,7 @@ pub fn briefing(path: &Path, name: &str, siblings: &[String]) -> String {
             .join(", ")
     };
     format!(
-        "You are working in the jj workspace `{}` (workspace `{name}`) of a repository co-located with git. Use `jj`, not `git`, in it: it has no `.git`. Sibling worktrees: {others}. Don't modify other worktrees. {}",
+        "You are working in the jj workspace `{}` (workspace `{name}`) of a repository co-located with git. Use `jj`, not `git`, in it: it has no `.git`. Record your work with `jj commit` or `jj new`; never squash, absorb or edit into the commits below your working copy. Sibling worktrees: {others}. Don't modify other worktrees. {}",
         path.display(),
         crate::lanes::CLAIMS_BRIEFING
     )
@@ -286,7 +286,8 @@ pub struct JjLane {
     /// Also the workspace's name.
     pub slug: String,
     pub path: PathBuf,
-    /// The commit it started from (its working copy's parent).
+    /// The change id of its first commit (empty, its own): the lane's
+    /// changes are those since that commit's parent.
     pub base: String,
     /// Its record in the pending folder until its row exists.
     pub pending: Option<PathBuf>,
@@ -331,8 +332,13 @@ fn commit_revset(id: &str) -> Result<String, GitError> {
 }
 
 pub const FOREIGN_WORKSPACE: &str = "That folder isn't one of this repository's jj workspaces";
-pub const TRACKED_FOLDER: &str =
-    "The repository's git index has files in that worktree's folder, so Vibezeo won't remove it";
+/// A worktree's folder git tracks files in: never removed. The remedy names
+/// the folder.
+pub fn tracked_folder(slug: &str) -> String {
+    format!(
+        "The repository's git index has files in this worktree's folder, so Vibezeo won't remove it. Run `git rm -r --cached {WORKTREES_DIR}/{slug}` in the repository, then discard it again"
+    )
+}
 
 /// Whether git's index has entries at or under `.tandem/worktrees/<slug>`
 /// (a folder the repository tracks is never removed). Fails closed: an
@@ -354,14 +360,29 @@ pub fn tracked_under(repo_root: &Path, slug: &str) -> bool {
 
 /// jj's own words for a working copy that a rewrite elsewhere left behind.
 const STALE_WORDS: &str = "working copy is stale";
-pub const STALE: &str =
-    "This jj workspace is out of date: run `jj workspace update-stale` in it, then try again";
 
-/// What a failed jj command says: the stale working copy in plain words,
-/// else jj's first line.
-fn failed(out: &JjOutput, op: &str) -> GitError {
-    if out.stderr.contains(STALE_WORDS) {
-        GitError::Invalid(STALE.into())
+/// What Vibezeo says for a stale working copy, naming the folder it's in
+/// (a lane, the handoff's source, or the main checkout).
+pub fn stale(folder: &Path) -> String {
+    format!(
+        "The jj workspace at {} is out of date: run `jj workspace update-stale` there, then try again",
+        folder.display()
+    )
+}
+
+/// Runs jj in `cwd`; a stale working copy there is a Conflict that says
+/// which folder and what to run.
+fn checked(jj: &dyn JjRunner, cwd: &Path, args: &[&str]) -> Result<JjOutput, GitError> {
+    let out = jj.run(cwd, args)?;
+    if !out.success() && out.stderr.contains(STALE_WORDS) {
+        return Err(GitError::Conflict(stale(cwd)));
+    }
+    Ok(out)
+}
+
+fn ok_or(out: JjOutput, op: &str) -> Result<JjOutput, GitError> {
+    if out.success() {
+        Ok(out)
     } else {
         let line: String = out
             .stderr
@@ -372,15 +393,7 @@ fn failed(out: &JjOutput, op: &str) -> GitError {
             .chars()
             .take(300)
             .collect();
-        GitError::Invalid(format!("jj {op} failed: {line}"))
-    }
-}
-
-fn ok_or(out: JjOutput, op: &str) -> Result<JjOutput, GitError> {
-    if out.success() {
-        Ok(out)
-    } else {
-        Err(failed(&out, op))
+        Err(GitError::Invalid(format!("jj {op} failed: {line}")))
     }
 }
 
@@ -388,7 +401,8 @@ fn ok_or(out: JjOutput, op: &str) -> Result<JjOutput, GitError> {
 /// snapshot of `root`'s working copy: the person's main checkout).
 pub fn workspace_names(jj: &dyn JjRunner, root: &Path) -> Result<HashSet<String>, GitError> {
     let out = ok_or(
-        jj.run(
+        checked(
+            jj,
             root,
             &[
                 "--ignore-working-copy",
@@ -413,7 +427,8 @@ pub fn workspace_names(jj: &dyn JjRunner, root: &Path) -> Result<HashSet<String>
 /// `ws_root` (its first, for a merge).
 pub fn base_of(jj: &dyn JjRunner, ws_root: &Path) -> Result<String, GitError> {
     let out = ok_or(
-        jj.run(
+        checked(
+            jj,
             ws_root,
             &[
                 "log",
@@ -443,22 +458,38 @@ pub fn base_of(jj: &dyn JjRunner, ws_root: &Path) -> Result<String, GitError> {
 /// commit (`jj duplicate @`, run in the source, which snapshots it first).
 /// The new lane sits on the copy, so the source's later edits (which
 /// rewrite its working-copy commit) never rebase the lane or leave it stale.
-/// Returns the copy's change id.
+/// The copy has what jj snapshotted: files jj refused or doesn't track in
+/// the source aren't in it. Returns the copy's change id.
 fn fork_of(jj: &dyn JjRunner, main: &Path, source: &Path) -> Result<String, GitError> {
-    let out = ok_or(jj.run(source, &["duplicate", "@"])?, "duplicate")?;
-    // "Duplicated <commit> as <change> <commit> <description>".
+    // jj prints the copy with `templates.commit_summary`, and says nothing
+    // with `ui.quiet`, both of which config can set: fixed for this call.
+    let out = ok_or(
+        checked(
+            jj,
+            source,
+            &[
+                "--config=ui.quiet=false",
+                "--config=templates.commit_summary=\"self.change_id()\"",
+                "duplicate",
+                "@",
+            ],
+        )?,
+        "duplicate",
+    )?;
+    // "Duplicated <commit> as <change id>".
     let text = format!("{}\n{}", out.stdout, out.stderr);
-    let short = text
+    let id = text
         .lines()
         .find_map(|l| l.trim().strip_prefix("Duplicated "))
-        .and_then(|rest| rest.split(" as ").nth(1))
-        .and_then(|rest| rest.split_whitespace().next())
-        .filter(|c| !c.is_empty() && c.chars().all(|ch| ('k'..='z').contains(&ch)))
-        .ok_or_else(|| GitError::Invalid("jj duplicate gave an unexpected answer".into()))?
-        .to_string();
-    let quoted = format!("\"{short}\"");
-    let full = ok_or(
-        jj.run(
+        .and_then(|rest| rest.rsplit_once(" as "))
+        .map(|(_, id)| id.trim().to_string())
+        .filter(|id| is_change_id(id))
+        .ok_or_else(|| GitError::Invalid("jj duplicate gave an unexpected answer".into()))?;
+    // And jj, in the repository, knows that change as itself.
+    let quoted = format!("\"{id}\"");
+    let back = ok_or(
+        checked(
+            jj,
             main,
             &[
                 "--ignore-working-copy",
@@ -472,8 +503,7 @@ fn fork_of(jj: &dyn JjRunner, main: &Path, source: &Path) -> Result<String, GitE
         )?,
         "log",
     )?;
-    let id = full.stdout.trim().to_string();
-    if !is_change_id(&id) || !id.starts_with(&short) {
+    if back.stdout.trim() != id {
         return Err(GitError::Invalid(
             "jj duplicate gave an unexpected answer".into(),
         ));
@@ -482,9 +512,15 @@ fn fork_of(jj: &dyn JjRunner, main: &Path, source: &Path) -> Result<String, GitE
 }
 
 /// `jj workspace add <repo>/.tandem/worktrees/<slug> --name <slug>` in the
-/// co-located repository `repo`. `from`: another workspace's name, whose
-/// working-copy commit it starts from (a handoff); otherwise jj starts it
-/// beside the default workspace's.
+/// co-located repository `repo`, then `jj new` in it. `from`: another
+/// workspace's name, whose working copy it starts from (a copy of it, made
+/// by [`fork_of`]: a handoff); otherwise jj starts it beside the default
+/// workspace's working copy. jj snapshots the main checkout while adding.
+///
+/// The `jj new` leaves the workspace's first commit (empty, the lane's own)
+/// as its base: the lane's diff is from that commit's parent, so work an
+/// agent squashes into it still shows, and nothing it squashes reaches the
+/// person's commits.
 ///
 /// `pending`: a folder of Vibezeo's own (never in the repository) where a
 /// record of the workspace being made stays until its row exists
@@ -521,7 +557,7 @@ pub async fn add_workspace(
     tokio::task::spawn_blocking(move || {
         taken.extend(workspace_names(jj.as_ref(), &main)?);
         // A handoff starts from a copy of the source's working copy.
-        let start = match &from {
+        let fork = match &from {
             Some(name) => {
                 let source = dir.join(name);
                 if main_of_workspace(&source).as_deref() != Some(repo_key.as_path()) {
@@ -531,76 +567,90 @@ pub async fn add_workspace(
             }
             None => None,
         };
-        // A slug another create took meanwhile: the next one.
-        for _ in 0..8 {
-            let slug = dedupe(&slugify(&source), &taken);
-            let path = dir.join(&slug);
-            if path.exists() {
-                taken.insert(slug);
-                continue;
-            }
-            let path_s = path.to_string_lossy().into_owned();
-            // Recorded before jj makes it, outside the repository.
-            let marker = match &pending {
-                Some(p) => Some(write_pending(p, &repo_key, &slug)?),
-                None => None,
-            };
-            let unmark = || {
-                if let Some(m) = &marker {
-                    let _ = std::fs::remove_file(m);
+        let start = fork.clone();
+        let made = (|| {
+            // A slug another create took meanwhile: the next one.
+            for _ in 0..8 {
+                let slug = dedupe(&slugify(&source), &taken);
+                let path = dir.join(&slug);
+                if path.exists() {
+                    taken.insert(slug);
+                    continue;
                 }
-            };
-            let mut args = vec!["workspace", "add", path_s.as_str(), "--name", slug.as_str()];
-            if let Some(r) = &start {
-                args.push("--revision");
-                args.push(r.as_str());
-            }
-            let out = match jj.run(&main, &args) {
-                Ok(out) => out,
-                Err(e) => {
+                let path_s = path.to_string_lossy().into_owned();
+                // Recorded before jj makes it, outside the repository.
+                let marker = match &pending {
+                    Some(p) => Some(write_pending(p, &repo_key, &slug)?),
+                    None => None,
+                };
+                let unmark = || {
+                    if let Some(m) = &marker {
+                        let _ = std::fs::remove_file(m);
+                    }
+                };
+                let mut args = vec!["workspace", "add", path_s.as_str(), "--name", slug.as_str()];
+                if let Some(r) = &start {
+                    args.push("--revision");
+                    args.push(r.as_str());
+                }
+                let out = match checked(&*jj, &main, &args) {
+                    Ok(out) => out,
+                    Err(e) => {
+                        unmark();
+                        return Err(e);
+                    }
+                };
+                if !out.success() && out.stderr.contains("already exists") {
+                    unmark();
+                    taken.insert(slug);
+                    continue;
+                }
+                if let Err(e) = ok_or(out, "workspace add") {
                     unmark();
                     return Err(e);
                 }
-            };
-            if !out.success() && out.stderr.contains("already exists") {
-                unmark();
-                taken.insert(slug);
-                continue;
+                let base = match ok_or(checked(&*jj, &path, &["new"])?, "new")
+                    .and_then(|_| base_of(jj.as_ref(), &path))
+                    .and_then(|b| verify_base(jj.as_ref(), &path, &main, &b).map(|_| b))
+                {
+                    Ok(b) => b,
+                    Err(e) => {
+                        // Nothing half-made stays behind.
+                        let _ = checked(
+                            &*jj,
+                            &main,
+                            &[
+                                "--ignore-working-copy",
+                                "workspace",
+                                "forget",
+                                slug.as_str(),
+                            ],
+                        );
+                        let _ = std::fs::remove_dir_all(&path);
+                        unmark();
+                        return Err(e);
+                    }
+                };
+                return Ok(JjLane {
+                    path: std::fs::canonicalize(&path).unwrap_or(path),
+                    slug,
+                    base,
+                    pending: marker,
+                });
             }
-            if let Err(e) = ok_or(out, "workspace add") {
-                unmark();
-                return Err(e);
-            }
-            let base = match base_of(jj.as_ref(), &path)
-                .and_then(|b| verify_base(jj.as_ref(), &path, &main, &b).map(|_| b))
-            {
-                Ok(b) => b,
-                Err(e) => {
-                    // Nothing half-made stays behind.
-                    let _ = jj.run(
-                        &main,
-                        &[
-                            "--ignore-working-copy",
-                            "workspace",
-                            "forget",
-                            slug.as_str(),
-                        ],
-                    );
-                    let _ = std::fs::remove_dir_all(&path);
-                    unmark();
-                    return Err(e);
-                }
-            };
-            return Ok(JjLane {
-                path: std::fs::canonicalize(&path).unwrap_or(path),
-                slug,
-                base,
-                pending: marker,
-            });
+            Err(GitError::Conflict(
+                "Couldn't find a free name for the jj workspace".into(),
+            ))
+        })();
+        // The handoff's copy goes with a create that failed.
+        if let (Err(_), Some(copy)) = (&made, &fork) {
+            let _ = checked(
+                &*jj,
+                &main,
+                &["--ignore-working-copy", "abandon", copy.as_str()],
+            );
         }
-        Err(GitError::Conflict(
-            "Couldn't find a free name for the jj workspace".into(),
-        ))
+        made
     })
     .await
     .map_err(|e| GitError::Invalid(e.to_string()))?
@@ -761,7 +811,7 @@ pub async fn forget_orphans(
         }
         match orphan_decision(repo_root, &record.slug, written, has_row) {
             Ok(folder) => {
-                match forget_workspace(jj.clone(), repo_root, &folder, &record.slug, false).await {
+                match forget_workspace(jj.clone(), repo_root, &folder, &record.slug, None).await {
                     Ok(()) => {
                         let _ = std::fs::remove_file(&path);
                         n += 1;
@@ -808,6 +858,8 @@ pub fn prune_pending(pending: &Path, age: Duration) -> usize {
     n
 }
 
+pub const GONE_BASE: &str = "This jj workspace's first commit was abandoned, so Vibezeo can't tell what changed in it. Its commits are still in `jj log`; discard it when you're done with them";
+
 pub const SHADOWED_BASE: &str =
     "A ref named like this worktree's base commit hides it, so Vibezeo won't use it";
 
@@ -816,6 +868,7 @@ pub const SHADOWED_BASE: &str =
 /// base is a change id (or, from before them, a commit id), no git ref has
 /// its name (a tag or branch named like it would be resolved first, and
 /// comes with a clone, no config needed), and jj resolves it to itself.
+/// Returns the revset to diff from (the base's parent, for a change id).
 pub fn verify_base(
     jj: &dyn JjRunner,
     ws_root: &Path,
@@ -843,17 +896,25 @@ pub fn verify_base(
     } else {
         "self.commit_id() ++ \"\\n\""
     };
-    let out = ok_or(
-        jj.run(
-            ws_root,
-            &["log", "-r", &revset, "--no-graph", "-T", template],
-        )?,
-        "log",
+    let out = checked(
+        jj,
+        ws_root,
+        &["log", "-r", &revset, "--no-graph", "-T", template],
     )?;
+    if !out.success() && out.stderr.contains("doesn't exist") {
+        return Err(GitError::Invalid(GONE_BASE.into()));
+    }
+    let out = ok_or(out, "log")?;
     if out.stdout.trim() != base {
         return Err(GitError::Invalid(SHADOWED_BASE.into()));
     }
-    Ok(revset)
+    // A lane's base is its own first commit: its changes are from that
+    // commit's parent. An older base (a commit id) is the parent itself.
+    if is_change_id(base) {
+        Ok(format!("{revset}-"))
+    } else {
+        Ok(revset)
+    }
 }
 
 /// The workspace's changes since `base`, working copy included, as git
@@ -870,7 +931,11 @@ pub async fn diff(
     tokio::task::spawn_blocking(move || {
         let base = verify_base(jj.as_ref(), &root, &main, &base)?;
         let out = ok_or(
-            jj.run(&root, &["diff", "--git", "--from", &base, "--to", "@"])?,
+            checked(
+                &*jj,
+                &root,
+                &["diff", "--git", "--from", &base, "--to", "@"],
+            )?,
             "diff",
         )?;
         parse_git_patch(out.stdout.as_bytes())
@@ -902,7 +967,8 @@ pub async fn changed_files(
     tokio::task::spawn_blocking(move || {
         let base = verify_base(jj.as_ref(), &root, &main, &base)?;
         let out = ok_or(
-            jj.run(
+            checked(
+                &*jj,
                 &root,
                 &["diff", "--name-only", "--from", &base, "--to", "@"],
             )?,
@@ -948,44 +1014,84 @@ fn working_copy(jj: &dyn JjRunner, cwd: &Path, rev: &str) -> Option<String> {
     (out.success() && is_commit_id(&id)).then_some(id)
 }
 
-/// Whether `jj status` (run in the workspace, which snapshots its working
-/// copy into its commit) kept everything: it ran, and jj neither refused a
-/// file (too big) nor left one untracked (outside `snapshot.auto-track`).
-pub fn snapshotted_whole(jj: &dyn JjRunner, ws_root: &Path) -> bool {
-    match jj.run(ws_root, &["status"]) {
-        Ok(out) => {
-            out.success()
-                && !out.stderr.contains("Refused to snapshot")
-                && !out.stdout.contains("Untracked paths:")
+/// A folder in a lane that holds another repository (`.git` or `.jj`
+/// below the lane's own `.jj`): jj never snapshots it, so removing the lane
+/// would lose its history. Symlinks aren't followed.
+fn nested_repository(ws_root: &Path) -> bool {
+    let mut stack = vec![ws_root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let Ok(kind) = e.file_type() else {
+                continue;
+            };
+            let name = e.file_name();
+            let top_jj = dir == ws_root && name == ".jj";
+            if (name == ".git" || name == ".jj") && !top_jj {
+                return true;
+            }
+            if kind.is_dir() && !top_jj {
+                stack.push(e.path());
+            }
         }
-        Err(_) => false,
     }
+    false
 }
 
-/// Discard: snapshot the working copy (so what's in it stays in the
-/// workspace's commit), `jj workspace forget <name>` in the repository,
-/// then remove the folder. The workspace's commits stay.
-///
-/// Without `force`, a working copy jj couldn't snapshot whole (jj failed,
-/// timed out, was locked or stale, or refused or left out a file) is
-/// [`GitError::Dirty`], as a git lane's uncommitted changes are: removing
-/// the folder would lose what's only on disk. A folder that isn't this
-/// repository's workspace named `name`, or that git's index tracks, is
-/// never removed. A folder already gone: nothing is forgotten (the name
-/// can't be checked against it).
-pub async fn forget_workspace(
-    jj: Arc<dyn JjRunner>,
+/// Whether jj kept everything in the workspace at `ws_root`, named `name`,
+/// in its commit: `jj status` there (which snapshots it) ran and printed no
+/// warning at all (a refused file, or any other: one a later jj words
+/// differently still counts), left nothing untracked, and found its
+/// working copy; jj still lists `name`, the folder's working-copy commit
+/// reads back, and no nested repository is in it. Otherwise Dirty (a stale
+/// working copy: Conflict, saying what to run).
+pub fn kept_whole(
+    jj: &dyn JjRunner,
     repo_root: &Path,
     ws_root: &Path,
     name: &str,
-    force: bool,
 ) -> Result<(), GitError> {
-    let repo_root = repo_root.to_path_buf();
-    let ws_root = ws_root.to_path_buf();
-    let name = name.to_string();
-    // Only a workspace Vibezeo made (never `default`), and only a folder of
-    // its own: `<repo>/.tandem/worktrees/<name>`.
-    if !is_lane_name(&name) {
+    let out = match checked(jj, ws_root, &["status"]) {
+        Ok(out) => out,
+        Err(e @ GitError::Conflict(_)) => return Err(e),
+        Err(_) => return Err(GitError::Dirty),
+    };
+    if !out.success()
+        || out.stderr.contains("Warning:")
+        || out.stdout.contains("Untracked paths:")
+        || out.stdout.contains("No working copy")
+    {
+        return Err(GitError::Dirty);
+    }
+    // jj snapshots only a workspace still in its view: one forgotten (or
+    // undone) while the agent kept editing has nothing of it kept.
+    if working_copy(jj, ws_root, "@").is_none() || !workspace_names(jj, repo_root)?.contains(name) {
+        return Err(GitError::Dirty);
+    }
+    if nested_repository(ws_root) {
+        return Err(GitError::Dirty);
+    }
+    Ok(())
+}
+
+/// Where a Discard stands before anything runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Folder {
+    /// Already gone: nothing on disk to lose.
+    Gone,
+    /// There, this repository's jj workspace, and not tracked by git.
+    Present,
+}
+
+/// Discard's checks that need no jj (so they run before anything stops):
+/// a name Vibezeo makes (never `default`), the folder
+/// `<repo>/.tandem/worktrees/<name>` (no symlink), and, when it's there,
+/// nothing in it tracked by git's index and its `.jj/repo` naming this
+/// repository's.
+pub fn forget_checks(repo_root: &Path, ws_root: &Path, name: &str) -> Result<Folder, GitError> {
+    if !is_lane_name(name) {
         return Err(GitError::Invalid(
             "That isn't a jj workspace Vibezeo made".into(),
         ));
@@ -994,48 +1100,82 @@ pub async fn forget_workspace(
     let dir = canon(&repo_root.join(WORKTREES_DIR));
     let parent = ws_root.parent().map(canon);
     let ours = parent.as_deref() == Some(dir.as_path())
-        && ws_root.file_name() == Some(std::ffi::OsStr::new(&name))
-        && !std::fs::symlink_metadata(&ws_root).is_ok_and(|m| m.file_type().is_symlink());
+        && ws_root.file_name() == Some(std::ffi::OsStr::new(name))
+        && !std::fs::symlink_metadata(ws_root).is_ok_and(|m| m.file_type().is_symlink());
     if !ours {
         return Err(GitError::Invalid(
             "That folder isn't one of this repository's worktrees".into(),
         ));
     }
-    if tracked_under(&repo_root, &name) {
-        return Err(GitError::Invalid(TRACKED_FOLDER.into()));
+    if !std::fs::symlink_metadata(ws_root).is_ok_and(|m| m.is_dir()) {
+        return Ok(Folder::Gone);
     }
-    if !std::fs::symlink_metadata(&ws_root).is_ok_and(|m| m.is_dir()) {
-        return Ok(());
+    if tracked_under(repo_root, name) {
+        return Err(GitError::Invalid(tracked_folder(name)));
     }
-    let main = std::fs::canonicalize(&repo_root).ok();
-    if main.is_none() || main_of_workspace(&ws_root) != main {
+    let main = std::fs::canonicalize(repo_root).ok();
+    if main.is_none() || main_of_workspace(ws_root) != main {
         return Err(GitError::Invalid(FOREIGN_WORKSPACE.into()));
     }
+    Ok(Folder::Present)
+}
+
+fn forget_name(jj: &dyn JjRunner, repo_root: &Path, name: &str) -> Result<(), GitError> {
+    ok_or(
+        checked(
+            jj,
+            repo_root,
+            &["--ignore-working-copy", "workspace", "forget", name],
+        )?,
+        "workspace forget",
+    )?;
+    Ok(())
+}
+
+/// Discard: snapshot the working copy (so what's in it stays in the
+/// workspace's commit), `jj workspace forget <name>` in the repository,
+/// then remove the folder. The workspace's commits stay.
+///
+/// Without `force` (a person's confirmation, [`ForceConfirm`]), anything
+/// [`kept_whole`] can't vouch for is [`GitError::Dirty`], as a git lane's
+/// uncommitted changes are: removing the folder would lose what's only on
+/// disk. Even forced, a folder [`forget_checks`] refuses is never removed,
+/// and the name is forgotten only when it's this folder's workspace (the
+/// same working-copy commit read from both sides). A folder already gone:
+/// its registration is forgotten when jj lists the name (Vibezeo's slugs
+/// are never names jj already had, so it's the lane's).
+pub async fn forget_workspace(
+    jj: Arc<dyn JjRunner>,
+    repo_root: &Path,
+    ws_root: &Path,
+    name: &str,
+    force: Option<ForceConfirm>,
+) -> Result<(), GitError> {
+    let folder = forget_checks(repo_root, ws_root, name)?;
+    let repo_root = repo_root.to_path_buf();
+    let ws_root = ws_root.to_path_buf();
+    let name = name.to_string();
     tokio::task::spawn_blocking(move || {
-        if !snapshotted_whole(jj.as_ref(), &ws_root) && !force {
-            return Err(GitError::Dirty);
-        }
         let known = workspace_names(jj.as_ref(), &repo_root)?;
+        if folder == Folder::Gone {
+            if known.contains(&name) {
+                forget_name(jj.as_ref(), &repo_root, &name)?;
+            }
+            return Ok(());
+        }
+        if force.is_none() {
+            kept_whole(jj.as_ref(), &repo_root, &ws_root, &name)?;
+        }
         if known.contains(&name) {
-            // The workspace jj calls `name` is this folder's: the same
-            // working-copy commit, read from both sides.
             let named = named_working_copy(jj.as_ref(), &repo_root, &name);
             let here = working_copy(jj.as_ref(), &ws_root, "@");
-            if named.is_none() || named != here {
-                return Err(GitError::Invalid(FOREIGN_WORKSPACE.into()));
+            match (named, here) {
+                (Some(n), Some(h)) if n == h => forget_name(jj.as_ref(), &repo_root, &name)?,
+                // The folder's workspace is gone from jj's view (forced):
+                // the name now belongs to something else; it stays.
+                (_, None) => {}
+                _ => return Err(GitError::Invalid(FOREIGN_WORKSPACE.into())),
             }
-            ok_or(
-                jj.run(
-                    &repo_root,
-                    &[
-                        "--ignore-working-copy",
-                        "workspace",
-                        "forget",
-                        name.as_str(),
-                    ],
-                )?,
-                "workspace forget",
-            )?;
         }
         match std::fs::remove_dir_all(&ws_root) {
             Ok(()) => Ok(()),
@@ -1506,13 +1646,11 @@ mod tests {
                     ok("default\nfirst\n"),
                 ),
                 (
-                    "duplicate @",
+                    "--config=ui.quiet=false",
                     JjOutput {
                         code: Some(0),
                         stdout: String::new(),
-                        stderr:
-                            "Duplicated 0123abcd4567 as zzkkxyzw 89abcdef (no description set)\n"
-                                .into(),
+                        stderr: format!("Duplicated 0123abcd4567 as {CID}\n"),
                     },
                 ),
                 ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
@@ -1549,10 +1687,19 @@ mod tests {
             ),
             // The handoff starts from a copy of the source's working copy,
             // made in the source, so the source's edits can't move it.
-            at(&source, vec!["duplicate".to_string(), "@".into()]),
+            // With jj's summary and quietness fixed for the call.
+            at(
+                &source,
+                vec![
+                    "--config=ui.quiet=false".to_string(),
+                    "--config=templates.commit_summary=\"self.change_id()\"".into(),
+                    "duplicate".into(),
+                    "@".into(),
+                ],
+            ),
         ];
         let mut full = vec!["--ignore-working-copy".to_string()];
-        full.extend(log("\"zzkkxyzw\"", "change_id"));
+        full.extend(log(&format!("\"{CID}\""), "change_id"));
         expected.push(at(&main, full));
         expected.push(at(
             &main,
@@ -1566,6 +1713,8 @@ mod tests {
                 quoted.clone(),
             ],
         ));
+        // The lane's own first commit, empty: its base.
+        expected.push(at(&path, vec!["new".to_string()]));
         expected.push(at(&path, log("@-", "change_id")));
         expected.push(at(&path, log(&quoted, "change_id")));
         assert_eq!(calls, expected);
@@ -1601,7 +1750,8 @@ mod tests {
                 .all(|a| !a.iter().any(|x| x == "duplicate")),
             "no copy made"
         );
-        // The diff checks the base resolves to itself, then diffs from it quoted.
+        // The diff checks the base resolves to itself, then diffs from its
+        // parent, quoted (so work squashed into the base still shows).
         let before = fake.calls().len();
         diff(fake.clone(), &main, &path, CID).await.expect("diff");
         assert_eq!(
@@ -1612,7 +1762,7 @@ mod tests {
                     "diff".to_string(),
                     "--git".into(),
                     "--from".into(),
-                    quoted.clone(),
+                    format!("{quoted}-"),
                     "--to".into(),
                     "@".into()
                 ],
@@ -1635,12 +1785,100 @@ mod tests {
             .expect_err("shadowed");
         assert!(e.to_string().contains(SHADOWED_BASE), "{e}");
         // A stale workspace says what to do.
-        let stale = Arc::new(FakeJj::answering(vec![(
+        let fake_stale = Arc::new(FakeJj::answering(vec![(
             "log -r",
             failing("Error: The working copy is stale (not updated since operation 1234).\nHint: Run `jj workspace update-stale` to update it."),
         )]));
-        let e = diff(stale, &main, &path, CID).await.expect_err("stale");
-        assert_eq!(e.to_string(), STALE);
+        let e = diff(fake_stale, &main, &path, CID)
+            .await
+            .expect_err("stale");
+        assert_eq!(e.to_string(), stale(&path));
+        assert!(e.to_string().contains(&path.to_string_lossy().into_owned()));
+        // An abandoned base says so.
+        let gone = Arc::new(FakeJj::answering(vec![(
+            "log -r",
+            failing(&format!("Error: Revision `{CID}` doesn't exist")),
+        )]));
+        let e = diff(gone, &main, &path, CID).await.expect_err("gone");
+        assert_eq!(e.to_string(), GONE_BASE);
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_a_failed_handoff_abandons_its_copy_and_fixed_output_is_read() {
+        let (_t, main) = colocated_fixture();
+        let repo = Repo::discover(&main).expect("discover").expect("repo");
+        workspace_folder(&main, "first");
+        // jj adds the workspace but fails after (no `making`: no folder, so
+        // the base can't be verified).
+        let fake = Arc::new(FakeJj::answering(vec![
+            (
+                "--ignore-working-copy workspace list",
+                ok("default\nfirst\n"),
+            ),
+            (
+                "--config=ui.quiet=false",
+                JjOutput {
+                    code: Some(0),
+                    stdout: String::new(),
+                    stderr: format!("Duplicated 0123abcd4567 as {CID}\n"),
+                },
+            ),
+            ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
+            ("log -r", ok(&format!("{CID}\n"))),
+        ]));
+        add_workspace(
+            fake.clone(),
+            &repo,
+            "x",
+            &HashSet::new(),
+            Some("first".into()),
+            None,
+        )
+        .await
+        .expect_err("failed");
+        let quoted = format!("\"{CID}\"");
+        assert!(fake.calls().contains(&vec![
+            "--ignore-working-copy".to_string(),
+            "abandon".into(),
+            quoted
+        ]));
+        // A summary jj didn't print as fixed (a word, a short id, nothing):
+        // refused, nothing made.
+        for stderr in [
+            "Duplicated 0123abcd4567 as klmnopqr 89abcdef (no description set)\n".to_string(),
+            String::new(),
+            format!("Duplicated 0123 as {CID} extra\n"),
+        ] {
+            let fake = Arc::new(FakeJj::answering(vec![
+                (
+                    "--ignore-working-copy workspace list",
+                    ok("default\nfirst\n"),
+                ),
+                (
+                    "--config=ui.quiet=false",
+                    JjOutput {
+                        code: Some(0),
+                        stdout: String::new(),
+                        stderr: stderr.clone(),
+                    },
+                ),
+                ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
+            ]));
+            add_workspace(
+                fake.clone(),
+                &repo,
+                "y",
+                &HashSet::new(),
+                Some("first".into()),
+                None,
+            )
+            .await
+            .expect_err("unexpected");
+            assert!(
+                fake.calls().iter().all(|a| !a.iter().any(|x| x == "add")),
+                "{stderr:?}"
+            );
+        }
     }
 
     #[test]
@@ -1688,16 +1926,25 @@ mod tests {
         }
     }
 
+    fn forced() -> Option<ForceConfirm> {
+        let review =
+            tandem_core::origin::LocalReview::check(&tandem_core::origin::Origin::main_window())
+                .expect("main window");
+        Some(ForceConfirm::new(review))
+    }
+
     #[tokio::test]
     async fn f_cd_24_4_discard_keeps_a_working_copy_jj_couldnt_snapshot_whole() {
         let (_t, main) = colocated_fixture();
         let same = ("--ignore-working-copy log -r", ok(&format!("{HEX}\n")));
-        let list = (
-            "--ignore-working-copy workspace list",
-            ok("default\ntidy\n"),
-        );
-        let cases: Vec<(&str, JjOutput)> = vec![
-            ("failed", failing("Error: The working copy is stale")),
+        let listed = ok("default\ntidy\n");
+        let gone_from_view = ok("default\n");
+        let cases: Vec<(&str, JjOutput, JjOutput)> = vec![
+            (
+                "failed",
+                failing("Error: Concurrent checkout"),
+                listed.clone(),
+            ),
             (
                 "refused",
                 JjOutput {
@@ -1705,17 +1952,43 @@ mod tests {
                     stdout: "Working copy changes:\nA small.txt\n".into(),
                     stderr: "Warning: Refused to snapshot some files:\n  big.bin: 2.0MiB\n".into(),
                 },
+                listed.clone(),
             ),
-            ("untracked", ok("Untracked paths:\n? notes.txt\n")),
+            (
+                "a warning a later jj words differently",
+                JjOutput {
+                    code: Some(0),
+                    stdout: String::new(),
+                    stderr: "Warning: Skipped some files:\n  big.bin\n".into(),
+                },
+                listed.clone(),
+            ),
+            (
+                "untracked",
+                ok("Untracked paths:\n? notes.txt\n"),
+                listed.clone(),
+            ),
+            // Forgotten (or undone) while the agent kept editing: jj skips
+            // the snapshot and says only this.
+            (
+                "no working copy",
+                ok("No working copy\n"),
+                gone_from_view.clone(),
+            ),
+            (
+                "not listed",
+                ok("The working copy has no changes.\n"),
+                gone_from_view.clone(),
+            ),
         ];
-        for (why, status) in cases {
+        for (why, status, list) in cases {
             let ws = workspace_folder(&main, "tidy");
             let fake = Arc::new(FakeJj::answering(vec![
                 ("status", status.clone()),
-                list.clone(),
+                ("--ignore-working-copy workspace list", list.clone()),
                 same.clone(),
             ]));
-            let e = forget_workspace(fake.clone(), &main, &ws, "tidy", false)
+            let e = forget_workspace(fake.clone(), &main, &ws, "tidy", None)
                 .await
                 .expect_err(why);
             assert!(matches!(e, GitError::Dirty), "{why}: {e}");
@@ -1726,23 +1999,60 @@ mod tests {
                     .all(|a| !a.iter().any(|x| x == "forget")),
                 "{why}"
             );
-            // Forced (the person confirmed): forgotten and removed.
-            forget_workspace(fake.clone(), &main, &ws, "tidy", true)
+            // Forced (the person confirmed): removed; the name is forgotten
+            // only while jj lists it as this folder's.
+            forget_workspace(fake.clone(), &main, &ws, "tidy", forced())
                 .await
                 .expect(why);
             assert!(!ws.exists(), "{why}");
+            let forgot = fake.calls().iter().any(|a| a.iter().any(|x| x == "forget"));
+            assert_eq!(forgot, list == listed, "{why}");
         }
-        // A runner that can't run jj at all (timeout, missing) is the same.
+        // A whole snapshot: forgotten and removed without force.
+        let ws = workspace_folder(&main, "tidy");
+        let fake = Arc::new(FakeJj::answering(vec![
+            ("status", ok("The working copy has no changes.\n")),
+            ("--ignore-working-copy workspace list", listed.clone()),
+            same.clone(),
+        ]));
+        forget_workspace(fake.clone(), &main, &ws, "tidy", None)
+            .await
+            .expect("clean");
+        assert!(!ws.exists());
+        // A nested repository (jj never snapshots it): kept until forced.
+        let ws = workspace_folder(&main, "tidy");
+        std::fs::create_dir_all(ws.join("vendor/lib/.git")).expect("mkdir");
+        let e = forget_workspace(fake.clone(), &main, &ws, "tidy", None)
+            .await
+            .expect_err("nested");
+        assert!(matches!(e, GitError::Dirty), "{e}");
+        assert!(ws.join("vendor/lib/.git").exists());
+        std::fs::remove_dir_all(&ws).expect("rm");
+        // A stale working copy says what to run, and where.
+        let ws = workspace_folder(&main, "tidy");
+        let fake = Arc::new(FakeJj::answering(vec![
+            (
+                "status",
+                failing("Error: The working copy is stale (not updated since operation 1)"),
+            ),
+            ("--ignore-working-copy workspace list", listed.clone()),
+            same.clone(),
+        ]));
+        let e = forget_workspace(fake, &main, &ws, "tidy", None)
+            .await
+            .expect_err("stale");
+        assert!(
+            matches!(e, GitError::Conflict(ref m) if *m == stale(&ws)),
+            "{e}"
+        );
+        // A runner that can't run jj at all (timeout, missing) is Dirty.
         struct Broken;
         impl JjRunner for Broken {
             fn run(&self, _: &Path, _: &[&str]) -> Result<JjOutput, GitError> {
                 Err(GitError::Invalid("jj timed out".into()))
             }
         }
-        let ws = workspace_folder(&main, "tidy");
-        let e = forget_workspace(Arc::new(Broken), &main, &ws, "tidy", false)
-            .await
-            .expect_err("broken");
+        let e = kept_whole(&Broken, &main, &ws, "tidy").expect_err("broken");
         assert!(matches!(e, GitError::Dirty), "{e}");
         assert!(ws.exists());
     }
@@ -1767,7 +2077,7 @@ mod tests {
                 ok(&format!("{}\n", "f".repeat(40))),
             ),
         ]));
-        let e = forget_workspace(fake.clone(), &main, &ws, "tidy", true)
+        let e = forget_workspace(fake.clone(), &main, &ws, "tidy", forced())
             .await
             .expect_err("someone else's");
         assert!(e.to_string().contains(FOREIGN_WORKSPACE), "{e}");
@@ -1777,11 +2087,12 @@ mod tests {
             .iter()
             .all(|a| !a.iter().any(|x| x == "forget")));
         // A folder that isn't this repository's jj workspace, or that git's
-        // index tracks: refused before jj runs, even forced.
+        // index tracks: refused before jj runs, even forced, and the
+        // refusal says what to do.
         let plain = main.join(WORKTREES_DIR).join("plain");
         std::fs::create_dir_all(&plain).expect("mkdir");
         let fake = Arc::new(FakeJj::default());
-        let e = forget_workspace(fake.clone(), &main, &plain, "plain", true)
+        let e = forget_workspace(fake.clone(), &main, &plain, "plain", forced())
             .await
             .expect_err("plain");
         assert!(e.to_string().contains(FOREIGN_WORKSPACE), "{e}");
@@ -1792,18 +2103,53 @@ mod tests {
             .add_path(Path::new(".tandem/worktrees/tidy/f.txt"))
             .expect("add");
         index.write().expect("write");
-        let e = forget_workspace(fake.clone(), &main, &ws, "tidy", true)
+        let e = forget_workspace(fake.clone(), &main, &ws, "tidy", forced())
             .await
             .expect_err("tracked");
-        assert!(e.to_string().contains(TRACKED_FOLDER), "{e}");
+        assert_eq!(e.to_string(), tracked_folder("tidy"));
+        assert!(e
+            .to_string()
+            .contains("git rm -r --cached .tandem/worktrees/tidy"));
         assert!(fake.calls().is_empty());
         assert!(ws.join("f.txt").exists());
-        // A folder already gone: nothing forgotten by name.
+        assert_eq!(
+            forget_checks(&main, &ws, "tidy").map_err(|e| e.to_string()),
+            Err(tracked_folder("tidy"))
+        );
+        // A folder already gone: its registration goes when jj lists the
+        // name, and nothing else runs.
         let gone = main.join(WORKTREES_DIR).join("gone");
-        forget_workspace(fake.clone(), &main, &gone, "gone", false)
+        assert_eq!(
+            forget_checks(&main, &gone, "gone").expect("gone"),
+            Folder::Gone
+        );
+        let listed = Arc::new(FakeJj::answering(vec![(
+            "--ignore-working-copy workspace list",
+            ok("default\ngone\n"),
+        )]));
+        forget_workspace(listed.clone(), &main, &gone, "gone", None)
             .await
             .expect("gone");
-        assert!(fake.calls().is_empty());
+        assert_eq!(
+            listed.calls().last(),
+            Some(&vec![
+                "--ignore-working-copy".to_string(),
+                "workspace".into(),
+                "forget".into(),
+                "gone".into()
+            ])
+        );
+        let unlisted = Arc::new(FakeJj::answering(vec![(
+            "--ignore-working-copy workspace list",
+            ok("default\n"),
+        )]));
+        forget_workspace(unlisted.clone(), &main, &gone, "gone", None)
+            .await
+            .expect("gone");
+        assert!(unlisted
+            .calls()
+            .iter()
+            .all(|a| !a.iter().any(|x| x == "forget")));
     }
 
     #[tokio::test]
