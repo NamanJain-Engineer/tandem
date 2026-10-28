@@ -1,8 +1,10 @@
 // CI results and review comments back to the agent (F-WT-08), simulated on
 // the sample pull request (`story.json`'s `pr`). The prompts follow the
 // core's (pr_checks.rs, untrusted.rs): CI's text and a reviewer's words go
-// behind the untrusted label and a fence. Nothing here runs gh: the demo
-// asks for it as the app does, and answers from the story.
+// behind the untrusted label and a fence, with no `@` in them that names a
+// file for the agent (D-3022). Nothing here runs gh: the demo asks for it as
+// the app does, and answers from the story. drift.test.ts holds this text to
+// the core's sources.
 import type { ImportedComment, ImportedComments, LaneChecks, PrCheck } from "@tandem/protocol";
 import { STORY, type StoryCheck } from "./story";
 
@@ -18,6 +20,30 @@ export function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
+/** untrusted.rs `defang_mentions`: every `@` that could start a mention
+ * made a full-width `＠`, since Claude Code reads a file a message names as
+ * `@<path>`; one before whitespace, another `@` or the end stays. */
+export function defangMentions(text: string): string {
+  const chars = [...text];
+  return chars
+    .map((c, i) => {
+      const next = chars[i + 1];
+      return c === "@" && next !== undefined && !/\s/u.test(next) && next !== "@" ? "\uFF20" : c;
+    })
+    .join("");
+}
+
+/** untrusted.rs `DEFANGED`: what follows text `defangMentions` changed. */
+export const DEFANGED = "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
+
+/** untrusted.rs `fence_defanged`: `fence`, for text a message to an engine
+ * carries, with `DEFANGED` after it when an `@` was changed. */
+export function fenceDefanged(lang: string, text: string): string {
+  const safe = defangMentions(text);
+  const fenced = fence(lang, safe);
+  return safe === text ? fenced : `${fenced}\n${DEFANGED}`;
+}
+
 /** "Send failure to agent" (pr_checks.rs `failure_prompt`): the instruction
  * is ours; the check's name, link and log are CI's. */
 export function failurePrompt(pr: number, check: StoryCheck): string {
@@ -30,13 +56,13 @@ export function failurePrompt(pr: number, check: StoryCheck): string {
     `A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.`,
     "",
     untrustedLabel("the CI check"),
-    fence("text", ci),
+    fenceDefanged("text", ci),
   ].join("\n");
 }
 
-/** pr_checks.rs `comment_fenced`. */
+/** pr_checks.rs `comment_fenced`: the author written without an `@`. */
 export function commentFenced(author: string, path: string, line: number, body: string): string {
-  return `${untrustedLabel("a pull request review comment")}\n${fence("text", `@${author} on ${path}:${line}:\n${body.trim()}`)}`;
+  return `${untrustedLabel("a pull request review comment")}\n${fenceDefanged("text", `${author} on ${path}:${line}:\n${body.trim()}`)}`;
 }
 
 /** A check as gh reports it, its job read from its link. */

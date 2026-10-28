@@ -281,6 +281,8 @@ export function WorktreeRow({
     JSON.stringify([
       wt.name,
       wt.missing,
+      // F-CD-24's jj badge takes room in the row too.
+      wt.laneVcs ?? null,
       status,
       checks?.state === "ready" ? checks.checks.map((c) => c.bucket) : null,
       radar ?? null,
