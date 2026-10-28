@@ -78,12 +78,17 @@ release fails when its version has no section.
   file on your computer: a worktree's diff and a second opinion's words, in the
   review you send or for the second opinion itself, a pull request's review
   comments, a failed check's log, Warn both agents' note, a teammate's mail, the
-  terminal selection, clipboard, file name or branch name in a prompt, a web
-  page's elements, the turn a teammate learns from, a teammate's briefing for an
-  ACP agent, a handoff brief, and what Auto and Conductor send. Any `@` there
-  that could name a file is written ＠, and the message says so. A handoff brief,
-  or what Auto or Conductor sends an agent, that starts with `/` or `!` gets a
-  space first, so it runs no slash or shell command.
+  terminal selection, clipboard, file name or branch name in a prompt, a
+  branch's name in a review you send back, a web page's elements, the turn a
+  teammate learns from, a teammate's briefing for an ACP agent, a handoff brief,
+  the summary that continues work on another account, and what Auto and
+  Conductor send. Any `@` there that could name a file is written ＠, and the
+  message says so. Characters nobody can see are dropped, a paste marker such as
+  [Pasted text #1] can't stand in for something you pasted, and words such as
+  ultrathink get a hyphen. A handoff brief, or what Auto or Conductor sends an
+  agent, that starts with `/` or `!`, or is just "exit" or "quit", has its first
+  character written full width (／, ！), so it runs no slash or shell command and
+  quits nothing, mid-turn too.
 
 ## 0.12.0
 

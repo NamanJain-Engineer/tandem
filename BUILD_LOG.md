@@ -3168,6 +3168,37 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the vectors (Rust and TypeScript), the tokenizer invariant, `no_command`, the headless request (two), Conductor's `prompt_pane` guard, its tools' words through a thread draft and the source check, a launch's names without the note, Auto's guard, the handoff brief's defang, `deliver`'s guard and a Thread's, the git read (a real repository, and linked files), and a prompt's file and branch (the core, and a real branch through `prompts_render`).
     - These failed on the old code: the vectors, the invariant, the headless request, `prompt_pane`'s guard, the launch's names, a Thread's brief, the git read and its links, and the prompt's names (both).
     - The desktop ones (Auto, Conductor's tools, the briefs) and `no_command`'s own were first run after the code.
+- [x] The verification of 8c97f6e8 ("merge after must-fixes"): must-fixes 1 and 2, should-fixes 3 to 6 and the nits (D-3028, D-3029). chain27 a71b3dd4 merged in first.
+  - **Must-fix 1 (D-3028).** `no_command` decides on the first character the REPL reads: past whitespace, control characters (typing drops them) and characters nothing shows. `"\u0001!curl … | sh"` from Auto's supervisor had passed it and typed as `!curl …`.
+  - **Should-fix 4 (D-3028).**
+    - That character goes full width (`／`, `！`), not behind a space: mid-turn, Claude Code trims the input before it runs a command, and ` /exit` typed mid-turn quit 2.1.312's REPL.
+    - A whole message that's an exit word (`exit`, `quit`, `:q`, `:q!`, `:wq`, `:wq!`) gets the same.
+    - Auto re-checks readiness after the supervisor answers, and drops an answer that would land mid-turn.
+  - **Must-fix 2 and should-fix 3.** The fallback brief puts the scrollback behind the untrusted label in `fence_defanged`, so a ``` line can't close it. A continue elsewhere (F-AC-05) types it through `handoff::offered` (`moved_brief`).
+  - **Should-fix 5.** Send back's prompt defangs the branch (D-3027).
+  - **Should-fix 6 (D-3029).** `untrusted::defang`, in the core and the app:
+    - drops what nothing shows;
+    - applies the `@` rule;
+    - makes a paste marker's `[` a `［`;
+    - puts a hyphen after `ultra` before code, plan, review or think.
+    - The note follows only an `@` it wrote.
+  - **Nits.**
+    - ACP and Codex: the guard writes the character full width, so nothing an engine gets starts with an ASCII `/` or `!`, and a leading space no longer matters there. Not run against them: there's no Codex in the container, and each ACP agent parses its own commands.
+    - S3: D-3024 notes that it relies on `new_id("pl")` never repeating, and that two reads at once can leave the older one's file, with the same content.
+  - **Found on the way.** The review prompt's head (TypeScript) put the branch in raw too; it's defanged now.
+  - **Tests**, written before the code:
+    - the vectors: 19 new (invisibles, paste markers, ultra words), Rust and TypeScript, each output defanged again unchanged;
+    - the guard's cases: control characters, U+FEFF, exit words, mid-turn ` /exit`;
+    - the note only for an `@`;
+    - the app's invisible list against its engine's table, over every code point;
+    - per sink, with `\u{1}!x`, `\u{7f}/x`, `\u{9b}!x` and an exit word: Conductor's `prompt_pane`, Auto (as the PTY gets it), `deliver` and a Thread's brief;
+    - Auto's readiness re-check;
+    - the fallback (engines) and a continue elsewhere's brief;
+    - Send back's branch and the review head's branch;
+    - two rule-8 invariants. Guarded text, typed as the app types it or sent, behind any of 15 leading characters, is never read as a command or an exit word by a port of the REPL's checks. Defanged text carries no word or paste marker the REPL acts on, after a clean-up of what nothing shows.
+    - These failed on the old code: the core's three (vectors, guard, note), both invariants, the readiness re-check (checked by taking the re-check out), the fallback, Send back's branch and the review head's branch.
+    - The keyword rule has no end-of-text case, unlike `@` (D-3025). Where the app joins fragments, its own text sits between them (`:`, a fence, a label), and none of that starts with code, plan, review or think. Two prompt variables written side by side are the one join it doesn't cover, and that's your template.
+    - The sinks' tests moved to the new guard after the core changed. A continue elsewhere's brief test passes on the old desktop code once the fallback is fixed; the fallback's own test failed first.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3351,7 +3382,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - An `@` at the start of a line or after whitespace (a space, a tab, a no-break space) attaches, inside a code fence too. One after a quote, a word character, a bracket (`(`, `[`, `{`, `<`) or a backtick doesn't, and `＠` never does.
     - Nothing in `--append-system-prompt-file` attaches.
     - The defang stays wider than that: the rule isn't documented, and it moves with versions.
-  - The rule, one for the core and the app (`untrusted::defang_mentions`, `defangMentions`, pinned by `crates/tandem-core/tests/fixtures/defang.json`): every `@` becomes ＠ except one before a space, a tab, a line break, another `@` or the end. Amended by D-3025: a whole run of `@` stays only before a space, a tab or a line break.
+  - The rule, one for the core and the app (`untrusted::defang_mentions`, `defangMentions`, pinned by `crates/tandem-core/tests/fixtures/defang.json`): every `@` becomes ＠ except one before a space, a tab, a line break, another `@` or the end. Amended by D-3025: a whole run of `@` stays only before a space, a tab or a line break. Amended by D-3029: callers use `untrusted::defang` and the app's `defang`, which also drop what nothing shows, a paste marker's `[` and a whole `ultra` word; the `@` step on its own is private.
     - Not "any whitespace": Rust's and JavaScript's differ (U+0085), and typing into a terminal drops every other control character, a form feed too, which would join the `@` to what follows.
     - The note says "read ＠ as an at sign" and holds no `@`: "@." after a space could name the current folder.
   - The review prompt Send to agent types (F-WT-02, built in the app) defangs the diff's lines and paths and the second opinion's words. Your own comments stay as you wrote them.
@@ -3377,6 +3408,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Amended after the review of e1b80bb2:
     - git's read tells a file the commit doesn't have from a failure. The commit must exist first (`cat-file -e <commit>^{commit}`), so a collected commit or a folder that's no longer a repository is an error. Each name is looked up with `ls-tree --full-tree`: nothing, a folder or a link is left out (git keeps the path a link points to as its blob, which Lead read as the file's text), and a blob that can't be read is an error. A text that isn't a commit id is refused.
     - The snapshot is written outside the plans' lock, so no plan operation waits on the disk. It's kept only if the plan is still there, and one removed meanwhile has its file taken back out (plan ids don't repeat).
+    - That relies on `new_id("pl")` never repeating. Two reads at once can leave the older one's file, with the same content, which is harmless (the verification of 8c97f6e8's nit).
 - D-3025: A run of `@` is defanged whole, unless a space, a tab or a line break follows it (rule 8, the review of e1b80bb2, M1).
   - D-3023's rule kept an `@` before another `@` or at the end. Claude Code 2.1.312 reads a mention at an `@` that opens a token, so `@@k` became `@＠k`, a mention of `＠k`: a symlink named ＠ to `/` makes that any file. And an `@` kept at the end joined the next fragment, as in `notes @` then `:12`.
   - Now every run of `@` becomes ＠, all of it, unless a space, tab, LF or CR follows it; the end of the text counts as text to follow. Hunk headers keep theirs.
@@ -3392,12 +3424,36 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - a handoff or Continue brief as `deliver` types it, after the trim;
     - a brief sent to a new Thread as its first message (`thread_message`).
   - The others start with Vibezeo's own words: the review prompt, the failure prompts, radar's note, mail, the picker's brief, Lead's answer, a run's briefing and the learn prompt.
+  - Amended by D-3028: the guard reads past control characters and characters nothing shows, and writes the character full width rather than adding a space.
 - D-3027: The prompt library's bodies stay as written; `{{file}}` and `{{branch}}` go in defanged (F-EX-05, the review of e1b80bb2's nit).
   - A prompt is yours or your repository's, picked by you and inserted unsent (F-EX-05.3). A team prompt's `@` is often meant: "Follow @docs/CONTRIBUTING.md".
   - A repository can already make Claude Code read a file: `CLAUDE.md` imports `@path`. A workspace prompt that anyone with write access added is the same trust.
   - Recorded risk: a long body is collapsed to "[Pasted text]" when it's inserted, so its `@` may not be seen before you send it.
-  - `{{file}}` and `{{branch}}` are names the repository holds, whoever made them. Git takes a branch named `@/etc/passwd`, and a folder named `@~` makes `@~/.ssh/id_rsa` a path in it; after a space, Claude Code reads either as a file outside the repository. So `prompts::fill` runs both through `defang_mentions` where they go, and the prompt ends with the note when one it uses changed. A raw `@types/x` wouldn't name the right file anyway: its `@` opens the mention.
+  - `{{file}}` and `{{branch}}` are names the repository holds, whoever made them. Git takes a branch named `@/etc/passwd`, and a folder named `@~` makes `@~/.ssh/id_rsa` a path in it; after a space, Claude Code reads either as a file outside the repository. So `prompts::fill` runs both through `untrusted::defang` where they go, and the prompt ends with the note when it wrote `＠` in one it uses. A raw `@types/x` wouldn't name the right file anyway: its `@` opens the mention.
   - `{{selection}}` and `{{clipboard}}` stay labelled, fenced and defanged (D-3023). What you type in the form for other variables stays as written; a file or branch you type there is defanged like one filled in.
+  - Amended after the verification of 8c97f6e8 (should-fix 5): Send back's prompt (F-CN-09) and the review prompt's head (F-WT-02) defang the branch too, the note at the end when that wrote `＠`. A workspace that isn't a worktree is on whatever branch its checkout has. The second opinion's branch is the lane's, as the app made it, and stays.
+- D-3028: The command guard reads what Claude Code reads, and changes it so that no trim undoes it (the verification of 8c97f6e8, must-fix 1 and should-fix 4).
+  - `untrusted::no_command` looks at the first character the REPL reads. It skips whitespace (the REPL trims, mid-turn too), control characters (`sanitize_prompt` drops them before typing) and characters nothing shows (the REPL trims U+FEFF).
+  - The character goes full width (`／`, `！`, `ｅxit`) when:
+    - it's `/` or `!`;
+    - or the whole message is an exit word (`exit`, `quit`, `:q`, `:q!`, `:wq`, `:wq!`, any case).
+  - A space is no longer the guard. Mid-turn, Claude Code trims the paste-expanded input before it runs some commands at once (`/exit`, `/model`, `/add-dir` and others), and it quits on a trimmed exit word.
+  - Checked on 2.1.312 against a local stand-in for the API, typed as the app types:
+    - mid-turn, ` /exit` and `exit` quit the REPL, and `／exit` and `ｅxit` didn't;
+    - idle, `！echo` and `／cost` reached the model as text.
+  - Auto re-checks readiness after the supervisor answers. A turn the agent started meanwhile drops the answer, and the next one is asked when the agent is back at its prompt. Conductor already waits for idle, and a handoff types into a new pane.
+  - D-3026's sinks keep the guard: Auto, Conductor's `prompt_pane` and `spoken`, `deliver` and `thread_message`. A continue elsewhere goes through `deliver`.
+- D-3029: Text from elsewhere loses what nothing shows, and no paste marker or keyword in it acts (the verification of 8c97f6e8, should-fix 6).
+  - `untrusted::defang` is what every user of D-3023 calls, and the app's `defang` is the same (`tests/fixtures/defang.json`). In order:
+    - The default-ignorable code points go (zero-width and bidi controls, variation selectors, tags, the soft hyphen, fillers). None can split a word that a reader's own clean-up puts back together, or carry words nobody sees.
+    - The `@` run rule (D-3025).
+    - The `[` that opens one of Claude Code's paste markers (`[Pasted text #N]`, `[Image #N]`, `[...Truncated text #N +M lines...]`, `[✦ Team setup guide #N]`) becomes `［`, so text from elsewhere can't stand in for something you pasted.
+    - `ultra` before `code`, `plan`, `review` or `think`, in any ASCII case, gets a hyphen. `ultrathink` raises the effort, and `ultraplan` can start a cloud session.
+  - That's what 2.1.312's own relay sanitiser rewrites.
+    - Its dispatcher matches the whole word (`\bultraplan\b`) in any case, on the message as typed.
+    - That was read from the installed binary, not run: thinking was already at its largest budget, so `ultrathink` showed nothing.
+  - The note follows only an `@` it wrote (`defang_marked`); a marker or a keyword changes silently.
+  - The app lists the invisible characters as the core does, not from its engine's tables. A test checks the list against the engine's `Default_Ignorable_Code_Point` over every code point.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.
