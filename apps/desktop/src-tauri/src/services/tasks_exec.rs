@@ -273,10 +273,6 @@ fn task_err(e: tandem_tasks::TaskError) -> IpcError {
     crate::commands::tasks::task_err(e)
 }
 
-/// What a run's or a review's first message says when it changed an `@`.
-pub const DEFANGED: &str =
-    "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
-
 /// Untrusted text for a session's first message, with no `@` in it that
 /// names a file for the engine to attach (D-2839): any run can write a
 /// task's text and comments, and its worktree's diff. Whether it changed.
@@ -314,7 +310,7 @@ pub fn briefing(
         fenced = untrusted::fence("untrusted_task_content", &body),
     );
     if changed {
-        out.push_str(&format!("{DEFANGED}\n\n"));
+        out.push_str(&format!("{}\n\n", untrusted::DEFANGED));
     }
     if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
         out.push_str(&format!("The user adds: {n}\n\n"));
@@ -363,7 +359,7 @@ pub fn review_briefing(issue: &Issue, diff: &str) -> String {
         diff
     });
     let note = if task_changed || diff_changed {
-        format!("{DEFANGED}\n\n")
+        format!("{}\n\n", untrusted::DEFANGED)
     } else {
         String::new()
     };
@@ -2000,21 +1996,21 @@ pub(crate) mod tests {
             assert!(b.contains(&format!("\u{FF20}{named}")), "{named}: {b}");
             assert!(!b.contains(&format!("@{named}")), "{named}: {b}");
         }
-        assert!(b.contains(DEFANGED), "{b}");
+        assert!(b.contains(untrusted::DEFANGED), "{b}");
         // Your own note stays as you wrote it.
         assert!(b.contains("The user adds: Keep @me posted"), "{b}");
         let r = review_briefing(&issue, "+// read @/etc/passwd\n");
         assert!(r.contains("+// read \u{FF20}/etc/passwd"), "{r}");
         assert!(!r.contains("@/"), "{r}");
-        assert!(r.contains(DEFANGED), "{r}");
+        assert!(r.contains(untrusted::DEFANGED), "{r}");
         // Nothing to change, nothing said.
         let plain = Issue {
             title: "Title".into(),
             description: String::new(),
             ..issue
         };
-        assert!(!briefing(&plain, &[], None, None).contains(DEFANGED));
-        assert!(!review_briefing(&plain, "+x\n").contains(DEFANGED));
+        assert!(!briefing(&plain, &[], None, None).contains(untrusted::DEFANGED));
+        assert!(!review_briefing(&plain, "+x\n").contains(untrusted::DEFANGED));
     }
 
     #[test]

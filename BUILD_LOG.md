@@ -2920,6 +2920,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - A plan kept without one reads them at its first question and keeps them.
     - `blocking()` is the off-the-worker file work `save()` already did, now shared.
     - Tests: read once at Execute all, so a changed CLAUDE.md doesn't reach the next answer, and after a restart the plan's file gives the same, with no read; the file is 0600 and goes with Remove plan; a plan kept without one, or with another commit's, reads once at its commit and keeps it.
+  - **No file reaches an agent through an `@` (D-3022).** F-TK-08 defanged its own briefings; rule 8's other agent prompts didn't.
+    - The second opinion's diff, PR checks' CI log and review comments, and the merge queue's check output now go through `untrusted::fence_defanged`, which adds the note only when something changed.
+    - A review comment's author lost its @, so a plain comment needs no note.
+    - A second-opinion finding on a path written with ＠ still lands on its line.
+    - Tests: `fence_defanged`; each prompt names no file, keeps hunk headers and notes it; a finding on `app/＠modal/page.tsx`; a rule-8 invariant over all four prompts. The review comment tests, the PR checks UI test's fixture and E2E-M18-WT-08 use the new author wording.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3077,6 +3082,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The word check reads the question folded: compatibility forms, accents, hidden characters and Cyrillic and Greek look-alikes don't hide a word, and action words match inside words. `clean` drops every format character, so the question you see is the one checked.
   - The instructions files are read by size first, without replace refs, so a ref a run writes can't swap their text and a huge file is never read whole.
   - Amended by the re-review (N6): a run's first message and its review's are read the same way, with ＠ for @ in the task's text, its comments and the diff. Checked on Claude Code 2.1.310: `@/path` attaches the file even with every tool off, and `＠/path` doesn't.
+  - Amended by D-3022: the second opinion, PR checks and the merge queue defang the untrusted text they send an agent the same way.
 - D-3020: A plan's runs are the ones it started, kept by attempt, not by task (F-TK-08, the re-review's later item).
   - Every run started with a plan's code, by Execute all or a Retry of one, tells its plan (`QuestionEvent::Started`), and the plan keeps the attempt in `plans.json` (`runs`) before the run can ask.
   - After a restart, a run's code comes only from the plan that kept it. A run you start yourself of a plan's task is yours: its questions come to you, never to Lead.
@@ -3085,6 +3091,11 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Execute all reads them once, at the plan's base commit, and keeps them in a file of the plan's own (`plan-instructions/<id>.json`, 0600), checked against that commit. They aren't in `plans.json`, which is written whole on every change, and they go with Remove plan.
   - Every question in the plan is answered from those files: a later commit, a rewritten or collected history, or an engine catalog that names other files changes nothing.
   - A plan kept before there were snapshots reads them at its base commit for its first question, and keeps them from then.
+- D-3022: A diff, a review comment or a check's output that an agent gets names no file for it to attach (rule 8, D-2839's later item).
+  - The second opinion's diff, PR checks' CI log and review comments, and the merge queue's check output go through `untrusted::fence_defanged`: ＠ for each @ that could name a file, and a line saying so after the fence when one changed. `DEFANGED` lives in `untrusted` now, shared with F-TK-08's briefings.
+  - A review comment's author is written without an @ (it's our wording), so a plain comment needs no note. Its path and words are defanged, since a path can carry `@~/…`.
+  - The second opinion reads a finding's path with ＠ as @, so the finding still lands on its line.
+  - Radar's heads-up isn't defanged: it carries symbol names, which can't spell a path out of the worktree.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

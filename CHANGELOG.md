@@ -39,6 +39,13 @@ release fails when its version has no section.
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
 
+### Security
+
+- [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
+  for a second opinion, a pull request's review comments, and a failed check's
+  log sent to an agent can't make Claude Code read a file on your computer: any
+  `@` there that could name one is written ＠, and the message says so.
+
 ## 0.12.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
