@@ -86,6 +86,26 @@ fn seen(files: &[FileDiff]) -> Vec<(String, String, u32, u32, Vec<String>)> {
     out
 }
 
+/// The commit id of the commit whose change id is `change`.
+fn commit_of(jj: &dyn JjRunner, root: &Path, change: &str) -> String {
+    let out = jj
+        .run(
+            root,
+            &[
+                "--ignore-working-copy",
+                "log",
+                "-r",
+                &format!("\"{change}\""),
+                "--no-graph",
+                "-T",
+                "self.commit_id()",
+            ],
+        )
+        .expect("jj");
+    assert!(out.success(), "{}", out.stderr);
+    out.stdout.trim().to_string()
+}
+
 fn change(root: &Path) {
     std::fs::write(root.join("a.txt"), "one\nTWO\nthree\nfour\n").expect("write");
     std::fs::write(root.join("new.txt"), "fresh\n").expect("write");
@@ -112,7 +132,12 @@ async fn f_cd_24_1_2_a_jj_workspace_diffs_and_overlaps_like_a_git_worktree() {
         jj::jj_without_git(&jl.path),
         "a secondary workspace has no .git"
     );
-    assert_eq!(jl.base, gl.base, "both start from the repository's HEAD");
+    assert_eq!(jl.base.len(), 32, "a change id");
+    assert_eq!(
+        commit_of(jj.as_ref(), &fx.repo, &jl.base),
+        gl.base,
+        "both start from the repository's HEAD"
+    );
     change(&gl.path);
     change(&jl.path);
     let git_diff = Repo::discover(&gl.path)
@@ -121,7 +146,7 @@ async fn f_cd_24_1_2_a_jj_workspace_diffs_and_overlaps_like_a_git_worktree() {
         .diff_since(&gl.base)
         .await
         .expect("git diff");
-    let jj_diff = jj::diff(jj.clone(), &jl.path, &jl.base)
+    let jj_diff = jj::diff(jj.clone(), &fx.repo, &jl.path, &jl.base)
         .await
         .expect("jj diff");
     assert_eq!(seen(&jj_diff), seen(&git_diff));
@@ -131,7 +156,7 @@ async fn f_cd_24_1_2_a_jj_workspace_diffs_and_overlaps_like_a_git_worktree() {
         tandem_git::overlap::changed_files(&git_cli, &gl.path, &gl.base)
             .await
             .expect("git files");
-    let jj_files: BTreeSet<String> = jj::changed_files(jj.clone(), &jl.path, &jl.base)
+    let jj_files: BTreeSet<String> = jj::changed_files(jj.clone(), &fx.repo, &jl.path, &jl.base)
         .await
         .expect("jj files")
         .into_iter()
@@ -155,7 +180,19 @@ async fn f_cd_24_4_discard_forgets_the_workspace_and_keeps_its_commit() {
         .expect("jj workspace");
     // Uncommitted work: the snapshot keeps it in the workspace's commit.
     std::fs::write(lane.path.join("kept.txt"), "kept\n").expect("write");
-    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug)
+    // A file jj won't snapshot (over its size limit) would be lost with the
+    // folder: Discard says so, as a git lane's uncommitted changes do.
+    std::fs::write(lane.path.join("big.bin"), vec![b'x'; 2 * 1024 * 1024]).expect("write");
+    let e = jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, false)
+        .await
+        .expect_err("dirty");
+    assert!(matches!(e, tandem_git::GitError::Dirty), "{e}");
+    assert!(lane.path.join("big.bin").exists());
+    assert!(jj::workspace_names(jj.as_ref(), &fx.repo)
+        .expect("names")
+        .contains("tidy"));
+    // The person confirmed: forced.
+    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, true)
         .await
         .expect("forget");
     assert!(!lane.path.exists());
@@ -216,6 +253,21 @@ async fn f_cd_24_1_a_workspace_made_from_another_starts_at_its_working_copy() {
         next.path.join("work.txt").exists(),
         "it starts from that work"
     );
+    // The source keeps working: its edits don't move the new lane, which
+    // isn't left stale and diffs only its own changes.
+    std::fs::write(first.path.join("work.txt"), "w2\n").expect("write");
+    std::fs::write(first.path.join("more.txt"), "m\n").expect("write");
+    let st = jj.run(&first.path, &["status"]).expect("status");
+    assert!(st.success(), "{}", st.stderr);
+    std::fs::write(next.path.join("own.txt"), "o\n").expect("write");
+    let files = jj::changed_files(jj.clone(), &fx.repo, &next.path, &next.base)
+        .await
+        .expect("the handoff lane isn't stale");
+    assert_eq!(files, vec!["own.txt".to_string()]);
+    assert_eq!(
+        std::fs::read_to_string(next.path.join("work.txt")).expect("read"),
+        "w\n"
+    );
     // And a second workspace of one name gets the next slug.
     let again = jj::add_workspace(jj.clone(), &repo, "first", &HashSet::new(), None, None)
         .await
@@ -271,10 +323,10 @@ async fn f_cd_24_a_repositorys_own_config_runs_no_program() {
         .await
         .expect("jj workspace");
     change(&lane.path);
-    jj::diff(jj.clone(), &lane.path, &lane.base)
+    jj::diff(jj.clone(), &fx.repo, &lane.path, &lane.base)
         .await
         .expect("diff");
-    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug)
+    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, false)
         .await
         .expect("forget");
     assert!(!marker.exists(), "the repository's signing program ran");
@@ -394,27 +446,17 @@ async fn f_cd_24_what_a_repository_commits_never_names_what_the_sweep_forgets() 
     let tidy = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
         .await
         .expect("a workspace with no row and no record of Vibezeo's");
-    for name in [
-        ".default.jj-adding",
-        "default-1.pending",
-        ".x.jj-adding",
-        "tidy-1.pending",
-    ] {
-        std::fs::write(dir.join(name), format!("{}\ndefault\n", fx.repo.display())).expect("write");
+    let key = std::fs::canonicalize(&fx.repo).expect("canonical");
+    // Markers naming tidy, in the old line format and in the record format
+    // (written by Vibezeo's own writer, so they'd parse if they were read).
+    for name in [".tidy.jj-adding", ".default.jj-adding"] {
+        std::fs::write(dir.join(name), format!("{}\ntidy\n", key.display())).expect("write");
     }
+    jj::write_pending(&dir, &key, "tidy").expect("committed record");
     git(&fx.repo, &["add", "-f", ".tandem/worktrees"]);
     git(&fx.repo, &["commit", "-qm", "ship markers"]);
     // A record naming `default`, even in Vibezeo's own folder.
-    std::fs::write(
-        pending.join("default-1.pending"),
-        format!(
-            "{}\ndefault\n",
-            std::fs::canonicalize(&fx.repo)
-                .expect("canonical")
-                .display()
-        ),
-    )
-    .expect("write");
+    jj::write_pending(&pending, &key, "default").expect("record");
     let n = jj::forget_orphans(
         jj.clone(),
         &pending,
@@ -436,7 +478,7 @@ async fn f_cd_24_what_a_repository_commits_never_names_what_the_sweep_forgets() 
     );
     // And Discard itself never forgets `default`.
     assert!(
-        jj::forget_workspace(jj.clone(), &fx.repo, &dir.join("default"), "default")
+        jj::forget_workspace(jj.clone(), &fx.repo, &dir.join("default"), "default", true)
             .await
             .is_err()
     );
@@ -466,11 +508,15 @@ async fn f_cd_24_a_repositorys_aliases_cant_change_the_base_or_the_diff() {
     let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
         .await
         .expect("jj workspace");
-    assert_eq!(lane.base, head, "the base is the real parent");
+    assert_eq!(
+        commit_of(jj.as_ref(), &fx.repo, &lane.base),
+        head,
+        "the base is the real parent"
+    );
     let names = jj::workspace_names(jj.as_ref(), &fx.repo).expect("names");
     assert!(names.contains("tidy") && !names.contains("evil"));
     change(&lane.path);
-    let files = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+    let files = jj::changed_files(jj.clone(), &fx.repo, &lane.path, &lane.base)
         .await
         .expect("files");
     assert_eq!(
@@ -577,21 +623,63 @@ async fn f_cd_24_a_ref_named_like_the_base_is_refused_not_followed() {
     let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
         .await
         .expect("jj workspace");
-    assert_eq!(lane.base, head);
+    assert_eq!(commit_of(jj.as_ref(), &fx.repo, &lane.base), head);
     // A clone ships a tag named exactly like the base, pointing elsewhere.
-    git(&fx.repo, &["tag", &head, &first]);
+    git(&fx.repo, &["tag", &lane.base, &first]);
     let _ = jj.run(&fx.repo, &["git", "import"]);
     change(&lane.path);
-    let e = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+    let e = jj::changed_files(jj.clone(), &fx.repo, &lane.path, &lane.base)
         .await
         .expect_err("refused");
     assert!(e.to_string().contains(jj::SHADOWED_BASE), "{e}");
-    assert!(jj::diff(jj.clone(), &lane.path, &lane.base).await.is_err());
+    assert!(jj::diff(jj.clone(), &fx.repo, &lane.path, &lane.base)
+        .await
+        .is_err());
     // Without it, the diff is from the real base.
-    git(&fx.repo, &["tag", "-d", &head]);
+    git(&fx.repo, &["tag", "-d", &lane.base]);
     let _ = jj.run(&fx.repo, &["git", "import"]);
-    let files = jj::changed_files(jj.clone(), &lane.path, &lane.base)
+    let files = jj::changed_files(jj.clone(), &fx.repo, &lane.path, &lane.base)
         .await
         .expect("files");
     assert_eq!(files, vec!["a.txt".to_string(), "new.txt".to_string()]);
+}
+
+#[tokio::test]
+async fn f_cd_24_a_squash_in_the_main_checkout_keeps_the_lanes_base() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    change(&lane.path);
+    let _ = jj.run(&lane.path, &["status"]);
+    let before = commit_of(jj.as_ref(), &fx.repo, &lane.base);
+    // The person squashes work into the lane's base in the main checkout:
+    // the base commit is rewritten (a new commit id, the same change).
+    std::fs::write(fx.repo.join("main.txt"), "m\n").expect("write");
+    let out = jj.run(&fx.repo, &["squash"]).expect("squash");
+    assert!(out.success(), "{}", out.stderr);
+    assert_ne!(commit_of(jj.as_ref(), &fx.repo, &lane.base), before);
+    // jj rebased the lane onto it, which leaves its folder stale: the diff
+    // says what to do, and after that it's the lane's own changes again.
+    let e = jj::diff(jj.clone(), &fx.repo, &lane.path, &lane.base)
+        .await
+        .expect_err("stale");
+    assert_eq!(e.to_string(), jj::STALE);
+    let out = jj
+        .run(&lane.path, &["workspace", "update-stale"])
+        .expect("update-stale");
+    assert!(out.success(), "{}", out.stderr);
+    let files = jj::changed_files(jj.clone(), &fx.repo, &lane.path, &lane.base)
+        .await
+        .expect("files");
+    assert_eq!(
+        files,
+        vec!["a.txt".to_string(), "new.txt".to_string()],
+        "not main.txt: the base moved with the squash"
+    );
 }

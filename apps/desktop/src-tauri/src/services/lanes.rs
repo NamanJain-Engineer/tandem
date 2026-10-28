@@ -757,7 +757,7 @@ pub async fn remove_with_teardown(
         return remove_multi(store, terms, git, &lane, &repos, force).await;
     }
     if jj_lanes::is_jj(store, &lane).await? {
-        return remove_jj(store, terms, &lane, &parent).await;
+        return remove_jj(store, terms, &lane, &parent, force).await;
     }
     let lane_path = Path::new(&lane.root);
     if force.is_none() && lane_path.is_dir() {
@@ -803,26 +803,32 @@ pub async fn remove_with_teardown(
     Ok(report)
 }
 
-/// F-CD-24: Discard for a jj workspace. Nothing in it is lost (jj keeps
-/// the working copy in its commit), so there's no uncommitted-changes
-/// refusal: its panes stop, then its language servers, then
+/// F-CD-24: Discard for a jj workspace. jj keeps the working copy in its
+/// commit, but only what it can snapshot: without `force`, a working copy
+/// it couldn't snapshot whole (jj failed, or refused or left out a file)
+/// refuses with Conflict before anything stops, as a git lane's uncommitted
+/// changes do. Then its panes stop, then its language servers, then
 /// `jj workspace forget` and the folder go. Its commits stay.
 async fn remove_jj(
     store: &Store,
     terms: &TerminalService,
     lane: &Workspace,
     parent: &Workspace,
+    force: Option<ForceConfirm>,
 ) -> Result<RemoveReport, IpcError> {
     // jj must be allowed to run here before anything stops: nothing fails
     // halfway.
     jj_lanes::gate(Path::new(&parent.root))?;
+    if force.is_none() && jj_lanes::dirty(lane, parent).await? {
+        return Err(IpcError::new(ErrorCode::Conflict, "Uncommitted changes").with_stage("jj"));
+    }
     stop_panes(store, terms, &lane.id).await?;
     let _closing =
         crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
     let lane_path = Path::new(&lane.root);
     let claimed_in =
         tandem_core::contain::canonical(lane_path).unwrap_or_else(|_| lane_path.to_path_buf());
-    jj_lanes::forget(lane, parent).await?;
+    jj_lanes::forget(lane, parent, force.is_some()).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
     crate::services::radar::forget(lane.id.as_str());
@@ -962,7 +968,7 @@ pub async fn sweep(
     }
     // F-CD-24: records of jj workspaces being made in repositories no
     // longer on the rail.
-    jj_lanes::prune_pending(store).await;
+    jj_lanes::prune_pending();
     // Repositories on SSH hosts, by their helper (D-1602): only hosts
     // connected now, so the sweep never opens a connection (or a password
     // prompt) by itself.
@@ -1674,6 +1680,24 @@ mod tests {
             .expect("jj workspace");
         std::fs::write(Path::new(&lane.root).join("kept.txt"), "kept\n").expect("write");
         let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        // A file jj won't snapshot (over its size limit): Discard refuses as
+        // for a git lane's uncommitted changes, and nothing goes.
+        let big = Path::new(&lane.root).join("big.bin");
+        std::fs::write(&big, vec![b'x'; 2 * 1024 * 1024]).expect("write");
+        let e = remove(&fx.store, &terms, &fx.git, &lane.id, None)
+            .await
+            .expect_err("dirty");
+        assert_eq!(e.code, ErrorCode::Conflict);
+        assert_eq!(e.message, "Uncommitted changes");
+        assert!(big.exists());
+        assert_eq!(
+            workspaces::lanes(&fx.store, &fx.repo.id)
+                .await
+                .expect("lanes")
+                .len(),
+            1
+        );
+        std::fs::remove_file(&big).expect("rm");
         remove(&fx.store, &terms, &fx.git, &lane.id, None)
             .await
             .expect("discard");
@@ -1770,12 +1794,15 @@ mod tests {
         };
         let root = PathBuf::from(&fx.repo.root);
         let held = jj_lanes::repo_lock(&root).lock_owned().await;
+        let reached = jj_lanes::lock_probe::signal(&root);
         let (store, git, id) = (fx.store.clone(), fx.git.clone(), fx.repo.id.clone());
         let task =
             tokio::spawn(
                 async move { create_kind(&store, &git, &id, "waits", LaneKind::Jj).await },
             );
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // The create reached the lock (it signals just before waiting on it).
+        reached.notified().await;
+        tokio::task::yield_now().await;
         assert!(
             !task.is_finished(),
             "the create waits while the sweep holds the lock"
