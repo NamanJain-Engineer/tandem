@@ -338,7 +338,10 @@ async fn launch_seat(
                 .into_iter()
                 .map(|r| r.name)
                 .collect();
-            let briefing = if repos.is_empty() {
+            let briefing = if crate::services::jj_lanes::is_jj(&state.store, &lane).await? {
+                // F-CD-24: a jj workspace's agents use jj, not git.
+                tandem_git::jj::briefing(Path::new(&lane.root), &branch, &others)
+            } else if repos.is_empty() {
                 tandem_git::lanes::briefing(Path::new(&lane.root), &branch, &others)
             } else {
                 tandem_git::lanes::multi_briefing(Path::new(&lane.root), &branch, &repos, &others)
@@ -355,7 +358,23 @@ async fn launch_seat(
                     tab.id
                 }
             };
-            (ws.clone(), tab, None)
+            // F-CD-24: agents in a jj workspace's own checkout are told to
+            // use jj too.
+            let briefing = if seat.kind == SeatKind::Agent
+                && crate::services::jj_lanes::is_jj(&state.store, ws).await?
+            {
+                let name = ws.lane_branch.clone().unwrap_or_default();
+                let others: Vec<String> =
+                    branches.iter().filter(|b| **b != name).cloned().collect();
+                Some(tandem_git::jj::briefing(
+                    Path::new(&ws.root),
+                    &name,
+                    &others,
+                ))
+            } else {
+                None
+            };
+            (ws.clone(), tab, briefing)
         }
     };
     let pane = match seat.kind {

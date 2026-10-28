@@ -42,6 +42,23 @@ pub fn defang_mentions(text: &str) -> String {
     out
 }
 
+/// The line a message adds after untrusted text `defang_mentions` changed.
+pub const DEFANGED: &str =
+    "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
+
+/// [`fence`] for untrusted text a message to an engine carries: no `@` in it
+/// names a file for the engine to attach ([`defang_mentions`]), and
+/// [`DEFANGED`] follows it when one was changed (rule 8, D-2839, D-3022).
+pub fn fence_defanged(info: &str, text: &str) -> String {
+    let safe = defang_mentions(text);
+    let fenced = fence(info, &safe);
+    if safe == text {
+        fenced
+    } else {
+        format!("{fenced}\n{DEFANGED}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +94,20 @@ mod tests {
         assert!(f.starts_with("`````html\n"));
         assert!(f.ends_with("\n`````"));
         assert_eq!(fence("", "plain"), "```\nplain\n```");
+    }
+
+    #[test]
+    fn f_tk_08_1_a_fence_for_an_engine_names_no_file_and_says_so() {
+        let fenced = fence_defanged("text", "npm ERR! see @/home/u/.npmrc\n@@ -1,2 +1,3 @@");
+        assert!(fenced.starts_with(&fence(
+            "text",
+            "npm ERR! see \u{FF20}/home/u/.npmrc\n@@ -1,2 +1,3 @@"
+        )));
+        assert!(fenced.ends_with(&format!("\n{DEFANGED}")));
+        // Nothing to change: just the fence, with no note.
+        assert_eq!(
+            fence_defanged("diff", "+a = b\n"),
+            fence("diff", "+a = b\n")
+        );
     }
 }

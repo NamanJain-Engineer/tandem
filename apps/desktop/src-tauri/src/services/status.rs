@@ -73,7 +73,12 @@ pub type ScreenSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 pub type TurnSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// `(pane_id, tool_name)` for every tool report (the runaway guard, F-AC-09).
-pub type ToolSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+/// A tool start: the pane, the tool's name and the report's time.
+pub type ToolSink = Arc<dyn Fn(&str, &str, i64) + Send + Sync>;
+
+/// A prompt the engine's hooks reported (UserPromptSubmit): the pane and
+/// the report's time.
+pub type PromptSink = Arc<dyn Fn(&str, i64) + Send + Sync>;
 /// `(pane_id, paths)`: the files an agent's edit tool is about to change
 /// (F-TK-05 inferred claims).
 pub type EditSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
@@ -105,6 +110,7 @@ pub struct StatusService {
     screen: std::sync::OnceLock<ScreenSource>,
     on_turn: std::sync::OnceLock<TurnSink>,
     on_tool: std::sync::OnceLock<ToolSink>,
+    on_prompt: std::sync::OnceLock<PromptSink>,
     on_edit: std::sync::OnceLock<EditSink>,
 }
 
@@ -129,6 +135,7 @@ impl StatusService {
             screen: std::sync::OnceLock::new(),
             on_turn: std::sync::OnceLock::new(),
             on_tool: std::sync::OnceLock::new(),
+            on_prompt: std::sync::OnceLock::new(),
             on_edit: std::sync::OnceLock::new(),
             bus,
             clock,
@@ -183,6 +190,16 @@ impl StatusService {
                 }
             },
         ));
+    }
+
+    /// Where reported prompts go (set once, at startup).
+    pub fn set_prompt_sink(&self, sink: PromptSink) {
+        let _ = self.on_prompt.set(sink);
+    }
+
+    /// The app's clock, for subsystems built on the status service.
+    pub fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
     }
 
     /// The app's bus, for subsystems built on the status service.
@@ -478,7 +495,12 @@ impl StatusService {
                 if let (ReportEvent::Working, Some(tool), Some(sink)) =
                     (report.event, &report.payload.tool, self.on_tool.get())
                 {
-                    sink(&pane, tool);
+                    sink(&pane, tool, report.ts);
+                }
+                if let (ReportEvent::Working, true, Some(sink)) =
+                    (report.event, report.payload.prompt, self.on_prompt.get())
+                {
+                    sink(&pane, report.ts);
                 }
                 if let (ReportEvent::Working, false, Some(sink)) = (
                     report.event,

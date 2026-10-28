@@ -19,14 +19,12 @@ export async function jumpTo(item: DashboardItem): Promise<boolean> {
 /** "Hand off to…" (UI-13) for the card's pane. */
 export function handOff(item: DashboardItem): void {
   if (item.source.type !== "pane" || !item.workspaceId) return;
-  useHandoff
-    .getState()
-    .open({
-      paneId: item.source.paneId,
-      workspaceId: item.workspaceId,
-      kind: "agent",
-      engineId: item.engineId,
-    });
+  useHandoff.getState().open({
+    paneId: item.source.paneId,
+    workspaceId: item.workspaceId,
+    kind: "agent",
+    engineId: item.engineId,
+  });
 }
 
 /** Ends the agent's process; the pane stays with its output. */
@@ -59,12 +57,13 @@ export async function closeIdle(keys: string[]): Promise<string[]> {
 export async function answer(
   approvalId: string,
   allow: boolean,
-  via: "dashboard" | "notification" = "dashboard",
+  via: "dashboard" | "notification" | "inline" = "dashboard",
+  scope: "once" | "conversation" = "once",
 ): Promise<IpcError | null> {
   try {
     await invoke("approval_resolve", {
       approvalId,
-      decision: allow ? { type: "allow", scope: "once" } : { type: "deny", reason: null },
+      decision: allow ? { type: "allow", scope } : { type: "deny", reason: null },
       via,
     });
     return null;

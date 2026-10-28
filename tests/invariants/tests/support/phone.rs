@@ -192,8 +192,8 @@ pub async fn pair(rig: &Rig) -> Phone {
 pub fn approval() -> ApprovalView {
     ApprovalView {
         id: ApprovalId::new(),
-        source: SourceRef::Pane {
-            pane_id: "pn_1".into(),
+        source: SourceRef::Thread {
+            thread_id: "th_1".into(),
         },
         kind: ApprovalKind::Command,
         summary: "Run a command".into(),

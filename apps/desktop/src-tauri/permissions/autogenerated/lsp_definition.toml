@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lsp-definition"
+description = "Enables the lsp_definition command without any pre-configured scope."
+commands.allow = ["lsp_definition"]
+
+[[permission]]
+identifier = "deny-lsp-definition"
+description = "Denies the lsp_definition command without any pre-configured scope."
+commands.deny = ["lsp_definition"]

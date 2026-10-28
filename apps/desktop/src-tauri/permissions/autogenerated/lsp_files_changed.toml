@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lsp-files-changed"
+description = "Enables the lsp_files_changed command without any pre-configured scope."
+commands.allow = ["lsp_files_changed"]
+
+[[permission]]
+identifier = "deny-lsp-files-changed"
+description = "Denies the lsp_files_changed command without any pre-configured scope."
+commands.deny = ["lsp_files_changed"]

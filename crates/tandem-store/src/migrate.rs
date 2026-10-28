@@ -21,6 +21,14 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0005_secrets",
         include_str!("../migrations/0005_secrets.sql"),
     ),
+    (
+        "0006_activity",
+        include_str!("../migrations/0006_activity.sql"),
+    ),
+    (
+        "0007_lane_vcs",
+        include_str!("../migrations/0007_lane_vcs.sql"),
+    ),
 ];
 
 pub const KEEP_BACKUPS: usize = 3;

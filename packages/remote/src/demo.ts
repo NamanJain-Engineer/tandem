@@ -106,6 +106,7 @@ export class DemoDesktop {
         detail: "pnpm test --filter checkout",
         source: "Fix the login redirect",
         queued: false,
+        deskOnly: false,
         createdAt: t - 60_000,
       },
     ];
@@ -186,6 +187,7 @@ export class DemoDesktop {
           detail: "src/checkout/cart.ts",
           source: "Checkout tests",
           queued: false,
+          deskOnly: false,
           createdAt: now(),
         },
       ];

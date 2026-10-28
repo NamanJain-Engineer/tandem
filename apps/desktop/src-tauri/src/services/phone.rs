@@ -22,6 +22,8 @@ use tokio::sync::{mpsc, watch};
 use ts_rs::TS;
 
 use tandem_core::approvals::ApprovalView;
+
+use crate::services::notifications::PANE_APPROVAL_BODY;
 use tandem_core::bus::{BusEvent, EventBus, Topic};
 use tandem_core::clock::Clock;
 use tandem_core::ids::{PairingId, PhoneQueueId};
@@ -151,6 +153,9 @@ pub struct PhoneApproval {
     pub source: String,
     /// The phone allowed it and it waits for the desktop to confirm.
     pub queued: bool,
+    /// A pane's `vibezeo run`: answered on the computer only, where the
+    /// whole line shows. The phone gets the fixed body and no Allow.
+    pub desk_only: bool,
     pub created_at: i64,
 }
 
@@ -1077,7 +1082,11 @@ impl PhoneService {
                     kind: "approval".into(),
                     id: a.id.to_string(),
                     title: "Approval needed".into(),
-                    body: clip(&tandem_core::redact::redact(&a.summary), 160),
+                    body: if desk_only(a) {
+                        PANE_APPROVAL_BODY.into()
+                    } else {
+                        clip(&tandem_core::redact::redact(&a.summary), 160)
+                    },
                     at: now,
                 });
             }
@@ -1685,6 +1694,9 @@ impl PhoneService {
                 else {
                     return res_err(id, "not_found", "That approval was already answered.");
                 };
+                if desk_only(&view) && decision == PhoneDecision::Allow {
+                    return res_err(id, "desk_only", "Answer this on your computer.");
+                }
                 match approval_route(decision, self.armed().is_some()) {
                     ApprovalRoute::Apply => match host.approval_resolve(&approval_id, decision) {
                         Ok(()) => res_ok(id, json!({ "state": "applied" })),
@@ -1778,13 +1790,25 @@ impl PhoneService {
             .approvals()
             .into_iter()
             .take(MAX_APPROVALS)
-            .map(|a| PhoneApproval {
-                queued: queued.iter().any(|q| q == a.id.as_str()),
-                id: a.id.as_str().to_string(),
-                summary: clip(&a.summary, 200),
-                detail: clip(&tandem_core::redact::redact(&a.detail), 1000),
-                source: source_label(&a),
-                created_at: a.created_at,
+            .map(|a| {
+                let desk = desk_only(&a);
+                PhoneApproval {
+                    queued: queued.iter().any(|q| q == a.id.as_str()),
+                    id: a.id.as_str().to_string(),
+                    summary: if desk {
+                        PANE_APPROVAL_BODY.into()
+                    } else {
+                        clip(&a.summary, 200)
+                    },
+                    detail: if desk {
+                        String::new()
+                    } else {
+                        clip(&tandem_core::redact::redact(&a.detail), 1000)
+                    },
+                    source: source_label(&a),
+                    desk_only: desk,
+                    created_at: a.created_at,
+                }
             })
             .collect();
         let mut threads = host.threads().await;
@@ -1840,6 +1864,12 @@ impl PhoneService {
     fn is_pending(&self, pid: &str) -> bool {
         self.lock().pending.contains_key(pid)
     }
+}
+
+/// A pane's approval (`vibezeo run`) is answered on the computer, where
+/// the whole line shows: a clipped line could hide its second command.
+fn desk_only(a: &ApprovalView) -> bool {
+    matches!(a.source, tandem_core::source::SourceRef::Pane { .. })
 }
 
 fn source_label(a: &ApprovalView) -> String {

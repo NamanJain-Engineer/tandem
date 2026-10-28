@@ -70,6 +70,7 @@ export const EN = {
   "approvals.empty": "Nothing waiting for approval.",
   "approvals.allow": "Allow",
   "approvals.deny": "Deny",
+  "approvals.deskOnly": "Answer on your computer",
   "approvals.queued": "Allowed here. Waiting for you to confirm on your computer.",
   "approvals.needsGrant":
     "Answering approvals needs the Approvals permission. Turn it on for this phone on your computer.",

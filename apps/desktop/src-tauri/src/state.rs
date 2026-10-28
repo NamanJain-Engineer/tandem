@@ -790,9 +790,41 @@ impl AppState {
             terminals.clone(),
         );
         threads.set_checkpoints(checkpoints.clone());
+        threads.set_activity(terminals.activity.clone());
         let (hook_cps, hook_store) = (checkpoints.clone(), store.clone());
-        terminals.set_prompt_hook(Arc::new(move |pane, late| {
+        let hook_activity = terminals.activity.clone();
+        // F-EX-07: engines with hooks report each prompt (UserPromptSubmit);
+        // the turn links to the checkpoint its Enter took just before.
+        let (prompt_activity, prompt_store) = (terminals.activity.clone(), store.clone());
+        terminals.status.set_prompt_sink(Arc::new(move |pane, at| {
+            let (activity, store) = (prompt_activity.clone(), prompt_store.clone());
+            let pane = pane.to_string();
+            tauri::async_runtime::spawn(async move {
+                use tandem_store::repo::{activity as ledger, panes};
+                let id = tandem_core::ids::PaneId::from_db(pane.clone());
+                let engine = panes::get(&store, &id).await.ok().and_then(|r| r.engine_id);
+                let checkpoint = ledger::checkpoints(
+                    &store,
+                    "pane",
+                    &pane,
+                    ledger::Page {
+                        until: Some(at),
+                        limit: 1,
+                    },
+                )
+                .await
+                .ok()
+                .and_then(|c| c.into_iter().next())
+                .filter(|c| at - c.at <= 10_000)
+                .map(|c| c.id);
+                activity
+                    .turn("pane", &pane, engine.as_deref(), checkpoint, at, true)
+                    .await;
+            });
+        }));
+        terminals.set_prompt_hook(Arc::new(move |pane, late, turn_at| {
             let (cps, store) = (hook_cps.clone(), hook_store.clone());
+            let activity = hook_activity.clone();
             Box::pin(async move {
                 use tandem_store::repo::{panes, workspaces};
                 let Ok(record) = panes::get(&store, &pane).await else {
@@ -801,18 +833,37 @@ impl AppState {
                 let Ok(ws) = workspaces::get(&store, &record.workspace_id).await else {
                     return;
                 };
-                cps.before_turn(
-                    crate::services::checkpoints::Request {
-                        folder: std::path::PathBuf::from(&ws.root),
-                        workspace_id: Some(ws.id.as_str().to_string()),
-                        pane_id: Some(pane.as_str().to_string()),
-                        label: record.human_name.unwrap_or_default(),
-                        late,
-                        ..Default::default()
-                    },
-                    tandem_store::repo::checkpoints::CheckpointReason::Prompt,
-                )
-                .await;
+                let engine = record.engine_id.clone();
+                let made = cps
+                    .before_turn(
+                        crate::services::checkpoints::Request {
+                            folder: std::path::PathBuf::from(&ws.root),
+                            workspace_id: Some(ws.id.as_str().to_string()),
+                            pane_id: Some(pane.as_str().to_string()),
+                            label: record.human_name.unwrap_or_default(),
+                            late,
+                            ..Default::default()
+                        },
+                        tandem_store::repo::checkpoints::CheckpointReason::Prompt,
+                    )
+                    .await;
+                // F-EX-07: the prompt, never its text, recorded off the Enter
+                // path; the terminal decided it's a turn (`turn_at`).
+                if let (Some(at), "agent") = (turn_at, record.kind.as_str()) {
+                    let pane = pane.as_str().to_string();
+                    tauri::async_runtime::spawn(async move {
+                        activity
+                            .turn(
+                                "pane",
+                                &pane,
+                                engine.as_deref(),
+                                made.map(|c| c.id),
+                                at,
+                                false,
+                            )
+                            .await;
+                    });
+                }
             })
         }));
         let ports = crate::services::ports::PortsService::new(store.clone());
@@ -822,6 +873,7 @@ impl AppState {
         files.allow_editing(data.prompts());
         files.set_remote(remote.clone());
         crate::services::lanes::set_remote(&remote);
+        crate::services::jj_lanes::set_terminals(&terminals);
         let git_panel = crate::services::git_panel::GitPanelService::new(files.clone());
         let auto = Arc::new(crate::services::auto::AutoService::new(
             bus.clone(),
