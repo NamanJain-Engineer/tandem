@@ -1,8 +1,10 @@
 // The animated product scenes (F-WB-01 AC9, D-1880): their words. Every
 // label the app itself would draw comes from its catalog by key, so a scene
 // says exactly what the app says; what's left is sample work (branches,
-// files, terminal lines), which the captions call simplified.
+// files, terminal lines), which the captions call simplified, and which
+// comes from the in-app demo's story.json (D-1899, D-2609).
 import en from "../../desktop/src/i18n/en.json";
+import story from "../../desktop/src/demo/story.json";
 import { RELEASE } from "./release";
 
 const CATALOG = en as Record<string, string>;
@@ -77,53 +79,72 @@ function pluralForms(rest: string): Record<string, string> {
   return forms;
 }
 
-/** The sample work the scenes show: one repository and its worktrees. */
+/** One thing an agent did, as story.json says it: read a file, edit one
+ * (lines added and removed), or run a command (and the tests that passed). */
+type Step = { read: string } | { edit: string; add: number; del: number } | { run: string; passed?: number };
+type Edit = Extract<Step, { edit: string }>;
+type EngineId = keyof typeof story.engines;
+
+/** The story's worktree an engine works in. */
+function worktree(engine: EngineId) {
+  const w = story.worktrees.find((x) => x.engine === engine);
+  if (!w) throw new Error(`scenes: no ${engine} worktree in story.json`);
+  return { ...w, steps: w.steps as readonly Step[] };
+}
+
+/** An agent's terminal as the scenes print it: its task, then each step. */
+function terminal(w: { task: string; steps: readonly Step[] }): string[] {
+  return [
+    `› ${w.task}`,
+    ...w.steps.flatMap((s): string[] => {
+      if ("read" in s) return [`  reading ${s.read}`];
+      if ("edit" in s) return [`  editing ${s.edit}  +${s.add}${s.del ? ` −${s.del}` : ""}`];
+      return [`  $ ${s.run}`, ...(s.passed ? [`  Tests  ${s.passed} passed`] : [])];
+    }),
+  ];
+}
+
+const claude = worktree("claude");
+const codex = worktree("codex");
+const gemini = worktree("gemini");
+const edits = claude.steps.filter((s): s is Edit => "edit" in s);
+const label = (engine: EngineId) => story.engines[engine].label;
+const lane = (w: ReturnType<typeof worktree>) => ({
+  engine: label(w.engine as EngineId),
+  branch: w.slug,
+  commits: w.commits.length,
+});
+
+/** The sample work the scenes show: one repository and its worktrees. It's
+ * the world the in-app demo shows too, read from its story.json (D-1899,
+ * D-2609), so the two never drift; the files the agents change are beside
+ * it in the demo's sample repository. */
 export const SAMPLE = {
-  workspace: "shop",
-  base: "main",
-  worktrees: {
-    claude: { engine: "Claude Code", branch: "checkout-fix" },
-    codex: { engine: "Codex", branch: "coupon-rules" },
-    gemini: { engine: "Gemini CLI", branch: "search-ui" },
-  },
-  symbol: "applyCoupon",
-  /** What each agent's terminal prints, in order (illustrative). */
+  workspace: story.repo,
+  base: story.base,
+  worktrees: { claude: lane(claude), codex: lane(codex), gemini: lane(gemini) },
+  symbol: story.overlap.symbol,
+  /** What each agent's terminal prints, in order: the story's steps. */
   lines: {
-    claude: [
-      "› Find why checkout sends people back to /login",
-      "  reading src/auth/session.ts",
-      "  reading src/cart/checkout.ts",
-      "  editing src/cart/checkout.ts  +18 −4",
-      "  editing src/cart/coupon.ts  +9 −2",
-      "  $ pnpm test cart",
-      "  Tests  42 passed",
-    ],
-    codex: [
-      "› Stack coupons by priority",
-      "  reading src/cart/coupon.ts",
-      "  editing src/cart/coupon.ts  +31 −12",
-      "  editing src/cart/rules.ts  +40",
-      "  $ pnpm test coupons",
-    ],
-    gemini: ["› Make search results keyboard friendly", "  reading src/search/results.tsx", "  editing src/search/results.tsx  +22 −6"],
-    shell: ["$ pnpm dev", "  ready on localhost:41003", "  GET /checkout 200", "  GET /cart 200"],
+    claude: terminal(claude),
+    codex: terminal(codex),
+    gemini: terminal(gemini),
+    shell: [`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)],
   },
-  ask: "pnpm test search",
-  diff: { files: 4, adds: 62, dels: 18 },
-  comments: [
-    { line: 12, file: "src/cart/checkout.ts", text: "This returns before the session is refreshed; a second tab still loops." },
-    { line: 27, file: "src/cart/checkout.ts", text: "Add a test for an expired cart." },
-  ],
-  commits: ["a41c9e2", "7d03b5f", "c18e6a0"],
-  failedCheck: "test",
+  /** The command the waiting agent asks to run. */
+  ask: gemini.ask ?? "",
+  /** The finished worktree's diff: the sum of its agent's edits. */
+  diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },
+  /** Second opinion's line comments on it. */
+  comments: story.secondOpinion.comments.map((c) => ({ line: c.line, file: c.file, text: c.body })),
+  /** Each worktree's merge commit once it lands, in the story's order. */
+  commits: story.worktrees.map((w) => w.mergeCommit),
+  failedCheck: story.pr.checks.find((c) => c.bucket === "fail")?.name ?? "",
   /** A plan from Lead in the same repository (0.12.0's F-TK-07): its goal,
-   * and the tasks Execute all ran, each in its own worktree. */
+   * and the tasks Execute all ran, each in its own worktree, numbered as the
+   * tracker numbers them (`ISSUE_PREFIX`, crates/tandem-tasks/src/model.rs). */
   plan: {
-    goal: "Add gift cards to checkout, with tests",
-    tasks: [
-      { id: "TAN-31", title: "Add gift card balances", engine: "Codex" },
-      { id: "TAN-32", title: "Redeem gift cards at checkout", engine: "Claude Code" },
-      { id: "TAN-33", title: "Show gift cards in the cart", engine: "Gemini CLI" },
-    ],
+    goal: story.plan.goal,
+    tasks: story.plan.tasks.map((x, i) => ({ id: `TAN-${31 + i}`, title: x.title, engine: label(x.engine as EngineId) })),
   },
 } as const;

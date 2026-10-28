@@ -138,11 +138,20 @@
 .sc-diff-state { font-size: 0.75em; color: var(--tn-text-muted); }
 .sc-diff-state > * { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
 .sc-diff-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-block: 0.5em; font-family: var(--font-mono); font-size: 0.6875em; line-height: 1.9; }
-.sc-diff-line { position: relative; display: grid; grid-template-columns: 3.5em 1.5em 1fr; white-space: pre; color: var(--tn-text-muted); }
+.sc-diff-line { position: relative; display: grid; grid-template-columns: 2.75em 2.75em 1.5em 1fr; white-space: pre; color: var(--tn-text-muted); }
 .sc-diff-add { color: var(--tn-diff-add-fg); background: var(--tn-diff-add-bg); }
 .sc-diff-del { color: var(--tn-diff-del-fg); background: var(--tn-diff-del-bg); }
 .sc-diff-no { padding-right: 1em; text-align: right; color: var(--tn-text-subtle); }
-.sc-comment { position: absolute; right: 1.5em; top: 50%; z-index: 1; display: flex; align-items: flex-start; gap: 0.625em; width: 30em; padding: 0.625em 0.875em; border-radius: 0.625em; font-family: var(--font-sans); font-size: 1.1em; line-height: 1.45; white-space: normal; color: var(--tn-text); background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), 0 0 0 1px var(--tn-border-strong); transform-origin: 100% 0; }
+/* Under the first commented line: the rows as they were and the same rows
+   with the comments, in one cell, so the comments arrive without a gap
+   waiting for them (D-3000). */
+.sc-diff-swap { display: grid; }
+.sc-diff-swap > * { grid-area: 1 / 1; display: flex; flex-direction: column; }
+/* A line comment, under its line as DiffView's annotation row: the comment
+   in sans, with Edit and Remove. */
+.sc-diff-note { display: flex; align-items: center; gap: 0.5em; padding: 0.5em 1em 0.5em 7em; border-block: 1px solid var(--tn-border); font-family: var(--font-sans); font-size: 1.1em; line-height: 1.45; white-space: normal; color: var(--tn-text); background: var(--tn-surface-2); }
+.sc-diff-note-text { flex: 1; min-width: 0; }
+.sc-diff-note .sc-btn { font-size: 0.9em; }
 .sc-diff-foot { display: flex; justify-content: flex-end; padding: 0.75em 1em; border-top: 1px solid var(--sc-line); }
 
 /* Land worktrees: the dialog over the workspace. */
@@ -216,7 +225,7 @@
   .sc-rev-list { display: none; }
   .sc-diff-no { display: none; }
   .sc-diff-line { grid-template-columns: 1.25em 1fr; }
-  .sc-comment { right: 0.75em; left: 2em; width: auto; }
+  .sc-diff-note { padding-left: 1em; flex-wrap: wrap; }
   .sc-land-body { padding: 0.75em; }
   .sc-dialog { width: 100%; }
   .sc-lane-row { grid-template-columns: auto 1fr; }

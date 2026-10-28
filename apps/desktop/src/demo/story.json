@@ -75,6 +75,14 @@
   ],
   "dev": { "command": "pnpm dev", "port": 41003, "requests": ["GET /checkout 200", "GET /cart 200"] },
   "overlap": { "symbol": "applyCoupon", "file": "src/cart/coupon.ts", "between": ["checkout-fix", "coupon-rules"] },
+  "plan": {
+    "goal": "Add gift cards to checkout, with tests",
+    "tasks": [
+      { "title": "Add gift card balances", "engine": "codex" },
+      { "title": "Redeem gift cards at checkout", "engine": "claude" },
+      { "title": "Show gift cards in the cart", "engine": "gemini" }
+    ]
+  },
   "secondOpinion": {
     "worktree": "checkout-fix",
     "engine": "codex",

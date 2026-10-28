@@ -42,6 +42,8 @@ describe("D-2609 the sample world the demo and the site's scenes share (D-1899)"
     expect(STORY.secondOpinion.engine).not.toBe(reviewed.engine);
     expect(STORY.engines[STORY.secondOpinion.engine]).toBeDefined();
     expect(worktree(STORY.pr.worktree).state).toBe("done");
+    // The plan's tasks go to the engines the demo has, one each.
+    expect(STORY.plan.tasks.map((t) => t.engine).sort()).toEqual(Object.keys(STORY.engines).sort());
     // Each comment sits on a line its worktree changed or kept, in a file it changed.
     for (const [slug, comments] of [
       [STORY.secondOpinion.worktree, STORY.secondOpinion.comments],

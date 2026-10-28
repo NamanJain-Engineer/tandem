@@ -30,6 +30,7 @@ function run(running: number, reviewing: number, ready: number) {
 }
 
 const [balances, redeem, cart] = SAMPLE.plan.tasks;
+if (!balances || !redeem || !cart || SAMPLE.plan.tasks.length !== 3) throw new Error("scenes: the plan scene runs story.json's plan, which needs three tasks");
 
 /** The plan's three runs, in seconds from the scene's start. Execute all
  * queued them together (at most four run at a time); each is reviewed by

@@ -146,12 +146,15 @@ export function Pane({
   );
 }
 
-/** Terminal lines arriving one after another from `start`, `step` apart. */
-export function Lines({ lines, start, step = 0.55 }: { lines: readonly string[]; start: number; step?: number }) {
+/** Terminal lines arriving one after another from `start`, `step` apart,
+ * or spread evenly so the last arrives at `end`, however many there are
+ * (a pane printing story.json's steps, before what comes next in it). */
+export function Lines({ lines, start, step = 0.55, end }: { lines: readonly string[]; start: number; step?: number; end?: number }) {
+  const gap = end !== undefined && lines.length > 1 ? (end - start) / (lines.length - 1) : step;
   return (
     <>
       {lines.map((l, i) => (
-        <span key={l} className="sc-line" {...fx("line", start + i * step)}>
+        <span key={l} className="sc-line" {...fx("line", Math.round((start + i * gap) * 100) / 100)}>
           {l}
         </span>
       ))}

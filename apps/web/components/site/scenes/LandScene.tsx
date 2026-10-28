@@ -2,11 +2,12 @@ import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
 import { AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
 
-const LANES = [
-  { engine: "Claude Code", branch: SAMPLE.worktrees.claude.branch, commits: 3, commit: SAMPLE.commits[0] },
-  { engine: "Codex", branch: SAMPLE.worktrees.codex.branch, commits: 5, commit: SAMPLE.commits[1] },
-  { engine: "Gemini CLI", branch: SAMPLE.worktrees.gemini.branch, commits: 2, commit: SAMPLE.commits[2] },
-] as const;
+/** The three worktrees in the order they land, with their commits and the
+ * merge commit each lands as (the story's, D-2609). */
+const LANES = [SAMPLE.worktrees.claude, SAMPLE.worktrees.codex, SAMPLE.worktrees.gemini].map((w, i) => ({
+  ...w,
+  commit: SAMPLE.commits[i] ?? "",
+}));
 
 /** Each worktree's steps, 1.6 s apart and one worktree after another, as
  * the queue lands them (merge main in, run the check, land). */

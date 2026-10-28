@@ -57,10 +57,10 @@ export function WorkspaceScene() {
             doneAt={6.4}
             status={<DotChange from="working" to="done" seconds={6.4} />}
           >
-            <Lines lines={SAMPLE.lines.claude} start={0.5} step={0.8} />
+            <Lines lines={SAMPLE.lines.claude} start={0.5} end={5.3} />
           </Pane>
           <Pane engine={codex.engine} title={t("pane.engine", { engine: codex.engine, n: 2 })} branch={codex.branch} status={<Dot status="working" />}>
-            <Lines lines={SAMPLE.lines.codex} start={0.9} step={1} />
+            <Lines lines={SAMPLE.lines.codex} start={0.9} end={4.9} />
             <span className="sc-line sc-caret" {...fx("line", 5.9)} />
           </Pane>
           <Pane
@@ -72,7 +72,7 @@ export function WorkspaceScene() {
               <GeminiStatus />
             }
           >
-            <Lines lines={SAMPLE.lines.gemini} start={0.7} step={0.7} />
+            <Lines lines={SAMPLE.lines.gemini} start={0.7} end={2.1} />
             {/* The approval, answered: it arrives, Allow once is pressed, and it goes. */}
             <span className="sc-ask" {...visit(2.2, 3.1)}>
               <span className="sc-ask-text">{t("dashboard.wants", { summary: `run ${SAMPLE.ask}` })}</span>

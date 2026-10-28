@@ -17,6 +17,8 @@ import { LANDS, SAMPLE, SCENE_BUILD, atLeast, t } from "../lib/scenes";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
 import { SCENE_PAGES, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
+import story from "../../desktop/src/demo/story.json";
+import { REVIEW_DIFF } from "../components/site/scenes/ReviewScene";
 
 // The animated product scenes (F-WB-01 AC9, D-1880, D-1881).
 
@@ -25,8 +27,26 @@ const v090 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ 
 const css = readFileSync(join(import.meta.dirname, "../components/site/scenes/scenes.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 const ALL = { workspace: <WorkspaceScene />, dashboard: <DashboardScene />, review: <ReviewScene />, land: <LandScene />, plan: <PlanScene /> };
 /** Text as React writes it into HTML. */
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** HTML's text, tags dropped (entities kept). */
+const text = (h: string) => h.replace(/<[^>]+>/g, "");
 const versionHtml = async (version: string) => renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version }) }));
+/** When the pop that last starts before `s` in `h` plays: the time of the
+ * element that brings `s` in. */
+const popBefore = (h: string, s: string) => [...h.slice(0, h.indexOf(esc(s))).matchAll(/data-fx-pop="" style="--at:([\d.]+)s"/g)].at(-1)?.[1];
+/** A line comment in the Review scene's diff (DiffView's annotation row). */
+const NOTE = /<span class="sc-diff-note"><span class="sc-diff-note-text">[^<]*<\/span>(?:<span class="sc-btn sc-btn-ghost">[^<]*<\/span>)*<\/span>/g;
+/** The Review scene's diff body: the rows down to the first commented line,
+ * then the stack under it: the rows as they were (`was`, leaving at
+ * `wasAt`) and with the comments (`now`, arriving at `nowAt`). */
+function reviewBody(h: string) {
+  const body = /<div class="sc-diff-body">([\s\S]*?)<\/div>/.exec(h)?.[1] ?? "";
+  const m =
+    /^([\s\S]*?)<span class="sc-diff-swap"><span class="sc-diff-rows" data-fx-out="" style="--at:([\d.]+)s">([\s\S]*?)<\/span><span class="sc-diff-rows" data-fx-in="" style="--at:([\d.]+)s">([\s\S]*)<\/span><\/span>$/.exec(
+      body,
+    );
+  return { above: m?.[1] ?? "", wasAt: m?.[2], was: m?.[3] ?? "", nowAt: m?.[4], now: m?.[5] ?? "" };
+}
 
 describe("F-WB-01 AC9 product scenes", () => {
   it("F-WB-01 AC9 a scene is decorative, sits in the bezel and says what happens in it", async () => {
@@ -140,6 +160,120 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(css).toMatch(/\.sc-plan-chip-goal \{[^}]*text-overflow: ellipsis;/);
   });
 
+  it("F-WB-01 AC9 D-1899 the scenes' sample world is story.json's, the one the demo shows, with no copy kept here (D-2609)", () => {
+    const by = (engine: string) => story.worktrees.find((w) => w.engine === engine);
+    expect(SAMPLE.workspace).toBe(story.repo);
+    expect(SAMPLE.base).toBe(story.base);
+    expect(SAMPLE.symbol).toBe(story.overlap.symbol);
+    for (const [key, engine] of [["claude", "claude"], ["codex", "codex"], ["gemini", "gemini"]] as const) {
+      const w = by(engine);
+      expect(SAMPLE.worktrees[key].branch).toBe(w?.slug);
+      expect(SAMPLE.worktrees[key].engine).toBe(story.engines[engine].label);
+      expect(SAMPLE.lines[key][0]).toBe(`› ${w?.task}`);
+      // Every step the story gives the agent is a line in its pane.
+      expect(SAMPLE.lines[key].length).toBe(1 + (w?.steps ?? []).reduce((n, s) => n + ("passed" in s && s.passed ? 2 : 1), 0));
+    }
+    expect(SAMPLE.lines.codex).toContain("  $ pnpm test coupon");
+    expect(SAMPLE.lines.shell).toEqual([`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)]);
+    expect(SAMPLE.ask).toBe(by("gemini")?.ask);
+    // The review card's figures are the sum of checkout-fix's edits.
+    const edits = (by("claude")?.steps ?? []).filter((s) => "edit" in s) as Array<{ edit: string; add: number; del: number }>;
+    expect(SAMPLE.diff).toEqual({ files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) });
+    // "Touches auth paths" is earned: one of those files is on an auth path (review_queue.rs is_auth).
+    expect(edits.some((e) => e.edit.split("/").some((seg) => /auth|oauth|login|password|secret|crypto|permission/i.test(seg) && !/^author/i.test(seg)))).toBe(true);
+    expect(SAMPLE.comments.map((c) => c.text)).toEqual(story.secondOpinion.comments.map((c) => c.body));
+    expect(SAMPLE.commits).toEqual(story.worktrees.map((w) => w.mergeCommit));
+    expect(SAMPLE.failedCheck).toBe(story.pr.checks.find((c) => c.bucket === "fail")?.name);
+    // The plan (0.12.0's scene): its goal, and its tasks in order, numbered
+    // as the tracker numbers them, each with its engine's name.
+    expect(SAMPLE.plan.goal).toBe(story.plan.goal);
+    expect(SAMPLE.plan.tasks).toEqual(story.plan.tasks.map((x, i) => ({ id: `TAN-${31 + i}`, title: x.title, engine: story.engines[x.engine as keyof typeof story.engines].label })));
+    // No copies: the world's names come only from story.json.
+    const source = readFileSync(join(import.meta.dirname, "../lib/scenes.ts"), "utf8");
+    for (const name of [
+      story.repo,
+      story.overlap.symbol,
+      ...story.worktrees.flatMap((w) => [w.slug, w.task, w.mergeCommit]),
+      story.plan.goal,
+      ...story.plan.tasks.map((x) => x.title),
+    ])
+      expect(source, name).not.toContain(name);
+  });
+
+  it("F-WB-01 AC9 D-3000 the hero's panes print every story line before what comes next in them, however many lines the story has", () => {
+    const h = renderToStaticMarkup(<WorkspaceScene />);
+    // Each pane, from its root (not its head) to the next one's.
+    const panes = h.split(/<div class="sc-pane(?:"| )/).slice(1);
+    const pane = (engine: string) => panes.find((p) => p.includes(`>${t("pane.engine", { engine, n: 1 })}<`) || p.includes(`>${engine} · `)) ?? "";
+    const times = (p: string, re: RegExp) => [...p.matchAll(re)].map((m) => Number(m[1]));
+    const lines = (p: string) => times(p, /<span class="sc-line" data-fx-line="" style="--at:([\d.]+)s">/g);
+    const { claude, codex, gemini } = SAMPLE.worktrees;
+    // Claude Code: all its lines, then done (its header flashes).
+    const c = pane(claude.engine);
+    expect(lines(c).length).toBe(SAMPLE.lines.claude.length);
+    expect(Math.max(...lines(c))).toBeLessThan(times(c, /class="sc-flash" data-fx-visit="" style="--at:([\d.]+)s/g)[0] ?? 0);
+    // Codex: all its lines, then the caret waiting on its tests.
+    const x = pane(codex.engine);
+    expect(Math.max(...lines(x).slice(0, SAMPLE.lines.codex.length))).toBeLessThan(times(x, /class="sc-line sc-caret" data-fx-line="" style="--at:([\d.]+)s/g)[0] ?? 0);
+    // Gemini CLI: all its lines, then its ask to run the tests.
+    const g = pane(gemini.engine);
+    expect(Math.max(...lines(g).slice(0, SAMPLE.lines.gemini.length))).toBeLessThan(times(g, /class="sc-ask" data-fx-visit="" style="--at:([\d.]+)s/g)[0] ?? 0);
+  });
+
+  it("F-WB-01 AC9 D-1899 the Land scene counts each worktree's commits from the story", () => {
+    const h = renderToStaticMarkup(<LandScene />);
+    for (const w of story.worktrees) expect(h, w.slug).toContain(`${t("landing.commits", { n: w.commits.length })} · ${t("landing.forecast.clean")}`);
+  });
+
+  it("F-WB-01 AC9 D-1899 the Review scene's diff is checkout-fix's real one: each row is the sample file's line at its number", () => {
+    const shop = join(import.meta.dirname, "../../desktop/src/demo/shop");
+    const file = "src/cart/checkout.ts";
+    const before = readFileSync(join(shop, "main", `${file}.sample`), "utf8").split("\n");
+    const after = readFileSync(join(shop, story.secondOpinion.worktree, `${file}.sample`), "utf8").split("\n");
+    for (const [mark, code, oldNo, newNo] of REVIEW_DIFF) {
+      if (mark !== "+") expect(before[(oldNo ?? 0) - 1], `${mark} ${code}`).toBe(code);
+      if (mark !== "−") expect(after[(newNo ?? 0) - 1], `${mark} ${code}`).toBe(code);
+      // An added line has no old number, a removed one no new one (DiffView's two columns).
+      if (mark === "+") expect(oldNo, code).toBeNull();
+      if (mark === "−") expect(newNo, code).toBeNull();
+    }
+    // Codex's comments sit under the rows at the story's lines, in its words.
+    const h = renderToStaticMarkup(<ReviewScene />);
+    const { above, now } = reviewBody(h);
+    const final = text(above + now);
+    for (const c of story.secondOpinion.comments) {
+      const row = REVIEW_DIFF.findIndex(([, , , newNo]) => newNo === c.line);
+      expect(row, `line ${c.line}`).toBeGreaterThan(-1);
+      // Inline, directly under its line, as DiffView's annotation row.
+      expect(final).toContain(`${esc(REVIEW_DIFF[row]?.[1] ?? "")}${esc(c.body)}`);
+      expect(h).toContain(`<span class="sc-diff-note-text">${esc(c.body)}</span>`);
+    }
+    // One agent in the worktree: the review bar names it (WorktreeReview's sendTo).
+    expect(h).toContain(t("worktree.review.sendTo", { name: SAMPLE.worktrees.claude.engine }));
+    expect(h).not.toContain(`>${t("worktree.review.send")}<`);
+  });
+
+  it("F-WB-01 AC9 D-3000 Codex's comments arrive together, with its done line, as review:second_opinion adds them, and no gap waits for them", () => {
+    const h = renderToStaticMarkup(<ReviewScene />);
+    const doneAt = popBefore(h, t("worktree.opinion.done", { engine: "Codex", n: SAMPLE.comments.length }));
+    expect(doneAt).toBeDefined();
+    // Above the first commented line nothing changes. Under it, the rows as
+    // they were leave as the same rows with the comments under their lines
+    // come in, both when Codex is done, stacked in one cell, so the lines
+    // under a comment never wait apart from the line above it.
+    const { above, was, now, wasAt, nowAt } = reviewBody(h);
+    expect(above).not.toContain("sc-diff-note");
+    expect(was).not.toContain("sc-diff-note");
+    expect(now.startsWith('<span class="sc-diff-note">')).toBe(true);
+    expect(now.match(NOTE)?.length).toBe(SAMPLE.comments.length);
+    expect(now.replace(NOTE, "")).toBe(was);
+    expect([wasAt, nowAt]).toEqual([doneAt, doneAt]);
+    expect(css).toMatch(/\.sc-diff-swap \{ display: grid; \}/);
+    expect(css).toMatch(/\.sc-diff-swap > \* \{ grid-area: 1 \/ 1;/);
+    // "Send to Claude Code" comes once they're in.
+    expect(Number(popBefore(h, t("worktree.review.sendTo", { name: SAMPLE.worktrees.claude.engine })))).toBeGreaterThan(Number(doneAt));
+  });
+
   it("F-WB-01 AC9 the app's own words come from its catalog, with plurals, and a missing one fails the build", () => {
     expect(t("review.stat", { n: SAMPLE.diff.files, adds: 62, dels: 18 })).toBe("4 files · +62 −18");
     expect(t("review.stat", { n: 1, adds: 1, dels: 0 })).toBe("1 file · +1 −0");
@@ -178,7 +312,7 @@ describe("F-WB-01 AC9 product scenes", () => {
   it("F-WB-01 AC8 AC9 the markup is the final frame: what leaves is marked, and hidden there", () => {
     const final = renderToStaticMarkup(<ReviewScene />);
     expect(final).toContain(t("worktree.opinion.done", { engine: "Codex", n: 2 }));
-    expect(final).toContain(t("worktree.review.send"));
+    expect(final).toContain(t("worktree.review.sendTo", { name: SAMPLE.worktrees.claude.engine }));
     for (const c of SAMPLE.comments) expect(final).toContain(c.text);
     // "Codex is reviewing…" comes and goes.
     expect(final).toMatch(new RegExp(`data-fx-visit=""[^>]*>[\\s\\S]{0,1500}?${t("worktree.opinion.reviewing", { engine: "Codex" })}`));
@@ -234,7 +368,9 @@ describe("F-WB-01 AC9 product scenes", () => {
   });
 
   it("F-WB-01 AC9 the scenes follow app-ui's T2 and T3: lit raised surfaces, status as text rather than pills (D-1887)", () => {
-    for (const cls of ["sc-ask", "sc-toast", "sc-comment", "sc-dialog"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-[23]\\)`).test(css), cls).toBe(true);
+    for (const cls of ["sc-ask", "sc-toast", "sc-dialog"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-[23]\\)`).test(css), cls).toBe(true);
+    // A line comment isn't raised: it's DiffView's annotation row under its line (D-1889).
+    expect(/\.sc-diff-note \{[^}]*\}/.exec(css)?.[0]).not.toMatch(/elev|shadow/);
     for (const cls of ["sc-card", "sc-item"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-1\\)`).test(css), cls).toBe(true);
     // A risk is an outlined tag, a check's result is text, a warning sent is a status.
     expect(/\.sc-chip \{([^}]*)\}/.exec(css)?.[1]).not.toMatch(/status-waiting/);
