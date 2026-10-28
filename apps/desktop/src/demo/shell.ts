@@ -170,6 +170,33 @@ export class DemoShell {
   }
 }
 
+const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
+
+/** `text` as an agent's terminal UI shows it `cols` wide: each line broken
+ * at spaces and continued at its indent, where the terminal would cut a
+ * word in two. Colour codes take no room; a word wider than the pane stays
+ * whole. */
+export function wrapWords(text: string, cols: number): string {
+  const width = (s: string) => s.replace(SGR, "").length;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (width(line) <= cols) return line;
+      const indent = /^ */.exec(line)?.[0] ?? "";
+      const out: string[] = [];
+      let cur = "";
+      for (const word of line.slice(indent.length).split(" ")) {
+        if (cur && width(`${indent}${cur} ${word}`) > cols) {
+          out.push(indent + cur);
+          cur = word;
+        } else cur = cur ? `${cur} ${word}` : word;
+      }
+      out.push(indent + cur);
+      return out.join("\n");
+    })
+    .join("\n");
+}
+
 /** What an agent pane shows: a still frame of an agent's terminal UI. */
 export function agentScreen(engine: string, task: string, lines: string[]): string {
   // As wide as its words, so it fits a narrow pane without wrapping.

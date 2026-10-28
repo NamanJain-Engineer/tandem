@@ -58,7 +58,7 @@ import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
 import { DemoLanding } from "./landing";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
-import { DemoShell, agentScreen, type ShellPlace } from "./shell";
+import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
 import { STORY, branchOf, engineLabel, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
 import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
 import { version } from "../../package.json";
@@ -490,7 +490,15 @@ const STATUS: Record<string, { status: StatusRecord["status"]; title: string; pr
   STORY.worktrees.map((w) => [agentPane(w), { status: w.state, title: w.task, preview: previewOf(w) }]),
 );
 
-type Pty = { channel: FrameChannel; seq: number; screen: string; shell: DemoShell | null; typed?: string };
+type Pty = {
+  channel: FrameChannel;
+  seq: number;
+  screen: string;
+  shell: DemoShell | null;
+  typed?: string;
+  /** Its terminal's width, once the pane has said (pty_resize). */
+  cols?: number;
+};
 
 type DemoThread = {
   thread: Thread;
@@ -889,7 +897,7 @@ export class DemoCore {
     const paneId = agentPane(w);
     const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
     if (!yes) {
-      this.frame(pty, `\r\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\r\n`);
+      this.say(pty, `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`);
       this.finish(paneId, "done", "Didn't run the tests");
       return;
     }
@@ -906,7 +914,7 @@ export class DemoCore {
       w.closing ?? "Done.",
     ];
     this.later(600, () => {
-      this.frame(pty, `\r\n${lines.join("\r\n")}\r\n`);
+      this.say(pty, `\n${lines.join("\n")}\n`);
       this.files.commit(id);
       this.committed.add(w.slug);
       this.finish(paneId, "done", w.closing ?? "Done.");
@@ -1145,6 +1153,12 @@ export class DemoCore {
     for (const fn of this.listeners) fn();
   }
 
+  /** An agent's words in its pane, wrapped at its width as an agent's
+   * terminal UI wraps them (a shell's output isn't: a terminal cuts it). */
+  private say(pty: Pty, text: string): void {
+    this.frame(pty, wrapWords(text, pty.cols ?? 80).replace(/\n/g, "\r\n"));
+  }
+
   private frame(pty: Pty, text: string): void {
     pty.seq += 1;
     pty.screen += text;
@@ -1294,10 +1308,12 @@ export class DemoCore {
         else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
           this.answer(pty, data);
         else if (pty && data.includes("\r") && this.checkpoint(paneId))
-          this.frame(
-            pty,
-            "\r\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\r\n",
-          );
+          this.say(pty, "\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\n");
+        return null;
+      }
+      case "pty_resize": {
+        const pty = this.ptys.get(String(args?.paneId));
+        if (pty && typeof args?.cols === "number") pty.cols = args.cols;
         return null;
       }
       case "thread_list":
@@ -1532,7 +1548,10 @@ export class DemoCore {
         const pty = this.ptys.get(paneId);
         const text = String(args?.text ?? "");
         if (pty && !pty.shell) {
-          this.frame(pty, `\r\n${text.replace(/\n/g, "\r\n")}\r\n\x1b[2m(This agent is simulated. In Vibezeo it reads the note and fits its work to the other worktree's.)\x1b[0m\r\n`);
+          this.say(
+            pty,
+            `\n${text}\n\x1b[2m(This agent is simulated. In Vibezeo it reads the note and fits its work to the other worktree's.)\x1b[0m\n`,
+          );
           this.checkpoint(paneId);
         }
         return null;

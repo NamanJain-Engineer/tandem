@@ -614,7 +614,7 @@
   "worktree.overlap.clean": "No conflicts expected",
   "worktree.overlap.conflicts": "Merging will conflict in {n, plural, one {# file} other {# files}}",
   "worktree.overlap.unavailable": "No forecast: {reason}",
-  "worktree.overlap.uncommitted": "{n, plural, one {# uncommitted change isn't} other {# uncommitted changes aren't}} in the forecast. Commit them to include them.",
+  "worktree.overlap.uncommitted": "{n, plural, one {# uncommitted change isn't in the forecast. Commit it to include it.} other {# uncommitted changes aren't in the forecast. Commit them to include them.}}",
   "worktree.overlap.failed": "Couldn't check overlap: {reason}",
   "worktree.overlap.retry": "Retry",
   "worktree.overlap.checking": "Checking for conflicts…",
