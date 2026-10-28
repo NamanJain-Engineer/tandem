@@ -674,8 +674,11 @@ impl AutoService {
                     }
                     typed_on = host.status(&pane).map(|r| (r.status, r.since));
                     // The supervisor read the scrollback, which anyone can
-                    // write: no `@` it types names a file (D-3023).
-                    let text = tandem_core::untrusted::defang_noted(&text);
+                    // write: no `@` it types names a file (D-3023), and it
+                    // runs no slash or shell command (D-3026).
+                    let text = tandem_core::untrusted::no_command(
+                        &tandem_core::untrusted::defang_noted(&text),
+                    );
                     match host.type_prompt(&pane, &text).await {
                         Ok(()) => {
                             type_failures = 0;
@@ -958,6 +961,25 @@ mod tests {
                 tandem_core::untrusted::DEFANGED
             )]
         );
+    }
+
+    #[tokio::test]
+    async fn f_au_01_1_the_supervisors_prompt_runs_no_command() {
+        // A prompt that starts with / or ! would run a slash or shell
+        // command when typed (D-3026).
+        let svc = service();
+        let host = Arc::new(FakeHost::new(Box::new(|_, asked| match asked {
+            1 => prompt("/compact"),
+            2 => prompt("!rm -rf ~"),
+            _ => Ok(AutoNextResponse {
+                action: "done".into(),
+                text: None,
+                reason: None,
+            }),
+        })));
+        let run = start(&svc, &host, AutoMode::Finish);
+        until_ended(&svc, &run).await;
+        assert_eq!(host.typed(), vec![" /compact", " !rm -rf ~"]);
     }
 
     #[tokio::test]

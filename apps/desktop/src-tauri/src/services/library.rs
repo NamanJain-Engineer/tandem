@@ -322,10 +322,10 @@ pub async fn resume(state: &AppState, key: &str) -> Result<LibraryOpened, IpcErr
 /// `library_brief`: the handoff fallback brief from the transcript.
 pub async fn brief(state: &AppState, key: &str) -> Result<handoff::HandoffBrief, IpcError> {
     let items = transcript(state, key).await?;
-    Ok(handoff::HandoffBrief {
-        text: handoff::fallback_brief(&library::as_text(&items)),
-        source: handoff::BriefSource::Fallback,
-    })
+    Ok(handoff::offered(
+        handoff::fallback_brief(&library::as_text(&items)),
+        handoff::BriefSource::Fallback,
+    ))
 }
 
 /// `library_continue`: the target engine in the session's folder with the

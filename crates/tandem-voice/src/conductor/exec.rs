@@ -316,8 +316,11 @@ impl Executor {
         }
         self.effect()?;
         // The model reads panes anyone can write to: no `@` it types names a
-        // file (D-3023), and the note goes on the same line.
-        let clean = strip_controls(&tandem_core::untrusted::defang_noted(text));
+        // file (D-3023), the note goes on the same line, and it runs no
+        // slash or shell command (D-3026).
+        let clean = tandem_core::untrusted::no_command(&strip_controls(
+            &tandem_core::untrusted::defang_noted(text),
+        ));
         if clean.trim().is_empty() {
             return Err("There was nothing to type.".into());
         }
@@ -727,6 +730,21 @@ pub(crate) mod tests {
                 tandem_core::untrusted::DEFANGED
             )
         );
+    }
+
+    #[tokio::test]
+    async fn f_cn_03_typed_text_runs_no_command() {
+        // Typed with Enter, /clear would run a slash command (D-3026).
+        let host = FakeHost::with_panes();
+        let (e, _) = exec(host.clone());
+        let r = e
+            .run(&call(
+                "prompt_pane",
+                json!({"pane": "agent", "text": "/clear", "send": true}),
+            ))
+            .await;
+        assert!(r.result.ok, "{}", r.result.output);
+        assert_eq!(host.typed.lock().clone()[0].1, " /clear");
     }
 
     #[tokio::test]
