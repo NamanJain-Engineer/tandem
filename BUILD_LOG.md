@@ -60,7 +60,7 @@
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
   - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
-  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001); 0.11.0's claims and the governor follow.
+  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001); next, the hero as 0.12.0 draws one worktree in Code mode (D-2702), then 0.11.0's claims and the governor.
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -2306,8 +2306,8 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - "Codex is reviewing…" sits in WorktreeReview's bar, with a spinner and Open thread. "Codex left 2 comments" is a toast with Show diff (SecondOpinion.tsx), and then the bar reads "2 comments · Copy review · Send to Ada". The diff's header is just its file.
     - The card's second line is ReviewQueue's: the engine, the worktree's name once (its own workspace and its `tandem/` branch, shown as the name, D-1898) and how long ago it finished, `ago()`'s "4m": "Claude Code · checkout-fix · 4m". The hero's arriving card has the same line with "0m", since it arrives as the work finishes.
   - **The hero and the Dashboard follow the story's states:**
-    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Her ask stays in her pane with Allow once and Deny, and her dot and rail row stay waiting. Arlo stays at work, and the repository's working count follows (3, 2, 1).
-    - The Dashboard has the story's one repository, with each worktree's agent under its branch, as the app groups a repository's worktrees by project. Each card has the first name, with `cardMeta` under it: the engine and the worktree's name, once by the same rule ("Codex · coupon-rules"). The story gives no account, so none shows. Bea's card reads "Wants to: run pnpm test search", with Allow once, Deny and Open. The counts end at Waiting 1, Working 1 and Done 1, with Review · 1.
+    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Gemini CLI asks in its own terminal, "Allow running pnpm test search? (y/n)", and Bea's dot and rail row stay waiting. Arlo stays at work, and the repository's working count follows (3, 2, 1). (At 54a05e0d the ask was a banner with Allow once and Deny; see the design QA round below.)
+    - The Dashboard has the story's one repository, with each worktree's agent under its branch, as the app groups a repository's worktrees by project. Each card has the first name, with `cardMeta` under it: the engine and the worktree's name, once by the same rule ("Codex · coupon-rules"). The story gives no account, so none shows. Bea's card has the engine's question as its line, "Allow running pnpm test search?", with the waiting border and no buttons. The counts end at Waiting 1, Working 1 and Done 1, with Review · 1.
     - The api and docs projects are gone, and no engine's name is written into any scene file now.
     - The hero's caption counts three agents. It said four, counting the shell.
   - **Polish on 39601718:** both dialogs' scrims cover the whole window, title bar and status bar too, as the app's fixed overlay does, and the hero's radar notice sits under the panes' headers instead of across one.
@@ -2320,6 +2320,25 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - **The sample world keeps what the scenes rely on:** a test checks that the 15% code is BULK15 wherever it's defined and used, and that every worktree's agent has its first name right after its engine, from the app's list.
     - **Tests, tightened:** a story name or an engine's name now counts anywhere in a scene file, as a whole word ("Bea" isn't in "Beat"), with only a scene's own diff exempt, in its own file. A diff must run inside one of git's hunks. git runs with `--no-ext-diff`, and its absence fails with a clear message. The Review scene draws with no comments ("Codex had no comments", the first edited file in the header, no "0 line comments") and with two equal comments on one line.
     - **Not taken:** the hero's ask, radar marks and toast still fade in. Lighthouse's accessibility is 1.00 on `/` in all six runs; if axe catches one mid-fade, they take the lines' print-at-once treatment.
+  - **The design QA round on 54a05e0d (two must-fixes):**
+    - **An engine's own question isn't a Vibezeo approval.** 0.12.0 raises a pane's approval only for `vibezeo run` (agent_run.rs), and "Wants to: …" with Allow once is a Thread agent's. Bea's ask is Gemini CLI's own question, so the scenes draw it as the demo does (backend.ts): the engine's prompt in its terminal, "Allow running pnpm test search? (y/n)", and on Bea's Dashboard card the line "Allow running pnpm test search?", with the waiting border and no buttons. The banner in the pane, the buttons on the card and the captions' "answer in place" are gone. The scenes had shown an answer in place since slice 1, when it was Codex's "pnpm db:migrate". The design lead approved it then, in 1b and at 39601718, and records it as its miss. A test ties the two strings to the demo's.
+    - **The hero's rail ends with its worktrees.** Its "4 running sessions" line isn't in 0.12.0's rail: "N running sessions" is only the accessible name of a row's count badge, and CodeRail ends with Remote hosts under a divider. D-2702 redraws the rail as CodeRail draws it, Remote hosts included.
+  - **The coordinator's round on 54a05e0d (one must-fix, its should-fixes and the cheap nits):**
+    - **A push reads no checks.** The text said Vibezeo reads them "every two minutes while it's in front or on Refresh", but finished checks are read every 15 minutes (worktrees.ts's `CHECKS_IDLE_MS`), running ones every 2 with the window in front (`CHECKS_POLL_MS`), and nothing reads them on a push. So after the push the row's "1 check failed: test" is pressed again. ChecksDialog reads as it opens, so Refresh (secondary) shows its spinner over the old rows until the read ends. Then all three rows read "Running", in Badge's outline variant, and Send failure to agent goes. The row reads "Checks running", Close is pressed, and "Checks passed" comes on a later read. The first open shows the spinner too. The design lead chose the read on open over a press on Refresh, which would only repeat it. The text says how they're read, and that Vibezeo asks once before it reads a repository's pull requests (UI-156, which stays out of the scene). The scene runs about 14 s. A test lists who calls `loadChecks`, so when app-ui's 0.13.0 reads after a push, it fails and the scene changes.
+    - **A check's result is the app's Badge:** a 4 px box, 18 px tall, its 10 px text in the tone's text colour, a border in the tone at 40 % (mixed as the app's `border-done/40` compiles), no fill and no pill (DESIGN §4.5). A test reads Badge.tsx, ChecksDialog's `BUCKET_VARIANT` and tokens.css.
+    - **The prompt is tied to the core's own output.** `apps/desktop/src-tauri/tests/failure_prompts.rs` checks five cases in `tests/fixtures/failure_prompts.json` against `failure_prompt`: the scene's own, a path defanged with its note, the @s that stay, a fence longer than a backtick run in the log with no workflow or link, and a log of blank lines. `UPDATE_FIXTURES=1` rewrites them. The web test checks the port against each. That replaces the hand-written prompt and the source-string reads.
+    - **The CI scene's rules come only with it.** About 6 KB of scenes.css drew only the CI scene and blocked rendering on `/` and 0.12.0's page. They're now `ci.css`. Only a page whose release scenes name it (`css` in releaseScenes.tsx) inlines it, in the head after Next's stylesheets, with its comments gone. Every scene element's box and styles are the same before and after, on all three pages at 1440 and 390.
+      - 0.12.0's page drops from 1.66 to 1.51 s in light. `/` stays at 1.89 s median.
+      - `/`'s estimate counts every request that starts before its first paint. One of them is the demo's still under "Try Vibezeo right here", the section after the hero: 17 KB, lazy, but 1,540 px down on Lighthouse's phone viewport, inside Chrome's lazy-load distance. With it blocked, `/` is 1.82 s (1.81, 1.81, 1.82, 1.89, 1.82).
+      - `content-visibility: auto` on the scene windows cut the load's style and layout work from 1.19 to 0.77 s, and the real paint came earlier, but the estimate didn't move, so it isn't in. Keeping the still out of the first paint is the coordinator's call.
+    - **Nits taken:**
+      - Close finishes its press before the dialog fades: a press is 260 ms and the fade 180 ms, so the dialog leaves 0.44 s after Close.
+      - The interim fix reads "Tests 54 passed", as app-ui's CI data will.
+      - The token scan covers docs.css and ci.css. Shiki writes `--shiki-light` and `--shiki-dark` inline, so they count as defined.
+      - The theme cell's ring uses `--site-elev-1`.
+      - With no comments, the Review's bar goes when the review is done (WorktreeReview draws it only while reviewing or with comments).
+      - The CI scene's status bar has the branch's ↑/↓ and F-WT-08's CI segment, failed, running and passed, as StatusBar draws them.
+    - **Left for later:** the account on Dashboard cards stays out, as the design lead decided (it's "Default" on every card, and app-ui may show it only when an engine has two). The rail's checks badge on one line, with D-2700's short forms, goes in the 0.13.0 slice. The hero's repository count, which adds up its worktrees' agents, goes in D-2702.
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2447,7 +2466,7 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - The final frame's bar reads "1 comment · Copy review · Send to Ada".
     - The Review queue's buttons are ReviewQueue's variants. "Reviewing" is in the bar, the done toast has Show diff (SecondOpinion read), the bar shows the count and Copy review, and the meta ends with `ago()` (ReviewQueue read).
     - The hero's waiting agent ends on its ask, the working one stays at work, the working count follows, and the caption counts the story's agents.
-    - The Dashboard has one repository, worktree groups by branch, cards by first name with `cardMeta`, and the ask with Allow once, Deny and Open (Dashboard.tsx read). Its counts end on the story's states, with nothing from outside the story.
+    - The Dashboard has one repository, worktree groups by branch, cards by first name with `cardMeta`, and the ask with Allow once, Deny and Open (Dashboard.tsx read; at 54a05e0d, replaced by the engine's question in the design QA round). Its counts end on the story's states, with nothing from outside the story.
     - The no-copies test covers engines' names in every scene now, and the pull request's and second opinion's words.
     - The dialogs' scrims cover the whole window (Dialog.tsx's overlay read).
     - The radar notice sits under the panes' headers, and the spinner's keyframes and gating are checked.
@@ -2487,6 +2506,30 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - The gate passed:
     - TypeScript: 1,848 tests (web 168, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
     - Rust: 2,571 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The rounds on 54a05e0d (D-3001), on top of it with no merge: the design lead's two must-fixes and the coordinator's must-fix, should-fixes and cheap nits. Tests first:
+  - scenes.test:
+    - The waiting agent's question is its engine's own, in the demo's words (backend.ts read), and no caption or text alternative has an answer in place. The hero's rail has no "running sessions" line.
+    - A push reads no checks. The badge is pressed again, the dialog reads with Refresh spinning, the new run is Running in Badge's outline, Close, and passed on a later read; the text says so. The test reads ChecksDialog, worktrees.ts's intervals and every caller of `loadChecks`.
+    - A check's result is the app's Badge (Badge.tsx, `BUCKET_VARIANT` and tokens.css read).
+    - The prompt is each case of the fixture that `tests/failure_prompts.rs` checks against `failure_prompt`.
+    - The CI scene's own rules are only in ci.css, only its page inlines them, and the home page and 0.12.0's have none.
+    - The CI scene's status bar has the branch's ↑/↓ and the CI segment (StatusBar.tsx read).
+    - Close's press ends before the dialog fades. The no-comments Review's bar goes. The token scan covers docs.css and ci.css.
+    - Planted faults each fail a test: a CI rule in scenes.css, a shared one in ci.css, an undefined var() in ci.css or docs.css, the old filled badge, the old bar, a wrong defang rule in the port and an edited fixture (that one fails cargo's test).
+  - site.test: the ring uses `--site-elev-1`.
+  - cargo: `tests/failure_prompts.rs`, the fixture's five cases.
+  - scenes.spec: the CI rules load only on 0.9.0's page, after the shared ones. The final-frame tests expect the question in Bea's pane and the waiting border on Bea's card.
+  - Checks: web lint, web vitest 173/173, ui 466/466, `build:site` (58 pages), site Playwright 66/66, design-shots 24 ok with teal unchanged. Every scene element's box is the same before and after the CSS split, on all three pages at 1440 and 390. On the home page and 0.12.0's, the status bar's new layout moves no box either.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - /changelog/0.12.0/ 1.51 s light and 1.66 s dark (1.66 in both before).
+    - /changelog/0.9.0/ 1.66 s in both.
+    - `/` 0.99 at 1.89 s in both, as before; 1.82 s with the demo's still blocked.
+    - The rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,853 tests (web 173, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,572 passed (`tests/failure_prompts.rs` is the new one), 9 ignored.
     - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase

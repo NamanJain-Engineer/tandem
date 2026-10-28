@@ -14,6 +14,7 @@ import { SiteFrame } from "../../../components/site/SiteFrame";
 import type { ChangelogEntry } from "@tandem/protocol/changelog";
 import { PLATFORM_LABEL, RELEASES, addedCard, versionPath } from "../../../lib/changelog";
 import { RELEASE } from "../../../lib/release";
+import { sceneCss } from "../../../lib/sceneCss";
 import { SITE } from "../../../lib/site";
 
 type Params = { params: Promise<{ version: string }> };
@@ -50,6 +51,8 @@ export default async function VersionPage({ params }: Params) {
     })
     .sort((a, b) => a.at - b.at);
   const scene = slots.length > 0;
+  // A scene's own rules come only with it: in the head, after scenes.css.
+  const sheets = [...new Set(slots.flatMap((s) => (s.scene.css ? [s.scene.css] : [])))];
   // The Added list's breaks: before each scene's card, and its end.
   const breaks = [...new Set([0, ...slots.map((s) => s.at), added.length])].sort((a, b) => a - b);
   const blocks: ReactNode[] = [];
@@ -71,6 +74,11 @@ export default async function VersionPage({ params }: Params) {
   });
   return (
     <SiteFrame current="/changelog/">
+      {sheets.map((f) => (
+        <style key={f} href={`scenes/${f}`} precedence="scenes">
+          {sceneCss(f)}
+        </style>
+      ))}
       <article className="relative isolate">
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[32rem]" />
       <div className="container-site grid gap-10 py-16 lg:grid-cols-12 lg:gap-6 lg:py-24">

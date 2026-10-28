@@ -99,15 +99,19 @@ export function AppWindow({ children, className, mode = "code" }: { children: Re
 }
 
 /** The app's status bar as the download draws it (D-2603): the branch with
- * its icon, then the version. The early-access download has no hosted
- * service, so it shows no connection (D-816). */
-export function StatusBar({ branch }: { branch: string }) {
+ * its icon, and what there is to push and pull once it has an upstream;
+ * then a scene's segments (its CI); the version at the end. The
+ * early-access download has no hosted service, so it shows no connection
+ * (D-816). */
+export function StatusBar({ branch, counts, segments }: { branch: string; counts?: ReactNode; segments?: ReactNode }) {
   return (
     <div className="sc-statusbar">
       <span className="sc-statusbar-branch">
         <Icon icon={GitBranch} className="sc-statusbar-icon" />
         {branch}
+        {counts}
       </span>
+      {segments}
       <span className="sc-statusbar-right">
         <span>{t("status.version", { version: SCENE_BUILD })}</span>
       </span>

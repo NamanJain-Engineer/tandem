@@ -200,8 +200,12 @@ export const SAMPLE = {
     waiting: terminal(waiting),
     shell: [`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)],
   },
-  /** The command the waiting agent asks to run. */
+  /** The command the waiting agent asks to run, and how its engine asks:
+   * in its own terminal, and as the Dashboard card's line, as the demo
+   * draws an engine's question (backend.ts). It's the engine's prompt, not
+   * a Vibezeo approval, so nothing in the app answers it in place (D-3001). */
   ask: waiting.ask ?? "",
+  question: { terminal: `Allow running ${waiting.ask ?? ""}? (y/n)`, preview: `Allow running ${waiting.ask ?? ""}?` },
   /** The finished worktree's diff: the sum of its agent's edits, and the
    * files it edited, in order. */
   diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },
@@ -227,7 +231,7 @@ export const SAMPLE = {
         "  reading src/auth/session.test.ts",
         "  editing src/auth/session.test.ts  +9 −7",
         `  $ ${story.check}`,
-        "  Tests  48 passed",
+        "  Tests  54 passed",
         '  $ git commit -m "Test refreshSession, getSession\'s new name"',
         "  The session tests still called getSession, which this branch renamed. They test refreshSession now, its grace period too.",
       ],

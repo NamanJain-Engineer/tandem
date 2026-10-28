@@ -13,7 +13,7 @@ export const DASH_T = { ask: 2, done: 4.6 } as const;
  * name (cardMeta: a worktree's workspace is its own, and its branch,
  * tandem/<name>, is shown as the name, so once: D-1898); its latest line,
  * and its state. The story gives no account, so none shows. */
-function Card({ lane, status, line, wants }: { lane: typeof finished; status: ReactNode; line: ReactNode; wants?: ReactNode }) {
+function Card({ lane, status, line }: { lane: typeof finished; status: ReactNode; line: ReactNode }) {
   return (
     <span className="sc-card">
       <Glyph engine={lane.engine} />
@@ -23,7 +23,6 @@ function Card({ lane, status, line, wants }: { lane: typeof finished; status: Re
       </span>
       <span className="sc-card-line">{line}</span>
       <span className="sc-card-status">{status}</span>
-      {wants}
     </span>
   );
 }
@@ -43,27 +42,23 @@ const last = (lines: readonly string[], back = 1) => (lines.at(-back) ?? "").tri
 
 /** "Who needs you" (D-1880): the Dashboard over the story's repository,
  * grouped by project, each worktree's agent under its branch, as the app
- * groups a repository's worktrees. The waiting one asks to run its tests:
- * its card turns to Waiting for you and offers the answer in place; the
- * finished one finishes; the working one stays at work; the filter counts
- * follow. About 7 s, played once, resting with the waiting agent on you. */
+ * groups a repository's worktrees. The waiting one's engine asks to run
+ * its tests: its card turns to Waiting for you, with the question as its
+ * line; the finished one finishes; the working one stays at work; the
+ * filter counts follow. About 7 s, played once, resting with the waiting
+ * agent on you. */
 export function DashboardScene() {
   const n = SAMPLE.order.length;
   const card = (branch: string) => {
     if (branch === waiting.branch)
       return (
         <span className="sc-card-wrap sc-card-ask">
+          {/* Its engine's own question, as the card's line: there's no
+              Vibezeo approval to answer here, so no buttons (D-3001). */}
           <Card
             lane={waiting}
             status={<DotChange from="working" to="waiting" seconds={DASH_T.ask} />}
-            line={<Line from={last(SAMPLE.lines.waiting)} to={t("dashboard.wants", { summary: `run ${SAMPLE.ask}` })} seconds={DASH_T.ask} />}
-            wants={
-              <span className="sc-card-actions" {...fx("rise", DASH_T.ask + 0.3)}>
-                <span className="sc-btn sc-btn-primary">{t("dashboard.allowOnce")}</span>
-                <span className="sc-btn">{t("dashboard.deny")}</span>
-                <span className="sc-btn sc-btn-ghost">{t("dashboard.open")}</span>
-              </span>
-            }
+            line={<Line from={last(SAMPLE.lines.waiting)} to={SAMPLE.question.preview} seconds={DASH_T.ask} />}
           />
           <span className="sc-ring" {...fx("pop", DASH_T.ask)} />
         </span>
@@ -130,8 +125,8 @@ export function DashboardScene() {
   );
 }
 
-export const DASHBOARD_CAPTION = "Every agent across your workspaces, and the one waiting on you, with its answer in place.";
+export const DASHBOARD_CAPTION = "Every agent across your workspaces, and the one waiting on you.";
 
 export function dashboardSceneText(): string {
-  return `The Dashboard shows ${SAMPLE.order.length} agents in ${SAMPLE.workspace}, grouped by project, each under its worktree's branch. ${waiting.name}, in ${waiting.engine}, asks to run ${SAMPLE.ask}: the card turns to Waiting for you, with Allow once and Deny on it. ${finished.name}, in ${finished.engine}, finishes its tests and turns Done, and ${working.name}, in ${working.engine}, keeps working. The filter counts change to 1 waiting, 1 working and 1 done.`;
+  return `The Dashboard shows ${SAMPLE.order.length} agents in ${SAMPLE.workspace}, grouped by project, each under its worktree's branch. ${waiting.name}, in ${waiting.engine}, asks in its terminal to run ${SAMPLE.ask}: the card turns to Waiting for you and shows the question. ${finished.name}, in ${finished.engine}, finishes its tests and turns Done, and ${working.name}, in ${working.engine}, keeps working. The filter counts change to 1 waiting, 1 working and 1 done.`;
 }

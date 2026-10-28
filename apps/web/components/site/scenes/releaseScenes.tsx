@@ -13,6 +13,9 @@ export type ReleaseScene = {
   scene: () => ReactNode;
   caption: string;
   text: () => string;
+  /** The scene's own stylesheet, beside scenes.css: only the pages that play
+   * the scene inline it (D-3001). */
+  css?: string;
 };
 
 /** The release pages' scenes, by version (D-1885, D-1888, D-3001). A page with
@@ -21,7 +24,14 @@ export type ReleaseScene = {
 export const RELEASE_SCENES: Readonly<Record<string, readonly ReleaseScene[]>> = {
   "0.9.0": [
     { id: "land", card: "Land worktrees", scene: () => <LandScene />, caption: LAND_CAPTION, text: landSceneText },
-    { id: "checks", card: "CI results and review comments back to the agent", scene: () => <ChecksScene />, caption: CI_CAPTION, text: ciSceneText },
+    {
+      id: "checks",
+      card: "CI results and review comments back to the agent",
+      scene: () => <ChecksScene />,
+      caption: CI_CAPTION,
+      text: ciSceneText,
+      css: "ci.css",
+    },
   ],
   "0.12.0": [{ id: "plan", card: "Follow a plan through", scene: () => <PlanScene />, caption: PLAN_CAPTION, text: planSceneText }],
 };

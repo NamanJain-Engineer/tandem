@@ -55,8 +55,8 @@ test("F-WB-01 AC9 with the scene player blocked, every scene shows its final fra
     expect(await states(page, id), id).toEqual([]);
   }
   expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  // The waiting agent's ask stays: it's still waiting on you (D-3001).
-  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(1);
+  // The waiting agent's question stays: it's still waiting on you (D-3001).
+  expect(await opacity(page, '[data-scene="workspace"] .sc-line-ask')).toBe(1);
   expect(await opacity(page, '[data-scene="review"] .sc-review-bar .sc-btn-primary')).toBe(1);
   await context.close();
 });
@@ -204,6 +204,29 @@ test("F-WB-01 AC9 the CI scene ends with the checks passed, the agent's summary,
   expect(await shown(".sc-ci-layer, .sc-note-toast")).toEqual([]);
 });
 
+test("F-WB-01 AC9 D-3001 the CI scene's rules load only on the page that plays it, after the shared scene rules", async ({ page }) => {
+  /** Every rule the page's stylesheets hold that draws the CI scene. */
+  const ciRules = () =>
+    page.evaluate(() =>
+      [...document.styleSheets].flatMap((s) => {
+        const walk = (rules: CSSRuleList): string[] =>
+          [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && /\.sc-(ci|badge|checks|menu|branch-chip)\b/.test(r.selectorText) ? [r.selectorText] : []));
+        return walk(s.cssRules);
+      }),
+    );
+  for (const path of ["/", "/changelog/0.12.0/"]) {
+    await page.goto(path);
+    expect(await ciRules(), path).toEqual([]);
+  }
+  await page.goto("/changelog/0.9.0/");
+  expect((await ciRules()).length).toBeGreaterThan(20);
+  // One inline sheet in the head, after the shared ones, and the scene draws with it.
+  const order = await page.evaluate(() => [...document.head.querySelectorAll('link[rel="stylesheet"], style')].map((e) => (e.tagName === "STYLE" ? e.getAttribute("data-href") : "link")));
+  expect(order.at(-1)).toBe("scenes/ci.css");
+  expect(order.filter((x) => x === "scenes/ci.css")).toHaveLength(1);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="checks"] .sc-ci-layer') as Element).position)).toBe("absolute");
+});
+
 test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.12.0/");
@@ -232,10 +255,10 @@ test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and
     );
     expect(moving, id).toBe(0);
   }
-  // The final frame: the review item has arrived, and the waiting agent's ask is there to answer.
+  // The final frame: the review item has arrived, and the waiting agent's question is in its pane and on its card.
   expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  expect(await opacity(page, '[data-scene="workspace"] .sc-ask')).toBe(1);
-  expect(await opacity(page, '[data-scene="dashboard"] .sc-card-actions')).toBe(1);
+  expect(await opacity(page, '[data-scene="workspace"] .sc-line-ask')).toBe(1);
+  expect(await opacity(page, '[data-scene="dashboard"] .sc-card-ask .sc-ring')).toBe(1);
   await context.close();
 });
 

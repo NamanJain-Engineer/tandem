@@ -6,18 +6,18 @@ const { finished, working, waiting } = SAMPLE.worktrees;
 /** When the finished worktree's agent is done: its dot, its rail row and its
  * pane's header all change then. */
 export const HERO_DONE = 6.4;
-/** When the waiting worktree's agent asks to run its tests: it waits on you
- * from then on, with its ask in its pane (D-3001). */
+/** When the waiting worktree's engine asks to run its tests: it waits on
+ * you from then on, with its question in its pane (D-3001). */
 export const HERO_ASK = 2.2;
 
 /** The hero's scene (D-1880): Code mode over one repository, four live
  * panes, each agent in its own worktree, in the states story.json gives
- * them. The finished one fixes checkout; the waiting one asks before running
- * its tests and waits on you; the working one stays at work. On 0.9.0 the
- * intent radar sees the finished and the working one change the same
- * function and both are warned; the finished work arrives in the review
- * queue with its diff counting up. About 11 s, played once, resting on the
- * last frame. */
+ * them. The finished one fixes checkout; the waiting one's engine asks in
+ * its terminal before running its tests and waits on you; the working one
+ * stays at work. On 0.9.0 the intent radar sees the finished and the
+ * working one change the same function and both are warned; the finished
+ * work arrives in the review queue with its diff counting up. About 11 s,
+ * played once, resting on the last frame. */
 export function WorkspaceScene() {
   const radar = LANDS;
   return (
@@ -61,7 +61,6 @@ export function WorkspaceScene() {
             <DotChange from="working" to="waiting" seconds={HERO_ASK} />
             <span className="sc-lane-name">{waiting.branch}</span>
           </span>
-          <span className="sc-rail-foot">{t("rail.live", { n: 4 })}</span>
         </aside>
 
         <div className="sc-grid">
@@ -89,13 +88,10 @@ export function WorkspaceScene() {
             status={<DotChange from="working" to="waiting" seconds={HERO_ASK} />}
           >
             <Lines lines={SAMPLE.lines.waiting} start={0.7} end={HERO_ASK - 0.1} />
-            {/* Its ask: it waits on you, with the answer in place. */}
-            <span className="sc-ask" {...fx("in", HERO_ASK)}>
-              <span className="sc-ask-text">{t("dashboard.wants", { summary: `run ${SAMPLE.ask}` })}</span>
-              <span className="sc-ask-actions">
-                <span className="sc-btn sc-btn-primary">{t("dashboard.allowOnce")}</span>
-                <span className="sc-btn">{t("dashboard.deny")}</span>
-              </span>
+            {/* Its engine asks in its own terminal and waits for you: the
+                engine's question, which Vibezeo leaves to you (D-3001). */}
+            <span className="sc-line sc-line-ask" {...fx("line", HERO_ASK)}>
+              {SAMPLE.question.terminal}
             </span>
           </Pane>
           <Pane title={t("pane.shellIn", { folder: SAMPLE.workspace })} className="sc-hide-narrow" status={<Dot status="idle" />}>
@@ -166,5 +162,5 @@ export function workspaceSceneText(): string {
   const radar = LANDS
     ? ` The intent radar marks ${finished.branch} and ${working.branch}, which both change ${SAMPLE.symbol}, and both agents are warned.`
     : "";
-  return `Code mode with ${SAMPLE.order.length} agents in their own worktrees of one repository, and a shell. ${finished.name}, in ${finished.engine}, fixes checkout and turns Done; ${working.name}, in ${working.engine}, keeps working; ${waiting.name}, in ${waiting.engine}, asks to run ${SAMPLE.ask} and waits for you, with Allow once and Deny in its pane.${radar} ${finished.name}'s change arrives in the review queue: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, with its check passed.`;
+  return `Code mode with ${SAMPLE.order.length} agents in their own worktrees of one repository, and a shell. ${finished.name}, in ${finished.engine}, fixes checkout and turns Done; ${working.name}, in ${working.engine}, keeps working; ${waiting.name}, in ${waiting.engine}, asks in its terminal to run ${SAMPLE.ask} and waits for you.${radar} ${finished.name}'s change arrives in the review queue: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, with its check passed.`;
 }

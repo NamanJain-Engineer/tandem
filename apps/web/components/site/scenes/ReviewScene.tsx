@@ -146,10 +146,11 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
           <DiffRows rows={REVIEW_DIFF} notes={notes(comments)} at={DONE} />
           {/* WorktreeReview's bar: the reviewer at work, with Open thread,
               then the comments' count with Copy review and Send to the
-              worktree's one agent, by its name. */}
-          <span className="sc-review-bar" {...fx("in", REVIEW_T.reviewing)}>
+              worktree's one agent, by its name. With no comments it goes
+              when the review's done, as the app's does. */}
+          <span className="sc-review-bar" {...(n > 0 ? fx("in", REVIEW_T.reviewing) : visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing))}>
             <span className="sc-bar-states">
-              <span className="sc-bar-state" {...visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing)}>
+              <span className="sc-bar-state" {...(n > 0 ? visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing) : {})}>
                 <span className="sc-spin" />
                 <span className="sc-review-doing">{t("worktree.opinion.reviewing", { engine: reviewer })}</span>
                 <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("worktree.opinion.openThread")}</span>

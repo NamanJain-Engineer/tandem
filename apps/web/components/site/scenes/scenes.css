@@ -45,7 +45,6 @@
 .sc-lane { display: grid; grid-template-columns: 1em 1fr; align-items: center; column-gap: 0.5em; row-gap: 0.125em; padding: 0.3125em 0.5em 0.3125em 1em; font-size: 0.75em; color: var(--tn-text-muted); }
 .sc-lane-name { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-radar { grid-column: 2; justify-self: start; padding: 0 0.5em; border-radius: 0.25em; font-size: 0.875em; color: var(--tn-status-waiting-text); background: var(--tn-status-waiting-soft); }
-.sc-rail-foot { margin-top: auto; padding: 0 0.5em; font-size: 0.6875em; color: var(--tn-text-subtle); }
 
 /* Panes: four in a 2 × 2 grid, 6 px apart as in the app. */
 .sc-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 0.375em; padding: 0.375em; min-height: 0; }
@@ -71,12 +70,9 @@
 .sc-dot-swap { display: inline-grid; }
 .sc-dot-swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; }
 
-/* An approval in a pane, and buttons as the app draws them. */
-.sc-ask { position: absolute; inset: auto 0.75em 0.75em; display: flex; flex-direction: column; gap: 0.5em; padding: 0.625em 0.75em; border-radius: 0.5em; font-family: var(--font-sans); white-space: normal; color: var(--tn-text); background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), 0 0 0 1px var(--tn-border-strong); }
-.sc-ask-text { font-size: 1.05em; }
+/* Buttons as the app draws them, and a row of them. */
 .sc-ask-actions { display: flex; gap: 0.5em; }
 .sc-btn { display: inline-flex; align-items: center; height: 1.875em; padding-inline: 0.75em; border-radius: 0.375em; font-family: var(--font-sans); font-size: 0.75em; font-weight: 500; white-space: nowrap; color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
-.sc-term .sc-btn { font-size: 1em; }
 .sc-btn-primary { color: var(--tn-accent-fg); background: var(--tn-accent); box-shadow: none; }
 /* A status as text: its StatusDot shape and a sentence-case label (T3). */
 .sc-status { display: inline-flex; align-items: center; gap: 0.5em; font-family: var(--font-sans); font-size: 0.75em; white-space: nowrap; color: var(--tn-text-muted); }
@@ -106,8 +102,8 @@
 .sc-pane { position: relative; }
 .sc-sheen { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(105deg, transparent 35%, var(--tn-edge-hi) 50%, transparent 65%); translate: 100% 0; }
 
-.sc-statusbar { display: flex; align-items: center; justify-content: space-between; padding-inline: 0.875em; border-top: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.625em; color: var(--tn-text-subtle); background: var(--tn-surface-1); }
-.sc-statusbar-right { display: inline-flex; gap: 1.5em; }
+.sc-statusbar { display: flex; align-items: center; gap: 1.2em; padding-inline: 0.875em; border-top: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.625em; color: var(--tn-text-subtle); background: var(--tn-surface-1); }
+.sc-statusbar-right { margin-left: auto; display: inline-flex; gap: 1.5em; }
 
 /* The Dashboard. */
 .sc-dash { display: flex; flex-direction: column; gap: 0.875em; min-height: 0; padding: 1.25em 1.5em; overflow: hidden; }
@@ -134,7 +130,6 @@
 :is(.sc-item, .sc-toast, .sc-card) .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
 .sc-card-line { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-muted); white-space: nowrap; }
 .sc-card-status { display: inline-flex; }
-.sc-card-actions { grid-column: 3 / -1; display: flex; gap: 0.5em; }
 .sc-card-ask .sc-card { background: var(--tn-surface-3); }
 .sc-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 1px var(--tn-status-waiting), 0 0 1.5em -0.25em var(--tn-status-waiting-soft); }
 
@@ -183,7 +178,8 @@
 .sc-dialog-done .sc-btn { font-size: 0.9em; }
 
 /* The status bar as the download draws it (D-2603): the branch with its
-   icon, then the version; no connection (D-816). */
+   icon and its counts, a scene's segments 12 px apart, then the version;
+   no connection (D-816). */
 .sc-statusbar-branch { display: inline-flex; align-items: center; gap: 0.375em; }
 .sc-statusbar-icon { width: 1.1em; height: 1.1em; }
 .sc-btn-ghost { background: none; box-shadow: none; }
@@ -217,57 +213,13 @@
 .sc-run-label .sc-swap { justify-items: end; }
 .sc-plan-foot { gap: 0.5em; }
 
-/* CI results and review comments (D-3001): the rail, the agent's pane and
-   the Files panel, which gives way to Open diff. */
-.sc-ci-main { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 27em; gap: 0.375em; padding: 0.375em; min-height: 0; }
-.sc-ci-main > .sc-pane { min-width: 0; }
-.sc-ci-strip { display: none; }
-.sc-lane-on { color: var(--tn-text); background: var(--tn-surface-4); border-radius: 0.375em; }
-.sc-checks { grid-column: 2; justify-self: start; font-family: var(--font-sans); font-size: 0.9em; }
-.sc-checks > * > * { display: inline-flex; align-items: center; gap: 0.375em; white-space: nowrap; }
-.sc-checks-fail { color: var(--tn-danger); }
-.sc-checks-run { color: var(--tn-text-subtle); }
-.sc-checks-pass { color: var(--tn-success); }
-.sc-checks-icon { width: 1em; height: 1em; }
 /* Spinner (UI_SPEC §2.18): a faint ring and its arc in the text's colour. */
 .sc-spin { display: inline-block; flex: none; width: 0.85em; height: 0.85em; border-radius: 50%; border: 0.14em solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; }
 
-/* The agent's pane: what it ran before, the prompt as typed, its fix. */
-.sc-term .sc-line-old { color: var(--tn-text-subtle); }
-.sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
+/* A terminal's blank line (Lines draws "" as a short gap). */
 .sc-line-gap { height: 0.5em; flex: none; }
 
-/* The side: the Files panel, then Open diff in its place. */
-.sc-ci-side { display: grid; min-height: 0; }
-.sc-ci-side > * { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 0.5em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
-.sc-files-head { position: relative; display: flex; align-items: center; gap: 0.5em; height: 2.25em; flex: none; padding-inline: 0.5em; border-bottom: 1px solid var(--sc-line); }
-.sc-files-head .sc-seg { font-size: 0.75em; }
-.sc-seg-item { padding: 0.125em 0.625em; border-radius: 0.3125em; color: var(--tn-text-muted); }
-.sc-seg-on { color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 1px 0 var(--tn-edge-hi); }
-.sc-branch-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 0.375em; height: 1.875em; padding-inline: 0.625em; border-radius: 999px; font-size: 0.75em; color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border); white-space: nowrap; }
-.sc-branch-chip-icon { width: 1em; height: 1em; }
-.sc-branch-chip-name { font-weight: 500; color: var(--tn-text); }
-.sc-menu { position: absolute; top: 2.4em; right: 0.5em; z-index: 2; display: flex; flex-direction: column; min-width: 11em; padding: 0.25em; border-radius: 0.5em; font-size: 0.75em; background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), inset 0 0 0 1px var(--tn-border); }
-.sc-menu-item { padding: 0.3125em 0.625em; border-radius: 0.3125em; color: var(--tn-text); }
-.sc-menu-on { background: var(--tn-surface-4); }
-.sc-menu-sep { height: 1px; margin: 0.25em 0.375em; background: var(--sc-line); }
-.sc-files-body { display: grid; flex: 1; min-height: 0; padding: 0.5em; }
-.sc-files-swap { display: grid; align-self: start; }
-.sc-files-swap > * { grid-area: 1 / 1; }
-.sc-empty { display: flex; flex-direction: column; align-items: center; gap: 0.25em; padding: 2em 1em; text-align: center; }
-.sc-empty-title { font-size: 0.8125em; font-weight: 600; }
-.sc-empty-body { font-size: 0.75em; color: var(--tn-text-muted); }
-.sc-files-list { display: flex; flex-direction: column; gap: 0.25em; }
-.sc-files-section { padding: 0.25em 0.5em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tn-text-subtle); }
-.sc-files-row { display: flex; align-items: center; gap: 0.5em; padding: 0.25em 0.5em; font-size: 0.75em; }
-.sc-ci-letter { font-family: var(--font-mono); font-weight: 600; color: var(--tn-warning); }
-
-.sc-ci-review-top { display: flex; padding: 0.5em; }
-.sc-ci-file { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 0 0.5em; overflow: hidden; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
-.sc-ci-file-head { display: flex; align-items: center; gap: 0.5em; height: 2em; flex: none; padding-inline: 0.625em; border-bottom: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.6875em; background: var(--tn-surface-3); }
-.sc-ci-file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-ci-file .sc-diff-body { font-size: 0.625em; }
-.sc-diff-note-by { margin-right: 0.25em; font-weight: 500; color: var(--tn-text-muted); }
+/* WorktreeReview's bar under a diff (the Review and CI scenes). */
 .sc-review-bar { display: flex; align-items: center; gap: 0.5em; margin: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; background: var(--tn-surface-3); box-shadow: inset 0 0 0 1px var(--sc-line); }
 .sc-review-count { flex: 1; font-size: 0.75em; }
 /* Its states, one at a time: the reviewer at work (a spinner, what it's
@@ -276,19 +228,6 @@
 .sc-bar-state { grid-area: 1 / 1; display: flex; align-items: center; gap: 0.5em; min-width: 0; }
 .sc-review-doing { font-size: 0.75em; color: var(--tn-text-muted); white-space: nowrap; }
 .sc-btn-sm { height: 1.75em; padding-inline: 0.625em; font-size: 0.6875em; }
-
-/* The Checks dialog, over the window. */
-.sc-ci-layer { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: var(--tn-overlay); }
-.sc-ci-dialog { width: 34em; }
-.sc-ci-checks { display: flex; flex-direction: column; gap: 0.5em; }
-.sc-ci-check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
-.sc-ci-check-head { display: flex; align-items: center; gap: 0.5em; align-self: stretch; font-size: 0.8125em; }
-.sc-ci-check-flow { font-size: 0.85em; color: var(--tn-text-subtle); }
-.sc-badge { margin-left: auto; padding: 0.0625em 0.5em; border-radius: 999px; font-size: 0.8em; font-weight: 500; }
-.sc-badge-done { color: var(--tn-status-done-text); background: color-mix(in srgb, var(--tn-success) 14%, transparent); }
-.sc-badge-error { color: var(--tn-danger); background: var(--tn-status-error-soft); }
-.sc-badge-outline { color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border); }
-.sc-ci-foot { gap: 0.5em; }
 
 /* A toast, bottom right, as the app's (UI_SPEC §2.12): a bar in its tone,
    its title, and its action under it. */
@@ -313,7 +252,6 @@
   .sc-card { grid-template-columns: auto 1fr auto; }
   .sc-card-line { grid-column: 2 / -1; grid-row: 2; }
   .sc-card-status { grid-column: 3; grid-row: 1; }
-  .sc-card-actions { grid-column: 1 / -1; }
   .sc-rev { grid-template-columns: 1fr; }
   .sc-rev-list { display: none; }
   .sc-diff-no { display: none; }
@@ -330,18 +268,6 @@
   .sc-run-label { grid-column: 2; }
   .sc-run-label .sc-swap { justify-items: start; }
   .sc-note-toast { left: 1em; right: 1em; width: auto; }
-  .sc-ci-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
-  .sc-ci-strip { display: grid; padding-left: 0.75em; }
-  .sc-ci-side { display: contents; }
-  .sc-ci-strip { grid-area: 1 / 1; }
-  .sc-ci-main > .sc-pane { grid-area: 2 / 1; }
-  .sc-ci-review { grid-area: 2 / 1; z-index: 1; }
-  .sc-ci-files { grid-area: 3 / 1; overflow: visible; }
-  .sc-ci-files .sc-files-body { display: none; }
-  .sc-menu { top: auto; bottom: 2.4em; }
-  .sc-ci-dialog { width: 100%; }
-  .sc-ci-layer { padding: 0.75em; }
-  .sc-term .sc-line-old { display: none; }
 }
 
 /* Final frame: things that come and go, and things that leave, aren't in it. */

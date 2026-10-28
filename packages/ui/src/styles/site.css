@@ -539,7 +539,7 @@ body.site {
        which is how the ring went missing (it named --tn-shadow-color). */
     color: var(--tn-text);
     background: var(--site-card);
-    box-shadow: 0 0 0 1px var(--tn-text-muted), var(--tn-elev-1);
+    box-shadow: 0 0 0 1px var(--tn-text-muted), var(--site-elev-1);
   }
 }
 :root:not([data-theme-choice]) :is(.theme-switch, .theme-only) { display: none !important; }

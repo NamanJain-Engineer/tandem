@@ -1,0 +1,101 @@
+/* The CI scene's own rules (0.9.0's "CI results and review comments back
+   to the agent", D-3001): the rail row's checks, the status bar's CI, the
+   agent's pane, the Files panel and its branch menu, Open diff and the
+   Checks dialog. Only a page that plays that scene inlines them
+   (releaseScenes.tsx's `css`), so the home page and the other release
+   pages don't load them. They build on scenes.css, which comes first. */
+
+/* The agent's pane beside the side panel; the rail's selected row and its
+   checks (on a phone, a strip over the pane). */
+.sc-ci-main { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 27em; gap: 0.375em; padding: 0.375em; min-height: 0; }
+.sc-ci-main > .sc-pane { min-width: 0; }
+.sc-ci-strip { display: none; }
+.sc-lane-on { color: var(--tn-text); background: var(--tn-surface-4); border-radius: 0.375em; }
+.sc-checks { grid-column: 2; justify-self: start; font-family: var(--font-sans); font-size: 0.9em; }
+.sc-checks > * > * { display: inline-flex; align-items: center; gap: 0.375em; white-space: nowrap; }
+.sc-checks-fail { color: var(--tn-danger); }
+.sc-checks-run { color: var(--tn-text-subtle); }
+.sc-checks-pass { color: var(--tn-success); }
+.sc-checks-icon { width: 1em; height: 1em; }
+
+/* The status bar's CI segment (StatusBar's ChecksSegment): a 6 px status
+   dot and a word, in danger when failed and done's text when passed. */
+.sc-ci-seg { display: inline-flex; align-items: center; gap: 0.4em; white-space: nowrap; }
+.sc-ci-seg .sc-dot svg { width: 0.6em; height: 0.6em; }
+.sc-ci-seg-fail { color: var(--tn-danger); }
+.sc-ci-seg-pass { color: var(--tn-status-done-text); }
+
+/* The agent's pane: what it ran before, the prompt as typed, its fix. */
+.sc-term .sc-line-old { color: var(--tn-text-subtle); }
+.sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
+
+/* The side: the Files panel, then Open diff in its place. */
+.sc-ci-side { display: grid; min-height: 0; }
+.sc-ci-side > * { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 0.5em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-files-head { position: relative; display: flex; align-items: center; gap: 0.5em; height: 2.25em; flex: none; padding-inline: 0.5em; border-bottom: 1px solid var(--sc-line); }
+.sc-files-head .sc-seg { font-size: 0.75em; }
+.sc-seg-item { padding: 0.125em 0.625em; border-radius: 0.3125em; color: var(--tn-text-muted); }
+.sc-seg-on { color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 1px 0 var(--tn-edge-hi); }
+.sc-branch-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 0.375em; height: 1.875em; padding-inline: 0.625em; border-radius: 999px; font-size: 0.75em; color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border); white-space: nowrap; }
+.sc-branch-chip-icon { width: 1em; height: 1em; }
+.sc-branch-chip-name { font-weight: 500; color: var(--tn-text); }
+.sc-menu { position: absolute; top: 2.4em; right: 0.5em; z-index: 2; display: flex; flex-direction: column; min-width: 11em; padding: 0.25em; border-radius: 0.5em; font-size: 0.75em; background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), inset 0 0 0 1px var(--tn-border); }
+.sc-menu-item { padding: 0.3125em 0.625em; border-radius: 0.3125em; color: var(--tn-text); }
+.sc-menu-on { background: var(--tn-surface-4); }
+.sc-menu-sep { height: 1px; margin: 0.25em 0.375em; background: var(--sc-line); }
+.sc-files-body { display: grid; flex: 1; min-height: 0; padding: 0.5em; }
+.sc-files-swap { display: grid; align-self: start; }
+.sc-files-swap > * { grid-area: 1 / 1; }
+.sc-empty { display: flex; flex-direction: column; align-items: center; gap: 0.25em; padding: 2em 1em; text-align: center; }
+.sc-empty-title { font-size: 0.8125em; font-weight: 600; }
+.sc-empty-body { font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-files-list { display: flex; flex-direction: column; gap: 0.25em; }
+.sc-files-section { padding: 0.25em 0.5em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tn-text-subtle); }
+.sc-files-row { display: flex; align-items: center; gap: 0.5em; padding: 0.25em 0.5em; font-size: 0.75em; }
+.sc-ci-letter { font-family: var(--font-mono); font-weight: 600; color: var(--tn-warning); }
+
+.sc-ci-review-top { display: flex; padding: 0.5em; }
+.sc-ci-file { display: flex; flex-direction: column; flex: 1; min-height: 0; margin: 0 0.5em; overflow: hidden; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-ci-file-head { display: flex; align-items: center; gap: 0.5em; height: 2em; flex: none; padding-inline: 0.625em; border-bottom: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.6875em; background: var(--tn-surface-3); }
+.sc-ci-file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-ci-file .sc-diff-body { font-size: 0.625em; }
+.sc-diff-note-by { margin-right: 0.25em; font-weight: 500; color: var(--tn-text-muted); }
+
+/* The Checks dialog, over the window. */
+.sc-ci-layer { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: var(--tn-overlay); }
+.sc-ci-dialog { width: 34em; }
+.sc-ci-checks { display: flex; flex-direction: column; gap: 0.5em; }
+.sc-ci-check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
+.sc-ci-check-head { display: flex; align-items: center; gap: 0.5em; align-self: stretch; font-size: 0.8125em; }
+.sc-ci-check-flow { font-size: 0.85em; color: var(--tn-text-subtle); }
+/* A check's result as the app's Badge draws it (Badge.tsx): a small box with
+   4 px corners, 18 px tall, its text 10 px in its tone's text colour, and a
+   border in its tone at 40 %, mixed as the app's `border-done/40` compiles;
+   no fill and no pill (DESIGN §4.5). Sized in its row's 13 px. */
+.sc-badge { margin-left: auto; display: inline-flex; align-items: center; height: 1.8em; padding-inline: 0.6em; border-radius: 0.4em; font-size: calc(10em / 13); font-weight: 500; line-height: 1; white-space: nowrap; }
+.sc-badge-done { color: var(--tn-status-done-text); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tn-status-done) 40%, transparent); }
+.sc-badge-error { color: var(--tn-status-error); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tn-status-error) 40%, transparent); }
+.sc-badge-outline { color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-ci-foot { gap: 0.5em; }
+/* Refresh while the dialog reads: its spinner, then only its label, in one
+   cell (the app's loading Button). */
+.sc-btn-swap { display: inline-grid; justify-items: center; }
+.sc-btn-swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 0.5em; }
+/* The reopened dialog's rows: as they were, then the new run's, in one cell. */
+.sc-ci-checks-swap { display: grid; }
+.sc-ci-checks-swap > * { grid-area: 1 / 1; align-self: start; }
+
+@container (max-width: 40rem) {
+  .sc-ci-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .sc-ci-strip { display: grid; padding-left: 0.75em; }
+  .sc-ci-side { display: contents; }
+  .sc-ci-strip { grid-area: 1 / 1; }
+  .sc-ci-main > .sc-pane { grid-area: 2 / 1; }
+  .sc-ci-review { grid-area: 2 / 1; z-index: 1; }
+  .sc-ci-files { grid-area: 3 / 1; overflow: visible; }
+  .sc-ci-files .sc-files-body { display: none; }
+  .sc-menu { top: auto; bottom: 2.4em; }
+  .sc-ci-dialog { width: 100%; }
+  .sc-ci-layer { padding: 0.75em; }
+  .sc-term .sc-line-old { display: none; }
+}
