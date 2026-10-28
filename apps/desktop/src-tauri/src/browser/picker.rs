@@ -192,8 +192,8 @@ pub fn brief(url: &str, note: &str, elements: &[PickedElement]) -> String {
     // that names a file for the agent to attach (D-3023).
     let mut defanged = false;
     let mut page = |text: &str| {
-        let safe = tandem_core::untrusted::defang_mentions(text);
-        defanged |= safe != text;
+        let (safe, wrote) = tandem_core::untrusted::defang_marked(text);
+        defanged |= wrote;
         safe
     };
     let mut out = String::from("# Picked elements\n\n");

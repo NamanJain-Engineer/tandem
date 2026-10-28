@@ -44,8 +44,8 @@ pub fn prompt(name: &str, user: &str, assistant: &str, notes: &str) -> String {
     let mut defanged = false;
     let mut safe = |text: &str| {
         let fenced = fence_text(text, &mut hits);
-        let out = tandem_core::untrusted::defang_mentions(&fenced);
-        defanged |= out != fenced;
+        let (out, wrote) = tandem_core::untrusted::defang_marked(&fenced);
+        defanged |= wrote;
         out
     };
     let user = safe(user);

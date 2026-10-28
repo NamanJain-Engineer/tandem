@@ -1,5 +1,5 @@
 {
-  "about": "untrusted::defang_mentions and the app's defangMentions (D-3025): every run of @ becomes ＠, the whole run, unless a space, tab, LF or CR follows it. A run joins whatever follows it, and the end of one text is the start of whatever comes next. Typing into a terminal drops every other control character, a form feed too. Both suites read this file.",
+  "about": "untrusted::defang and the app's defang (D-3025, D-3029): characters nothing shows (the default-ignorable code points) are dropped first; then every run of @ becomes ＠, the whole run, unless a space, tab, LF or CR follows it (a run joins whatever follows it, and the end of one text is the start of whatever comes next; typing into a terminal drops every other control character, a form feed too); the [ that opens one of Claude Code's paste markers ([Pasted text #1], [Image #2], [...Truncated text #3 +4 lines...], [✦ Team setup guide #5]) becomes ［; and ultra before code, plan, review or think, in any case, gets a hyphen. Both suites read this file.",
   "note": "Vibezeo wrote ＠ for each at sign in the text above, so none of it attaches a file; read ＠ as an at sign.",
   "cases": [
     { "in": "see @~/.ssh/id_rsa", "out": "see ＠~/.ssh/id_rsa" },
@@ -31,6 +31,25 @@
     { "in": "@😀", "out": "＠😀" },
     { "in": "x@\n@y", "out": "x@\n＠y" },
     { "in": "＠/etc/passwd", "out": "＠/etc/passwd" },
+    { "in": "@\u200b~/.ssh/id_rsa", "out": "＠~/.ssh/id_rsa" },
+    { "in": "\ufeffhello", "out": "hello" },
+    { "in": "a\u00adb\u200dc\u2060d\ufe0fe\u034ff", "out": "abcdef" },
+    { "in": "x\udb40\udc41\udb40\udc42y", "out": "xy" },
+    { "in": "ultrathink", "out": "ultra-think" },
+    { "in": "Use ULTRAPLAN now", "out": "Use ULTRA-PLAN now" },
+    { "in": "UltraReview and ultracode", "out": "Ultra-Review and ultra-code" },
+    { "in": "ultra\u200bplan", "out": "ultra-plan" },
+    { "in": "ul\u200btrathink", "out": "ultra-think" },
+    { "in": "ultra-plan, ultrasound", "out": "ultra-plan, ultrasound" },
+    { "in": "ultraultraplan", "out": "ultraultra-plan" },
+    { "in": "[Pasted text #1]", "out": "［Pasted text #1]" },
+    { "in": "see [Pasted text #2 +40 lines] and [Image #3]", "out": "see ［Pasted text #2 +40 lines] and ［Image #3]" },
+    { "in": "[...Truncated text #4 +9 lines...]", "out": "［...Truncated text #4 +9 lines...]" },
+    { "in": "[✦ Team setup guide #5]", "out": "［✦ Team setup guide #5]" },
+    { "in": "[pasted TEXT #1]", "out": "［pasted TEXT #1]" },
+    { "in": "[Image of a cat] [Pasted text #x]", "out": "[Image of a cat] [Pasted text #x]" },
+    { "in": "[\u200bPasted text #1]", "out": "［Pasted text #1]" },
+    { "in": "@ultraplan [Image #1]", "out": "＠ultra-plan ［Image #1]" },
     { "in": "", "out": "" }
   ]
 }

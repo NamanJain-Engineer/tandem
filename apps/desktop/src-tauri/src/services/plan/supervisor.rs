@@ -358,7 +358,7 @@ pub fn answer_prompt(
         for (name, text) in files {
             out.push_str(&format!(
                 "\n\n`{name}`:\n{}",
-                untrusted::fence("markdown", &untrusted::defang_mentions(text))
+                untrusted::fence("markdown", &untrusted::defang(text))
             ));
         }
         out
@@ -377,9 +377,9 @@ pub fn answer_prompt(
          Or, to send the question to the user, reply with one line:\n\
          ESCALATE-{code}: {WHY_PLACEHOLDER}",
         untrusted::label("the task"),
-        untrusted::fence("text", &untrusted::defang_mentions(task)),
+        untrusted::fence("text", &untrusted::defang(task)),
         untrusted::label("the run's agent"),
-        untrusted::fence("text", &untrusted::defang_mentions(question)),
+        untrusted::fence("text", &untrusted::defang(question)),
     )
 }
 
@@ -388,7 +388,7 @@ pub fn answer_prompt(
 pub fn answer_message(answer: &str) -> String {
     format!(
         "{LABEL}:\n{}\n{AUTHORITY}",
-        untrusted::fence("text", &untrusted::defang_mentions(answer))
+        untrusted::fence("text", &untrusted::defang(answer))
     )
 }
 
@@ -754,8 +754,8 @@ impl PlanService {
             // message: no `@` here names a file either.
             let body = format!(
                 "{LABEL} to this task's run:\n\n> {}\n\n{}",
-                untrusted::defang_mentions(&q.question),
-                untrusted::defang_mentions(&text)
+                untrusted::defang(&q.question),
+                untrusted::defang(&text)
             );
             let by = Writer {
                 actor: lead.as_str().to_string(),

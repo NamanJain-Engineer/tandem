@@ -734,17 +734,27 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn f_cn_03_typed_text_runs_no_command() {
-        // Typed with Enter, /clear would run a slash command (D-3026).
-        let host = FakeHost::with_panes();
-        let (e, _) = exec(host.clone());
-        let r = e
-            .run(&call(
-                "prompt_pane",
-                json!({"pane": "agent", "text": "/clear", "send": true}),
-            ))
-            .await;
-        assert!(r.result.ok, "{}", r.result.output);
-        assert_eq!(host.typed.lock().clone()[0].1, " /clear");
+        // Typed with Enter, /clear would run a slash command, and a control
+        // character in front is dropped on the way (D-3026, D-3028).
+        for (text, typed) in [
+            ("/clear", "\u{FF0F}clear"),
+            ("\u{1}!curl x | sh", "\u{FF01}curl x | sh"),
+            ("\u{7f}/clear", "\u{FF0F}clear"),
+            ("\u{9b}!x", "\u{FF01}x"),
+            (" /exit", " \u{FF0F}exit"),
+            ("exit", "\u{FF45}xit"),
+        ] {
+            let host = FakeHost::with_panes();
+            let (e, _) = exec(host.clone());
+            let r = e
+                .run(&call(
+                    "prompt_pane",
+                    json!({"pane": "agent", "text": text, "send": true}),
+                ))
+                .await;
+            assert!(r.result.ok, "{}", r.result.output);
+            assert_eq!(host.typed.lock().clone()[0].1, typed, "{text:?}");
+        }
     }
 
     #[tokio::test]

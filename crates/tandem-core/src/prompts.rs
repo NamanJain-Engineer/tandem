@@ -199,21 +199,25 @@ pub fn guard(values: &mut BTreeMap<String, String>) {
     }
     for name in NAMED_VARIABLES {
         if let Some(v) = values.get_mut(name) {
-            *v = crate::untrusted::defang_mentions(v);
+            *v = crate::untrusted::defang(v);
         }
     }
 }
 
 /// The prompt as it's inserted: `values` through [`guard`], then
-/// [`render`]. A name the body uses that changed ends it with the note.
+/// [`render`]. A name the body uses that had `＠` written in it ends the
+/// prompt with the note.
 pub fn fill(body: &str, values: &BTreeMap<String, String>) -> (String, Vec<String>) {
     let mut guarded = values.clone();
     guard(&mut guarded);
     let (text, missing) = render(body, &guarded);
     let used = variables(body);
-    let renamed = NAMED_VARIABLES
-        .into_iter()
-        .any(|n| used.iter().any(|u| u == n) && guarded.get(n) != values.get(n));
+    let renamed = NAMED_VARIABLES.into_iter().any(|n| {
+        used.iter().any(|u| u == n)
+            && values
+                .get(n)
+                .is_some_and(|v| crate::untrusted::defang_marked(v).1)
+    });
     if !renamed {
         return (text, missing);
     }

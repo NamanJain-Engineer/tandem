@@ -273,13 +273,11 @@ fn task_err(e: tandem_tasks::TaskError) -> IpcError {
     crate::commands::tasks::task_err(e)
 }
 
-/// Untrusted text for a session's first message, with no `@` in it that
-/// names a file for the engine to attach (D-2839): any run can write a
-/// task's text and comments, and its worktree's diff. Whether it changed.
+/// Untrusted text for a session's first message, through
+/// [`untrusted::defang`] (D-2839, D-3029): any run can write a task's text
+/// and comments, and its worktree's diff. Whether it wrote `＠`.
 fn defanged(text: &str) -> (String, bool) {
-    let out = untrusted::defang_mentions(text);
-    let changed = out != text;
-    (out, changed)
+    untrusted::defang_marked(text)
 }
 
 /// The run's briefing (ARCHITECTURE §9.4): the issue's text and recent

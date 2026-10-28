@@ -28,7 +28,7 @@ import { diffNames } from "../../stores/intel";
 import { useEngines } from "../../stores/engines";
 import { switchMode } from "../shell/actions";
 import { useThreads } from "../../stores/threads";
-import { DEFANGED, defangMentions } from "./untrusted";
+import { DEFANGED, defangMarked } from "./untrusted";
 
 /** One review comment on a worktree's diff (F-WT-02). A General one (a
  * second opinion's lines that aren't on a shown line, F-WT-05) has no line.
@@ -61,24 +61,25 @@ function quote(text: string): string {
 
 /** The one prompt "Send to agent" types (F-WT-02). The words are the
  * agent's instructions, so they stay in English like the app's other
- * prompts to engines. The paths and lines are the worktree agent's, and the
- * second opinion's words another engine's: no `@` in them names a file for
- * the agent to attach (D-3023). Your own comments stay as you wrote them. */
+ * prompts to engines. The paths and lines are the worktree agent's, the
+ * second opinion's words another engine's, and the branch whoever named it:
+ * no `@` in them names a file for the agent to attach (D-3023). Your own
+ * comments stay as you wrote them. */
 export function buildReviewPrompt(branch: string, comments: ReviewComment[]): string {
+  let defanged = false;
+  const safe = (text: string) => {
+    const out = defangMarked(text);
+    defanged ||= out.wroteAt;
+    return out.text;
+  };
   const sorted = [...comments].sort(byPlace);
   const n = sorted.length;
-  const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
+  const head = `Review of your changes on ${safe(branch)} (${n} ${n === 1 ? "comment" : "comments"}):`;
   const indent = (text: string) =>
     text
       .split("\n")
       .map((l) => `   ${l}`)
       .join("\n");
-  let defanged = false;
-  const safe = (text: string) => {
-    const out = defangMentions(text);
-    defanged ||= out !== text;
-    return out;
-  };
   const items = sorted.map((c, i) => {
     // An imported comment's place and words are GitHub's: the core's
     // fenced copy carries both, and nothing of it goes outside the fence.

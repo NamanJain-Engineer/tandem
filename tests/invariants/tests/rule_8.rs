@@ -446,7 +446,7 @@ fn invariant_rule_8_typing_defanged_text_names_no_file() {
             format!("see 。@{between}~/.ssh/id_rsa"),
             format!("see @{between}"),
         ] {
-            let safe = untrusted::defang_mentions(&hostile);
+            let safe = untrusted::defang(&hostile);
             for bracketed in [true, false] {
                 let (typed, _) = prompt_writes(&safe, bracketed, "\u{1b}\r");
                 let typed = String::from_utf8(typed).expect("utf-8");

@@ -119,6 +119,15 @@ describe("review comments to the agent (F-WT-02)", () => {
     expect(one).toContain(`   > ${"x".repeat(199)}…`);
   });
 
+  it("F-WT-02.1 a branch named like a path names no file: git takes @/etc/passwd from whoever pushed it", () => {
+    const prompt = buildReviewPrompt("@/etc/passwd", [
+      comment({ id: 1, path: "a.ts", line: 1, text: "x", comment: "Why?" }),
+    ]);
+    expect(prompt.startsWith("Review of your changes on \uFF20/etc/passwd (1 comment):")).toBe(true);
+    expect(prompt).not.toContain("@/etc/passwd");
+    expect(prompt.split(DEFANGED)).toHaveLength(2);
+  });
+
   it("F-WT-02.1 no @ from the diff or the second opinion names a file for the agent, and your words stay yours", () => {
     // The worktree's agent wrote the line and the path, and the second
     // opinion's words echo it: Claude Code attaches the file an `@path` in

@@ -350,7 +350,7 @@ mod tests {
         assert!(!p.contains("@~/"), "{p}");
         assert!(p.contains(&tandem_core::untrusted::fence(
             "text",
-            &tandem_core::untrusted::defang_mentions(session)
+            &tandem_core::untrusted::defang(session)
         )));
         assert!(p.contains(tandem_core::untrusted::DEFANGED));
         assert!(!p.contains("<session>"));

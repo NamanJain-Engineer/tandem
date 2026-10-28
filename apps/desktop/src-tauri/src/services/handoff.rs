@@ -473,14 +473,20 @@ mod tests {
         // a slash or shell command (D-3026).
         let dir = tempfile::tempdir().expect("tmp");
         let pane = PaneId::from_db("pn_1".to_string());
-        assert_eq!(
-            deliver("/compact first", dir.path(), &pane).expect("short"),
-            " /compact first"
-        );
-        assert_eq!(
-            deliver("!rm -rf ~", dir.path(), &pane).expect("short"),
-            " !rm -rf ~"
-        );
+        for (brief, typed) in [
+            ("/compact first", "\u{FF0F}compact first"),
+            ("!rm -rf ~", "\u{FF01}rm -rf ~"),
+            ("\u{1}!x", "\u{1}\u{FF01}x"),
+            ("\u{7f}/x", "\u{7f}\u{FF0F}x"),
+            ("\u{9b}!x", "\u{9b}\u{FF01}x"),
+            ("exit", "\u{FF45}xit"),
+        ] {
+            assert_eq!(
+                deliver(brief, dir.path(), &pane).expect("short"),
+                typed,
+                "{brief:?}"
+            );
+        }
         assert_eq!(
             deliver("## Goal\nShip it.", dir.path(), &pane).expect("short"),
             "## Goal\nShip it."
@@ -491,11 +497,16 @@ mod tests {
     fn f_cd_16_a_brief_sent_to_a_thread_runs_no_command() {
         // A Thread's turn runs a slash command too: 2.1.312 ran `/cost` sent
         // in stream-json, as a string or a text block (D-3026).
-        assert_eq!(
-            thread_message("  /compact first\n").expect("brief"),
-            " /compact first"
-        );
-        assert_eq!(thread_message("!rm -rf ~").expect("brief"), " !rm -rf ~");
+        for (brief, sent) in [
+            ("  /compact first\n", "\u{FF0F}compact first"),
+            ("!rm -rf ~", "\u{FF01}rm -rf ~"),
+            ("\u{1}!x", "\u{1}\u{FF01}x"),
+            ("\u{7f}/x", "\u{7f}\u{FF0F}x"),
+            ("\u{9b}!x", "\u{9b}\u{FF01}x"),
+            (" :wq ", "\u{FF1A}wq"),
+        ] {
+            assert_eq!(thread_message(brief).expect("brief"), sent, "{brief:?}");
+        }
         assert_eq!(
             thread_message("## Goal\nShip it.").expect("brief"),
             "## Goal\nShip it."
