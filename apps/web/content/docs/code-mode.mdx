@@ -131,7 +131,7 @@ Git only notices two agents' changes clashing when they touch the same lines. Th
 Two worktrees of the same repository share a symbol when both changed it, or when one renamed, removed or changed something the other's new code uses. One agent renames `Session` while another adds a call to `Session.refresh`, for example.
 
 - **Check overlap…** lists the shared symbols next to the shared files, with what each side did: "renamed or removed here, used there".
-- A worktree that shares symbols shows **Shares Session** (or how many) on its rail row; click it to check the overlap.
+- A worktree that shares symbols shows **Shares Session** (or how many) on its rail row, or just the radar icon while the row shows its agent's status (hover it for the words); click it to check the overlap.
 - When an agent's turn makes two worktrees share something new, a notice names both branches and the symbols. **Warn both agents** types a short note into each worktree's agent, naming what the other worktree did. Nothing is typed until you click.
 
 Files in other languages, files over 512 KB, and anything past a worktree's first 300 changed files aren't checked, and Check overlap… says how many. Short names (under three letters) aren't matched.

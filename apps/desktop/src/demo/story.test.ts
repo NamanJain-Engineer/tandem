@@ -37,6 +37,18 @@ describe("D-2609 the sample world the demo and the site's scenes share (D-1899)"
       expect(editsOf(worktree(slug)).map((e) => e.edit), slug).toContain(STORY.overlap.file);
       expect(changedIn(slug)[STORY.overlap.file], slug).toContain(STORY.overlap.symbol);
     }
+    // Both change the symbol's definition: the radar's "changed here and there" (F-WT-10).
+    const body = (text: string | undefined) => {
+      const start = text?.indexOf(`export function ${STORY.overlap.symbol}(`) ?? -1;
+      return start < 0 ? null : text?.slice(start, text.indexOf("\n}\n", start));
+    };
+    const base = body(MAIN[STORY.overlap.file]);
+    expect(base).toBeTruthy();
+    for (const slug of STORY.overlap.between) {
+      const theirs = body(changedIn(slug)[STORY.overlap.file]);
+      expect(theirs, slug).toBeTruthy();
+      expect(theirs, slug).not.toBe(base);
+    }
     // Second opinion is another engine reading a finished worktree's diff (F-WT-05).
     const reviewed = worktree(STORY.secondOpinion.worktree);
     expect(reviewed.state).toBe("done");

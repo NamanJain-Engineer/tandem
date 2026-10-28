@@ -571,6 +571,7 @@
   "worktree.opinion.showDiff": "Show diff",
   "radar.mark.one": "Shares {symbol}",
   "radar.mark.many": "Shares {n} symbols",
+  "radar.mark.title": "Shares {symbols}",
   "radar.sharedHeading": "Shared symbols",
   "radar.siblingSymbols": "{branch} touches the same symbols",
   "radar.symbol": "{here} here, {there} there",
