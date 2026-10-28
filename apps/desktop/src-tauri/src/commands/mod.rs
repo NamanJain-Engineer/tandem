@@ -4,6 +4,7 @@
 pub mod account;
 pub mod accounts;
 pub mod acp_agents;
+pub mod activity;
 pub mod app;
 pub mod auto;
 pub mod bestof;

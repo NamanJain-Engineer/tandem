@@ -23,6 +23,7 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
+import { approvalActions } from "../lib/approvals";
 import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
@@ -208,33 +209,40 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
       {!view.grants?.approvals && <Notice tone="warning">{t("approvals.needsGrant")}</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
       {approvals.length === 0 && <Empty label={t("approvals.empty")} />}
-      {approvals.map((a) => (
-        <Card key={a.id}>
-          <Body>{a.summary}</Body>
-          <Small>{a.source}</Small>
-          {a.detail && a.detail !== a.summary ? <Text style={st.mono}>{a.detail}</Text> : null}
-          {a.queued ? (
-            <Notice tone="warning">{t("approvals.queued")}</Notice>
-          ) : (
-            <Row>
-              <Button
-                size="sm"
-                variant="primary"
-                label={t("approvals.allow")}
-                disabled={busy === a.id || !view.grants?.approvals}
-                onPress={() => void decide(a, "allow")}
-              />
-              <Button
-                size="sm"
-                variant="danger"
-                label={t("approvals.deny")}
-                disabled={busy === a.id || !view.grants?.approvals}
-                onPress={() => void decide(a, "deny")}
-              />
-            </Row>
-          )}
-        </Card>
-      ))}
+      {approvals.map((a) => {
+        const can = approvalActions(a, !!view.grants?.approvals);
+        return (
+          <Card key={a.id}>
+            <Body>{a.summary}</Body>
+            <Small>{a.source}</Small>
+            {a.detail && a.detail !== a.summary ? <Text style={st.mono}>{a.detail}</Text> : null}
+            {a.queued ? (
+              <Notice tone="warning">{t("approvals.queued")}</Notice>
+            ) : (
+              <Row>
+                {can.deskOnly ? (
+                  <Notice tone="warning">{t("approvals.deskOnly")}</Notice>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    label={t("approvals.allow")}
+                    disabled={busy === a.id || !can.allow}
+                    onPress={() => void decide(a, "allow")}
+                  />
+                )}
+                <Button
+                  size="sm"
+                  variant="danger"
+                  label={t("approvals.deny")}
+                  disabled={busy === a.id || !can.deny}
+                  onPress={() => void decide(a, "deny")}
+                />
+              </Row>
+            )}
+          </Card>
+        );
+      })}
     </ScrollView>
   );
 }

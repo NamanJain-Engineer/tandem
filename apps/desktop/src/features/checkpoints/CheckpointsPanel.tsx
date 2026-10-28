@@ -3,7 +3,7 @@
 // each against now, with a diff per file and restore for all or chosen files.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { History, RefreshCw } from "lucide-react";
-import type { Checkpoint, CheckpointTimeline, FileDiff, IpcError, RestoreReport } from "@tandem/protocol";
+import type { Checkpoint, CheckpointTimeline, FileContext, FileDiff, IpcError, RestoreReport } from "@tandem/protocol";
 import {
   Badge,
   Banner,
@@ -23,6 +23,7 @@ import {
 import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { useCheckpointFocus } from "../../stores/activity";
 import { useLayout } from "../../stores/layout";
 import { useSettings } from "../../stores/settings";
 import { paneKey, useStatus } from "../../stores/status";
@@ -208,7 +209,14 @@ function Detail({
 
 export function CheckpointsPanel() {
   const active = useActiveFiles();
-  const context = active.kind === "context" ? active.context : null;
+  // F-EX-07: an Activity link opens on its checkpoint's own folder.
+  const focus = useCheckpointFocus((s) => s.focus);
+  useEffect(() => () => useCheckpointFocus.getState().set(null), []);
+  const context: FileContext | null = focus
+    ? { type: "workspace", workspaceId: focus.workspaceId }
+    : active.kind === "context"
+      ? active.context
+      : null;
   const key = context ? JSON.stringify(context) : "";
   const [timeline, setTimeline] = useState<Load<CheckpointTimeline>>({ at: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
@@ -245,6 +253,11 @@ export function CheckpointsPanel() {
     setSelected(null);
     void load();
   }, [load]);
+
+  // ...with that checkpoint selected, once the list is in.
+  useEffect(() => {
+    if (focus && timeline.at === "ready") setSelected(focus.checkpointId);
+  }, [focus, timeline.at]);
 
   // A new checkpoint for this folder: the list again (the diff stays).
   const folder = timeline.at === "ready" ? timeline.value.folder : null;

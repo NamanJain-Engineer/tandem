@@ -4,6 +4,7 @@ import { Button, Callout, Dialog, Input, Skeleton } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useLayout } from "../../stores/layout";
 import { runPlan, runWithSecrets } from "../../stores/secrets";
+import { TellAgents } from "./TellAgents";
 
 /** The folder's last segment ("checkout"). */
 function folderName(path: string): string {
@@ -28,6 +29,7 @@ export function RunDialog({
   const [command, setCommand] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [telling, setTelling] = useState(false);
   useEffect(() => {
     if (!open) return;
     let live = true;
@@ -138,7 +140,19 @@ export function RunDialog({
         )}
         {error && <Callout tone="error">{error}</Callout>}
         <p className="text-xs text-fg-subtle">{t("run.footnote")}</p>
+        <div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid="run-tell-agents"
+            onClick={() => setTelling(true)}
+          >
+            {t("run.tellAgents")}
+          </Button>
+        </div>
       </form>
+      <TellAgents paneId={paneId} open={telling} onOpenChange={setTelling} />
     </Dialog>
   );
 }

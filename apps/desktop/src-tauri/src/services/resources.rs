@@ -357,6 +357,20 @@ impl ResourcesService {
         unit
     }
 
+    /// Moves `pid` into the pane's scope, when it has one (F-TL-12: a
+    /// `vibezeo run`'s command, so whatever escapes its process group still
+    /// ends with the pane).
+    pub fn adopt(self: &Arc<Self>, pane: &str, pid: u32) {
+        let Some(unit) = lock(&self.placed).get(pane).map(|p| p.unit.clone()) else {
+            return;
+        };
+        let me = self.clone();
+        tokio::spawn(async move {
+            let groups = me.groups().await;
+            let _ = tokio::task::spawn_blocking(move || groups.attach(&unit, &[pid])).await;
+        });
+    }
+
     /// Ends a closed pane's scope and anything that outlived its kill.
     pub async fn stop_scope(&self, unit: String) {
         let groups = self.groups().await;
