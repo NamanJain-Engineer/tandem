@@ -376,7 +376,11 @@ const OVERLAP_PATHS = 5;
 function Overlaps({ overlaps }: { overlaps: TaskClaimOverlap[] }) {
   if (overlaps.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2" aria-label={t("review.overlap.section")} data-testid="review-overlaps">
+    <section
+      className="flex flex-col gap-2"
+      aria-label={t("review.overlap.section")}
+      data-testid="review-overlaps"
+    >
       {overlaps.map((o) => {
         const more = o.paths.length - OVERLAP_PATHS;
         return (

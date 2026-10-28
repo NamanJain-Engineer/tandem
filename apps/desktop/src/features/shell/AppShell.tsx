@@ -57,6 +57,7 @@ import { followBrowser } from "../../stores/browser";
 import { followBrowserTabs } from "../../stores/sidebar";
 import { followFocus } from "../../stores/focus";
 import { followDashboard } from "../../stores/dashboard";
+import { ActivityDialog } from "../activity/ActivityDialog";
 import { followPlans } from "../../stores/plan";
 import { followReview } from "../../stores/review";
 import { followNotifications } from "../../stores/notifications";
@@ -236,6 +237,7 @@ export function AppShell() {
       <WorktreeDialogs />
       <LaunchSheet />
       <HandoffDialog />
+      <ActivityDialog />
       <NewTeammateSheet />
       <AutoDialog />
       <Hud />

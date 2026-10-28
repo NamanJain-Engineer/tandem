@@ -36,6 +36,10 @@ import { useSetting } from "../../stores/settings";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorkspaces } from "../../stores/workspaces";
 import { parseApproval, riskLabel, riskVariant } from "../plugins/model";
+import { useActivity } from "../../stores/activity";
+import { RunLine } from "../secrets/RunLine";
+import { parseRunApproval } from "../secrets/runApproval";
+import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
   cardMeta,
@@ -126,13 +130,25 @@ function AgentCard({
   const busy = item.status === "working" || item.status === "waiting";
   const approval = item.pendingApproval;
   const plugin = approval ? parseApproval(approval.detail) : null;
+  const run = approval ? parseRunApproval(approval) : null;
+  const key = approval ? `${approval.id}\n${approval.detail}` : null;
+  const settled = useSettled(key);
+  const [endRef, seenEnd] = useSeenEnd(run ? key : null);
+  // A pane's approval is a run; one that can't be read offers only Deny.
+  const unreadable = !!approval && approval.source.type === "pane" && !run;
+  // Cards sort and size by what agents report, so Allow can move under the
+  // pointer: it waits until its own place has held still (F-TL-12.12).
+  const box = useSteadyBox(!!approval);
+  const canAllow = settled && box.steady && (!run || seenEnd) && !unreadable;
   const close = () =>
     busy
       ? setConfirm(true)
       : void closeAgent(item).then(() => show({ title: t("dashboard.closed", { title }) }));
-  const decide = (allow: boolean) =>
+  const decide = (allow: boolean, scope: "once" | "conversation" = "once") =>
     approval &&
-    void answer(approval.id, allow).then((err) => err && show({ tone: "error", title: err.message }));
+    void answer(approval.id, allow, "dashboard", scope).then(
+      (err) => err && show({ tone: "error", title: err.message }),
+    );
   const menu: MenuEntry[] = [
     { id: "open", label: t("dashboard.open"), onSelect: () => void jumpTo(item) },
     ...(item.status === "done"
@@ -146,6 +162,24 @@ function AgentCard({
       : []),
     ...(item.source.type === "pane"
       ? [{ id: "handoff", label: t("dashboard.handoff"), onSelect: () => handOff(item) }]
+      : []),
+    ...(item.source.type === "pane" || item.source.type === "thread"
+      ? [
+          {
+            id: "activity",
+            label: t("activity.menu"),
+            onSelect: () =>
+              useActivity.getState().show(
+                item.source.type === "pane"
+                  ? { source: "pane", id: item.source.paneId, title }
+                  : {
+                      source: "thread",
+                      id: item.source.type === "thread" ? item.source.threadId : "",
+                      title,
+                    },
+              ),
+          },
+        ]
       : []),
     ...(item.status === "working"
       ? [{ id: "stop", label: t("dashboard.stop"), danger: true, onSelect: () => void stopAgent(item) }]
@@ -222,33 +256,86 @@ function AgentCard({
           })}
         </p>
       )}
-      {showPreview && (approval?.summary ?? item.preview) && (
-        <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
-          {approval ? t("dashboard.wants", { summary: approval.summary }) : item.preview}
-        </p>
-      )}
-      {plugin && (
-        <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
-          <EngineGlyph letters={plugin.logo} size={14} />
-          <span className="truncate">{plugin.pluginLabel}</span>
-          <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
-          {plugin.cost && (
-            <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
+      {approval ? (
+        // One boundary around the approval: if any of it fails to show,
+        // none of its Allow buttons are left behind.
+        <ApprovalBoundary key={approval.id} onDeny={() => decide(false)}>
+          {run ? (
+            // F-TL-12: the whole line, whatever the previews setting, before Allow.
+            <div onClick={(e) => e.stopPropagation()}>
+              <RunLine run={run} />
+              <span ref={endRef} aria-hidden="true" data-testid="run-line-end" />
+            </div>
+          ) : unreadable ? (
+            <p data-testid="agent-card-preview" className="text-sm text-fg-subtle">
+              {t("approval.unreadable")}
+            </p>
+          ) : (
+            showPreview && (
+              <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
+                {t("dashboard.wants", { summary: approval.summary })}
+              </p>
+            )
           )}
-        </p>
-      )}
-      {approval && (
-        <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="primary" data-testid="card-allow" onClick={() => decide(true)}>
-            {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
-          </Button>
-          <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
-            {t("dashboard.deny")}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void jumpTo(item)}>
-            {t("dashboard.open")}
-          </Button>
-        </div>
+          {plugin && (
+            <p className="flex items-center gap-1.5 text-sm text-fg-muted" data-testid="card-plugin">
+              <EngineGlyph letters={plugin.logo} size={14} />
+              <span className="truncate">{plugin.pluginLabel}</span>
+              <Badge variant={riskVariant(plugin.riskClass)}>{riskLabel(plugin.riskClass)}</Badge>
+              {plugin.cost && (
+                <span className={plugin.riskClass === "spend" ? "text-error" : undefined}>{plugin.cost}</span>
+              )}
+            </p>
+          )}
+          <div ref={box.ref} className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+            {!unreadable && (
+              <Button
+                size="sm"
+                variant="primary"
+                data-testid="card-allow"
+                disabled={!canAllow}
+                title={
+                  canAllow ? undefined : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
+                }
+                onClick={() => box.check() && decide(true)}
+              >
+                {plugin ? t("plugins.approval.approve") : t("dashboard.allowOnce")}
+              </Button>
+            )}
+            {!unreadable &&
+              !plugin &&
+              item.source.type === "pane" &&
+              approval.options.includes("conversation") && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="card-allow-agent"
+                  disabled={!canAllow}
+                  title={
+                    canAllow
+                      ? undefined
+                      : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
+                  }
+                  onClick={() => box.check() && decide(true, "conversation")}
+                >
+                  {t("dashboard.allowAgent")}
+                </Button>
+              )}
+            <Button size="sm" variant="secondary" data-testid="card-deny" onClick={() => decide(false)}>
+              {t("dashboard.deny")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void jumpTo(item)}>
+              {t("dashboard.open")}
+            </Button>
+          </div>
+        </ApprovalBoundary>
+      ) : (
+        showPreview &&
+        item.preview && (
+          <p data-testid="agent-card-preview" className="line-clamp-2 text-sm text-fg-subtle">
+            {item.preview}
+          </p>
+        )
       )}
       <ConfirmDialog
         open={confirm}
@@ -286,8 +373,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   const { items, loaded, query, filter, groupBy, collapsed } = useDashboard();
   const { load: usageLoad } = usePaneUsage(onScreen);
   const usage = useMemo(
-    () =>
-      usageLoad.at === "ready" ? Object.fromEntries(usageLoad.panes.map((u) => [u.paneId, u])) : {},
+    () => (usageLoad.at === "ready" ? Object.fromEntries(usageLoad.panes.map((u) => [u.paneId, u])) : {}),
     [usageLoad],
   );
   const engines = useEngines((s) => s.list);
@@ -325,6 +411,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
     [workspaces],
   );
   const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
+
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
 
@@ -357,7 +444,11 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   const renderGroup = (g: Group) => {
     const open = !collapsed[g.id];
     const total = g.items.length + (g.children ?? []).reduce((n, c) => n + c.items.length, 0);
-    const label = g.status ? GROUP_LABEL[g.status](g.items.length) : `${g.label} · ${total}`;
+    const label = g.asking
+      ? t("dashboard.group.asking", { n: g.items.length })
+      : g.status
+        ? GROUP_LABEL[g.status](g.items.length)
+        : `${g.label} · ${total}`;
     return (
       <section key={g.id} aria-label={label} data-testid={`group-${g.id}`} className="flex flex-col gap-1.5">
         <div className="flex h-6 items-center gap-1">

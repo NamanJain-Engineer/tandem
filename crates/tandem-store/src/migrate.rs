@@ -22,8 +22,12 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../migrations/0005_secrets.sql"),
     ),
     (
-        "0006_lane_vcs",
-        include_str!("../migrations/0006_lane_vcs.sql"),
+        "0006_activity",
+        include_str!("../migrations/0006_activity.sql"),
+    ),
+    (
+        "0007_lane_vcs",
+        include_str!("../migrations/0007_lane_vcs.sql"),
     ),
 ];
 

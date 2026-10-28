@@ -116,14 +116,22 @@ function applyApprovals(upserted: ApprovalView[], resolved: string[]): void {
   const items = { ...useDashboard.getState().items };
   const sameSource = (a: ApprovalView, item: DashboardItem) =>
     JSON.stringify(a.source) === JSON.stringify(item.source);
+  let cleared = false;
   for (const [key, item] of Object.entries(items)) {
-    const fresh = upserted.find((a) => sameSource(a, item));
+    const shown = item.pendingApproval;
+    const open = shown && !resolved.includes(shown.id);
+    // The shown approval stays until it's answered: another one from the
+    // same source mustn't take its place under the person's cursor.
+    const fresh = upserted.find((a) => sameSource(a, item) && (!open || a.id === shown.id));
     if (fresh) items[key] = { ...item, pendingApproval: fresh };
-    else if (item.pendingApproval && resolved.includes(item.pendingApproval.id))
+    else if (shown && !open) {
       items[key] = { ...item, pendingApproval: null };
+      // Another may wait behind it.
+      cleared = true;
+    }
   }
   useDashboard.setState({ items });
-  if (upserted.some((a) => !Object.values(items).some((i) => sameSource(a, i)))) refetchSoon();
+  if (cleared || upserted.some((a) => !Object.values(items).some((i) => sameSource(a, i)))) refetchSoon();
 }
 
 let following = false;
