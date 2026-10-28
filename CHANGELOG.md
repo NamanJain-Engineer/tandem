@@ -42,9 +42,10 @@ release fails when its version has no section.
 ### Security
 
 - [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
-  for a second opinion, a pull request's review comments, and a failed check's
-  log sent to an agent can't make Claude Code read a file on your computer: any
-  `@` there that could name one is written ＠, and the message says so.
+  for a second opinion, a pull request's review comments, a failed check's log
+  sent to an agent, and Warn both agents' note about another worktree's symbols
+  can't make Claude Code read a file on your computer: any `@` there that could
+  name one is written ＠, and the message says so.
 
 ## 0.12.0
 
