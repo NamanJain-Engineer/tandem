@@ -628,6 +628,7 @@ pub fn grant_permission(
 pub fn dictate_relaunch(app: AppHandle) -> Result<(), IpcError> {
     // A sync command runs on the main thread, where restart() skips the
     // exit event: end agent runs first (F-TL-12).
+    crate::services::agent_run::mark_exiting();
     crate::services::agent_run::shutdown_all();
     app.restart();
 }

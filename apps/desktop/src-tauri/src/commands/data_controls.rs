@@ -95,6 +95,7 @@ pub async fn data_delete_local(
     // them again: harmless, at most 3 s more. (On Windows the updater's
     // installer exits on its own: see `TauriUpdater`'s `before_exit`.)
     tokio::task::spawn_blocking(move || {
+        crate::services::agent_run::mark_exiting();
         crate::services::agent_run::shutdown_all();
         terminals.shutdown(&scrollback)
     })
