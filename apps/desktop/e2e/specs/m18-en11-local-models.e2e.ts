@@ -3,7 +3,20 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { Key } from "webdriverio";
-import { addFolder, checkAgain, fakeEngine, freshOffline, home, invoke, mod, paneIds } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  crash,
+  fakeEngine,
+  freshOffline,
+  home,
+  invoke,
+  mod,
+  pausedCards,
+  paneIds,
+  relaunch,
+  stopOrphansAutomatically,
+} from "../support/app";
 
 type LocalServer = {
   kind: string;
@@ -14,9 +27,9 @@ type LocalServer = {
 };
 type Spawn = { argv: string[]; envKeys: string[]; providerHome: string | null; cwd: string };
 
-/** A stand-in for Ollama on 127.0.0.1: `/api/tags` lists one model, and
- * every path asked is recorded. */
-function fakeOllama(): Promise<{ server: Server; port: number; asked: string[] }> {
+/** A stand-in for Ollama on 127.0.0.1 (on `port`, or any free one):
+ * `/api/tags` lists one model, and every path asked is recorded. */
+function fakeOllama(port = 0): Promise<{ server: Server; port: number; asked: string[] }> {
   const asked: string[] = [];
   const server = createServer((req, res) => {
     asked.push(req.url ?? "");
@@ -33,7 +46,7 @@ function fakeOllama(): Promise<{ server: Server; port: number; asked: string[] }
     }
   });
   return new Promise((resolve) =>
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(port, "127.0.0.1", () => {
       const addr = server.address();
       resolve({ server, port: typeof addr === "object" && addr ? addr.port : 0, asked });
     }),
@@ -67,7 +80,9 @@ async function press(selector: string): Promise<void> {
 // found by the port the user adds, with its model's size and parameters; a
 // host off this computer is refused; Start in Codex opens a Codex pane in a
 // provider home of its own whose config.toml points at 127.0.0.1, and the
-// pane says "On this computer".
+// pane says "On this computer". Every start names the model and the local
+// provider on Codex's command line, and a restore after the app restarts
+// asks the server again.
 describe("E2E-M18-EN11 local models", function () {
   this.timeout(180_000);
   const repo = `/tmp/tandem-e2e-en11-${Date.now()}`;
@@ -83,7 +98,10 @@ describe("E2E-M18-EN11 local models", function () {
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 30_000 });
   });
 
-  after(() => ollama?.server.close());
+  after(async () => {
+    ollama?.server.close();
+    await stopOrphansAutomatically(false).catch(() => undefined);
+  });
 
   it("F-EN-11.3 a host that isn't this computer is refused", async () => {
     await expect(
@@ -155,5 +173,57 @@ describe("E2E-M18-EN11 local models", function () {
     await chip.waitForDisplayed({ timeout: 10_000 });
     expect(await chip.getText()).toBe("On this computer");
     await browser.keys(Key.Escape);
+  });
+
+  it("F-EN-11.2 every start names the model and provider on Codex's command line, and a restore asks the server again", async () => {
+    const port = ollama.port;
+    const homes = join(home(), "providers", "codex");
+    const homeDir = join(
+      homes,
+      readdirSync(homes).find((d) => d.startsWith(`local-ollama-${port}-qwen3-coder-30b-`))!,
+    );
+    const local = async () =>
+      (await invoke<Spawn[]>("test_spawn_log")).filter((s) => s.providerHome === homeDir);
+    // Right after the program, each after -c, in the wrapped command.
+    const named = (s: Spawn) => {
+      const script = s.argv.join(" ");
+      return (
+        script.includes(`codex' '-c' 'model="qwen3-coder:30b"' '-c' 'model_provider="vibezeo-local"'`) &&
+        script.includes(`'-c' 'model_providers.vibezeo-local.base_url="http://127.0.0.1:${port}/v1"'`)
+      );
+    };
+    const started = await local();
+    expect(started.length).toBeGreaterThan(0);
+    expect(started.every(named)).toBe(true);
+    const pane = await browser.execute(
+      () =>
+        document
+          .querySelector('[data-testid="local-model-chip"]')
+          ?.closest<HTMLElement>('[data-testid="pane"]')?.dataset.paneId ?? "",
+    );
+    expect(pane).not.toBe("");
+    // The app goes down with the pane running, and the server stops.
+    await stopOrphansAutomatically(true);
+    crash();
+    ollama.server.closeAllConnections();
+    await new Promise((done) => ollama.server.close(done));
+    await relaunch();
+    await browser.waitUntil(async () => (await pausedCards()).some((c) => c.paneId === pane), {
+      timeout: 30_000,
+      timeoutMsg: "the local pane's card isn't shown",
+    });
+    await expect(invoke("restore_start_fresh", { paneId: pane })).rejects.toThrow(
+      new RegExp(`Ollama isn't running on port ${port}`),
+    );
+    expect((await local()).length).toBe(started.length);
+    // Running again on its port: the restore starts Codex, named the same way.
+    ollama = await fakeOllama(port);
+    await invoke("restore_start_fresh", { paneId: pane });
+    await browser.waitUntil(async () => (await local()).length > started.length, {
+      timeout: 20_000,
+      timeoutMsg: "the restore didn't start Codex",
+    });
+    expect((await local()).every(named)).toBe(true);
+    expect(ollama.asked).toContain("/api/tags");
   });
 });
