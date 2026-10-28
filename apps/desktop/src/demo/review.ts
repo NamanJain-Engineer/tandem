@@ -34,7 +34,9 @@ export type ReviewSeed = {
   repo: { root: string; check: string };
   branch: string;
   paneId: string;
-  engine: { id: string; label: string };
+  /** The item's title: its agent pane's first name. */
+  title: string;
+  engine: string;
   closing: string;
   files: FileDiff[];
   checkOutput: string;
@@ -47,8 +49,8 @@ export type ReviewSeed = {
 export class DemoReview {
   private item: ReviewItem;
   private repo: RepoReview;
-  private readonly files: FileDiff[];
-  private readonly output: string;
+  private files: FileDiff[];
+  private output: string;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(seed: ReviewSeed, now = Date.now()) {
@@ -57,8 +59,8 @@ export class DemoReview {
     this.item = {
       key: `pane:${seed.paneId}`,
       source: { type: "pane", paneId: seed.paneId },
-      title: seed.engine.label,
-      engineId: seed.engine.id,
+      title: seed.title,
+      engineId: seed.engine,
       workspaceId: seed.ws.id,
       workspace: seed.ws.name,
       branch: seed.branch,
@@ -114,6 +116,24 @@ export class DemoReview {
       this.set({ check: { state: "passed", exit: 0, output: this.output } });
     }, 600);
     return this.set({ check: { state: "running", exit: null, output: "" } });
+  }
+
+  /** The worktree's diff changed (its agent committed more): the item shows
+   * the new diff and check, and goes back to review, since an approval
+   * holds only for the diff it saw. */
+  update(files: FileDiff[], checkOutput: string): void {
+    this.files = files;
+    this.output = checkOutput;
+    this.set({
+      files: files.length,
+      additions: files.reduce((n, f) => n + f.additions, 0),
+      deletions: files.reduce((n, f) => n + f.deletions, 0),
+      risks: risksOf(files),
+      check: { state: "passed", exit: 0, output: checkOutput },
+      diffHash: `${this.item.diffHash}+`,
+      state: "review",
+      snoozedUntil: null,
+    });
   }
 
   repoGet(): RepoReview {

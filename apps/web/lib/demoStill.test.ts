@@ -15,4 +15,11 @@ describe("D-2609 the demo still's alts say what its first frame shows", () => {
     }
     expect(LAUNCH_ALT).toMatch(/^Launch the demo: /);
   });
+
+  it("D-2609 F-CD-12 they name the working agent as its pane header does, by its first name", () => {
+    const working = story.worktrees.find((w) => w.state === "working");
+    for (const alt of [STILL_ALT, LAUNCH_ALT]) {
+      expect(alt).toContain(`${working?.agentName} (${ENGINES[working?.engine ?? ""]?.label})`);
+    }
+  });
 });

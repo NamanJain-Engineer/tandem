@@ -42,6 +42,12 @@ release fails when its version has no section.
   lists its files without line counts rather than a partial total. An edit
   that was refused or failed counts nothing, and files changed by shell
   commands aren't counted.
+- [lin] **The rail's marks say it in a word.** A worktree's pull request
+  checks read as the status bar has them, CI running, CI passed or CI
+  failed, and hovering says which checks failed. The overlap mark shows the
+  symbol two worktrees share, such as `applyCoupon`. A row that's short of
+  room shows a mark's icon rather than cut its words, and a pane header's
+  branch gives way before the pane's title does.
 
 ### Fixed
 

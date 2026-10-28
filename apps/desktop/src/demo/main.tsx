@@ -5,6 +5,7 @@ import "../styles.css";
 import { useLayout } from "../stores/layout";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspaces";
+import { loadChecks } from "../stores/worktrees";
 import { DEMO_ACTIVE, DEMO_WORKTREES, installDemo } from "./backend";
 import { DemoBar } from "./DemoBar";
 import { DemoCoach } from "./DemoCoach";
@@ -13,6 +14,9 @@ import { holdFocusUntilEngaged } from "./embedFocus";
 // vibezeo.com/demo: the real interface against a simulated core. On the home
 // page it runs in a same-origin frame (`?embed=1`, D-128).
 const core = installDemo();
+// The rail reads a pull request's checks when the core says they changed;
+// the app would, at its next poll (F-WT-08).
+core.onChecks = (laneId) => void loadChecks([laneId]);
 const embedded = new URLSearchParams(window.location.search).has("embed");
 // Code mode opens on the working agent's worktree (D-1899): a state any
 // visitor reaches by opening it. Each worktree's tab is loaded, as after

@@ -9,13 +9,13 @@ describe("applyCoupon", () => {
     [3, "SPRING10", 2700],
     [5, "SPRING10", 4500],
     [8, "SPRING10", 7200],
-    [10, "BIGBASKET", 8500],
-    [11, "BIGBASKET", 9350],
-    [12, "BIGBASKET", 10200],
-    [20, "BIGBASKET", 17000],
-    [40, "BIGBASKET", 34000],
-    [9, "BIGBASKET", 9000],
-    [1, "BIGBASKET", 1000],
+    [10, "BULK15", 8500],
+    [11, "BULK15", 9350],
+    [12, "BULK15", 10200],
+    [20, "BULK15", 17000],
+    [40, "BULK15", 34000],
+    [9, "BULK15", 9000],
+    [1, "BULK15", 1000],
     [3, null, 3000],
     [3, "NOPE", 3000],
     [0, "SPRING10", 0],
@@ -30,7 +30,7 @@ describe("applyCoupon", () => {
 
   it("counts quantities toward a coupon's minimum", () => {
     const cart = { ...cartFor(1), items: [{ sku: "tea", name: "Tea", price: 2500, qty: 4 }] };
-    expect(applyCoupon(cart, "BIGBASKET")).toBe(8500);
+    expect(applyCoupon(cart, "BULK15")).toBe(8500);
   });
 
   it("leaves the cart itself alone", () => {
@@ -40,6 +40,6 @@ describe("applyCoupon", () => {
   });
 
   it("takes nothing off an empty cart", () => {
-    expect(applyCoupon(cartFor(0), "BIGBASKET")).toBe(0);
+    expect(applyCoupon(cartFor(0), "BULK15")).toBe(0);
   });
 });

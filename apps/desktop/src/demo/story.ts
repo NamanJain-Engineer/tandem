@@ -23,6 +23,9 @@ export type StoryWorktree = {
   slug: string;
   /** A key of `engines`. */
   engine: string;
+  /** Its agent pane's first name, as the app gives every agent pane one
+   * (F-CD-12; from the app's `names.json`). */
+  agentName: string;
   task: string;
   state: StoryState;
   steps: StoryStep[];
@@ -41,6 +44,17 @@ export type StoryWorktree = {
 export type StoryCommit = { sha: string; subject: string };
 
 export type StoryComment = { file: string; line: number; body: string };
+
+/** A pull request check as gh reports it (F-WT-08). The failed one carries
+ * its job's log as the failed step printed it. */
+export type StoryCheck = {
+  name: string;
+  bucket: "pass" | "fail";
+  workflow: string;
+  /** The job's page, `…/actions/runs/<run>/job/<job>`. */
+  link: string;
+  log?: string[];
+};
 
 export type Story = {
   repo: string;
@@ -65,9 +79,13 @@ export type Story = {
     worktree: string;
     title: string;
     url: string;
-    checks: Array<{ name: string; bucket: "pass" | "fail" }>;
+    checks: StoryCheck[];
     /** A reviewer's line comments, in their own words. */
     comments: Array<StoryComment & { author: string }>;
+    /** "Send failure to agent": what the worktree's agent does about the
+     * failed check (its files are in `shop/ci-fix/`), and the CI run that
+     * pushing its commit starts. */
+    fix: { steps: StoryStep[]; commit: StoryCommit; closing: string; run: number };
   };
 };
 

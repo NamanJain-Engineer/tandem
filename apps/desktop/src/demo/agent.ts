@@ -26,7 +26,8 @@ const tool = (
 });
 
 /** The first thread's fix, in `shop` itself on main (`shop/thread/`):
- * `getSession` renews a session that expired a moment ago, with tests. */
+ * `getSession` renews a session that expired a moment ago, and its tests
+ * say so. */
 export const THREAD_CHANGES: FileDiff[] = diffsOf("thread");
 
 const SESSION = "src/auth/session.ts";
@@ -66,8 +67,8 @@ export function fixTurn(approvalId: string, expiresAt: number): Step[] {
     { wait: 500, event: tool("t2", "read", SESSION, "ok", { output: `(${lineCount(MAIN[SESSION] ?? "")} lines)` }) },
     { wait: 700, event: tool("t3", "edit", SESSION, "running") },
     { wait: 500, event: tool("t3", "edit", SESSION, "ok", { diff: patchOf(SESSION) }) },
-    { wait: 400, event: tool("t4", "write", SESSION_TEST, "running") },
-    { wait: 500, event: tool("t4", "write", SESSION_TEST, "ok", { diff: patchOf(SESSION_TEST) }) },
+    { wait: 400, event: tool("t4", "edit", SESSION_TEST, "running") },
+    { wait: 500, event: tool("t4", "edit", SESSION_TEST, "ok", { diff: patchOf(SESSION_TEST) }) },
     {
       approval: {
         type: "approval_request",
@@ -96,7 +97,7 @@ export function afterAllow(): Step[] {
           "",
           "- **Cause:** a session that expired while another tab still had its cookie was dropped, so checkout sent that tab to `/login`, again and again.",
           `- **Fix:** \`getSession\` now renews a session that expired less than 15 minutes ago (\`${SESSION}\`).`,
-          `- **Test:** added \`${SESSION_TEST}\`; all ${TESTS_PASSED} tests pass.`,
+          `- **Tests:** \`${SESSION_TEST}\` covers the renewal now; all ${TESTS_PASSED} tests pass.`,
           "",
           "Open **Changes** to review the diff.",
         ].join("\n"),
@@ -113,7 +114,7 @@ export function afterDeny(): Step[] {
       wait: 500,
       event: {
         type: "assistant",
-        markdown: `Understood, I won't run the tests. The fix is in \`${SESSION}\`, with new tests in \`${SESSION_TEST}\`; run \`${TEST_COMMAND}\` when you're ready.`,
+        markdown: `Understood, I won't run the tests. The fix is in \`${SESSION}\`, with its tests in \`${SESSION_TEST}\`; run \`${TEST_COMMAND}\` when you're ready.`,
       },
     },
     { wait: 100, event: usage(16_900, 640, 8.4) },

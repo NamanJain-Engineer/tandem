@@ -52,6 +52,7 @@ import {
   planTurn,
   type Step,
 } from "./agent";
+import { DemoChecks } from "./ci";
 import { DemoFiles, NO_GIT, type CheckoutSeed } from "./files";
 import { DemoNotes } from "./notes";
 import { DemoPlans, RUNS_IN_THE_APP } from "./plan";
@@ -59,7 +60,7 @@ import { DemoLanding } from "./landing";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
-import { STORY, branchOf, engineLabel, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
+import { STORY, branchOf, engineLabel, worktree, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
 import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
 import { version } from "../../package.json";
 
@@ -334,7 +335,8 @@ const agentPane = (w: StoryWorktree) => AGENT_PANE[w.engine] ?? `pn_${w.engine}`
 const WORKING = worktreeIn("working");
 const WAITING = worktreeIn("waiting");
 
-function pane(id: string, kind: string, engineId: string | null, slug: string): PaneRecord {
+/** A pane as the core keeps it; an agent pane has its first name (F-CD-12). */
+function pane(id: string, kind: string, engineId: string | null, slug: string, humanName: string | null = null): PaneRecord {
   return {
     id,
     tabId: tabOf(slug),
@@ -343,7 +345,7 @@ function pane(id: string, kind: string, engineId: string | null, slug: string): 
     cwd: rootOf(slug),
     engineId,
     accountId: null,
-    humanName: null,
+    humanName,
     title: null,
     restoreState: "live",
     browserUrl: null,
@@ -354,7 +356,7 @@ function pane(id: string, kind: string, engineId: string | null, slug: string): 
 /** The story's three agents, each in its own worktree, and a shell beside
  * the working one (D-1899: worktree agents never share a grid). */
 const PANES: PaneRecord[] = [
-  ...STORY.worktrees.map((w) => pane(agentPane(w), "agent", w.engine, w.slug)),
+  ...STORY.worktrees.map((w) => pane(agentPane(w), "agent", w.engine, w.slug, w.agentName)),
   pane("pn_shell", "terminal", null, WORKING.slug),
 ];
 
@@ -446,6 +448,13 @@ function layoutOf(workspaceId: unknown): TabLayout[] {
   return [{ tab, tree, activePaneId: first?.id ?? null, maximizedPaneId: null }];
 }
 
+/** "Send failure to agent" as the agent's input shows it: the prompt's
+ * first line, and what follows it summed up (the log is long). */
+function ciEcho(pr: number): string {
+  const log = STORY.pr.checks.find((c) => c.bucket === "fail")?.log?.length ?? 0;
+  return `\n> A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\x1b[2m  (Then the check's name, its link and its log's last ${log} lines, behind an untrusted label.)\x1b[0m\n\n`;
+}
+
 /** What a story step looks like in each engine's terminal. */
 const STYLE: Record<string, { mark: string; read: string; edit: string; run: string }> = {
   claude: { mark: "●", read: "Read", edit: "Update", run: "Bash" },
@@ -498,6 +507,9 @@ type Pty = {
   typed?: string;
   /** Its terminal's width, once the pane has said (pty_resize). */
   cols?: number;
+  /** An agent's text before it's wrapped, which its terminal UI draws again
+   * at each new width. */
+  logical?: string;
 };
 
 type DemoThread = {
@@ -531,6 +543,8 @@ function base64(text: string): string {
 }
 
 const DONE = worktreeIn("done");
+/** The worktree with the pull request (F-WT-08). */
+const PR_LANE = wsOf(STORY.pr.worktree);
 
 /** The finished agent's work, as the review queue holds it (F-DB-04). */
 const REVIEW_SEED = {
@@ -538,7 +552,9 @@ const REVIEW_SEED = {
   repo: { root: ROOT, check: STORY.check },
   branch: branchOf(DONE.slug),
   paneId: agentPane(DONE),
-  engine: { id: DONE.engine, label: engineLabel(DONE.engine) },
+  // The core titles an item with its pane's first name (review_queue.rs).
+  title: DONE.agentName,
+  engine: DONE.engine,
   closing: DONE.closing ?? "",
   files: diffsOf(DONE.slug),
   checkOutput: testRun({ ...MAIN, ...changedIn(DONE.slug) }).join("\n"),
@@ -566,6 +582,10 @@ export class DemoCore {
   /** Worktrees whose agent has committed its work: the finished ones, then
    * any that finish here. */
   private committed = new Set(STORY.worktrees.filter((w) => w.state === "done").map((w) => w.slug));
+  /** Commits made here, by worktree, newest first (the CI fix), and how
+   * many of them are pushed. */
+  private madeHere: Record<string, StoryCommit[]> = {};
+  private pushedHere: Record<string, number> = {};
   /** Worktrees landed in main, and main's commits, newest first. */
   private landed = new Set<string>();
   private mainLog: StoryCommit[] = [...STORY.history];
@@ -582,7 +602,7 @@ export class DemoCore {
       lanes: () =>
         STORY.worktrees
           .filter((w) => this.committed.has(w.slug) && !this.landed.has(w.slug))
-          .map((w) => ({ id: wsOf(w.slug), branch: branchOf(w.slug), ahead: w.commits.length })),
+          .map((w) => ({ id: wsOf(w.slug), branch: branchOf(w.slug), ahead: this.commitsOf(w.slug).length })),
       check: (id, command) => this.check(id, command),
       land: (id) => this.land(id),
       undo: (before) => this.undoLanding(before),
@@ -591,6 +611,17 @@ export class DemoCore {
     // Used here before, by a landing since undone: Undo keeps the check.
     STORY.check,
   );
+  /** A worktree's checks changed: the page's rail reads them again, as
+   * the app's polling would within two minutes (main.tsx). */
+  onChecks: (laneId: string) => void = () => undefined;
+  /** The pull request's checks and review comments (F-WT-08). */
+  private readonly ci = new DemoChecks(
+    PR_LANE,
+    (ms, fn) => this.later(ms, fn),
+    (id) => this.onChecks(id),
+  );
+  /** Whether checkout-fix's agent has fixed what CI found. */
+  private ciFixed = false;
   private ids = 0;
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -876,9 +907,64 @@ export class DemoCore {
     const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
     this.files.setHead(id, merged);
     this.files.setHead(WS, merged);
-    this.mainLog = [{ sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` }, ...w.commits, ...this.mainLog];
+    this.mainLog = [{ sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` }, ...this.commitsOf(w.slug), ...this.mainLog];
     this.landed.add(w.slug);
     return w.mergeCommit;
+  }
+
+  /** A worktree's commits, newest first: its story's, then any made here. */
+  private commitsOf(slug: string): StoryCommit[] {
+    return [...(this.madeHere[slug] ?? []), ...(STORY.worktrees.find((w) => w.slug === slug)?.commits ?? [])];
+  }
+
+  /** Send failure to agent in the pull request's worktree (F-WT-08): its
+   * agent reads the failing test file, fixes it, runs every test and
+   * commits. The commit waits for a push; the checks run again after it. */
+  private fixCi(pty: Pty, paneId: string): void {
+    const w = worktree(STORY.pr.worktree);
+    const { fix, number } = STORY.pr;
+    const st = STYLE[w.engine] ?? { mark: "•", read: "Read", edit: "Edit", run: "Run" };
+    const id = wsOf(w.slug);
+    this.ciFixed = true;
+    this.say(pty, ciEcho(number));
+    this.setStatus(paneId, "working", "Working");
+    let at = 0;
+    for (const step of fix.steps) {
+      if ("read" in step) {
+        at += 700;
+        this.later(at, () => this.say(pty, `${st.mark} ${st.read} ${step.read}\n`));
+      } else if ("edit" in step) {
+        at += 900;
+        this.later(at, () => {
+          this.say(pty, `${st.mark} ${st.edit} ${step.edit} (+${step.add} -${step.del})\n`);
+          this.files.edit(id, step.edit, changedIn("ci-fix")[step.edit] ?? "");
+        });
+      } else {
+        at += 700;
+        this.later(at, () => {
+          this.say(pty, `${st.mark} ${st.run} ${step.run}\n`);
+          this.setStatus(paneId, "working", `Running ${step.run}`);
+        });
+        at += 1400;
+        this.later(at, () => {
+          const passed = /Tests {2}(\d+) passed/.exec(testRun(this.filesOf(id)).at(-1) ?? "")?.[1] ?? "0";
+          this.say(pty, `  ✓ ${passed} tests passed\n`);
+        });
+      }
+    }
+    this.later(at + 600, () => {
+      this.say(pty, `${st.mark} ${st.run} git commit\n  [${branchOf(w.slug)} ${fix.commit.sha}] ${fix.commit.subject}\n\n${fix.closing}\n`);
+      this.files.commit(id);
+      this.madeHere[w.slug] = [fix.commit, ...(this.madeHere[w.slug] ?? [])];
+      // The review queue's item is the worktree's diff: it has the fix now.
+      this.review.update(
+        Object.entries(this.files.committedChanges(id))
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([path, text]) => fileDiff(path, MAIN[path] ?? null, text)),
+        testRun(this.filesOf(id)).join("\n"),
+      );
+      this.setStatus(paneId, "done", fix.closing);
+    });
   }
 
   private undoLanding(before: string): void {
@@ -898,7 +984,7 @@ export class DemoCore {
     const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
     if (!yes) {
       this.say(pty, `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`);
-      this.finish(paneId, "done", "Didn't run the tests");
+      this.setStatus(paneId, "done", "Didn't run the tests");
       return;
     }
     const id = wsOf(w.slug);
@@ -917,11 +1003,11 @@ export class DemoCore {
       this.say(pty, `\n${lines.join("\n")}\n`);
       this.files.commit(id);
       this.committed.add(w.slug);
-      this.finish(paneId, "done", w.closing ?? "Done.");
+      this.setStatus(paneId, "done", w.closing ?? "Done.");
     });
   }
 
-  private finish(paneId: string, status: StatusRecord["status"], preview: string): void {
+  private setStatus(paneId: string, status: StatusRecord["status"], preview: string): void {
     const s = this.status[paneId];
     if (!s) return;
     this.status[paneId] = { ...s, status, preview };
@@ -1030,15 +1116,16 @@ export class DemoCore {
         pty.typed = "";
         if (said === "y" || said === "yes") this.answerWaiting(pty, true);
         else if (said === "n" || said === "no") this.answerWaiting(pty, false);
-        else this.frame(pty, "\r\nType y or n, then Enter.\r\n");
+        else this.say(pty, "\nType y or n, then Enter.\n");
       } else if (ch === "\x7f" || ch === "\b") {
         if (pty.typed) {
           pty.typed = pty.typed.slice(0, -1);
+          if (pty.logical !== undefined) pty.logical = pty.logical.slice(0, -1);
           this.frame(pty, "\b \b");
         }
       } else if (ch >= " " && ch !== "\x1b") {
         pty.typed = (pty.typed ?? "") + ch;
-        this.frame(pty, ch);
+        this.say(pty, ch);
       }
     }
   }
@@ -1081,7 +1168,10 @@ export class DemoCore {
       text: (path) => this.files.text(ws.id, path),
       changes: () => this.files.changes(ws.id),
       diff: (path) => this.files.gitDiff(ws.id, path).patch,
-      log: () => [...(story && this.committed.has(story.slug) && !this.landed.has(story.slug) ? story.commits : []), ...this.mainLog],
+      log: () => [
+        ...(story && this.committed.has(story.slug) && !this.landed.has(story.slug) ? this.commitsOf(story.slug) : []),
+        ...this.mainLog,
+      ],
       test: (filter) => testRun(files(), filter),
     };
   }
@@ -1153,9 +1243,28 @@ export class DemoCore {
     for (const fn of this.listeners) fn();
   }
 
+  /** A pane's terminal: a shell's once its pane spawned it, an agent's from
+   * the start, since its agent runs whether or not its tab was opened (what
+   * it prints is replayed when its pane attaches). */
+  private ptyOf(paneId: string): Pty | undefined {
+    const pty = this.ptys.get(paneId);
+    if (pty || AGENT_SCREENS[paneId] === undefined) return pty;
+    const logical = (AGENT_SCREENS[paneId] ?? "").replace(/\r\n/g, "\n");
+    const agent: Pty = { channel: { onmessage: () => undefined }, seq: 0, screen: "", shell: null, logical };
+    agent.screen = this.rendered(agent);
+    this.ptys.set(paneId, agent);
+    return agent;
+  }
+
+  /** An agent's text as its terminal UI lays it out at its width. */
+  private rendered(pty: Pty): string {
+    return wrapWords(pty.logical ?? "", pty.cols ?? 80).replace(/\n/g, "\r\n");
+  }
+
   /** An agent's words in its pane, wrapped at its width as an agent's
    * terminal UI wraps them (a shell's output isn't: a terminal cuts it). */
   private say(pty: Pty, text: string): void {
+    if (pty.logical !== undefined) pty.logical += text;
     this.frame(pty, wrapWords(text, pty.cols ?? 80).replace(/\n/g, "\r\n"));
   }
 
@@ -1279,7 +1388,7 @@ export class DemoCore {
       case "status_snapshot":
         return this.dashboard();
       case "pty_attach": {
-        const pty = this.ptys.get(String(args?.paneId));
+        const pty = this.ptyOf(String(args?.paneId));
         if (!pty) throw { code: "not_found", message: "Not running" };
         pty.channel = args?.channel as FrameChannel;
         const snap: AttachSnapshot = {
@@ -1295,14 +1404,24 @@ export class DemoCore {
         // A shell answers from its worktree's checkout; an agent pane shows its still.
         const record = PANES.find((p) => p.id === id);
         const shell = record?.kind === "terminal" ? new DemoShell(this.place(record.workspaceId)) : null;
+        const agent = shell ? undefined : this.ptyOf(id);
+        if (agent) {
+          // Its agent has been running: the pane shows all it printed.
+          agent.channel = args?.channel as FrameChannel;
+          this.later(80, () => {
+            agent.seq += 1;
+            agent.channel.onmessage(encodeFrame(FrameKind.Data, agent.seq, encoder.encode(agent.screen)));
+          });
+          return { pid: 4000 + Object.keys(AGENT_SCREENS).indexOf(id), startedAt: START };
+        }
         const pty: Pty = { channel: args?.channel as FrameChannel, seq: 0, screen: "", shell };
         this.ptys.set(id, pty);
-        this.later(80, () => this.frame(pty, shell ? shell.greeting() : (AGENT_SCREENS[id] ?? "")));
+        this.later(80, () => this.frame(pty, shell ? shell.greeting() : ""));
         return { pid: 4000 + this.ptys.size, startedAt: Date.now() };
       }
       case "pty_write": {
         const paneId = String(args?.paneId);
-        const pty = this.ptys.get(paneId);
+        const pty = this.ptyOf(paneId);
         const data = String(args?.data ?? "");
         if (pty?.shell) this.frame(pty, pty.shell.write(data));
         else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
@@ -1312,8 +1431,15 @@ export class DemoCore {
         return null;
       }
       case "pty_resize": {
-        const pty = this.ptys.get(String(args?.paneId));
-        if (pty && typeof args?.cols === "number") pty.cols = args.cols;
+        const pty = this.ptyOf(String(args?.paneId));
+        if (!pty || typeof args?.cols !== "number" || args.cols === pty.cols) return null;
+        pty.cols = args.cols;
+        // An agent's terminal UI draws itself again at the new width.
+        if (pty.logical !== undefined) {
+          pty.screen = this.rendered(pty);
+          pty.seq += 1;
+          pty.channel.onmessage(encodeFrame(FrameKind.Data, pty.seq, encoder.encode(`\x1b[2J\x1b[3J\x1b[H${pty.screen}`)));
+        }
         return null;
       }
       case "thread_list":
@@ -1470,17 +1596,36 @@ export class DemoCore {
         throw { code: "unavailable", message: "The browser demo doesn't create, rename or delete files." };
       case "fs_watch":
         return "demo-watch";
-      case "git_status":
-        return this.files.gitStatus(this.checkout(args));
+      case "git_status": {
+        const id = this.checkout(args);
+        const panel = this.files.gitStatus(id);
+        // The pull request's branch is on the remote: what's committed here
+        // since is ahead of it until it's pushed (F-WT-08).
+        if (id !== PR_LANE) return panel;
+        const slug = STORY.pr.worktree;
+        const ahead = (this.madeHere[slug]?.length ?? 0) - (this.pushedHere[slug] ?? 0);
+        return { ...panel, status: { ...panel.status, upstream: `origin/${branchOf(slug)}`, ahead } };
+      }
       case "git_diff":
         return this.files.gitDiff(this.checkout(args), String(args?.path ?? ""));
       case "git_branches":
         return this.files.gitBranches(this.checkout(args));
+      case "git_push": {
+        // Only the pull request's branch has a remote here: pushing the
+        // fix starts CI on it (F-WT-08).
+        if (this.checkout(args) !== PR_LANE) throw { code: "unavailable", message: NO_GIT };
+        const slug = STORY.pr.worktree;
+        const made = this.madeHere[slug]?.length ?? 0;
+        if (made > (this.pushedHere[slug] ?? 0)) {
+          this.pushedHere[slug] = made;
+          this.ci.pushed();
+        }
+        return null;
+      }
       case "git_stage":
       case "git_unstage":
       case "git_discard":
       case "git_commit":
-      case "git_push":
       case "git_pull":
       case "git_switch":
       case "git_create_branch":
@@ -1515,8 +1660,25 @@ export class DemoCore {
       // The review queue (F-DB-04): Claude Code's finished fix, kept in the page.
       // Worktrees as the app shows them before any pull request, overlap
       // or landing (F-WT-04, F-WT-10, F-WT-07; D-2609).
+      // A worktree's diff (F-WT-02): what it changed since main as the
+      // story starts, uncommitted work included.
+      case "lane_diff": {
+        const files = this.filesOf(String(args?.laneId ?? ""));
+        return Object.keys(files)
+          .filter((path) => files[path] !== MAIN[path])
+          .sort()
+          .map((path) => fileDiff(path, MAIN[path] ?? null, files[path] ?? ""));
+      }
+      // CI results and review comments back to the agent (F-WT-08).
       case "lane_checks":
-        return { laneId: String(args?.laneId ?? ""), state: "no_pr", pr: null, checks: [], error: null };
+        return this.ci.get(String(args?.laneId ?? ""));
+      case "pr_checks_allow":
+        this.ci.allow(Boolean(args?.allow));
+        return null;
+      case "lane_check_failure":
+        return this.ci.failure(String(args?.laneId ?? ""), String(args?.name ?? ""));
+      case "lane_review_comments":
+        return this.ci.comments(String(args?.laneId ?? ""), (args?.seen as string[] | undefined) ?? []);
       case "merge_queue_plan":
         this.repoOf(args);
         return this.landing.plan();
@@ -1545,13 +1707,24 @@ export class DemoCore {
         return this.radarNote(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
       case "pty_type_prompt": {
         const paneId = String(args?.paneId ?? "");
-        const pty = this.ptys.get(paneId);
+        const pty = this.ptyOf(paneId);
         const text = String(args?.text ?? "");
-        if (pty && !pty.shell) {
-          this.say(
-            pty,
-            `\n${text}\n\x1b[2m(This agent is simulated. In Vibezeo it reads the note and fits its work to the other worktree's.)\x1b[0m\n`,
-          );
+        if (pty && !pty.shell && text.startsWith("A CI check failed")) {
+          this.checkpoint(paneId);
+          if (paneId === agentPane(DONE) && !this.ciFixed) this.fixCi(pty, paneId);
+          else {
+            // Sent again, the fix is already in and waits for a push.
+            const then = this.ciFixed
+              ? "it reads the failure again; here its fix is committed and waits for a push"
+              : "it reads the failure and gets to work on it";
+            this.say(pty, `${ciEcho(STORY.pr.number)}\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`);
+          }
+        } else if (pty && !pty.shell) {
+          // The radar's note, or a review (F-WT-02): typed in, and simulated from there.
+          const then = text.startsWith("Heads-up from Vibezeo")
+            ? "it reads the note and fits its work to the other worktree's"
+            : "it reads what you sent and gets to work on it";
+          this.say(pty, `\n${text}\n\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`);
           this.checkpoint(paneId);
         }
         return null;

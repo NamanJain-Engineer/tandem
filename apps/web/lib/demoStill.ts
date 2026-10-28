@@ -16,7 +16,9 @@ const engine = (w: Worktree) => ENGINES[w.engine]?.label ?? w.engine;
 const working = inState("working");
 const done = inState("done");
 const waiting = inState("waiting");
-const frame = `the ${story.repo} repository's ${working.slug} worktree with ${engine(working)} at work beside a shell; in the rail, ${engine(done)} is done in ${done.slug} and ${engine(waiting)} is waiting on you in ${waiting.slug}`;
+// The working agent's pane header shows its first name (F-CD-12); the rail
+// shows the others' worktrees and states, not their names.
+const frame = `the ${story.repo} repository's ${working.slug} worktree with ${working.agentName} (${engine(working)}) at work beside a shell; in the rail, ${engine(done)} is done in ${done.slug} and ${engine(waiting)} is waiting on you in ${waiting.slug}`;
 
 /** The home page's still (DemoStage), until the live demo loads over it. */
 export const STILL_ALT = `Vibezeo's Code mode in the demo: ${frame}, with a tip pointing to it.`;

@@ -102,7 +102,7 @@ Landing never pushes or fetches. Until you push, **Undo landing** moves the bran
 
 Vibezeo can show a worktree's pull request checks and bring CI failures and review comments to its agent. It reads them through your own GitHub CLI (`gh`), which signs itself in: Vibezeo never sees or stores a token. It asks first: choose **Check pull request** in a worktree's ⋯ menu and allow it for the repository. Until you do, Vibezeo doesn't run `gh` for that repository; **Stop checking pull requests** in the same menu forgets it again.
 
-- Once allowed, a worktree with an open pull request shows its checks on its rail row: running, passed, or "1 check failed: test". Vibezeo reads them every 2 minutes while the window is focused while checks are running, every 15 minutes otherwise, and whenever you choose **Refresh checks** in the worktree's menu.
+- Once allowed, a worktree with an open pull request shows its checks on its rail row as the status bar does: **CI running**, **CI passed** or **CI failed** (just the icon while the row shows its agent's status, or when the row is too narrow; hover it for which checks, such as "1 check failed: test"). Vibezeo reads them every 2 minutes while checks are running and the window is focused, every 15 minutes otherwise, and whenever you choose **Refresh checks** in the worktree's menu.
 - Click the checks to see each one. On a failed check, **Send failure to agent** types the check's name, link and the end of the failing job's log (for GitHub Actions jobs) into the agent running in that worktree. With no agent there, **Copy failure** copies it instead.
 - In **Open diff**, **Import review comments** adds the pull request's line comments to the review bar, on their files and lines with their authors, next to your own. Send them to the agent as one review. Comments on lines that no longer exist are left out, one import brings up to 40 comments, and importing again only adds comments you haven't imported before. Resolved threads are imported too.
 - CI logs and review comments are other people's text, so they reach the agent marked as data, not instructions, and only when you click.
@@ -131,7 +131,7 @@ Git only notices two agents' changes clashing when they touch the same lines. Th
 Two worktrees of the same repository share a symbol when both changed it, or when one renamed, removed or changed something the other's new code uses. One agent renames `Session` while another adds a call to `Session.refresh`, for example.
 
 - **Check overlap…** lists the shared symbols next to the shared files, with what each side did: "renamed or removed here, used there".
-- A worktree that shares symbols shows **Shares Session** (or how many) on its rail row, or just the radar icon while the row shows its agent's status (hover it for the words); click it to check the overlap.
+- A worktree that shares symbols shows the radar icon and the symbol, such as `Session` (or how many), on its rail row, or just the icon while the row shows its agent's status or is too narrow (hover it for every symbol); click it to check the overlap.
 - When an agent's turn makes two worktrees share something new, a notice names both branches and the symbols. **Warn both agents** types a short note into each worktree's agent, naming what the other worktree did. Nothing is typed until you click.
 
 Files in other languages, files over 512 KB, and anything past a worktree's first 300 changed files aren't checked, and Check overlap… says how many. Short names (under three letters) aren't matched.
