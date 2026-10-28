@@ -9,12 +9,23 @@ export type CheckboxProps = {
   checked: boolean | "indeterminate";
   onCheckedChange?: (checked: boolean) => void;
   disabled?: boolean;
+  /** Off for now but still focusable (`aria-disabled`), as Button's. */
+  waiting?: boolean;
   description?: string;
   className?: string;
   id?: string;
 };
 
-export function Checkbox({ label, checked, onCheckedChange, disabled, description, className, id }: CheckboxProps) {
+export function Checkbox({
+  label,
+  checked,
+  onCheckedChange,
+  disabled,
+  waiting = false,
+  description,
+  className,
+  id,
+}: CheckboxProps) {
   const auto = useId();
   const cid = id ?? auto;
   return (
@@ -23,11 +34,13 @@ export function Checkbox({ label, checked, onCheckedChange, disabled, descriptio
         id={cid}
         checked={checked}
         disabled={disabled}
-        onCheckedChange={(v) => onCheckedChange?.(v === true)}
+        aria-disabled={waiting || undefined}
+        onCheckedChange={(v) => !waiting && onCheckedChange?.(v === true)}
         aria-describedby={description ? `${cid}-desc` : undefined}
         className={cx(
           "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface-4",
           "focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
+          waiting && "cursor-not-allowed opacity-40",
           "data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-fg",
           "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-fg",
         )}

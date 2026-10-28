@@ -255,7 +255,8 @@ export function ApprovalCard({
             size="sm"
             variant="primary"
             onClick={() => box.check() && onAllow()}
-            disabled={busy || !box.steady}
+            disabled={busy}
+            waiting={!box.steady}
             title={box.steady ? undefined : labels.steadying}
             data-grant
             data-testid="approval-allow"
@@ -267,7 +268,8 @@ export function ApprovalCard({
               size="sm"
               variant="secondary"
               onClick={() => box.check() && onAllowThread?.()}
-              disabled={busy || !box.steady}
+              disabled={busy}
+              waiting={!box.steady}
               title={box.steady ? undefined : labels.steadying}
               data-grant
               data-testid="approval-allow-thread"

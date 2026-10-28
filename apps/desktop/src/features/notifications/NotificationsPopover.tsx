@@ -68,7 +68,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
           onJump(n);
         }
       }}
-      className="flex cursor-pointer gap-2.5 rounded-sm px-2.5 py-2 outline-none hover:bg-surface-4 focus-visible:shadow-focus"
+      className="flex cursor-pointer gap-2.5 rounded-sm px-2.5 py-2 outline-none hover:bg-surface-4 focus-visible:shadow-focus [content-visibility:auto] [contain-intrinsic-size:auto_64px]"
     >
       <span className="mt-1 inline-flex size-3 shrink-0 items-center justify-center">
         {status ? (
@@ -110,7 +110,7 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
               variant="primary"
               data-grant
               data-testid="notification-allow"
-              disabled={!box.steady}
+              waiting={!box.steady}
               title={box.steady ? undefined : t("approval.waiting")}
               onClick={() => box.check() && decide(true)}
             >

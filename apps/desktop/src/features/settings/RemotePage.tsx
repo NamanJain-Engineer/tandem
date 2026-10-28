@@ -480,7 +480,11 @@ function QueueRow({
 }) {
   const box = useSteadyBox(true, item.id);
   return (
-    <div ref={box.ref} className="flex items-center gap-3 px-4 py-3" data-testid="remote-queue-item">
+    <div
+      ref={box.ref}
+      className="flex items-center gap-3 px-4 py-3 [content-visibility:auto] [contain-intrinsic-size:auto_56px]"
+      data-testid="remote-queue-item"
+    >
       <span className="min-w-0 flex-1 text-base text-fg">
         {t("remote.queue.item", { device: item.deviceName, summary: item.summary })}
       </span>
@@ -489,7 +493,7 @@ function QueueRow({
         variant="primary"
         data-grant
         data-testid="remote-queue-allow"
-        disabled={!box.steady}
+        waiting={!box.steady}
         title={box.steady ? undefined : t("approval.waiting")}
         onClick={() => box.check() && onAllow()}
       >

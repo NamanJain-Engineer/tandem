@@ -71,8 +71,9 @@ release fails when its version has no section.
   sliding into place, or a new held draft arriving on top, can't take a click
   or a double-click meant for something else. A chat card's keys answer only
   the card you're on, and only once its Allow would. A phone's queued Allow in
-  Settings › Remote and Trust and connect for a new SSH host key wait the same
-  way.
+  Settings › Remote, Trust and connect for a new SSH host key and Trust and run
+  for a repository's worktree setup wait the same way. A waiting Allow can
+  still be reached with Tab, and a card scrolled out of view takes no key.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.

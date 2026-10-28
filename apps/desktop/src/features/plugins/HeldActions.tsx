@@ -99,7 +99,8 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
           <Button
             size="sm"
             variant="secondary"
-            disabled={busy || chosen.length === 0 || !selectedBox.steady}
+            disabled={busy || chosen.length === 0}
+            waiting={!selectedBox.steady}
             title={chosen.length > 0 && !selectedBox.steady ? t("approval.waitingApprove") : undefined}
             onClick={() =>
               selectedBox.check() &&
@@ -178,15 +179,20 @@ function HeldRow({
     <li
       ref={box.ref}
       data-testid={`held-${d.displayNo}`}
-      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+      // Off screen, a row skips layout, paint and hit tests (up to 500 drafts).
+      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3 [content-visibility:auto] [contain-intrinsic-size:auto_220px]"
     >
       <div className="flex items-center gap-2">
         {/* Unpicking never waits; picking does. */}
-        <span data-grant className="flex">
+        <span
+          data-grant
+          className="flex"
+          title={!picked && !box.steady ? t("approval.waitingPick") : undefined}
+        >
           <Checkbox
             label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
             checked={picked}
-            disabled={!picked && !box.steady}
+            waiting={!picked && !box.steady}
             onCheckedChange={(v) => (v ? box.check() && onPick(true) : onPick(false))}
           />
         </span>
@@ -207,7 +213,8 @@ function HeldRow({
         <Button
           size="sm"
           variant="primary"
-          disabled={busy || !box.steady}
+          disabled={busy}
+          waiting={!box.steady}
           title={box.steady ? undefined : t("approval.waitingApprove")}
           onClick={() => box.check() && onRun()}
           data-grant

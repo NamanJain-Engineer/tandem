@@ -10,6 +10,7 @@ import { PluginApprovalFields } from "./PluginApproval";
 import { PluginsPage } from "./PluginsPage";
 import { ThreadPlugins } from "./ThreadPlugins";
 import { filterCards, parseApproval, splitCards } from "./model";
+import { waiting } from "../../test/waiting";
 
 function card(id: string, label: string, extra: Partial<PluginCard> = {}): PluginCard {
   return {
@@ -397,7 +398,7 @@ describe("F-PL-08 held actions", () => {
   it("F-PL-08 Approve & run runs a draft once", async () => {
     ui(<HeldActions />);
     const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
-    await waitFor(() => expect(run.disabled).toBe(false));
+    await waitFor(() => expect(waiting(run)).toBe(false));
     fireEvent.click(run);
     await waitFor(() => expect(screen.queryByTestId("held-12")).toBeNull());
     expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1);
@@ -412,7 +413,7 @@ describe("F-PL-08 held actions", () => {
     await screen.findByTestId("held-12");
     // N3: a pick waits for its row to hold still, like Approve & run.
     const pick = (id: string) => screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
-    await waitFor(() => expect(pick("D-12").disabled || pick("D-13").disabled).toBe(false));
+    await waitFor(() => expect(waiting(pick("D-12")) || waiting(pick("D-13"))).toBe(false));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-12" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-13" }));
     fireEvent.click(screen.getByTestId("held-discard-selected"));
@@ -426,21 +427,28 @@ describe("F-PL-08 held actions", () => {
     ui(<HeldActions />);
     const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
     // Just shown: a click meant for what was there before does nothing.
-    expect(run.disabled).toBe(true);
+    expect(waiting(run)).toBe(true);
     expect(run.title).toBe("Approve turns on once this has been still on screen for a moment.");
+    // S4: Approve & run, the pick and Approve & run {n} are marked as controls that grant.
+    expect(run.hasAttribute("data-grant")).toBe(true);
+    expect(screen.getByTestId("held-run-selected").hasAttribute("data-grant")).toBe(true);
     fireEvent.click(run);
     const pick13 = screen.getByRole("checkbox", { name: "Select D-13" }) as HTMLButtonElement;
     // N3: the pick waits too.
-    expect(pick13.disabled).toBe(true);
+    expect(waiting(pick13)).toBe(true);
+    expect(pick13.closest("[data-grant]")).not.toBeNull();
+    expect(pick13.closest("[data-grant]")?.getAttribute("title")).toBe(
+      "You can pick this once it has been still on screen for a moment.",
+    );
     fireEvent.click(pick13);
     expect(pick13.getAttribute("aria-checked")).toBe("false");
-    await waitFor(() => expect(pick13.disabled).toBe(false));
+    await waitFor(() => expect(waiting(pick13)).toBe(false));
     fireEvent.click(pick13);
     const selected = screen.getByTestId("held-run-selected") as HTMLButtonElement;
-    expect(selected.disabled).toBe(true);
+    expect(waiting(selected)).toBe(true);
     fireEvent.click(selected);
     expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
-    await waitFor(() => expect(selected.disabled).toBe(false));
+    await waitFor(() => expect(waiting(selected)).toBe(false));
     fireEvent.click(selected);
     await waitFor(() => expect(screen.queryByTestId("held-13")).toBeNull());
     expect(calls.filter((c) => c.cmd === "held_draft_run").map((c) => c.args?.draftId)).toEqual(["hd_13"]);
@@ -475,20 +483,20 @@ describe("F-PL-08 held actions", () => {
       const pick = (id: string) =>
         screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
       const run = (n: number) => screen.getByTestId(`held-run-${n}`) as HTMLButtonElement;
-      await waitFor(() => expect(pick("D-12").disabled).toBe(false));
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(false));
       // An unattended run holds a new draft: it's listed first.
       drafts = [draft(14), ...drafts];
       act(() => emitLocal("held:changed", null));
       await screen.findByTestId("held-14");
-      await waitFor(() => expect(pick("D-12").disabled).toBe(true));
-      expect(run(12).disabled).toBe(true);
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(true));
+      expect(waiting(run(12))).toBe(true);
       fireEvent.click(pick("D-12"));
       fireEvent.click(pick("D-14"));
       expect(pick("D-12").getAttribute("aria-checked")).toBe("false");
       expect(pick("D-14").getAttribute("aria-checked")).toBe("false");
-      expect((screen.getByTestId("held-run-selected") as HTMLButtonElement).disabled).toBe(true);
+      expect(waiting(screen.getByTestId("held-run-selected") as HTMLButtonElement)).toBe(true);
       expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
-      await waitFor(() => expect(pick("D-12").disabled).toBe(false));
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(false));
     });
   });
 });

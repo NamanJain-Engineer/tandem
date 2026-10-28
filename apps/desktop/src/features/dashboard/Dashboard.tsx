@@ -204,7 +204,8 @@ function AgentCard({
       onClick={() => void jumpTo(item)}
       onKeyDown={onKey}
       className={cx(
-        "group flex cursor-pointer flex-col gap-1 rounded-md border bg-surface-2 px-3 py-2 outline-none hover:bg-surface-3 focus-visible:shadow-focus",
+        // Off screen, a card skips layout, paint and hit tests.
+        "group flex cursor-pointer flex-col gap-1 rounded-md border bg-surface-2 px-3 py-2 outline-none hover:bg-surface-3 focus-visible:shadow-focus [content-visibility:auto] [contain-intrinsic-size:auto_72px]",
         item.status === "waiting" ? "border-waiting" : "border-border",
       )}
     >
@@ -295,7 +296,7 @@ function AgentCard({
                 variant="primary"
                 data-grant
                 data-testid="card-allow"
-                disabled={!canAllow}
+                waiting={!canAllow}
                 title={
                   canAllow ? undefined : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
                 }
@@ -313,7 +314,7 @@ function AgentCard({
                   variant="secondary"
                   data-grant
                   data-testid="card-allow-agent"
-                  disabled={!canAllow}
+                  waiting={!canAllow}
                   title={
                     canAllow
                       ? undefined

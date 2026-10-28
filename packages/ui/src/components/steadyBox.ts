@@ -9,7 +9,8 @@ export const SETTLE_MS = 500;
 export const COVER_EVERY_MS = 100;
 
 /** The attribute that marks a control as one that grants something (Allow,
- * Approve, Trust): only those are checked for covers. */
+ * Approve, Trust): only those are checked for covers (`data-grant="false"`
+ * doesn't count). */
 export const GRANT_ATTR = "data-grant";
 
 /** The box an element takes on the screen (the window's place included,
@@ -50,7 +51,9 @@ function pointsOf(r: DOMRect): [number, number][] {
  * skipped. */
 function covered(el: HTMLElement): boolean {
   if (typeof document.elementFromPoint !== "function") return false;
-  const marked = Array.from(el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]`));
+  const marked = Array.from(
+    el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`),
+  );
   const targets: HTMLElement[] = marked.length > 0 ? marked : [el];
   return targets.some((target) => {
     const r = target.getBoundingClientRect();
@@ -89,9 +92,10 @@ function useInView(el: HTMLElement | null): boolean {
  *
  * `key` names what the box would grant (the request): a new one starts the
  * wait over, even on the same element, and `steady` and `check()` say no
- * for it until it has waited. A box out of view or hidden does no work at
- * all and starts over when it's back; one in view measures its place every
- * frame and looks for covers every {@link COVER_EVERY_MS}. */
+ * for it until it has waited. A box out of view or hidden does no work
+ * per frame and starts over when it's back, and `check()` says no for it;
+ * one in view measures its place every frame and looks for covers every
+ * {@link COVER_EVERY_MS} and at every pointer press. */
 export function useSteadyBox(
   active: boolean,
   key: string | null = null,
@@ -124,10 +128,12 @@ export function useSteadyBox(
     },
     [el, token],
   );
+  // Out of view answers no too: a focused card scrolled away can't be
+  // allowed by a key typed into what the person thinks is the composer.
   const check = useCallback((): boolean => {
-    if (!active || el === null || hidden(el)) return false;
+    if (!active || el === null || !inView || hidden(el)) return false;
     return sample(true);
-  }, [active, el, sample]);
+  }, [active, el, inView, sample]);
   useEffect(() => {
     last.current = null;
     cover.current = null;
@@ -141,6 +147,13 @@ export function useSteadyBox(
       typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (id: number) => clearTimeout(id);
     let id = 0;
     let timer = 0;
+    // Every press anywhere looks for a cover too, so one that comes and
+    // goes between samples (an overlay a double-click's first press closes)
+    // still starts the wait over.
+    const press = () => {
+      if (!hidden(el)) sample(true);
+    };
+    document.addEventListener("pointerdown", press, true);
     const tick = () => {
       // Hidden (a pane in another tab, the panel closed): no per-frame work,
       // a slow look for when it's shown, and the wait starts over then.
@@ -159,6 +172,7 @@ export function useSteadyBox(
     return () => {
       cancel(id);
       clearTimeout(timer);
+      document.removeEventListener("pointerdown", press, true);
     };
   }, [active, el, inView, sample, token]);
   return { ref: setEl, steady: steadyFor !== null && steadyFor === token, check };

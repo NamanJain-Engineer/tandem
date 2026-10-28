@@ -10,6 +10,7 @@ import { PaneBanners } from "./PaneGrid";
 import { useRunaway } from "../../stores/runaway";
 import { ApprovalBoundary } from "../secrets/ApprovalGuard";
 import { parseRunApproval } from "../secrets/runApproval";
+import { waiting } from "../../test/waiting";
 
 beforeEach(resetStores);
 afterEach(() => {
@@ -44,7 +45,7 @@ function withApproval(a: ApprovalView | null): void {
 /** Allow takes clicks once the approval has been on screen 500 ms. */
 async function settled(): Promise<void> {
   await waitFor(() =>
-    expect((screen.getByTestId("pane-approval-once") as HTMLButtonElement).disabled).toBe(false),
+    expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(false),
   );
 }
 
@@ -292,8 +293,11 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(end.compareDocumentPosition(once) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     view.show(false);
     await new Promise((r) => setTimeout(r, 700));
-    expect(once.disabled).toBe(true);
-    expect((screen.getByTestId("pane-approval-agent") as HTMLButtonElement).disabled).toBe(true);
+    expect(waiting(once)).toBe(true);
+    expect(waiting(screen.getByTestId("pane-approval-agent") as HTMLButtonElement)).toBe(true);
+    // S4: both Allows are marked as controls that grant.
+    expect(screen.getByTestId("pane-approval-once").hasAttribute("data-grant")).toBe(true);
+    expect(screen.getByTestId("pane-approval-agent").hasAttribute("data-grant")).toBe(true);
     view.show(true);
     await settled();
     // A new line starts over.
@@ -305,7 +309,7 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
       }),
     );
     await new Promise((r) => setTimeout(r, 700));
-    expect((screen.getByTestId("pane-approval-once") as HTMLButtonElement).disabled).toBe(true);
+    expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(true);
   });
 
   it("F-TL-12.13 a look-alike letter in the folder shows the warning too", () => {
@@ -375,7 +379,7 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     top = 40;
     fireEvent.click(once());
     expect(answered()).toBe(false);
-    await waitFor(() => expect(once().disabled).toBe(true));
+    await waitFor(() => expect(waiting(once())).toBe(true));
     await settled();
     // Something covers it (a menu, a dialog): the click goes nowhere.
     const cover = document.createElement("div");
@@ -390,7 +394,7 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     // Hidden (the pane's tab isn't shown): it isn't sampled, and waits again.
     const visible = vi.fn(() => false);
     Object.defineProperty(HTMLElement.prototype, "checkVisibility", { value: visible, configurable: true });
-    await waitFor(() => expect(once().disabled).toBe(true));
+    await waitFor(() => expect(waiting(once())).toBe(true));
     fireEvent.click(once());
     expect(answered()).toBe(false);
     Object.defineProperty(HTMLElement.prototype, "checkVisibility", { value: undefined, configurable: true });

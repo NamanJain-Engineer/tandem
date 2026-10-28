@@ -19,10 +19,13 @@ function card(props: Partial<ApprovalCardProps> = {}) {
   return handlers;
 }
 
+/** A control that waits is still focusable: it says so with aria-disabled. */
+const waiting = (el: Element) => el.getAttribute("aria-disabled") === "true";
+
 /** Waits until Allow has held still long enough to take a click. */
 async function steady() {
   await waitFor(() =>
-    expect((screen.getByTestId("approval-allow") as HTMLButtonElement).disabled).toBe(false),
+    expect(waiting((screen.getByTestId("approval-allow") as HTMLButtonElement))).toBe(false),
   );
 }
 
@@ -139,8 +142,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     const h = card();
     const el = screen.getByTestId("approval-card");
     el.focus();
-    expect(allow().disabled).toBe(true);
-    expect(thread().disabled).toBe(true);
+    expect(waiting(allow())).toBe(true);
+    expect(waiting(thread())).toBe(true);
     expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
     fireEvent.click(allow());
     fireEvent.keyDown(el, { key: "a" });
@@ -168,7 +171,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     fireEvent.keyDown(el, { key: "Enter", ctrlKey: true, shiftKey: true });
     expect(h.onAllow).not.toHaveBeenCalled();
     expect(h.onAllowThread).not.toHaveBeenCalled();
-    await waitFor(() => expect(allow().disabled).toBe(true));
+    await waitFor(() => expect(waiting(allow())).toBe(true));
     await steady();
     fireEvent.click(thread());
     expect(h.onAllowThread).toHaveBeenCalledTimes(1);
@@ -183,8 +186,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     covering = document.createElement("div");
     document.body.append(covering);
     coverX = [160, 200];
-    await waitFor(() => expect(thread().disabled).toBe(true));
-    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(waiting(thread())).toBe(true));
+    expect(waiting(allow())).toBe(true);
     fireEvent.click(thread());
     fireEvent.keyDown(el, { key: "a" });
     expect(h.onAllow).not.toHaveBeenCalled();
@@ -192,7 +195,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     act(() => covering?.remove());
     covering = null;
     await steady();
-    expect(thread().disabled).toBe(false);
+    expect(waiting(thread())).toBe(false);
   });
 
   it("S4: keys answer only the card that has focus", async () => {
@@ -227,7 +230,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     const { rerender } = render(view("apr_a", a));
     await steady();
     rerender(view("apr_b", b));
-    expect(allow().disabled).toBe(true);
+    expect(waiting(allow())).toBe(true);
     fireEvent.click(allow());
     fireEvent.keyDown(screen.getByTestId("approval-card"), { key: "a" });
     expect(a).not.toHaveBeenCalled();
@@ -235,5 +238,70 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     await steady();
     fireEvent.click(allow());
     expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it("S4: Allow and Allow for this thread are marked as controls that grant", () => {
+    card();
+    expect(allow().hasAttribute("data-grant")).toBe(true);
+    expect(thread().hasAttribute("data-grant")).toBe(true);
+    expect(screen.getByTestId("approval-deny").hasAttribute("data-grant")).toBe(false);
+  });
+
+  it("S3: a waiting Allow stays reachable by Tab, and Enter or a click on it does nothing", async () => {
+    layout();
+    const h = card();
+    expect(waiting(allow())).toBe(true);
+    expect(allow().disabled).toBe(false);
+    allow().focus();
+    expect(document.activeElement).toBe(allow());
+    fireEvent.click(allow());
+    fireEvent.keyDown(allow(), { key: "Enter" });
+    expect(h.onAllow).not.toHaveBeenCalled();
+    await steady();
+    fireEvent.click(allow());
+    expect(h.onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  describe("S2: scrolled out of view", () => {
+    let intersecting = true;
+    let callbacks: IntersectionObserverCallback[] = [];
+    class FakeIO {
+      constructor(private cb: IntersectionObserverCallback) {
+        callbacks.push(cb);
+      }
+      observe(el: Element) {
+        queueMicrotask(() =>
+          this.cb([{ isIntersecting: intersecting, target: el } as IntersectionObserverEntry], this as never),
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      intersecting = true;
+      callbacks = [];
+    });
+
+    it("a focused card that has scrolled away takes no key, pressed once or twice", async () => {
+      vi.stubGlobal("IntersectionObserver", FakeIO);
+      layout();
+      const h = card();
+      const el = screen.getByTestId("approval-card");
+      el.focus();
+      await steady();
+      // The person scrolls on and types "a…a" into what they think is the
+      // composer; focus is still on the card.
+      intersecting = false;
+      act(() => callbacks.forEach((cb) => cb([{ isIntersecting: false } as IntersectionObserverEntry], {} as never)));
+      fireEvent.keyDown(el, { key: "a" });
+      await act(() => new Promise((r) => setTimeout(r, 600)));
+      fireEvent.keyDown(el, { key: "a" });
+      fireEvent.keyDown(el, { key: "Enter", ctrlKey: true });
+      expect(h.onAllow).not.toHaveBeenCalled();
+    });
   });
 });

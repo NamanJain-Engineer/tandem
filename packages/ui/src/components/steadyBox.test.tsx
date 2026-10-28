@@ -187,4 +187,44 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     fireEvent.click(allow());
     expect(onAllow).not.toHaveBeenCalled();
   });
+
+  it("nit: a cover that comes and goes between samples still counts, caught at the press", async () => {
+    const onAllow = vi.fn();
+    render(<Row n={0} onAllow={onAllow} />);
+    const allow = () => screen.getByTestId("allow-0") as HTMLButtonElement;
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // An overlay up for 20 ms: the first press of a double-click lands on
+    // it (and closes it), the second on Allow.
+    covering = document.createElement("div");
+    document.body.append(covering);
+    fireEvent.pointerDown(covering);
+    covering.remove();
+    covering = null;
+    fireEvent.click(allow());
+    expect(onAllow).not.toHaveBeenCalled();
+  });
+
+  it('nit: data-grant="false" is not a grant: a cover over it holds nothing off', async () => {
+    function Marked({ onAllow }: { onAllow: () => void }) {
+      const box = useSteadyBox(true, "m");
+      return (
+        <div ref={box.ref} data-row={0}>
+          <button type="button" data-grant data-testid="allow" onClick={() => box.check() && onAllow()}>
+            Allow
+          </button>
+          <button type="button" data-grant="false">
+            Deny
+          </button>
+        </div>
+      );
+    }
+    const onAllow = vi.fn();
+    render(<Marked onAllow={onAllow} />);
+    await wait(SETTLE_MS + 100);
+    covering = document.createElement("div");
+    document.body.append(covering);
+    coverX = [100, 200];
+    fireEvent.click(screen.getByTestId("allow"));
+    expect(onAllow).toHaveBeenCalledTimes(1);
+  });
 });

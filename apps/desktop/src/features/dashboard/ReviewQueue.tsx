@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import type {
   FileDiff,
@@ -210,6 +210,10 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   // place) starts the wait over too, so Approve never sends a hash for a
   // diff that was on screen for less than a moment.
   const settled = useSettled(approved ? null : item.diffHash);
+  // "This diff just changed" only once it has: a card that just arrived
+  // waits with the plain reason.
+  const firstHash = useRef(item.diffHash);
+  const changed = item.diffHash !== firstHash.current;
   const box = useSteadyBox(!approved, item.diffHash);
   const canApprove = approved || (settled && box.steady);
   return (
@@ -217,7 +221,8 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
       data-testid="review-item"
       data-key={item.key}
       data-state={item.state}
-      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+      // Off screen, a card skips layout, paint and hit tests.
+      className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3 [content-visibility:auto] [contain-intrinsic-size:auto_200px]"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg" data-testid="review-item-title">
@@ -270,8 +275,14 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
         <Button
           size="sm"
           variant={approved ? "ghost" : "primary"}
-          disabled={!canApprove}
-          title={canApprove ? undefined : settled ? t("approval.waitingApprove") : t("approval.waitingDiff")}
+          waiting={!canApprove}
+          title={
+            canApprove
+              ? undefined
+              : !settled && changed
+                ? t("approval.waitingDiff")
+                : t("approval.waitingApprove")
+          }
           onClick={() =>
             (approved || (settled && box.check())) &&
             act(
