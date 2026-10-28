@@ -927,8 +927,151 @@ fn f_th_12_4_claude_codes_edits_count_the_lines_their_inputs_describe() {
     // event, so it names its file and counts no lines.
     assert_eq!(at("toolu_e4").2, None);
     assert_eq!(at("toolu_e4").3, Some(vec!["/work/shop/README.md".into()]));
-    // replace_all: once, since how many places it changed isn't said.
-    assert_eq!(at("toolu_e7").2, lines(1, 1));
+    // replace_all without the result's patch: how many places it changed
+    // isn't said, so it names its file and counts no lines.
+    assert_eq!(at("toolu_e7").2, None);
+    assert_eq!(
+        at("toolu_e7").3,
+        Some(vec!["/work/shop/src/checkout/next.ts".into()])
+    );
+}
+
+#[test]
+fn f_th_12_4_the_results_patch_counts_a_replace_all_and_a_rewrite_exactly() {
+    let rows = finished(edits_fixture());
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // `tool_use_result.structuredPatch`: three occurrences replaced.
+    assert_eq!(at("toolu_e8").2, lines(3, 3));
+    // A rewrite whose result carries its patch.
+    assert_eq!(at("toolu_e9").2, lines(2, 1));
+}
+
+#[test]
+fn f_th_12_4_a_notebook_edit_names_its_file_without_lines() {
+    let rows = finished(edits_fixture());
+    let nb = rows.iter().find(|r| r.0 == "toolu_e10").expect("notebook");
+    assert_eq!(nb.1, ToolStatus::Ok);
+    assert_eq!(nb.2, None);
+    assert_eq!(nb.3, Some(vec!["/work/shop/notebooks/prices.ipynb".into()]));
+}
+
+#[test]
+fn f_th_12_4_a_subagents_edits_count_on_its_task() {
+    let rows = finished(edits_fixture());
+    let task = rows.iter().find(|r| r.0 == "toolu_e11").expect("task");
+    assert_eq!(
+        task.3,
+        Some(vec![
+            "/work/shop/docs/checkout.md".into(),
+            "/work/shop/docs/faq.md".into()
+        ])
+    );
+    // An Edit's (1, 1) and a new file's three lines.
+    assert_eq!(task.2, lines(4, 1));
+    // The subagent's own rows stay inside the Task's.
+    assert!(rows
+        .iter()
+        .all(|r| r.0 != "toolu_e12" && r.0 != "toolu_e13"));
+}
+
+/// Parses `lines` (stream-json values) as one session in /work/shop.
+fn parse(lines: &[Value]) -> Vec<Finished> {
+    let mut p = ClaudeParser::new(PathBuf::from("/work/shop"), &[], false);
+    finished(
+        lines
+            .iter()
+            .flat_map(|l| p.line(&l.to_string(), now()))
+            .collect(),
+    )
+}
+
+fn tool_use(id: &str, name: &str, input: Value, task: Option<&str>) -> Value {
+    json!({"type": "assistant", "parent_tool_use_id": task, "message": {"role": "assistant",
+        "content": [{"type": "tool_use", "id": id, "name": name, "input": input}]}})
+}
+
+fn tool_result(id: &str, text: &str, error: bool, task: Option<&str>) -> Value {
+    json!({"type": "user", "parent_tool_use_id": task, "message": {"role": "user",
+        "content": [{"type": "tool_result", "tool_use_id": id, "content": text, "is_error": error}]}})
+}
+
+#[test]
+fn f_th_12_4_a_task_names_its_subagents_files_without_lines_when_one_edit_cant_say() {
+    let edit = |file: &str, all: bool| json!({"file_path": file, "old_string": "a", "new_string": "b", "replace_all": all});
+    let rows = parse(&[
+        tool_use("t1", "Task", json!({"description": "Rename"}), None),
+        tool_use("s1", "Edit", edit("src/a.ts", false), Some("t1")),
+        tool_result(
+            "s1",
+            "The file src/a.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // replace_all with no patch: its lines aren't known.
+        tool_use("s2", "Edit", edit("src/b.ts", true), Some("t1")),
+        tool_result(
+            "s2",
+            "The file src/b.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // A refused edit adds nothing.
+        tool_use("s3", "Edit", edit("src/c.ts", false), Some("t1")),
+        tool_result("s3", "Denied by the user", true, Some("t1")),
+        tool_result("t1", "Renamed.", false, None),
+        // A Task whose subagent edited nothing names no files.
+        tool_use("t2", "Task", json!({"description": "Look"}), None),
+        tool_result("t2", "Nothing to change.", false, None),
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    assert_eq!(
+        at("t1").3,
+        Some(vec![
+            "/work/shop/src/a.ts".into(),
+            "/work/shop/src/b.ts".into()
+        ])
+    );
+    assert_eq!(at("t1").2, None);
+    assert_eq!(at("t2").3, None);
+    assert_eq!(at("t2").2, None);
+}
+
+#[test]
+fn f_th_12_4_a_patch_counts_only_when_its_message_answers_one_tool() {
+    let edit = |file: &str| json!({"file_path": file, "old_string": "a", "new_string": "b"});
+    let patch = json!({"structuredPatch": [{"oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 3,
+        "lines": ["-a", "+b", "+c", " d"]}]});
+    let mut two = json!({"type": "user", "parent_tool_use_id": null, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "e1", "content": "The file has been updated."},
+        {"type": "tool_result", "tool_use_id": "e2", "content": "The file has been updated."}]}});
+    two["tool_use_result"] = patch.clone();
+    let mut one = tool_result("e3", "The file has been updated.", false, None);
+    one["tool_use_result"] = patch;
+    let rows = parse(&[
+        tool_use("e1", "Edit", edit("a.ts"), None),
+        tool_use("e2", "Edit", edit("b.ts"), None),
+        two,
+        tool_use("e3", "Edit", edit("c.ts"), None),
+        one,
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Two answers share the message's patch, so each keeps its input's count.
+    assert_eq!(at("e1").2, lines(1, 1));
+    assert_eq!(at("e2").2, lines(1, 1));
+    assert_eq!(at("e3").2, lines(2, 1));
+}
+
+#[test]
+fn f_tk_07_an_edits_path_is_named_one_way() {
+    let cwd = Path::new("/work/shop");
+    let named = |p: &str| edited_paths("Edit", &json!({"file_path": p}), cwd);
+    let one = Some(vec!["/work/shop/src/a.ts".to_string()]);
+    assert_eq!(named("src/a.ts"), one);
+    assert_eq!(named("./src/../src/a.ts"), one);
+    assert_eq!(named("/work/shop/./src/a.ts"), one);
+    assert_eq!(named("/work/x/../shop/src/a.ts"), one);
+    // Never above the root.
+    assert_eq!(named("/../a.ts"), Some(vec!["/a.ts".to_string()]));
 }
 
 #[test]
@@ -944,7 +1087,7 @@ fn f_th_12_5_a_refused_or_failed_edit_counts_no_lines() {
 #[test]
 fn f_th_12_4_lines_come_from_a_line_diff_not_the_changed_span() {
     let c = |old: &str, new: &str| {
-        let l = LineCounts::between(old, new);
+        let l = LineCounts::edit(old, new).expect("within the budget");
         (l.added, l.removed)
     };
     assert_eq!(c("a\nb\nc", "a\nB\nc"), (1, 1));
@@ -959,13 +1102,54 @@ fn f_th_12_4_lines_come_from_a_line_diff_not_the_changed_span() {
     // A change inside one line changes that line.
     assert_eq!(c("foo(1)", "bar(1)"), (1, 1));
     assert_eq!(c("a\nb", "a\nb"), (0, 0));
-    assert_eq!(c("a\nb", ""), (0, 2));
+    // Two lines taken out without their newline leave one line, empty.
+    assert_eq!(c("a\nb", ""), (1, 2));
+    // An empty old string writes a new file's content.
     assert_eq!(c("", "a\nb\n"), (2, 0));
-    // A huge edit stays quick: past the comparison budget, the changed
-    // span counts.
+}
+
+#[test]
+fn f_th_12_4_a_snippets_edges_count_as_git_does() {
+    // Each against `git diff --numstat`, the snippet a whole line or lines.
+    let c = |old: &str, new: &str| {
+        let l = LineCounts::edit(old, new).expect("within the budget");
+        (l.added, l.removed)
+    };
+    // The line is left empty.
+    assert_eq!(c("foo();", ""), (1, 1));
+    // A new line after it.
+    assert_eq!(c("foo();", "foo();\n"), (1, 0));
+    // The line and its newline go.
+    assert_eq!(c("foo();\n", ""), (0, 1));
+    // A line join: "foo();" and the line after become one.
+    assert_eq!(c("foo();\n", "foo();"), (1, 2));
+    assert_eq!(c("a\nb\n", "a\nb"), (1, 2));
+    // Whole lines with their newlines, in and out.
+    assert_eq!(c("a\n", "a\nb\n"), (1, 0));
+    assert_eq!(c("a\nb\nc\n", "c\n"), (0, 2));
+}
+
+#[test]
+fn f_th_12_4_a_huge_edit_counts_no_lines_rather_than_a_guess() {
+    let c = |old: &str, new: &str| LineCounts::edit(old, new).map(|l| (l.added, l.removed));
+    // 2,000 lines a side, the first and last changed: exact, within the
+    // comparison budget.
+    let mid = |n: usize| -> String { (0..n).map(|i| format!("m{i}\n")).collect() };
+    assert_eq!(
+        c(&format!("x\n{}y", mid(1998)), &format!("X\n{}Y", mid(1998))),
+        Some((2, 2))
+    );
+    // Past it, no count (the changed span would say 2,102 and 2,102 where
+    // git says 2 and 2).
+    assert_eq!(
+        c(&format!("x\n{}y", mid(2100)), &format!("X\n{}Y", mid(2100))),
+        None
+    );
     let old: String = (0..5000).map(|i| format!("a{i}\n")).collect();
     let new: String = (0..5000).map(|i| format!("b{i}\n")).collect();
-    let started = std::time::Instant::now();
-    assert_eq!(c(&old, &new), (5000, 5000));
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(c(&old, &new), None);
+    // A MultiEdit with one such edit counts none.
+    let input = json!({"edits": [{"old_string": "a", "new_string": "b"},
+        {"old_string": old, "new_string": new}]});
+    assert_eq!(input_lines("MultiEdit", &input), None);
 }

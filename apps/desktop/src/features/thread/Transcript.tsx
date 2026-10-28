@@ -103,7 +103,16 @@ function Tool({ tool }: { tool: ToolEvent }) {
       icon={v.icon}
       verb={v.verb}
       arg={v.arg}
-      meta={v.meta}
+      meta={
+        v.metaLabel ? (
+          <>
+            <span aria-hidden="true">{v.meta}</span>
+            <span className="sr-only">{v.metaLabel}</span>
+          </>
+        ) : (
+          v.meta
+        )
+      }
       status={tool.status}
       statusLabel={v.statusLabel}
     >
@@ -336,8 +345,13 @@ const RowView = memo(function RowView({
               {row.add !== null && row.del !== null && (
                 <>
                   {" "}
-                  <span className="tabular-nums text-diff-add-fg">{t("thread.summary.add", { n: row.add })}</span>{" "}
-                  <span className="tabular-nums text-diff-del-fg">{t("thread.summary.del", { n: row.del })}</span>
+                  <span aria-hidden="true" className="tabular-nums text-diff-add-fg">
+                    {t("thread.summary.add", { n: row.add })}
+                  </span>{" "}
+                  <span aria-hidden="true" className="tabular-nums text-diff-del-fg">
+                    {t("thread.summary.del", { n: row.del })}
+                  </span>
+                  <span className="sr-only">{t("thread.lines.label", { add: row.add, del: row.del })}</span>
                 </>
               )}
             </span>

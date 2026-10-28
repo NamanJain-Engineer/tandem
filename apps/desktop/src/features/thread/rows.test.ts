@@ -338,8 +338,54 @@ describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
     const rewrite = claudeEdit("a", "write", "/work/shop/README.md", undefined);
     expect(toolView(rewrite as ToolEvent).meta).toBeUndefined();
     expect(turn(rewrite).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: null, del: null });
+  });
+
+  it("F-TH-12.4 when one edit can't say its lines, the summary names the files with no partial total", () => {
+    const rewrite = claudeEdit("a", "write", "/work/shop/README.md", undefined);
     const mixed = turn(rewrite, claudeEdit("b", "edit", "/work/shop/src/a.ts", { added: 1, removed: 0 }));
-    expect(mixed.find((r) => r.kind === "summary")).toMatchObject({ files: 2, add: 1, del: 0 });
+    expect(mixed.find((r) => r.kind === "summary")).toMatchObject({ files: 2, add: null, del: null });
+    // A Codex patch with its diff beside it changes nothing about that.
+    const codex: ThreadEvent = {
+      ...(claudeEdit("c", "edit", "/work/shop/src/b.ts", undefined) as ToolEvent),
+      diff: "--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1,2 @@\n-a\n+b\n+c\n",
+    };
+    expect(turn(codex).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 2, del: 1 });
+    expect(turn(codex, rewrite).find((r) => r.kind === "summary")).toMatchObject({ files: 2, add: null, del: null });
+  });
+
+  it("F-TH-12.4 a notebook edit and a subagent's Task count the files they name (D-2608)", () => {
+    const notebook: ThreadEvent = {
+      ...(claudeEdit("n", "edit", "/work/shop/prices.ipynb", undefined) as ToolEvent),
+      verb: "other",
+      argSummary: "prices.ipynb",
+    };
+    const task: ThreadEvent = {
+      ...(claudeEdit("t", "edit", "/work/shop/docs/a.md", { added: 4, removed: 1 }) as ToolEvent),
+      verb: "task",
+      argSummary: "Update the docs",
+      paths: ["/work/shop/docs/a.md", "/work/shop/docs/faq.md"],
+    };
+    expect(turn(task).find((r) => r.kind === "summary")).toMatchObject({ files: 2, add: 4, del: 1 });
+    expect(turn(task, notebook).find((r) => r.kind === "summary")).toMatchObject({ files: 3, add: null, del: null });
+    // A tool that names no files isn't an edit.
+    const read: ThreadEvent = { ...(notebook as ToolEvent), id: "r", verb: "read", paths: undefined };
+    expect(turn(read).some((r) => r.kind === "summary")).toBe(false);
+  });
+
+  it("F-TH-12.4 a file reported by its diff and by its absolute path counts once", () => {
+    const withDiff: ThreadEvent = {
+      ...(claudeEdit("a", "edit", "/work/shop/src/b.ts", undefined) as ToolEvent),
+      diff: "--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1 @@\n-a\n+b\n",
+    };
+    const again = claudeEdit("b", "edit", "/work/shop/src/b.ts", { added: 1, removed: 0 });
+    expect(turn(withDiff, again).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 2, del: 1 });
+  });
+
+  it("F-TH-12.4 a row's counts read as words", () => {
+    const one = claudeEdit("a", "edit", "/work/shop/src/redirect.ts", { added: 7, removed: 1 }) as ToolEvent;
+    expect(toolView(one)).toMatchObject({ meta: "+7 −1", metaLabel: "7 lines added, 1 removed" });
+    const single = claudeEdit("b", "edit", "/work/shop/src/a.ts", { added: 1, removed: 0 }) as ToolEvent;
+    expect(toolView(single).metaLabel).toBe("1 line added, 0 removed");
   });
 
   it("F-TH-12.5 a refused or failed edit adds no file and no lines", () => {
@@ -348,6 +394,13 @@ describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
       claudeEdit("b", "edit", "/work/shop/src/next.ts", { added: 1, removed: 1 }, "error"),
     );
     expect(rows.some((r) => r.kind === "summary")).toBe(false);
+    // Beside an edit that happened, only that one counts, lines and all.
+    const mixed = turn(
+      claudeEdit("a", "edit", "/work/shop/.env", { added: 5, removed: 5 }, "denied"),
+      claudeEdit("b", "edit", "/work/shop/src/next.ts", { added: 3, removed: 3 }, "error"),
+      claudeEdit("c", "edit", "/work/shop/src/ok.ts", { added: 2, removed: 1 }),
+    );
+    expect(mixed.find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 2, del: 1 });
     const denied = claudeEdit("a", "edit", "/work/shop/.env", { added: 1, removed: 1 }, "denied") as ToolEvent;
     expect(toolView(denied).meta).toBe("Denied");
   });

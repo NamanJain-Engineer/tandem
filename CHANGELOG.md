@@ -36,12 +36,12 @@ release fails when its version has no section.
 ### Changed
 
 - [lin] **Claude Code threads summarise their edits too.** A finished Claude
-  Code turn counts the files it changed, with lines added and removed,
-  worked out from the edits Claude Code reports, and each edit's row shows
-  its own counts. A file Claude Code rewrites whole counts as changed
-  without line counts, an edit that replaces every occurrence of some text
-  counts its lines once, and an edit that was refused or failed counts
-  nothing.
+  Code turn says which files its edits changed, a subagent's and a
+  notebook's included, with the lines added and removed, and each edit's
+  row shows its own counts. When an edit's lines aren't known, the turn
+  lists its files without line counts rather than a partial total. An edit
+  that was refused or failed counts nothing, and files changed by shell
+  commands aren't counted.
 
 ### Fixed
 

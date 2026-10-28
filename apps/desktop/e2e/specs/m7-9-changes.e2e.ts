@@ -70,10 +70,13 @@ describe("E2E-M7-9 changes", () => {
     await sendMessage("write app/a.txt=one\\nTWO\\n;b.txt=brand new\\n");
     await waitForAssistant("Wrote 2 files.");
     // F-TH-12.4: the rewrite of app/a.txt counts its file but not its lines
-    // (what it replaced isn't in the event); the new b.txt adds its line.
+    // (what it replaced isn't in the event), so the turn names both files
+    // with no partial total (b.txt's one line alone isn't the turn's).
     const summary = await $('[data-testid="turn-summary"]');
     await summary.waitForExist({ timeout: 10_000 });
-    expect(await summary.getText()).toContain("Changed 2 files +1 −0");
+    const said = await summary.getText();
+    expect(said).toContain("Changed 2 files");
+    expect(said).not.toMatch(/[+−]\d/);
     // The panel reads the folder again when the turn ends.
     await browser.waitUntil(async () => (await changedPaths()).length === 2, {
       timeout: 10_000,

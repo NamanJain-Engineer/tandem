@@ -8,7 +8,7 @@ Thread mode runs an engine as a conversation instead of a terminal: replies stre
 - **Approvals** appear inline. Answer once, or for the whole thread.
 - **Plan mode** keeps numbered plan versions; **Implement** runs the one you pick.
 - **Changes** lists every file the thread changed since it started, and the files it read.
-- **Turn summaries** close each turn that edited files or ran tests, such as "Changed 3 files +7 −4" and how many tests passed and failed. Codex and agents that speak ACP send each edit's diff. Claude Code doesn't, so its lines are counted from the edits it reports: a file it rewrites whole is named without line counts, and an edit that was refused or failed counts nothing.
+- **Turn summaries** close each turn that edited files or ran tests, such as "Changed 3 files +7 −4" and how many tests passed and failed. Codex and agents that speak ACP send each edit's diff. Claude Code doesn't, so its lines come from the edits it reports: when an edit's lines aren't known, the turn names its files without line counts, and an edit that was refused or failed counts nothing. Files a shell command changes aren't counted.
 - **Switching engines** mid-thread carries a summary of the conversation over.
 
 ## Engines

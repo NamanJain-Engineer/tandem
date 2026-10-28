@@ -1937,10 +1937,13 @@ pub enum ThreadEvent {
     ReasoningDelta { text: String },
     Tool { id: String, verb: ToolVerb, arg_summary: String, status: ToolStatus, output: Option<String>,
            output_truncated: bool, output_file: Option<AttachmentId>, diff: Option<String>, detail: Option<String>,
-           paths: Option<Vec<String>> /* the files an edit names, absolute; left out otherwise (F-TK-07) */,
-           lines: Option<LineCounts> /* a successful edit's lines added and removed, counted from its input by an
-                                        engine that sends no diff (Claude Code's Edit, MultiEdit, Write); left out
-                                        when unknown or the edit didn't happen (F-TH-12, D-2608) */ },
+           paths: Option<Vec<String>> /* the files an edit names, absolute, with `.` and `..` worked out; a Task's
+                                         result names the files its subagent edited; left out otherwise (F-TK-07,
+                                         F-TH-12) */,
+           lines: Option<LineCounts> /* a successful edit's lines added and removed, from an engine that sends no
+                                        diff (Claude Code: its result's structuredPatch, else counted from its Edit,
+                                        MultiEdit or Write input; a Task's result sums its subagent's edits); left
+                                        out when unknown or the edit didn't happen (F-TH-12, D-2608) */ },
     AssistantDelta { text: String },
     Assistant { markdown: String },                                   // compacted at turn end
     ApprovalRequest { id: ApprovalId, kind: ApprovalKind, summary: String, detail: String, options: Vec<ApprovalScope>, expires_at: i64 },

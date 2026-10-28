@@ -73,21 +73,26 @@ export function statusLabel(status: ToolStatus): string {
   return t(STATUS_KEY[status]);
 }
 
-/** What a ToolCallBlock shows for a tool event (UI-21 labels). */
+/** What a ToolCallBlock shows for a tool event (UI-21 labels). `metaLabel`
+ * reads "+2 −1" out as words. */
 export function toolView(tool: ToolEvent): {
   icon: ToolIcon;
   verb: string;
   arg: string;
   meta?: string;
+  metaLabel?: string;
   statusLabel: string;
 } {
   const active = tool.status === "running" || tool.status === "pending";
   const verb = t(`thread.tool.${tool.verb}${active ? ".active" : ""}` as MessageKey);
   let meta: string | undefined;
+  let metaLabel: string | undefined;
   const tests = tool.verb === "bash" && !active ? testResult(tool.output) : null;
   const counts = editCounts(tool);
   if (tool.status === "denied") meta = t("thread.tool.denied");
-  else if (counts) meta = t("thread.tool.diffMeta", { add: counts.add, del: counts.del });
-  else if (tests) meta = t("thread.tool.tests", { passed: tests.passed, failed: tests.failed });
-  return { icon: ICON[tool.verb], verb, arg: tool.argSummary, meta, statusLabel: statusLabel(tool.status) };
+  else if (counts) {
+    meta = t("thread.tool.diffMeta", { add: counts.add, del: counts.del });
+    metaLabel = t("thread.lines.label", { add: counts.add, del: counts.del });
+  } else if (tests) meta = t("thread.tool.tests", { passed: tests.passed, failed: tests.failed });
+  return { icon: ICON[tool.verb], verb, arg: tool.argSummary, meta, metaLabel, statusLabel: statusLabel(tool.status) };
 }

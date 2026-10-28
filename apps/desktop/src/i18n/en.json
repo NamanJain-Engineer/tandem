@@ -1833,6 +1833,7 @@
   "thread.tool.truncated": "Output cut at 64 KB; the full text is saved with the thread.",
   "thread.tool.denied": "Denied",
   "thread.tool.diffMeta": "+{add} −{del}",
+  "thread.lines.label": "{add, plural, one {# line added} other {# lines added}}, {del} removed",
   "thread.tool.tests": "{passed} passed · {failed} failed",
   "thread.tools.previous": "{n, plural, one {+# previous tool call} other {+# previous tool calls}}",
   "thread.summary.files": "{n, plural, one {Changed # file} other {Changed # files}}",

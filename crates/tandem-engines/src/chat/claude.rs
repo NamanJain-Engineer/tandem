@@ -304,30 +304,102 @@ struct ToolCall {
     lines: Option<LineCounts>,
 }
 
+/// What a Task's subagent edited so far (F-TH-12): the Task's result names
+/// the files, with their lines when every edit said them.
+#[derive(Debug, Default)]
+struct SubagentEdits {
+    paths: Vec<String>,
+    lines: LineCounts,
+    /// An edit that didn't say its lines.
+    uncounted: bool,
+}
+
+/// The tools whose lines are counted (F-TH-12).
+const COUNTED: [&str; 3] = ["Edit", "MultiEdit", "Write"];
+
 /// The lines an edit tool's input says it changes (F-TH-12, D-2608), since
-/// Claude Code sends no diff: an Edit's old and new strings, counted once
-/// even with `replace_all` (how many places it changed isn't in the event),
-/// a MultiEdit's edits summed, and all of a Write's content, which holds
-/// only when the Write made a new file (see [`created`]).
+/// Claude Code sends no diff: an Edit's old and new strings, a MultiEdit's
+/// edits summed (so two edits to one line count it twice), and all of a
+/// Write's content, which holds only when the Write made a new file (see
+/// [`created`]). `replace_all` changes every occurrence, and how many isn't
+/// in the input, so such an edit says nothing.
 fn input_lines(tool: &str, input: &Value) -> Option<LineCounts> {
-    let pair = |e: &Value| {
+    let edit = |e: &Value| {
+        if e.get("replace_all").and_then(Value::as_bool) == Some(true) {
+            return None;
+        }
         let s = |k: &str| e.get(k).and_then(Value::as_str);
-        Some(LineCounts::between(s("old_string")?, s("new_string")?))
+        LineCounts::edit(s("old_string")?, s("new_string")?)
     };
     match tool {
-        "Edit" => pair(input),
+        "Edit" => edit(input),
         "MultiEdit" => input
             .get("edits")?
             .as_array()?
             .iter()
-            .map(pair)
+            .map(edit)
             .sum::<Option<LineCounts>>(),
-        "Write" => Some(LineCounts::between(
-            "",
+        "Write" => Some(LineCounts::created(
             input.get("content").and_then(Value::as_str)?,
         )),
         _ => None,
     }
+}
+
+/// The lines Claude Code's result says an edit changed: the hunks of its
+/// `tool_use_result.structuredPatch`, read only when the message answers a
+/// single tool. Exact, so they win over the input's count; a new file's
+/// Write carries none.
+fn patch_lines(message: &Value, blocks: &[Value]) -> Option<LineCounts> {
+    let results = blocks
+        .iter()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
+        .count();
+    if results != 1 {
+        return None;
+    }
+    let hunks = message
+        .pointer("/tool_use_result/structuredPatch")?
+        .as_array()?;
+    let mut lines = Vec::new();
+    for h in hunks {
+        for l in h.get("lines")?.as_array()? {
+            lines.push(l.as_str()?);
+        }
+    }
+    (!lines.is_empty()).then(|| LineCounts::patch(lines))
+}
+
+/// A tool result's status, text, and, for an edit that happened, its lines:
+/// the result's patch, or what its input says (a Write's only when it made
+/// the file).
+fn outcome(
+    call: &ToolCall,
+    block: &Value,
+    patch: Option<LineCounts>,
+) -> (ToolStatus, String, Option<LineCounts>) {
+    let text = result_text(&block["content"]);
+    let is_error = block
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let status = if !is_error {
+        ToolStatus::Ok
+    } else if denied(&text) {
+        ToolStatus::Denied
+    } else {
+        ToolStatus::Error
+    };
+    let counted = status == ToolStatus::Ok && COUNTED.contains(&call.name.as_str());
+    let lines = counted
+        .then(|| {
+            patch.or_else(|| {
+                call.lines
+                    .filter(|_| call.name != "Write" || created(&text))
+            })
+        })
+        .flatten();
+    (status, text, lines)
 }
 
 /// Whether a Write's result says it made a new file. Over a file that
@@ -405,6 +477,8 @@ pub struct ClaudeParser {
     model: String,
     /// Tool id → (name, summary, detail, edited files), for its result row.
     tools: HashMap<String, ToolCall>,
+    /// Task id → what its subagent edited, for the Task's result.
+    subagents: HashMap<String, SubagentEdits>,
     /// Every tool is off: a tool block starting is reported at once.
     tools_off: bool,
 }
@@ -417,6 +491,7 @@ impl ClaudeParser {
             announce: !resumed,
             model: String::new(),
             tools: HashMap::new(),
+            subagents: HashMap::new(),
             tools_off: false,
         }
     }
@@ -433,9 +508,16 @@ impl ClaudeParser {
             return Vec::new();
         };
         let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
-        // A subagent's own messages stay inside its Task row.
-        if !v.get("parent_tool_use_id").is_none_or(Value::is_null) {
-            return Vec::new();
+        // A subagent's own messages stay inside its Task row; its edits
+        // count on the Task's result (F-TH-12).
+        match v.get("parent_tool_use_id") {
+            None | Some(Value::Null) => {}
+            Some(task) => {
+                if let Some(task) = task.as_str() {
+                    self.subagent(kind, &v, task);
+                }
+                return Vec::new();
+            }
         }
         match kind {
             "system" => self.system(&v),
@@ -614,31 +696,29 @@ impl ClaudeParser {
         let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else {
             return Vec::new();
         };
+        let patch = patch_lines(v, blocks);
         let mut out = Vec::new();
         for b in blocks {
             if b.get("type").and_then(Value::as_str) != Some("tool_result") {
                 continue;
             }
             let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+            let call = self.tools.get(id).cloned().unwrap_or_default();
+            let (status, text, mut lines) = outcome(&call, b, patch);
             let ToolCall {
                 name,
                 summary,
                 detail,
-                paths,
-                lines,
-            } = self.tools.get(id).cloned().unwrap_or_default();
-            let text = result_text(&b["content"]);
-            let is_error = b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
-            let status = if !is_error {
-                ToolStatus::Ok
-            } else if denied(&text) {
-                ToolStatus::Denied
-            } else {
-                ToolStatus::Error
-            };
-            // Only an edit that happened counts its lines.
-            let lines =
-                lines.filter(|_| status == ToolStatus::Ok && (name != "Write" || created(&text)));
+                mut paths,
+                ..
+            } = call;
+            // A Task that finished names the files its subagent edited.
+            if let Some(sub) = self.subagents.remove(id) {
+                if status == ToolStatus::Ok && !sub.paths.is_empty() {
+                    paths = Some(sub.paths);
+                    lines = (!sub.uncounted).then_some(sub.lines);
+                }
+            }
             let (output, truncated) = truncate_output(&text);
             out.push(Parsed::Event(ThreadEvent::Tool {
                 id: id.to_string(),
@@ -655,6 +735,60 @@ impl ClaudeParser {
             }));
         }
         out
+    }
+
+    /// A subagent's message (F-TH-12): its rows stay inside its Task's, and
+    /// its edits that happened are kept for the Task's result.
+    fn subagent(&mut self, kind: &str, v: &Value, task: &str) {
+        let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else {
+            return;
+        };
+        let is = |b: &Value, t: &str| b.get("type").and_then(Value::as_str) == Some(t);
+        match kind {
+            "assistant" => {
+                for b in blocks.iter().filter(|b| is(b, "tool_use")) {
+                    let name = b.get("name").and_then(Value::as_str).unwrap_or("");
+                    let input = b.get("input").cloned().unwrap_or(Value::Null);
+                    let Some(paths) = edited_paths(name, &input, &self.cwd) else {
+                        continue;
+                    };
+                    let id = b.get("id").and_then(Value::as_str).unwrap_or("");
+                    self.tools.insert(
+                        id.to_string(),
+                        ToolCall {
+                            name: name.to_string(),
+                            paths: Some(paths),
+                            lines: input_lines(name, &input),
+                            ..ToolCall::default()
+                        },
+                    );
+                }
+            }
+            "user" => {
+                let patch = patch_lines(v, blocks);
+                for b in blocks.iter().filter(|b| is(b, "tool_result")) {
+                    let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+                    let Some(call) = self.tools.remove(id) else {
+                        continue;
+                    };
+                    let (status, _, lines) = outcome(&call, b, patch);
+                    if status != ToolStatus::Ok {
+                        continue;
+                    }
+                    let sub = self.subagents.entry(task.to_string()).or_default();
+                    for p in call.paths.unwrap_or_default() {
+                        if !sub.paths.contains(&p) {
+                            sub.paths.push(p);
+                        }
+                    }
+                    match lines {
+                        Some(l) => sub.lines = sub.lines + l,
+                        None => sub.uncounted = true,
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn result(&mut self, v: &Value, now: DateTime<FixedOffset>) -> Vec<Parsed> {

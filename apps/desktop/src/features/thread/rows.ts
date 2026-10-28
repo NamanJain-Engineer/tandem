@@ -29,7 +29,8 @@ export type Row =
   | { kind: "end"; key: string; reason: TurnEndReason; blocked: number }
   /** A finished turn's closing line (D-2604): files it edited with their
    * lines added and removed, and its last test run. Only from events the
-   * engine sent; `add` and `del` are null when no edit said (D-2608). */
+   * engine sent; `add` and `del` are null when an edit didn't say its
+   * lines, rather than a partial total (D-2608). */
   | {
       kind: "summary";
       key: string;
@@ -67,22 +68,26 @@ export function toRows(view: ThreadView): Row[] {
     const edited = new Set<string>();
     let add = 0;
     let del = 0;
-    let counted = false;
+    let uncounted = false;
     let tests: TestResult | null = null;
     for (const item of turn.items) {
       const e = item.event;
       if (e.type !== "tool") continue;
       // Only edits that happened: a declined or failed patch keeps its diff.
-      // An engine that sends no diff names its files (D-2608).
-      if (e.status === "ok" && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
-        const paths = e.diff ? diffPaths(e.diff) : (e.paths ?? []);
+      // Any tool that names the files it edited counts them, a notebook
+      // edit's and a subagent's Task's too (D-2608). A file is keyed by the
+      // absolute path the event names, then by its diff's header, so it
+      // counts once however its edits were reported.
+      const named = e.paths ?? [];
+      const edit = e.verb === "edit" || e.verb === "write" || e.verb === "multiedit";
+      if (e.status === "ok" && (edit || named.length > 0)) {
+        const paths = named.length > 0 ? named : e.diff ? diffPaths(e.diff) : [];
         for (const path of paths.length > 0 ? paths : [e.argSummary]) edited.add(path);
         const c = editCounts(e);
         if (c) {
           add += c.add;
           del += c.del;
-          counted = true;
-        }
+        } else uncounted = true;
       }
       if (e.verb === "bash") tests = testResult(e.output) ?? tests;
     }
@@ -173,8 +178,8 @@ export function toRows(view: ThreadView): Row[] {
               kind: "summary",
               key: `${key}:summary`,
               files: edited.size,
-              add: counted ? add : null,
-              del: counted ? del : null,
+              add: uncounted ? null : add,
+              del: uncounted ? null : del,
               tests,
             });
           break;

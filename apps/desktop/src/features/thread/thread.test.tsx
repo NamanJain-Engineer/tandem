@@ -280,6 +280,9 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     const summaries = await screen.findAllByTestId("turn-summary");
     expect(summaries).toHaveLength(2);
     expect(summaries[0]?.textContent).toContain("Changed 3 files +7 −4");
+    // Read out as words: the signs are hidden, a label says them.
+    expect(summaries[0]?.querySelector(".sr-only:last-child")?.textContent).toBe("7 lines added, 4 removed");
+    expect(summaries[0]?.querySelectorAll('[aria-hidden="true"].tabular-nums')).toHaveLength(2);
     // The rewrite's lines aren't in the event: its file counts, and no +0 −0.
     expect(summaries[1]?.textContent).toContain("Changed 1 file");
     expect(summaries[1]?.textContent).not.toMatch(/[+−]\d/);
