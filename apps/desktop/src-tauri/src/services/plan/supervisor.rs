@@ -1034,12 +1034,13 @@ impl PlanService {
                 return Err(why);
             }
         };
-        // Kept under the plans' lock, and only for a plan still there:
-        // Remove plan takes the plan first, then its file.
-        let mut plans = self.lock();
-        let Some(entry) = plans.get_mut(&view.id) else {
+        // Written outside the plans' lock, then kept for a plan still there.
+        // Remove plan takes the plan, then its file; one that ran meanwhile
+        // has its file taken here, so a removed plan keeps none (ids don't
+        // repeat).
+        if self.get(&view.id).is_err() {
             return Ok(files);
-        };
+        }
         if let Some(path) = self.instructions_file(&view.id) {
             let kept = Snapshot {
                 version: 1,
@@ -1060,7 +1061,16 @@ impl PlanService {
                 tracing::warn!(code = "plan.instructions_unkept", error = %e, "a plan's instructions weren't kept");
             }
         }
-        entry.instructions = Some(files.clone());
+        let kept = match self.lock().get_mut(&view.id) {
+            Some(entry) => {
+                entry.instructions = Some(files.clone());
+                true
+            }
+            None => false,
+        };
+        if !kept {
+            self.forget_instructions(&view.id);
+        }
         Ok(files)
     }
 
