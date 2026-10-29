@@ -202,11 +202,14 @@ struct Run {
     control: Arc<Control>,
 }
 
-/// The scrollback one turn sends: the last 200 lines, redacted, then at most
-/// the last 16 KB (on a character boundary).
+/// The scrollback one turn sends: the last 200 lines, redacted as a reader
+/// that drops what's removable reads them (D-3031), then at most the last
+/// 16 KB (on a character boundary).
 pub fn scrollback(raw: &str) -> String {
-    let text =
-        tandem_core::redact::redact(&tandem_engines::handoff::last_lines(raw, SCROLLBACK_LINES));
+    let text = tandem_core::untrusted::redacted(&tandem_engines::handoff::last_lines(
+        raw,
+        SCROLLBACK_LINES,
+    ));
     if text.len() <= SCROLLBACK_BYTES {
         return text;
     }
@@ -1104,6 +1107,14 @@ mod tests {
         let sent = host.requests.lock().expect("lock")[0].scrollback.clone();
         assert!(sent.contains("[REDACTED]"), "{sent}");
         assert!(!sent.contains(key));
+    }
+
+    #[test]
+    fn f_au_01_3_a_key_split_by_what_a_reader_drops_is_redacted() {
+        // A reader can read past a character nothing shows, as Claude Code
+        // drops it: the redactor reads the scrollback without it (D-3031).
+        let s = scrollback("$ echo ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\nok\n");
+        assert!(!s.contains("abcdefghijABCDEFGHIJ012345"), "{s}");
     }
 
     #[test]

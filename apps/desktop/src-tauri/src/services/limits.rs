@@ -275,7 +275,8 @@ pub async fn continue_elsewhere(
 /// fallback for the pane's scrollback, redacted, and offered as the handoff
 /// dialog offers a brief, though no dialog shows this one (rule 8, D-3023).
 fn moved_brief(scrollback: &str) -> String {
-    let session = tandem_core::redact::redact(scrollback);
+    // Redacted as defang leaves it (D-3031).
+    let session = tandem_core::untrusted::redacted(scrollback);
     handoff::offered(
         tandem_engines::handoff::fallback(
             &tandem_engines::handoff::last_lines(&session, 200),
@@ -306,6 +307,14 @@ mod tests {
     }
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tandem_core::clock::MockClock;
+
+    #[test]
+    fn f_ac_05_1_a_credential_split_by_what_defang_drops_is_redacted() {
+        // The brief is defanged, which joins what it drops (D-3031).
+        let brief = moved_brief("pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\n");
+        assert!(!brief.contains("ghp_0123456789"), "{brief}");
+        assert!(!brief.contains("abcdefghijABCDEFGHIJ012345"), "{brief}");
+    }
 
     #[tokio::test]
     async fn f_ac_05_2_resume_at_reset_acts_at_the_reset_time_and_not_after_a_cancel() {

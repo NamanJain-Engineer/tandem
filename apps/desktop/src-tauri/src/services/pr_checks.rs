@@ -439,8 +439,9 @@ pub fn log_tail(stdout: &str) -> String {
     let plain = strip_ansi(stdout);
     let tail = tail(&plain, LOG_LINES);
     // Redacted whole, then cut: a secret across the cut can't lose the
-    // prefix its pattern needs.
-    let redacted = Redactor::global().redact(&tail).into_owned();
+    // prefix its pattern needs. Redacted as defang leaves it, since the
+    // prompt defangs it (D-3031).
+    let redacted = untrusted::redacted(&tail);
     last_bytes(&redacted, LOG_BYTES)
 }
 
@@ -991,6 +992,26 @@ mod tests {
         let log = format!("line1 AKIAABCDEFGHIJKLMNOP\n{}", "x".repeat(LOG_BYTES - 10));
         let t = log_tail(&log);
         assert!(!t.contains("HIJKLMNOP"), "{}", &t[..40]);
+    }
+
+    #[test]
+    fn f_wt_08_1_a_secret_split_by_what_defang_drops_is_redacted() {
+        // The prompt defangs the log, which joins what it drops: the
+        // redactor reads it as that leaves it (D-3031).
+        let t = log_tail("pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\n");
+        let p = failure_prompt(
+            7,
+            &PrCheck {
+                name: "test".into(),
+                bucket: CheckBucket::Fail,
+                link: None,
+                workflow: None,
+                job_id: None,
+            },
+            &Log::Tail(t),
+        );
+        assert!(!p.contains("ghp_0123456789"), "{p}");
+        assert!(!p.contains("abcdefghijABCDEFGHIJ012345"), "{p}");
     }
 
     #[test]

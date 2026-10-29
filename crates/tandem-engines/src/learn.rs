@@ -76,6 +76,9 @@ pub fn parse(out: &str) -> Option<Learned> {
             Some(serde_json::Value::Array(a)) => Some(
                 a.iter()
                     .filter_map(|x| x.as_str())
+                    // As a briefing reads it, so the credential check below
+                    // reads the same (D-3031).
+                    .map(tandem_core::untrusted::readable)
                     // It read ＠ for @ (D-3023): a note it names is the one
                     // kept, so a removal still matches.
                     .map(|s| s.replace('\u{FF20}', "@"))
@@ -263,6 +266,18 @@ mod tests {
         assert!(parse("no json here").is_none());
         assert!(parse("{\"add\": \"not a list\"}").is_none());
         assert!(parse("{\"add\": []}").expect("empty").items.is_empty());
+    }
+
+    #[test]
+    fn f_ag_08_a_credential_split_by_what_defang_drops_is_dropped() {
+        // A note is kept as a briefing reads it, so the credential check
+        // reads the same (D-3031).
+        let got = parse(
+            "{\"add\": [\"Prefers pnpm.\", \"pushed with ghp_0123456789\\u200babcdefghijABCDEFGHIJ012345\", \"Uses\\u2028 tabs\\u2800.\"], \"remove\": [], \"rationale\": \"\"}",
+        )
+        .expect("parsed");
+        let texts: Vec<&str> = got.items.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["Prefers pnpm.", "Uses tabs."]);
     }
 
     #[test]

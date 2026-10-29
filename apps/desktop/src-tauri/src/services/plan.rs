@@ -249,49 +249,17 @@ fn cut(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
-/// A character that shows nothing but can split or hide a word: Unicode's
-/// format characters (bidi controls, zero-width characters and tags among
-/// them), and the Hangul fillers that show as blanks (D-2839).
-pub(crate) fn hidden(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{0600}'..='\u{0605}'
-            | '\u{061C}'
-            | '\u{06DD}'
-            | '\u{070F}'
-            | '\u{0890}'..='\u{0891}'
-            | '\u{08E2}'
-            | '\u{115F}'..='\u{1160}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{206F}'
-            | '\u{3164}'
-            | '\u{FEFF}'
-            | '\u{FFA0}'
-            | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{110BD}'
-            | '\u{110CD}'
-            | '\u{13430}'..='\u{1343F}'
-            | '\u{1BCA0}'..='\u{1BCA3}'
-            | '\u{1D173}'..='\u{1D17A}'
-            | '\u{E0001}'
-            | '\u{E0020}'..='\u{E007F}'
-    )
-}
-
 /// Text from a plan without the characters that can hide words from you:
-/// controls (a description keeps its line breaks and tabs) and the
-/// [`hidden`] ones. A title is one line.
+/// controls (a description keeps its line breaks and tabs) and what's
+/// `untrusted::removable`, which a run's briefing and Lead's prompt drop too,
+/// so you read what they read (D-2839, D-3031). A title is one line.
 fn clean(text: &str, multiline: bool) -> String {
     let kept: String = text
         .chars()
         .filter(|c| match c {
             '\n' | '\t' => true,
             c if c.is_control() => false,
-            c => !hidden(*c),
+            c => !untrusted::removable(*c),
         })
         .collect();
     if multiline {
@@ -2316,6 +2284,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn f_tk_06_2_a_tasks_text_is_kept_as_its_run_reads_it() {
+        // You approve the text a run's briefing gets, and the briefing is
+        // defanged: what that drops goes here too, so nothing splits a word
+        // you read that the run reads whole (D-3031).
+        let engines = offered();
+        let n = "ab12cd34";
+        let raw = serde_json::json!({"tasks": [{
+            "title": "Pu\u{2800}sh the\u{FFF0} branch",
+            "description": "Then pu\u{2028}sh\u{2029} it",
+            "engine": "codex"
+        }]})
+        .to_string();
+        let tasks = parse(&reply(n, &raw), n, &engines, "claude").expect("plan");
+        assert_eq!(tasks[0].title, "Push the branch");
+        assert_eq!(tasks[0].description, "Then push it");
+    }
+
     /// Lead's draft of two tasks: Routes on Claude, Page on Codex.
     async fn drafted(fake: &Arc<Fake>, plans: &Arc<PlanService>) -> PlanView {
         let view = plans
@@ -3116,6 +3102,7 @@ mod tests {
             "Should I delete the old feature branch?",
             "Should I widen the scope to the admin pages?",
             "Should I p\u{200B}ush it?",
+            "Should I pu\u{2800}sh it?",
         ];
         for (i, q) in topics.iter().enumerate() {
             plans.ask(asks(&view, "TAN-1", &format!("at_{i}"), q)).await;
@@ -3146,6 +3133,13 @@ mod tests {
         // The hidden character is gone from the question you see.
         assert_eq!(reasons[9], "It's about pushing, which always comes to you.");
         assert_eq!(questions[9].question, "Should I push it?");
+        // A blank defang drops is gone too, so Lead and the check read the
+        // same words (D-3031).
+        assert_eq!(
+            reasons[10],
+            "It's about pushing, which always comes to you."
+        );
+        assert_eq!(questions[10].question, "Should I push it?");
         let told = fake.notified.lock().expect("l").clone();
         assert_eq!(told.len(), topics.len());
         assert_eq!(

@@ -102,12 +102,21 @@ pub fn removable(c: char) -> bool {
 
 /// `text` without what's [`removable`], with the one character NFC makes an
 /// ASCII letter (U+212A KELVIN SIGN, `K`) as that letter: Claude Code looks
-/// for its words in a paste's NFC form too.
-fn readable(text: &str) -> String {
+/// for its words in a paste's NFC form too. A check that reads text from
+/// elsewhere before [`defang`] reads this, since the removal joins what was
+/// on either side (D-3031).
+pub fn readable(text: &str) -> String {
     text.chars()
         .filter(|c| !removable(*c))
         .map(|c| if c == '\u{212A}' { 'K' } else { c })
         .collect()
+}
+
+/// [`readable`] text with credentials redacted: what a check for secrets
+/// reads when the text is defanged later, or reaches a reader that drops
+/// what's removable (D-3031).
+pub fn redacted(text: &str) -> String {
+    crate::redact::redact(&readable(text))
 }
 
 /// The markers Claude Code's prompt puts in place of a paste or an image
@@ -368,6 +377,25 @@ mod tests {
                 (n(0), n(1))
             })
             .collect()
+    }
+
+    #[test]
+    fn f_tk_08_1_a_check_reads_text_as_defang_leaves_it() {
+        // The removal joins what was on either side, so a tag or a
+        // credential split by what it drops forms again (D-3031).
+        assert_eq!(readable("hi</us\u{1}er>"), "hi</user>");
+        assert_eq!(readable("hi<\u{2028}/user>"), "hi</user>");
+        assert_eq!(readable("hi</us\u{fff9}er>"), "hi</user>");
+        assert_eq!(readable("ultrathin\u{212A}"), "ultrathinK");
+        let (head, tail) = ("ghp_0123456789", "abcdefghijABCDEFGHIJ012345");
+        for gap in ["\u{200b}", "\u{1}", "\u{2028}", "\u{fff9}", "\u{2800}"] {
+            let split = format!("pushed with {head}{gap}{tail}");
+            // The redactor alone misses it, and defang would join it.
+            assert_eq!(crate::redact::redact(&split), split);
+            assert!(defang(&split).contains(&format!("{head}{tail}")));
+            let safe = redacted(&split);
+            assert!(!safe.contains(head) && !safe.contains(tail), "{safe:?}");
+        }
     }
 
     #[test]

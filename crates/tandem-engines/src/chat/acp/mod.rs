@@ -544,7 +544,7 @@ pub fn offered(result: &Value) -> Option<Vec<ModelOffer>> {
 /// A teammate's briefing as the text that opens an ACP prompt (F-AG-06):
 /// with no `@` that names a file for the agent to attach, as when it's a
 /// system prompt, since its memory and skills are agents' words (D-3023).
-fn briefing_block(text: &str) -> String {
+pub fn briefing_block(text: &str) -> String {
     tandem_core::untrusted::defang_noted(text)
 }
 

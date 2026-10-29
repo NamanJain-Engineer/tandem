@@ -197,7 +197,9 @@ pub async fn brief(
                 break 'brief (text, BriefSource::Source);
             }
         }
-        let session = tandem_core::redact::redact(
+        // Redacted as defang leaves it: the request and the brief are
+        // defanged, which joins what it drops (D-3031).
+        let session = tandem_core::untrusted::redacted(
             &state
                 .terminals
                 .pty
@@ -273,10 +275,11 @@ pub fn slug_source(brief: &str) -> String {
         .unwrap_or_else(|| "handoff".into())
 }
 
-/// The fallback brief for a session's text: its last lines, redacted
-/// (§6.11 strategy 3; the session library's Continue, F-TH-17).
+/// The fallback brief for a session's text: its last lines, redacted as
+/// defang leaves them (§6.11 strategy 3; the session library's Continue,
+/// F-TH-17; D-3031).
 pub fn fallback_brief(session: &str) -> String {
-    let session = tandem_core::redact::redact(session);
+    let session = tandem_core::untrusted::redacted(session);
     handoff::fallback(&handoff::last_lines(&session, FALLBACK_LINES), None)
 }
 
@@ -544,6 +547,16 @@ mod tests {
             let sent = thread_message(&brief).expect("brief");
             assert_eq!(sent, safe, "{generated:?} sent");
         }
+    }
+
+    #[test]
+    fn f_cd_16_a_credential_split_by_what_defang_drops_is_redacted() {
+        // The brief is defanged, which joins what it drops: the redactor
+        // reads the session as that leaves it (D-3031).
+        let session = "$ git push\npushed with ghp_0123456789\u{2028}abcdefghijABCDEFGHIJ012345\n";
+        let brief = offered(fallback_brief(session), BriefSource::Fallback).text;
+        assert!(!brief.contains("ghp_0123456789"), "{brief}");
+        assert!(!brief.contains("abcdefghijABCDEFGHIJ012345"), "{brief}");
     }
 
     #[test]
