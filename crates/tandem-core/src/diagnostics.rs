@@ -45,7 +45,9 @@ pub fn bundle(logs_dir: &Path, data_root: &Path, info: &DiagnosticsInfo) -> Stri
         out
     };
     let text = redactor.redact_home(&text);
-    redactor.redact(&text).into_owned()
+    // It leaves the machine: secrets are redacted as a reader past what's
+    // removable would read them (D-3036).
+    crate::untrusted::redacted(&text)
 }
 
 #[cfg(test)]
@@ -79,5 +81,22 @@ mod tests {
         );
         assert!(text.contains("~/code/project"));
         assert!(text.contains("claude: 1.0.0"));
+    }
+
+    #[test]
+    fn f_tk_08_1_a_credential_split_by_what_defang_drops_is_redacted_in_the_bundle() {
+        // The bundle leaves the machine, so it reads the log as a reader
+        // past what defang drops would (D-3036).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs = dir.path().join("logs");
+        let file = RedactingFile::new(&logs, LOG_FILE, MAX_BYTES);
+        file.write_text("pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\n")
+            .expect("write");
+        let text = bundle(&logs, dir.path(), &DiagnosticsInfo::default());
+        assert!(text.contains("pushed with"), "{text}");
+        assert!(
+            !text.contains("ghp_0123456789") && !text.contains("abcdefghijABCDEFGHIJ012345"),
+            "{text:?}"
+        );
     }
 }

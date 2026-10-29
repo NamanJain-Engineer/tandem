@@ -10,7 +10,8 @@
 //! - Closing a pane, executing a task and creating a teammate ask first; a
 //!   shell command runs only after a click in the main window (AC3).
 //! - Every output passes the secret redactor before the doer or the talker
-//!   sees it (AC4), capped at 8 KB.
+//!   sees it (AC4), as written and past what's removable, as they read it
+//!   (D-3036), capped at 8 KB.
 //! - Once the call ends, nothing more runs: each effect checks the call's
 //!   cancellation first (F-CN-01 AC2).
 
@@ -229,7 +230,8 @@ impl Executor {
             result: ToolResult {
                 id: call.id.clone(),
                 ok,
-                output: capped(&tandem_core::redact::redact(&output)),
+                // Conductor's model reads past what's removable (D-3036).
+                output: capped(&tandem_core::untrusted::redacted(&output)),
             },
             confirmed,
         }
@@ -1044,6 +1046,31 @@ pub(crate) mod tests {
                 .ok
         );
         assert_eq!(host.ui.lock()[0].action, "switch_mode");
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_tools_output_hides_a_credential_behind_what_is_removable() {
+        // What a tool found goes to Conductor's cloud model, which reads
+        // past what's removable: redacted as written and as it reads it
+        // (D-3036). read_thread, find_work and the rest end the same way.
+        for secret in [
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let host = FakeHost::with_panes();
+            *host.tail.lock() = format!("pushed with {secret}\nok");
+            let (e, _) = exec(host.clone());
+            let r = e
+                .run(&call("read_pane", json!({"pane": "agent", "lines": 20})))
+                .await;
+            assert!(r.result.ok);
+            let out = &r.result.output;
+            assert!(out.contains("pushed with") && out.contains("ok"), "{out}");
+            assert!(
+                !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
+                "{out}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -893,6 +893,33 @@ async fn f_cn_04_1_five_actions_make_five_chips() {
 }
 
 #[tokio::test]
+async fn f_tk_08_1_the_doers_answer_hides_a_credential_behind_what_is_removable() {
+    // The doer's answer goes to the talker, a cloud model that reads past
+    // what's removable: redacted as written and as it reads it (D-3036).
+    for secret in [
+        "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+        "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+    ] {
+        let (host, mut wires) = Host::new(Duration::ZERO);
+        host.script(vec![Ok(ActResponse {
+            tool_calls: vec![],
+            say: Some(format!("It pushed with {secret}.")),
+        })]);
+        let (_c, mut wire) = connected(&host, &mut wires, CallOrigin::Button).await;
+        wire.to_app
+            .send(act("fc1", "what did it push with"))
+            .await
+            .expect("send");
+        let out = output(&mut wire, "fc1").await;
+        assert!(out.starts_with("It pushed with"), "{out}");
+        assert!(
+            !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
+            "{out}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn f_cn_03_2_a_spoken_allow_answers_only_the_request_it_names() {
     let (host, mut wires) = Host::new(Duration::ZERO);
     host.script(vec![

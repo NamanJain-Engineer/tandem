@@ -112,11 +112,26 @@ pub fn readable(text: &str) -> String {
         .collect()
 }
 
-/// [`readable`] text with credentials redacted: what a check for secrets
-/// reads when the text is defanged later, or reaches a reader that drops
-/// what's removable (D-3031).
+/// [`readable`] text with credentials redacted, for text that is defanged
+/// later or that a model reads, since either reads past what's removable
+/// (D-3031). It redacts twice: as written, then once what's removable is
+/// gone (D-3036). A credential split by what's removable is whole only after
+/// it goes, and one that only what's removable set apart from a letter is
+/// found only before, since the join hides where it starts or ends.
 pub fn redacted(text: &str) -> String {
-    crate::redact::redact(&readable(text))
+    crate::redact::redact(&readable(&crate::redact::redact(text)))
+}
+
+/// Whether `text` holds what [`redacted`] hides: a credential as written or
+/// as [`readable`] leaves it (D-3036). For a check that refuses text a model
+/// reads later, such as a memory.
+pub fn holds_credential(text: &str) -> bool {
+    let redactor = crate::redact::Redactor::global();
+    if redactor.redact(text) != text {
+        return true;
+    }
+    let read = readable(text);
+    redactor.redact(&read) != read.as_str()
 }
 
 /// The markers Claude Code's prompt puts in place of a paste or an image
@@ -537,6 +552,32 @@ mod tests {
             let safe = redacted(&split);
             assert!(!safe.contains(head) && !safe.contains(tail), "{safe:?}");
         }
+    }
+
+    #[test]
+    fn f_tk_08_1_redacted_hides_a_credential_what_is_removable_splits_or_sets_apart() {
+        // Set apart from a letter only by what's removable, a credential is
+        // found as written but not once the two join; split by it, only
+        // once it goes. `redacted` and `holds_credential` read both (D-3036).
+        for apart in [
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+            "npm_0123456789abcdefghijABCDEFGHIJ012345\u{200b}x",
+        ] {
+            let read = readable(apart);
+            assert_eq!(crate::redact::redact(&read), read, "joined, it hides");
+            assert_ne!(crate::redact::redact(apart), apart);
+            assert!(holds_credential(apart), "{apart:?}");
+            let safe = redacted(apart);
+            assert!(!safe.contains("0123456789abcdefghij"), "{safe:?}");
+        }
+        let split = "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345";
+        assert!(holds_credential(split));
+        assert!(!redacted(split).contains("0123456789"));
+        assert!(!holds_credential("Release on Thursdays \u{200b}ok"));
+        assert_eq!(
+            redacted("Release on Thursdays \u{200b}ok"),
+            "Release on Thursdays ok"
+        );
     }
 
     #[test]
