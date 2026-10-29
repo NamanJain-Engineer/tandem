@@ -196,9 +196,12 @@ pub fn defang(text: &str) -> String {
 
 /// A `/` that opens a word Claude Code could read as a skill's name, which
 /// its Skill tool takes as typed by you (`(?<!\S)/name(?=$|\s)`), becomes
-/// `／` (D-3033). The word runs to the next whitespace with no second `/`
-/// (a skill's name is a folder's, so a path keeps its slashes) and starts
-/// with a letter, a digit, `_` or anything outside ASCII.
+/// `／` (D-3033, D-3035). A skill's name is its folder's, which can start
+/// with any character a name can hold, or `<folder>:<name>` for one found in
+/// a nested folder, whose path has slashes. So the `/` opens a word when the
+/// word after it, up to the next whitespace, isn't empty, doesn't start with
+/// `*` or `/` (a comment, `//`), and has no second `/` unless it holds a `:`:
+/// a path keeps its slashes.
 fn defang_slashes(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut after_space = true;
@@ -208,11 +211,10 @@ fn defang_slashes(text: &str) -> String {
                 .split(char::is_whitespace)
                 .next()
                 .unwrap_or_default();
-            let opens = word
-                .chars()
-                .next()
-                .is_some_and(|f| f.is_ascii_alphanumeric() || f == '_' || !f.is_ascii());
-            if opens && !word.contains('/') {
+            if !word.is_empty()
+                && !word.starts_with(['*', '/'])
+                && (!word.contains('/') || word.contains(':'))
+            {
                 out.push('\u{FF0F}');
                 after_space = false;
                 continue;
@@ -464,6 +466,43 @@ mod tests {
                 );
                 assert_eq!(no_command(&inside), inside, "U+{cp:04X}");
             }
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_a_slash_opens_a_skill_word_before_any_code_point_but_a_space() {
+        // What follows a `/` decides whether it opens a skill's name, over
+        // every code point (D-3035). The spaces are JavaScript's `\s` and
+        // Rust's whitespace both, once what's removable is gone, so a space
+        // outside ASCII opens no word in the core or the app.
+        const SPACES: [(u32, u32); 9] = [
+            (0x09, 0x0A),
+            (0x0D, 0x0D),
+            (0x20, 0x20),
+            (0xA0, 0xA0),
+            (0x1680, 0x1680),
+            (0x2000, 0x200A),
+            (0x202F, 0x202F),
+            (0x205F, 0x205F),
+            (0x3000, 0x3000),
+        ];
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            let cp = c as u32;
+            let space = SPACES.iter().any(|&(a, b)| (a..=b).contains(&cp));
+            assert_eq!(space, c.is_whitespace() && !removable(c), "U+{cp:04X}");
+            let text = format!("x /{c}y");
+            let want = if space || matches!(c, '*' | '/') {
+                text.clone()
+            } else if removable(c) {
+                "x \u{FF0F}y".to_string()
+            } else if c == '@' {
+                "x \u{FF0F}\u{FF20}y".to_string()
+            } else if c == '\u{212A}' {
+                "x \u{FF0F}Ky".to_string()
+            } else {
+                format!("x \u{FF0F}{c}y")
+            };
+            assert_eq!(defang(&text), want, "U+{cp:04X}");
         }
     }
 
