@@ -4,6 +4,7 @@ import type { Thread, ThreadDetail, ThreadEventEnvelope } from "@tandem/protocol
 import { setInvokeBackend } from "../ipc/invoke";
 import { fakeBackend, resetStores, type Call } from "../test/fakeBackend";
 import { useThreads } from "./threads";
+import { useUi } from "./ui";
 
 type Channel = { onmessage: (e: ThreadEventEnvelope) => void };
 
@@ -42,6 +43,8 @@ describe("F-TH-01 AC2: a thread is read when it's on screen, not when it's read"
   let calls: Call[];
   beforeEach(() => {
     resetStores();
+    // Threads are showing unless a test says otherwise.
+    useUi.setState({ mode: "thread", settingsOpen: false });
     unread = { thr_a: false, thr_b: false };
     channels = {};
     const detail = (id: string): ThreadDetail => ({
@@ -188,5 +191,62 @@ describe("F-TH-01 AC2: a thread is read when it's on screen, not when it's read"
     release();
     await reload;
     expect(listed("thr_a")?.unread).toBe(false);
+  });
+
+  it("N2: in Code mode, or with Settings open, the selected thread isn't on screen: a turn that ends there stays unread until threads show again", async () => {
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    act(() => useUi.setState({ mode: "code" }));
+    endTurn("thr_b");
+    await waitFor(() => expect(listed("thr_b")?.unread).toBe(true));
+    expect(unread.thr_b).toBe(true);
+    // Back in Thread mode, but Settings is open over it.
+    act(() => useUi.setState({ mode: "thread", settingsOpen: true }));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(unread.thr_b).toBe(true);
+    // Settings closed: the thread is on screen, so it's read.
+    act(() => useUi.setState({ settingsOpen: false }));
+    await waitFor(() => expect(unread.thr_b).toBe(false));
+    await waitFor(() => expect(listed("thr_b")?.unread).toBe(false));
+  });
+
+  it("N3: a turn that ends after the mark, while a reload from before it is in flight, keeps its dot", async () => {
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_a");
+    await waitFor(() => expect(channels.thr_a).toBeTruthy());
+    // A slow reload of thr_a, then a mark, then the person leaves and its
+    // turn ends off screen (a fast reload says unread), then the slow one
+    // lands.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    let slow = true;
+    setInvokeBackend(async (cmd, args) => {
+      calls.push({ cmd, args });
+      const id = String(args?.threadId);
+      if (cmd === "thread_get") {
+        const wasSlow = slow && id === "thr_a";
+        const reading = unread[id] ?? false;
+        if (wasSlow) {
+          slow = false;
+          await gate;
+        }
+        return { thread: { ...thread(id), unread: reading }, turns: [], running: null, queued: null, draft: "{}", attachments: [], planRevisions: [] };
+      }
+      if (cmd === "thread_mark_read") {
+        unread[id] = false;
+        return null;
+      }
+      return null;
+    });
+    unread.thr_a = true;
+    const stale = useThreads.getState().reloadDetail("thr_a");
+    await useThreads.getState().markRead("thr_a");
+    act(() => useUi.setState({ mode: "code" }));
+    endTurn("thr_a");
+    await waitFor(() => expect(listed("thr_a")?.unread).toBe(true));
+    release();
+    await stale;
+    expect(listed("thr_a")?.unread).toBe(true);
   });
 });

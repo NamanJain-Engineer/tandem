@@ -67,8 +67,10 @@ release fails when its version has no section.
 - [lin] **A finished chat stays unread until you look at it.** A chat you'd
   opened earlier and left could lose its unread dot when its turn ended in the
   background, and one you were looking at could get the dot back. Now a chat is
-  marked read when you open it, or when its turn ends while it's the selected
-  chat (or in the grid) and the window is showing.
+  marked read when you open it, or when it's the selected chat (or in the grid)
+  while chats are showing: its turn ends while you're in Thread mode with
+  Settings closed and the window in front, or you come back to Thread mode or
+  the window.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything

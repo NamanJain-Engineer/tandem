@@ -14,6 +14,7 @@ import { GRID_MAX, addCell, neighbor, removeCell, type GridAdd } from "../featur
 import { emptyThread, fromHistory, reduce, type ThreadView } from "../features/thread/reducer";
 import { useSession } from "./session";
 import { useSettings } from "./settings";
+import { useUi } from "./ui";
 
 /** Events loaded when a thread opens, and per "load older" page. */
 export const PAGE = 200;
@@ -110,25 +111,33 @@ export const useThreads = create<ThreadsState>((set, get) => {
   const patch = (id: string, next: Partial<ThreadLive>) =>
     set((s) => ({ byId: { ...s.byId, [id]: { ...(s.byId[id] ?? blank()), ...next } } }));
 
-  /** Shown now: the selected thread, or a cell of the grid, while the
-   * window is visible. Every thread opened this session stays subscribed, so
-   * a turn ending elsewhere must leave it unread. (Which mode or page the
-   * window shows isn't known here: a selected thread counts while the person
-   * is in Code mode or Settings too.) */
-  const onScreen = (id: string) =>
-    !document.hidden && (get().selectedId === id || get().grid.includes(id));
+  /** Threads are showing: the window is visible, in Thread mode, with
+   * Settings closed. */
+  const showing = () => {
+    const ui = useUi.getState();
+    return !document.hidden && ui.mode === "thread" && !ui.settingsOpen;
+  };
+  /** On screen now: the selected thread, or a cell of the grid, while
+   * threads are showing. Every thread opened this session stays subscribed,
+   * so a turn ending elsewhere must leave it unread. */
+  const onScreen = (id: string) => showing() && (get().selectedId === id || get().grid.includes(id));
+  /** What threads show, once they're showing again: read. */
+  const markShown = () => {
+    if (!showing()) return;
+    const { selectedId, grid } = get();
+    for (const id of new Set([...(selectedId ? [selectedId] : []), ...grid])) {
+      if (get().list.find((t) => t.id === id)?.unread) void get().markRead(id);
+    }
+  };
   /** Bumped by each mark: a reload that started before a mark can't bring
    * the dot back. */
   const marks: Record<string, number> = {};
-  // The window shown again: what it shows is read.
-  if (typeof document !== "undefined")
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) return;
-      const { selectedId, grid } = get();
-      for (const id of new Set([...(selectedId ? [selectedId] : []), ...grid])) {
-        if (get().list.find((t) => t.id === id)?.unread) void get().markRead(id);
-      }
-    });
+  // The window shown again, Thread mode entered, Settings closed: what
+  // threads show is read.
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", markShown);
+  useUi.subscribe((ui, prev) => {
+    if (ui.mode !== prev.mode || ui.settingsOpen !== prev.settingsOpen) markShown();
+  });
 
   const onEnvelope = (env: ThreadEventEnvelope) => {
     const cur = get().byId[env.threadId];
@@ -292,9 +301,14 @@ export const useThreads = create<ThreadsState>((set, get) => {
       const mark = marks[id] ?? 0;
       try {
         const loaded = await invoke<ThreadDetail>("thread_get", { threadId: id });
-        // Marked read while this was in flight: it's read.
+        // Marked read while this was in flight: this reload is older than
+        // the mark, so the list's own unread (the mark, or a turn that has
+        // ended since) wins over the one it brought.
+        const current = get().list.find((t) => t.id === id)?.unread;
         const detail =
-          (marks[id] ?? 0) !== mark ? { ...loaded, thread: { ...loaded.thread, unread: false } } : loaded;
+          (marks[id] ?? 0) !== mark && current !== undefined
+            ? { ...loaded, thread: { ...loaded.thread, unread: current } }
+            : loaded;
         patch(id, { detail });
         set((s) => ({ list: s.list.map((t) => (t.id === id ? detail.thread : t)) }));
       } catch {
