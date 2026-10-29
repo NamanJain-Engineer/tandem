@@ -466,7 +466,13 @@ mod tests {
             let p = panes::create_with(&store, &tab.id, "agent", None, Some("claude".into()))
                 .await
                 .expect("pane");
-            let home = dir.path().join(format!("home-{i}"));
+            // A provider home as Vibezeo makes one: a saved home anywhere
+            // else isn't started (D-3077).
+            let home = data
+                .root()
+                .join("providers")
+                .join("claude")
+                .join(format!("acc-{i}"));
             std::fs::create_dir_all(&home).expect("home");
             let config = LaunchConfig {
                 extra_args: vec![],

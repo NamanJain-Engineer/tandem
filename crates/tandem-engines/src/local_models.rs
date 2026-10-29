@@ -131,18 +131,15 @@ pub fn parse_ollama(body: &Value) -> Option<Vec<LocalModel>> {
             .filter(|m| !ollama_remote(m))
             .filter_map(|m| {
                 // `model` only stands in for a missing name, never for one
-                // that was refused.
-                let named = m
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .is_some_and(|n| !n.trim().is_empty());
+                // that was refused (blank, not a string, unreadable).
+                let named = m.get("name").is_some_and(|n| !n.is_null());
                 Some(LocalModel {
                     id: if named {
                         text(m, "name", 200)
                     } else {
                         text(m, "model", 200)
                     }
-                    .filter(|id| !cloud_name(id))?,
+                    .filter(|id| startable(id))?,
                     size: m.get("size").and_then(Value::as_u64),
                     parameters: m.get("details").and_then(|d| text(d, "parameter_size", 16)),
                 })
@@ -165,6 +162,15 @@ fn ollama_remote(m: &Value) -> bool {
         .iter()
         .any(|k| bare(m, k).is_some_and(|n| cloud_name(&n)));
     set("remote_host") || set("remote_model") || cloud_tag
+}
+
+/// A name a listed model may have: one Codex can be started with
+/// ([`model_ok`]: ASCII letters, digits and `. - _ : / @`), so nothing is
+/// listed that Start would refuse, and no look-alike in another script or
+/// with an accent or a space shows (D-3077); never one with Ollama's cloud
+/// tag.
+fn startable(id: &str) -> bool {
+    model_ok(id) && !cloud_name(id)
 }
 
 /// A model name with Ollama's cloud tag (`:cloud`, `:120b-cloud`), in any
@@ -213,7 +219,7 @@ pub fn parse_openai(body: &Value) -> Option<Vec<LocalModel>> {
                     // Ollama lists its cloud models here too (an Ollama
                     // server added as another kind): they run on ollama.com,
                     // never listed.
-                    id: text(m, "id", 200).filter(|id| !cloud_name(id))?,
+                    id: text(m, "id", 200).filter(|id| startable(id))?,
                     size: None,
                     parameters: None,
                 })
@@ -888,12 +894,13 @@ mod tests {
         }
     }
 
-    /// F-EN-11 follow-up (D-3076): a server's name for a model with a
-    /// character that doesn't read as itself (a control, bidi or zero-width
-    /// character, the BOM, an odd space) or past the length limit is never
+    /// F-EN-11 follow-ups (D-3076, D-3077): a server's name for a model with
+    /// a character that doesn't read as itself (a control, bidi or zero-width
+    /// character, the BOM, an odd space), past the length limit, or one Codex
+    /// can't be started with (an accent, another script, a space) is never
     /// listed, rather than listed as a look-alike of another name, and the
-    /// name's `model` field doesn't stand in for it; such characters can't
-    /// hide a cloud tag either.
+    /// entry's `model` field doesn't stand in for a name that's there; such
+    /// characters can't hide a cloud tag either.
     #[test]
     fn f_en_11_1_a_name_that_doesnt_read_as_itself_is_never_listed() {
         let tags = json!({"models": [
@@ -912,13 +919,38 @@ mod tests {
         let ids: Vec<&str> = listed.iter().map(|m| m.id.as_str()).collect();
         let long = "y".repeat(200);
         assert_eq!(ids, vec!["mistral:7b", "phi4:14b", long.as_str()]);
+        // Only a name Codex can be started with is listed (D-3077): no
+        // accent, letter from another script, space or leading `-`; and a
+        // name that's there but blank, a space other than U+0020 or not a
+        // string isn't replaced by the entry's `model`.
+        let odd = json!({"models": [
+            {"name": "qwe\u{0301}n3:8b", "size": 1},
+            {"name": "qw\u{0435}n3:8b", "size": 1},
+            {"name": "qwen3:8b ", "size": 1},
+            {"name": "-qwen3:8b", "size": 1},
+            {"name": "qwen3 8b", "size": 1},
+            {"name": "   ", "model": "qwen3:8b", "size": 1},
+            {"name": "\u{00A0}", "model": "qwen3:8b", "size": 1},
+            {"name": 7, "model": "qwen3:8b", "size": 1},
+            {"name": null, "model": "gemma3:4b", "size": 1}
+        ]});
+        let ids: Vec<String> = parse(ServerKind::Ollama, &odd)
+            .expect("tags")
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(ids, vec!["gemma3:4b"]);
         // A detail that doesn't read as itself isn't shown.
         assert_eq!(listed[0].parameters, None);
         assert_eq!(listed[1].parameters.as_deref(), Some("14.7B"));
         // Read bare, a hidden cloud tag still marks the model remote.
         assert!(ollama_remote_ids(&tags).contains("gpt-oss:120b-cloud"));
         // The same in an OpenAI-style list.
-        let v1 = json!({"data": [{"id": "qwen\u{2066}3:8b"}, {"id": "gemma3:4b"}]});
+        let v1 = json!({"data": [
+            {"id": "qwen\u{2066}3:8b"},
+            {"id": "qw\u{0435}n3:8b"},
+            {"id": "gemma3:4b"}
+        ]});
         let ids: Vec<String> = parse(ServerKind::LmStudio, &v1)
             .expect("models")
             .into_iter()
