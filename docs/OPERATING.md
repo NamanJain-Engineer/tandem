@@ -165,6 +165,12 @@ bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --
 sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
 sh scripts/build-tandem-host.sh                             # musl binary + manifest into src-tauri/resources/tandem-host
 cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
+# In a fresh agent container the m14 specs need, in order: the musl target
+# (rustup target add x86_64-unknown-linux-musl), the fixture (pull ubuntu:24.04
+# through mirror.gcr.io on a 429, then build-sshd-image.sh and compose up),
+# tandem-host, then the app's build (no TANDEM_E2E_SKIP_BUILD): an app built
+# before tandem-host has no helper to upload, and connecting stops at
+# install_failed ("Connecting…" in the specs).
 
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/

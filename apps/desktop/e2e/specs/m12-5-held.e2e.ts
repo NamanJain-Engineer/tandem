@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds } from "../support/app";
+import { addFolder, clickAllow, freshOffline, invoke, paneIds } from "../support/app";
 import { sendAndWait } from "../support/agents";
 import { connectGithub, mockCalls, mockReset, openPlugins, openTabNamed } from "../support/plugins";
 
@@ -54,7 +54,7 @@ describe("E2E-M12-5 held draft", () => {
     const row = $(`[data-testid="held-${draft?.displayNo}"]`);
     await row.waitForDisplayed({ timeout: 10_000 });
     expect(await row.getText()).toContain("Held · from routine rt_nightly");
-    await $(`[data-testid="held-run-${draft?.displayNo}"]`).click();
+    await clickAllow(`[data-testid="held-run-${draft?.displayNo}"]`);
     await row.waitForExist({ reverse: true, timeout: 20_000 });
     expect(await mockCalls("create_issue")).toBe(1);
     await expect(invoke("held_draft_run", { draftId: draft?.id, editedArgs: null })).rejects.toThrow(

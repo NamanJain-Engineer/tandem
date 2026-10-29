@@ -31,6 +31,7 @@ import { diffNames } from "../../stores/intel";
 import { sortItems, toReview, useReview } from "../../stores/review";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorktrees } from "../../stores/worktrees";
+import { useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
 import { Dashboard } from "./Dashboard";
 
 const RULE: Record<ReviewRiskRule, () => string> = {
@@ -203,6 +204,14 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   const open = useWorktrees.getState().open;
   const lane = item.laneId;
   const approved = item.state === "approved";
+  // Approve waits for its place to hold still: the queue re-sorts as agents
+  // finish, so another item's Approve could slide under the pointer.
+  // The queue updates an item in place: a changed diff (same size, same
+  // place) starts the wait over too, so Approve never sends a hash for a
+  // diff that was on screen for less than a moment.
+  const settled = useSettled(approved ? null : item.diffHash);
+  const box = useSteadyBox(!approved, item.diffHash);
+  const canApprove = approved || (settled && box.steady);
   return (
     <article
       data-testid="review-item"
@@ -257,11 +266,14 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
           )}
         </details>
       )}
-      <div className="flex flex-wrap gap-1.5">
+      <div ref={box.ref} className="flex flex-wrap gap-1.5">
         <Button
           size="sm"
           variant={approved ? "ghost" : "primary"}
+          disabled={!canApprove}
+          title={canApprove ? undefined : settled ? t("approval.waitingApprove") : t("approval.waitingDiff")}
           onClick={() =>
+            (approved || (settled && box.check())) &&
             act(
               approved
                 ? invoke("review_unapprove", { key: item.key })
@@ -269,6 +281,7 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
               show,
             )
           }
+          data-grant
           data-testid="review-approve"
         >
           {approved ? t("review.unapprove") : t("review.approve")}

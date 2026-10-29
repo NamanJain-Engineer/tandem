@@ -1,5 +1,5 @@
 import { $, $$, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds } from "../support/app";
+import { addFolder, clickAllow, freshOffline, invoke, paneIds } from "../support/app";
 import { connectTestPlugin } from "../support/agents";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 import { connectGithub, mockCalls, mockReset, mockState } from "../support/plugins";
@@ -81,7 +81,7 @@ describe("E2E-M12-4 interactive approval", () => {
     // Writes may be allowed for the rest of the chat.
     expect(await $(`${pinned} [data-testid="approval-allow-thread"]`).isExisting()).toBe(true);
     expect(await mockCalls("create_issue")).toBe(0);
-    await $(`${pinned} [data-testid="approval-allow"]`).click();
+    await clickAllow(`${pinned} [data-testid="approval-allow"]`);
     await waitForAssistant("The tool said:");
     await cardGone();
     expect(await mockCalls("create_issue")).toBe(1);
@@ -110,7 +110,7 @@ describe("E2E-M12-4 interactive approval", () => {
     expect(await $(`${pinned} [data-testid="approval-allow-thread"]`).isExisting()).toBe(false);
     // The vendor's price moves while the card is up.
     await invoke("test_plugin_price", { cents: 700 });
-    await $(`${pinned} [data-testid="approval-allow"]`).click();
+    await clickAllow(`${pinned} [data-testid="approval-allow"]`);
     await waitForAssistant("The amount changed from 5.00 USD to 7.00 USD");
     await invoke("test_plugin_price", { cents: 500 });
   });

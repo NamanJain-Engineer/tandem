@@ -589,6 +589,7 @@ function ThreadView({
                   return (
                     <ApprovalCard
                       key={p.request.id}
+                      requestKey={`${p.request.id}\n${p.request.detail}`}
                       compact
                       kind={p.request.kind}
                       title={`${approvalTitle(engineLabel, p.request.kind)}: ${p.request.summary}`}

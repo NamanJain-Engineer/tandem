@@ -13,6 +13,7 @@ import {
   type Status,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { focusSource } from "../../stores/focus";
 import { useNotifications } from "../../stores/notifications";
 import { answer } from "../dashboard/actions";
@@ -46,6 +47,9 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
       ? n.dedupeKey.slice(9)
       : null;
   const status = dot(n);
+  // New items arrive on top and push this one down: Allow once waits until
+  // its own place has held still, and checks again at the click (F-TL-12.12).
+  const box = useSteadyBox(approvalId !== null, approvalId);
   const decide = (allow: boolean) =>
     approvalId &&
     void answer(approvalId, allow, "notification").then(
@@ -100,8 +104,16 @@ function Item({ n, now, onJump }: { n: Notification; now: number; onJump: (n: No
           </span>
         )}
         {approvalId && (
-          <span className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-            <Button size="sm" variant="primary" data-testid="notification-allow" onClick={() => decide(true)}>
+          <span ref={box.ref} className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+            <Button
+              size="sm"
+              variant="primary"
+              data-grant
+              data-testid="notification-allow"
+              disabled={!box.steady}
+              title={box.steady ? undefined : t("approval.waiting")}
+              onClick={() => box.check() && decide(true)}
+            >
               {t("dashboard.allowOnce")}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => decide(false)}>

@@ -65,7 +65,7 @@ describe("E2E-M7-2 approvals", () => {
 
   it("F-TH-11.2 Allow for this thread covers npm test with arguments, not npm install", async function () {
     this.timeout(60_000);
-    await $(`${pinned} [data-testid="approval-allow-thread"]`).click();
+    await clickAllow(`${pinned} [data-testid="approval-allow-thread"]`);
     await waitForAssistant("Ran npm test.");
     await $(pinned).waitForExist({ reverse: true, timeout: 5_000 });
 
