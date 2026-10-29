@@ -6,8 +6,10 @@
 //! writes the files that skip first-run screens and report status, and
 //! every write merges into what's there so the user's own keys survive.
 
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use serde_json::{json, Map, Value};
 
@@ -35,6 +37,18 @@ pub enum HomeError {
     Parse { file: String, kind: &'static str },
     #[error("that folder isn't a Vibezeo provider home")]
     NotOwned,
+}
+
+/// One lock per home, held across each of Vibezeo's own reads, changes and
+/// writes of Codex's `config.toml` there: a local model's settings, the
+/// status hook and the tasks server (D-3070, D-3073). Panes on one model
+/// starting at once then each keep what they wrote. Codex itself may still
+/// rewrite the file, and no lock inside Vibezeo covers that.
+pub fn config_lock(home: &Path) -> Arc<Mutex<()>> {
+    static HOMES: LazyLock<Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>> =
+        LazyLock::new(Default::default);
+    let mut homes = HOMES.lock().unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(homes.entry(home.to_path_buf()).or_default())
 }
 
 /// What to put in a fresh home.
@@ -163,6 +177,8 @@ impl ProviderHomes {
             }
             HooksSupport::CodexNotify => {
                 let file = home.join("config.toml");
+                let lock = config_lock(home);
+                let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
                 let mut doc = read_toml(&file)?;
                 let mut notify = toml_edit::Array::new();
                 notify.push(hook_bin.to_string_lossy().into_owned());
@@ -221,6 +237,8 @@ impl ProviderHomes {
             }
             HooksSupport::CodexNotify => {
                 let file = home.join("config.toml");
+                let lock = config_lock(home);
+                let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
                 let mut doc = read_toml(&file)?;
                 let had = doc.get("mcp_servers").and_then(|t| t.get(name)).is_some();
                 match server {
