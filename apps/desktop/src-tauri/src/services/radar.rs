@@ -1,17 +1,23 @@
 //! Intent radar (F-WT-10): each local worktree's changed symbols, kept from
-//! its last parse, refreshed after each checkpoint in its folder and when
-//! its overlap is checked. A pair of sibling worktrees that newly share a
-//! symbol after a checkpoint raises `radar:overlap` once; Warn both agents
-//! types `lane_radar_note`'s text, only on a click.
+//! its last parse, refreshed after each checkpoint in its folder, when its
+//! overlap is checked, and (once parsed) when its files change on disk: a
+//! watcher per parsed worktree, debounced, re-parses only what changed, one
+//! parse at a time, never while the worktree is being discarded ([`hold`]).
+//! A pair of sibling worktrees that newly share a symbol raises
+//! `radar:overlap` once; a watched update raises `radar:changed`. Warn both
+//! agents types `lane_radar_note`'s text, and Claim these files claims
+//! through F-TK-05, each only on a click.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use tandem_core::bus::{BusEvent, EventBus, Topic};
+use tandem_core::files::watch::{self, DirWatcher, Strategy, WatchOptions};
 use tandem_core::ids::WorkspaceId;
 use tandem_core::{untrusted, DataDir, ErrorCode, IpcError};
 use tandem_git::symbols::{self, SharedSymbol, SymbolChange, SymbolIndex};
@@ -32,6 +38,46 @@ struct Entry {
 }
 
 static INDEXES: LazyLock<Mutex<HashMap<String, Entry>>> = LazyLock::new(Mutex::default);
+/// A watcher per parsed worktree (F-WT-10 slice 2), until it's forgotten.
+static WATCHERS: LazyLock<Mutex<HashMap<String, DirWatcher>>> = LazyLock::new(Mutex::default);
+/// Worktrees being discarded: never parsed or watched again.
+static HELD: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+/// Worktrees a watched parse runs for, and whether changes came during it.
+static RUNNING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
+/// What a watched change needs to parse again (set by [`run`]).
+static CONTEXT: OnceLock<Context> = OnceLock::new();
+
+/// What a watched worktree's parses need: the store, the bus, and git (the
+/// login environment's, or a fixed one).
+#[derive(Clone)]
+pub(crate) struct Context {
+    store: Store,
+    bus: EventBus,
+    git: GitSource,
+}
+
+#[derive(Clone)]
+enum GitSource {
+    Login(DataDir, Arc<TerminalService>),
+    #[cfg(test)]
+    Fixed(Git),
+}
+
+impl Context {
+    async fn git(&self) -> Option<Git> {
+        match &self.git {
+            GitSource::Login(data, terminals) => git_for(data, &*terminals.login_env().await).ok(),
+            #[cfg(test)]
+            GitSource::Fixed(git) => Some(git.clone()),
+        }
+    }
+}
+
+/// How long changes settle before a watched worktree is parsed again.
+pub const SETTLE: Duration = Duration::from_secs(2);
+/// At most this many folders are watched per worktree (inotify watches are
+/// a per-user budget, shared with the Files tab).
+pub const MAX_WATCHED_DIRS: usize = 5_000;
 /// Pairs and symbols already announced, so a notice isn't repeated.
 static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
 
@@ -66,7 +112,7 @@ pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcErro
     let (Some(parent), Some(base)) = (&lane.parent_id, &lane.lane_base) else {
         return Ok(SymbolIndex::default());
     };
-    if !covered(lane) {
+    if !covered(lane) || is_held(lane.id.as_str()) {
         return Ok(SymbolIndex::default());
     }
     let mut cache = lock(&INDEXES)
@@ -79,15 +125,161 @@ pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcErro
         parsed = done.parsed,
         "radar index refreshed"
     );
-    lock(&INDEXES).insert(
-        lane.id.as_str().to_string(),
-        Entry {
-            parent: parent.as_str().to_string(),
-            index: done.index.clone(),
-            cache,
-        },
-    );
+    {
+        // A discard that started meanwhile wins: nothing is kept or watched.
+        // Checked under the lock [`hold`]'s `forget` takes after marking the
+        // worktree held, so either this sees the hold or `forget` removes
+        // what this keeps.
+        let mut indexes = lock(&INDEXES);
+        if is_held(lane.id.as_str()) {
+            return Ok(SymbolIndex::default());
+        }
+        indexes.insert(
+            lane.id.as_str().to_string(),
+            Entry {
+                parent: parent.as_str().to_string(),
+                index: done.index.clone(),
+                cache,
+            },
+        );
+    }
+    ensure_watched(lane).await;
     Ok(done.index)
+}
+
+fn is_held(lane_id: &str) -> bool {
+    lock(&HELD).contains(lane_id)
+}
+
+/// While it lives, the worktree is neither parsed nor watched (it's being
+/// discarded); its index and watcher go at once.
+pub struct Hold(String);
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        lock(&HELD).remove(&self.0);
+    }
+}
+
+/// Holds the radar off a worktree being discarded.
+pub fn hold(lane_id: &str) -> Hold {
+    lock(&HELD).insert(lane_id.to_string());
+    forget(lane_id);
+    Hold(lane_id.to_string())
+}
+
+/// Starts watching a parsed worktree's folder, once, with the app's
+/// context ([`run`] sets it).
+async fn ensure_watched(lane: &Workspace) {
+    if let Some(ctx) = CONTEXT.get().cloned() {
+        watch_with(lane, ctx).await;
+    }
+}
+
+/// Watches `lane`'s folder, once: a change to a file in a parsed language
+/// parses it again after [`SETTLE`].
+pub(crate) async fn watch_with(lane: &Workspace, ctx: Context) {
+    let id = lane.id.as_str().to_string();
+    if lock(&WATCHERS).contains_key(&id) || is_held(&id) {
+        return;
+    }
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let root = std::fs::canonicalize(&lane.root).unwrap_or_else(|_| PathBuf::from(&lane.root));
+    let opts = WatchOptions {
+        debounce: SETTLE,
+        strategy: Strategy::for_platform(),
+        max_dirs: MAX_WATCHED_DIRS,
+        ..WatchOptions::default()
+    };
+    let lane_id = id.clone();
+    // Walking the folders to watch is blocking IO.
+    let made = tokio::task::spawn_blocking(move || {
+        watch::watch(
+            &root,
+            None,
+            opts,
+            Box::new(move |change| {
+                let parsed =
+                    change.overflow || change.paths.iter().any(|p| symbols::Lang::of(p).is_some());
+                if parsed {
+                    handle.spawn(watched(lane_id.clone(), ctx.clone()));
+                }
+            }),
+        )
+    })
+    .await;
+    match made {
+        Ok(Ok(w)) => {
+            // A discard or another watcher may have come first (the hold is
+            // checked under the lock, as in [`refresh`]).
+            let mut watchers = lock(&WATCHERS);
+            if !is_held(&id) {
+                watchers.entry(id).or_insert(w);
+            }
+        }
+        Ok(Err(e)) => {
+            tracing::debug!(code = "radar.watch_failed", error = %e, "a worktree isn't watched")
+        }
+        Err(_) => {}
+    }
+}
+
+/// [`on_watched`] as a boxed `Send` future: a watched parse can start a
+/// watcher, whose callback spawns this again, and the box ends that cycle.
+fn watched(
+    lane_id: String,
+    ctx: Context,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(on_watched(lane_id, ctx))
+}
+
+/// A watched change in a worktree: parse it again (once at a time; changes
+/// during a parse are taken by one more after it), then announce.
+async fn on_watched(lane_id: String, ctx: Context) {
+    {
+        let mut running = lock(&RUNNING);
+        if let Some(again) = running.get_mut(&lane_id) {
+            *again = true;
+            return;
+        }
+        running.insert(lane_id.clone(), false);
+    }
+    loop {
+        if !is_held(&lane_id) {
+            rescan(&lane_id, &ctx).await;
+        }
+        let mut running = lock(&RUNNING);
+        match running.get_mut(&lane_id) {
+            Some(again) if *again => *again = false,
+            _ => {
+                running.remove(&lane_id);
+                return;
+            }
+        }
+    }
+}
+
+/// Parses one worktree again from a watched change and announces new pairs.
+async fn rescan(lane_id: &str, ctx: &Context) {
+    let Ok(all) = workspaces::list(&ctx.store).await else {
+        return;
+    };
+    let Some(lane) = all.iter().find(|w| w.id.as_str() == lane_id && covered(w)) else {
+        forget(lane_id);
+        return;
+    };
+    let Some(git) = ctx.git().await else {
+        return;
+    };
+    if announce(&ctx.store, &git, &ctx.bus, lane, &all).await {
+        ctx.bus.publish(BusEvent::new(
+            Topic::App,
+            "radar:changed",
+            serde_json::json!({ "laneIds": [lane_id] }),
+        ));
+    }
 }
 
 /// The last index, parsing it first when there's none.
@@ -135,9 +327,10 @@ pub fn marks(lane_ids: &[String]) -> Vec<RadarMark> {
     out
 }
 
-/// Forgets a worktree's index (it was discarded or merged).
+/// Forgets a worktree's index and stops watching it (it was discarded).
 pub fn forget(lane_id: &str) {
     lock(&INDEXES).remove(lane_id);
+    lock(&WATCHERS).remove(lane_id);
 }
 
 fn pair_key(a: &str, b: &str, symbols: &[String]) -> String {
@@ -156,22 +349,39 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
     let Some(lane) = all.iter().find(|w| covered(w) && same(w)) else {
         return;
     };
+    announce(store, git, bus, lane, &all).await;
+}
+
+/// Refreshes `lane`, compares it with its siblings, and raises
+/// `radar:overlap` for pairs newly sharing symbols. False when it wasn't
+/// parsed (a multi-repo worktree, a parse that failed, one being discarded).
+async fn announce(
+    store: &Store,
+    git: &Git,
+    bus: &EventBus,
+    lane: &Workspace,
+    all: &[Workspace],
+) -> bool {
     // F-CD-22: no radar for multi-repo worktrees yet.
     if crate::services::lanes::is_multi(store, lane)
         .await
         .unwrap_or(false)
+        || is_held(lane.id.as_str())
     {
-        return;
+        return false;
     }
     let Ok(mine) = refresh(git, lane).await else {
         tracing::warn!(code = "radar.parse_failed", "radar index skipped");
-        return;
+        return false;
     };
     let parent = lane.parent_id.clone();
     for sib in all
         .iter()
         .filter(|w| w.id != lane.id && w.parent_id == parent && covered(w))
     {
+        if is_held(sib.id.as_str()) {
+            continue;
+        }
         let Ok(theirs) = index_of(git, sib).await else {
             continue;
         };
@@ -179,7 +389,7 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
         if found.is_empty() {
             continue;
         }
-        let names: Vec<String> = found.iter().map(|s| s.qualified.clone()).collect();
+        let names: Vec<String> = found.iter().map(SharedSymbol::display).collect();
         if !lock(&WARNED).insert(pair_key(lane.id.as_str(), sib.id.as_str(), &names)) {
             continue;
         }
@@ -199,10 +409,16 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
             }),
         ));
     }
+    true
 }
 
 /// Listens for checkpoints for as long as the app runs.
 pub async fn run(store: Store, data: DataDir, bus: EventBus, terminals: Arc<TerminalService>) {
+    let _ = CONTEXT.set(Context {
+        store: store.clone(),
+        bus: bus.clone(),
+        git: GitSource::Login(data.clone(), terminals.clone()),
+    });
     let mut rx = bus.subscribe(Topic::App);
     loop {
         match rx.recv().await {
@@ -222,12 +438,13 @@ pub async fn run(store: Store, data: DataDir, bus: EventBus, terminals: Arc<Term
     }
 }
 
-fn what(c: SymbolChange) -> &'static str {
-    match c {
-        SymbolChange::Added => "added",
-        SymbolChange::Changed => "changed",
-        SymbolChange::Removed => "renamed or removed",
-        SymbolChange::Used => "used",
+fn what(c: SymbolChange, renamed_to: Option<&str>) -> String {
+    match (c, renamed_to) {
+        (SymbolChange::Renamed, Some(to)) => format!("renamed to {to}"),
+        (SymbolChange::Added, _) => "added".into(),
+        (SymbolChange::Changed, _) => "changed".into(),
+        (SymbolChange::Removed | SymbolChange::Renamed, _) => "renamed or removed".into(),
+        (SymbolChange::Used, _) => "used".into(),
     }
 }
 
@@ -242,8 +459,8 @@ pub fn note_text(other_branch: &str, found: &[SharedSymbol]) -> String {
         data.push_str(&format!(
             "- {}: {} here, {} there\n",
             s.qualified,
-            what(s.here),
-            what(s.there)
+            what(s.here, s.renamed_to.as_deref()),
+            what(s.there, s.renamed_to.as_deref())
         ));
     }
     format!(
@@ -284,6 +501,96 @@ pub async fn note(
     ))
 }
 
+/// `lane_radar_claim`: claims, for `lane_id`'s worktree (F-TK-05), the
+/// files where it changed, renamed or removed the definitions it shares
+/// with `other_id`, with an intent naming them and the sibling. Returns the
+/// paths claimed.
+pub async fn claim(
+    store: &Store,
+    git: &Git,
+    tasks: Arc<crate::services::tasks::TasksService>,
+    lane_id: &WorkspaceId,
+    other_id: &WorkspaceId,
+) -> Result<Vec<String>, IpcError> {
+    let lane = workspaces::get(store, lane_id).await?;
+    let other = workspaces::get(store, other_id).await?;
+    if lane.parent_id.is_none() || lane.parent_id != other.parent_id || lane.id == other.id {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Those aren't two worktrees of one repository",
+        ));
+    }
+    let mine = index_of(git, &lane).await?;
+    let found = shared(&mine, &index_of(git, &other).await?);
+    let (paths, intent) = claim_of(
+        &mine,
+        &found,
+        other.lane_branch.as_deref().unwrap_or(&other.name),
+    );
+    if paths.is_empty() {
+        return Err(IpcError::new(
+            ErrorCode::NotFound,
+            "This worktree didn't change the symbols it shares any more",
+        ));
+    }
+    let folder = PathBuf::from(&lane.root);
+    let claimed = paths.clone();
+    tokio::task::spawn_blocking(move || tasks.claim_for_tree(&folder, &paths, &intent))
+        .await
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))??;
+    Ok(claimed)
+}
+
+/// The files `mine` changed the `found` definitions in (sorted, at most
+/// F-TK-05's [`tandem_tasks::CLAIM_PATHS_MAX`]), and the claim's intent:
+/// "Intent radar: renamed parse → parseLine, changed Session.refresh, which
+/// tandem/b uses".
+pub fn claim_of(
+    mine: &SymbolIndex,
+    found: &[SharedSymbol],
+    other_branch: &str,
+) -> (Vec<String>, String) {
+    let names: HashSet<&str> = found.iter().map(|s| s.name.as_str()).collect();
+    let mut paths = BTreeSet::new();
+    let mut did = Vec::new();
+    for s in &mine.symbols {
+        if !names.contains(s.name.as_str())
+            || !matches!(
+                s.change,
+                SymbolChange::Changed | SymbolChange::Removed | SymbolChange::Renamed
+            )
+        {
+            continue;
+        }
+        paths.insert(s.path.clone());
+        let words = match (&s.change, &s.renamed_to) {
+            (SymbolChange::Renamed, Some(to)) => format!("renamed {} → {to}", s.qualified),
+            (SymbolChange::Changed, _) => format!("changed {}", s.qualified),
+            _ => format!("removed {}", s.qualified),
+        };
+        if !did.contains(&words) {
+            did.push(words);
+        }
+    }
+    let mut intent = format!(
+        "Intent radar: {}, which {other_branch} uses",
+        did.join(", ")
+    );
+    if intent.chars().count() > tandem_tasks::CLAIM_INTENT_MAX {
+        intent = intent
+            .chars()
+            .take(tandem_tasks::CLAIM_INTENT_MAX - 1)
+            .collect::<String>()
+            + "…";
+    }
+    (
+        paths
+            .into_iter()
+            .take(tandem_tasks::CLAIM_PATHS_MAX)
+            .collect(),
+        intent,
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +618,11 @@ mod tests {
 
     /// `shop` with `src/session.ts`, and one worktree per name.
     async fn fixture(names: &[&str]) -> Fx {
+        fixture_with(names, &[]).await
+    }
+
+    /// [`fixture`], with more files in the base.
+    async fn fixture_with(names: &[&str], files: &[(&str, &str)]) -> Fx {
         let tmp = tempfile::tempdir().expect("tmp");
         let data = DataDir::at(tmp.path().join("data")).expect("data");
         let main = tmp.path().join("shop");
@@ -328,6 +640,9 @@ mod tests {
             "export class Session {\n  refresh(): void {}\n}\n",
         )
         .expect("write");
+        for (path, text) in files {
+            std::fs::write(main.join(path), text).expect("write");
+        }
         git(&main, &["add", "."]);
         git(&main, &["commit", "-q", "-m", "init"]);
         let base = git(&main, &["rev-parse", "HEAD"]);
@@ -448,6 +763,7 @@ mod tests {
                 qualified: d.qualified.clone(),
                 here: SymbolChange::Used,
                 there: SymbolChange::Changed,
+                renamed_to: None,
             })
             .collect();
         assert!(
@@ -465,6 +781,7 @@ mod tests {
             qualified: "Session.refresh".into(),
             here: SymbolChange::Used,
             there: SymbolChange::Changed,
+            renamed_to: None,
         };
         assert!(!note_text("tandem/other", &[plain]).contains(untrusted::DEFANGED));
     }
@@ -487,6 +804,151 @@ mod tests {
             .await
             .expect_err("nothing shared");
         assert_eq!(e.code, ErrorCode::NotFound);
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+    }
+
+    const PARSE: &str =
+        "export function parse(line: string): string {\n  return line.trim().toLowerCase();\n}\n";
+    const PARSE_LINE: &str = "export function parseLine(line: string): string {\n  return line.trim().toLowerCase();\n}\n";
+
+    /// Two worktrees, with `src/parse.ts` in their base.
+    async fn parse_fixture() -> Fx {
+        fixture_with(&["renamer", "user"], &[("src/parse.ts", PARSE)]).await
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_6_a_rename_is_announced_and_noted_as_a_rename() {
+        let fx = parse_fixture().await;
+        let (a, b) = (&fx.lanes[0], &fx.lanes[1]);
+        std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
+        std::fs::write(
+            Path::new(&b.root).join("src/main.ts"),
+            "import { parse } from './parse';\nexport const out = parse(' X ');\n",
+        )
+        .expect("write");
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe(Topic::App);
+        on_checkpoint(&fx.store, &fx.git, &bus, &a.root).await;
+        let ev = rx.try_recv().expect("an overlap notice");
+        assert_eq!(
+            ev.payload["symbols"],
+            serde_json::json!(["parse → parseLine"])
+        );
+        let text = note(&fx.store, &fx.git, &b.id, &a.id).await.expect("note");
+        assert!(
+            text.contains("- parse: used here, renamed to parseLine there"),
+            "{text}"
+        );
+        // What Claim these files claims for the renamer, and why.
+        let mine = index_of(&fx.git, a).await.expect("index");
+        let theirs = index_of(&fx.git, b).await.expect("index");
+        let (paths, intent) = claim_of(&mine, &shared(&mine, &theirs), "tandem/user");
+        assert_eq!(paths, ["src/parse.ts"]);
+        assert_eq!(
+            intent,
+            "Intent radar: renamed parse → parseLine, which tandem/user uses"
+        );
+        // The user's worktree changed no shared definition: nothing to claim.
+        let (paths, _) = claim_of(&theirs, &shared(&theirs, &mine), "tandem/renamer");
+        assert!(paths.is_empty());
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn f_wt_10_7_a_watched_edit_is_announced_without_a_checkpoint() {
+        let fx = parse_fixture().await;
+        let (a, b) = (&fx.lanes[0], &fx.lanes[1]);
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe(Topic::App);
+        // Both parsed (nothing shared yet), then watched.
+        on_checkpoint(&fx.store, &fx.git, &bus, &a.root).await;
+        assert!(rx.try_recv().is_err());
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: bus.clone(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        for lane in [a, b] {
+            watch_with(lane, ctx.clone()).await;
+            assert!(lock(&WATCHERS).contains_key(lane.id.as_str()));
+        }
+        // An edit in another language parses nothing.
+        std::fs::write(Path::new(&a.root).join("NOTES.md"), "notes\n").expect("write");
+        let quiet = tokio::time::timeout(Duration::from_secs(4), async {
+            loop {
+                if let Ok(ev) = rx.recv().await {
+                    if ev.name.starts_with("radar:") {
+                        return ev.name;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(quiet.is_err(), "{quiet:?}");
+        // Mid-turn edits, no checkpoint: the rename and the use.
+        std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
+        std::fs::write(
+            Path::new(&b.root).join("src/main.ts"),
+            "import { parse } from './parse';\nexport const out = parse(' X ');\n",
+        )
+        .expect("write");
+        let mut seen = (false, false);
+        let found = tokio::time::timeout(Duration::from_secs(20), async {
+            while !(seen.0 && seen.1) {
+                if let Ok(ev) = rx.recv().await {
+                    if ev.name == "radar:overlap" {
+                        assert_eq!(
+                            ev.payload["symbols"],
+                            serde_json::json!(["parse → parseLine"])
+                        );
+                        seen.0 = true;
+                    }
+                    if ev.name == "radar:changed" {
+                        seen.1 = true;
+                    }
+                }
+            }
+        })
+        .await;
+        assert!(found.is_ok(), "no watched notice: {seen:?}");
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+        assert!(!lock(&WATCHERS).contains_key(a.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_9_a_worktree_being_discarded_isnt_parsed_or_watched() {
+        let fx = parse_fixture().await;
+        let a = &fx.lanes[0];
+        std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
+        assert!(!refresh(&fx.git, a).await.expect("index").symbols.is_empty());
+        let held = hold(a.id.as_str());
+        assert!(
+            !lock(&INDEXES).contains_key(a.id.as_str()),
+            "its index went"
+        );
+        assert!(refresh(&fx.git, a).await.expect("held").symbols.is_empty());
+        assert!(
+            !lock(&INDEXES).contains_key(a.id.as_str()),
+            "nothing kept while held"
+        );
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: EventBus::new(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        watch_with(a, ctx).await;
+        assert!(
+            !lock(&WATCHERS).contains_key(a.id.as_str()),
+            "not watched while held"
+        );
+        drop(held);
+        assert!(!refresh(&fx.git, a).await.expect("index").symbols.is_empty());
         for l in &fx.lanes {
             forget(l.id.as_str());
         }

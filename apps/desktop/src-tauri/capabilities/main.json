@@ -184,6 +184,7 @@
     "allow-lane-review-comments",
     "allow-lane-radar",
     "allow-lane-radar-note",
+    "allow-lane-radar-claim",
     "allow-lane-create-prs",
     "allow-lane-prs-get",
     "allow-worktree-env-check",

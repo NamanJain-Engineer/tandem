@@ -554,3 +554,51 @@ fn f_tk_05_1_overlaps_come_from_within_each_repository_in_order() {
         "one per pair, never across repositories, in order"
     );
 }
+
+#[test]
+fn f_wt_10_8_a_claim_made_for_a_working_tree_is_its_own_with_the_intent() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/renamer";
+    // From the top folder whatever a session's prefix, with the intent.
+    let mut sub = scope(tree);
+    sub.prefix = "src".into();
+    let first = s
+        .claim_for_tree(
+            &sub,
+            &paths(&["src/parse.ts"]),
+            "Intent radar: renamed parse → parseLine, which tandem/user uses",
+        )
+        .expect("claim");
+    assert!(first.is_empty());
+    let claims = s.claims().expect("claims");
+    assert_eq!(claims.len(), 1);
+    let c = &claims[0];
+    assert_eq!(c.path, "src/parse.ts");
+    assert_eq!(c.agent, "renamer");
+    assert!(!c.inferred && c.connection.is_none());
+    assert_eq!(
+        c.intent,
+        "Intent radar: renamed parse → parseLine, which tandem/user uses"
+    );
+    // The sibling's agent claiming the file meets it.
+    let user = session(&s, "/r/app/.tandem/worktrees/user");
+    let overlaps = s
+        .claim(&user, &paths(&["src/parse.ts"]), "use parse")
+        .expect("user");
+    assert_eq!(overlaps.len(), 1);
+    assert_eq!(
+        overlaps[0].agents,
+        ["renamer".to_string(), "user".to_string()]
+    );
+    // Only the tree's own real files: no `..`, no absolute path.
+    for bad in ["../x.ts", "/etc/passwd"] {
+        assert!(
+            s.claim_for_tree(&scope(tree), &paths(&[bad]), "x").is_err(),
+            "{bad}"
+        );
+    }
+    let long = "x".repeat(501);
+    assert!(s
+        .claim_for_tree(&scope(tree), &paths(&["a.ts"]), &long)
+        .is_err());
+}

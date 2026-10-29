@@ -8,4 +8,8 @@ export type SharedSymbol = { name: string,
 /**
  * `here`'s qualified name when it has a definition, else `there`'s.
  */
-qualified: string, here: SymbolChange, there: SymbolChange, };
+qualified: string, here: SymbolChange, there: SymbolChange, 
+/**
+ * When a side renamed it: the qualified name that side gives it now.
+ */
+renamedTo?: string, };

@@ -555,6 +555,20 @@ pub async fn lane_radar_note(
     radar::note(&state.store, &git, &lane_id, &other_id).await
 }
 
+/// "Claim these files" (F-WT-10): claims, for `lane_id`'s worktree, the
+/// files where it changed the definitions it shares with `other_id`, as
+/// F-TK-05 claims. Returns the paths claimed.
+#[tauri::command]
+pub async fn lane_radar_claim(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    other_id: WorkspaceId,
+) -> Result<Vec<String>, IpcError> {
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    radar::claim(&state.store, &git, state.tasks.clone(), &lane_id, &other_id).await
+}
+
 // ---- Multi-repo pull requests (F-CD-22) -------------------------------------
 
 /// Pushes the branch and opens a linked pull request in each of a

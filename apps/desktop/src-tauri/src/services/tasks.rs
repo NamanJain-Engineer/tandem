@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use tandem_core::contain;
 use tandem_core::settings::SettingKey;
-use tandem_core::DataDir;
+use tandem_core::{DataDir, ErrorCode, IpcError};
 use tandem_engines::chat::StdioServer;
 use tandem_store::Store;
 use tandem_tasks::store::claim_key;
@@ -420,6 +420,34 @@ impl TasksService {
         if let Err(e) = tracker.claim_inferred(&scope, &rel) {
             tracing::warn!(code = "tasks.claim_failed", error = %e, "an edit wasn't claimed");
         }
+    }
+
+    /// Claims `paths` (relative to its top folder) for the working tree at
+    /// `folder`, with `intent`, on a person's click (F-WT-10), then tells the
+    /// sink about overlaps as any claim would. Blocking file IO.
+    pub fn claim_for_tree(
+        &self,
+        folder: &Path,
+        paths: &[String],
+        intent: &str,
+    ) -> Result<(), IpcError> {
+        let Some(tracker) = &self.tracker else {
+            return Err(IpcError::new(
+                ErrorCode::Unavailable,
+                "Claims aren't running, so nothing was claimed",
+            ));
+        };
+        let Some(scope) = claim_scope(folder) else {
+            return Err(IpcError::new(
+                ErrorCode::Invalid,
+                "That folder isn't a git working tree",
+            ));
+        };
+        tracker
+            .claim_for_tree(&scope, paths, intent)
+            .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
+        self.check_overlaps();
+        Ok(())
     }
 
     /// A workspace or worktree at `root` left the app (F-TK-05 AC3): the

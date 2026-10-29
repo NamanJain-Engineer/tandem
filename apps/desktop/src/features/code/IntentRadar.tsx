@@ -109,9 +109,18 @@ export function useIntentRadar(laneIds: string[], active: boolean) {
       if (live) off = u;
       else u();
     });
+    // A watched change updated a worktree's symbols: the marks follow.
+    let offChanged: (() => void) | undefined;
+    void listen<{ laneIds: string[] }>("radar:changed", () => {
+      if (live) void loadRadar(ids);
+    }).then((u) => {
+      if (live) offChanged = u;
+      else u();
+    });
     return () => {
       live = false;
       off?.();
+      offChanged?.();
     };
   }, [key, active, show]);
 }

@@ -62,6 +62,14 @@ release fails when its version has no section.
   everything in it). Folders on this computer only. Landing, pull requests,
   previews, setup, second opinion, the intent radar and the git panel aren't
   available for jj workspaces yet.
+- [lin] **The intent radar, live.** Once a worktree has been read, the
+  radar reads it again about two seconds after its files stop changing, so a
+  clash shows up while the agents are still working, not after their turn. It
+  now reads Go and Java too, and says when a definition was renamed
+  (`parse → parseLine`) rather than removed, only when nothing else could
+  explain it. **Claim these files** in Check overlap… claims the files the
+  worktree changed what it shares in, so agents in the other worktrees see it
+  before they edit them. Everything stays on this computer.
 - [lin] **Local models.** Settings › Engines › Local models finds Ollama,
   LM Studio and llama.cpp servers running on this computer and lists their
   models, with the size and parameter count each server reports. Vibezeo

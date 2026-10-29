@@ -4,4 +4,8 @@ import type { SymbolChange } from "./SymbolChange";
 /**
  * A definition the worktree added, changed or removed.
  */
-export type ChangedSymbol = { name: string, qualified: string, kind: string, path: string, line: number, change: SymbolChange, };
+export type ChangedSymbol = { name: string, qualified: string, kind: string, path: string, line: number, change: SymbolChange, 
+/**
+ * For [`SymbolChange::Renamed`]: the qualified name it has now.
+ */
+renamedTo?: string, };

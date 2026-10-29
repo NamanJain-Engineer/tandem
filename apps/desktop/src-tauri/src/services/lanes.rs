@@ -711,6 +711,10 @@ pub async fn remove_with_teardown(
     teardown: Option<(&DataDir, &LoginEnv)>,
 ) -> Result<RemoveReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
+    // F-WT-10: the radar neither parses nor watches a worktree being
+    // discarded (its index and watcher go now; a refused discard is parsed
+    // again from its next checkpoint).
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     if let Some((remote, host)) = remote_for(&parent)? {
         use tandem_host::protocol::method;
         // Dirty refuses before anything stops, as locally.

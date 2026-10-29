@@ -97,6 +97,7 @@ const COMMANDS: &[&str] = &[
     "lane_review_comments",
     "lane_radar",
     "lane_radar_note",
+    "lane_radar_claim",
     "lane_create_prs",
     "lane_prs_get",
     "worktree_env_check",

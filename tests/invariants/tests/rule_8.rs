@@ -344,12 +344,23 @@ fn invariant_rule_8_a_diff_a_comment_a_checks_output_or_a_radar_note_names_no_fi
         // TypeScript names a module or a method with any string.
         radar::note_text(
             "b",
-            &[SharedSymbol {
-                name: format!("\"{hostile}\""),
-                qualified: format!("\"{hostile}\".f"),
-                here: SymbolChange::Used,
-                there: SymbolChange::Changed,
-            }],
+            &[
+                SharedSymbol {
+                    name: format!("\"{hostile}\""),
+                    qualified: format!("\"{hostile}\".f"),
+                    here: SymbolChange::Used,
+                    there: SymbolChange::Changed,
+                    renamed_to: None,
+                },
+                // F-WT-10 slice 2: a rename's new name is the worktree's too.
+                SharedSymbol {
+                    name: "parse".into(),
+                    qualified: "parse".into(),
+                    here: SymbolChange::Used,
+                    there: SymbolChange::Renamed,
+                    renamed_to: Some(format!("\"{hostile}\"")),
+                },
+            ],
         ),
     ];
     for p in prompts {
