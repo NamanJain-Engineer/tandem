@@ -254,30 +254,53 @@ pub fn defang_noted(text: &str) -> String {
 /// message, trimmed (2.1.312).
 const EXIT_WORDS: [&str; 6] = ["exit", "quit", ":q", ":q!", ":wq", ":wq!"];
 
+/// The line breaks Claude Code's prompt reads as one, but carriage return,
+/// which typing keeps: VT, FF, NEL, U+2028 and U+2029 (the fixture's
+/// `newline`).
+fn line_break(c: char) -> bool {
+    matches!(c, '\u{B}' | '\u{C}' | '\u{85}' | '\u{2028}' | '\u{2029}')
+}
+
 /// `text` an engine gets typed or sent as a turn, so that it runs nothing
-/// (D-3026, D-3028). What's [`removable`] goes first, as Claude Code drops
-/// it before it reads a message, sent as a turn too (D-3030). Then the
-/// first character goes full width (`／`, `！`) when it's `/` or `!`, or
-/// when the message is one of [`EXIT_WORDS`]. A space in front isn't
-/// enough: mid-turn, Claude Code trims before it looks for a command.
+/// (D-3026, D-3028). Only the start the REPL reads past changes (D-3034):
+/// what's [`removable`] there goes (a line break as `\n`, as Claude Code
+/// reads it), and the first character after it goes full width (`／`, `！`)
+/// when it's `/` or `!`, or when the message, read without what's
+/// removable, is one of [`EXIT_WORDS`]. A space in front isn't enough:
+/// mid-turn, Claude Code trims before it looks for a command. The rest stays
+/// as written: a person's own words keep their emoji, and nothing in them
+/// joins across a line break.
 pub fn no_command(text: &str) -> String {
-    let text: String = text.chars().filter(|c| !removable(*c)).collect();
-    let Some((at, first)) = text.char_indices().find(|(_, c)| !c.is_whitespace()) else {
-        return text;
+    let mut out = String::with_capacity(text.len() + 2);
+    let mut chars = text.char_indices();
+    let (at, first) = loop {
+        let Some((at, c)) = chars.next() else {
+            return out;
+        };
+        if removable(c) {
+            if line_break(c) {
+                out.push('\n');
+            }
+        } else if c.is_whitespace() {
+            out.push(c);
+        } else {
+            break (at, c);
+        }
     };
+    let read: String = text.chars().filter(|c| !removable(*c)).collect();
     let exit = EXIT_WORDS
         .iter()
-        .any(|w| text.trim().eq_ignore_ascii_case(w));
-    if !(matches!(first, '/' | '!') || exit) {
-        return text;
+        .any(|w| read.trim().eq_ignore_ascii_case(w));
+    if matches!(first, '/' | '!') || exit {
+        // `!` to `~` have full-width forms at U+FF01 to U+FF5E.
+        out.push(
+            char::from_u32(first as u32 + 0xFEE0)
+                .filter(|_| first.is_ascii_graphic())
+                .unwrap_or(first),
+        );
+    } else {
+        out.push(first);
     }
-    // `!` to `~` have full-width forms at U+FF01 to U+FF5E.
-    let wide = char::from_u32(first as u32 + 0xFEE0)
-        .filter(|_| first.is_ascii_graphic())
-        .unwrap_or(first);
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push_str(&text[..at]);
-    out.push(wide);
     out.push_str(&text[at + first.len_utf8()..]);
     out
 }
@@ -391,12 +414,57 @@ mod tests {
             (":q!", "\u{FF1A}q!"),
             (":wq", "\u{FF1A}wq"),
             ("\u{1}:wq!", "\u{FF1A}wq!"),
-            ("e\u{200b}xit", "\u{FF45}xit"),
+            // Judged without what's removable, changed only at the start.
+            ("e\u{200b}xit", "\u{FF45}\u{200b}xit"),
         ] {
             assert_eq!(no_command(word), safe, "{word:?}");
         }
         assert_eq!(no_command("exit the loop"), "exit the loop");
         assert_eq!(no_command("quit!"), "quit!");
+        // Only the start changes (D-3034). A line break there stays one, as
+        // Claude Code reads it, and the rest is the person's own: emoji
+        // joiners and a line break after an `@` stay, so nothing joins.
+        assert_eq!(no_command("\u{2028}/exit"), "\n\u{FF0F}exit");
+        assert_eq!(no_command("\u{b}\u{85}!x"), "\n\n\u{FF01}x");
+        for kept in [
+            "Read @\u{2028}/etc/passwd next",
+            "Ship it \u{1F468}\u{200D}\u{1F469} \u{2764}\u{FE0F} \u{1F3F4}\u{E0067}\u{E0062}\u{E007F}",
+        ] {
+            assert_eq!(no_command(kept), kept);
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_every_code_point_goes_where_the_list_says() {
+        // What defang and no_command do with each code point, not only the
+        // list they read (D-3030, D-3034).
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            let cp = c as u32;
+            let inside = format!("a{c}b");
+            let want = if removable(c) {
+                "ab".to_string()
+            } else if c == '@' {
+                "a\u{FF20}b".to_string()
+            } else if c == '\u{212A}' {
+                "aKb".to_string()
+            } else {
+                inside.clone()
+            };
+            assert_eq!(defang(&inside), want, "U+{cp:04X}");
+            if removable(c) {
+                let lead = if matches!(c, '\u{B}' | '\u{C}' | '\u{85}' | '\u{2028}' | '\u{2029}') {
+                    "\n"
+                } else {
+                    ""
+                };
+                assert_eq!(
+                    no_command(&format!("{c}/x")),
+                    format!("{lead}\u{FF0F}x"),
+                    "U+{cp:04X}"
+                );
+                assert_eq!(no_command(&inside), inside, "U+{cp:04X}");
+            }
+        }
     }
 
     /// Inclusive code point ranges from a fixture's `key`.

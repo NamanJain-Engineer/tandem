@@ -41,6 +41,18 @@ describe("untrusted text for an agent (D-3023)", () => {
     }
   });
 
+  it("F-WT-02.1 drops each removable code point wherever it is, and reads the Kelvin sign as K", () => {
+    // Behaviour over every code point, not only the list it reads.
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const c = String.fromCodePoint(cp);
+      const want = removable(cp) ? "ab" : c === "@" ? "a\uFF20b" : cp === 0x212a ? "aKb" : `a${c}b`;
+      const got = defang(`a${c}b`);
+      if (got !== want) throw new Error(`U+${cp.toString(16).toUpperCase()} gave ${JSON.stringify(got)}`);
+    }
+    expect(defang("ultrathin\u212A")).toBe("ultra-thinK");
+  });
+
   it("F-WT-02.1 notes only an at sign it wrote", () => {
     expect(defangMarked("ultraplan [Image #1]")).toEqual({
       text: "ultra-plan \uFF3BImage #1]",
