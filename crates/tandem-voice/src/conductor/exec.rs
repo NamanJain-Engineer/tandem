@@ -758,6 +758,33 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn f_cn_03_typed_text_hides_no_keyword_or_exit_word_in_what_is_dropped() {
+        // The review's three cases (D-3030): a U+FFF9 gap Claude Code's
+        // prompt drops, a control character typing drops, and U+FFF9 before
+        // an exit word. The app types what the host gets through
+        // `sanitize_prompt`, which drops only control characters, and none
+        // is left.
+        for (text, safe) in [
+            ("ultra\u{fff9}plan", "ultra-plan"),
+            ("ultra\u{1}plan", "ultra-plan"),
+            ("\u{fff9}exit", "\u{FF45}xit"),
+        ] {
+            let host = FakeHost::with_panes();
+            let (e, _) = exec(host.clone());
+            let r = e
+                .run(&call(
+                    "prompt_pane",
+                    json!({"pane": "agent", "text": text, "send": true}),
+                ))
+                .await;
+            assert!(r.result.ok, "{}", r.result.output);
+            let typed = host.typed.lock().clone()[0].1.clone();
+            assert_eq!(typed, safe, "{text:?}");
+            assert!(!typed.chars().any(char::is_control), "{typed:?}");
+        }
+    }
+
+    #[tokio::test]
     async fn f_cn_01_2_hang_up_during_a_pending_prompt_types_nothing() {
         let host = FakeHost::with_panes();
         host.set("agent", false, true); // busy: the prompt waits

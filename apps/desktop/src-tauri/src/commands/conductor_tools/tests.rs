@@ -653,6 +653,30 @@ fn f_cn_03_spoken_words_run_no_command_whatever_comes_first() {
 }
 
 #[test]
+fn f_cn_03_spoken_words_hide_no_keyword_or_exit_word_in_what_is_dropped() {
+    // The review's three cases (D-3030): a U+FFF9 gap Claude Code's prompt
+    // drops, a control character typing drops, and U+FFF9 before an exit
+    // word. A Thread gets the words as a turn; a launched agent or a
+    // teammate's pane gets them typed (through `sanitize_prompt`).
+    for (text, safe) in [
+        ("ultra\u{fff9}plan", "ultra-plan"),
+        ("ultra\u{1}plan", "ultra-plan"),
+        ("\u{fff9}exit", "\u{FF45}xit"),
+    ] {
+        let sent = super::spoken(&json!({ "text": text }), "text");
+        assert_eq!(sent, safe, "{text:?} sent");
+        for bracketed in [true, false] {
+            let (typed, _) = tandem_pty::typing::prompt_writes(&sent, bracketed, "\x1b\r");
+            let typed = String::from_utf8(typed).expect("utf-8");
+            let typed = typed
+                .trim_start_matches("\x1b[200~")
+                .trim_end_matches("\x1b[201~");
+            assert_eq!(typed, safe, "{text:?} typed");
+        }
+    }
+}
+
+#[test]
 fn f_cn_03_every_tool_sends_the_models_words_through_spoken() {
     // launch_agents' task, new_thread, send_to_thread, message_teammate and
     // review_send_back: none reads the text raw (D-3023, D-3026).

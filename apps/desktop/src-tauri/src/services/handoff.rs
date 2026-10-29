@@ -519,6 +519,34 @@ mod tests {
     }
 
     #[test]
+    fn f_cd_16_a_generated_brief_hides_no_keyword_or_exit_word_in_what_is_dropped() {
+        // The review's three cases (D-3030): a U+FFF9 gap Claude Code's
+        // prompt drops, a control character typing drops, and U+FFF9 before
+        // an exit word. The brief is typed into the new agent (through
+        // `sanitize_prompt`) or sent as a Thread's first message.
+        let dir = tempfile::tempdir().expect("tmp");
+        let pane = PaneId::from_db("pn_1".to_string());
+        for (generated, safe) in [
+            ("ultra\u{fff9}plan", "ultra-plan"),
+            ("ultra\u{1}plan", "ultra-plan"),
+            ("\u{fff9}exit", "\u{FF45}xit"),
+        ] {
+            let brief = offered(generated.into(), BriefSource::Headless).text;
+            let first = deliver(&brief, dir.path(), &pane).expect("short");
+            for bracketed in [true, false] {
+                let (typed, _) = tandem_pty::typing::prompt_writes(&first, bracketed, "\x1b\r");
+                let typed = String::from_utf8(typed).expect("utf-8");
+                let typed = typed
+                    .trim_start_matches("\x1b[200~")
+                    .trim_end_matches("\x1b[201~");
+                assert_eq!(typed, safe, "{generated:?} typed");
+            }
+            let sent = thread_message(&brief).expect("brief");
+            assert_eq!(sent, safe, "{generated:?} sent");
+        }
+    }
+
+    #[test]
     fn f_cd_16_a_generated_brief_names_no_file() {
         // The source agent, a headless run or the scrollback wrote it; what
         // you edit in the dialog stays yours (D-3023).

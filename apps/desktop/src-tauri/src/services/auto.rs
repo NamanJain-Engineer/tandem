@@ -1019,6 +1019,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_au_01_1_the_supervisors_prompt_hides_no_keyword_or_exit_word_in_what_is_dropped() {
+        // The review's three cases (D-3030): a U+FFF9 gap Claude Code's
+        // prompt drops, a control character typing drops, and U+FFF9 before
+        // an exit word, checked as the PTY gets them.
+        let svc = service();
+        let host = Arc::new(FakeHost::new(Box::new(|_, asked| match asked {
+            1 => prompt("ultra\u{fff9}plan"),
+            2 => prompt("ultra\u{1}plan"),
+            3 => prompt("\u{fff9}exit"),
+            _ => Ok(AutoNextResponse {
+                action: "done".into(),
+                text: None,
+                reason: None,
+            }),
+        })));
+        let run = start(&svc, &host, AutoMode::Finish);
+        until_ended(&svc, &run).await;
+        for bracketed in [true, false] {
+            let typed: Vec<String> = host
+                .typed()
+                .iter()
+                .map(|t| {
+                    let (body, _) = tandem_pty::typing::prompt_writes(t, bracketed, "\x1b\r");
+                    let body = String::from_utf8(body).expect("utf-8");
+                    body.trim_start_matches("\x1b[200~")
+                        .trim_end_matches("\x1b[201~")
+                        .to_string()
+                })
+                .collect();
+            assert_eq!(typed, ["ultra-plan", "ultra-plan", "\u{FF45}xit"]);
+        }
+    }
+
+    #[tokio::test]
     async fn f_au_01_1_a_prompt_waits_if_the_agent_got_busy_meanwhile() {
         // The agent started a turn while the supervisor thought: typing now
         // would land mid-turn, where Claude Code runs some commands at once.
