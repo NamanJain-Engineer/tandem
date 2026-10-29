@@ -268,5 +268,7 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     // Back in view: it waits its moment, then works again.
     grantTop = 200;
     await waitFor(() => expect(allow().disabled).toBe(false));
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(2);
   });
 });

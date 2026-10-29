@@ -291,7 +291,7 @@ function AgentCard({
               )}
             </p>
           )}
-          <div ref={box.ref} className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+          <div ref={box.ref} className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
             {!unreadable && (
               <Button
                 size="sm"

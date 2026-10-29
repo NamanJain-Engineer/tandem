@@ -442,4 +442,89 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     expect(h.onAllow).toHaveBeenCalledTimes(1);
     fireEvent.keyUp(el, { key: "a", code: "KeyA" });
   });
+
+  describe("M1/N4: the press tracker", () => {
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard kind="command" title="run" requestKey={requestKey} onAllow={onAllow} onDeny={() => undefined} />
+      </UiProvider>
+    );
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("M1: mouse held on A, B replaces it, another window takes focus, mouse released: nothing is allowed", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      rerender(view("apr_b", b));
+      fireEvent.blur(window);
+      await wait(1_050);
+      fireEvent.focus(window);
+      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.click(allow());
+      expect(a).not.toHaveBeenCalled();
+      expect(b).not.toHaveBeenCalled();
+    });
+
+    it("M1: Space held on A, blur and refocus, Space released over B: nothing is allowed", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      allow().focus();
+      fireEvent.keyDown(allow(), { key: " ", code: "Space" });
+      rerender(view("apr_b", b));
+      fireEvent.blur(window);
+      await wait(1_050);
+      fireEvent.focus(window);
+      // Keydowns after refocus are repeats: they start no press.
+      fireEvent.keyDown(allow(), { key: " ", code: "Space", repeat: true });
+      fireEvent.keyUp(allow(), { key: " ", code: "Space" });
+      fireEvent.click(allow());
+      expect(b).not.toHaveBeenCalled();
+    });
+
+    it("N4: Shift held since before the card changed doesn't hold back a fresh shift-click on it", async () => {
+      layout();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", () => undefined));
+      await steady();
+      // Shift goes down for a shift-click, then the card changes.
+      fireEvent.keyDown(document.body, { key: "Shift", code: "ShiftLeft" });
+      rerender(view("apr_b", b));
+      await wait(600);
+      fireEvent.pointerDown(allow(), { pointerId: 1, shiftKey: true });
+      fireEvent.pointerUp(allow(), { pointerId: 1, shiftKey: true });
+      fireEvent.click(allow(), { shiftKey: true });
+      expect(b).toHaveBeenCalledTimes(1);
+      fireEvent.keyUp(document.body, { key: "Shift", code: "ShiftLeft" });
+    });
+
+    it("N4: a click handled late is judged by when it happened, not when its handler ran", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      rerender(view("apr_b", b));
+      await wait(1_050);
+      // Released now; the click happened 10 ms later, but its handler runs
+      // 300 ms after that (slow listeners): it still belongs to the press.
+      const released = performance.now();
+      const up = new PointerEvent("pointerup", { bubbles: true, pointerId: 1 } as PointerEventInit);
+      Object.defineProperty(up, "timeStamp", { value: released });
+      allow().dispatchEvent(up);
+      await wait(300);
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      Object.defineProperty(click, "timeStamp", { value: released + 10 });
+      act(() => {
+        allow().dispatchEvent(click);
+      });
+      expect(b).not.toHaveBeenCalled();
+    });
+  });
 });

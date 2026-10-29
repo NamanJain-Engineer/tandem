@@ -475,21 +475,30 @@ describe("F-PL-08 held actions", () => {
     vi.stubGlobal("IntersectionObserver", PartIO);
     const rect = (top: number, height: number) =>
       ({ left: 0, top, width: 200, height, right: 200, bottom: top + height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    // Step by step: first only the pick is inside the window, then only the
+    // buttons. One box for the whole row would hold both back.
+    let pickTop = 40;
+    let buttonsTop = window.innerHeight + 100;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       if (this.tagName === "LI") return rect(-300, 1_600);
       if (this.closest('[data-testid^="held-run-"], [data-testid="held-run-selected"]') || this.querySelector?.('[data-testid^="held-run-"]'))
-        return rect(600, 30);
-      return rect(40, 20);
+        return rect(buttonsTop, 30);
+      return rect(pickTop, 20);
     });
     Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
     try {
       ui(<HeldActions />);
       const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
       const pick = screen.getByRole("checkbox", { name: "Select D-12" }) as HTMLButtonElement;
+      // 1: the pick is in view, the buttons are below the window.
       await waitFor(() => expect(waiting(pick)).toBe(false));
-      await waitFor(() => expect(waiting(run)).toBe(false));
+      expect(waiting(run)).toBe(true);
       fireEvent.click(pick);
       expect(pick.getAttribute("aria-checked")).toBe("true");
+      // 2: scrolled on: the pick is above the window, the buttons in view.
+      pickTop = -100;
+      buttonsTop = 300;
+      await waitFor(() => expect(waiting(run)).toBe(false));
       fireEvent.click(run);
       await waitFor(() => expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(true));
     } finally {

@@ -84,8 +84,9 @@ function trackPresses() {
     true,
   );
   document.addEventListener("keyup", (e) => release(key(e), e), true);
-  // Focus left the window: whatever was held, its release won't be seen.
-  window.addEventListener("blur", () => presses.clear());
+  // No reset when the window loses focus: a press held across it (the
+  // pointer grab keeps its release and click coming) must still be judged by
+  // when it began, and an unreleased one goes stale on its own.
   for (const type of ["click", "keydown", "keyup"] as const) {
     document.addEventListener(
       type,
