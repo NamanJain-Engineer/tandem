@@ -142,6 +142,12 @@ pnpm --filter desktop exec vitest run src/features/thread   # one area's TS test
 cargo test -p tandem-desktop --lib f_th_16                  # Rust tests by name
 pnpm gen:protocol                                           # regenerate TS types + shortcuts.json + settings.json
 pnpm gen:docs                                               # just the docs' generated sources (shortcuts, settings)
+node scripts/agent/claude-code-strip.mjs                    # what Claude Code's prompt drops before it reads a message, read
+                                                            # from the installed binary (or the path given) into
+                                                            # crates/tandem-core/tests/fixtures/claude-code-strip.json
+                                                            # (D-3030). Run it again when the Claude Code version the app
+                                                            # supports moves past the one the fixture names; the defang
+                                                            # tests then name what `untrusted::removable` must add
 
 # Desktop E2E (real Tauri binary via tauri-driver; builds first, ~10 min for all 60 files)
 sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
