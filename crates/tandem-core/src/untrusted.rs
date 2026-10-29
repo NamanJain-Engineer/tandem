@@ -114,24 +114,69 @@ pub fn readable(text: &str) -> String {
 
 /// [`readable`] text with credentials redacted, for text that is defanged
 /// later or that a model reads, since either reads past what's removable
-/// (D-3031). It redacts twice: as written, then once what's removable is
-/// gone (D-3036). A credential split by what's removable is whole only after
-/// it goes, and one that only what's removable set apart from a letter is
-/// found only before, since the join hides where it starts or ends.
+/// (D-3031). What it hides is found three ways, on the text as read
+/// (D-3036, D-3170):
+/// - as read: a credential split by what's removable is whole once it goes;
+/// - as written, mapped across the removal: one that only what's removable
+///   set apart from a letter, whose edge the join hides;
+/// - by the token rules, counting a word boundary where the removal cut: one
+///   both set apart and split, which neither of the others sees.
+///
+/// A span found any way hides the whole of what any way found, so the tail
+/// after a late split goes with the rest.
 pub fn redacted(text: &str) -> String {
-    crate::redact::redact(&readable(&crate::redact::redact(text)))
+    let (read, spans) = credential_spans(text);
+    if spans.is_empty() {
+        read
+    } else {
+        crate::redact::apply(&read, &spans)
+    }
 }
 
-/// Whether `text` holds what [`redacted`] hides: a credential as written or
-/// as [`readable`] leaves it (D-3036). For a check that refuses text a model
-/// reads later, such as a memory.
+/// Whether `text` holds what [`redacted`] hides (D-3036, D-3170). For a
+/// check that refuses text a model reads later, such as a memory.
 pub fn holds_credential(text: &str) -> bool {
-    let redactor = crate::redact::Redactor::global();
-    if redactor.redact(text) != text {
-        return true;
+    !credential_spans(text).1.is_empty()
+}
+
+/// [`readable`]'s text, and the spans [`redacted`] hides in it, merged.
+fn credential_spans(text: &str) -> (String, Vec<(usize, usize)>) {
+    // Where each removal or the Kelvin sign shifted the text: (offset in
+    // `text` after it, offset in `read` there), ascending.
+    let mut shifts = vec![(0, 0)];
+    let mut cuts = Vec::new();
+    let mut read = String::with_capacity(text.len());
+    for (at, c) in text.char_indices() {
+        if removable(c) {
+            if cuts.last() != Some(&read.len()) {
+                cuts.push(read.len());
+            }
+        } else if c == '\u{212A}' {
+            read.push('K');
+        } else {
+            read.push(c);
+            continue;
+        }
+        shifts.push((at + c.len_utf8(), read.len()));
     }
-    let read = readable(text);
-    redactor.redact(&read) != read.as_str()
+    let to_read = |b: usize| {
+        let k = shifts
+            .partition_point(|&(from, _)| from <= b)
+            .saturating_sub(1);
+        let (from, to) = shifts[k];
+        to + (b - from)
+    };
+    let redactor = crate::redact::Redactor::global();
+    let mut spans = redactor.spans(&read);
+    spans.extend(
+        redactor
+            .spans(text)
+            .into_iter()
+            .map(|(start, end)| (to_read(start), to_read(end))),
+    );
+    spans.extend(redactor.cut_spans(&read, &cuts));
+    spans.retain(|(start, end)| end > start);
+    (read, crate::redact::merge(spans))
 }
 
 /// The markers Claude Code's prompt puts in place of a paste or an image
@@ -578,6 +623,44 @@ mod tests {
             redacted("Release on Thursdays \u{200b}ok"),
             "Release on Thursdays ok"
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_redacted_hides_a_credential_what_is_removable_both_sets_apart_and_splits() {
+        // As written the split stops the rule's body, and once what's
+        // removable goes the join hides its edge: a token rule counts a word
+        // boundary where the removal cut too (D-3170). The review of
+        // a106fbf1's four probes, then two long tails after a late split,
+        // which go with the rest (its SF1 and Nit 1).
+        let z = '\u{200b}';
+        for text in [
+            format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+            format!("npm_0123456789{z}abcdefghijABCDEFGHIJ012345{z}x"),
+            format!("x{z}AIza0123456789{z}abcdefghijABCDEFGHIJ01234"),
+            format!("AKIA0123456789{z}ABCDEF{z}Z"),
+        ] {
+            assert!(holds_credential(&text), "{text:?}");
+            let safe = redacted(&text);
+            assert!(!safe.contains("0123456789"), "{safe:?}");
+            assert!(safe.contains(crate::redact::REDACTED), "{safe:?}");
+        }
+        let tail = "abcdefghijABCDEFGHIJ0123456789abcdefghijABCDEFGHIJ0123";
+        for text in [
+            format!("xoxb-0123456789{z}{tail}"),
+            format!("sk-ant-api03-ABCDEFGHIJ0123456789{z}{tail}abcdefghij01"),
+        ] {
+            let safe = redacted(&text);
+            assert!(!safe.contains(&tail[..20]), "{safe:?}");
+        }
+        // Nothing is found where nothing was cut: a word that only holds a
+        // prefix stays.
+        assert_eq!(
+            redacted("disk-usage-monitoring-service-name"),
+            "disk-usage-monitoring-service-name"
+        );
+        assert!(!holds_credential(
+            "disk\u{200b}usage-monitoring-service-name"
+        ));
     }
 
     #[test]

@@ -148,14 +148,15 @@ release fails when its version has no section.
   nothing, mid-turn too. What Conductor types in parts, without Enter between
   them, can't join into such a word either.
 - [lin] **A key split by a character nobody can see is still hidden.** Vibezeo
-  hides keys and tokens before text reaches a model or leaves your computer,
-  and now also finds one that an invisible character splits, or sets apart
-  from the word before it: in what Conductor reads from panes and threads and
-  what it says, the review queue's lines, a plugin's replies and errors, a
-  teammate's brief and memory, crash reports, usage statistics and Copy
-  diagnostics. A plugin's replies now lose every key Vibezeo recognises, not
-  only the connection's own. A thread that switches engines hides keys in the
-  summary it hands the next engine too, as a handoff's brief does.
+  hides keys and tokens before text reaches a model, your phone or anything
+  else off your computer, and now also finds one that an invisible character
+  splits, sets apart from the word before it, or both: in what Conductor reads
+  from panes and threads and what it says, the review queue's lines, a
+  plugin's replies and errors, a teammate's brief and memory, what your phone
+  shows, crash reports, usage statistics and Copy diagnostics. A plugin's
+  replies now lose every key Vibezeo recognises, not only the connection's
+  own. A thread that switches engines hides keys in the summary it hands the
+  next engine too, as a handoff's brief does.
 
 ## 0.12.0
 

@@ -574,6 +574,80 @@ async fn f_cn_09_5_a_big_review_reaches_the_phone_in_one_frame_with_view_only_cu
     assert!(!closing.contains("sk-ant-api03"), "{closing}");
 }
 
+/// Tokens a removable character splits, or sets apart and splits.
+fn hidden_tokens() -> Vec<String> {
+    let z = '\u{200b}';
+    vec![
+        format!("ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+        format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+    ]
+}
+
+#[test]
+fn f_tk_08_1_the_phones_review_hides_a_credential_behind_what_is_removable() {
+    // The phone is off this machine, and what's removable shows nothing
+    // there either: the diff and the closing lines are redacted as written
+    // and as read (D-3171).
+    for secret in hidden_tokens() {
+        let r = review_for_phone(PhoneReview {
+            item: Some(PhoneReviewItem {
+                key: "pane:pn_1".into(),
+                title: "Ada".into(),
+                engine: None,
+                workspace: "shop".into(),
+                branch: None,
+                finished_at: 1,
+                closing: Some(format!("pushed with {secret}")),
+                files: 1,
+                additions: 1,
+                deletions: 0,
+                risks: vec![],
+                check: None,
+                changed: false,
+            }),
+            files: vec![PhoneDiffFile {
+                path: "deploy.sh".into(),
+                change: "modified".into(),
+                additions: 1,
+                deletions: 0,
+                patch: format!("+TOKEN={secret}\n"),
+                truncated: false,
+                withheld: false,
+            }],
+            position: 1,
+            total: 1,
+            omitted: 0,
+        });
+        let shown = serde_json::to_string(&r).expect("json");
+        assert!(shown.contains("pushed with"), "{shown}");
+        assert!(!shown.contains("0123456789"), "{shown}");
+    }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_approvals_and_alerts_on_the_phone_hide_a_credential_behind_what_is_removable() {
+    for secret in hidden_tokens() {
+        let r = rig();
+        let mut phone = paired(&r).await;
+        let host: Arc<dyn PhoneHost> = r.host.clone();
+        let _ = r.svc.alerts(host.as_ref()).await; // the baseline
+        r.host.approvals.lock().expect("lock").push(ApprovalView {
+            summary: format!("Run deploy with {secret}"),
+            detail: format!("TOKEN={secret}"),
+            ..approval("ap_1")
+        });
+        let snap = cmd(&r, &mut phone, 1, "view.snapshot", json!({})).await;
+        let shown = snap["data"]["approvals"][0].to_string();
+        assert!(shown.contains("Run deploy with"), "{shown}");
+        assert!(!shown.contains("0123456789"), "{shown}");
+        let alerts = r.svc.alerts(host.as_ref()).await;
+        assert!(!alerts.is_empty());
+        for a in &alerts {
+            assert!(!a.body.contains("0123456789"), "{a:?}");
+        }
+    }
+}
+
 #[test]
 fn f_cn_09_5_patches_shrink_until_the_reply_fits_then_files_go_from_the_end() {
     let file = |n: usize, len: usize| PhoneDiffFile {

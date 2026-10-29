@@ -3445,6 +3445,17 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - **Tests**, both failing on a106fbf1 first:
     - `f_th_16_1_a_credential_said_in_the_thread_reaches_the_next_engine_redacted`: a token whole, split by what's removable, and set apart by it, said by you and by the agent;
     - `f_en_05_a_session_report_made_before_the_banner_still_makes_the_agent_idle`: it read `Working` where `Idle` was due. `f_en_05_a_started_hooked_agent_is_idle_whichever_arrives_first` had only the report newer than the banner.
+- [x] The review of a106fbf1 ("approved with should-fix", merged into chain27 at 390d0f0e): SF1 and the nits (D-3170, D-3171), on top of the answers' commit.
+  - **SF1 and Nit 1 (D-3170).** `redacted` finds a credential that what's removable both sets apart and splits, and a tail after a late split goes with the rest.
+  - **Nit 2.** D-3035 names the nested path with a space as left.
+  - **Nit 3 (D-3171).** `redact_text` answers as the save checks.
+  - **Nit 4 (D-3171).** What the phone gets is redacted as written and as read; notifications and the app's own lists stay as they are.
+  - **Nit 5.** Plugin replies' false positives wait for F-TK-09's slice, with the `descriptive_key` suffixes and F-TL-02's corpus.
+  - **F-CN-10's owner questions** (the TTS engine, the voice, bundled or downloaded, the notice) are in HUMAN_TODO, for after F-TK-09 (the coordinator's approval of the 0.14.0 plan).
+  - **Tests,** each failing first on the answers' commit:
+    - core `f_tk_08_1_redacted_hides_a_credential_what_is_removable_both_sets_apart_and_splits`: the review's four probes, the two tails, and a word that only holds a prefix;
+    - app `f_tk_08_1_the_preview_finds_what_the_save_refuses`;
+    - phone `f_tk_08_1_the_phones_transcript_hides_a_credential_behind_what_is_removable`, `f_tk_08_1_the_phones_review_hides_a_credential_behind_what_is_removable` and `f_tk_08_1_approvals_and_alerts_on_the_phone_hide_a_credential_behind_what_is_removable`.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3764,6 +3775,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - Paths (`/usr/bin/env`, `/tmp/x`, `//cdn.example/x.js`), comments (`/*`, `/**`) and a lone `/` stay.
     - `*` first is left for comments, though a folder's name could start with one.
     - A path with a `:` in it (`/usr/lib:/lib`) gets `／`: harmless, as a marker or a keyword is.
+    - Left, as contrived (the review of a106fbf1, Nit 2): a nested folder whose path has a space after a `/` still lifts. `Run /packages/ui kit:button` matches `(?<!\S)/packages/ui kit:button(?=$|\s)`, and the word the rule reads ends at the space. `/*deploy` stays as D-3035 has it.
   - The app's `\P{ASCII}` took a space outside ASCII (U+00A0, U+2003, U+3000) right after the `/` as a word, where the core's whitespace split ended it. So `x /\u{A0}y` got `／` in the app only.
     - Both now read the same spaces: JavaScript's `\s` and Rust's whitespace agree once what's removable is gone.
     - A test over every code point in each suite pins them.
@@ -3784,7 +3796,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - It also hid one timestamp, `access_token_expires_at`, whose key it reads as a credential's.
     - IDs, SHAs and `node_id`s stay.
   - Left as they are:
-    - the local log file, the UI's lists, notifications and the phone, which a person reads as written;
+    - the local log file, the UI's lists, notifications and the phone, which a person reads as written. Amended by D-3171: the phone isn't, since what's removable shows nothing there either and the phone is off this machine. Notifications and the app's own lists stay: they're local, and the person's own view;
     - the checks that warn about a launch's arguments and environment;
     - a thread's summary for the next engine (F-TH-16), which wasn't redacted at all, as its spec had it. The handoff's brief is redacted (F-CD-16). Amended by D-3038: the summary is redacted now.
 - D-3037: Conductor's typed chunks can't join (the review of eea2125f, SF3).
@@ -3800,6 +3812,17 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
 - D-3039: An agent's first session report makes it idle even when the app read its banner first (the coordinator's answer to a106fbf1's READY, question 3).
   - An engine can report its session starting before it prints its banner, and the app can read the banner first. The heuristics marked the pane "working" at the app's later time, and `StatusStore::apply` dropped the report's idle as older. The report had marked the pane hooked, so the heuristics stopped, and the agent showed "working" until its first prompt: on the Dashboard, and to Auto, which waits for an idle prompt (the m16-7-auto flake).
   - The first session report's idle takes the later of its own time and the current record's, as a title report already does.
+- D-3170: `untrusted::redacted` finds a credential that what's removable both sets apart and splits (the review of a106fbf1, SF1 and Nit 1).
+  - The token rules are anchored on a word boundary. As written, the split stops a rule's body; once what's removable goes, the join removes the boundary. So both of D-3036's passes missed `abc\u{200B}ghp_0123456789\u{200B}abcdefghij…`, `npm_0123456789\u{200B}…\u{200B}x`, `x\u{200B}AIza0123456789\u{200B}…` and `AKIA0123456789\u{200B}ABCDEF\u{200B}Z`, and gave them back whole.
+  - D-3036's two passes left a long tail too. The pass as written redacted the part before a late split, and the rest stayed visible: `xoxb-0123456789\u{200B}<54 more>`, `sk-ant-api03-<20>\u{200B}<66 more>`.
+  - Now it finds spans three ways on the text as read and hides their union:
+    - as read;
+    - as written, each span mapped across the removal;
+    - by the token rules (`Redactor::cut_spans`): each one without its `\b`s, anchored at every real word boundary and every place the removal cut, and accepted where it ends at either, or with a cut inside it.
+  - A word that only holds a prefix, with nothing cut before it (`disk-usage-…`), isn't a token. `holds_credential` is whether there are any spans.
+- D-3171: The phone and the app's secret previews read text as a model and a save do (the review of a106fbf1, Nits 3 and 4).
+  - `redact_text`, which Memory's and Skills' editors compare with what they sent, used the plain redactor, so a split credential passed the preview and the save refused it. It now returns `untrusted::redacted` when `holds_credential`, else the text unchanged.
+  - The phone's review diff and closing lines, approvals' summaries and details, push bodies and transcripts go through `untrusted::redacted`. An approval's summary had no redaction at all in the snapshot.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

@@ -37,6 +37,15 @@ struct Rule {
     extract: Extract,
 }
 
+/// A rule that redacts a whole token after a word boundary (`\bghp_…`), as
+/// [`Redactor::cut_spans`] runs it: without its `\b`s, anchored at a start
+/// it's given.
+struct TokenRule {
+    re: Regex,
+    /// Whether the rule also wants a word boundary after the token.
+    end_boundary: bool,
+}
+
 type Spec = (String, Extract);
 
 fn rule(pattern: &str) -> Spec {
@@ -331,6 +340,10 @@ impl SecretFilter {
 pub struct Redactor {
     prefilter: RegexSet,
     rules: Vec<Rule>,
+    /// The token rules' bodies, unanchored, to tell which can match at all.
+    token_prefilter: RegexSet,
+    token_rules: Vec<TokenRule>,
+    boundary_re: Regex,
     token_re: Regex,
     secrets: RwLock<SecretFilter>,
     home: Option<String>,
@@ -347,6 +360,23 @@ impl Redactor {
         let specs = rule_specs();
         let prefilter = RegexSet::new(specs.iter().map(|(p, _)| p.as_str()))
             .expect("redaction patterns compile");
+        let mut token_rules = Vec::new();
+        let mut token_bodies = Vec::new();
+        for (pattern, extract) in &specs {
+            let (Extract::Whole, Some(body)) = (extract, pattern.strip_prefix(r"\b")) else {
+                continue;
+            };
+            let (body, end_boundary) = match body.strip_suffix(r"\b") {
+                Some(body) => (body, true),
+                None => (body, false),
+            };
+            token_rules.push(TokenRule {
+                re: Regex::new(&format!("^(?:{body})")).expect("token pattern compiles"),
+                end_boundary,
+            });
+            token_bodies.push(body.to_string());
+        }
+        let token_prefilter = RegexSet::new(&token_bodies).expect("token patterns compile");
         let rules = specs
             .into_iter()
             .map(|(pattern, extract)| Rule {
@@ -358,6 +388,9 @@ impl Redactor {
         Self {
             prefilter,
             rules,
+            token_prefilter,
+            token_rules,
+            boundary_re: Regex::new(r"\b").expect("boundary pattern compiles"),
             token_re,
             secrets: RwLock::new(SecretFilter::new()),
             home: crate::paths::user_home()
@@ -387,7 +420,7 @@ impl Redactor {
     }
 
     /// Byte spans to redact, sorted and merged.
-    fn spans(&self, s: &str) -> Vec<(usize, usize)> {
+    pub(crate) fn spans(&self, s: &str) -> Vec<(usize, usize)> {
         let mut spans = Vec::new();
         for idx in self.prefilter.matches(s).into_iter() {
             let Some(rule) = self.rules.get(idx) else {
@@ -437,6 +470,48 @@ impl Redactor {
         merge(spans)
     }
 
+    /// Spans a token rule finds in `s` when a position in `cuts` counts as a
+    /// word boundary too. `s` is text something was taken out of at each cut
+    /// (`untrusted::readable`): what was taken out could set a token apart
+    /// from a letter, and the join hides that edge (D-3170). A rule that
+    /// wants a boundary after the token also takes a cut inside it, where the
+    /// removal split it. Starts are only real boundaries and cuts, so a word
+    /// that merely holds a prefix (`disk-usage-…`) isn't one.
+    pub(crate) fn cut_spans(&self, s: &str, cuts: &[usize]) -> Vec<(usize, usize)> {
+        let mut spans = Vec::new();
+        if cuts.is_empty() {
+            return spans;
+        }
+        let rules: Vec<usize> = self.token_prefilter.matches(s).into_iter().collect();
+        if rules.is_empty() {
+            return spans;
+        }
+        let mut bounds: Vec<usize> = self.boundary_re.find_iter(s).map(|m| m.start()).collect();
+        bounds.extend_from_slice(cuts);
+        bounds.sort_unstable();
+        bounds.dedup();
+        let at_bound = |i: usize| bounds.binary_search(&i).is_ok();
+        for idx in rules {
+            let Some(rule) = self.token_rules.get(idx) else {
+                continue;
+            };
+            for &start in &bounds {
+                if start >= s.len() || !s.is_char_boundary(start) {
+                    continue;
+                }
+                let Some(m) = rule.re.find(&s[start..]) else {
+                    continue;
+                };
+                let end = start + m.end();
+                let split = cuts.iter().any(|&c| c > start && c < end);
+                if end > start && (!rule.end_boundary || at_bound(end) || split) {
+                    spans.push((start, end));
+                }
+            }
+        }
+        spans
+    }
+
     /// Replaces every secret in `s` with `[REDACTED]`.
     pub fn redact<'a>(&self, s: &'a str) -> Cow<'a, str> {
         let spans = self.spans(s);
@@ -462,7 +537,7 @@ impl Redactor {
     }
 }
 
-fn merge(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+pub(crate) fn merge(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     spans.sort_unstable();
     let mut out: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
     for (start, end) in spans {
@@ -474,7 +549,7 @@ fn merge(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     out
 }
 
-fn apply(s: &str, spans: &[(usize, usize)]) -> String {
+pub(crate) fn apply(s: &str, spans: &[(usize, usize)]) -> String {
     let mut out = String::with_capacity(s.len());
     let mut cursor = 0;
     for (start, end) in spans {

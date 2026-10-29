@@ -224,7 +224,40 @@ pub fn commands_registry() -> Vec<CommandSpec> {
     registry::registry().to_vec()
 }
 
+/// `text` as a save's check reads it: redacted as written and past what's
+/// removable when it holds a credential, else unchanged, so a caller that
+/// compares the two learns what the save refuses (D-3171).
 #[tauri::command]
 pub fn redact_text(text: String) -> String {
-    Redactor::global().redact(&text).into_owned()
+    if tandem_core::untrusted::holds_credential(&text) {
+        tandem_core::untrusted::redacted(&text)
+    } else {
+        text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_tk_08_1_the_preview_finds_what_the_save_refuses() {
+        // MemoryTab and SkillsTab compare redact_text's answer with what
+        // they sent: it changes exactly the text a save would refuse, a
+        // credential as written or past what's removable (D-3171).
+        let z = '\u{200b}';
+        for secret in [
+            format!("ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+            format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+        ] {
+            let text = format!("- pushed with {secret}");
+            assert!(tandem_core::untrusted::holds_credential(&text));
+            let shown = redact_text(text.clone());
+            assert_ne!(shown, text);
+            assert!(!shown.contains("0123456789"), "{shown:?}");
+        }
+        // No credential, an emoji joiner kept: unchanged, as the save keeps it.
+        let fine = "- Ships on Thursdays \u{1F468}\u{200D}\u{1F469}".to_string();
+        assert_eq!(redact_text(fine.clone()), fine);
+    }
 }

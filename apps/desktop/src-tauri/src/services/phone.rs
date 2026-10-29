@@ -255,18 +255,19 @@ fn review_bytes(r: &PhoneReview) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// Redacts a review's diff for the phone, withholds `.env` files, and cuts
-/// patches (the longest first, then whole files from the end) until the
-/// reply fits in one sealed frame.
+/// Redacts a review's diff for the phone, as written and past what's
+/// removable (D-3171), withholds `.env` files, and cuts patches (the longest
+/// first, then whole files from the end) until the reply fits in one sealed
+/// frame.
 pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
-    use tandem_core::redact::Redactor;
+    use tandem_core::untrusted::redacted;
     for f in &mut r.files {
         if crate::services::review_queue::is_env(&f.path) {
             f.patch.clear();
             f.withheld = true;
             continue;
         }
-        let text = Redactor::global().redact(&f.patch).into_owned();
+        let text = redacted(&f.patch);
         if text.chars().count() > MAX_DIFF_FILE_CHARS {
             f.patch = text.chars().take(MAX_DIFF_FILE_CHARS).collect();
             f.truncated = true;
@@ -278,7 +279,7 @@ pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
         item.closing = item
             .closing
             .take()
-            .map(|c| clip(&Redactor::global().redact(&c), MAX_ITEM_CHARS));
+            .map(|c| clip(&redacted(&c), MAX_ITEM_CHARS));
     }
     loop {
         let bytes = review_bytes(&r);
@@ -1085,7 +1086,7 @@ impl PhoneService {
                     body: if desk_only(a) {
                         PANE_APPROVAL_BODY.into()
                     } else {
-                        clip(&tandem_core::redact::redact(&a.summary), 160)
+                        clip(&tandem_core::untrusted::redacted(&a.summary), 160)
                     },
                     at: now,
                 });
@@ -1107,7 +1108,7 @@ impl PhoneService {
                 id: a.key.clone(),
                 title: clip(&title, 80),
                 body: clip(
-                    &tandem_core::redact::redact(a.preview.as_deref().unwrap_or_default()),
+                    &tandem_core::untrusted::redacted(a.preview.as_deref().unwrap_or_default()),
                     160,
                 ),
                 at: now,
@@ -1795,15 +1796,16 @@ impl PhoneService {
                 PhoneApproval {
                     queued: queued.iter().any(|q| q == a.id.as_str()),
                     id: a.id.as_str().to_string(),
+                    // What the phone gets is off this machine (D-3171).
                     summary: if desk {
                         PANE_APPROVAL_BODY.into()
                     } else {
-                        clip(&a.summary, 200)
+                        clip(&tandem_core::untrusted::redacted(&a.summary), 200)
                     },
                     detail: if desk {
                         String::new()
                     } else {
-                        clip(&tandem_core::redact::redact(&a.detail), 1000)
+                        clip(&tandem_core::untrusted::redacted(&a.detail), 1000)
                     },
                     source: source_label(&a),
                     desk_only: desk,
