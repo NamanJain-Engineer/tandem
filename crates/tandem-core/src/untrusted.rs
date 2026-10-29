@@ -419,6 +419,10 @@ mod tests {
             }
         }
         assert!(engine["version"].as_str().is_some_and(|v| !v.is_empty()));
+        // It names the binary it was read from.
+        assert!(engine["sha256"]
+            .as_str()
+            .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())));
     }
 
     #[test]

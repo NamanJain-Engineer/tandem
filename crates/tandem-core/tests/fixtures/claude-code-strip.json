@@ -1,6 +1,7 @@
 {
-  "about": "What Claude Code's prompt drops from a message before it reads it, and what it reads as a line break: its submit-time stripper, run over every code point by scripts/agent/claude-code-strip.mjs from the installed binary (the binary isn't run). untrusted::removable, and the app's, must cover `removed` (D-3030). Ranges are inclusive code points.",
+  "about": "What Claude Code's prompt drops from a message before it reads it, and what it reads as a line break: its submit-time stripper, run over every code point by scripts/agent/claude-code-strip.mjs from the binary whose SHA-256 is `sha256` (the binary isn't run). untrusted::removable, and the app's, must cover `removed` (D-3030). Ranges are inclusive code points.",
   "version": "2.1.312",
+  "sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
   "removed": [
     [0, 8],
     [14, 31],

@@ -13,7 +13,7 @@ const fixture = (name: string): unknown =>
 // The core reads the same file, so both make the same text (D-3023).
 const vectors = fixture("defang.json") as Vectors;
 // What Claude Code's prompt drops, from its own stripper (D-3030).
-const engine = fixture("claude-code-strip.json") as { version: string; removed: Ranges };
+const engine = fixture("claude-code-strip.json") as { version: string; sha256: string; removed: Ranges };
 const within = (rs: Ranges, cp: number) => rs.some(([lo, hi]) => cp >= lo && cp <= hi);
 
 describe("untrusted text for an agent (D-3023)", () => {
@@ -29,6 +29,7 @@ describe("untrusted text for an agent (D-3023)", () => {
 
   it("F-WT-02.1 drops the core's list, which covers every code point Claude Code's prompt drops", () => {
     expect(engine.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(engine.sha256).toMatch(/^[0-9a-f]{64}$/);
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue;
       if (removable(cp) !== within(vectors.removable, cp)) {
