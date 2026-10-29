@@ -499,6 +499,12 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
   strongest check before touching `main`.
+- **`test:site` is in neither the gate nor CI.** The gate runs the site's vitest
+  (`scenes.test.tsx` among it), not its Playwright. The scenes' browser checks
+  are only there: no swap showing two values at once (every scene stepped every
+  25 ms at 1440 and 390 px, D-3002), one clock in real playback (D-3001), every
+  step laid out alike (D-3003) and the final frames. Run it on any scene change
+  before READY; the release checks run it too.
 - **Deployment limit (D-829):** Vercel's plan caps deployments per day, and every push to a branch Vercel deploys counts. Only `main` deploys (`git.deploymentEnabled`). Batch: merge features into `product-m0-m5` as they're ready, and move `main` only for a release that bundles them all. One release is one deployment. Never merge into `main` for a single small change unless it's a hotfix the live site needs. If Vercel answers "Deployment rate limited", wait it out (the limit is a rolling day) or use **Redeploy** on the latest `main` deployment once it clears.
 - `build:site` ends with `scripts/strip-runtime.mjs` (D-1813): it removes Next's
   unused client runtime from the marketing pages and the docs (not the demo app;

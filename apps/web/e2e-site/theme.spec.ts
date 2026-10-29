@@ -89,6 +89,27 @@ test("F-WB-01 AC4 F-WB-01 AC7 the header's control switches the page at once and
   await ctx.close();
 });
 
+test("F-WB-01 AC4 the chosen theme's cell draws its 1 px ring, in both themes (WCAG 1.4.11, D-3001)", async ({ browser }) => {
+  // An undefined var() in a box-shadow voids all of it: check what the browser draws, not the stylesheet's text.
+  for (const stored of ["light", "dark"] as const) {
+    const ctx = await context(browser, stored === "light" ? "dark" : "light", stored);
+    const page = await ctx.newPage();
+    await page.goto("/");
+    const cell = page.locator(`.site-header > nav > fieldset label[data-choice="${stored}"]`);
+    const [shadow, ring] = await cell.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--tn-text-muted)";
+      el.append(probe);
+      const muted = getComputedStyle(probe).color;
+      probe.remove();
+      return [getComputedStyle(el).boxShadow, muted];
+    });
+    expect(shadow, stored).not.toBe("none");
+    expect(shadow, stored).toContain(`${ring} 0px 0px 0px 1px`);
+    await ctx.close();
+  }
+});
+
 test("F-WB-01 AC4 keyboard focus shows on the theme control's cell, not only on its hidden radio (WCAG 2.4.7)", async ({ browser }) => {
   const ctx = await context(browser, "dark");
   const page = await ctx.newPage();

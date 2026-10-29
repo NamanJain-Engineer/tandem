@@ -1,0 +1,140 @@
+/* The home page's scenes' own rules (D-2702): the hero's Code-mode window
+   (the rail, Code mode's tab and the sidebar on the Dashboard's Review
+   view) and the review queue's card, which the Review scene draws too.
+   Only the home page imports them; they build on scenes.css, which comes
+   first. Each part is sized in the app's own pixels (--sc-px), as its
+   component draws it. */
+
+/* The window's body as AppShell lays it out: the rail, Code mode's main
+   area and the docked sidebar, as at 1,100 px and wider. The rail is 320 px,
+   a width CodeRail allows (180 to 360), where every row holds its name, its
+   slot, its count and its menu's room without cutting any (D-2704). The
+   sidebar is 400 px, between its 320 and its default 470. */
+.sc-code { position: relative; display: grid; grid-template-columns: calc(320 * var(--sc-px)) minmax(0, 1fr) calc(400 * var(--sc-px)); min-height: 0; }
+
+/* The rail (CodeRail): WORKSPACES and + on a 36 px row, then the list 6 px
+   in from each side, Remote hosts at the foot over a divider. */
+.sc-crail { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--tn-border); background: var(--tn-surface-1); }
+.sc-crail-head { display: flex; flex: none; align-items: center; gap: calc(4 * var(--sc-px)); height: calc(36 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); }
+.sc-crail-title { flex: 1; padding-inline: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tn-text-subtle); }
+.sc-crail-add, .sc-side-tools svg { box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(7 * var(--sc-px)); color: var(--tn-text-muted); }
+/* The list starts with the pinned band's 4 px, empty with nothing pinned. */
+.sc-crail-list { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: calc(4 * var(--sc-px)) calc(6 * var(--sc-px)) calc(8 * var(--sc-px)); }
+/* The repository's row (RailList): 30 px, 13 px; its chevron, its folder,
+   its name and, with nothing to say about its own agents, its branch. */
+.sc-wsrow { display: flex; flex: none; align-items: center; gap: calc(6 * var(--sc-px)); height: calc(30 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(13 * var(--sc-px)); color: var(--tn-text); }
+.sc-wsrow-chevron { flex: none; box-sizing: content-box; width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); margin-left: calc(-4 * var(--sc-px)); padding: calc(2 * var(--sc-px)); color: var(--tn-text-subtle); }
+.sc-wsrow-icon { flex: none; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-wsrow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-bchip { display: inline-flex; flex: none; align-items: center; gap: calc(2 * var(--sc-px)); font-size: calc(11 * var(--sc-px)); color: var(--tn-text-subtle); }
+.sc-bchip-icon { width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); }
+/* Under it, 24 px in: its panes, here none, then its worktrees. */
+.sc-crail-group { display: flex; flex-direction: column; padding: 0 0 calc(4 * var(--sc-px)) calc(24 * var(--sc-px)); }
+.sc-crail-none { padding: calc(4 * var(--sc-px)) calc(8 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); color: var(--tn-text-subtle); }
+/* A worktree's row (WorktreeRow): 28 px, 12 px, muted unless it's the one
+   in view; its trailing parts 6 px apart, and room at the end for its
+   menu, which shows on hover. */
+.sc-wtrow { display: flex; flex: none; align-items: center; gap: calc(6 * var(--sc-px)); height: calc(28 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-wtrow-on { color: var(--tn-text); background: var(--tn-surface-4); }
+.sc-wtrow-icon { flex: none; width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); }
+.sc-wtrow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What trails its name, as it is from each time on, in one cell at the
+   row's end: the set shown is laid out as the app lays it out then. */
+.sc-wtrow-trail { display: inline-grid; flex: none; justify-items: end; }
+.sc-wtrow-step { grid-area: 1 / 1; display: inline-flex; }
+.sc-wtrow-parts { display: inline-flex; align-items: center; gap: calc(6 * var(--sc-px)); }
+.sc-wtrow-ask { display: inline-flex; }
+/* Its slot (WorkspaceSlot): a working dot and its count in 11 px, or
+   "Needs you" as a quiet badge. */
+.sc-slot-working { display: inline-flex; align-items: center; gap: calc(4 * var(--sc-px)); font-size: calc(11 * var(--sc-px)); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--tn-text-muted); }
+.sc-slot-working .sc-dot svg { width: calc(6 * var(--sc-px)); height: calc(6 * var(--sc-px)); }
+/* The radar's mark (RadarMark): its badge in a small ghost Button, 28 px
+   with 10 px each side. */
+.sc-wtrow-radar { display: inline-flex; flex: none; align-items: center; height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); }
+.sc-wtrow-menu { flex: none; width: calc(28 * var(--sc-px)); }
+.sc-crail-foot { flex: none; padding: calc(6 * var(--sc-px)) calc(6 * var(--sc-px)) 0; border-top: 1px solid var(--tn-divider); }
+.sc-crail-remote { justify-content: center; gap: calc(6 * var(--sc-px)); width: 100%; height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); }
+.sc-crail-remote-icon { width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); }
+
+/* Code mode's main area (CodeMain), 6 px in: its tab strip, 32 px, then
+   the tab's pane. */
+.sc-code-main { display: flex; flex-direction: column; gap: calc(6 * var(--sc-px)); min-width: 0; min-height: 0; padding: calc(6 * var(--sc-px)); }
+.sc-code-main > .sc-pane { flex: 1; }
+.sc-tabs { display: flex; flex: none; align-items: center; gap: calc(4 * var(--sc-px)); height: calc(32 * var(--sc-px)); }
+/* The tab (TabItem): 28 px, 13 px, raised while selected, its label cut
+   at 220 px as the app's is, and room for its close button, which shows on
+   hover; + and Arrange at the strip's end. */
+.sc-tab { display: block; flex: none; height: calc(28 * var(--sc-px)); max-width: calc(244 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)) calc(34 * var(--sc-px)); overflow: hidden; border-radius: calc(6 * var(--sc-px)); font-size: calc(13 * var(--sc-px)); line-height: calc(28 * var(--sc-px)); text-overflow: ellipsis; white-space: nowrap; color: var(--tn-text); background: var(--tn-surface-3); }
+.sc-tabs-add { margin-left: auto; box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(7 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-tabs-arrange, .sc-rq .sc-btn, .sc-rq-card .sc-btn { gap: calc(6 * var(--sc-px)); height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); }
+.sc-tabs-arrange-icon { width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); }
+
+/* The sidebar (Sidebar), docked: its 32 px header with the tab's pill and
+   its buttons, then the tab's panel. */
+.sc-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--tn-border); background: var(--tn-surface-1); }
+.sc-side-head { display: flex; flex: none; align-items: center; gap: calc(4 * var(--sc-px)); height: calc(32 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); border-bottom: 1px solid var(--tn-divider); }
+/* A tab's pill: 24 px, fully rounded, 12 px, raised while it's the open
+   one; its icon, its name, its waiting count, and room for its ×. */
+.sc-pills { display: grid; }
+.sc-pills > * { grid-area: 1 / 1; display: inline-flex; }
+.sc-pill { display: inline-flex; align-items: center; gap: calc(6 * var(--sc-px)); height: calc(24 * var(--sc-px)); padding-left: calc(10 * var(--sc-px)); border-radius: 999px; font-size: calc(12 * var(--sc-px)); color: var(--tn-text); background: var(--tn-surface-3); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-pill-icon { width: calc(13 * var(--sc-px)); height: calc(13 * var(--sc-px)); }
+.sc-pill-count { display: inline-flex; }
+.sc-pill-close { width: calc(16 * var(--sc-px)); margin-right: calc(4 * var(--sc-px)); }
+.sc-side-tools { margin-left: auto; display: inline-flex; }
+/* Pin shows only while the sidebar floats; its icon is 13 px in the same
+   28 px button (Sidebar's header). */
+.sc-side-tools .sc-side-pin { display: none; width: calc(13 * var(--sc-px)); height: calc(13 * var(--sc-px)); padding: calc(7.5 * var(--sc-px)); }
+/* DashboardPanel: its view switch 12 px in, then the view. */
+.sc-side-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sc-side-body > .sc-seg-sm { align-self: flex-start; margin: calc(12 * var(--sc-px)) calc(12 * var(--sc-px)) 0; }
+/* A small SegmentedControl: 2 px in a 6 px-cornered frame, each item 24
+   px, 12 px medium, the selected one raised. */
+.sc-seg-sm { display: inline-flex; flex: none; gap: 0; padding: calc(2 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); background: var(--tn-surface-1); box-shadow: inset 0 0 0 1px var(--tn-border); }
+.sc-seg-sm .sc-mode { display: inline-flex; align-items: center; height: calc(24 * var(--sc-px)); padding: 0 calc(12 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); white-space: nowrap; }
+.sc-seg-sm .sc-mode-on { background: var(--tn-surface-3); box-shadow: var(--tn-elev-1); }
+
+/* The Review view (ReviewQueue): "Nothing to review" until there's work,
+   then the queue, in one cell. */
+.sc-rq-views { display: grid; min-height: 0; }
+.sc-rq-views > * { grid-area: 1 / 1; min-width: 0; }
+.sc-rq-empty { display: flex; flex-direction: column; align-items: center; gap: calc(12 * var(--sc-px)); margin: calc(12 * var(--sc-px)); padding: calc(40 * var(--sc-px)) calc(16 * var(--sc-px)); text-align: center; }
+.sc-rq-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: calc(40 * var(--sc-px)); height: calc(40 * var(--sc-px)); border-radius: calc(10 * var(--sc-px)); color: var(--tn-text-muted); background: var(--tn-surface-4); }
+.sc-rq-empty-icon svg { width: calc(20 * var(--sc-px)); height: calc(20 * var(--sc-px)); }
+.sc-rq-empty-title { font-size: calc(14 * var(--sc-px)); line-height: calc(22 * var(--sc-px)); font-weight: 600; }
+.sc-rq-empty-body { font-size: calc(13 * var(--sc-px)); line-height: calc(20 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-rq { display: flex; flex-direction: column; gap: calc(12 * var(--sc-px)); padding: calc(12 * var(--sc-px)); }
+.sc-rq-sort { display: flex; align-items: center; justify-content: space-between; gap: calc(8 * var(--sc-px)); }
+.sc-rq-section { font-size: calc(11 * var(--sc-px)); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tn-text-muted); }
+.sc-rq-section + * { margin-top: calc(-4 * var(--sc-px)); }
+
+/* A review card (ReviewCard): 12 px in, 8 px apart, on surface-2 with its
+   border and 10 px corners. */
+.sc-rq-card { display: flex; flex-direction: column; gap: calc(8 * var(--sc-px)); padding: calc(12 * var(--sc-px)); border-radius: calc(10 * var(--sc-px)); background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--tn-border); }
+.sc-rq-title { font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); font-weight: 500; }
+.sc-rq-meta, .sc-rq-stat, .sc-rq-check { font-size: calc(11 * var(--sc-px)); line-height: calc(16 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-rq-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-rq-closing { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); }
+.sc-rq-risks { display: flex; flex-wrap: wrap; gap: calc(6 * var(--sc-px)); }
+/* The check's result is a details summary: its marker, then the words. */
+.sc-rq-check { display: flex; align-items: center; gap: calc(6 * var(--sc-px)); }
+.sc-rq-check::before { content: ""; flex: none; border-block: calc(4 * var(--sc-px)) solid transparent; border-left: calc(6 * var(--sc-px)) solid currentColor; }
+.sc-rq-actions { display: flex; flex-wrap: wrap; gap: calc(6 * var(--sc-px)); }
+/* Its buttons as Button draws a small one: Approve on the accent, Open diff
+   secondary with its border, the rest ghosts. */
+.sc-rq-actions .sc-btn:not(.sc-btn-primary, .sc-btn-ghost) { box-shadow: inset 0 0 0 1px var(--tn-border); }
+/* Before the check is done and after, in one cell: Run check joins them. */
+.sc-rq-actions-swap { display: grid; }
+.sc-rq-actions-swap > * { grid-area: 1 / 1; align-self: start; }
+
+/* A phone's frame: the worktrees' rows as a strip over the pane, and the
+   sidebar floating over the pane, as the app's does below 1,100 px. */
+@container (max-width: 40rem) {
+  .sc-code { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .sc-crail { border-right: 0; border-bottom: 1px solid var(--tn-border); }
+  .sc-crail-head, .sc-wsrow, .sc-crail-none, .sc-crail-foot { display: none; }
+  .sc-crail-list, .sc-crail-group { padding: calc(4 * var(--sc-px)); }
+  .sc-side { position: absolute; grid-area: 2 / 1; inset-block: 0; right: 0; z-index: 2; width: 62%; box-shadow: var(--tn-elev-3); }
+  .sc-side-tools .sc-side-pin { display: block; }
+  .sc-tabs-arrange { display: none; }
+}

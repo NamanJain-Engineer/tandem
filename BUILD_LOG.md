@@ -54,13 +54,13 @@
   - Previous release: 0.11.0 (25 and 26 October; D-873), deployed by #104 (d76688f2) on 26 October.
   Deployed by #107 (fc2ca3a6) on 26 October, live at 23:05 UTC. `main` came back into `product-m0-m5` with this record.
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
-- Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889):
+- Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889, D-3000 to D-3019):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
   - A motion system, accent discipline and the download's real button (D-1874 to D-1876).
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
   - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
-  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" is in; 0.9.0's CI results and review comments, 0.11.0's claims and the governor follow.
+  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001). The hero is one worktree's window in Code mode, as 0.12.0 draws it (D-2702, D-3003), without the intent radar until 0.13.0 (D-2704, D-3004); next, the scenes to 0.13.0, then 0.11.0's claims and the governor.
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -2222,7 +2222,7 @@ Built on branch `site-blog` from `chain19` (the owner's request of 15 October: a
   - Then the gate.
 
 ## M15 · Website dark mode and motion (`site-motion`)
-The owner (20 October, through the coordinating session): "dark mode isn't there in the website. I think the website will look great in dark mode"; take inspiration from onemana.dev's animations (its techniques only: our own code, scenes and words); and "maybe the product images aren't sufficient. Add some animations there instead which make it look crazy and give a special feel". Three slices on `site-motion` from `product-m0-m5`: dark mode, the motion system, animated product scenes. Decisions D-1870 to D-1889 (the design lead has D-1890 on). The spec's F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9.
+The owner (20 October, through the coordinating session): "dark mode isn't there in the website. I think the website will look great in dark mode"; take inspiration from onemana.dev's animations (its techniques only: our own code, scenes and words); and "maybe the product images aren't sufficient. Add some animations there instead which make it look crazy and give a special feel". Three slices on `site-motion` from `product-m0-m5`: dark mode, the motion system, animated product scenes. Decisions D-1870 to D-1889 (the design lead has D-1890 on), and D-3000 to D-3019 for the scenes catching up from slice 1b on. The spec's F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9.
 
 ### Website dark mode and motion decisions
 - D-1870: the site has a theme choice: System, Light or Dark, replacing D-1801's "no toggle". The site was already dark by default, and light only when the OS asked for it, so a visitor whose OS is light never saw it dark. The control is three radios with icons (`ThemeSwitch`): in the header before Download from 640 px up, and as a labelled "Theme" row in the phone menu below that; the account portal's `Shell` has it too, and the docs get it from the site header. The selected one is lit from `data-theme-choice` on `<html>` in CSS, so it's right at the first paint, before the radios are checked. System, the default, follows the OS live in CSS, as before. Light or Dark sets `data-theme`, which tokens.css already answers for the app's tokens; site.css gains `:root[data-theme="light"]` with the site's own light tokens (a test fails if it differs from the OS block), every `prefers-color-scheme: light` block is guarded by `:root:not([data-theme="dark"])` (a test checks each), and a `light:` custom variant serves the odd utility (the blog's Shiki colours). The docs' Shiki colours follow both too. The control's icon turns a quarter while it's pressed, only under no-preference. Without JavaScript the control and its menu row aren't shown and the page follows the OS.
@@ -2348,6 +2348,192 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **Scenes' `visit` effect:** it faded over the last tenth of its stay, so a long stay (a run's six seconds of "Running") left its dot blank for over half a second before the next state. Its fades are now a fixed `--dur-pop` at each end.
   - **design-shots counts what the capture shows:** it counted elements inside a transparent wrapper (a scene's earlier states), and a badge and its dot as two. It now skips what `checkVisibility` says isn't seen, and counts a teal element once with the teal inside it, as `accent.spec.ts` and DESIGN §4.2 do. This is the design lead's script; the change is flagged in the READY.
 
+- D-3000: the scenes' sample work is the in-app demo's `story.json` (D-1899, app-ui's D-2609), so the site and the demo never drift.
+  - **`SAMPLE` is a view of it:** `lib/scenes.ts` reads from it the repository and base, each worktree (its engine, slug, commits and merge commit), the overlap, each agent's steps, the dev server, the waiting agent's ask, the second opinion's comments and the pull request's failing check. A pane prints the steps as `reading …`, `editing … +a −d`, `$ command` and `Tests n passed`. So does the plan's goal and its tasks, from the `plan` block app-ui added in f47de661; the scene numbers the tasks as the tracker does (TAN-31 on, `ISSUE_PREFIX`). A test checks each value against story.json and that no name from it is written into lib/scenes.ts.
+  - **What it changes on the home page:** the hero's panes print the story's steps. Claude Code reads src/auth/session.ts and src/cart/checkout.ts, edits checkout.ts, coupon.ts, session.ts and checkout.test.ts, and passes 42 tests; Codex ends on `$ pnpm test coupon`. Claude Code's nine lines come 0.6 s apart (it had seven, 0.8 s apart), so its tests still pass before its dot turns done: each agent pane's lines now spread to end at a set time (`Lines`' `end`), however many steps the story gives, and a test checks that every pane prints them all before what comes next in it. The Land scene's commit counts come from the story (3, 5 and 2, as before).
+  - **The Review scene's diff is checkout-fix's real one:** each row is the demo's sample file's line at its number, in shop/main and shop/checkout-fix (a test reads both). It has DiffView's two number columns and "−" for a removed line.
+  - **Second opinion's comments are inline, as DiffView's annotation rows:** under lines 22 and 25, in the story's words, with Edit and Remove, because in the app they're ordinary review comments. They were popovers, which covered the code at the new comment's length.
+  - **They arrive together with "Codex left 2 comments",** as `review:second_opinion` adds them in the app. Under the first commented line, the rows as they were give way to the same rows with the comments, stacked in one cell. No empty band waits for a comment, and nothing animates layout (DESIGN §4.7). The two stacks swap at once, as the app inserts the comments in one go and the rows below just move down, and only the comment rows fade in. At first the stacks crossfaded, and for about 180 ms the rows under the comments showed twice, at two heights (the design lead's must-fix on 850bb6f9). Two effects joined the scenes' set for it: `cut` and `show`, which go or come at their time with no fade. In real playback they first started two to five frames before every other effect, so the rows moved before the comments came; D-3001 gives them the same delay as the rest. "Codex is reviewing…" lasts 1.7 s (it was 2.1 s), and the button names the worktree's one agent (WorktreeReview's `sendTo`) by its first name, "Send to Ada" (below).
+  - **The review round on 850bb6f9 (the coordinator's code review and the design lead's QA):**
+    - **First names, as the app shows its agents (F-CD-12):** each story worktree has an `agentName` from the app's names list: Ada for checkout-fix, Arlo for coupon-rules, Bea for search-ui. app-ui makes the identical change. A pane's header reads the first name, then the title, which is the task's first eight words (PaneChrome, `promptTitle`): "Ada" then "Find why checkout sends people back to /login". The shell is "Shell · shop". The review queue's card is titled "Ada", and the button reads "Send to Ada" (`sendTo` with `agentName`). The card's second line read "Claude Code · shop · checkout-fix", which isn't the app's: ReviewQueue builds "{engine} · {workspace} · {branch} · {n}m", and a worktree's item has the worktree's own workspace, named for it, and its `tandem/` branch, which the site shows as the name (D-1898). So it's "Claude Code · checkout-fix · 4m", with the name once (the coordinator's must-fix on 39601718, D-3001). Engine names stay where the app shows the engine: "Codex is reviewing…", "Codex left 2 comments", the tiles and the meta lines.
+    - **Roles by state:** `SAMPLE`'s worktrees are the finished one, the working one and the one waiting on you, chosen by state rather than by engine. Land lands each worktree with its own merge commit and runs the story's check command.
+    - **The queue has only finished work:** the story has one finished worktree, so Cursor Agent's card in another project is gone. The Dashboard's other projects follow in slice 2.
+    - **Comments are drawn under their own file's lines:** a line can carry two. A comment the diff can't show (another file, or a line outside the hunk) fails the build. No comments would read "Codex had no comments". The diff's header names the comments' file, and a note's indent lines up with the code column: 7em of the diff's font, so `calc(7em / 1.1)` in the note's.
+    - **The sample's coupon code is now BULK15,** not a real brand's name, in the sample files (CLAUDE.md, Never), as app-ui renames it too.
+    - **The plan scene's scrim:** it was drawn with `--tn-shadow-color`, which no stylesheet defines, so since slice 1 the dialog's backdrop on /changelog/0.12.0/ was transparent. It's the app's modal scrim now, `--tn-overlay`, and a test checks that every token a scene draws with is defined.
+    - **A terminal line is printed at once:** it's at full opacity from the first percent of its effect, and only its 0.25em slide takes the 180 ms. Lighthouse's axe read the hero's lines at 2.9 s mid-fade as low contrast (2.48:1). That held `/`'s accessibility at 0.96 in two of three light runs; the threshold is 0.95. It was latent since D-1880: the check samples the page at a moment that lands on a fade only some of the time. A terminal prints whole lines anyway.
+    - **Tests:** the Review diff is a run of git's own diff of the sample files (`git diff --no-index`), marks and both line numbers included, rather than rows checked one by one. No name from story.json is copied into any scene file. The engines' names are still in the Dashboard's, until slice 2.
+  - **app-ui's work, taken ahead of its merge into `chain27`:** a0d4d1e8 (story.json, the demo's sample files and their tests) was cherry-picked as 140833f5; its BUILD_LOG conflicts were in app-ui's own sections, taken as theirs. From f47de661, only its three `plan` hunks (story.json, story.ts and one line of story.test.ts). The merges aren't clean: the files were cherry-picked, not merged, so git has no common version, and whichever branch reaches `chain27` second meets add/add conflicts in repo.ts, story.json, story.test.ts and story.ts, resolved with app-ui's side. From here, site-motion takes only what's in `chain27`, with an interim block in lib/scenes.ts until app-ui's work lands there (the coordinator's rule).
+- D-3001: 0.9.0's "CI results and review comments back to the agent" scene (F-WT-08), and the home scenes drawn where the app draws review and in the story's states (the design lead's should-fixes on 850bb6f9 and polish on 39601718).
+  - **Where:** on /changelog/0.9.0/, after the Land worktrees scene and directly above its own Added card. The scene player was already allowed on that page. Lighthouse CI covers the page now.
+  - **The story:** the finished worktree, checkout-fix (Ada, in Claude Code), has pull request #42, and its `test` check fails. checkout-fix renamed getSession to refreshSession and ran only `pnpm test cart`; CI runs everything, and main's session tests still call getSession (app-ui's story, agreed for its slice 2B). The failing check's workflow, link and log, and the fix's lines, are an interim block in lib/scenes.ts (`SAMPLE.pr`) until app-ui's data lands in `chain27`. The coordinator's rule is to depend only on what's in `chain27`.
+  - **What happens, about 12 s:**
+    - The rail row's ChecksBadge, "1 check failed: test", opens "Checks for checkout-fix", "Pull request #42": lint, test and build, each with its workflow and badge.
+    - Send failure to agent types the failure into Ada's pane, and the toast reads "Sent the failure to Ada" (`failure.sent` with `agentName`). The dialog stays: SendToAgent doesn't close it. Close is pressed after the toast.
+    - The prompt is pr_checks.rs's `failure_prompt` word for word: the instruction, the untrusted-data label and the fenced check, with its name, workflow, link and the failed steps' last lines. `chain27`'s D-3022 now fences it with `fence_defanged`, which writes ＠ for an `@` that would attach a file and adds a line saying so. The scene does the same, and since the sample log has no `@`, it reads as 0.12.0's.
+    - Ada reads and edits session.test.ts, runs `pnpm test`, commits, and says in one line what it changed. The Files panel shows the edit, then "No changes".
+    - The branch chip turns "↑1 ↓0". Its menu (Pull, Push, Switch branch, New branch…) opens, Push is pressed, and the toast reads "Pushed checkout-fix".
+    - The row reads "Checks running" with a spinner, then "Checks passed".
+    - Open diff, then Import review comments from #42: "Imported 1 comment", and the reviewer's comment arrives under session.ts line 12, with "@sample-reviewer:" and Remove only. The bar reads "1 comment · Copy review · Send to Ada", and Send pops once the toast has gone.
+  - **The final frame tells the story:** "Checks passed", the agent's one-line summary, the imported comment, and the bar, with Send the only teal.
+  - **Layout:** the rail, the agent's pane, and a right column with the Files panel, then the worktree's review in its place. In the app, Open diff is a dialog; the scene draws it in the column so the pane stays in view (the approved plan). At 390 there's no rail: a strip on top keeps the row and its badge, the review covers the pane once it opens, and the link line and the summary fold away.
+  - **Shared parts:** DiffRows (a hunk's rows with notes under them, swapped in at once, D-3000), a Toast (its title and an optional action), Lines' gaps and folds, and a spinner (UI_SPEC §2.18). The spinner's `rotate` is the one property a keyframe moves beyond opacity, translate and scale, and it turns only while its scene plays.
+  - **The home scenes draw review where the app does:**
+    - ReviewQueue's buttons as it styles them: Approve primary, Open diff secondary, and Send back, Second opinion and Merge as ghosts, with the press on Second opinion. The final frame has two primaries, one in each app view the scene combines (the design lead's call).
+    - "Codex is reviewing…" sits in WorktreeReview's bar, with a spinner and Open thread. "Codex left 2 comments" is a toast with Show diff (SecondOpinion.tsx), and then the bar reads "2 comments · Copy review · Send to Ada". The diff's header is just its file.
+    - The card's second line is ReviewQueue's: the engine, the worktree's name once (its own workspace and its `tandem/` branch, shown as the name, D-1898) and how long ago it finished, `ago()`'s "4m": "Claude Code · checkout-fix · 4m". The hero's arriving card has the same line with "0m", since it arrives as the work finishes.
+  - **The hero and the Dashboard follow the story's states:**
+    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Gemini CLI asks in its own terminal, "Allow running pnpm test search? (y/n)", and Bea's dot and rail row stay waiting. (D-3002: Gemini CLI's own words are "Allow execution of: '…'?", and Bea's card has no line.) Arlo stays at work, and the repository's working count follows (3, 2, 1). (At 54a05e0d the ask was a banner with Allow once and Deny; see the design QA round below.)
+    - The Dashboard has the story's one repository, with each worktree's agent under its branch, as the app groups a repository's worktrees by project. Each card has the first name, with `cardMeta` under it: the engine and the worktree's name, once by the same rule ("Codex · coupon-rules"). The story gives no account, so none shows. Bea's card has the waiting border and no buttons. (D-3002: no line either, as a waiting found by a pattern has no preview; at D-3001 the line was the demo's "Allow running pnpm test search?".) The counts end at Waiting 1, Working 1 and Done 1, with Review · 1.
+    - The api and docs projects are gone, and no engine's name is written into any scene file now.
+    - The hero's caption counts three agents. It said four, counting the shell.
+  - **Polish on 39601718:** both dialogs' scrims cover the whole window, title bar and status bar too, as the app's fixed overlay does, and the hero's radar notice sits under the panes' headers instead of across one.
+  - **0.13.0:** `chain27`'s F-TL-12.12 pins a card with a question first, in its own group, and shows a pane's whole command line before Allow. The scenes show the release they name, 0.12.0 (D-128), so the Dashboard keeps 0.12.0's grouping until 0.13.0 ships.
+  - **The review round on 39601718 (the coordinator's verification, three must-fixes and three should-fixes, and the design lead's follow-ups):**
+    - **The review card's second line is the app's** (above): "Claude Code · checkout-fix · 4m", on the hero's card too, and the Dashboard's cards follow the same rule.
+    - **BUILD_LOG:** D-2609 no longer says udiff's hunks match git's, D-3000 no longer says "Send to Claude Code", and the retailer's name is gone from it (`git grep` finds none).
+    - **`cut` and `show` start on the scene's clock:** each takes no time and waits for its `--at`, as every other effect does, filled both ways. They ran from the scene's start before, and in Chrome they began 33 to 83 ms before the rest, so the rows dropped before the comments faded in and the toast came. Every effect in the Review and CI scenes now has one start time in real playback, and a browser test checks every scene that way. Setting animations' times can't see this, since it puts them all on one clock.
+    - **The theme control's ring draws:** the selected cell's `box-shadow` named `--tn-shadow-color`, which nothing defines, so the whole declaration, its 1 px WCAG 1.4.11 ring included, was dropped in both themes since 73b6a6b5. It's the ring and `--tn-elev-1` now. A browser test reads the computed shadow in both themes, and the token test covers every stylesheet the site loads (tokens, brand, base, site, globals, scenes) and every inline `var()` in its pages.
+    - **The sample world keeps what the scenes rely on:** a test checks that the 15% code is BULK15 wherever it's defined and used, and that every worktree's agent has its first name right after its engine, from the app's list.
+    - **Tests, tightened:** a story name or an engine's name now counts anywhere in a scene file, as a whole word ("Bea" isn't in "Beat"), with only a scene's own diff exempt, in its own file. A diff must run inside one of git's hunks. git runs with `--no-ext-diff`, and its absence fails with a clear message. The Review scene draws with no comments ("Codex had no comments", the first edited file in the header, no "0 line comments") and with two equal comments on one line.
+    - **Not taken:** the hero's ask, radar marks and toast still fade in. Lighthouse's accessibility is 1.00 on `/` in all six runs; if axe catches one mid-fade, they take the lines' print-at-once treatment.
+  - **The design QA round on 54a05e0d (two must-fixes):**
+    - **An engine's own question isn't a Vibezeo approval.** 0.12.0 raises a pane's approval only for `vibezeo run` (agent_run.rs), and "Wants to: …" with Allow once is a Thread agent's. Bea's ask is Gemini CLI's own question, so the scenes draw it as the demo does (backend.ts): the engine's prompt in its terminal, "Allow running pnpm test search? (y/n)", and on Bea's Dashboard card the line "Allow running pnpm test search?", with the waiting border and no buttons. (D-3002: Gemini CLI's own words are "Allow execution of: '…'?", and the card has no line.) The banner in the pane, the buttons on the card and the captions' "answer in place" are gone. The scenes had shown an answer in place since slice 1, when it was Codex's "pnpm db:migrate". The design lead approved it then, in 1b and at 39601718, and records it as its miss. A test ties the two strings to the demo's.
+    - **The hero's rail ends with its worktrees.** Its "4 running sessions" line isn't in 0.12.0's rail: "N running sessions" is only the accessible name of a row's count badge, and CodeRail ends with Remote hosts under a divider. D-2702 redraws the rail as CodeRail draws it, Remote hosts included.
+  - **The coordinator's round on 54a05e0d (one must-fix, its should-fixes and the cheap nits):**
+    - **A push reads no checks.** The text said Vibezeo reads them "every two minutes while it's in front or on Refresh", but finished checks are read every 15 minutes (worktrees.ts's `CHECKS_IDLE_MS`), running ones every 2 with the window in front (`CHECKS_POLL_MS`), and nothing reads them on a push. So after the push the row's "1 check failed: test" is pressed again. ChecksDialog reads as it opens, so Refresh (secondary) shows its spinner over the old rows until the read ends. Then all three rows read "Running", in Badge's outline variant, and Send failure to agent goes. The row reads "Checks running", Close is pressed, and "Checks passed" comes on a later read. The first open shows the spinner too. The design lead chose the read on open over a press on Refresh, which would only repeat it. The text says how they're read, and that Vibezeo asks once before it reads a repository's pull requests (UI-156, which stays out of the scene). The scene runs about 14 s. A test lists who calls `loadChecks`, so when app-ui's 0.13.0 reads after a push, it fails and the scene changes.
+    - **A check's result is the app's Badge:** a 4 px box, 18 px tall, its 10 px text in the tone's text colour, a border in the tone at 40 % (mixed as the app's `border-done/40` compiles), no fill and no pill (DESIGN §4.5). A test reads Badge.tsx, ChecksDialog's `BUCKET_VARIANT` and tokens.css.
+    - **The prompt is tied to the core's own output.** `apps/desktop/src-tauri/tests/failure_prompts.rs` checks five cases in `tests/fixtures/failure_prompts.json` against `failure_prompt`: the scene's own, a path defanged with its note, the @s that stay, a fence longer than a backtick run in the log with no workflow or link, and a log of blank lines. `UPDATE_FIXTURES=1` rewrites them. The web test checks the port against each. That replaces the hand-written prompt and the source-string reads.
+    - **The CI scene's rules come only with it.** About 6 KB of scenes.css drew only the CI scene and blocked rendering on `/` and 0.12.0's page. They're now `ci.css`. Only a page whose release scenes name it (`css` in releaseScenes.tsx) inlines it, in the head after Next's stylesheets, with its comments gone. Every scene element's box and styles are the same before and after, on all three pages at 1440 and 390.
+      - 0.12.0's page drops from 1.66 to 1.51 s in light. `/` stays at 1.89 s median.
+      - `/`'s estimate counts every request that starts before its first paint. One of them is the demo's still under "Try Vibezeo right here", the section after the hero: 17 KB, lazy, but 1,540 px down on Lighthouse's phone viewport, inside Chrome's lazy-load distance. With it blocked, `/` is 1.82 s (1.81, 1.81, 1.82, 1.89, 1.82).
+      - `content-visibility: auto` on the scene windows cut the load's style and layout work from 1.19 to 0.77 s, and the real paint came earlier, but the estimate didn't move, so it isn't in. Keeping the still out of the first paint is the coordinator's call.
+    - **Nits taken:**
+      - Close finishes its press before the dialog fades: a press is 260 ms and the fade 180 ms, so the dialog leaves 0.44 s after Close.
+      - The interim fix reads "Tests 54 passed", as app-ui's CI data will.
+      - The token scan covers docs.css and ci.css. Shiki writes `--shiki-light` and `--shiki-dark` inline, so they count as defined.
+      - The theme cell's ring uses `--site-elev-1`.
+      - With no comments, the Review's bar goes when the review is done (WorktreeReview draws it only while reviewing or with comments).
+      - The CI scene's status bar has the branch's ↑/↓ and F-WT-08's CI segment, failed, running and passed, as StatusBar draws them.
+    - **Left for later:** the account on Dashboard cards stays out, as the design lead decided (it's "Default" on every card, and app-ui may show it only when an engine has two). The rail's checks badge on one line, with D-2700's short forms, goes in the 0.13.0 slice. The hero's repository count, which adds up its worktrees' agents, goes in D-2702.
+- D-3002: the fix pass on 2966da74. No swap shows two of its values at once, and words come in as DESIGN §4.7's enter (the design lead's must-fix and polish). Bea asks in Gemini CLI's own words, and every Dashboard card shows its state (the coordinator's M1). The checks' readers are pinned, the port matches the core's whitespace, and the agents segment is in, with the nits (S1–S3, nits 1–8).
+  - **A value's steps never show together.** `Changes` faded a value's first step out over 180 ms while the next came in, so for about 125 ms two texts sat in one place. That happened 31 times across the six scenes, by the design lead's count and the new test's. The app re-renders a value at once.
+    - Now each step is cut at the next one's time, and the next enters then. A step between the first and the last enters on its cell, which can move, and is cut inside it.
+    - These swap the same way, the one before going at once: Land's done line, the old hero's "Warned both agents", the Dashboard cards' lines, and the CI scene's Files panel, which Open diff's panel replaces.
+  - **Words come in as §4.7's enter:** a fade and a 0.4em rise (4.4 to 5.6 px at the scenes' 11 to 14 px text) over `--dur-pop`. They popped from 0.6 to 1.08 to 1. Marks still pop (the dots and the waiting card's ring), and a dot changing colour still fades, as §4.7's status change does.
+  - **A browser test steps every scene's clock:** every 25 ms, and around each effect's start (−50, −1, 0, +1, +50 and +100 ms), at 1440 and 390.
+    - Any grid cell that stacks two or more items shows at most one of them, and at most one toast shows at a time.
+    - A dot's swap may fade. An overlay with a z-index of its own covers what's under it.
+    - Run on the build before the fix, it found 31 at 1440. That's the design lead's list, but for an empty step under "Land 1 approved…", which draws nothing, plus the dots inside `Changes` and the CI scene's Files panel under Open diff's. It counts an empty step too now, as the design lead's checker does.
+    - On this build it finds none.
+  - **Bea asks in Gemini CLI's own words (M1).** The app shows an agent waiting only when a hook says so or its line matches the engine's `waitingPatterns`. Gemini CLI's are "Allow execution" and "Apply this change\?", so "Allow running pnpm test search? (y/n)", the demo's line, would have shown Bea working, then done.
+    - Bea's pane's last line at 2.2 s is now "Allow execution of: 'pnpm test search'?", with no option list, since that's another product's copy. Bea's dot and rail row turn waiting then. Each engine's question has its own shape in lib/scenes.ts (`ASKS`); the story's waiting engine is the only one needed, and a missing one fails the build.
+    - A waiting found by a pattern carries no preview: the heuristics report no tool and no preview, and the Dashboard's line is one or the other. So Bea's card has no line at all, before the ask too, and the text no longer says the card shows the question.
+    - The test reads the app, not the demo: the registry's patterns match Bea's line and not the old one, Gemini CLI has no hooks, a pane is watched with its engine's patterns (terminal.rs, status.rs), the heuristics' one StatusUpdate has no tool or preview, dashboard.rs's line is the preview or the tool, and AgentCard draws a line only for one. app-ui makes the demo match in its slice; backend.ts isn't touched.
+  - **Every Dashboard card says its state, as AgentCard does (M1's must).** The card is drawn as AgentCard's: its title row (its dot, its engine's tile, its first name, then its state with how long it has held it at the right), then its engine and worktree, then its line when it has one.
+    - "Working · 42m", then "Waiting for you · 0m" for Bea at the ask and "Done · 0m" for Ada when done, and Arlo's "Working · 42m" throughout. The demo starts every pane 42 minutes back and restarts the clock on a change of state (backend.ts), so the scene's minutes are the demo's.
+    - A test ties the words and the format to AgentCard's (STATUS_LABEL and `elapsed`), and the 42 to the demo's clock.
+  - **The agents segment is in the CI and Dashboard scenes' status bars (S3),** after the CI segment as StatusBar draws it: waiting first, at medium weight in waiting's text, then working, each after its 6 px dot.
+    - The CI scene reads "1 waiting · 1 working", "1 waiting · 2 working" while Ada fixes, then "1 waiting · 1 working". The Dashboard reads "3 working", then "1 waiting · 2 working" and "1 waiting · 1 working".
+    - Tests read the counts off each scene at every change: the CI scene's rail dots, and the Dashboard's cards and filters.
+    - The hero gets it with D-2702. Land, Review and Plan don't have it yet. By Land every agent is done, so the app's segment would draw nothing. Review's second opinion and the plan's runs are agents too, so what those count is the coordinator's call.
+  - **Who reads the checks is pinned (S1),** call by call, with what each call is in. The test parses the app's source (TypeScript's compiler) and lists every call to `loadChecks`, `openChecks`, `pollChecks`, `allowChecks` and `useChecksPolling`: eleven, from the store's three readers, the worktree menu, the dialog's Refresh and Allow, and the rail's polling. Only `loadChecks` writes `checks`, which the store starts empty, and the push (stores/git.ts) touches no checks. app-ui's D-2619 (319e8be9) reads them after a push; when it lands in `chain27`, this test fails by design and the CI scene changes.
+  - **The port's whitespace is the core's (S2).** Rust's `char::is_whitespace` and `str::trim` follow Unicode's White_Space property, which the port now names (`\p{White_Space}`). JS's `\s` and `trim()` differ from it on U+0085 and U+FEFF. The fixture has three new cases from the core: @s around U+3000, U+0085 and U+FEFF, a log of U+0085 and U+3000 that printed nothing, and a log of U+FEFF that did.
+  - **Nits:**
+    1. Running checks are read "every two minutes while its window has focus and its Code rail is open" (document.hasFocus() in useChecksPolling, and the rail's `!collapsed`).
+    2. `UPDATE_FIXTURES` takes only "1", is refused on CI, and fails once it has rewritten a fixture, so a rewrite never passes as a test (`tests/common`, for every fixture test).
+    3. sceneCss refuses a quoted string and url(), whose whitespace closing up could change, as well as "</". Its test compares the sheets rule by rule with each whitespace run one space, so `.a .b` against `.a.b` fails.
+    4. The fixture test is `f_wt_08_failure_prompts_are_the_fixtures`.
+    5. Every scene's status bar is in the app footer's fg-muted and its sans, tabular. It was subtle and mono.
+    6. The check row is text-sm, 12 px, read from the tokens, and its workflow text-xs. The badge's 1 px border is a border inside its box, as the app's is, where the inset shadow left it 2 px narrow.
+    7. Each Checks dialog is two boxes in one place: while it reads, with Refresh's spinner, and once it has, each its own size. So it shrinks as the app's does when Send and the spinner go.
+    8. sceneCss finds its folder from its own file, so it works from any directory (a test moves away and reads it). Under `next dev` a reload shows an edit to ci.css, since each render reads it; a hot reload on save would need it in the module graph, so that's not done.
+  - **Coming in `chain27`:** m16a's D-3025, D-3028 and D-3029 change the defang and its note, so the fixture's @ cases and the port change with them, and app-ui's 319e8be9 brings askLine and previewOf from story.ts and "1 with changes requested". Each is merged when it's in `chain27`.
+- D-3003: the hero is one worktree's window in Code mode (D-2702, after the coordinator's go on 2966da74), and the CI scene's work is story.json's. It's rebased onto D-3002's fix pass and keeps its rules: a value's steps never show together, words enter, the agents segment is StatusBar's, and a fixture rewrite fails. It also has the two must-fixes from the design lead's QA of 018b37a9 (card lines, and the CI scene's data from story.json), and the agents segment in Review and Plan.
+  - **The window:** the title bar's modes in 0.12.0's order (Agent, Code, Thread, in every scene) and, in Code mode, the workspace menu's button, which names the worktree in view. Then the rail; Code mode on checkout-fix's tab, labelled with the task's first five words (tabLabel), with + and Arrange and Ada's pane alone in it; and the sidebar's Dashboard tab on Review.
+  - **In the app's pixels:** the new parts are sized in `--sc-px`, one app pixel at the window's scale (16 to its em). It's registered, so it's worked out once on the window, and a part copies its component's classes (h-7, px-2, text-sm) without em compounding.
+  - **The rail is 0.12.0's** (CodeRail, RailList, WorktreeRow, WorkspaceSlot):
+    - WORKSPACES and +, then shop's row: its folder, its name and "⎇ main", since none of its own panes is busy (BranchChip). Under it "No open panes": every pane the demo opens is in a worktree.
+    - Each worktree's row: its branch icon, its name, its slot, the radar's mark, its count of panes (1, 2 with the working one's shell, 1), and room for its menu, which shows on hover. Remote hosts is at the foot.
+    - A row's trailing parts swap as a set, at once, when the app re-renders them. So "1 working" moves over when the radar's mark loads and when Ada is done, as the app's row reflows. search-ui's slot turns to "Needs you", waiting's quiet badge, at 2.2 s.
+    - The words a set brings enter, as §4.7's enter (D-3002): the radar's mark, "Needs you", and the Dashboard pill's count.
+  - **The rail is 416 px wide.** A marked row holds its name, "1 working", "Shares applyCoupon" in its small ghost Button and its count only from 410 px. CodeRail stops at 360, where both marked names are cut to their first letter. The brief asks for nothing cut, so the hero's rail is wider than the app lets it go, under "simplified". The other choice is 360, with the cut.
+  - **Toasts are Toast.tsx's,** at the bottom right: 360 px, a 3 px bar in the tone, the title, the body, the action and ×.
+    - The radar's notice is a warning with Warn both agents. The click that ends the press (260 ms) dismisses it, and it leaves over its 180 ms fade. Then "Warned both agents" is a success for the 5 s a toast stays, so one toast shows at a time.
+    - Every scene's toasts are this one now, in the app's tones: IntentRadar's, SecondOpinion's, SendToAgent's, the push's and the import's.
+  - **The note Warn both agents types is the core's.** radar.rs's `note_text` is ported (`radarNote`). `tests/radar_notes.rs` (`f_wt_10_radar_notes_are_the_fixtures`) and its six-case fixture tie it to the core, as failure_prompts.rs ties the CI prompt.
+    - `UPDATE_FIXTURES=1` rewrites it and fails, as it does for every fixture test (`tests/common`, D-3002).
+    - The port trims the note's end as the core's `trim_end` does, by Unicode's White_Space, before the defang removes what's removable. A case with no symbols and a branch name ending in a space, U+0085, a space and U+FEFF shows it: both spaces stay, where JS's trimEnd() would leave one.
+    - The note arrives in Ada's pane after the press, echoed as a paste, before the tests run and the closing words come. It folds away on a phone.
+  - **The status bar:** the worktree's branch, then D-3002's agents segment, waiting first: 3 working, then 1 waiting and 2 working, then 1 and 1. A test counts the rail's rows at every change.
+  - **A Dashboard card has a line only where the app draws one** (the must-fix on 018b37a9). dashboard.rs draws a pane card's line as its status's preview, else its tool. A pane's status gets no preview: hook reports and pattern matches both leave it None. Only Claude Code's hooks name a tool, in PreToolUse as the agent works. Codex's notify names none, and each report replaces the tool, so the done report clears it.
+    - Ada's card names Ada's tool while Ada works: Edit for the edits, then Bash for the tests from 3.2 s (the story's last two steps). Arlo's and Bea's cards never have a line. "Tests 42 passed" and "$ pnpm test coupon" are gone.
+    - At Done the app draws Ada's card again without the line. The scene does it as D-3002's Checks dialog does: both cards in one place, each its own size, swapped at once. The card loses its line, and nothing under it moves.
+    - The text says Ada turns Done and the card names the tool until then. It no longer says Ada finishes the tests.
+  - **The Review and Plan scenes' status bars count their threads** (the coordinator's and the design lead's answer). A thread's status goes into the store a pane's does (state.rs's status sink), and AgentsSegment counts every record in it. The second opinion is a thread, and so are a plan's runs and their reviews.
+    - Review: "1 working" while Codex reviews, and nothing before or after, since Ada is done.
+    - Plan: the runs that show Running or Reviewing, which its line counts as running: 3 from 0.9 s, then 2, 1 and none as each is ready to review.
+    - Land has none: every agent is done by then, so the app's segment would draw nothing.
+  - **The waiting agent's question isn't drawn.** The one worktree in view is Ada's, so Bea's question is in a pane the hero doesn't show. Its row says "Needs you", the pill and the status bar count it, and nothing answers it. The text says Bea asks in its terminal, in Gemini CLI's own words (D-3002).
+  - **The sidebar on Review:**
+    - The Dashboard pill, its waiting count from when Bea asks, then +, Full screen and Close.
+    - DashboardPanel's switch on "Review · 0" and "Nothing to review" (EmptyState). At 6.4 s, "Review · 1" and the queue: Risk | Finish time, Refresh, "To review · 1" and Ada's card.
+    - The card reads "Check running…" from its arrival, and "Check passed", with Run check, from 8.4 s (the design lead's addendum).
+  - **The review card is ReviewCard's,** in the hero and the Review scene: the first name, the meta line, the closing words (3 lines), the diff's size, its risks as outline Badges, the check as a details summary, and its nine buttons in ReviewCard's order (a test reads it). Approve is primary, Open diff secondary, the rest ghosts. It has no glyph and no shadow, as the app's hasn't. Its risk and check come with the card in the Review scene; the chips entered after it.
+  - **Shared parts:**
+    - PaneChrome's header: 30 px, the status dot first, after the hover grip's room, then the worktree's chip, and ⋯ and ✕ at half strength. Maximize shows only for a pane that isn't alone. A pane alone in its tab has no focus ring, as PaneGrid draws it: the CI scene's too.
+    - The app's Badge, every variant the scenes draw, quiet too, now in scenes.css. Its 1 px border sits inside its 18 px (D-3002).
+    - The toast, and `pasted`, a message echoed as a paste.
+  - **On a phone:** the worktrees' rows are a strip over the pane, with "Needs you" in view, and the sidebar floats over the pane with e3, as the app's does below 1,100 px. The note folds away.
+  - **Only the home page loads the hero's rules:** they're in home.css, with the review card's, and only the home page imports it, after scenes.css. The old rail's rules, which only the CI scene draws now, moved to ci.css. Rules no scene draws are gone: the old hero's grid, toasts, chips and items.
+  - **Caption:** "Three agents work in one repository, each in its own worktree, and the rail shows the one that needs you."
+  - **The CI scene's work is story.json's** (the coordinator's late message), so the site and the demo agree:
+    - The failed check's workflow, link (…/runs/7104/job/20032) and 83-line log.
+    - The fix: +12 −8, 54 passed, 6b2e9f4 "Test refreshSession and its renewal", and its closing words.
+    - The pane shows the prompt's start, a ⋮ for what scrolled by, then the log's last six lines and the fence's end. A phone's keeps the log's last two, and a log too short for the ⋮ keeps all its lines (`foldEchoed`). Land counts the fix's commit on checkout-fix, as the demo does once it's made. failure_prompts.json's first case is the story's now.
+  - **D-3022 waits for 0.13.0 (D-128).** The story's log has an @ ("shop@1.4.0"). The tree's core writes it as ＠, with its note after the fence; 0.12.0's fenced CI's text as it was. The port writes either (`DEFANGS`, gated on 0.13.0 as LANDS is on 0.9.0). The fixture checks the tree's, and the scene types 0.12.0's. The demo, built from the tree, shows the note. The @ is in the log's first line, which scrolls by under the ⋮, so the lines the pane shows are the story's own text either way; only the note would differ.
+  - **The demo's still stays as it was** (the coordinator's call, measured with D-2702 before the rebase). There, `/` is at 1.82 s whether or not the still is fetched before the first paint: Lighthouse's estimate on the new hero no longer counts it. `content-visibility: auto` on the still's `<picture>` did keep it from being fetched (the frame can't take it: containment there would hold the full screen, which is the stage made fixed, inside it). But it put half the runs in a 1.96 s mode that neither the page as it is nor the still blocked ever shows. So it isn't in. The numbers are in the log. The picture would have had to come first, too: its containment stacked it over the full screen's bar, which came before it, and it took the tap on Close on a phone.
+  - **The defang is the app's own** (chain27 836a8a47, merged before this, brought m16a's D-3023 to D-3034). The core's defang removes what's removable first, keeps an @ run only before a space, a tab or a line break, and defangs skill words, paste markers and the words an engine acts on. Its note now reads "…for each at sign…".
+    - The site's port of it is gone: lib/scenes.ts imports the app's TypeScript side (features/code/untrusted.ts), which the core's defang.json pins to the core. So the site and the app run one copy, and a test ties the site's note to defang.json's.
+    - failure_prompts.json and radar_notes.json are the new core's output. S2's whitespace cases now show the removable rule (D-3030). The trim before the fence is still str::trim's, by White_Space.
+  - **scenes.test's git diff runs alone:** myers, the indent heuristic and -U3 named, no external diff, GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM at /dev/null, no inherited GIT_* variable, from an empty temp folder.
+  - **Left for the 0.13.0 slice:** the Dashboard scene's switch above the count and F-TL-12.12's question-first group, the CI scene's rail (D-2611, D-2613, D-2700, D-2701, D-2703), and D-2619's push that reads the checks (the design lead's note: the row turns to Checks running by itself after the push; `PUSH_READS`, since chain27 65c7b5d7 brought it to the tree). Every card's state, as AgentCard draws it, came with D-3002. D-3004 adds the hero's radar, with RadarMark's compact rule, and D-3022's note.
+- D-3004: the round on cced2f8f. It has the coordinator's code review of the fix pass (27c8cd53, c059d30b: S-1, S-2 and nits 1 to 7), the design lead's QA of cced2f8f (D-2704, the gap at Done, the done flash and cardTitle) and the code review of cced2f8f (S1, S2 and nits 1 to 7).
+  - **The 0.12.0 hero leaves the intent radar out** (D-2704, the design lead's). 0.12.0's mark is words ("Shares {symbol}"), and a row holding them needs about 410 px, where CodeRail stops at 360.
+    - `RADAR`, on 0.13.0, gates the marks, the notice, the note Warn both agents types and "Warned both agents". Their code stays for the 0.13.0 hero, which draws the mark with RadarMark's compact rule (D-2613) in a rail that folds (D-2701). A test fails once 0.13.0 ships, until it does.
+    - The rail is 320 px, a width CodeRail allows (180 to 360). Its tightest row, coupon-rules, has 47 app px to spare. A row keeps its menu's 28 px, as 0.12.0's WorktreeRow (297d1238) keeps the menu in the row, hidden until hover.
+    - The radar's note names the other worktree by its branch, tandem/coupon-rules, as radar.rs passes `lane_branch` (the code review's nit 1). The fixture's first case is the core's output for it.
+  - **The Dashboard closes up when Ada's card loses its line,** as the app's re-render does (the design lead's must-fix). The swap's place is the done card's. The card at work hangs over what's below by its line: the card's gap and the line, at the window's line height. The groups below wait that much lower, then move up over --dur-base with --ease-standard, by transform only. The lanes' rule has a tail as long, which shortens from below as they move, so its translucent colour is never drawn twice. The end frame is the app's.
+  - **A Dashboard card is AgentCard's:**
+    - its title is cardTitle's "{first name} · {work}" (model.ts), cut to the card, and the review card's stays the first name (the design lead's polish);
+    - its title row keeps the hover menu's 28 px after the state, as 0.12.0's AgentCard does;
+    - the waiting one keeps the card's surface, with its 1 px border in the waiting colour from when it's drawn again. The surface-3 and the glowing ring are gone (the fix pass's nit 6), so the only thing that pops is a dot.
+  - **No glow on finish:** the pane's done flash is gone. 0.12.0's only pane flash is F-CD-12's focus ring on a jump (the design lead's polish).
+  - **A working agent's pane header has Elapsed,** by the demo's clock: "42m" in the hero until Ada is done, and "now" in the CI scene's pane while its agent works (the code review's nit 2; 0.12.0's PaneChrome has it).
+  - **Pin on the floating sidebar,** between + and Full screen, on a phone's frame (nit 4; 0.12.0's Sidebar has it).
+  - **Every status bar counts every agent** (S1). The story's agents count beside a scene's own threads: Bea waits and Arlo works, from story.json's states (`SAMPLE.agents`).
+    - Review: 1 waiting and 1 working, then 2 working while the second opinion reviews.
+    - Plan: 1 waiting, and 1 working plus its runs: 1, 4, 3, 2, then 1.
+    - A segment with nobody waiting or working isn't drawn, as the app's isn't.
+  - **A value's middle step is one element** (S-1 on the fix pass). Changes drew a step between the first and the last as an entering cell with a cut inside it. So the rules for a step's contents (Land's `.sc-step > *`, the CI rail's `.sc-checks > * > *`) styled the cut: Land's middle steps lost the dot's gap and centring, and "Checks running" its spinner's.
+    - A stint (`data-fx-stint`) does both on one element: in as words enter at `--at`, cut at `--until`. Its enter names where it ends, since the final frame hides it. Its cut fills forwards only, so nothing of it shows before it enters.
+    - A spinner in a stint turns from when its step comes in. The CI rail's turned from when it was cut before.
+  - **Who reads the checks, by every use** (S-2 on the fix pass). The guard listed calls of the five readers by their names. So it missed an aliased import, a namespace's member, a reader passed as a value, and `open({ kind: "checks" })`, which reads as the dialog opens.
+    - It now lists every use of the five, through aliases and members, values and re-exports. It also lists every object of the dialog's kind: ChecksBadge's, ChecksSegment's, AllowChecksDialog's and openChecks'.
+    - The app is parsed once, and the test has its own 30 s.
+  - **Nothing in place fades away** (nit 4 on the fix pass). The Review bar's "Codex is reviewing…" left with a visit's fade. It's a stint now, cut when the comments come; with none, the bar is cut when the review's done.
+    - The check that lists every pop and fade lists every visit too. What's left fades as it closes over the scene: a toast, the Checks dialog and the branch chip's menu, as UI_SPEC §1.8's exits do.
+  - **The tests' git diff reads nothing of the machine's** (S2):
+    - HOME and XDG_CONFIG_HOME are its temp folder, and core.attributesFile is /dev/null;
+    - GIT_ATTR_NOSYSTEM is set, and GIT_CEILING_DIRECTORIES stops at the temp folder's parent.
+    - A test plants attributes files, a repository above TMPDIR with its own, and git's diff variables, and gets git's defaults.
+  - **home.css is inlined on /,** as a release page's own sheet is, so the first paint waits on two stylesheets, not three (nit 6). On / alone, five runs per theme, the first paint's estimate drops from 1.52 s to 1.37 s.
+    - The largest paint, still the hero's lead, lands on Lighthouse's 1.89 s step in four or five runs of five, where cced2f8f's lands there in two: cced2f8f measures 1.82 s in both themes, and this round 1.89 s. With home.css linked it's the same 1.90 and 1.89, so the sheet isn't the cause.
+    - Main-thread work and the DOM are no larger than cced2f8f's, and the requests before the paint are the same ones.
+    - Tests no longer feed Tailwind: globals.css keeps test and spec files out of its scan, so every page's stylesheet is 1.4 KB smaller, without utilities only tests named.
+  - **An app pixel is in the scene box's units** (nit 7): `calc(100cqw / 1280)`, and `/ 448` on a phone's frame, as the window's em is 16 of them. It never compounds, with or without @property, and the scenes need container units anyway.
+  - **Still to decide:** the CI pane's ⋮ (nit 3, the design lead's call). The app animates no exit (base.css: "closing content never animates"; a toast is removed when dismissed), while UI_SPEC §1.8 gives a toast, a dialog and a menu a fade. The scenes keep the spec's.
+- D-3005: the site imports only four of the app's files: i18n/en.json (its words), demo/story.json (the demo's world), demo/story.ts (the story's helpers: the waiting agent's question, a step's tool and a branch, one copy for the demo and the site, since chain27 65c7b5d7) and features/code/untrusted.ts (the core's defang, in TypeScript). Each is pure data or a pure function that imports nothing but the story, so the site's build takes nothing else of the app. Each is held to its source by tests: the words by `t()`, the story and its helpers by the scenes' and the demo's tests, the defang by the core's defang.json. The tests may read any app file. A test lists what the site imports and fails on anything else. Nothing moves (the code review of cced2f8f, nit 5).
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2424,6 +2610,218 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Checks: web vitest 146/146, ui styles unchanged, `build:site` (58 pages), site Playwright 58/58, design-shots on the release pages (/changelog/0.12.0/: 3 teal at 1440 (Latest, Download 0.12.0, Land 2 approved…), 2 at 390; all captures ok).
   - Lighthouse CI on eight URLs, /changelog/0.12.0/ added, every assertion passing in both themes: /changelog/0.12.0/ 1.00 / 1.66 s with accessibility 1.00 (0.95 with `rise`, fixed above); `/` 0.99 / 1.82 s light, 1.89 s dark; the rest 0.99–1.00 / 1.36–1.81 s; blocking time at most 47 ms, CLS at most 0.001. A dark run of `/` that read 0.69 with 1,800 ms of blocking time, while the session was being stopped, was contention: the rerun is above.
   - The gate: passed (TypeScript 1,740 tests: web 146, ui 462, desktop 829, api 235, remote 33, mobile 21, protocol 14; Rust 2,358; desktop build; clippy on Linux, Windows and both Macs; fmt; no protocol drift). With 19 GB of the session's disk free and the Linux test build at about 22 GB with debug info, it ran with `CARGO_PROFILE_DEV_DEBUG=0` (the tests' results don't depend on debug info).
+- Slice 1b (D-3000), on `chain27` dbbd109a (merged as 022a3607; cdd8a8ca and c90d9f65 before it), with app-ui's a0d4d1e8 cherry-picked (140833f5) and f47de661's `plan` hunks. The design lead approved slice 1 (07846890) and `chain27` merged it (4dabf660). Tests first:
+  - scenes.test:
+    - `SAMPLE` is story.json's view, the plan included, with no name from story.json written into lib/scenes.ts.
+    - The Land scene's commit counts come from the story.
+    - Each row of the Review scene matches the sample files at its numbers.
+    - Its comments sit inline under their lines, in the story's words, and arrive together with Codex's done line, with no gap waiting for them.
+    - The button reads "Send to Claude Code".
+    - Each hero pane prints all its story lines before what comes next in it. This one failed on the slice's first build, because Claude Code's ninth line arrived at 6.9 s, after it was done at 6.4 s. It's fixed above.
+  - Checks: web lint, web vitest 151/151, story.test 11/11, `build:site` (58 pages), site Playwright 58/58. design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/: 24 captures, all ok; teal on home 2, on 0.12.0 3 at 1440 and 2 at 390, on 0.9.0 0.
+  - One full web vitest run, early in the slice, failed `frame.test`'s "the stylesheet scans every packages/ui component…". It passed in three reruns and in every run since. The cause wasn't found; the test reads the site's sources as they stand, so a file caught mid-edit is one possibility.
+  - Lighthouse CI on eight URLs, every assertion passing in both themes. `/` scored 0.99, with LCP 1.82 s light and 1.83 s dark. /changelog/0.12.0/ scored 1.00 at 1.66 s. The rest scored 0.99–1.00, at 1.36–1.81 s. Blocking time was 0 ms and CLS at most 0.001. A run stopped halfway had measured the build before the hero's timing fix; the numbers above are from the build that's committed. The merge of dbbd109a changes no page (only BUILD_LOG lines).
+  - The gate passed:
+    - TypeScript: 1,773 tests (web 151, ui 462, desktop 857, api 235, remote 33, mobile 21, protocol 14).
+    - Rust: 2,420 passed, 9 ignored.
+    - The desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+    - It ran with `CARGO_PROFILE_DEV_DEBUG=0`. `chain27`'s tandem-core change rebuilt every crate, and 9.8 GB of disk was left at the low point.
+- The review round on 850bb6f9 (D-3000): the design lead's handover must-fix and every item of the coordinator's code review (three must-fixes, four should-fixes, six nits), in one commit on `chain27` dbbd109a, with no app-ui code taken. Tests first:
+  - scenes.test:
+    - The Review handover swaps with `cut` and `show`, and only the notes fade.
+    - Roles are chosen by state, and every agent has its first name from names.json.
+    - Pane headers show the name then `promptTitle`, and the shell is "Shell · shop".
+    - The Review card is "Ada" with its engine, workspace and branch, and the button reads "Send to Ada". The queue holds only finished work.
+    - The Review diff is a run of `git diff --no-index` of the sample files. Both of the reviewer's mutations (a context row turned "+", a row deleted) now fail it, tried and reverted.
+    - `notesFor` places comments by file and line, two on one line, and fails the build on another file or a line outside the hunk.
+    - Land lands each worktree with its own merge commit and the story's check.
+    - The radar comes after both coupon.ts edits.
+    - The hero's done time is one constant.
+    - The note's indent matches the gutter.
+    - No story name is copied into any scene file.
+    - Every token a scene draws with is defined.
+    - A terminal line is printed at once.
+  - scenes.spec: no frame around the handover draws the rows twice, checked at 3.78, 3.82, 3.89, 3.98 and 4.1 s.
+  - Checks: web lint, web vitest 155/155, the demo's tests 44/44, `build:site` (58 pages) and site Playwright 59/59. design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/ gave 24 captures, all ok, with teal unchanged: home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0.
+  - Lighthouse CI on eight URLs, every assertion passing in both themes:
+    - `/` 0.99, LCP 1.89 s light and 1.88 s dark; /changelog/0.12.0/ 1.00 at 1.66 s; the rest 0.99–1.00 at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+    - The first run had `/` at 0.96 in light. axe had caught the hero's lines mid-fade at 2.9 s, which the line fix above settles. The run after it is the one quoted.
+  - The gate passed:
+    - TypeScript: 1,777 tests (web 155, ui 462, desktop 857, api 235, remote 33, mobile 21, protocol 14).
+    - Rust: 2,420 passed.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- Slice 2 (D-3001), on `chain27` 2de26391 (merged as dd27e797), with the design lead's two changes to the plan, its should-fixes on 850bb6f9 and its polish on 39601718, which it approved. No app-ui code is taken: the CI story's data is an interim block. Tests first:
+  - scenes.test:
+    - The CI scene plays on 0.9.0's page, after Land and above its own card, on the pull request's worktree, with Ada's name and first prompt in its pane header.
+    - Its prompt is pr_checks.rs's `failure_prompt` word for word. The test reads pr_checks.rs and untrusted.rs, including D-3022's `fence_defanged` and its ＠ case, and the pane prints the prompt a line at a time once it's sent.
+    - Send failure to agent leaves the dialog open, its toast names Ada, and Close closes it. The test reads SendToAgent.
+    - The fix is pushed before the checks run again, then they pass.
+    - The imported comment is the reviewer's own, under its line, with Remove only, and the diff is a run of git's diff of session.ts.
+    - The final frame's bar reads "1 comment · Copy review · Send to Ada".
+    - The Review queue's buttons are ReviewQueue's variants. "Reviewing" is in the bar, the done toast has Show diff (SecondOpinion read), the bar shows the count and Copy review, and the meta ends with `ago()` (ReviewQueue read).
+    - The hero's waiting agent ends on its ask, the working one stays at work, the working count follows, and the caption counts the story's agents.
+    - The Dashboard has one repository, worktree groups by branch, cards by first name with `cardMeta`, and the ask with Allow once, Deny and Open (Dashboard.tsx read; at 54a05e0d, replaced by the engine's question in the design QA round). Its counts end on the story's states, with nothing from outside the story.
+    - The no-copies test covers engines' names in every scene now, and the pull request's and second opinion's words.
+    - The dialogs' scrims cover the whole window (Dialog.tsx's overlay read).
+    - The radar notice sits under the panes' headers, and the spinner's keyframes and gating are checked.
+  - scenes.spec:
+    - The CI scene on /changelog/0.9.0/ plays at full width.
+    - It shows its final frame with the player blocked and under reduced motion.
+    - It ends on "Checks passed", the agent's last line inside its pane, the imported comment and "1 comment · Copy review · Send to Ada".
+    - The final-frame tests now expect the hero's ask and the Review's bar.
+  - Checks: web lint, web vitest 167/167, `build:site` (58 pages), site Playwright 63/63. design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/: 24 captures, all ok, with teal unchanged (home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0, the CI scene being below the first viewport).
+  - Lighthouse CI on nine URLs, /changelog/0.9.0/ added, every assertion passing in both themes:
+    - /changelog/0.9.0/ 1.00 at 1.66 s in both themes.
+    - `/` 0.99, at 1.90 s light and 1.89 s dark.
+    - The rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,847 tests (web 167, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,566 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+    - Its first run stopped at the protocol check's `git status`, because the merge's generated protocol files were staged but not yet committed. Every earlier step had passed. With the merge committed, the whole gate ran again and passed.
+- The review round on 39601718 (D-3000, D-3001), on `chain27` 00c93bd2 (merged as da83e46f), on top of slice 2: the coordinator's three must-fixes, three should-fixes and five of its nits, and the design lead's two follow-ups. Tests first:
+  - scenes.test:
+    - The review card's second line is ReviewQueue's for a worktree, on the hero's card too, and the Dashboard's is `cardMeta`. The tests read review_queue.rs, lanes.rs, ReviewQueue.tsx and model.ts.
+    - `cut` and `show` wait for their `--at` like every other effect.
+    - Every `var()` the site draws with is defined: in its six stylesheets, inline in its pages, next/font's two and the scenes' own.
+    - The sample world's BULK15 and first names.
+    - Names, engines included, count as whole words anywhere in a scene file, with each diff exempt only in its own file. A diff runs inside one of git's hunks.
+    - The Review scene is drawn with no comments and with two equal ones.
+  - site.test: the theme control's ring, and every `var()` in it defined.
+  - scenes.spec: in real playback, every effect in each of the six scenes has one start time. Before the fix, cut and show started 33 ms early, in 3 of 3 runs.
+  - theme.spec: the chosen cell's computed ring, in both themes.
+  - Checks: web lint, web vitest 168/168, `build:site` (58 pages), site Playwright 65/65, and design-shots: 24 captures ok, with teal unchanged.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - /changelog/0.9.0/ 1.00, at 1.67 s light and 1.66 s dark.
+    - `/` 0.99 at 1.89 s in both themes, with accessibility 1.00 in all six runs.
+    - The rest 0.99–1.00, at 1.37–1.81 s.
+    - Blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,848 tests (web 168, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,571 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The rounds on 54a05e0d (D-3001), on top of it with no merge: the design lead's two must-fixes and the coordinator's must-fix, should-fixes and cheap nits. Tests first:
+  - scenes.test:
+    - The waiting agent's question is its engine's own, in the demo's words (backend.ts read), and no caption or text alternative has an answer in place. The hero's rail has no "running sessions" line.
+    - A push reads no checks. The badge is pressed again, the dialog reads with Refresh spinning, the new run is Running in Badge's outline, Close, and passed on a later read; the text says so. The test reads ChecksDialog, worktrees.ts's intervals and every caller of `loadChecks`.
+    - A check's result is the app's Badge (Badge.tsx, `BUCKET_VARIANT` and tokens.css read).
+    - The prompt is each case of the fixture that `tests/failure_prompts.rs` checks against `failure_prompt`.
+    - The CI scene's own rules are only in ci.css, only its page inlines them, and the home page and 0.12.0's have none.
+    - The CI scene's status bar has the branch's ↑/↓ and the CI segment (StatusBar.tsx read).
+    - Close's press ends before the dialog fades. The no-comments Review's bar goes. The token scan covers docs.css and ci.css.
+    - Planted faults each fail a test: a CI rule in scenes.css, a shared one in ci.css, an undefined var() in ci.css or docs.css, the old filled badge, the old bar, a wrong defang rule in the port and an edited fixture (that one fails cargo's test).
+  - site.test: the ring uses `--site-elev-1`.
+  - cargo: `tests/failure_prompts.rs`, the fixture's five cases.
+  - scenes.spec: the CI rules load only on 0.9.0's page, after the shared ones. The final-frame tests expect the question in Bea's pane and the waiting border on Bea's card.
+  - Checks: web lint, web vitest 173/173, ui 466/466, `build:site` (58 pages), site Playwright 66/66, design-shots 24 ok with teal unchanged. Every scene element's box is the same before and after the CSS split, on all three pages at 1440 and 390. On the home page and 0.12.0's, the status bar's new layout moves no box either.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - /changelog/0.12.0/ 1.51 s light and 1.66 s dark (1.66 in both before).
+    - /changelog/0.9.0/ 1.66 s in both.
+    - `/` 0.99 at 1.89 s in both, as before; 1.82 s with the demo's still blocked.
+    - The rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,853 tests (web 173, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,572 passed (`tests/failure_prompts.rs` is the new one), 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The fix pass on 2966da74, part 1 (D-3002): no swap shows two of its values at once, and words come in as §4.7's enter. On 4d3df4de: 2be8fa88 (chain27 f5b3272a merged, its gate passed) with chain27 b1a5e499 merged, its gate passed, pushed. Tests first:
+  - scenes.spec: at 1440 and 390, every scene's clock stepped every 25 ms and around each effect's start: no grid cell shows two of its items at once, and no two toasts show together. It failed on the build before the fix, with 31 at 1440, and passes on this one. The plan's and the CI scene's final-frame checks count a step's words, not its cell.
+  - scenes.test: `Changes`' markup (the first step cut at the next one's time, a step between entering and cut, the last entering), the enter's CSS, and that only marks pop and only DotChange fades out. The plan, hero, Dashboard, Review and CI tests read the new swaps.
+  - Checks: web lint, web vitest 177/177, `build:site` (58 pages), site Playwright 68/68. Frames of the CI scene at 8.69, 8.75 and 8.82 s show "1 check failed: test", then "Checks running" coming in alone.
+  - The gate passed:
+    - TypeScript: 1,927 tests (web 177, ui 475, desktop 969, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,588 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The fix pass on 2966da74, part 2 (D-3002): the coordinator's M1, S1 to S3 and nits 1 to 8, with the design lead's specifics for M1 and S3. Tests first:
+  - scenes.test:
+    - M1: the waiting agent's line is the question in Gemini CLI's own words, which its waitingPatterns match and the old line doesn't. The app's side is read in registry.json, terminal.rs, status.rs, status_heuristics.rs, dashboard.rs and AgentCard. The agent's card has no line, and the text says nothing of a question.
+    - Each Dashboard card's title row ends on its state, in AgentCard's words and format, with the demo's 42 minutes. The status bar's agents are counted against the cards and the filters at every change.
+    - The CI scene's agents segment comes after its CI segment, in StatusBar's order and look, counted against the rail's dots at every change. The footer is in fg-muted, the app's sans, tabular.
+    - S1: every call to the checks' readers is listed by what it's in (TypeScript's parser), `checks` is written only by loadChecks, and the push touches none.
+    - S2: the fixture's three new cases, and the port's whitespace.
+    - Nits: the text's "while its window has focus and its Code rail is open", the check row's text-sm and the badge's border, each dialog's two boxes, and sceneCss's refusals, its rule-by-rule comparison and its folder from any working directory.
+    - Planted faults each fail a test: the demo's old line, a line on the waiting card, the minutes off the demo's, a push that reads the checks, the port's `\s`, a wrong count in the agents segment, a minifier that drops spaces, the subtle footer, the badge's ring as a shadow, and one dialog box.
+  - cargo: `tests/failure_prompts.rs` is `f_wt_08_failure_prompts_are_the_fixtures`, with eight cases. `UPDATE_FIXTURES=1` rewrote the fixture and failed, as it now must. "yes" and CI were refused, and a run with nothing to change passed.
+  - Checks: web lint, web vitest 180/180, `build:site` (58 pages), site Playwright 68/68, design-shots 24 ok with teal unchanged. Frames of the reopened Checks dialog before and after its read show it shrink.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - `/` 0.99 at 1.89 s light and 1.74 s dark (the old hero, as before).
+    - /changelog/0.9.0/ and /changelog/0.12.0/ 1.66 s in both.
+    - The rest 0.99–1.00, at 1.36–1.81 s. Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,930 tests (web 180, ui 475, desktop 969, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,588 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The hero as one worktree's window (D-2702, D-3003), rebased onto the fix pass: on fbdfb0e2, 018b37a9 with chain27 836a8a47 merged (m16a's defang: the site's port is the app's TypeScript and failure_prompts.json the new core's), its gate passed. Tests first:
+  - scenes.test:
+    - D-2702's block: the title bar (TitleBar's modes read, the workspace's button); Code mode's tab (tabLabel read) and its one pane; PaneChrome's header (PaneChrome and PaneGrid read: the dot first, ⋯ and ✕, no Maximize or focus ring for a pane alone); the sidebar on Review (the pill's count, the switch from 0 to 1, EmptyState then the queue, the check running then passed; ReviewQueue read); the radar's note against `tests/fixtures/radar_notes.json`; home.css only on the home page; the phone's strip and floating sidebar (Sidebar.tsx and FLOAT_BELOW read); the caption and the text, by the agents' names.
+    - The rail is CodeRail's (read), each row's parts from each time on, and the status bar's agents segment, D-3002's, counted against the rail's rows at every change (StatusBar read).
+    - Toasts are Toast.tsx's (read), in IntentRadar's tones (read). The click that ends the press dismisses the notice, and Warned both agents comes once it has gone.
+    - Every badge the scenes draw is Badge.tsx's, quiet too, with its 1 px border, and a review card's buttons are ReviewCard's, in its order (read).
+    - D-3002's rules hold: the radar's marks, Needs you and the pill's count enter; the sidebar's switch and the card's check change as `Changes` draws a value; only marks pop. The waiting agent's card has no line, and the hero draws no question.
+    - The must-fixes on 018b37a9: each Dashboard card's line against dashboard.rs, status_report.rs, StatusStore::apply, status_heuristics.rs, hook.rs and the registry (one line in all, the working Claude Code agent's tool; its card drawn again without it at Done), and the text's "turns Done". The CI scene's data against story.json's pr.
+    - The Review and Plan segments against state.rs's status sink, set_external, StatusBar's count, second_opinion.rs's thread and tasks_exec.rs's two start_sessions, each count against what its frame draws.
+    - The site's defang is the app's (the import, the note against defang.json), and the prompt and the note against the new core's fixtures.
+    - The CI scene's work is story.json's, its prompt 0.12.0's (`DEFANGS`), and the fixture's first case the story's. Land counts the fix's commit (backend.ts read). On a phone the pane keeps the prompt's start, the ⋮ and the log's last two lines; a two-line log keeps all its lines.
+    - The git diff runs alone: the tests pass under a hostile global config, GIT_DIFF_OPTS and GIT_EXTERNAL_DIFF, which move a plain `git diff`.
+    - Planted faults each fail a test, twenty-three. D-2702's ten: the note typed after the tests, the shell's pane gone, the agents' counts, the warned toast's tone, a check that never runs, the note's wording, the buttons' order, the modes' order, Maximize on a lone pane, and the phone's fold with no ⋮. Five for the rebase: the note trimmed as JS trims, the radar's mark popping, Warned both agents while the notice leaves, the Badge's border as a shadow, and the rail's Needs you after the segment's count. Eight for the must-fixes and the segments: a line on the Codex card, a line on the done card, one card that keeps its line's slot, a run's tool named Run, the notify hook naming tools, the old text, the second opinion not counted, and a plan's reviews not counted.
+  - cargo: `tests/radar_notes.rs` is `f_wt_10_radar_notes_are_the_fixtures`, with six cases on `tests/common`. `UPDATE_FIXTURES=1` rewrote radar_notes.json, and failure_prompts.json's first case, for the new defang and failed, as it must; the next runs passed, and so did a rewrite with nothing to change. A changed rewrite failed, and the core put the file back.
+  - scenes.spec: at 1440, 1280, 1024 and 768 nothing in the rail is cut and the hero ends with Ada's card checked; at 390 the strip and the floating sidebar; the hero's rules load only on `/`; the final-frame checks follow the new hero. D-3002's swap test steps the new hero every 25 ms at 1440 and 390.
+  - Checks: web lint, web vitest 190/190, `build:site` (58 pages), site Playwright 74/74, design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/: 24 captures ok, with teal unchanged (home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0). The hero rail's widest row (coupon-rules) has 3.8 app px to spare at 1440 and 1.9 at 768.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - `/` 0.99 at 1.81 s light and 1.82 s dark (the old hero's were 1.89 s and 1.74 s on c059d30b).
+    - /changelog/0.9.0/ and /changelog/0.12.0/ 1.66 s in both.
+    - The rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - Lighthouse on `/`, five runs per theme (the repo's lhci settings), for the coordinator's call on the demo's still, on D-2702 before the rebase:
+    - As the page is, the still fetched before the first paint: light 1.82 s (1.81, 1.89, 1.89, 1.81, 1.82), dark 1.81 s (1.81, 1.81, 1.89, 1.83, 1.81).
+    - With `content-visibility: auto` on the still's picture, so it isn't fetched: light 1.82 s (1.82, 1.96, 1.82, 1.82, 1.96), dark 1.96 s (1.82, 1.96, 1.97, 1.96, 1.81). A first batch, before the picture moved first, was the same: 1.81 s and 1.96 s.
+    - With the still blocked instead: light 1.82 s (1.82, 1.81, 1.81, 1.89, 1.82), dark 1.85 s (1.90, 1.85, 1.81, 1.89, 1.81).
+    - Every run's largest paint is the hero's line, with 0.99 for performance. With the wait, the observed paint came earlier (141 to 172 ms, against 169 to 209), main-thread work was lower (2.6 to 2.9 s, against 3.0 to 3.6) and 14 KB less came before it. But half its estimates fell in a 1.96 s mode the other two never show. The same requests started before the paint in its fast and slow runs, with less script and layout before it, so the mode is the containment's, not the still's. The containment also stacked the picture over the full screen's bar, which came before it, so on a phone it took the tap on Close (demo-embed.spec's AC4 failed until the picture came first). It isn't in (D-3003).
+  - The gate passed:
+    - TypeScript: 1,989 tests (web 190, ui 492, desktop 1,001, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,695 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The round on cced2f8f (D-3004, D-3005, the design lead's D-2704): the code reviews of the fix pass and of cced2f8f, and the design lead's QA of cced2f8f. On cced2f8f. Tests first:
+  - scenes.test, 63 tests (57 before):
+    - Changes' markup with a stint; every swap's steps one element down, in every scene; Land's and the CI rail's rules against what they find.
+    - The checks' readers by every use, and the dialog's kind objects. Four reads planted in ChangesView's push (the dialog's kind, an alias, a namespace, a value) are each caught.
+    - The Review bar's stint and its spinner's start; every visit listed, none in place; the waiting card against Dashboard.tsx and the tokens.
+    - terminal.rs's three watches (a planted `&[]` is caught); the D-3001 record's card line.
+    - The 0.12.0 hero without the radar, its rail inside CodeRail's widths, and a tripwire for 0.13.0. The radar's note by its branch, against radar.rs and the demo's branchOf.
+    - The Dashboard's close (the groups below, the tail, the CSS); cardTitle against model.ts; the menu's room against AgentCard and IconButton.
+    - Elapsed against PaneChrome and PaneGrid; Pin against Sidebar.tsx.
+    - Review's and Plan's counts against story.json's states; an empty segment draws nothing.
+    - The git diff on a planted hostile machine (the old isolation, planted, fails it); the site's imports of the app (one more, planted, fails it); home.css inlined after scenes.css; the app pixel in cqw.
+  - scenes.spec, 77 tests (74 before):
+    - every step's mark and words a column gap apart and centred. The old nesting, planted and built, fails it on Land's three middle steps and "Checks running";
+    - the Dashboard's close at 1440 and 390, seeked through the change: the next group a lanes' gap below the card that shows, and the rule reaching the last card throughout;
+    - the rail without the radar, inside CodeRail's widths.
+  - cargo: radar_notes.json's first case names the branch. `UPDATE_FIXTURES=1` rewrote it and failed, as it must, and the next run passed.
+  - Checks: web lint, web vitest 196/196, `build:site` (58 pages), site Playwright 77/77. design-shots on /, /changelog/0.12.0/ and /changelog/0.9.0/: 24 captures ok, teal unchanged (home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0). The rail's tightest row (coupon-rules) has 47 app px to spare at 1440, 1280, 1024 and 768.
+  - Frames at 1440 and 390: the hero at 3 s and at its end; the Dashboard at 4.5, 4.66 and 7 s; Review at 3 s; Plan at 2 s; the CI pane at 9.5 s.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - `/` 0.99 at 1.89 s (light 1.88, 1.89 and 1.89; dark 1.73, 1.89 and 1.89).
+    - /changelog/0.9.0/ and /changelog/0.12.0/ 1.66 s; the rest 0.99–1.00, at 1.36–1.81 s.
+    - Accessibility 1.00, blocking time 0 ms, CLS at most 0.001.
+    - On `/` alone, five runs per theme: cced2f8f 1.82 s and 1.82 s; this round 1.89 s and 1.89 s, with home.css inlined or linked; the first paint 1.52 s, then 1.37 s with it inlined.
+  - The gate passed:
+    - TypeScript: 1,995 tests (web 196, ui 492, desktop 1,001, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,695 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- chain27 65c7b5d7 merged after it. It brings app-ui's D-2618 to D-2628, D-2701 and D-2703, product-research's F-TL-12 rounds 15 and 16, m16a's skill-word rule, m16d's F-EN-11 follow-ups and the design lead's D-2704 record. The site's side:
+  - **D-2619 is in the tree:** a successful push reads the worktree's checks. The CI scene keeps 0.12.0's push, which read nothing, so the badge is opened again (`PUSH_READS`, on 0.13.0). The checks guard pins the tree's readers, the push's `checksAfterPush` among them, and fails once 0.13.0 ships, until the 0.13.0 slice draws the push reading them.
+  - The tree's rail measures its minimum (D-2701, D-2703). The hero's test pins 0.12.0's clamp, 180 to 360 px, and the tree's 360.
+  - The waiting agent's question, a step's tool and a branch come from the demo's story.ts, one copy for the demo and the site (D-3005 lists it). NAMES_TOOLS comes from story.json's `hooksSupport`, held to the registry's.
+  - The Plan scene says "1 with changes requested", the tree's words.
+  - Pinned where they now are: cardMeta's account, shown only beside another of the engine's (D-2620); the demo's tool on a status (D-2624); and BranchChip's rule (`showsStatus`).
+  - failure_prompts.json and radar_notes.json still match the merged core.
+  - Checks: web lint, web vitest 196/196, `build:site` (58 pages), site Playwright 77/77.
+  - The gate passed:
+    - TypeScript: 2,042 tests (web 196, ui 497, desktop 1,043, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,717 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

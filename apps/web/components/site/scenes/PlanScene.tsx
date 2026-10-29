@@ -1,7 +1,7 @@
 import type { Status } from "@tandem/ui/components/StatusDot";
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, StatusBar, fx } from "./parts";
+import { AgentsSegment, AppWindow, Changes, Dot, StatusBar, fx, type Agents } from "./parts";
 
 /** A task run's states, as the plan's list shows them (F-TK-07). */
 type RunState = "queued" | "running" | "reviewing" | "in_review";
@@ -30,6 +30,7 @@ function run(running: number, reviewing: number, ready: number) {
 }
 
 const [balances, redeem, cart] = SAMPLE.plan.tasks;
+if (!balances || !redeem || !cart || SAMPLE.plan.tasks.length !== 3) throw new Error("scenes: the plan scene runs story.json's plan, which needs three tasks");
 
 /** The plan's three runs, in seconds from the scene's start. Execute all
  * queued them together (at most four run at a time); each is reviewed by
@@ -92,6 +93,15 @@ function over<T>(value: (seconds: number) => T): Array<readonly [number, T]> {
   return out;
 }
 
+/** The agents waiting and at work from each time on, as the status bar
+ * counts them: the story's (one waits, one works), and a plan's runs, which
+ * are threads, as their reviews are, whose status the app counts as it does
+ * a pane's. So it's the story's, and the runs running or being reviewed,
+ * which the plan's line counts as running (D-3003, D-3004). */
+export const PLAN_AGENTS: ReadonlyArray<readonly [number, Agents]> = over((at) => PLAN_RUNS.filter((r) => kindOf(stateAt(r, at), r.verdict) === "running").length).map(
+  ([at, running]) => [at, { ...SAMPLE.agents, working: SAMPLE.agents.working + running }] as const,
+);
+
 const dots = (steps: Array<readonly [number, Status]>) =>
   steps.map(([at, status]) => [at, <Dot key={at} status={status} />] as const);
 
@@ -136,42 +146,43 @@ export function PlanScene() {
             </span>
           ))}
         </span>
-        <div className="sc-plan-layer">
-          <div className="sc-dialog sc-plan-dialog" {...fx("rise", 0.2)}>
-            <span className="sc-dash-title">{t("plan.titleOf", { goal })}</span>
-            <span className="sc-plan-line">
-              <Dot status="done" /> {t("plan.started", { n: tasks.length })}
-            </span>
-            <span className="sc-plan-summary">
-              <Changes steps={over((at) => planAt(at).summary)} />
-            </span>
-            <span className="sc-runs">
-              {PLAN_RUNS.map((r) => (
-                <span key={r.task.id} className="sc-run">
-                  <Changes steps={dots(over((at) => SHAPE[kindOf(stateAt(r, at), r.verdict)]))} />
-                  <span className="sc-run-title">
-                    <span className="sc-mono sc-run-id">{r.task.id}</span> {r.task.title}
-                  </span>
-                  <span className="sc-run-label">
-                    <Changes steps={r.steps.map((s) => [s.at, `${r.task.engine} · ${runLabel(s.state, r.verdict)}`] as const)} />
-                  </span>
+      </div>
+      <StatusBar branch={SAMPLE.base} segments={<AgentsSegment steps={PLAN_AGENTS} />} />
+      {/* Over the whole window, as the app's overlay is (fixed, inset 0). */}
+      <div className="sc-plan-layer">
+        <div className="sc-dialog sc-plan-dialog" {...fx("rise", 0.2)}>
+          <span className="sc-dash-title">{t("plan.titleOf", { goal })}</span>
+          <span className="sc-plan-line">
+            <Dot status="done" /> {t("plan.started", { n: tasks.length })}
+          </span>
+          <span className="sc-plan-summary">
+            <Changes steps={over((at) => planAt(at).summary)} />
+          </span>
+          <span className="sc-runs">
+            {PLAN_RUNS.map((r) => (
+              <span key={r.task.id} className="sc-run">
+                <Changes steps={dots(over((at) => SHAPE[kindOf(stateAt(r, at), r.verdict)]))} />
+                <span className="sc-run-title">
+                  <span className="sc-mono sc-run-id">{r.task.id}</span> {r.task.title}
                 </span>
-              ))}
-            </span>
-            <span className="sc-dialog-foot sc-plan-foot">
-              <span className="sc-btn sc-btn-ghost">{t("plan.removePlan")}</span>
-              <Changes
-                steps={[
-                  [0, <span key="primary" className="sc-btn sc-btn-primary">{t("common.close")}</span>],
-                  [firstApproved, <span key="ghost" className="sc-btn sc-btn-ghost">{t("common.close")}</span>],
-                ]}
-              />
-              <Changes steps={land} />
-            </span>
-          </div>
+                <span className="sc-run-label">
+                  <Changes steps={r.steps.map((s) => [s.at, `${r.task.engine} · ${runLabel(s.state, r.verdict)}`] as const)} />
+                </span>
+              </span>
+            ))}
+          </span>
+          <span className="sc-dialog-foot sc-plan-foot">
+            <span className="sc-btn sc-btn-ghost">{t("plan.removePlan")}</span>
+            <Changes
+              steps={[
+                [0, <span key="primary" className="sc-btn sc-btn-primary">{t("common.close")}</span>],
+                [firstApproved, <span key="ghost" className="sc-btn sc-btn-ghost">{t("common.close")}</span>],
+              ]}
+            />
+            <Changes steps={land} />
+          </span>
         </div>
       </div>
-      <StatusBar branch={SAMPLE.base} />
     </AppWindow>
   );
 }
