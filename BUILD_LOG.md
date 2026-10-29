@@ -3456,6 +3456,14 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - core `f_tk_08_1_redacted_hides_a_credential_what_is_removable_both_sets_apart_and_splits`: the review's four probes, the two tails, and a word that only holds a prefix;
     - app `f_tk_08_1_the_preview_finds_what_the_save_refuses`;
     - phone `f_tk_08_1_the_phones_transcript_hides_a_credential_behind_what_is_removable`, `f_tk_08_1_the_phones_review_hides_a_credential_behind_what_is_removable` and `f_tk_08_1_approvals_and_alerts_on_the_phone_hide_a_credential_behind_what_is_removable`.
+  - **Gate:** passed on 865d4a66, which carries both commits:
+    - 2,714 Rust tests (6 ignored) and 1,948 TypeScript;
+    - the rule-8 invariants, 15 of 15;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 194, and protocol drift with 596 types (none added).
+  - **E2E** on 865d4a66: m16-7-auto (5 tests) and m6-1-launch (4) three times each, and every test passed every time.
+    - The first run still exited 1, from the runner's teardown after both specs had passed. `cleanHomes` hit ENOTEMPTY removing the run's home while something still wrote into it.
+    - `rmSync`'s `maxRetries` would retry that. The runner is shared code, so this is proposed to the coordinator, not changed here.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
