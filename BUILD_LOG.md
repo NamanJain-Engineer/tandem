@@ -3596,6 +3596,28 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - The hero rail's "running sessions" footer has been there just as long.
   - The 39601718 polish asked only that the radar notice clear the pane headers. It should have said that the app's toasts sit at the bottom right (`Toast.tsx`), and that the hero's review card belongs to the queue's Review view.
   - DESIGN §6 now lists whose question it is and where the app shows it.
+- Design QA of `app-ui` @ be355620 (READY, with chain27 00c93bd2 merged; D-3022 in the demo): approved, walked on a real 2× screen.
+  - The CI failure reaches Ada as pr_checks.rs's prompt, with the fenced log summed up in her pane, and the fix turn commits 6b2e9f4 with 54 tests.
+  - Send to Ada types the imported comment behind the untrusted label and fence as "sample-reviewer on src/auth/session.ts:12:", with no @.
+  - The radar notice is a warning toast at the bottom right. Warn both agents types radar.rs's note word for word, and "Warned both agents" follows.
+  - The rail and the status bar follow D-2700.
+  - Polish:
+    - The coach's first hint names the engine ("Gemini CLI is waiting on you"), where 0.12.0 names agents (F-CD-12). The copy deck now reads "{name} is waiting on you. Open it to see why."
+    - Export the waiting agent's terminal line and previewOf from story.ts, so the site reads one source.
+    - Make plan.count.changes read right for one ("1 changes requested").
+    - Show a Dashboard card's account only when its engine has more than one ("Default" on every card says nothing).
+- `site-motion`'s three calls on 54a05e0d, checked against the code:
+  - The CI scene shows checks read when the dialog opens (ChecksDialog's effect). Refresh's spinner is drawn rather than a press on it, since nothing reads on a push and running checks are read every two minutes with the window in front.
+  - UI-156 stays out of the scene, since it's asked once per repository.
+  - Dashboard cards leave the account out, as a simplification.
+- Design QA of `site-motion` @ 2966da74 (the must-fixes on 54a05e0d and the coordinating session's round): both must-fixes are fixed.
+  - A script checks both widths, the captions and the text alternatives: no Allow once, Deny, Open or "Wants to:"; Bea's prompt is in her terminal; her card's line is "Allow running pnpm test search?"; there's no rail footer.
+  - The CI read on open, Badge's look, the status bar's ↑/↓ and CI segment, real playback (0.0 ms spread in all six scenes) and design-shots (24 of 24) are right.
+  - One new must-fix: the shared `Changes` helper cross-fades a value's first swap, so two texts share one place for about 150 ms.
+    - In the CI scene, the rail badge and the status bar's CI words overlap at 8.75–8.85 s.
+    - On the home page, the Dashboard's "Waiting 0"/"Waiting 1" overlap at 2.05–2.15 s.
+  - Polish: words enter with §4.7's enter, not sc-pop's 0.6 → 1.08 bounce.
+- Correction (the design lead's own): the `Changes` overlap has been in every scene's first swap since e97cf660. It was approved in that round and in 54a05e0d's, because frames were sampled only at rest. DESIGN §6 now asks for a seek to each change's time ± 0.05 s.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
