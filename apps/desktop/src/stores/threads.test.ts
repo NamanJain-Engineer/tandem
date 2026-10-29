@@ -1,6 +1,7 @@
 import { act, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Thread, ThreadDetail, ThreadEventEnvelope } from "@tandem/protocol";
+import { setInvokeBackend } from "../ipc/invoke";
 import { fakeBackend, resetStores, type Call } from "../test/fakeBackend";
 import { useThreads } from "./threads";
 
@@ -127,5 +128,65 @@ describe("F-TH-01 AC2: a thread is read when it's on screen, not when it's read"
     useThreads.getState().select("thr_a");
     await waitFor(() => expect(unread.thr_a).toBe(false));
     await waitFor(() => expect(listed("thr_a")?.unread).toBe(false));
+  });
+
+  it("N3: a thread opened for the first time is marked read only once subscribed", async () => {
+    unread.thr_a = true;
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_a");
+    await waitFor(() => expect(unread.thr_a).toBe(false));
+    const cmds = calls.filter((c) => c.args?.threadId === "thr_a").map((c) => c.cmd);
+    expect(cmds.indexOf("thread_subscribe")).toBeLessThan(cmds.indexOf("thread_mark_read"));
+  });
+
+  it("N3: with the window hidden, a turn that ends on the selected thread leaves it unread until the window is shown", async () => {
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    try {
+      endTurn("thr_b");
+      await waitFor(() => expect(listed("thr_b")?.unread).toBe(true));
+      expect(unread.thr_b).toBe(true);
+      hidden.mockReturnValue(false);
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await waitFor(() => expect(unread.thr_b).toBe(false));
+      await waitFor(() => expect(listed("thr_b")?.unread).toBe(false));
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it("N3: a reload in flight when the thread is marked read can't bring the dot back", async () => {
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_a");
+    await waitFor(() => expect(channels.thr_a).toBeTruthy());
+    useThreads.getState().select("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    // thr_a's next read is slow: it answers "unread" after the person has
+    // opened it.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const slowUnread = { ...thread("thr_a"), unread: true };
+    setInvokeBackend(async (cmd, args) => {
+      calls.push({ cmd, args });
+      if (cmd === "thread_get" && args?.threadId === "thr_a") {
+        await gate;
+        return { thread: slowUnread, turns: [], running: null, queued: null, draft: "{}", attachments: [], planRevisions: [] };
+      }
+      if (cmd === "thread_mark_read") {
+        unread[String(args?.threadId)] = false;
+        return null;
+      }
+      return null;
+    });
+    unread.thr_a = true;
+    const reload = useThreads.getState().reloadDetail("thr_a");
+    await useThreads.getState().markRead("thr_a");
+    release();
+    await reload;
+    expect(listed("thr_a")?.unread).toBe(false);
   });
 });

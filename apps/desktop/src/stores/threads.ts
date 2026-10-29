@@ -110,10 +110,25 @@ export const useThreads = create<ThreadsState>((set, get) => {
   const patch = (id: string, next: Partial<ThreadLive>) =>
     set((s) => ({ byId: { ...s.byId, [id]: { ...(s.byId[id] ?? blank()), ...next } } }));
 
-  /** Shown now: the selected thread, or a cell of the grid. Every thread
-   * opened this session stays subscribed, so a turn ending elsewhere must
-   * leave it unread. */
-  const onScreen = (id: string) => get().selectedId === id || get().grid.includes(id);
+  /** Shown now: the selected thread, or a cell of the grid, while the
+   * window is visible. Every thread opened this session stays subscribed, so
+   * a turn ending elsewhere must leave it unread. (Which mode or page the
+   * window shows isn't known here: a selected thread counts while the person
+   * is in Code mode or Settings too.) */
+  const onScreen = (id: string) =>
+    !document.hidden && (get().selectedId === id || get().grid.includes(id));
+  /** Bumped by each mark: a reload that started before a mark can't bring
+   * the dot back. */
+  const marks: Record<string, number> = {};
+  // The window shown again: what it shows is read.
+  if (typeof document !== "undefined")
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      const { selectedId, grid } = get();
+      for (const id of new Set([...(selectedId ? [selectedId] : []), ...grid])) {
+        if (get().list.find((t) => t.id === id)?.unread) void get().markRead(id);
+      }
+    });
 
   const onEnvelope = (env: ThreadEventEnvelope) => {
     const cur = get().byId[env.threadId];
@@ -209,10 +224,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
       }
     },
     open: async (id) => {
-      // Opened is on screen: read (F-TH-01 AC2), before the detail loads.
-      await get().markRead(id);
       const cur = get().byId[id];
       if (cur && cur.status !== "error") {
+        // Opened is on screen: read (F-TH-01 AC2), before the detail reloads.
+        await get().markRead(id);
         void get().reloadDetail(id);
         return;
       }
@@ -231,6 +246,9 @@ export const useThreads = create<ThreadsState>((set, get) => {
             throw e;
           });
         }
+        // Read once subscribed: a turn that ends from here on reaches
+        // onEnvelope, which marks it read again while it's on screen.
+        await get().markRead(id);
         const [detail, page] = await Promise.all([
           invoke<ThreadDetail>("thread_get", { threadId: id }),
           invoke<ThreadEventPage>("thread_events", { threadId: id, limit: PAGE }),
@@ -264,14 +282,19 @@ export const useThreads = create<ThreadsState>((set, get) => {
     markRead: async (id) => {
       try {
         await invoke("thread_mark_read", { threadId: id });
+        marks[id] = (marks[id] ?? 0) + 1;
         set((s) => ({ list: s.list.map((t) => (t.id === id ? { ...t, unread: false } : t)) }));
       } catch {
         // The next open retries.
       }
     },
     reloadDetail: async (id) => {
+      const mark = marks[id] ?? 0;
       try {
-        const detail = await invoke<ThreadDetail>("thread_get", { threadId: id });
+        const loaded = await invoke<ThreadDetail>("thread_get", { threadId: id });
+        // Marked read while this was in flight: it's read.
+        const detail =
+          (marks[id] ?? 0) !== mark ? { ...loaded, thread: { ...loaded.thread, unread: false } } : loaded;
         patch(id, { detail });
         set((s) => ({ list: s.list.map((t) => (t.id === id ? detail.thread : t)) }));
       } catch {
