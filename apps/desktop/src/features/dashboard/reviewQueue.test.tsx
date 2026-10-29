@@ -8,6 +8,7 @@ import { followReview, sortItems, useReview } from "../../stores/review";
 import { useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { DashboardPanel, ReviewQueue } from "./ReviewQueue";
+import { waiting } from "../../test/waiting";
 
 const item = (over: Partial<ReviewItem>): ReviewItem => ({
   key: "pane:p1",
@@ -124,10 +125,10 @@ describe("Review queue (F-DB-04)", () => {
     );
     // S4: Approve waits for the item to have held still a moment.
     const approve = screen.getByTestId("review-approve") as HTMLButtonElement;
-    expect(approve.disabled).toBe(true);
+    expect(waiting(approve)).toBe(true);
     fireEvent.click(approve);
     expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
-    await waitFor(() => expect(approve.disabled).toBe(false));
+    await waitFor(() => expect(waiting(approve)).toBe(false));
     fireEvent.click(approve);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h1" }),
@@ -139,6 +140,37 @@ describe("Review queue (F-DB-04)", () => {
     stop();
   });
 
+  it("nit: the changed-diff reason shows only after a change, and only until its wait is over", async () => {
+    let current = item({});
+    fakeBackend({
+      review_queue: () => ({ items: [current] }),
+      review_approve: () => (current = item({ state: "approved", diffHash: current.diffHash })),
+      review_unapprove: () => (current = item({ diffHash: current.diffHash })),
+    });
+    const stop = followReview();
+    wrap(<ReviewQueue />);
+    const approve = () => screen.getByTestId("review-approve") as HTMLButtonElement;
+    const plain = "Approve turns on once this has been still on screen for a moment.";
+    const changedText = "This diff just changed: Approve turns on in a moment.";
+    await screen.findByTestId("review-approve");
+    await waitFor(() => expect(waiting(approve())).toBe(false));
+    // h1 → h2: changed, then plain once it has waited.
+    act(() => emitLocal("review:queue", { items: [(current = item({ diffHash: "h2" }))] }));
+    expect(approve().title).toBe(changedText);
+    await waitFor(() => expect(waiting(approve())).toBe(false));
+    // Approved, then unapproved: the diff didn't change, so the plain reason.
+    act(() => emitLocal("review:queue", { items: [(current = item({ state: "approved", diffHash: "h2" }))] }));
+    act(() => emitLocal("review:queue", { items: [(current = item({ diffHash: "h2" }))] }));
+    expect(waiting(approve())).toBe(true);
+    expect(approve().title).toBe(plain);
+    await waitFor(() => expect(waiting(approve())).toBe(false));
+    // A → B → A: each is a change.
+    act(() => emitLocal("review:queue", { items: [(current = item({ diffHash: "h3" }))] }));
+    act(() => emitLocal("review:queue", { items: [(current = item({ diffHash: "h2" }))] }));
+    expect(approve().title).toBe(changedText);
+    stop();
+  });
+
   it("N4: a diff that changes in place starts Approve's wait over, so the hash sent is one that was on screen", async () => {
     const calls = fakeBackend({
       review_queue: () => ({ items: [item({})] }),
@@ -147,14 +179,18 @@ describe("Review queue (F-DB-04)", () => {
     const stop = followReview();
     wrap(<ReviewQueue />);
     const approve = () => screen.getByTestId("review-approve") as HTMLButtonElement;
-    await waitFor(() => expect(approve().disabled).toBe(false));
+    await screen.findByTestId("review-approve");
+    expect(approve().hasAttribute("data-grant")).toBe(true);
+    // A card that just arrived waits with the plain reason: its diff hasn't changed.
+    expect(approve().title).toBe("Approve turns on once this has been still on screen for a moment.");
+    await waitFor(() => expect(waiting(approve())).toBe(false));
     // Same item, same place, a new diff.
     act(() => emitLocal("review:queue", { items: [item({ diffHash: "h2" })] }));
-    expect(approve().disabled).toBe(true);
+    expect(waiting(approve())).toBe(true);
     expect(approve().title).toBe("This diff just changed: Approve turns on in a moment.");
     fireEvent.click(approve());
     expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
-    await waitFor(() => expect(approve().disabled).toBe(false));
+    await waitFor(() => expect(waiting(approve())).toBe(false));
     fireEvent.click(approve());
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h2" }),

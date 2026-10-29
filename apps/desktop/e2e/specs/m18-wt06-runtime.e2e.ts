@@ -2,7 +2,19 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, paneIds, relaunch, sendToPane, settled, userHome, waitForApp } from "../support/app";
+import {
+  addFolder,
+  clickAllow,
+  freshOffline,
+  home,
+  invoke,
+  paneIds,
+  relaunch,
+  sendToPane,
+  settled,
+  userHome,
+  waitForApp,
+} from "../support/app";
 import { openFromPlus } from "../support/files";
 import { newWorktree, pick } from "../support/worktrees";
 
@@ -99,7 +111,7 @@ describe("E2E-M18-WT06-1 worktree runtime", function () {
     expect(db).toBe("");
     expect(compose).toBe(`tandem-e2e-wt06-${stamp}-alpha`);
     await settled();
-    await $('[data-testid="worktree-review-trust"]').click();
+    await clickAllow('[data-testid="worktree-review-trust"]');
     await $('[data-testid="worktree-review"]').waitForExist({ reverse: true, timeout: 10_000 });
   });
 

@@ -946,5 +946,9 @@ export async function clickAllow(selector: string): Promise<void> {
   await button.scrollIntoView({ block: "center" });
   await browser.pause(700);
   await button.waitForEnabled();
+  // A control that waits stays focusable and says so with aria-disabled.
+  await browser.waitUntil(async () => (await button.getAttribute("aria-disabled")) !== "true", {
+    timeoutMsg: `${selector} kept waiting`,
+  });
   await button.click();
 }

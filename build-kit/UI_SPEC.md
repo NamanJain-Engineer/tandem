@@ -485,6 +485,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 | `loading` | boolean | false |
 | `kbd` | string (e.g. `"⌘↩"`), rendered as a trailing `Kbd` | — |
 | `fullWidth` | boolean | false |
+| `waiting` | boolean: off for now but still focusable (a control that waits until it has held still, F-TL-12.12) | false |
 
 **Visuals:**
 - *primary:* bg accent, fg accent-fg; hover accent-hover; pressed accent-press.
@@ -495,6 +496,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 
 **Loading:** replaces `iconLeft` with a 14px spinner, keeps the label, sets `aria-busy`, and blocks clicks.
 **Disabled:** 40% opacity, `cursor: not-allowed`, no hover change; the tooltip explains why if `disabledReason` is passed.
+**Waiting:** `aria-disabled`, not `disabled`: Tab still reaches it, and clicks, Enter and Space do nothing. Its content dims to 40% and its focus ring stays at full strength; `title` says why it's waiting. Every control that grants something (Allow, Approve, Trust) uses it while it waits, and carries `data-grant`.
 
 ### 2.2 IconButton
 Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**required**; used for the `aria-label` and the tooltip). Optional `badge` (number or dot) at top-right, and `pressed` (toggle state → `aria-pressed`, bg accent-soft, icon accent).
@@ -512,7 +514,7 @@ Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**r
 - Combobox adds type-to-filter and an "Add {query}…" creatable row when `onCreate` is given.
 
 ### 2.5 Checkbox, Radio, Switch
-- Checkbox: 16px, radius xs, accent when checked, supports indeterminate.
+- Checkbox: 16px, radius xs, accent when checked, supports indeterminate. `waiting` (with `waitingReason`) works as Button's: `aria-disabled`, still focusable; the box turns fainter (border `border`, background surface-2, also when unchecked), its mark and label dim, its focus ring stays full strength, and the reason is the box's accessible description and title.
 - Switch: 28×16 track, accent when on, with a label to the left in settings rows.
 - **All have visible labels; clicking the label toggles.**
 

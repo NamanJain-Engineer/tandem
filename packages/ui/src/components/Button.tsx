@@ -17,6 +17,10 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "childre
   fullWidth?: boolean;
   /** Explains why the button is disabled (tooltip). */
   disabledReason?: string;
+  /** Off for now but still focusable (`aria-disabled`): clicks and keys do
+   * nothing until it's on, and Tab still reaches it. For a control that
+   * waits (Allow until it has held still), so keyboard users can get to it. */
+  waiting?: boolean;
   children?: ReactNode;
 };
 
@@ -62,6 +66,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     fullWidth = false,
     disabledReason,
     disabled,
+    waiting = false,
     className,
     children,
     onClick,
@@ -70,7 +75,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  const inert = disabled || loading;
+  const inert = disabled || loading || waiting;
   return (
     <button
       ref={ref}
@@ -80,6 +85,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         buttonClass(variant, size),
         fullWidth && "w-full",
         disabled && "pointer-events-auto cursor-not-allowed opacity-40 hover:bg-[inherit]",
+        // Waiting stays focusable: its content dims, its focus ring doesn't.
+        waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40",
         loading && "cursor-progress",
         className,
       )}

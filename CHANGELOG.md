@@ -97,6 +97,13 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **A finished chat stays unread until you look at it.** A chat you'd
+  opened earlier and left could lose its unread dot when its turn ended in the
+  background, and one you were looking at could get the dot back. Now a chat is
+  marked read when you open it, or when it's the selected chat (or in the grid)
+  while chats are showing: its turn ends while you're in Thread mode with
+  Settings closed and the window in front, or you come back to Thread mode or
+  the window.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything
@@ -104,8 +111,9 @@ release fails when its version has no section.
   sliding into place, or a new held draft arriving on top, can't take a click
   or a double-click meant for something else. A chat card's keys answer only
   the card you're on, and only once its Allow would. A phone's queued Allow in
-  Settings › Remote and Trust and connect for a new SSH host key wait the same
-  way.
+  Settings › Remote, Trust and connect for a new SSH host key and Trust and run
+  for a repository's worktree setup wait the same way. A waiting Allow can
+  still be reached with Tab, and a card scrolled out of view takes no key.
 - [lin] **The task list keeps your latest changes.** When changes came quickly,
   an earlier refresh that finished last could show the list as it was before
   them until the next change.
