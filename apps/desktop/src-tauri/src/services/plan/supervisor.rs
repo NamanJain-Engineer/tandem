@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use super::answer::AnswerFailed;
 use super::{
-    block_body, blocking, clean, cut, hidden, nonce, not_found, PlanQuestion, PlanService,
-    PlanView, QuestionState, REPLY_MAX,
+    block_body, blocking, clean, cut, nonce, not_found, PlanQuestion, PlanService, PlanView,
+    QuestionState, REPLY_MAX,
 };
 use crate::services::tasks_exec::{Question, QuestionEvent, Supervision, QUESTION_MAX};
 
@@ -229,11 +229,13 @@ fn latin(c: char) -> char {
 }
 
 /// Text as the word check reads it: compatibility forms (full-width,
-/// ligatures, styled letters) and accents folded, hidden characters gone,
-/// lower case, and look-alike letters read as Latin.
+/// ligatures, styled letters) and accents folded, lower case, and look-alike
+/// letters read as Latin. What Lead's prompt drops is gone too: it shows the
+/// question defanged, without what's `untrusted::removable` (D-3030), so a
+/// character there splits no word that Lead reads whole.
 fn folded(text: &str) -> String {
     text.nfkd()
-        .filter(|c| !is_combining_mark(*c) && !hidden(*c))
+        .filter(|c| !is_combining_mark(*c) && !untrusted::removable(*c))
         .flat_map(char::to_lowercase)
         .map(latin)
         .collect()
@@ -1240,6 +1242,29 @@ mod tests {
             sensitive("Should I d\u{0435}ploy?"),
             Some("deploys or publishing")
         );
+    }
+
+    #[test]
+    fn f_tk_08_3_what_leads_prompt_drops_hides_no_topic() {
+        // Lead reads the question defanged, so without what's removable: a
+        // control character, a line separator or a blank there joins what
+        // the check would read as two words (D-3030).
+        for q in [
+            "Should I pu\u{1}sh the branch?",
+            "Should I pu\u{7f}sh the branch?",
+            "Should I pu\u{b}sh the branch?",
+            "Should I pu\u{85}sh the branch?",
+            "Should I pu\u{2028}sh the branch?",
+            "Should I pu\u{2800}sh the branch?",
+            "Should I pu\u{fff9}sh the branch?",
+            "Should I pu\u{1107f}sh the branch?",
+        ] {
+            assert_eq!(sensitive(q), Some("pushing"), "{q:?}");
+            let read = untrusted::defang(q);
+            assert!(read.contains("push"), "{read:?}");
+        }
+        // A line break Lead reads stays one.
+        assert_eq!(sensitive("Should I pu\nsh the branch?"), None);
     }
 
     #[test]
