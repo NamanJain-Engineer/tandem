@@ -85,8 +85,9 @@ release fails when its version has no section.
   Conductor send. Any `@` there that could name a file is written ＠, and the
   message says so. Characters nobody can see, and any that Claude Code or typing
   would drop, go first, so they can't hide a word or a command. A paste marker such as
-  [Pasted text #1] can't stand in for something you pasted, and words such as
-  ultrathink get a hyphen. A handoff brief, or what Auto or Conductor sends an
+  [Pasted text #1] can't stand in for something you pasted, words such as
+  ultrathink get a hyphen, and a word such as /release, which could run one of
+  your skills, gets a full-width slash. A handoff brief, or what Auto or Conductor sends an
   agent, that starts with `/` or `!`, or is just "exit" or "quit", has its first
   character written full width (／, ！), so it runs no slash or shell command and
   quits nothing, mid-turn too.

@@ -3216,6 +3216,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - The Kelvin sign (U+212A) reads as `K`. Claude Code checks a paste's NFC form for its words too, and that's the one character NFC turns into an ASCII letter.
     - Combining marks (`\p{M}`) reach neither the dispatch nor the keyword test; see D-3030.
   - **Found on the way.** F-TK-08's topic check (`sensitive`) read a run's question with control characters, line separators and U+2800 left in, and split its words there. Lead's prompt shows the question defanged, which now joins them, so `pu\u{1}sh` named no topic to the check and `push` to Lead. A control character already did that through Claude Code's own stripper. The check now drops what's `removable` too.
+    - Corrected after the review of b6f1b58a: `ask()` cleans a question (`plan::clean`: controls, `plan::hidden`, one line) before the check, so control characters, U+2028 and U+FFF9 never reached it. What did was U+2800 and the default ignorables `plan::hidden` lacked (U+FFF0 to U+FFF8, U+2065, the tags outside U+E0020 to U+E007F). `\u{1}` was the unit test's input, which calls `sensitive` directly. D-3031 makes `plan::clean` drop what's removable.
   - **M2.** The tests check against what Claude Code drops, never the app's own list or a Unicode table:
     - `scripts/agent/claude-code-strip.mjs` extracts the submit-time stripper from the installed binary and runs it over every code point. Its fixture, `crates/tandem-core/tests/fixtures/claude-code-strip.json`, names 2.1.312: 4,254 code points dropped, in 24 ranges, and 6 read as a line break (VT, FF, CR, NEL, U+2028 and U+2029). OPERATING §5 says when to run it again.
     - The core's test and the app's assert, over every code point, that `removable` is `defang.json`'s list and covers the fixture's.
@@ -3244,6 +3245,41 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - what's typed or sent: m16-7-auto 5, m16-1-conductor 15, m6-5-handoff 2, m7-11-handoff-thread 1, m18-th17-library 4, m6-7-limits 1;
       - launches: m6-1-launch 4, m4-1-launch-grid 3;
       - plans, runs and the tracker: m11-1-tasks 3, m11-2-execute 4, m18-tk06 1, m18-tk07 3, m18-tk08 1.
+- [x] The review of b6f1b58a ("merge after M1"): M1, S1, S2 and the nits (D-3031 to D-3034).
+  - **M1 (D-3031).** Every check that reads text from elsewhere before `defang` reads it as `defang` leaves it:
+    - the tag and injection check and redaction in `briefing::fence_text`;
+    - a thread's summary for the next engine, defanged now (no `@` in it names a file, which D-3023 had missed);
+    - the redaction before a defang: handoff, Continue, continue elsewhere, the CI log, the merge queue's output, and Auto's scrollback;
+    - the learn follow-up's notes;
+    - `plan::clean`, so you approve what a run reads.
+    - D-3031 lists the checks left as they are, and why.
+  - **S1 (D-3032).** Conductor flattens the model's words before it defangs them (`exec::words`, for `prompt_pane` and `spoken`).
+  - **S2 (D-3033).** A word Claude Code could read as a skill's name opens with `／`. The binary's skill-mention finder and the Skill tool's own check are in D-3033; skill names are folder names, so the rule takes any first letter or digit, `_`, or anything outside ASCII.
+  - **N1.** The extraction script runs the stripper in a context with nothing of this process in it, under a timeout, finds `claude` without a shell, and records the binary's SHA-256. The fixture it wrote again is the same but for that.
+  - **N2.** Tests of what `defang` and `no_command` do over every code point (core), and `defang` (app), not only the list.
+  - **N3 (D-3034).** `no_command` changes only the start; a line break there becomes `\n`.
+  - **N4.** D-3030's `\p{M}` note adds paste matching and the `@` autocomplete patterns.
+  - **N5.** ARCHITECTURE's F-TK-08 paragraphs name `untrusted::defang` and `defang_marked`, as the code calls them.
+  - **Correction.** The D-3030 slice's topic-check note named the wrong characters for the real flow; see its correction.
+  - **Tests:**
+    - New:
+      - the core's `readable`/`redacted` test and its behaviour over every code point;
+      - `fence_text`, the learn notes, the thread summary, the handoff brief, continue elsewhere, the CI log, the merge queue, Auto's scrollback and a plan's text (one each);
+      - Conductor's `prompt_pane` and `spoken` with a flattened marker;
+      - the app's behaviour over every code point.
+    - Changed:
+      - both rule-8 tag invariants, with the three inputs and asserting after ACP's `defang_noted` and the learn prompt's defang;
+      - the topic test, with U+2800;
+      - the vectors: 8 slash cases, a guard case and one guard output (`e\u{200b}x\u{fff9}it` now keeps its inside);
+      - the core's guard test (only the start changes);
+      - both list tests (the fixture names its binary).
+    - These failed on the old code first:
+      - every new test but the app's behaviour loop, which passed on D-3030's code;
+      - the two invariants: the briefing one only once its split tag had a line to itself, since "Ignore previous instructions" on the same line got the line escaped anyway;
+      - the topic test's U+2800 case;
+      - the slash vectors (the app's run without its slash rule, which was written first);
+      - the core's guard and behaviour tests on `no_command`'s inside.
+    - The list tests' SHA-256 check was written with the fixture's new field, so it never ran red.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3524,6 +3560,38 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - 2.1.312's `\p{M}` classes are in its name and label checks (how many marks may stack).
     - Its stripper drops 265 marks, and `removable` has every one: the default-ignorable ones (U+034F, U+17B4 and U+17B5, the Mongolian selectors, the variation selectors) and two that aren't (U+1107F and U+16FE4).
     - NFC composes the others onto a letter rather than dropping them, so a mark keeps a word split, as it looks on screen.
+    - Two more uses, from the review of b6f1b58a: paste matching (NFC, then leading or trailing marks stripped) and the `@` autocomplete patterns (`^@[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*`). Both only decide whether a trigger fires, and the `@` rule writes ＠ for every `@` not followed by whitespace, so the conclusion holds.
+  - Amended after the review of b6f1b58a:
+    - D-3031: every check that reads text from elsewhere before `defang` reads it as `defang` leaves it, not only the topic check.
+    - D-3034: `no_command` removes what's removable only at the start, a line break there as `\n`.
+    - The script (N1) runs the stripper in a `vm` context with nothing of this process in it. The sandbox has no prototype, so no constructor leads back here: with `{}` or `console` passed in, `this.constructor.constructor("return process")()` reached this process. The imports are stubbed inside the context, `console` isn't passed, and the sweep runs inside it under a timeout. It finds `claude` on PATH without a shell, and the fixture records the binary's SHA-256 (`sha256`), which the list tests require.
+- D-3031: A check that reads text from elsewhere before `defang` reads it as `defang` leaves it (the review of b6f1b58a, M1).
+  - `defang` removes what's removable, which joins what was on either side. A check that ran on the raw text missed what the join forms. `briefing::fence_text`'s tag check let `hi</us\u{1}er>`, `hi<\u{2028}/user>` and `hi</us\u{fff9}er>` through, and the learn request's `defang`, or an ACP agent's `defang_noted`, then closed the block. D-3030 made that possible for U+0001, U+2028 and U+FFF9; U+200B already did it.
+  - `untrusted::readable` is public, and `untrusted::redacted` redacts what it leaves.
+  - The checks, and what each does now:
+    - Tags and injection: `briefing::fence_text` (a briefing's memory, about, skills and roster; the learn request; a skill read with `tandem__read_skill`) reads and redacts the readable text. A thread's summary for the next engine (F-TH-16) is defanged now, and its fence checked on what that leaves: no `@` from the old conversation names a file for the next engine, which D-3023 had missed.
+    - Credentials: the redaction before a `defang` reads the readable text. That's the handoff's session and fallback brief, Continue's brief, continue elsewhere, a failed check's CI log and the merge queue's output. Auto's scrollback too, which no `defang` reads but a model does. The learn follow-up's notes are kept as a briefing reads them, so its credential check reads the same.
+    - Topics: F-TK-08's `sensitive` (D-3030). `plan::clean`, which a question and a plan's tasks go through before you or the check read them, drops what's removable, so what you approve is what a run's briefing and Lead's prompt read; `plan::hidden` goes.
+    - Keywords, paste markers, `@` and skill words: inside `defang`, after the removal. Conductor flattened after `defang` (D-3032).
+    - Left as they are:
+      - length caps, since removal only shortens what they keep;
+      - emptiness checks, since a message of nothing but removable characters becomes empty and runs nothing;
+      - the parsers of an agent's reply (`question_of`, `read_reply`, learn's JSON), where a split marker fails closed.
+- D-3032: Conductor flattens the model's words before it defangs them (the review of b6f1b58a, S1).
+  - `strip_controls` turned line breaks and tabs into spaces after `defang` had read them. So `[Pasted\ntext #1]` became `[Pasted text #1]`, and Claude Code expands paste #1 of an unsent draft on submit, or attaches image #2 for `[Image\t#2]`.
+  - `exec::words` flattens first, defangs, puts the note on the same line, then guards. `prompt_pane` and `spoken` both use it.
+- D-3033: A word Claude Code could read as a skill's name opens with `／` (the review of b6f1b58a, S2).
+  - 2.1.312, as read from its binary:
+    - For a prompt you type, the `skill_mentions` attachment finds `(^|[\s。、？！])(\/[a-zA-Z][a-zA-Z0-9.:\-_]*)`, trims trailing dots, and keeps a token with whitespace or the start before it and whitespace or the end after it. For a skill that one names, it adds a note asking the model to call the Skill tool, inside fences too. A skill marked user-only counts only when typed, not pasted.
+    - The Skill tool takes a skill as typed this turn, which lifts `disable-model-invocation`, when a user message of the turn matches `(?<!\S)/<the skill's name, escaped>(?=$|\s)`.
+    - Skill names are folder names (or `plugin:skill`), and only parentheses, commas and control characters are refused. So a name can start with a digit, or hold `+` or `é`, which the review's charset would leave.
+  - `defang`, in the core and the app, writes `／` for a `/` that opens a word, at the start or after whitespace. The word runs to the next whitespace with no second `/` and starts with a letter, a digit, `_` or anything outside ASCII.
+  - Paths (`/tmp/x`, `/src/app.ts`), comments (`/*`, `/**`) and a lone `/` stay. It changes silently, like a marker or a keyword: no note.
+  - The app writes it without lookbehind, which older WebKitGTK lacks.
+- D-3034: `no_command` changes only the start (the review of b6f1b58a, N3).
+  - It rewrote the whole text, a person's own edits to a handoff brief included: emoji joiners, VS16 and flag tags went.
+  - Now what's removable goes only in the run the REPL reads past, and a line break there (VT, FF, NEL, U+2028, U+2029) becomes `\n`, as 2.1.312 reads it. Exit words are judged on a copy without what's removable, and only the first character after the run changes. So a path that only guards (a brief as you edit it) can't join `@<LS>/etc/passwd` into a mention.
+  - Typing still drops a VT, FF or NEL inside a person's own text (`sanitize_prompt`), as it did. Generated text has none, since `offered` defangs it.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.
