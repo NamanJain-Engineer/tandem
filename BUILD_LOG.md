@@ -4018,6 +4018,11 @@ The owner (20 October): the product and the site should feel premium, "not somet
 
   The rail is drawn as 0.12.0's WorkspaceSlot and WorktreeRow draw it: each worktree's branch icon, its name, its slot ("● 1 working"; `search-ui` turns to "Needs you" in amber at 2.2 s), the radar mark inline and the count badge, with the rail wide enough that nothing is cut. The radar notice and "Warned both agents" are toasts at the bottom right, and the status bar carries the agents segment ("◆ 1 waiting ● 1 working"). At 390, the rail's worktree rows sit as a strip above the pane, so the agent that needs you shows on a phone, and the sidebar floats over the pane as the app's does below 1,100 px. Caption: "Three agents work in one repository, each in its own worktree, and the rail shows the one that needs you." At release, a "scenes to 0.13.0" slice moves every scene's rail to D-2611, D-2613, D-2700 and D-2701, and the Dashboard to F-TL-12.12, gated on 0.13.0 as LANDS is gated on 0.9.0.
 - D-2703: the rail's minimum (D-2701) counts F-CD-24's jj badge and the Preview's globe only while a row in the rail shows them (`app-ui`'s option 2). Most people keep 246 px; a jj repository with a running preview gets up to 297. A rail sitting at its minimum widens when such a row appears, eased over `--dur-base` with `--ease-standard` and never mid-drag. It doesn't narrow by itself when those marks go, since its width stays until someone drags it, so panes reflow once, not twice. A fixed 297 would cost everyone 51 px for a rare row, and leaving 246 would let that row run past the rail.
+- D-2704: the 0.12.0 hero (D-2702) leaves the intent radar out: its rail marks, its notice, the note Warn both agents types and "Warned both agents".
+  - Why: 0.12.0 clamps CodeRail to 180–360 px (RAIL_MAX; the default is 248). A row that shows its status slot, the 112 px "Shares applyCoupon" badge, its count and the hidden ⋯ cuts its name to a letter at 360, and a wider rail can't be reached.
+  - Why not rename: shortening the story's names wouldn't make that row fit, and would ripple through the demo and every scene.
+  - The hero's rail sits at a width CodeRail allows, where nothing is cut.
+  - The radar returns in the "scenes to 0.13.0" slice, where D-2613's icon mark beside a status and D-2701's folding make it fit. The typed note and the success toast come back with it, as drawn here.
 
 ### Design direction log
 - Read the brief's sources, captured vibezeo.com and its live demo (Playwright, Chromium, 1440×900, dark and light), inventoried the journey as built (welcome, five-step wizard, launch grid, empty states, every upgrade prompt and its copy, raw colours and arbitrary values) and studied premium product sites for principles only.
@@ -4138,6 +4143,27 @@ The owner (20 October): the product and the site should feel premium, "not somet
     - Ada's "Tests 42 passed" and Arlo's "$ pnpm test coupon" card lines can't be drawn by dashboard.rs.
     - The CI scene's interim data (+9 −7, "Test refreshSession, getSession's new name", runs/1807/job/5204) must now read story.json's pr, which `app-ui` landed in chain27 (f5b3272a): +12 −8, 54 tests, 6b2e9f4 "Test refreshSession and its renewal", its closing and its log.
   - The hero's agents segment comes with D-2702.
+- The agents segment counts threads as well as panes. AgentsSegment counts every status record, and threads report into the same store (state.rs's set_status_sink). So the second opinion's thread, "Second opinion: {branch}", counts while it reviews, and a plan's task runs (tasks_exec's start_session) count while they run. A scene's count matches the agents it draws.
+- Design QA of `site-motion` @ cced2f8f (D-2702, the hero as one worktree's window, with the must-fixes on 018b37a9).
+  - Right:
+    - Code mode on `checkout-fix`'s tab with Ada's pane alone and PaneChrome's header.
+    - The sidebar's Dashboard tab, with its waiting badge, on Review: "Nothing to review", then Ada's ReviewCard at 6.4 s, "Check running…", then "Check passed" with Run check.
+    - The rail rows as WorktreeRow draws them, with shop's "No open panes" and Remote hosts.
+    - The status bar: 3 working, then "◆ 1 waiting ● 2 working", then "● 1 working".
+    - At 390, the strip and the floating sidebar.
+    - Every scene's title bar in 0.12.0's order, Agent | Code | Thread.
+    - Ada's card names "Edit", then "Bash", then nothing at Done. The CI scene is story.json's pr.
+    - The Review and Plan counts are right.
+    - No text overlaps, and the frames at each change ± 0.05 s are clean. Real playback shows 0.0 ms spread, and design-shots passes 24 of 24.
+  - Must-fix:
+    - The 416 px rail is past 0.12.0's 360 maximum, so D-2704 takes the radar out of the 0.12.0 hero.
+    - The gap Ada's line leaves at Done closes as the app's list does, with the groups below eased up by a transform.
+  - Polish: Ada's green finish glow (sc-flash) isn't the app's, whose only pane flash is F-CD-12's focus ring.
+  - Decided as asked: the app's parts in every scene (ReviewCard, PaneChrome, Toast.tsx); D-3022's note waits for 0.13.0; Bea's question stays in her own pane.
+- Corrections (the design lead's own):
+  - The scenes drew the modes as Code | Thread | Agent from slice 1, where 0.12.0's title bar reads Agent | Code | Thread. site-motion fixed it in cced2f8f.
+  - The finish glow has been on the hero's pane since slice 1.
+  - D-2702's brief said the rail could widen until nothing was cut, without checking CodeRail's 360 maximum.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
