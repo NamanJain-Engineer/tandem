@@ -27,13 +27,16 @@ function Card({ lane, status, line }: { lane: typeof finished; status: ReactNode
   );
 }
 
-/** A line that changes once: `from` until `seconds`, then `to`. */
+/** A line that changes once: `from` until `seconds`, then `to`, as any
+ * value does (Changes). */
 function Line({ from, to, seconds }: { from: string; to: string; seconds: number }) {
   return (
-    <span className="sc-swap">
-      <span {...fx("out", seconds)}>{from}</span>
-      <span {...fx("in", seconds)}>{to}</span>
-    </span>
+    <Changes
+      steps={[
+        [0, from],
+        [seconds, to],
+      ]}
+    />
   );
 }
 

@@ -43,7 +43,7 @@ export function WorkspaceScene() {
             <DotChange from="working" to="done" seconds={HERO_DONE} />
             <span className="sc-lane-name">{finished.branch}</span>
             {radar && (
-              <span className="sc-radar" {...fx("pop", 3.4)}>
+              <span className="sc-radar" {...fx("enter", 3.4)}>
                 {t("radar.mark.one", { symbol: SAMPLE.symbol })}
               </span>
             )}
@@ -52,7 +52,7 @@ export function WorkspaceScene() {
             <Dot status="working" />
             <span className="sc-lane-name">{working.branch}</span>
             {radar && (
-              <span className="sc-radar" {...fx("pop", 3.5)}>
+              <span className="sc-radar" {...fx("enter", 3.5)}>
                 {t("radar.mark.one", { symbol: SAMPLE.symbol })}
               </span>
             )}
@@ -106,12 +106,12 @@ export function WorkspaceScene() {
             </span>
             <span className="sc-toast-body">{t("radar.notice.body")}</span>
             <span className="sc-swap">
-              <span {...fx("out", 4.75)}>
+              <span {...fx("cut", 4.75)}>
                 <span className="sc-btn" {...fx("press", 4.5)}>
                   {t("radar.notice.warn")}
                 </span>
               </span>
-              <span className="sc-status" {...fx("pop", 4.75)}>
+              <span className="sc-status" {...fx("enter", 4.75)}>
                 <Dot status="done" /> {t("radar.notice.warned")}
               </span>
             </span>
@@ -140,10 +140,10 @@ export function WorkspaceScene() {
             </span>
           </span>
           <span className="sc-chips">
-            <span className="sc-chip" {...fx("pop", 8.4)}>
+            <span className="sc-chip" {...fx("enter", 8.4)}>
               {t("review.rule.auth")}
             </span>
-            <span className="sc-chip sc-chip-ok" {...fx("pop", 8.8)}>
+            <span className="sc-chip sc-chip-ok" {...fx("enter", 8.8)}>
               {t("review.check.passed")}
             </span>
           </span>

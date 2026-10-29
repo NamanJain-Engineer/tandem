@@ -116,10 +116,10 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
               </span>
             </span>
             <span className="sc-chips">
-              <span className="sc-chip" {...fx("pop", 1)}>
+              <span className="sc-chip" {...fx("enter", 1)}>
                 {t("review.rule.auth")}
               </span>
-              <span className="sc-chip sc-chip-ok" {...fx("pop", 1.2)}>
+              <span className="sc-chip sc-chip-ok" {...fx("enter", 1.2)}>
                 {t("review.check.passed")}
               </span>
             </span>
@@ -159,7 +159,7 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
                 <span className="sc-bar-state" {...fx("in", DONE)}>
                   <span className="sc-review-count">{t("worktree.review.count", { n })}</span>
                   <span className="sc-btn sc-btn-sm">{t("worktree.review.copy")}</span>
-                  <span className="sc-btn sc-btn-sm sc-btn-primary" {...fx("pop", REVIEW_T.send)}>
+                  <span className="sc-btn sc-btn-sm sc-btn-primary" {...fx("enter", REVIEW_T.send)}>
                     {t("worktree.review.sendTo", { name: done.name })}
                   </span>
                 </span>

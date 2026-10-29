@@ -264,7 +264,7 @@ function Files() {
     </span>
   );
   return (
-    <div className="sc-ci-files" {...fx("out", T.diff)}>
+    <div className="sc-ci-files" {...fx("cut", T.diff)}>
       <div className="sc-files-head">
         <span className="sc-seg">
           <span className="sc-seg-item">{t("files.view.files")}</span>
@@ -347,7 +347,7 @@ function Review() {
       <span className="sc-review-bar" {...fx("in", T.imported)}>
         <span className="sc-review-count">{t("worktree.review.count", { n: pr.comments.length })}</span>
         <span className="sc-btn sc-btn-sm">{t("worktree.review.copy")}</span>
-        <span className="sc-btn sc-btn-sm sc-btn-primary" {...fx("pop", T.ready)}>
+        <span className="sc-btn sc-btn-sm sc-btn-primary" {...fx("enter", T.ready)}>
           {t("worktree.review.sendTo", { name: agent.name })}
         </span>
       </span>

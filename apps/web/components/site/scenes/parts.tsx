@@ -20,7 +20,7 @@ export function at(seconds: number, extra?: Record<string, string | number>): CS
 /** The effects a scene element can have (scenes.css). The element's own
  * styles are its final frame: that's what reduced motion, a page without
  * the scene script and a finished scene all show. */
-export type Fx = "in" | "line" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show";
+export type Fx = "in" | "line" | "enter" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show";
 
 export function fx(kind: Fx, seconds: number, extra?: Record<string, string | number>) {
   return { [`data-fx-${kind}`]: "", style: at(seconds, extra) } as const;
@@ -261,18 +261,32 @@ export function Count({ to, seconds, prefix = "" }: { to: number; seconds: numbe
 }
 
 /** A value that changes during the scene: each step from its time on, the
- * last one the final frame. */
+ * last one the final frame. The app re-renders a value at once, so a step
+ * is gone the moment the next comes, and the next enters as words do
+ * (DESIGN §4.7: a fade and a short rise). Two steps are never drawn
+ * together, mid-swap either (D-3002). A step between the first and the
+ * last enters on its cell, which can move, and is cut inside it. */
 export function Changes({ steps, className }: { steps: ReadonlyArray<readonly [number, ReactNode]>; className?: string }) {
   return (
     <span className={cx("sc-swap", className)}>
       {steps.map(([seconds, node], i) => {
         const next = steps[i + 1]?.[0];
-        if (next === undefined && i === 0) return <span key={i}>{node}</span>;
-        if (i === 0) return <span key={i} {...fx("out", next ?? 0)}>{node}</span>;
-        if (next === undefined) return <span key={i} {...fx("pop", seconds)}>{node}</span>;
+        const gone = next === undefined ? {} : fx("cut", next);
+        if (i === 0)
+          return (
+            <span key={i} {...gone}>
+              {node}
+            </span>
+          );
+        if (next === undefined)
+          return (
+            <span key={i} {...fx("enter", seconds)}>
+              {node}
+            </span>
+          );
         return (
-          <span key={i} {...visit(seconds, next - seconds)}>
-            {node}
+          <span key={i} {...fx("enter", seconds)}>
+            <span {...gone}>{node}</span>
           </span>
         );
       })}

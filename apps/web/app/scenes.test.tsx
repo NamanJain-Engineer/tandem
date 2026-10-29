@@ -8,7 +8,7 @@ import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
 import { HERO_ASK, HERO_DONE, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
-import { Glyph } from "../components/site/scenes/parts";
+import { Changes, Glyph } from "../components/site/scenes/parts";
 import { PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
 import { RELEASES, addedCard } from "../lib/changelog";
@@ -70,9 +70,11 @@ const runsIn = (rows: ReadonlyArray<readonly unknown[]>, hunks: ReadonlyArray<Re
 /** HTML's text, tags dropped (entities kept). */
 const text = (h: string) => h.replace(/<[^>]+>/g, "");
 const versionHtml = async (version: string) => renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version }) }));
-/** When the pop that last starts before `s` in `h` plays: the time of the
+/** When the enter that last starts before `s` in `h` plays: the time of the
  * element that brings `s` in. */
-const popBefore = (h: string, s: string) => [...h.slice(0, h.indexOf(esc(s))).matchAll(/data-fx-pop="" style="--at:([\d.]+)s"/g)].at(-1)?.[1];
+const enterBefore = (h: string, s: string) => [...h.slice(0, h.indexOf(esc(s))).matchAll(/data-fx-enter="" style="--at:([\d.]+)s"/g)].at(-1)?.[1];
+/** A value's step between its first and its last, as Changes draws it (D-3002): its cut, inside the cell that enters. */
+const CUT = '(?:<span data-fx-cut="" style="--at:[\\d.]+s">)?';
 /** A line comment in the Review scene's diff (DiffView's annotation row). */
 const NOTE = /<span class="sc-diff-note"[^>]*><span class="sc-diff-note-text">[^<]*<\/span>(?:<span class="sc-btn sc-btn-ghost">[^<]*<\/span>)*<\/span>/g;
 /** The Review scene's diff body: the rows down to the first commented line,
@@ -180,10 +182,10 @@ describe("F-WB-01 AC9 product scenes", () => {
     const end = planAt(Infinity);
     expect(end.summary).toBe(`${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`);
     expect(end.chip).toBe("waiting");
-    expect(h).toMatch(new RegExp(`<span data-fx-pop=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 2 })}</span></span>`));
-    expect(h).toMatch(new RegExp(`<span data-fx-visit=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 1 })}</span></span>`));
-    expect(h).toMatch(new RegExp(`<span data-fx-out=""[^>]*><span class="sc-btn sc-btn-primary">${t("common.close")}</span></span>`));
-    expect(h).toMatch(new RegExp(`<span data-fx-pop=""[^>]*><span class="sc-btn sc-btn-ghost">${t("common.close")}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 2 })}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span data-fx-cut=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 1 })}</span></span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-cut=""[^>]*><span class="sc-btn sc-btn-primary">${t("common.close")}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-ghost">${t("common.close")}</span></span>`));
     // The count line and the button agree at every moment: both come from the runs.
     for (const at of planTimes()) {
       const s = planAt(at);
@@ -336,7 +338,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     const both = Math.max(...edited(c), ...edited(x));
     expect(edited(c).length * edited(x).length).toBe(1);
     if (LANDS) {
-      const radar = [...times(h, /<span class="sc-radar" data-fx-pop="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-toast sc-toast-top" data-fx-slide="" style="--at:([\d.]+)s">/g)];
+      const radar = [...times(h, /<span class="sc-radar" data-fx-enter="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-toast sc-toast-top" data-fx-slide="" style="--at:([\d.]+)s">/g)];
       expect(radar.length).toBe(3);
       for (const r of radar) expect(r).toBeGreaterThan(both);
     }
@@ -467,7 +469,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(css).toMatch(/\.sc-diff-swap \{ display: grid;/);
     expect(css).toMatch(/\.sc-diff-swap > \* \{ grid-area: 1 \/ 1;/);
     // "Send to Ada" comes once they're in.
-    expect(Number(popBefore(h, t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name })))).toBeGreaterThan(Number(doneAt));
+    expect(Number(enterBefore(h, t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name })))).toBeGreaterThan(Number(doneAt));
   });
 
   it("F-WB-01 AC9 D-3001 the review queue's buttons are ReviewQueue's: Approve the primary, Open diff secondary, the rest ghosts, Second opinion pressed", () => {
@@ -501,7 +503,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     );
     // …then the comments' count, Copy review (secondary) and Send to the agent (primary), as the comments arrive.
     expect(done).toBe(
-      `<span class="sc-bar-state" data-fx-in="" style="--at:${REVIEW_T.done}s"><span class="sc-review-count">${t("worktree.review.count", { n })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-pop="" style="--at:${REVIEW_T.send}s">${esc(t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name }))}</span></span>`,
+      `<span class="sc-bar-state" data-fx-in="" style="--at:${REVIEW_T.done}s"><span class="sc-review-count">${t("worktree.review.count", { n })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-enter="" style="--at:${REVIEW_T.send}s">${esc(t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name }))}</span></span>`,
     );
     // The done toast (SecondOpinion.tsx's notify), with its Show diff action; Send waits for it to go, as it covers the bar.
     const toast = /<div class="sc-note-toast" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-title">([^<]*)<\/span><span class="sc-btn sc-btn-sm">([^<]*)<\/span><\/div>/.exec(h);
@@ -541,7 +543,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     // The repository's working count follows: all of them, less the one that asks, less the one that finishes.
     const count = /<span class="sc-ws-count">([\s\S]*?)<\/span><\/span><span class="sc-lane">/.exec(rail)?.[1] ?? "";
     const n = SAMPLE.order.length;
-    expect(count).toContain(`<span data-fx-out="" style="--at:${HERO_ASK}s">${n}</span><span data-fx-visit="" style="--at:${HERO_ASK}s;--stay:${Math.round((HERO_DONE - HERO_ASK) * 100) / 100}s">${n - 1}</span><span data-fx-pop="" style="--at:${HERO_DONE}s">${n - 2}</span>`);
+    expect(count).toContain(
+      `<span data-fx-cut="" style="--at:${HERO_ASK}s">${n}</span><span data-fx-enter="" style="--at:${HERO_ASK}s"><span data-fx-cut="" style="--at:${HERO_DONE}s">${n - 1}</span></span><span data-fx-enter="" style="--at:${HERO_DONE}s">${n - 2}</span>`,
+    );
     // Three agents (and a shell), as the caption says.
     expect(WORKSPACE_CAPTION.split(" ")[0]).toBe(["None", "One", "Two", "Three", "Four", "Five"][n]);
   });
@@ -586,19 +590,19 @@ describe("F-WB-01 AC9 product scenes", () => {
     const { waiting, finished, working } = SAMPLE.worktrees;
     const ask = /<span class="sc-card-wrap sc-card-ask">([\s\S]*?)<span class="sc-ring"/.exec(h)?.[1] ?? "";
     expect(ask).toContain(`<span class="sc-card-title">${waiting.name}</span>`);
-    expect(ask).toContain(`<span data-fx-in="" style="--at:${DASH_T.ask}s">${esc(SAMPLE.question.preview)}</span>`);
+    expect(ask).toContain(`<span data-fx-enter="" style="--at:${DASH_T.ask}s">${esc(SAMPLE.question.preview)}</span>`);
     expect(ask).not.toContain("sc-btn");
     expect(h).toContain(`<span class="sc-ring" data-fx-pop="" style="--at:${DASH_T.ask}s"></span>`);
     for (const s of [t("dashboard.allowOnce"), t("dashboard.deny"), t("dashboard.wants", { summary: "" }).trim()]) expect(h, s).not.toContain(s);
     const source = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/Dashboard.tsx"), "utf8");
     expect(source).toMatch(/\{approval \? \(/);
     // The finished one finishes; the working one's line is its last step.
-    expect(h).toContain(`<span data-fx-in="" style="--at:${DASH_T.done}s">${esc((SAMPLE.lines.finished.at(-1) ?? "").trim())}</span>`);
+    expect(h).toContain(`<span data-fx-enter="" style="--at:${DASH_T.done}s">${esc((SAMPLE.lines.finished.at(-1) ?? "").trim())}</span>`);
     expect(h).toContain(`<span class="sc-card-line">${esc((SAMPLE.lines.working.at(-1) ?? "").trim())}</span>`);
     expect(h.indexOf(`>${finished.name}<`)).toBeGreaterThan(-1);
     expect(h.indexOf(`>${working.name}<`)).toBeGreaterThan(-1);
     // The counts end where the story is: one each waiting, working and done, and one to review.
-    const ends = [...h.matchAll(/<span data-fx-pop="" style="--at:[\d.]+s">([^<]*)<\/span><\/span><\/span>/g)].map((m) => m[1]);
+    const ends = [...h.matchAll(/<span data-fx-enter="" style="--at:[\d.]+s">([^<]*)<\/span><\/span><\/span>/g)].map((m) => m[1]);
     for (const s of [t("review.viewReview", { n: 1 }), t("dashboard.chip.waiting", { n: 1 }), t("dashboard.chip.working", { n: n - 2 }), t("dashboard.chip.done", { n: 1 })]) expect(ends, s).toContain(s);
     expect(h).toContain(`>${t("dashboard.chip.all", { n })}<`);
     expect(h).toContain(`>${esc(t("dashboard.count", { n }))}<`);
@@ -832,10 +836,11 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
   const pr = story.pr;
   const failed = pr.checks.find((c) => c.bucket === "fail");
   const agent = SAMPLE.worktrees.finished;
-  /** When the element whose text starts with `s` comes in: the nearest `--at` before it. */
+  /** When the element whose text starts with `s` comes in: the nearest `--at` before it, not a cut's (a cut takes a
+   * value away: Changes cuts a step between inside the cell that brings it in, D-3002). */
   const when = (s: string) => {
     const i = h.indexOf(`>${s}`);
-    return i < 0 ? NaN : Number([...h.slice(0, i).matchAll(/--at:([\d.]+)s/g)].at(-1)?.[1] ?? NaN);
+    return i < 0 ? NaN : Number([...h.slice(0, i).matchAll(/(?<!data-fx-cut="" )style="--at:([\d.]+)s/g)].at(-1)?.[1] ?? NaN);
   };
   /** True when `s` is inside something that comes and goes (a visit), not something that stays. */
   const visiting = (s: string) => {
@@ -905,7 +910,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect([press, leave]).toEqual([0.26, 0.18]);
     expect(rise + stay - leave).toBeCloseTo(CI_T.close + press, 5);
     // The agent works from when it's sent until its commit.
-    expect(h).toMatch(new RegExp(`<span data-fx-visit="" style="--at:${CI_T.sent}s;[^"]*"><span class="sc-dot"><svg[^>]*data-status="working"`));
+    expect(h).toMatch(new RegExp(`<span data-fx-enter="" style="--at:${CI_T.sent}s"><span data-fx-cut="" style="--at:${CI_T.done}s"><span class="sc-dot"><svg[^>]*data-status="working"`));
   });
 
   it("F-WB-01 AC9 D-3001 the fix is pushed from the branch chip before the checks run again, and they pass", () => {
@@ -989,11 +994,11 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const bar = /<div class="sc-statusbar">([\s\S]*?)<\/div>/.exec(h)?.[1] ?? "";
     const ahead = (n: number) => re(esc(t("git.branch.short", { ahead: n, behind: 0 })));
     // ↑0, then ↑1 once the fix is committed, ↑0 again once it's pushed, as the Files panel's chip.
-    expect(bar).toMatch(new RegExp(`${re(agent.branch)}<span class="sc-swap"><span data-fx-out="" style="--at:${CI_T.commit}s">${ahead(0)}</span>`));
-    for (const [at, n] of [[CI_T.commit, 1], [CI_T.pushed, 0]] as const) expect(bar).toMatch(new RegExp(`style="--at:${at}s(?:;[^"]*)?">${ahead(n)}<`));
+    expect(bar).toMatch(new RegExp(`${re(agent.branch)}<span class="sc-swap"><span data-fx-cut="" style="--at:${CI_T.commit}s">${ahead(0)}</span>`));
+    for (const [at, n] of [[CI_T.commit, 1], [CI_T.pushed, 0]] as const) expect(bar).toMatch(new RegExp(`style="--at:${at}s">${CUT}${ahead(n)}<`));
     // Then the CI segment: failed, with an error dot; running from the read after the push; passed on the later one.
     const seg = (at: number | null, dot: string, words: string) =>
-      new RegExp(`${at === null ? "" : `style="--at:${at}s(?:;[^"]*)?">`}<span class="sc-ci-seg[^"]*"><span class="sc-dot"><svg[^>]*data-status="${dot}"[\\s\\S]*?</span>${re(words)}</span>`);
+      new RegExp(`${at === null ? "" : `style="--at:${at}s">${CUT}`}<span class="sc-ci-seg[^"]*"><span class="sc-dot"><svg[^>]*data-status="${dot}"[\\s\\S]*?</span>${re(words)}</span>`);
     expect(bar).toMatch(seg(null, "error", t("status.ciFailed", { n: 1 })));
     expect(bar).toMatch(seg(CI_T.running, "working", t("status.ciRunning")));
     expect(bar).toMatch(seg(CI_T.passed, "done", t("status.ciPassed")));
@@ -1052,7 +1057,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(h).toContain(t("checks.passed"));
     // WorktreeReview's bar: the count, Copy review (secondary), then Send to the worktree's agent by name (primary), once the import's toast has gone.
     expect(h).toContain(
-      `<span class="sc-review-bar" data-fx-in="" style="--at:${CI_T.imported}s"><span class="sc-review-count">${t("worktree.review.count", { n: pr.comments.length })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-pop="" style="--at:${CI_T.ready}s">${esc(t("worktree.review.sendTo", { name: agent.name }))}</span></span>`,
+      `<span class="sc-review-bar" data-fx-in="" style="--at:${CI_T.imported}s"><span class="sc-review-count">${t("worktree.review.count", { n: pr.comments.length })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-enter="" style="--at:${CI_T.ready}s">${esc(t("worktree.review.sendTo", { name: agent.name }))}</span></span>`,
     );
     expect(CI_T.ready).toBeGreaterThan(CI_T.imported + 1.5);
     // The agent's last word, what it changed, arrives as it's done.
@@ -1066,5 +1071,50 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const primaries = [...h.matchAll(/class="sc-btn[^"]*sc-btn-primary"[^>]*>([^<]*)</g)];
     expect(primaries.map((m) => m[1])).toEqual([esc(t("worktree.review.sendTo", { name: agent.name })), t("common.close"), t("common.close")]);
     expect(primaries.filter((m) => !inVisit(m.index ?? 0)).map((m) => m[1])).toEqual([esc(t("worktree.review.sendTo", { name: agent.name }))]);
+  });
+});
+
+describe("F-WB-01 AC9 D-3002 a value's steps never show together, and words come in as DESIGN §4.7's enter", () => {
+  it("F-WB-01 AC9 D-3002 Changes cuts each step at the next one's time, as the next enters: the first from the start, the last to stay", () => {
+    // The app re-renders a value at once, so no frame draws two of its steps (the design lead's must-fix on 2966da74).
+    // The browser test steps every scene's clock to show it; this is the markup that does it.
+    const h = renderToStaticMarkup(
+      <Changes
+        steps={[
+          [0, "a"],
+          [1.5, "b"],
+          [3, "c"],
+        ]}
+      />,
+    );
+    expect(h).toBe(
+      '<span class="sc-swap"><span data-fx-cut="" style="--at:1.5s">a</span><span data-fx-enter="" style="--at:1.5s"><span data-fx-cut="" style="--at:3s">b</span></span><span data-fx-enter="" style="--at:3s">c</span></span>',
+    );
+    expect(renderToStaticMarkup(<Changes steps={[[0, "a"]]} />)).toBe('<span class="sc-swap"><span>a</span></span>');
+    // A cut takes no time. The enter is a fade and a short rise (4.4 to 5.6 px at the scenes' 11 to 14 px text), at
+    // --dur-pop, gated and paused as every effect is.
+    expect(css).toMatch(/@keyframes sc-enter \{ from \{ opacity: 0; translate: 0 0\.4em; \} \}/);
+    expect(css).toMatch(/& \[data-fx-enter\] \{ animation: sc-enter var\(--dur-pop\) var\(--ease-out-site\) var\(--at\) both paused; \}/);
+    expect(css.match(/\[data-fx-line\], \[data-fx-enter\], \[data-fx-pop\]/g)?.length).toBe(2);
+    // The final frame: what's cut isn't in it; what enters is.
+    expect(css).toMatch(/\[data-fx-visit\], \[data-fx-out\], \[data-fx-cut\] \{ opacity: 0; \}/);
+    expect(css).not.toMatch(/\[data-fx-enter\][^{]*\{[^}]*opacity: 0/);
+  });
+
+  it("F-WB-01 AC9 D-3002 no scene fades one thing out as another comes in, and only marks pop", () => {
+    // A fade away is left only in DotChange: a dot changing colour is §4.7's status change. A pop is left only for a
+    // mark: that dot, and the waiting card's ring. Words, a button's included, enter.
+    const dir = join(import.meta.dirname, "../components/site/scenes");
+    const uses = readdirSync(dir)
+      .filter((f) => f.endsWith(".tsx"))
+      .sort()
+      .flatMap((f) => [...readFileSync(join(dir, f), "utf8").matchAll(/^.*fx\("(?:pop|out)".*$/gm)].map((m) => `${f}: ${m[0].trim()}`));
+    expect(uses).toEqual([
+      'DashboardScene.tsx: <span className="sc-ring" {...fx("pop", DASH_T.ask)} />',
+      'parts.tsx: <span {...fx("out", seconds)}>',
+      'parts.tsx: <span {...fx("pop", seconds)}>',
+    ]);
+    const parts = readFileSync(join(dir, "parts.tsx"), "utf8");
+    expect(parts).toMatch(/export function DotChange[\s\S]*?<span \{\.\.\.fx\("out", seconds\)\}>\s*<Dot status=\{from\} \/>[\s\S]*?<span \{\.\.\.fx\("pop", seconds\)\}>\s*<Dot status=\{to\} \/>/);
   });
 });

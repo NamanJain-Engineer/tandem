@@ -285,6 +285,10 @@
 /* A terminal prints a line whole: full opacity at once, then it settles
    (a line half faded reads as low contrast to a page checker, D-3000). */
 @keyframes sc-line  { from { opacity: 0; translate: -0.25em 0; } 1% { opacity: 1; } }
+/* Words coming in, a value's next step among them: DESIGN §4.7's enter, a
+   fade and a short rise. The step before is gone at once (D-3002). A mark,
+   such as a dot or a ring, can still pop. */
+@keyframes sc-enter { from { opacity: 0; translate: 0 0.4em; } }
 @keyframes sc-pop   { 0% { opacity: 0; scale: 0.6; } 60% { opacity: 1; scale: 1.08; } 100% { opacity: 1; scale: 1; } }
 @keyframes sc-out   { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sc-press { 0%, 100% { scale: 1; } 40% { scale: 0.92; } }
@@ -307,10 +311,11 @@
 
 @media screen and (prefers-reduced-motion: no-preference) {
   :root[data-fx] [data-scene] {
-    & :is([data-fx-in], [data-fx-line], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin),
+    & :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin),
     & .tn-dot, & .tn-attention { animation-play-state: paused; }
     & [data-fx-in]    { animation: sc-in var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-line]  { animation: sc-line var(--dur-pop) var(--ease-out-site) var(--at) both paused; }
+    & [data-fx-enter] { animation: sc-enter var(--dur-pop) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-pop]   { animation: sc-pop var(--dur-spring) var(--ease-spring-site) var(--at) both paused; }
     & [data-fx-out]   { animation: sc-out var(--dur-pop) var(--ease-exit) var(--at) both paused; }
     & [data-fx-press] { animation: sc-press 260ms var(--ease-io-site) var(--at) both paused; }
@@ -325,7 +330,7 @@
     & .sc-spin { animation: sc-spin 0.8s linear var(--at, 0s) 2 paused; }
     & [data-fx-count] .sc-sr { display: none; }
     & [data-fx-count]::after { content: attr(data-prefix) counter(sc); }
-    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin, .tn-dot, .tn-attention) {
+    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin, .tn-dot, .tn-attention) {
       animation-play-state: running;
     }
   }

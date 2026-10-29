@@ -56,12 +56,12 @@ export function LandScene() {
           </span>
           <span className="sc-dialog-foot">
             <span className="sc-swap">
-              <span {...fx("out", done)}>
+              <span {...fx("cut", done)}>
                 <span className="sc-btn sc-btn-primary" {...fx("press", 0.6)}>
                   {t("landing.land", { n: LANES.length })}
                 </span>
               </span>
-              <span className="sc-dialog-done" {...fx("pop", done)}>
+              <span className="sc-dialog-done" {...fx("enter", done)}>
                 <Dot status="done" /> {t("landing.done", { n: LANES.length, base: SAMPLE.base })}
                 <span className="sc-btn">{t("landing.undo")}</span>
               </span>

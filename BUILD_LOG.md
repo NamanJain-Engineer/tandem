@@ -2368,6 +2368,16 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
       - With no comments, the Review's bar goes when the review is done (WorktreeReview draws it only while reviewing or with comments).
       - The CI scene's status bar has the branch's ↑/↓ and F-WT-08's CI segment, failed, running and passed, as StatusBar draws them.
     - **Left for later:** the account on Dashboard cards stays out, as the design lead decided (it's "Default" on every card, and app-ui may show it only when an engine has two). The rail's checks badge on one line, with D-2700's short forms, goes in the 0.13.0 slice. The hero's repository count, which adds up its worktrees' agents, goes in D-2702.
+- D-3002: the fix pass on 2966da74. No swap shows two of its values at once, and words come in as DESIGN §4.7's enter (the design lead's must-fix and polish). Bea asks in Gemini CLI's own words, and every Dashboard card shows its state (the coordinator's M1). The checks' readers are pinned, the port matches the core's whitespace, and the agents segment is in, with the nits (S1–S3, nits 1–8).
+  - **A value's steps never show together.** `Changes` faded a value's first step out over 180 ms while the next came in, so for about 125 ms two texts sat in one place. That happened 31 times across the six scenes, by the design lead's count and the new test's. The app re-renders a value at once.
+    - Now each step is cut at the next one's time, and the next enters then. A step between the first and the last enters on its cell, which can move, and is cut inside it.
+    - These swap the same way, the one before going at once: Land's done line, the old hero's "Warned both agents", the Dashboard cards' lines, and the CI scene's Files panel, which Open diff's panel replaces.
+  - **Words come in as §4.7's enter:** a fade and a 0.4em rise (4.4 to 5.6 px at the scenes' 11 to 14 px text) over `--dur-pop`. They popped from 0.6 to 1.08 to 1. Marks still pop (the dots and the waiting card's ring), and a dot changing colour still fades, as §4.7's status change does.
+  - **A browser test steps every scene's clock:** every 25 ms, and around each effect's start (−50, −1, 0, +1, +50 and +100 ms), at 1440 and 390.
+    - Any grid cell that stacks two or more items shows at most one of them, and at most one toast shows at a time.
+    - A dot's swap may fade. An overlay with a z-index of its own covers what's under it.
+    - Run on the build before the fix, it found 31 at 1440. That's the design lead's list, but for an empty step under "Land 1 approved…", which draws nothing, plus the dots inside `Changes` and the CI scene's Files panel under Open diff's. It counts an empty step too now, as the design lead's checker does.
+    - On this build it finds none.
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2559,6 +2569,14 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - The gate passed:
     - TypeScript: 1,853 tests (web 173, ui 466, desktop 908, api 235, remote 33, mobile 24, protocol 14).
     - Rust: 2,572 passed (`tests/failure_prompts.rs` is the new one), 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The fix pass on 2966da74, part 1 (D-3002): no swap shows two of its values at once, and words come in as §4.7's enter. On 4d3df4de: 2be8fa88 (chain27 f5b3272a merged, its gate passed) with chain27 b1a5e499 merged, its gate passed, pushed. Tests first:
+  - scenes.spec: at 1440 and 390, every scene's clock stepped every 25 ms and around each effect's start: no grid cell shows two of its items at once, and no two toasts show together. It failed on the build before the fix, with 31 at 1440, and passes on this one. The plan's and the CI scene's final-frame checks count a step's words, not its cell.
+  - scenes.test: `Changes`' markup (the first step cut at the next one's time, a step between entering and cut, the last entering), the enter's CSS, and that only marks pop and only DotChange fades out. The plan, hero, Dashboard, Review and CI tests read the new swaps.
+  - Checks: web lint, web vitest 177/177, `build:site` (58 pages), site Playwright 68/68. Frames of the CI scene at 8.69, 8.75 and 8.82 s show "1 check failed: test", then "Checks running" coming in alone.
+  - The gate passed:
+    - TypeScript: 1,927 tests (web 177, ui 475, desktop 969, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,588 passed, 9 ignored.
     - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
