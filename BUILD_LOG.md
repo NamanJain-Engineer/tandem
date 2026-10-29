@@ -3426,6 +3426,17 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - every new test;
       - the set-apart case on D-3031's `redacted`, which gave `abcghp_…` whole;
       - learn's, against D-3031's code, which kept the note.
+  - **Gate:** passed on 5ff54e33, and again on 97574d9b after merging chain27 at 758c0ac2:
+    - 2,707 Rust tests (6 ignored) and 1,948 TypeScript, with chain27's work since eea2125f;
+    - the rule-8 invariants, 15 of 15;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 194, and protocol drift with 596 types (none added by this slice).
+  - **E2E**, the 21 specs in the suite's name order:
+    - On 5ff54e33, 20 passed. m18-tk08 failed once at its reverse `waitForExist`. The Needs you row unmounts as the plan re-renders, and WebKitWebDriver answered a find made while it went with a stale element, which WebdriverIO doesn't retry. 60df905d reads the DOM instead, as m18-en07's `clickFresh` does, and the test asserts the same.
+    - On 97574d9b, 19 passed, m18-tk08 among them, and it passed twice more on its own. Two specs that had passed on 5ff54e33 failed, and each passed on its one re-run:
+      - m6-1-launch's F-CD-14.4: the same stale element, at `m6-1-launch.e2e.ts:197`.
+      - m16-7-auto: the first run never got a turn, and the three tests after it found Auto still running. The pane's first hook report, its session start, was made at 16:51:45.819 by the engine's clock, before its banner. The app read the banner first and marked the pane "working" at a later app time. So the store dropped the session's idle as stale, and the report had marked the pane hooked, so the heuristics never moved it on.
+      - The fix belongs in `services/status.rs` (F-EN-05), not this slice: the first session report should take `report.ts.max(cur.ts)`, as the title report does. It's proposed to the coordinator, not changed here.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
