@@ -175,8 +175,10 @@ describe("Find work in the palette (F-CN-05)", () => {
 
   it("F-CN-05 a build without Vibezeo accounts searches on this computer even with hosted ranking on (D-833)", async () => {
     setup(() => AUTH);
-    useSession.setState({ auth: { ...SIGNED_IN, signedIn: false, email: null, hosted: false } });
-    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => {
+      useSession.setState({ auth: { ...SIGNED_IN, signedIn: false, email: null, hosted: false } });
+      useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    });
     act(() => runCommand("work.find"));
     expect(screen.getByText(/Open panes, threads and teammates are searched on this computer/)).toBeTruthy();
     expect(screen.queryByText(/1 credit a search/)).toBeNull();
@@ -204,7 +206,7 @@ describe("Find work in the palette (F-CN-05)", () => {
       clear: true,
       ranking: "hosted",
     }));
-    useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } }));
+    act(() => useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } })));
     act(() => runCommand("work.find"));
     expect(
       screen.getByText(/Vibezeo's AI ranks open panes, threads and teammates \(1 credit a search\)/),
@@ -222,5 +224,18 @@ describe("Find work in the palette (F-CN-05)", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Release scribe/ }));
     expect(useUi.getState().mode).toBe("agent");
     expect(useTeammates.getState().selectedId).toBe("tm_rel");
+  });
+
+  it("F-EN-11.3 a hosted answer with local model panes ranked on this computer says both", async () => {
+    setup(() => ({ ...AUTH, ranking: "mixed" }));
+    act(() => useSettings.setState((st) => ({ values: { ...st.values, find_work_hosted: true } })));
+    act(() => runCommand("work.find"));
+    type("login testing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(await screen.findByRole("option", { name: /auth tests/ })).toBeTruthy();
+    expect(screen.getByText("Find work · ranked by Vibezeo's AI and on this computer")).toBeTruthy();
+    expect(screen.queryByText("Find work · ranked by Vibezeo's AI")).toBeNull();
   });
 });

@@ -226,9 +226,12 @@ E2E lessons (each cost a debugging round):
   (D-2851). A dev database that ran an older copy needs resetting: delete
   `~/.tandem` (or your `TANDEM_HOME`) and start the app again. Symptoms: before
   round 4, every ledger insert logs `activity.store_failed`; a round-4 copy works but
-  silently lacks `activity_kept`. Reset again after the chain27 merge too: there the
-  migration is renumbered by merge order (D-872), so a dev database that ran it as #6
-  skips main's own #6 and then fails. Released databases never had it.
+  silently lacks `activity_kept`. The chain27 merges kept it as #6 (D-872), made
+  F-CD-24's `lane_vcs` #7 and F-EN-11's `local_model` column #8
+  (`0008_local_models.sql`): a dev database that ran `m16d-teammate-extras`' earlier
+  `0006_local_models.sql` or `0007_local_models.sql` skips a migration and then fails
+  at #8 (a duplicate column), so reset that one too. Released databases never had
+  any of them.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.

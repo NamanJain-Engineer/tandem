@@ -1788,6 +1788,16 @@ export class DemoCore {
       case "acp_agent_add":
       case "acp_agent_remove":
         throw { code: "unavailable", message: "The demo can't run commands. In the app, this adds any agent that speaks the Agent Client Protocol." };
+      // Model servers run on your computer (F-EN-11).
+      case "local_models_list":
+        return [];
+      case "local_models_add_port":
+      case "local_models_remove_port":
+      case "local_model_start":
+        throw {
+          code: "unavailable",
+          message: "The demo can't reach your computer. In the app, this finds Ollama and LM Studio running on it.",
+        };
       // Engines' session files are on your computer (F-TH-17).
       case "library_list":
         return { sessions: [], skipped: 0 };
