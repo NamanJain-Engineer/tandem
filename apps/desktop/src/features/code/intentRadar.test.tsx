@@ -11,6 +11,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RadarMark, useIntentRadar } from "./IntentRadar";
+import { showsStatus, useWorkspaceStatus } from "./workspaceStatus";
 
 const tab = (ws: string): Tab => ({
   id: `tb_${ws}`,
@@ -58,12 +59,17 @@ let calls: Call[] = [];
 const named = (cmd: string) => calls.filter((c) => c.cmd === cmd);
 let marks: Array<{ laneId: string; symbols: string[] }> = [];
 
+/** A mark as its row draws it: beside the row's status or not. */
+function Mark({ wt }: { wt: WorkspaceSummary }) {
+  return <RadarMark wt={wt} beside={showsStatus(useWorkspaceStatus(wt))} />;
+}
+
 function Radar({ ids }: { ids: string[] }) {
   useIntentRadar(ids, true);
   return (
     <>
-      <RadarMark wt={A} />
-      <RadarMark wt={B} />
+      <Mark wt={A} />
+      <Mark wt={B} />
     </>
   );
 }
@@ -101,9 +107,13 @@ describe("Intent radar (F-WT-10)", () => {
       </UiProvider>,
     );
     const found = await screen.findAllByTestId("worktree-radar");
-    // D-2700: the symbol, or how many; what it shares is the mark's name.
+    // D-2700: the symbol, or how many; its name starts with those words
+    // (D-2701, WCAG 2.5.3) and says what they mean.
     expect(found.map((m) => m.textContent)).toEqual(["Session", "2 symbols"]);
-    expect(found.map((m) => m.getAttribute("aria-label"))).toEqual(["Shares Session", "Shares 2 symbols"]);
+    expect(found.map((m) => m.getAttribute("aria-label"))).toEqual([
+      "Session, shared with another worktree",
+      "2 symbols shared with another worktree: Session, Session.refresh",
+    ]);
     // A symbol is code, and a long one is cut at its end; a count is never cut.
     expect(found[0]!.querySelector(".font-mono")?.textContent).toBe("Session");
     expect(found[0]!.querySelector(".font-mono")?.className).toContain("truncate");
@@ -135,15 +145,17 @@ describe("Intent radar (F-WT-10)", () => {
         </div>
       </UiProvider>,
     );
-    const busy = await screen.findByRole("button", { name: "Shares Session" });
-    const idle = screen.getByRole("button", { name: "Shares 2 symbols" });
+    const busy = await screen.findByRole("button", { name: "Session, shared with another worktree" });
+    const idle = screen.getByRole("button", {
+      name: "2 symbols shared with another worktree: Session, Session.refresh",
+    });
     expect(busy.hasAttribute("data-compact")).toBe(true);
     expect(busy.textContent).toBe("");
     expect(busy.querySelector("svg")).not.toBeNull();
-    expect(busy.title).toBe("Shares Session");
+    expect(busy.title).toBe("Session, shared with another worktree");
     expect(idle.hasAttribute("data-compact")).toBe(false);
     expect(idle.textContent).toBe("2 symbols");
-    expect(idle.title).toBe("Shares Session, Session.refresh");
+    expect(idle.title).toBe("2 symbols shared with another worktree: Session, Session.refresh");
     // The mark opens Check overlap, not the row under it.
     fireEvent.keyDown(busy, { key: "Enter" });
     fireEvent.click(busy);
@@ -155,13 +167,15 @@ describe("Intent radar (F-WT-10)", () => {
     useWorktrees.setState({ radar: { wt_b: ["Session", "Session.refresh"] } });
     render(
       <UiProvider>
-        <RadarMark wt={B} fold />
+        <RadarMark wt={B} beside={false} fold />
       </UiProvider>,
     );
-    const mark = screen.getByRole("button", { name: "Shares 2 symbols" });
+    const mark = screen.getByRole("button", {
+      name: "2 symbols shared with another worktree: Session, Session.refresh",
+    });
     expect(mark.hasAttribute("data-compact")).toBe(true);
     expect(mark.textContent).toBe("");
-    expect(mark.title).toBe("Shares Session, Session.refresh");
+    expect(mark.title).toBe("2 symbols shared with another worktree: Session, Session.refresh");
   });
 
   it("F-WT-10.4 a new overlap shows one notice; Warn both agents types each note only on the click", async () => {

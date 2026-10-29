@@ -60,7 +60,18 @@ import { DemoLanding } from "./landing";
 import { DemoReview } from "./review";
 import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
-import { STORY, branchOf, engineLabel, worktree, worktreeIn, type StoryCommit, type StoryWorktree } from "./story";
+import {
+  STORY,
+  askLine,
+  branchOf,
+  engineLabel,
+  previewOf,
+  toolOf,
+  worktree,
+  worktreeIn,
+  type StoryCommit,
+  type StoryWorktree,
+} from "./story";
 import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
 import { version } from "../../package.json";
 
@@ -433,6 +444,8 @@ export const DEMO_WAITING = {
   repoRoot: ROOT,
   paneId: agentPane(WAITING),
   engine: engineLabel(WAITING.engine),
+  /** Its agent's first name, as the coach calls it (F-CD-12). */
+  name: WAITING.agentName,
 };
 
 function layoutOf(workspaceId: unknown): TabLayout[] {
@@ -477,7 +490,7 @@ function screenOf(w: StoryWorktree): string {
   }
   lines.push("");
   if (w.state === "done") lines.push(w.closing ?? "Done.");
-  else if (w.state === "waiting") lines.push(`Allow running ${w.ask ?? ""}? (y/n)`);
+  else if (w.state === "waiting") lines.push(askLine(w));
   else lines.push("Working…");
   return agentScreen(engineLabel(w.engine), w.task, lines);
 }
@@ -486,18 +499,13 @@ const AGENT_SCREENS: Record<string, string> = Object.fromEntries(
   STORY.worktrees.map((w) => [agentPane(w), screenOf(w)]),
 );
 
-/** The Dashboard's line for each agent: done with its closing words,
- * running its last command, or asking to run one. */
-function previewOf(w: StoryWorktree): string {
-  if (w.state === "done") return w.closing ?? "Done.";
-  if (w.state === "waiting") return `Allow running ${w.ask ?? ""}?`;
-  const run = [...w.steps].reverse().find((s): s is { run: string } => "run" in s);
-  return run ? `Running ${run.run}` : "Working";
-}
-
-const STATUS: Record<string, { status: StatusRecord["status"]; title: string; preview: string }> = Object.fromEntries(
-  STORY.worktrees.map((w) => [agentPane(w), { status: w.state, title: w.task, preview: previewOf(w) }]),
-);
+/** Each agent pane's status record as the app keeps it: no preview (none
+ * of the app's sources sets one for a pane), and the tool Claude Code's
+ * hooks name while it works (D-2624). */
+const STATUS: Record<string, { status: StatusRecord["status"]; title: string; tool: string | null }> =
+  Object.fromEntries(
+    STORY.worktrees.map((w) => [agentPane(w), { status: w.state, title: w.task, tool: previewOf(w) }]),
+  );
 
 type Pty = {
   channel: FrameChannel;
@@ -591,6 +599,8 @@ export class DemoCore {
   private mainLog: StoryCommit[] = [...STORY.history];
   /** main as each landing found it, by its commit, for Undo landing. */
   private beforeLanding = new Map<string, { head: Map<string, string>; log: StoryCommit[]; landed: Set<string> }>();
+  /** The main each worktree last had merged into it, at a landing. */
+  private mergedMain = new Map<string, Record<string, string>>();
   /** Land worktrees (F-WT-07), on this repository's checkouts. */
   private readonly landing = new DemoLanding(
     {
@@ -722,8 +732,9 @@ export class DemoCore {
         durationMs: 2400,
       },
       tool("s1", "read", CART, { output: `(${lineCount(before[CART] ?? "")} lines)` }),
-      tool("s2", "edit", CART, { diff: diff(CART) }),
-      tool("s3", "write", CART_TEST, { diff: diff(CART_TEST) }),
+      // Codex reports each file change as an edit, with its diff and file.
+      tool("s2", "edit", CART, { diff: diff(CART), paths: [`${ROOT}/${CART}`] }),
+      tool("s3", "edit", CART_TEST, { diff: diff(CART_TEST), paths: [`${ROOT}/${CART_TEST}`] }),
       tool("s4", "bash", "pnpm test src/cart/cart", { output: run.join("\n") }),
       {
         type: "assistant",
@@ -873,9 +884,9 @@ export class DemoCore {
       reason: null,
       since: at,
       ts: at,
-      tool: null,
+      tool: s?.tool ?? null,
       title: s?.title ?? null,
-      preview: s?.preview ?? null,
+      preview: null,
     };
   }
 
@@ -896,6 +907,16 @@ export class DemoCore {
     return { output: testRun({ ...Object.fromEntries(this.files.head(WS)), ...this.filesOf(id) }, run[1] ?? "").join("\n") };
   }
 
+  /** What a worktree's diff is against: where its branch and main meet, as
+   * git's merge base. A landed worktree is in main, so only what it hasn't
+   * committed shows; one that main was merged into, at a landing since
+   * undone, meets main there; the rest left main as the story began. */
+  private baseOf(id: string): Record<string, string> {
+    const w = STORY.worktrees.find((x) => wsOf(x.slug) === id);
+    if (w && this.landed.has(w.slug)) return Object.fromEntries(this.files.head(id));
+    return this.mergedMain.get(id) ?? MAIN;
+  }
+
   /** Lands a worktree: main is merged into it, then it into main, as its
    * merge commit. The worktrees keep main merged into them. */
   private land(id: string): string {
@@ -904,6 +925,7 @@ export class DemoCore {
     const head = this.mainLog[0]?.sha ?? "";
     if (!this.beforeLanding.has(head))
       this.beforeLanding.set(head, { head: this.files.head(WS), log: [...this.mainLog], landed: new Set(this.landed) });
+    this.mergedMain.set(id, Object.fromEntries(this.files.head(WS)));
     const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
     this.files.setHead(id, merged);
     this.files.setHead(WS, merged);
@@ -927,23 +949,27 @@ export class DemoCore {
     const id = wsOf(w.slug);
     this.ciFixed = true;
     this.say(pty, ciEcho(number));
-    this.setStatus(paneId, "working", "Working");
+    this.setStatus(paneId, "working");
     let at = 0;
     for (const step of fix.steps) {
       if ("read" in step) {
         at += 700;
-        this.later(at, () => this.say(pty, `${st.mark} ${st.read} ${step.read}\n`));
+        this.later(at, () => {
+          this.say(pty, `${st.mark} ${st.read} ${step.read}\n`);
+          this.setStatus(paneId, "working", toolOf(step));
+        });
       } else if ("edit" in step) {
         at += 900;
         this.later(at, () => {
           this.say(pty, `${st.mark} ${st.edit} ${step.edit} (+${step.add} -${step.del})\n`);
+          this.setStatus(paneId, "working", toolOf(step));
           this.files.edit(id, step.edit, changedIn("ci-fix")[step.edit] ?? "");
         });
       } else {
         at += 700;
         this.later(at, () => {
           this.say(pty, `${st.mark} ${st.run} ${step.run}\n`);
-          this.setStatus(paneId, "working", `Running ${step.run}`);
+          this.setStatus(paneId, "working", toolOf(step));
         });
         at += 1400;
         this.later(at, () => {
@@ -963,7 +989,7 @@ export class DemoCore {
           .map(([path, text]) => fileDiff(path, MAIN[path] ?? null, text)),
         testRun(this.filesOf(id)).join("\n"),
       );
-      this.setStatus(paneId, "done", fix.closing);
+      this.setStatus(paneId, "done");
     });
   }
 
@@ -984,7 +1010,7 @@ export class DemoCore {
     const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
     if (!yes) {
       this.say(pty, `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`);
-      this.setStatus(paneId, "done", "Didn't run the tests");
+      this.setStatus(paneId, "done");
       return;
     }
     const id = wsOf(w.slug);
@@ -1003,14 +1029,16 @@ export class DemoCore {
       this.say(pty, `\n${lines.join("\n")}\n`);
       this.files.commit(id);
       this.committed.add(w.slug);
-      this.setStatus(paneId, "done", w.closing ?? "Done.");
+      this.setStatus(paneId, "done");
     });
   }
 
-  private setStatus(paneId: string, status: StatusRecord["status"], preview: string): void {
+  /** A pane's next status, and the tool its engine's hooks name with it:
+   * Claude Code's at work, none otherwise (D-2624). */
+  private setStatus(paneId: string, status: StatusRecord["status"], tool: string | null = null): void {
     const s = this.status[paneId];
     if (!s) return;
-    this.status[paneId] = { ...s, status, preview };
+    this.status[paneId] = { ...s, status, tool };
     this.since[paneId] = Date.now();
     emitLocal("status:changed", { records: [this.record(paneId)], removed: [] });
   }
@@ -1216,7 +1244,7 @@ export class DemoCore {
       });
     } else {
       if (first) t.fixTurn = turnId;
-      this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000) : chatTurn(text));
+      this.play(t, turnId, first ? fixTurn(this.id("apr"), Date.now() + 10 * 60_000, ROOT) : chatTurn(text));
     }
     return { turnId, queued: false };
   }
@@ -1275,7 +1303,7 @@ export class DemoCore {
 
   private dashboard(): DashboardItem[] {
     const panes = PANES.filter((p) => this.status[p.id]).map((p): DashboardItem => {
-      const s = this.status[p.id] ?? { status: "idle", title: "", preview: "" };
+      const s = this.status[p.id] ?? { status: "idle", title: "", tool: null };
       const engine = ENGINES.find((e) => e.spec.id === p.engineId);
       return {
         key: `pane:${p.id}`,
@@ -1292,7 +1320,8 @@ export class DemoCore {
         workspaceId: p.workspaceId,
         workspace: WORKSPACES.find((w) => w.id === p.workspaceId)?.name ?? null,
         branch: WORKSPACES.find((w) => w.id === p.workspaceId)?.branch ?? null,
-        preview: s.preview,
+        // dashboard.rs: the record's preview, else its tool.
+        preview: s.tool,
         pendingApproval: null,
       };
     });
@@ -1665,11 +1694,13 @@ export class DemoCore {
       // A worktree's diff (F-WT-02): what it changed since main as the
       // story starts, uncommitted work included.
       case "lane_diff": {
-        const files = this.filesOf(String(args?.laneId ?? ""));
+        const id = String(args?.laneId ?? "");
+        const files = this.filesOf(id);
+        const base = this.baseOf(id);
         return Object.keys(files)
-          .filter((path) => files[path] !== MAIN[path])
+          .filter((path) => files[path] !== base[path])
           .sort()
-          .map((path) => fileDiff(path, MAIN[path] ?? null, files[path] ?? ""));
+          .map((path) => fileDiff(path, base[path] ?? null, files[path] ?? ""));
       }
       // CI results and review comments back to the agent (F-WT-08).
       case "lane_checks":

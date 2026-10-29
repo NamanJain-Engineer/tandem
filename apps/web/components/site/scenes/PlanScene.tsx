@@ -181,5 +181,5 @@ export const PLAN_CAPTION = "A plan's tasks run in their own worktrees, each rev
 export function planSceneText(): string {
   const { goal, tasks } = SAMPLE.plan;
   const [a, b, c] = tasks;
-  return `Plan with Lead follows the plan "${goal}" through. Its three tasks run at once, each in its own worktree: ${a.engine} adds gift card balances, ${b.engine} redeems them at checkout and ${c.engine} shows them in the cart. Another engine reviews each run: two come back Approved and one Changes requested, the plan's line reads 2 approved and 1 changes requested, and "Land 2 approved…" is ready to land the approved two in the plan's order.`;
+  return `Plan with Lead follows the plan "${goal}" through. Its three tasks run at once, each in its own worktree: ${a.engine} adds gift card balances, ${b.engine} redeems them at checkout and ${c.engine} shows them in the cart. Another engine reviews each run: two come back Approved and one Changes requested, the plan's line reads 2 approved and 1 with changes requested, and "Land 2 approved…" is ready to land the approved two in the plan's order.`;
 }

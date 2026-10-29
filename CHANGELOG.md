@@ -84,16 +84,32 @@ release fails when its version has no section.
 - [lin] **Claude Code threads summarise their edits too.** A finished Claude
   Code turn says which files its edits changed, a subagent's and a
   notebook's included, with the lines added and removed, and each edit's
-  row shows its own counts. When an edit's lines aren't known, the turn
-  lists its files without line counts rather than a partial total. An edit
-  that was refused or failed counts nothing, and files changed by shell
-  commands aren't counted.
+  row shows its own counts. When an edit's lines aren't known, such as a
+  file an MCP server's tool wrote, the turn lists its files without line
+  counts rather than a partial total. An edit that was refused or failed
+  counts nothing, a subagent's edits count even when its task ends in an
+  error, and files changed by shell commands aren't counted.
 - [lin] **The rail's marks say it in a word.** A worktree's pull request
   checks read as the status bar has them, CI running, CI passed or CI
   failed, and hovering says which checks failed. The overlap mark shows the
-  symbol two worktrees share, such as `applyCoupon`. A row that's short of
-  room shows a mark's icon rather than cut its words, and a pane header's
-  branch gives way before the pane's title does.
+  symbol two worktrees share, such as `applyCoupon`, and a screen reader
+  hears those words first. A row that's short of room shows a mark's icon
+  rather than cut its words, and a pane header's branch gives way before the
+  pane's title does.
+- [lin] **The rail never cuts a row off.** A row too narrow for everything it
+  shows folds it: a worktree's Preview to its globe, its marks to their icons,
+  and last its agents' status to a dot that still says Needs you or 2 working
+  when you hover it. The rail stops at the width of a fully folded row, about
+  250 px rather than 180, a little wider while a row shows a jj badge or a
+  preview, and widens itself to fit one. A row's ⋯ shows in place of its
+  agents' count, never over a mark.
+- [lin] **Checks follow a push.** After you push from a worktree, its pull
+  request's checks are read at once and every 2 minutes for the next 5, so
+  its row moves to CI running when GitHub starts the new run instead of up
+  to 15 minutes later.
+- [lin] **An account is named when there's a choice.** A pane's header and
+  its Dashboard card name the agent's account only when its engine has more
+  than one, so a single account's "Default" no longer shows.
 
 ### Fixed
 
@@ -120,6 +136,12 @@ release fails when its version has no section.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
+- [lin] **A plan's counts read right for one.** A plan says "1 with changes
+  requested", where it said "1 changes requested".
+- [lin] **A Dashboard card's line follows its agent.** While Claude Code works,
+  its card names the tool it's running, and the name goes when it stops.
+  Before, an open Dashboard named no tool, and a card that opened mid-tool kept
+  that tool's name after Claude Code had finished.
 
 ### Security
 

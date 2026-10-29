@@ -1,8 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import NAMES from "../data/names.json";
 import GIT_HUNKS from "./fixtures/git-hunks.json";
 import { MAIN, changedIn, diffsOf, lineCount, testRun, testsIn } from "./repo";
-import { STORY, editsOf, totalsOf, worktree, worktreeIn } from "./story";
+import { STORY, askLine, editsOf, previewOf, totalsOf, worktree, worktreeIn } from "./story";
 import { unifiedDiff } from "./udiff";
 
 describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (D-1899)", () => {
@@ -104,6 +108,19 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     const filter = run?.run.replace(/^pnpm test ?/, "") ?? "";
     const files = { ...MAIN, ...changedIn(done.slug) };
     expect(testRun(files, filter).at(-1)).toBe(`      Tests  ${run?.passed} passed (${run?.passed})`);
+  });
+
+  it("F-WB-01 D-2609 the waiting agent asks in its own words, one string for the demo and the site's scenes", () => {
+    const w = worktreeIn("waiting");
+    // The engine's own question in its terminal: 0.12.0 raises no approval
+    // for an engine's question, only for `vibezeo run` (D-1899).
+    expect(askLine(w)).toBe(`Allow execution of: '${w.ask}'?`);
+    // Its card waits with no line: Gemini CLI has no hooks (D-2624).
+    expect(previewOf(w)).toBeNull();
+    // Nor do the others': Ada has finished, and Arlo's Codex names no
+    // tools (drift.test.ts holds the rule to the app's sources).
+    expect(previewOf(worktreeIn("done"))).toBeNull();
+    expect(previewOf(worktreeIn("working"))).toBeNull();
   });
 
   it("F-WB-01 D-2609 the pull request's checks are lint, test and build, with test failing", () => {
@@ -300,6 +317,28 @@ describe("F-WB-01 D-2609 the demo's diffs", () => {
       "@@ -23,7 +23,7 @@ function f() {",
     ]);
   });
+
+  it("F-WB-01 D-2609 git's hunks come out the same whatever the developer's git setup: a repository's diff config and GIT_DIFF_OPTS change nothing", () => {
+    const script = join(__dirname, "../../../../scripts/agent/demo-git-hunks.mjs");
+    const tmp = mkdtempSync(join(tmpdir(), "demo-hunks-test-"));
+    try {
+      // Run from inside a repository whose config, and with a variable
+      // whose value, would each change git's hunks if git read them.
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: tmp, stdio: "ignore" });
+      git("init", "-q");
+      git("config", "diff.interHunkContext", "10");
+      git("config", "diff.suppressBlankEmpty", "true");
+      const out = join(tmp, "hunks.json");
+      execFileSync(process.execPath, [script, out], {
+        cwd: tmp,
+        env: { ...process.env, GIT_DIFF_OPTS: "--unified=1", GIT_DIR: join(tmp, ".git") },
+        stdio: "ignore",
+      });
+      expect(JSON.parse(readFileSync(out, "utf8"))).toEqual(GIT_HUNKS);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("F-WB-01 D-2609 every sample edit's diff is git's own, hunk for hunk (fixtures/git-hunks.json)", () => {
     const want = GIT_HUNKS as Record<string, string[]>;

@@ -105,7 +105,10 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
       reason: r.reason,
       since: r.since,
       title: r.title ?? cur.title,
-      preview: r.preview ?? cur.preview,
+      // dashboard.rs's line: the record's preview, else its tool. The store
+      // keeps a preview and replaces the tool with each report, so a tool's
+      // name goes when its agent stops (D-2627).
+      preview: r.preview ?? r.tool ?? null,
     };
   }
   useDashboard.setState({ items });

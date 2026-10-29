@@ -1,4 +1,6 @@
 import type { FileDiff, ThreadEvent } from "@tandem/protocol";
+
+type ToolEvent = Extract<ThreadEvent, { type: "tool" }>;
 import { MAIN, changedIn, diffsOf, grep, lineCount, testRun } from "./repo";
 
 /** One step of a simulated turn: an event after a pause, or a stop that
@@ -7,10 +9,10 @@ export type Step = { wait: number; event: ThreadEvent } | { approval: ThreadEven
 
 const tool = (
   id: string,
-  verb: Extract<ThreadEvent, { type: "tool" }>["verb"],
+  verb: ToolEvent["verb"],
   argSummary: string,
-  status: Extract<ThreadEvent, { type: "tool" }>["status"],
-  extra: Partial<Extract<ThreadEvent, { type: "tool" }>> = {},
+  status: ToolEvent["status"],
+  extra: Partial<ToolEvent> = {},
 ): ThreadEvent => ({
   type: "tool",
   id,
@@ -32,7 +34,41 @@ export const THREAD_CHANGES: FileDiff[] = diffsOf("thread");
 
 const SESSION = "src/auth/session.ts";
 const SESSION_TEST = "src/auth/session.test.ts";
-const patchOf = (path: string) => THREAD_CHANGES.find((f) => f.path === path)?.patch ?? "";
+
+/** A Claude Code Edit as its stream carries it (D-2608): no diff, but the
+ * file it names, its input (the text it replaces with a line around it,
+ * as Claude Code's own edits have, and the text that goes there) and the
+ * lines it changes. Its first row, while it runs, has the file and input. */
+function claudeEdit(path: string, root: string): { running: Partial<ToolEvent>; done: Partial<ToolEvent> } {
+  const file = `${root}/${path}`;
+  const before = (MAIN[path] ?? "").split("\n");
+  const after = (changedIn("thread")[path] ?? "").split("\n");
+  let head = 0;
+  while (head < before.length && head < after.length && before[head] === after[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < before.length - head &&
+    tail < after.length - head &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+  )
+    tail += 1;
+  const from = Math.max(0, head - 1);
+  const input = {
+    file_path: file,
+    old_string: before.slice(from, Math.min(before.length, before.length - tail + 1)).join("\n"),
+    new_string: after.slice(from, Math.min(after.length, after.length - tail + 1)).join("\n"),
+  };
+  const counts = THREAD_CHANGES.find((f) => f.path === path);
+  const running = { detail: JSON.stringify(input, null, 2), paths: [file] };
+  return {
+    running,
+    done: {
+      ...running,
+      output: `The file ${file} has been updated.`,
+      lines: { added: counts?.additions ?? 0, removed: counts?.deletions ?? 0 },
+    },
+  };
+}
 
 /** The command the fix asks to run, and what it prints once the fix is in. */
 export const TEST_COMMAND = "pnpm test auth";
@@ -50,8 +86,11 @@ const usage = (input: number, output: number, fill: number): ThreadEvent => ({
 });
 
 /** A turn that reads, edits, asks to run the tests, and reports back. The
- * first turn of the demo, whatever the visitor typed. */
-export function fixTurn(approvalId: string, expiresAt: number): Step[] {
+ * first turn of the demo, whatever the visitor typed, in `root` (shop's
+ * folder). */
+export function fixTurn(approvalId: string, expiresAt: number, root: string): Step[] {
+  const session = claudeEdit(SESSION, root);
+  const sessionTest = claudeEdit(SESSION_TEST, root);
   return [
     {
       wait: 500,
@@ -65,10 +104,10 @@ export function fixTurn(approvalId: string, expiresAt: number): Step[] {
     { wait: 500, event: tool("t1", "grep", "getSession src/", "ok", { output: grep(MAIN, "getSession").join("\n") }) },
     { wait: 300, event: tool("t2", "read", SESSION, "running") },
     { wait: 500, event: tool("t2", "read", SESSION, "ok", { output: `(${lineCount(MAIN[SESSION] ?? "")} lines)` }) },
-    { wait: 700, event: tool("t3", "edit", SESSION, "running") },
-    { wait: 500, event: tool("t3", "edit", SESSION, "ok", { diff: patchOf(SESSION) }) },
-    { wait: 400, event: tool("t4", "edit", SESSION_TEST, "running") },
-    { wait: 500, event: tool("t4", "edit", SESSION_TEST, "ok", { diff: patchOf(SESSION_TEST) }) },
+    { wait: 700, event: tool("t3", "edit", SESSION, "running", session.running) },
+    { wait: 500, event: tool("t3", "edit", SESSION, "ok", session.done) },
+    { wait: 400, event: tool("t4", "edit", SESSION_TEST, "running", sessionTest.running) },
+    { wait: 500, event: tool("t4", "edit", SESSION_TEST, "ok", sessionTest.done) },
     {
       approval: {
         type: "approval_request",

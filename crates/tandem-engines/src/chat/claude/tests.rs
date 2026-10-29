@@ -1037,6 +1037,88 @@ fn f_th_12_4_a_task_names_its_subagents_files_without_lines_when_one_edit_cant_s
 }
 
 #[test]
+fn f_th_12_6_a_task_that_ends_in_error_still_names_what_its_subagent_edited() {
+    let edit = |file: &str| json!({"file_path": file, "old_string": "a", "new_string": "b"});
+    let rows = parse(&[
+        tool_use("t1", "Task", json!({"description": "Rename"}), None),
+        tool_use("s1", "Edit", edit("src/a.ts"), Some("t1")),
+        tool_result(
+            "s1",
+            "The file src/a.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // The subagent's edit happened; then the Task itself failed.
+        tool_result("t1", "Agent stopped: it ran out of turns.", true, None),
+    ]);
+    let task = rows.iter().find(|r| r.0 == "t1").expect("task");
+    assert_eq!(task.1, ToolStatus::Error);
+    assert_eq!(task.3, Some(vec!["/work/shop/src/a.ts".into()]));
+    assert_eq!(task.2, lines(1, 1));
+}
+
+#[test]
+fn f_th_12_6_an_unknown_tool_that_writes_a_file_names_it_and_counts_no_lines() {
+    let rows = parse(&[
+        // An MCP server's write: a file and what goes in it.
+        tool_use(
+            "m1",
+            "mcp__fs__write_file",
+            json!({"path": "src/new.ts", "content": "export {};\n"}),
+            None,
+        ),
+        tool_result("m1", "Wrote src/new.ts", false, None),
+        // A tool that names a file but writes nothing, and one that names none.
+        tool_use(
+            "m2",
+            "mcp__fs__read_file",
+            json!({"path": "src/a.ts"}),
+            None,
+        ),
+        tool_result("m2", "export {};", false, None),
+        tool_use(
+            "m3",
+            "TodoWrite",
+            json!({"todos": [{"content": "x", "status": "pending"}]}),
+            None,
+        ),
+        tool_result("m3", "Todos updated", false, None),
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Named, so the turn says it changed the file; uncounted, so the turn's
+    // total says no lines rather than a partial one (D-2622).
+    assert_eq!(at("m1").3, Some(vec!["/work/shop/src/new.ts".into()]));
+    assert_eq!(at("m1").2, None);
+    assert_eq!(at("m2").3, None);
+    assert_eq!(at("m3").3, None);
+}
+
+#[test]
+fn f_th_12_6_a_windows_path_names_one_file_whatever_its_case_and_slashes() {
+    // How a Task's subagent edits count once (claude.rs) and a turn's files
+    // too (rows.ts fileKey).
+    assert!(crate::events::same_file(
+        r"C:\work\shop\src\A.ts",
+        "c:/Work/Shop/src/a.ts"
+    ));
+    assert!(crate::events::same_file(
+        r"\\server\share\A.ts",
+        r"\\SERVER\share\a.ts"
+    ));
+    assert!(!crate::events::same_file(r"C:\work\a.ts", r"C:\work\b.ts"));
+    // Elsewhere the text is the file: Linux's names are case-sensitive, and
+    // a Mac's can be.
+    assert!(!crate::events::same_file(
+        "/work/shop/src/A.ts",
+        "/work/shop/src/a.ts"
+    ));
+    assert!(crate::events::same_file(
+        "/work/shop/src/a.ts",
+        "/work/shop/src/a.ts"
+    ));
+}
+
+#[test]
 fn f_th_12_4_a_patch_counts_only_when_its_message_answers_one_tool() {
     let edit = |file: &str| json!({"file_path": file, "old_string": "a", "new_string": "b"});
     let patch = json!({"structuredPatch": [{"oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 3,

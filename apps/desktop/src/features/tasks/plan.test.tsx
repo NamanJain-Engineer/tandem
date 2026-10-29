@@ -520,7 +520,7 @@ describe("Follow a plan through (F-TK-07)", () => {
     await waitFor(() => expect(states()).toEqual(["in_review", "in_review", "none"]));
     expect(screen.getAllByTestId("plan-run")[1]?.textContent).toContain("Changes requested");
     expect(screen.getByTestId("plan-summary").textContent).toBe(
-      "1 approved · 1 changes requested · 1 not started",
+      "1 approved · 1 with changes requested · 1 not started",
     );
   });
 

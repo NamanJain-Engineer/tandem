@@ -48,6 +48,8 @@ async function worktreeAction(branch: string, label: string): Promise<void> {
 describe("E2E-M18-WT09-1 previews", function () {
   this.timeout(240_000);
   const repo = `/tmp/tandem-e2e-wt09-${Date.now()}`;
+  /** The rail's minimum before any row shows a Preview (D-2703). */
+  let baseMin = 0;
 
   before(async () => {
     mkdirSync(join(repo, ".vibezeo"), { recursive: true });
@@ -65,6 +67,9 @@ describe("E2E-M18-WT09-1 previews", function () {
     writeFileSync(join(userHome(), ".gitconfig"), "[user]\n\tname = E2E\n\temail = e2e@vibezeo.test\n");
     await freshOffline();
     await addFolder(repo);
+    // Measured once the rail's fonts are in (D-2701, D-2626).
+    await browser.pause(1_000);
+    baseMin = Number(await $('[data-testid="rail-resizer"]').getAttribute("aria-valuemin"));
   });
 
   it("F-WT-09.2 the untrusted preview waits for review; F-WT-09.1 trusted, it runs in a Preview pane", async () => {
@@ -116,6 +121,23 @@ describe("E2E-M18-WT09-1 previews", function () {
       { timeout: 15_000, timeoutMsg: "no browser tab for the preview" },
     );
     expect(state?.url).toMatch(new RegExp(`^http://(alpha\\.)?localhost:${state?.port}/$`));
+  });
+
+  it("F-SH-03 D-2703 while a row shows its Preview, the rail's minimum adds the globe and its gap, and the rail widens to it", async () => {
+    expect(baseMin).toBeGreaterThanOrEqual(246);
+    const edge = $('[data-testid="rail-resizer"]');
+    // The globe (20 px) and its gap (6) have no text: every engine draws them alike.
+    await browser.waitUntil(async () => Number(await edge.getAttribute("aria-valuemin")) === baseMin + 26, {
+      timeout: 10_000,
+      timeoutMsg: `the minimum stayed ${await edge.getAttribute("aria-valuemin")}, from ${baseMin}`,
+    });
+    // Eased over --dur-base, then saved.
+    await browser.pause(500);
+    const width = await browser.execute(
+      () => document.querySelector('nav[aria-label="Workspaces"]')?.getBoundingClientRect().width ?? 0,
+    );
+    expect(width).toBeGreaterThanOrEqual(baseMin + 26 - 0.5);
+    expect(Number(await edge.getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(baseMin + 26);
   });
 
   it("F-WT-09.5 Compare previews opens two worktrees' previews side by side in a new tab", async () => {
