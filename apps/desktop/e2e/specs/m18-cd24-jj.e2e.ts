@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { addFolder, fakeLog, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
 import { newWorktree, pick, repoMenu } from "../support/worktrees";
@@ -24,7 +24,9 @@ const git = (cwd: string, ...args: string[]) =>
 const JJ_ENV = { ...process.env, HOME: userHome() };
 
 /** jj where the app finds it (`Jj::locate`): the PATH, then
- * `tandem_git::jj::usual_places` in its order, under the app's HOME. */
+ * `tandem_git::jj::usual_places` in its order, under the app's HOME. One
+ * difference: this reads the test runner's PATH, where the app reads the
+ * login shell's. */
 function findJj(): string | null {
   const exe = process.platform === "win32" ? "jj.exe" : "jj";
   const home = userHome();
@@ -37,8 +39,16 @@ function findJj(): string | null {
     "/usr/local/bin",
     "/usr/bin",
   ];
-  // The first one there, as Jj::locate picks it; then it must run.
-  const path = dirs.map((dir) => join(dir, exe)).find((p) => existsSync(p));
+  // The first file there (not a folder), as Jj::locate picks it; then it
+  // must run.
+  const isFile = (p: string) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const path = dirs.map((dir) => join(dir, exe)).find(isFile);
   if (path === undefined) return null;
   try {
     execFileSync(path, ["--version"], { stdio: "ignore", env: JJ_ENV });

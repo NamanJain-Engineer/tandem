@@ -1085,6 +1085,8 @@ async fn f_cd_24_4_a_tracked_file_rewritten_outside_the_sparse_patterns_is_kept(
     std::fs::write(fx.repo.join("kept/k.txt"), "k\n").expect("write");
     std::fs::write(fx.repo.join("svc/s.txt"), "s\n").expect("write");
     std::fs::write(fx.repo.join("package.json"), "{}\n").expect("write");
+    std::fs::create_dir_all(fx.repo.join("docs")).expect("mkdir");
+    std::fs::write(fx.repo.join("docs/guide.md"), "g\n").expect("write");
     git(&fx.repo, &["add", "."]);
     git(&fx.repo, &["commit", "-qm", "layout"]);
     colocated(&fx, jj.as_ref());
@@ -1111,6 +1113,53 @@ async fn f_cd_24_4_a_tracked_file_rewritten_outside_the_sparse_patterns_is_kept(
     .expect_err("outside the sparse patterns");
     assert!(matches!(e, tandem_git::GitError::Dirty), "{e}");
     assert!(lane.path.join("package.json").exists());
+    std::fs::remove_file(lane.path.join("package.json")).expect("rm");
+    // An ignore rule covering a tracked path outside the patterns hides
+    // nothing: rewritten there, it's still not kept.
+    let exclude = fx.repo.join(".git/info/exclude");
+    let mut text = std::fs::read_to_string(&exclude).unwrap_or_default();
+    text.push_str("\ndocs/\n");
+    std::fs::write(&exclude, text).expect("exclude");
+    std::fs::create_dir_all(lane.path.join("docs")).expect("mkdir");
+    std::fs::write(lane.path.join("docs/guide.md"), "rewritten\n").expect("write");
+    let e = jj::forget_workspace(
+        jj.clone(),
+        &fx.repo,
+        &lane.path,
+        &lane.slug,
+        Some(&lane.base),
+        None,
+    )
+    .await
+    .expect_err("ignored, tracked, outside the patterns");
+    assert!(matches!(e, tandem_git::GitError::Dirty), "{e}");
+    assert!(lane.path.join("docs/guide.md").exists());
+    std::fs::remove_dir_all(lane.path.join("docs")).expect("rm");
+    // An untracked file nothing ignores, outside the patterns.
+    std::fs::write(lane.path.join("notes.txt"), "n\n").expect("write");
+    let e = jj::forget_workspace(
+        jj.clone(),
+        &fx.repo,
+        &lane.path,
+        &lane.slug,
+        Some(&lane.base),
+        None,
+    )
+    .await
+    .expect_err("untracked, outside the patterns");
+    assert!(matches!(e, tandem_git::GitError::Dirty), "{e}");
+    std::fs::remove_file(lane.path.join("notes.txt")).expect("rm");
+    // Nothing outside the patterns: a clean sparse lane discards unforced.
+    jj::forget_workspace(
+        jj.clone(),
+        &fx.repo,
+        &lane.path,
+        &lane.slug,
+        Some(&lane.base),
+        None,
+    )
+    .await
+    .expect("a clean sparse lane");
     // A lane made beside a sparse main checkout copies its patterns
     // (`--sparse-patterns copy`, jj's default: checked on jj 0.34).
     let out = jj

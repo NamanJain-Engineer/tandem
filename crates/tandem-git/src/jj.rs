@@ -338,6 +338,8 @@ fn commit_revset(id: &str) -> Result<String, GitError> {
 }
 
 pub const FOREIGN_WORKSPACE: &str = "That folder isn't one of this repository's jj workspaces";
+pub const UNREADABLE_WORKSPACE: &str =
+    "jj couldn't read this worktree's workspace just now, so Vibezeo left it alone. Try again";
 /// A worktree's folder git tracks files in: never removed. The remedy names
 /// the folder.
 pub fn tracked_folder(slug: &str) -> String {
@@ -644,9 +646,15 @@ pub async fn add_workspace(
                         // Nothing half-made stays behind: the workspace, its
                         // empty first commit (when it was read), its folder
                         // and its record.
-                        let _ = forget_and_tidy(jj.as_ref(), &main, &slug, first.as_deref());
-                        let _ = std::fs::remove_dir_all(&path);
-                        unmark();
+                        // When the forget itself fails (jj not answering),
+                        // the folder and the record stay, so the sweep can
+                        // forget the workspace later. A first commit made
+                        // but never read (`base_of` failed) stays in
+                        // `jj log`, empty.
+                        if forget_and_tidy(jj.as_ref(), &main, &slug, first.as_deref()).is_ok() {
+                            let _ = std::fs::remove_dir_all(&path);
+                            unmark();
+                        }
                         return Err(e);
                     }
                 };
@@ -969,10 +977,12 @@ pub fn verify_base(
 /// resolves the quoted id to that same change, with no children, no
 /// workspace's working copy, no bookmark or tag, and, with `empty_only`,
 /// empty and undescribed (jj's own rule for a working-copy commit it
-/// drops). Returns whether it was abandoned. What's left: the abandon is a
-/// second jj process, so a bookmark or ref named like the id, or a child,
-/// made in the instant between could still redirect or follow it (jj
-/// rebases a child onto the parent, so no content is lost).
+/// drops). It's abandoned by the commit id read on that same line (no git
+/// ref named like that either), so a rewrite or divergence in between
+/// can't redirect it. Returns whether it was abandoned. What's left: the
+/// abandon is a second jj process, so a child made in the instant between
+/// would follow it (jj rebases a child onto the parent, so no content is
+/// lost).
 pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_only: bool) -> bool {
     if !is_change_id(id) || shadowed_by_ref(repo_root, id).unwrap_or(true) {
         return false;
@@ -999,7 +1009,7 @@ pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_onl
     // The commit and its children in one read: any child is a second line.
     let Some(state) = read(
         &format!("{quoted} | {quoted}+"),
-        "self.change_id() ++ \"|\" ++ self.empty() ++ \"|\" ++ self.description().len() ++ \"|\" ++ self.working_copies() ++ \"|\" ++ self.bookmarks() ++ \"|\" ++ self.tags() ++ \"\\n\"",
+        "self.change_id() ++ \"|\" ++ self.commit_id() ++ \"|\" ++ self.empty() ++ \"|\" ++ self.description().len() ++ \"|\" ++ self.working_copies() ++ \"|\" ++ self.bookmarks() ++ \"|\" ++ self.tags() ++ \"\\n\"",
     ) else {
         return false;
     };
@@ -1008,23 +1018,28 @@ pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_onl
         return false;
     };
     let fields: Vec<&str> = line.split('|').collect();
-    let holds_nothing = match fields.as_slice() {
-        [cid, empty, described, wc, bookmarks, tags] => {
-            *cid == id
+    let commit = match fields.as_slice() {
+        [cid, commit, empty, described, wc, bookmarks, tags]
+            if *cid == id
+                && is_commit_id(commit)
                 && wc.is_empty()
                 && bookmarks.is_empty()
                 && tags.is_empty()
-                && (!empty_only || (*empty == "true" && *described == "0"))
+                && (!empty_only || (*empty == "true" && *described == "0")) =>
+        {
+            commit.to_string()
         }
-        _ => false,
+        _ => return false,
     };
-    if !holds_nothing {
+    // By the commit id just read: a rewrite in between (a new commit id)
+    // makes it a no-op, not another commit.
+    if shadowed_by_ref(repo_root, &commit).unwrap_or(true) {
         return false;
     }
     checked(
         jj,
         repo_root,
-        &["--ignore-working-copy", "abandon", &quoted],
+        &["--ignore-working-copy", "abandon", &format!("\"{commit}\"")],
     )
     .is_ok_and(|o| o.success())
 }
@@ -1089,7 +1104,7 @@ pub async fn changed_files(
         let mut files: Vec<String> = out
             .stdout
             .lines()
-            .map(|l| l.trim().replace('\\', "/"))
+            .map(|l| slashed(l.trim()))
             .filter(|l| !l.is_empty())
             .collect();
         files.sort();
@@ -1145,23 +1160,61 @@ fn in_sparse(path: &str, patterns: &[String]) -> bool {
     })
 }
 
+/// Whether a file (or symlink) is on disk in the lane outside its sparse
+/// `patterns`, ignored or not: every folder that isn't inside a pattern is
+/// looked into, except the lane's own `.jj`; symlinks aren't followed.
+/// Fails closed (true) when a folder can't be read.
+fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
+    let mut stack = vec![ws_root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return true;
+        };
+        for e in entries {
+            let Ok(e) = e else {
+                return true;
+            };
+            let path = e.path();
+            if dir == ws_root && e.file_name() == ".jj" {
+                continue;
+            }
+            let Ok(rel) = path.strip_prefix(ws_root) else {
+                return true;
+            };
+            let rel = slashed(&rel.to_string_lossy());
+            if in_sparse(&rel, patterns) {
+                continue;
+            }
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                _ => return true,
+            }
+        }
+    }
+    false
+}
+
 /// Whether the lane at `ws_root` has something on disk jj didn't keep in
 /// its working-copy commit: a file (not ignored) that `jj file list -r @`
 /// doesn't list (refused, left untracked, or a reason a later jj words
-/// differently), a file outside the workspace's sparse patterns (`jj sparse
-/// list`: jj neither adds nor updates those, tracked or not, and says
-/// nothing), or a folder holding another repository (a nested `.git` or
-/// `.jj`, which jj never snapshots). Ignored files and folders aren't
-/// looked into: they go with the folder, as a git lane's do. Symlinks
-/// aren't followed. Fails closed (true) when jj or the walk fails.
+/// differently), anything at all outside the workspace's sparse patterns
+/// (`jj sparse list` isn't `.`: jj neither adds nor updates anything there,
+/// tracked or not, ignored or not, and says nothing; [`on_disk_outside`]),
+/// or a folder holding another repository (a nested `.git` or `.jj`, which
+/// jj never snapshots). Inside the patterns, ignored files and folders
+/// aren't looked into: they go with the folder, as a git lane's do.
+/// Symlinks aren't followed. Fails closed (true) when jj or a walk fails.
 ///
-/// The walk reads ignore rules as jj does, rooted at the lane: its
-/// `.gitignore` files, the repository's `info/exclude` and the global
-/// excludes. Two known differences, both failing closed (a file jj ignores
-/// is counted as not kept, so Discard asks): the `ignore` crate gives the
-/// global excludes precedence over `info/exclude` (git and jj: the
-/// reverse), and finds `core.excludesFile` only in `~/.gitconfig` and the
-/// XDG config, not in the repository's own config.
+/// Inside the patterns the walk reads ignore rules as jj does, rooted at
+/// the lane: its `.gitignore` files, the repository's `info/exclude` and the
+/// global excludes. Known differences, all over-refusing there (a file jj
+/// snapshots because it doesn't ignore it is in its commit anyway, and a
+/// file jj ignores but the walk doesn't only makes Discard ask): the `ignore`
+/// crate gives the global excludes precedence over `info/exclude` (git and
+/// jj: the reverse), and finds `core.excludesFile` only in `~/.gitconfig`
+/// and the XDG config. Outside the patterns no ignore rule is read. `jj
+/// sparse list` is read a line per pattern: a pattern whose name holds a
+/// newline or ends in a carriage return reads as another (a known gap).
 fn not_kept_on_disk(jj: &dyn JjRunner, repo_root: &Path, ws_root: &Path) -> bool {
     let list = |args: &[&str]| {
         checked(jj, ws_root, args)
@@ -1176,6 +1229,12 @@ fn not_kept_on_disk(jj: &dyn JjRunner, repo_root: &Path, ws_root: &Path) -> bool
     let Some(sparse) = list(&["--ignore-working-copy", "sparse", "list"]) else {
         return true;
     };
+    // A sparse lane: jj never checks out or snapshots anything outside the
+    // patterns, so anything there (ignored or not, tracked or not) is only
+    // on disk. Ignore rules aren't consulted for it.
+    if sparse != ["."] && on_disk_outside(ws_root, &sparse) {
+        return true;
+    }
     let mut walk = ignore::WalkBuilder::new(ws_root);
     walk.hidden(false)
         .parents(false)
@@ -1432,7 +1491,7 @@ pub async fn forget_workspace(
                 // jj lists the name but its working copy can't be read: it
                 // can't be checked against the folder's, so it's never
                 // forgotten (nor the folder removed).
-                (None, _) => return Err(GitError::Invalid(FOREIGN_WORKSPACE.into())),
+                (None, _) => return Err(GitError::Invalid(UNREADABLE_WORKSPACE.into())),
                 // The same working copy, or (forced: unforced, kept_whole
                 // already refused) the folder's couldn't be read: jj still
                 // lists the name, so the folder's going would leave it
@@ -1519,15 +1578,22 @@ mod tests {
             if self.broken.iter().any(|p| joined.starts_with(p)) {
                 return Err(GitError::Invalid("jj didn't answer within 120 s".into()));
             }
+            // Unanswered, `sparse list` says what jj does for a full
+            // workspace: `.`.
+            let default = if joined.starts_with("--ignore-working-copy sparse list") {
+                ok(".\n")
+            } else {
+                JjOutput {
+                    code: Some(0),
+                    ..Default::default()
+                }
+            };
             Ok(self
                 .answers
                 .iter()
                 .find(|(prefix, _)| joined.starts_with(prefix))
                 .map(|(_, out)| out.clone())
-                .unwrap_or(JjOutput {
-                    code: Some(0),
-                    ..Default::default()
-                }))
+                .unwrap_or(default))
         }
     }
 
@@ -2143,7 +2209,7 @@ mod tests {
             // working copy, bookmark or tag, and no children.
             (
                 &format!("--ignore-working-copy log -r \"{CID}\" | \"{CID}\"+ --no-graph -T self.change_id() ++ \"|\""),
-                ok(&format!("{CID}|false|5|||\n")),
+                ok(&format!("{CID}|{HEX}|false|5|||\n")),
             ),
             ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
             ("log -r @-", ok(&format!("{CID}\n"))),
@@ -2159,11 +2225,11 @@ mod tests {
         )
         .await
         .expect_err("failed");
-        let quoted = format!("\"{CID}\"");
+        // By the commit id read with it.
         assert!(fake.calls().contains(&vec![
             "--ignore-working-copy".to_string(),
             "abandon".into(),
-            quoted
+            format!("\"{HEX}\"")
         ]));
         // A summary jj didn't print as fixed (a word, a short id, nothing):
         // refused, nothing made.
@@ -2568,31 +2634,38 @@ mod tests {
     #[tokio::test]
     async fn f_cd_24_discard_abandons_the_lanes_empty_first_commit_only_when_it_holds_nothing() {
         let (_t, main) = colocated_fixture();
+        // By the commit id read with it, so a rewrite in between can't
+        // redirect it.
         let abandon = vec![
             "--ignore-working-copy".to_string(),
             "abandon".into(),
-            format!("\"{CID}\""),
+            format!("\"{HEX}\""),
         ];
         let cases = [
             (
                 "empty, undescribed, childless",
-                format!("{CID}|true|0|||"),
+                format!("{CID}|{HEX}|true|0|||"),
                 "",
                 true,
             ),
-            ("described", format!("{CID}|true|9|||"), "", false),
-            ("not empty", format!("{CID}|false|0|||"), "", false),
-            ("a child", format!("{CID}|true|0|||"), "kkkk\n", false),
+            ("described", format!("{CID}|{HEX}|true|9|||"), "", false),
+            ("not empty", format!("{CID}|{HEX}|false|0|||"), "", false),
+            ("a child", format!("{CID}|{HEX}|true|0|||"), "kkkk\n", false),
             (
                 "a working copy",
-                format!("{CID}|true|0|default@||"),
+                format!("{CID}|{HEX}|true|0|default@||"),
                 "",
                 false,
             ),
-            ("a bookmark", format!("{CID}|true|0||keep|"), "", false),
+            (
+                "a bookmark",
+                format!("{CID}|{HEX}|true|0||keep|"),
+                "",
+                false,
+            ),
             (
                 "another change",
-                format!("{}|true|0|||", "k".repeat(32)),
+                format!("{}|{HEX}|true|0|||", "k".repeat(32)),
                 "",
                 false,
             ),
@@ -2641,7 +2714,7 @@ mod tests {
                     ok(&format!("{CID}\n")),
                 ),
             ];
-            answers.extend(leftover(CID, &format!("{CID}|true|0|||"), ""));
+            answers.extend(leftover(CID, &format!("{CID}|{HEX}|true|0|||"), ""));
             answers.push((
                 "--ignore-working-copy log -r".into(),
                 ok(&format!("{HEX}\n")),
@@ -2667,7 +2740,7 @@ mod tests {
         git.reference(&format!("refs/tags/{CID}"), commit, false, "shadow")
             .expect("tag");
         let fake = FakeJj {
-            answers: leftover(CID, &format!("{CID}|true|0|||"), ""),
+            answers: leftover(CID, &format!("{CID}|{HEX}|true|0|||"), ""),
             ..FakeJj::default()
         };
         assert!(!abandon_leftover(&fake, &main, CID, true));
@@ -2741,7 +2814,7 @@ mod tests {
         let e = forget_workspace(fake.clone(), &main, &ws, "tidy", None, forced())
             .await
             .expect_err("unreadable");
-        assert!(e.to_string().contains(FOREIGN_WORKSPACE), "{e}");
+        assert_eq!(e.to_string(), UNREADABLE_WORKSPACE);
         assert!(ws.exists());
         assert!(fake
             .calls()
@@ -2779,6 +2852,81 @@ mod tests {
             "the sweep can still forget what jj registered"
         );
         assert_eq!(left[0].1.slug, "tidy");
+    }
+
+    #[test]
+    fn f_cd_24_4_in_a_sparse_lane_anything_outside_the_patterns_isnt_kept() {
+        let (_t, main) = colocated_fixture();
+        let ws = workspace_folder(&main, "tidy");
+        std::fs::create_dir_all(ws.join("svc")).expect("mkdir");
+        std::fs::write(ws.join("svc/s.txt"), "s").expect("write");
+        // An ignored folder there (`.tandem/` is in info/exclude, which
+        // Vibezeo writes itself) hides nothing outside the patterns.
+        let exclude = main.join(".git/info/exclude");
+        std::fs::create_dir_all(exclude.parent().expect("info")).expect("mkdir");
+        std::fs::write(&exclude, ".tandem/\n").expect("exclude");
+        let fake = || {
+            FakeJj::answering(vec![
+                (
+                    "--ignore-working-copy file list",
+                    ok("svc/s.txt\n.tandem/prompts/review.md\n"),
+                ),
+                ("--ignore-working-copy sparse list", ok("svc\n")),
+            ])
+        };
+        // A clean sparse lane: only what's inside the patterns.
+        assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        // A tracked file rewritten in an ignored folder outside them.
+        std::fs::create_dir_all(ws.join(".tandem/prompts")).expect("mkdir");
+        std::fs::write(ws.join(".tandem/prompts/review.md"), "rewritten").expect("write");
+        assert!(not_kept_on_disk(&fake(), &main, &ws));
+        std::fs::remove_dir_all(ws.join(".tandem")).expect("rm");
+        // An untracked, unignored file, or build output, outside them.
+        for name in ["notes.txt", "target/out.o"] {
+            let path = ws.join(name);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+            std::fs::write(&path, "x").expect("write");
+            assert!(not_kept_on_disk(&fake(), &main, &ws), "{name}");
+            std::fs::remove_file(&path).expect("rm");
+        }
+        // An empty folder outside them holds nothing to lose.
+        assert!(!not_kept_on_disk(&fake(), &main, &ws));
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_a_cleanup_whose_forget_fails_keeps_the_folder_and_record() {
+        let (_t, main) = colocated_fixture();
+        let repo = Repo::discover(&main).expect("discover").expect("repo");
+        let tmp = tempfile::tempdir().expect("tmp");
+        let pending = tmp.path().join("jj-pending");
+        // `jj new` fails, then the cleanup's forget doesn't answer.
+        let fake = Arc::new(
+            FakeJj::answering(vec![
+                ("--ignore-working-copy workspace list", ok("default\n")),
+                ("new", failing("Error: The working copy is locked")),
+            ])
+            .breaking("--ignore-working-copy workspace forget")
+            .making(&main),
+        );
+        add_workspace(
+            fake,
+            &repo,
+            "tidy",
+            &HashSet::new(),
+            None,
+            Some(pending.clone()),
+        )
+        .await
+        .expect_err("new failed");
+        assert!(
+            main.join(WORKTREES_DIR).join("tidy").exists(),
+            "the folder stays"
+        );
+        assert_eq!(
+            read_pending(&pending).len(),
+            1,
+            "the record stays for the sweep"
+        );
     }
 
     #[tokio::test]
