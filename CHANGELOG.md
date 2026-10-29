@@ -84,26 +84,42 @@ release fails when its version has no section.
 - [lin] **Claude Code threads summarise their edits too.** A finished Claude
   Code turn says which files its edits changed, a subagent's and a
   notebook's included, with the lines added and removed, and each edit's
-  row shows its own counts. When an edit's lines aren't known, the turn
-  lists its files without line counts rather than a partial total. An edit
-  that was refused or failed counts nothing, and files changed by shell
-  commands aren't counted.
+  row shows its own counts. When an edit's lines aren't known, such as a
+  file an MCP server's tool wrote, the turn lists its files without line
+  counts rather than a partial total. An edit that was refused or failed
+  counts nothing, a subagent's edits count even when its task ends in an
+  error, and files changed by shell commands aren't counted.
 - [lin] **The rail's marks say it in a word.** A worktree's pull request
   checks read as the status bar has them, CI running, CI passed or CI
   failed, and hovering says which checks failed. The overlap mark shows the
-  symbol two worktrees share, such as `applyCoupon`. A row that's short of
-  room shows a mark's icon rather than cut its words, and a pane header's
-  branch gives way before the pane's title does.
+  symbol two worktrees share, such as `applyCoupon`, and a screen reader
+  hears those words first. A row that's short of room shows a mark's icon
+  rather than cut its words, and a pane header's branch gives way before the
+  pane's title does.
+- [lin] **The rail never cuts a row off.** A row too narrow for everything it
+  shows folds it: a worktree's Preview to its globe, its marks to their icons,
+  and last its agents' status to a dot that still says Needs you or 2 working
+  when you hover it. The rail stops at the width of a fully folded row, about
+  250 px rather than 180, a little wider while a row shows a jj badge or a
+  preview, and widens itself to fit one. A row's ⋯ shows in place of its
+  agents' count, never over a mark.
+- [lin] **Checks follow a push.** After you push from a worktree, its pull
+  request's checks are read at once and every 2 minutes for the next 5, so
+  its row moves to CI running when GitHub starts the new run instead of up
+  to 15 minutes later.
+- [lin] **An account is named when there's a choice.** A pane's header and
+  its Dashboard card name the agent's account only when its engine has more
+  than one, so a single account's "Default" no longer shows.
 
 ### Fixed
 
 - [lin] **A finished chat stays unread until you look at it.** A chat you'd
   opened earlier and left could lose its unread dot when its turn ended in the
   background, and one you were looking at could get the dot back. Now a chat is
-  marked read when you open it, or when it's the selected chat (or in the grid)
-  while chats are showing: its turn ends while you're in Thread mode with
-  Settings closed and the window in front, or you come back to Thread mode or
-  the window.
+  marked read only while Thread mode shows it (the selected chat, or a chat in
+  the grid) with Settings closed and Vibezeo's window in front and focused:
+  when you open it, when its turn ends, or when you come back to Thread mode or
+  to the window.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything
@@ -120,27 +136,43 @@ release fails when its version has no section.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
+- [lin] **A plan's counts read right for one.** A plan says "1 with changes
+  requested", where it said "1 changes requested".
+- [lin] **A Dashboard card's line follows its agent.** While Claude Code works,
+  its card names the tool it's running, and the name goes when it stops.
+  Before, an open Dashboard named no tool, and a card that opened mid-tool kept
+  that tool's name after Claude Code had finished.
 
 ### Security
 
 - [lin] **Text from elsewhere can't hand an agent a file or run a command.**
-  What Vibezeo passes an agent from somewhere else can't make Claude Code read a
-  file on your computer: a worktree's diff and a second opinion's words, in the
-  review you send or for the second opinion itself, a pull request's review
-  comments, a failed check's log, Warn both agents' note, a teammate's mail, the
-  terminal selection, clipboard, file name or branch name in a prompt, a
-  branch's name in a review you send back, a web page's elements, the turn a
-  teammate learns from, a teammate's briefing for an ACP agent, a handoff brief,
-  the summary that continues work on another account, and what Auto and
-  Conductor send. Any `@` there that could name a file is written ＠, and the
-  message says so. Characters nobody can see, and any that Claude Code or typing
-  would drop, go first, so they can't hide a word or a command. A paste marker
-  such as [Pasted text #1] can't stand in for something you pasted, words such
-  as ultrathink get a hyphen, and a word such as /release, which could run one
-  of your skills, gets a full-width slash. A handoff brief, or what Auto or
-  Conductor sends an agent, that starts with `/` or `!`, or is just "exit" or
-  "quit", has its first character written full width (／, ！), so it runs no slash
-  or shell command and quits nothing, mid-turn too.
+  What Vibezeo passes an agent from somewhere else can't make Claude Code read
+  a file on your computer: a worktree's diff and a second opinion's words, in
+  the review you send or for the second opinion itself, a pull request's
+  review comments, a failed check's log, Warn both agents' note, a teammate's
+  mail, the terminal selection, clipboard, file name or branch name in a
+  prompt, a branch's name in a review you send back, a web page's elements,
+  the turn a teammate learns from, a teammate's briefing for an ACP agent, a
+  handoff brief, the summary that continues work on another account, and what
+  Auto and Conductor send. Any `@` there that could name a file is written ＠,
+  and the message says so. Characters nobody can see, and any that Claude Code
+  or typing would drop, go first, so they can't hide a word or a command. A
+  paste marker such as [Pasted text #1] can't stand in for something you
+  pasted, words such as ultrathink get a hyphen, and a word such as /release
+  or /apps/web:release, which could run one of your skills, gets a full-width
+  slash. A handoff brief, or what Auto or Conductor sends an agent, that
+  starts with `/` or `!`, or is just "exit" or "quit", has its first character
+  written full width (／, ！), so it runs no slash or shell command and quits
+  nothing, mid-turn too. What Conductor types in parts, without Enter between
+  them, can't join into such a word either.
+- [lin] **A key split by a character nobody can see is still hidden.** Vibezeo
+  hides keys and tokens before text reaches a model or leaves your computer,
+  and now also finds one that an invisible character splits, or sets apart
+  from the word before it: in what Conductor reads from panes and threads and
+  what it says, the review queue's lines, a plugin's replies and errors, a
+  teammate's brief and memory, crash reports, usage statistics and Copy
+  diagnostics. A plugin's replies now lose every key Vibezeo recognises, not
+  only the connection's own.
 
 ## 0.12.0
 

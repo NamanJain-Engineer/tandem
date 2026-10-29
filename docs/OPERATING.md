@@ -169,6 +169,10 @@ pnpm db:migrate && pnpm db:seed                             # inside with-infra,
 # order: a spec that leaves panes open closes them in an `after` hook, or the next
 # launch shows the "still running" dialog (closeAllPanes, stopLeftovers).
 
+# The E2E runner starts openbox under Xvfb (maximize, placement and window focus
+# need a window manager). With TANDEM_E2E_NO_WM=1 the window may never get focus,
+# so chats are never marked read (D-3116): no spec reads a chat's unread dot today.
+
 # Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
 bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
 sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
@@ -249,7 +253,13 @@ E2E lessons (each cost a debugging round):
   logs, marked `e2e-failed` (the runner prints the path, and
   `test-results/e2e-last-home` names it), and only the last 3 failed homes stay
   (`e2e/support/homes.ts`). `TANDEM_E2E_KEEP_HOME=1` keeps a passing run's home,
-  for a grep after the run. Homes from before this rule carry no mark and are
+  for a grep after the run. A removal that fails with ENOTEMPTY, EBUSY or EPERM
+  runs again, up to 3 times; one that still fails is a warning naming the
+  folder, and the run keeps its exit code (D-2625). The web app's dev server
+  runs with your real HOME and `NEXT_TELEMETRY_DISABLED=1`: as `next dev` exits,
+  a detached process makes Next.js's config folder in HOME, which would bring a
+  removed home back.
+  Homes from before this rule carry no mark and are
   never pruned: clearing them is the owner's call. The specs' own
   `/tmp/tandem-e2e-<spec>-<time>` folders still stay behind (about 77 MB after
   a thousand of them).

@@ -11,8 +11,6 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::redact::Redactor;
-
 pub const ALLOWLIST_JSON: &str =
     include_str!("../../../packages/protocol/telemetry-allowlist.json");
 /// Hosts the two SDK channels talk to; asserted absent from the network log
@@ -69,12 +67,12 @@ fn allowed_value(rule: &PropSpec, value: &Value) -> Option<Value> {
         (PropSpec::Kind(k), Value::Number(_)) if k == "number" => Some(value.clone()),
         (PropSpec::Kind(k), Value::Bool(_)) if k == "bool" => Some(value.clone()),
         (PropSpec::Kind(k), Value::String(s)) if k == "string" => {
-            // No paths, names or anything long enough to be content.
+            // No paths, names or anything long enough to be content, and
+            // nothing that hides a secret behind what's removable (D-3036).
             if s.len() > MAX_STRING || s.contains('/') || s.contains('\\') || s.contains('@') {
                 return None;
             }
-            let clean = Redactor::global().redact(s);
-            (clean == *s).then(|| value.clone())
+            (crate::untrusted::redacted(s) == *s).then(|| value.clone())
         }
         _ => None,
     }
@@ -204,7 +202,8 @@ impl Telemetry {
 }
 
 /// Prepares a crash report for upload: the home directory becomes `~`, every
-/// environment variable value is removed, and secrets are redacted.
+/// environment variable value is removed, and secrets are redacted as a
+/// reader past what's removable would read them (D-3036).
 pub fn scrub_crash(report: &str, home: Option<&Path>, env: &[(String, String)]) -> String {
     let mut out = report.to_string();
     // Longest values first so a value containing another is removed whole.
@@ -225,7 +224,7 @@ pub fn scrub_crash(report: &str, home: Option<&Path>, env: &[(String, String)]) 
     for v in values {
         out = out.replace(v, "[env]");
     }
-    Redactor::global().redact(&out).into_owned()
+    crate::untrusted::redacted(&out)
 }
 
 #[cfg(test)]
@@ -333,6 +332,27 @@ mod tests {
         assert!(!out.contains("/home/ana"));
         assert!(!out.contains("bluefalcon"));
         assert!(!out.contains("hunter22"));
+    }
+
+    #[test]
+    fn f_tk_08_1_a_credential_split_by_what_defang_drops_never_leaves() {
+        // A crash report or a property leaves the machine, so each reads
+        // its text as a reader past what defang drops would (D-3036).
+        let split = "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345";
+        assert_eq!(crate::redact::redact(split), split, "the redactor alone");
+        let out = scrub_crash(&format!("panicked: pushed with {split}"), None, &[]);
+        assert!(
+            !out.contains("ghp_0123456789") && !out.contains("abcdefghijABCDEFGHIJ012345"),
+            "{out:?}"
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t = Telemetry::new(dir.path(), Allowlist::bundled());
+        t.set_usage(true).expect("on");
+        assert!(t.capture(
+            "app_started",
+            &props(json!({"platform": "linux", "version": split}))
+        ));
+        assert_eq!(t.drain()[0].properties, props(json!({"platform": "linux"})));
     }
 
     #[test]

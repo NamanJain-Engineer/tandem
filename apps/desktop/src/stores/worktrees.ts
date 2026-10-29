@@ -567,13 +567,24 @@ export const CHECKS_POLL_MS = 120_000;
 /** Worktrees with no pull request, or whose checks all finished, are read
  * this rarely between Refreshes: each read is two gh calls. */
 export const CHECKS_IDLE_MS = 15 * 60_000;
+/** A push starts CI again, and gh can take a minute to list the new run:
+ * for this long after one, every poll reads the worktree's checks. */
+export const CHECKS_AFTER_PUSH_MS = 5 * 60_000;
 
 const checkedAt = new Map<string, number>();
+const pushedAt = new Map<string, number>();
 let polling = false;
 
-/** Whether a poll should read this worktree now (S6). */
-export function checksDue(c: LaneChecks | undefined, at: number | undefined, now: number): boolean {
+/** Whether a poll should read this worktree now (S6), given when it was
+ * last read and when it was last pushed. */
+export function checksDue(
+  c: LaneChecks | undefined,
+  at: number | undefined,
+  now: number,
+  pushed?: number,
+): boolean {
   if (!c || at === undefined || c.state === "error") return true;
+  if (pushed !== undefined && now - pushed < CHECKS_AFTER_PUSH_MS) return true;
   const live = c.state === "ready" && (c.checks.length === 0 || c.checks.some((x) => x.bucket === "pending"));
   return live || now - at >= CHECKS_IDLE_MS;
 }
@@ -585,7 +596,7 @@ export async function pollChecks(laneIds: string[], now = Date.now()): Promise<v
   polling = true;
   try {
     const { checks } = useWorktrees.getState();
-    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now)));
+    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now, pushedAt.get(id))));
   } finally {
     polling = false;
   }
@@ -599,6 +610,15 @@ export async function loadChecks(laneIds: string[]): Promise<void> {
     checkedAt.set(laneId, Date.now());
     if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));
   }
+}
+
+/** After a push from a worktree whose checks the rail shows: read them
+ * now, and on every poll until CI's new run is listed (F-WT-08). */
+export async function checksAfterPush(laneId: string): Promise<void> {
+  const c = useWorktrees.getState().checks[laneId];
+  if (!c || c.state === "not_allowed") return;
+  pushedAt.set(laneId, Date.now());
+  await loadChecks([laneId]);
 }
 
 /** Allows or forgets gh for the worktree's repository, then re-reads it. */

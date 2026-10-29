@@ -1154,9 +1154,10 @@ async fn doer(
     if !cancel.is_cancelled() && !output.is_empty() {
         host.act_answered();
     }
+    // The talker reads past what's removable (D-3036).
     let _ = notes.send(Note::Output {
         call_id: fc,
-        output: tandem_core::redact::redact(&output),
+        output: tandem_core::untrusted::redacted(&output),
     });
 }
 

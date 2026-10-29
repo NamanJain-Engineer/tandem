@@ -1,12 +1,12 @@
 // CI results and review comments back to the agent (F-WT-08), simulated on
 // the sample pull request (`story.json`'s `pr`). The prompts follow the
 // core's (pr_checks.rs, untrusted.rs): CI's text and a reviewer's words go
-// behind the untrusted label and a fence, with no `@` in them that names a
-// file for the agent (D-3022). Nothing here runs gh: the demo asks for it as
-// the app does, and answers from the story. drift.test.ts holds this text to
-// the core's sources.
+// behind the untrusted label and a fence, defanged by the app's `defang`
+// (rule 8, D-3023), so nothing in them names a file, a skill or a paste for
+// the agent. Nothing here runs gh: the demo asks for it as the app does, and
+// answers from the story. drift.test.ts holds this text to the core's.
 import type { ImportedComment, ImportedComments, LaneChecks, PrCheck } from "@tandem/protocol";
-import { DEFANGED } from "../features/code/untrusted";
+import { DEFANGED, defangMarked } from "../features/code/untrusted";
 import { STORY, type StoryCheck } from "./story";
 
 /** untrusted.rs `label`. */
@@ -21,36 +21,36 @@ export function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
-/** untrusted.rs `defang_mentions`: every `@` that could start a mention
- * made a full-width `＠`, since Claude Code reads a file a message names as
- * `@<path>`; one before whitespace, another `@` or the end stays. */
-export function defangMentions(text: string): string {
-  const chars = [...text];
-  return chars
-    .map((c, i) => {
-      const next = chars[i + 1];
-      return c === "@" && next !== undefined && !/\s/u.test(next) && next !== "@" ? "\uFF20" : c;
-    })
-    .join("");
+/** untrusted.rs `fence_defanged`: the text `defang` makes, fenced, with
+ * `DEFANGED` after it when `defang` wrote ＠. */
+export function fenceDefanged(lang: string, text: string): string {
+  const { text: safe, wroteAt } = defangMarked(text);
+  const fenced = fence(lang, safe);
+  return wroteAt ? `${fenced}\n${DEFANGED}` : fenced;
 }
 
-/** untrusted.rs `DEFANGED`: what follows text `defangMentions` changed. The
- * app's copy, which the shared vectors pin to the core's. */
-export { DEFANGED };
+/** The sample CI job's failed step, as gh names it in each log line. */
+const FAILED_STEP = "Run pnpm test";
+/** When that step started, for its lines' timestamps. */
+const STEP_STARTED = Date.UTC(2026, 9, 27, 9, 14, 5, 120);
 
-/** untrusted.rs `fence_defanged`: `fence`, for text a message to an engine
- * carries, with `DEFANGED` after it when an `@` was changed. */
-export function fenceDefanged(lang: string, text: string): string {
-  const safe = defangMentions(text);
-  const fenced = fence(lang, safe);
-  return safe === text ? fenced : `${fenced}\n${DEFANGED}`;
+/** The failed step's log as `gh run view --job <id> --log-failed` prints
+ * it, which the core passes on as it is (pr_checks.rs `log_tail`): each
+ * line after its job, its step and the timestamp Actions gave it. */
+export function ghLog(check: StoryCheck): string {
+  return (check.log ?? [])
+    .map((line, i) => {
+      const at = new Date(STEP_STARTED + i * 11).toISOString().replace(/Z$/, "0000Z");
+      return `${check.name}\t${FAILED_STEP}\t${at} ${line}`;
+    })
+    .join("\n");
 }
 
 /** "Send failure to agent" (pr_checks.rs `failure_prompt`): the instruction
  * is ours; the check's name, link and log are CI's. */
 export function failurePrompt(pr: number, check: StoryCheck): string {
   let ci = `Check: ${check.name}\nWorkflow: ${check.workflow}\nLink: ${check.link}`;
-  const log = (check.log ?? []).join("\n");
+  const log = ghLog(check);
   ci += log.trim()
     ? `\n\nFailed steps' log (last lines):\n${log}`
     : "\n\n(The failed steps printed nothing.)";

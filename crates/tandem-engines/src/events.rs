@@ -334,6 +334,25 @@ pub fn absolute(cwd: &std::path::Path, path: &str) -> String {
     out.to_string_lossy().into_owned()
 }
 
+/// Whether two absolute paths name one file. On a Windows path (a drive
+/// letter or a `\\` share) case and slashes don't count, as they don't on
+/// Windows; elsewhere the text is the file (F-TH-12, D-2622).
+pub fn same_file(a: &str, b: &str) -> bool {
+    if windows_path(a) && windows_path(b) {
+        let key = |p: &str| p.replace('/', "\\").to_lowercase();
+        key(a) == key(b)
+    } else {
+        a == b
+    }
+}
+
+/// A drive letter and a slash, or a `\\` share.
+fn windows_path(p: &str) -> bool {
+    let b = p.as_bytes();
+    (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/'))
+        || p.starts_with("\\\\")
+}
+
 /// `output` cut to at most [`TOOL_OUTPUT_MAX`] bytes on a char boundary, and
 /// whether it was cut.
 pub fn truncate_output(output: &str) -> (String, bool) {

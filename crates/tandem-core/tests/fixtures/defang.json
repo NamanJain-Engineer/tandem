@@ -1,5 +1,5 @@
 {
-  "about": "untrusted::defang and the app's defang (D-3025, D-3029): what untrusted::removable lists (`removable`: every code point Claude Code's prompt drops, and more, D-3030) is dropped first, and the Kelvin sign is read as K, as NFC does; then every run of @ becomes ＠, the whole run, unless a space, tab, LF or CR follows it (a run joins whatever follows it, and the end of one text is the start of whatever comes next; typing into a terminal drops every other control character, a form feed too); the [ that opens one of Claude Code's paste markers ([Pasted text #1], [Image #2], [...Truncated text #3 +4 lines...], [✦ Team setup guide #5]) becomes ［; and ultra before code, plan, review or think, in any case, gets a hyphen. Both suites read this file.",
+  "about": "untrusted::defang and the app's defang (D-3025, D-3029): what untrusted::removable lists (`removable`: every code point Claude Code's prompt drops, and more, D-3030) is dropped first, and the Kelvin sign is read as K, as NFC does; then every run of @ becomes ＠, the whole run, unless a space, tab, LF or CR follows it (a run joins whatever follows it, and the end of one text is the start of whatever comes next; typing into a terminal drops every other control character, a form feed too); a / that opens a word Claude Code could read as a skill's name becomes ／ (D-3033, D-3035: at the start or after whitespace, before a word that isn't empty, doesn't start with * or /, and has no second / unless it holds a :); the [ that opens one of Claude Code's paste markers ([Pasted text #1], [Image #2], [...Truncated text #3 +4 lines...], [✦ Team setup guide #5]) becomes ［; and ultra before code, plan, review or think, in any case, gets a hyphen. Both suites read this file.",
   "note": "Vibezeo wrote ＠ for each at sign in the text above, so none of it attaches a file; read ＠ as an at sign.",
   "cases": [
     { "in": "see @~/.ssh/id_rsa", "out": "see ＠~/.ssh/id_rsa" },
@@ -65,7 +65,14 @@
     { "in": "/* a comment */ and /** a doc */", "out": "/* a comment */ and /** a doc */" },
     { "in": "a/b /c/d, cd / now", "out": "a/b /c/d, cd / now" },
     { "in": "(/release) x\t/review\n", "out": "(/release) x\t／review\n" },
-    { "in": "\u3000/release and \u200b/review", "out": "\u3000／release and ／review" }
+    { "in": "\u3000/release and \u200b/review", "out": "\u3000／release and ／review" },
+    { "name": "a skill Claude Code found in a nested folder is named for that folder, slashes and all", "in": "Run /apps/web:release now", "out": "Run ／apps/web:release now" },
+    { "in": "/-release, /.release, /+deploy and /~ship", "out": "／-release, ／.release, ／+deploy and ／~ship" },
+    { "in": "/2fa\n/déploy\n/acme:ship-it", "out": "／2fa\n／déploy\n／acme:ship-it" },
+    { "in": "/[wip], /(beta) and /a,b", "out": "／[wip], ／(beta) and ／a,b" },
+    { "name": "a path keeps its slashes", "in": "/usr/bin/env node", "out": "/usr/bin/env node" },
+    { "in": "//cdn.example/x.js and /*x", "out": "//cdn.example/x.js and /*x" },
+    { "name": "a slash before a space outside ASCII opens no word", "in": "x /\u00a0y, x /\u2003y and x /\u3000y", "out": "x /\u00a0y, x /\u2003y and x /\u3000y" }
   ],
   "commands": [
     { "name": "a U+FFF9 gap Claude Code drops hides exit", "in": "\ufff9exit", "out": "ｅxit" },

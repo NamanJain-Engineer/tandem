@@ -31,6 +31,7 @@ import {
 } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { accountsFor, useAccounts } from "../../stores/accounts";
 import { useDashboard, type Filter } from "../../stores/dashboard";
 import { useEngines } from "../../stores/engines";
 import { useSetting } from "../../stores/settings";
@@ -125,6 +126,9 @@ function AgentCard({
   usage?: PaneUsage;
 }) {
   const showPreview = useSetting("show_status_previews", true);
+  // The card names its account only beside another of the engine's (D-2620).
+  const accounts = useAccounts((s) => accountsFor(s.list, item.engineId).length);
+  const meta = cardMeta(item, accounts);
   const logo =
     useEngines((s) => s.list.find((e) => e.spec.id === item.engineId)?.spec.logo) ?? item.engineLogo;
   const [confirm, setConfirm] = useState(false);
@@ -250,7 +254,7 @@ function AgentCard({
           />
         </span>
       </div>
-      {cardMeta(item) && <p className="truncate text-sm text-fg-muted">{cardMeta(item)}</p>}
+      {meta && <p className="truncate text-sm text-fg-muted">{meta}</p>}
       {usage && (
         // F-EX-06: the pane's CPU and memory, while it's live here.
         <p className="truncate text-sm tabular-nums text-fg-muted" data-testid="agent-card-usage">
@@ -394,6 +398,12 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   useEffect(() => {
     if (!loaded) void useDashboard.getState().load();
   }, [loaded]);
+  // Which engines have more than one account, for the cards' meta line:
+  // read once the Dashboard shows, not while the sidebar hides it.
+  const accountsLoaded = useAccounts((s) => s.loaded);
+  useEffect(() => {
+    if (onScreen && !accountsLoaded) void useAccounts.getState().load();
+  }, [onScreen, accountsLoaded]);
 
   const all = useMemo(() => Object.values(items), [items]);
   const titles = useMemo(() => {

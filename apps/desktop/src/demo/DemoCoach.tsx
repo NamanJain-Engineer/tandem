@@ -39,13 +39,13 @@ const HINTS: { id: HintId; spots: Spot[] }[] = [
         anchor: `[data-testid="worktree-row"][data-branch="${DEMO_WAITING.branch}"]`,
         side: "bottom",
         align: "start",
-        text: () => t("demo.coach.waiting", { engine: DEMO_WAITING.engine }),
+        text: () => t("demo.coach.waiting", { name: DEMO_WAITING.name }),
       },
       // Its repository's row while the repository is folded or the rail collapsed.
       {
         anchor: `[data-testid="workspace-row"][data-root="${DEMO_WAITING.repoRoot}"]`,
         side: "right",
-        text: () => t("demo.coach.waiting", { engine: DEMO_WAITING.engine }),
+        text: () => t("demo.coach.waiting", { name: DEMO_WAITING.name }),
       },
     ],
   },

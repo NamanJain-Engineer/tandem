@@ -12,9 +12,16 @@ export function cardTitle(item: DashboardItem, titlePatterns: string[] = []): st
   return name || work || item.engineLabel || item.engineId || "Agent";
 }
 
-/** "Claude Code · shop · tandem/fix-auth · Work", leaving out what's unknown. */
-export function cardMeta(item: DashboardItem): string {
-  return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel]
+/** "Claude Code · shop · tandem/fix-auth · Work", leaving out what's
+ * unknown. The account shows only beside another of the same engine's
+ * (`accounts` is how many it has): alone, "Default" says nothing (D-2620). */
+export function cardMeta(item: DashboardItem, accounts: number): string {
+  return [
+    item.engineLabel ?? item.engineId,
+    item.workspace,
+    item.branch,
+    accounts > 1 ? item.accountLabel : null,
+  ]
     .filter(Boolean)
     .join(" · ");
 }

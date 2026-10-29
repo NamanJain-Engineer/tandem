@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
+import { useAccounts } from "../../stores/accounts";
 import { followDashboard, useDashboard } from "../../stores/dashboard";
 import { useSettings } from "../../stores/settings";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { Dashboard } from "./Dashboard";
-import { cardTitle, closeIdleTargets, group, matches } from "./model";
+import { cardMeta, cardTitle, closeIdleTargets, group, matches } from "./model";
 import { waiting } from "../../test/waiting";
 
 let n = 0;
@@ -260,6 +261,38 @@ describe("Dashboard (F-DB-01)", () => {
     expect(screen.getByTestId("dashboard-subtitle").textContent).toContain("1 done");
   });
 
+  it("F-DB-01 D-2627 a status change draws the card's line as dashboard.rs does: the preview, else the tool", async () => {
+    // Loaded while Claude Code runs Edit: dashboard.rs's line is the tool.
+    const card = item("working", "build", { preview: "Edit" });
+    setup([card]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    followDashboard();
+    const line = () => screen.queryByTestId("agent-card-preview")?.textContent ?? null;
+    const change = (status: AgentStatus, tool: string | null, preview: string | null = null) =>
+      act(() =>
+        emitLocal("status:changed", {
+          records: [
+            { key: card.key, status, reason: null, since: Date.now(), ts: 2, tool, title: "build", preview },
+          ],
+          removed: [],
+        }),
+      );
+    expect(line()).toBe("Edit");
+    change("working", "Bash");
+    expect(line()).toBe("Bash");
+    // Its Stop names no tool: no line, not the last tool's.
+    change("done", null);
+    expect(line()).toBeNull();
+    // A record's preview comes before its tool.
+    change("working", "Read", "Reading the logs");
+    expect(line()).toBe("Reading the logs");
+  });
+
   it("empty and filter-empty states", async () => {
     setup([]);
     const { unmount } = render(
@@ -285,6 +318,102 @@ describe("Dashboard (F-DB-01)", () => {
 });
 
 describe("Dashboard model", () => {
+  it("F-DB-01 D-2620 a card names its account only when its engine has more than one", () => {
+    const i = item("working", "Stack coupons by priority", {
+      engineId: "codex",
+      engineLabel: "Codex",
+      workspace: "coupon-rules",
+      branch: "tandem/coupon-rules",
+      accountLabel: "Default",
+    });
+    expect(cardMeta(i, 1)).toBe("Codex · coupon-rules · tandem/coupon-rules");
+    expect(cardMeta(i, 0)).toBe("Codex · coupon-rules · tandem/coupon-rules");
+    expect(cardMeta({ ...i, accountLabel: "Work" }, 2)).toBe(
+      "Codex · coupon-rules · tandem/coupon-rules · Work",
+    );
+  });
+
+  it("F-DB-01 D-2620 the cards read the engines' accounts: Default alone is left out", async () => {
+    const one = item("working", "Stack coupons by priority", {
+      engineId: "codex",
+      engineLabel: "Codex",
+      accountLabel: "Default",
+    });
+    const two = item("working", "Fix the auth guard", { accountLabel: "Work" });
+    fakeBackend({
+      status_snapshot: () => [one, two],
+      accounts_list: () => [
+        {
+          id: "a1",
+          engineId: "codex",
+          label: "Default",
+          homePath: "/p/1",
+          isDefault: true,
+          planLabel: null,
+          createdAt: 0,
+        },
+        {
+          id: "a2",
+          engineId: "claude",
+          label: "Work",
+          homePath: "/p/2",
+          isDefault: true,
+          planLabel: null,
+          createdAt: 0,
+        },
+        {
+          id: "a3",
+          engineId: "claude",
+          label: "Personal",
+          homePath: "/p/3",
+          isDefault: false,
+          planLabel: null,
+          createdAt: 0,
+        },
+      ],
+      accounts_overrides: () => [],
+    });
+    useDashboard.setState({ items: { [one.key]: one, [two.key]: two } });
+    // The cards before these loaded no accounts: read them afresh.
+    useAccounts.setState({ list: [], overrides: [], loaded: false, failed: false, signIn: {} });
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("Claude Code · shop · Work")).toBeTruthy());
+    expect(screen.getByText("Codex · shop")).toBeTruthy();
+    expect(screen.queryByText(/Default/)).toBeNull();
+  });
+
+  it("F-DB-01 D-2620 a Dashboard that isn't on screen reads no accounts; shown, it reads them once", async () => {
+    // A hidden sidebar costs no read, and keeps no list that can go stale
+    // before anything shows it (E2E-M16-5 adds an account behind the app's back).
+    let reads = 0;
+    fakeBackend({
+      status_snapshot: () => [],
+      accounts_list: () => {
+        reads += 1;
+        return [];
+      },
+      accounts_overrides: () => [],
+    });
+    useAccounts.setState({ list: [], overrides: [], loaded: false, failed: false, signIn: {} });
+    const view = render(
+      <UiProvider>
+        <Dashboard onScreen={false} />
+      </UiProvider>,
+    );
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(reads).toBe(0);
+    view.rerender(
+      <UiProvider>
+        <Dashboard onScreen />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(reads).toBe(1));
+  });
+
   it("search is AND over the fields, case- and accent-insensitive", () => {
     const i = item("idle", "✳ Fix the auth guard", { humanName: "Zoë", branch: "tandem/fix-auth" });
     expect(cardTitle(i)).toBe("Zoë · Fix the auth guard");

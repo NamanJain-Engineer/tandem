@@ -5,6 +5,7 @@
 // comes from the in-app demo's story.json (D-1899, D-2609).
 import en from "../../desktop/src/i18n/en.json";
 import story from "../../desktop/src/demo/story.json";
+import { askLine, branchOf, toolOf, worktreeIn, type StoryStep } from "../../desktop/src/demo/story";
 import { DEFANGED, defangMarked } from "../../desktop/src/features/code/untrusted";
 import { RELEASE } from "./release";
 
@@ -38,6 +39,11 @@ export const SINCE_START = 42;
  * the radar out (D-2704). It comes back with 0.13.0's mark, an icon beside a
  * status (D-2613), and the rail's folding (D-2701). */
 export const RADAR = atLeast(SCENE_BUILD, "0.13.0");
+/** Whether a push reads the pushed worktree's checks (D-2619): from 0.13.0 a
+ * successful push reads them at once and on every poll for five minutes, so
+ * the row turns to Checks running by itself. 0.12.0's push read nothing, so
+ * the CI scene opens them again after it (D-128). */
+export const PUSH_READS = atLeast(SCENE_BUILD, "0.13.0");
 
 /** One of the app's strings, with its `{name}` values and simple plurals
  * (`{n, plural, one {# file} other {# files}}`) filled in. Throws on a key
@@ -146,10 +152,11 @@ export function failurePrompt(pr: number, check: { name: string; workflow?: stri
 
 /** What a worktree did to a symbol (tandem-git's SymbolChange), as the
  * radar's note says it. */
-/** A worktree's branch, as the core names it (`tandem/<slug>`). The scenes
- * show the name for it (D-1898), but text the core writes, such as the
- * radar's note, names the branch whole (radar.rs passes `lane_branch`). */
-export const branchOf = (slug: string) => `tandem/${slug}`;
+/** A worktree's branch, as the core names it (`tandem/<slug>`), the demo's
+ * branchOf. The scenes show the name for it (D-1898), but text the core
+ * writes, such as the radar's note, names the branch whole (radar.rs passes
+ * `lane_branch`). */
+export { branchOf };
 
 const CHANGED = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" } as const;
 export type SymbolChange = keyof typeof CHANGED;
@@ -166,7 +173,7 @@ export function radarNote(other: string, symbols: ReadonlyArray<{ qualified: str
 
 /** One thing an agent did, as story.json says it: read a file, edit one
  * (lines added and removed), or run a command (and the tests that passed). */
-type Step = { read: string } | { edit: string; add: number; del: number } | { run: string; passed?: number };
+type Step = StoryStep;
 type Edit = Extract<Step, { edit: string }>;
 
 /** The engines whose hooks name the tool an agent is using, by registry
@@ -174,16 +181,16 @@ type Edit = Extract<Step, { edit: string }>;
  * claude_report). The notify hook names none, and an engine with no hooks
  * is read by its patterns, which name none either. A Dashboard card's line
  * is a pane's tool, so only these engines' agents have one, and only while
- * they work (D-3003). */
-export const NAMES_TOOLS: ReadonlySet<string> = new Set(["claude"]);
+ * they work (D-3003). The demo's story says which, as the registry does. */
+export const NAMES_TOOLS: ReadonlySet<string> = new Set(
+  Object.entries(story.engines)
+    .filter(([, e]) => e.hooksSupport === "claude-hooks")
+    .map(([id]) => id),
+);
 
 /** The tool those hooks name for a step: Read, Edit, or Bash for a
- * command. */
-export function hookTool(step: Step): string {
-  if ("read" in step) return "Read";
-  if ("edit" in step) return "Edit";
-  return "Bash";
-}
+ * command (the demo's toolOf, one copy for both). */
+export const hookTool = (step: Step): string => toolOf(step);
 type EngineId = keyof typeof story.engines;
 
 /** The first eight words of a prompt: how the app titles an agent's pane
@@ -227,14 +234,6 @@ function terminal(w: { task: string; steps: readonly Step[] }): string[] {
 const finished = worktree("done");
 const working = worktree("working");
 const waiting = worktree("waiting");
-/** How an engine asks in its terminal to run a command, in its own words,
- * which its waitingPatterns match (a test checks): only the story's waiting
- * engine's is needed. */
-const ASKS: Partial<Record<EngineId, (command: string) => string>> = {
-  gemini: (command) => `Allow execution of: '${command}'?`,
-};
-const asks = ASKS[waiting.engine as EngineId];
-if (!asks) throw new Error(`scenes: no question for ${waiting.engine}, the story's waiting engine`);
 const edits = finished.steps.filter((s): s is Edit => "edit" in s);
 const label = (engine: string) => {
   const e = story.engines[engine as EngineId];
@@ -298,13 +297,13 @@ export const SAMPLE = {
     shell: [`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)],
   },
   /** The command the waiting agent asks to run, and how its engine asks: in
-   * its own terminal and its own words (`ASKS`), which its waitingPatterns
+   * its own terminal and its own words (the demo's askLine), which its waitingPatterns
    * match, so the app shows the agent waiting. It's the engine's prompt, not
    * a Vibezeo approval, so nothing in the app answers it in place (D-3001).
    * A waiting found by a pattern carries no preview, so the Dashboard card
    * has no line (D-3002). */
   ask: waiting.ask ?? "",
-  question: { terminal: asks(waiting.ask ?? "") },
+  question: { terminal: askLine(worktreeIn("waiting")) },
   /** The finished worktree's diff: the sum of its agent's edits, and the
    * files it edited, in order. */
   diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },

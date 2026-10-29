@@ -391,11 +391,13 @@ function ThreadView({
   const [login, setLogin] = useState<LoginRequest | null>(null);
 
   const previous = useRef<Row[]>([]);
+  // A diff's paths are relative to the thread's folder (D-2608).
+  const cwd = loaded?.cwd ?? null;
   const rows = useMemo(() => {
-    const next = reuseRows(previous.current, live ? toRows(live.view) : []);
+    const next = reuseRows(previous.current, live ? toRows(live.view, cwd) : []);
     previous.current = next;
     return next;
-  }, [live]);
+  }, [live, cwd]);
   const usage = useMemo(() => {
     const turns = new Map((live?.detail?.turns ?? []).map((t) => [t.id, t.engineId]));
     return live

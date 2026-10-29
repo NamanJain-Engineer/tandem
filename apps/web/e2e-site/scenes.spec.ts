@@ -388,14 +388,14 @@ test("F-WB-01 AC9 D-3001 the CI scene's rules load only on the page that plays i
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="checks"] .sc-ci-layer') as Element).position)).toBe("absolute");
 });
 
-test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
+test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 with changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.12.0/");
   const scene = page.locator('[data-scene="plan"]');
   await scene.scrollIntoViewIfNeeded();
   await expect.poll(() => states(page, "plan"), { timeout: 20_000 }).toEqual(["finished"]);
   const shown = (selector: string) => shownIn(scene, selector);
-  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 changes requested"]);
+  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 with changes requested"]);
   expect(await shown(".sc-plan-foot > .sc-swap:last-child > *")).toEqual(["Land 2 approved…"]);
 });
 

@@ -395,6 +395,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("settings_set", { key: "thread_defaults", value: {} });
   // Every spec starts with the default shortcuts (F-SH-09 rebinding).
   await invoke("settings_set", { key: "shortcut_overrides", value: {} });
+  // And with the rail at its default width (F-SH-03; E2E-M18-WT08-1 narrows it).
+  await invoke("settings_set", { key: "rail_width", value: 248 });
   await invoke("sidebar_save", {
     sidebar: {
       open: false,

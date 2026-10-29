@@ -77,6 +77,55 @@ describe("untrusted text for an agent (D-3023)", () => {
     EVERY_CODE_POINT_MS,
   );
 
+  it(
+    "F-TK-08.1 writes a full-width slash before every code point but a space, * or /",
+    () => {
+      // What follows a `/` decides whether it opens a skill's name (D-3035).
+      // The spaces are the core's too: JavaScript's \s and Rust's whitespace
+      // agree once what's removable is gone, so a space outside ASCII opens no
+      // word in either. Each "x /<c>y" ends its word at the line break that
+      // joins it to the next, so a chunk is one call.
+      const spaces: Ranges = [
+        [0x09, 0x0a],
+        [0x0d, 0x0d],
+        [0x20, 0x20],
+        [0xa0, 0xa0],
+        [0x1680, 0x1680],
+        [0x2000, 0x200a],
+        [0x202f, 0x202f],
+        [0x205f, 0x205f],
+        [0x3000, 0x3000],
+      ];
+      const want = (cp: number, c: string) => {
+        if (within(spaces, cp) || c === "*" || c === "/") return `x /${c}y`;
+        const rest = removable(cp) ? "" : c === "@" ? "\uFF20" : cp === 0x212a ? "K" : c;
+        return `x \uFF0F${rest}y`;
+      };
+      for (let from = 0; from <= 0x10ffff; from += 0x1000) {
+        const cps: number[] = [];
+        for (let cp = from; cp < from + 0x1000 && cp <= 0x10ffff; cp++) {
+          if (cp < 0xd800 || cp > 0xdfff) cps.push(cp);
+        }
+        for (const cp of cps) {
+          const c = String.fromCodePoint(cp);
+          if (within(spaces, cp) !== (/\s/u.test(c) && !removable(cp))) {
+            throw new Error(`U+${cp.toString(16).toUpperCase()} is a space to one of them only`);
+          }
+        }
+        const input = cps.map((cp) => `x /${String.fromCodePoint(cp)}y`).join("\n");
+        if (defang(input) === cps.map((cp) => want(cp, String.fromCodePoint(cp))).join("\n")) continue;
+        for (const cp of cps) {
+          const c = String.fromCodePoint(cp);
+          const got = defang(`x /${c}y`);
+          if (got !== want(cp, c))
+            throw new Error(`U+${cp.toString(16).toUpperCase()} gave ${JSON.stringify(got)}`);
+        }
+        throw new Error(`the chunk from U+${from.toString(16).toUpperCase()} differs only when joined`);
+      }
+    },
+    EVERY_CODE_POINT_MS,
+  );
+
   it("F-WT-02.1 notes only an at sign it wrote", () => {
     expect(defangMarked("ultraplan [Image #1]")).toEqual({
       text: "ultra-plan \uFF3BImage #1]",

@@ -16,7 +16,7 @@ import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/release
 import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE } from "../lib/release";
-import { DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, RADAR, SAMPLE, SCENE_BUILD, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
+import { DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, SAMPLE, SCENE_BUILD, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
@@ -326,7 +326,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
     expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => ["queued", "running", "reviewing", "in_review"]));
     expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
-    // It ends on 2 approved · 1 changes requested, with Land 2 approved…
+    // It ends on 2 approved · 1 with changes requested, with Land 2 approved…
     // primary and Close ghost (PlanWithLead's started footer).
     const end = planAt(Infinity);
     expect(end.summary).toBe(`${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`);
@@ -540,10 +540,11 @@ describe("F-WB-01 AC9 product scenes", () => {
     for (const f of ["scenes.css", "ci.css", "home.css"]) expect(sheet(f).match(/container-type/g)?.length ?? 0, f).toBe(f === "scenes.css" ? 1 : 0);
   });
 
-  it("F-WB-01 D-3005 the site imports only these of the app's files: its words, the demo's story and the core's defang", () => {
-    // Each is pure data or a pure function that imports nothing, so the site's build takes nothing else of the app, and
-    // each is held to its source by tests: en.json's words by t(), story.json by the scenes' tests and the demo's,
-    // untrusted.ts by the core's defang.json (the code review of cced2f8f, nit 5). The tests may read any app file.
+  it("F-WB-01 D-3005 the site imports only these of the app's files: its words, the demo's story and its helpers, and the core's defang", () => {
+    // Each is pure data or a pure function that imports nothing but the story, so the site's build takes nothing else
+    // of the app, and each is held to its source by tests: en.json's words by t(), story.json and story.ts by the
+    // scenes' tests and the demo's (the question, a step's tool and a branch, one copy for both), untrusted.ts by the
+    // core's defang.json (the code review of cced2f8f, nit 5). The tests may read any app file.
     const web = join(import.meta.dirname, "..");
     const desktop = join(web, "../desktop");
     const own = (dir: string): string[] =>
@@ -562,7 +563,8 @@ describe("F-WB-01 AC9 product scenes", () => {
         const to = resolve(dirname(f), m[1] ?? "");
         if (to.startsWith(desktop)) reached.add(relative(desktop, to));
       }
-    expect([...reached].sort()).toEqual(["src/demo/story.json", "src/features/code/untrusted", "src/i18n/en.json"]);
+    expect([...reached].sort()).toEqual(["src/demo/story", "src/demo/story.json", "src/features/code/untrusted", "src/i18n/en.json"]);
+    expect(readFileSync(join(desktop, "src/demo/story.ts"), "utf8").match(/^import .*$/gm)).toEqual(['import story from "./story.json";']);
     expect(readFileSync(join(desktop, "src/features/code/untrusted.ts"), "utf8")).not.toMatch(/^\s*(?:import|export [^\n]* from)\b/m);
     // Nor do the tests feed the site's stylesheet: they name the app's classes to check them (size-7, border-waiting,
     // bg-info…), and Tailwind made a rule for each on every page until globals.css kept them out of its scan.
@@ -817,7 +819,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     // Its panes, none (every pane the demo opens is in a worktree), then its worktrees, in the story's order.
     const code = readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/CodeRail.tsx"), "utf8");
     expect(code).toMatch(/<WorkspaceSessions ws=\{ws\} \/>\s*\{worktreesOf\(list, ws\.id\)\.map\(\(wt\) => \(\s*<WorktreeRow/);
-    expect(code).toContain("if (s.waiting || s.working > 0 || s.failed) return null;");
+    // The branch shows only while the row shows no status: the slot wins the room (D-2603).
+    expect(code).toContain("{beside ? null : isMultiRepo(ws) ? (");
+    expect(readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/workspaceStatus.ts"), "utf8")).toContain("return s.waiting || s.working > 0 || s.failed;");
     const backend = readFileSync(join(import.meta.dirname, "../../desktop/src/demo/backend.ts"), "utf8");
     expect(backend).toContain("...STORY.worktrees.map((w) => pane(agentPane(w), \"agent\", w.engine, w.slug, w.agentName)),");
     expect(backend).toContain('pane("pn_shell", "terminal", null, WORKING.slug),');
@@ -947,7 +951,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     // Each card: its title (cardTitle: the first name and the work), then cardMeta: the engine and the worktree's own
     // workspace, whose tandem/ branch the site shows as the name, so once (D-1898). The story gives no account.
     const model = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/model.ts"), "utf8");
-    expect(model).toContain("return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel]");
+    // The account shows only beside another of the engine's (D-2620), and the story gives none.
+    expect(model).toMatch(/export function cardMeta\(item: DashboardItem, accounts: number\): string \{\s*return \[\s*item\.engineLabel \?\? item\.engineId,\s*item\.workspace,\s*item\.branch,\s*accounts > 1 \? item\.accountLabel : null,\s*\]/);
     for (const w of SAMPLE.order)
       expect(h, w.branch).toMatch(
         new RegExp(`<span class="sc-card-title">${re(esc(cardTitle(w)))}</span><span class="sc-card-state">[\\s\\S]*?</span><span class="sc-card-menu"></span></span><span class="sc-card-meta">${re(esc(`${w.engine} · ${w.branch}`))}</span>`),
@@ -1010,7 +1015,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(dashboard).toContain('return m < 60 ? t("time.minutes", { n: m })');
     const backend = app("demo/backend.ts");
     expect(backend).toContain(`const START = Date.now() - ${SINCE_START} * 60_000;`);
-    expect(backend).toMatch(/this\.status\[paneId\] = \{ \.\.\.s, status, preview \};\s*this\.since\[paneId\] = Date\.now\(\);/);
+    expect(backend).toMatch(/this\.status\[paneId\] = \{ \.\.\.s, status, tool \};\s*this\.since\[paneId\] = Date\.now\(\);/);
     expect([cardState("working", SINCE_START), cardState("waiting", 0), cardState("done", 0)]).toEqual(["Working · 42m", "Waiting for you · 0m", "Done · 0m"]);
     // In the scene: each card's title row is its dot, its tile and its title, then its state and its menu's room; the one
     // that asks and the one that finishes change their states then, and the other keeps its own.
@@ -1683,9 +1688,12 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     // (the design lead's must-fix on cced2f8f). The radar comes back with 0.13.0's icon mark (D-2613) and the rail's
     // folding (D-2701), in the 0.13.0 slice.
     expect(RADAR).toBe(atLeast(RELEASE.version, "0.13.0"));
+    // 0.12.0's CodeRail (297d1238) clamps the rail to 180–360 px. The tree's measures its minimum from 0.13.0 (D-2701,
+    // D-2703), up to the same 360.
     const codeRail = readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/CodeRail.tsx"), "utf8");
-    const [min, max] = ["RAIL_MIN", "RAIL_MAX"].map((k) => Number(new RegExp(`export const ${k} = (\\d+);`).exec(codeRail)?.[1]));
-    expect([min, max]).toEqual([180, 360]);
+    const [min, max] = [180, 360];
+    expect(codeRail).toContain(`export const RAIL_MAX = ${max};`);
+    expect(codeRail).toContain("export const RAIL_MIN = railMin(PARTS, []);");
     const width = Number(/\.sc-code \{[^}]*grid-template-columns: calc\((\d+) \* var\(--sc-px\)\)/.exec(sheet("home.css"))?.[1]);
     expect(width).toBeGreaterThanOrEqual(min ?? NaN);
     expect(width).toBeLessThanOrEqual(max ?? NaN);
@@ -1845,10 +1853,12 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(h).not.toContain("tandem/");
   });
 
-  it("F-WB-01 AC9 D-3001 a push reads no checks: opening them again does, Refresh spinning, and the new run is Running until a later read passes it", () => {
+  it("F-WB-01 AC9 D-3001 D-2619 0.12.0's push read no checks: opening them again does, Refresh spinning, and the new run is Running until a later read passes it", () => {
     // The app: the dialog reads as it opens, and its Refresh (secondary) shows its spinner while it does; finished checks
-    // are read every 15 minutes and running ones every 2 with the window in front; and nothing else reads them, a push
-    // included (the coordinator's must-fix on 54a05e0d). When a push reads them, this test fails and the scene changes.
+    // are read every 15 minutes and running ones every 2 with the window in front. In 0.12.0 nothing else read them, a
+    // push included (the coordinator's must-fix on 54a05e0d). The tree's push reads them (D-2619, from 0.13.0), so a new
+    // reader still fails this test, and the 0.13.0 slice draws the push reading them.
+    expect(PUSH_READS).toBe(atLeast(RELEASE.version, "0.13.0"));
     const src = join(import.meta.dirname, "../../desktop/src");
     const app = (f: string) => readFileSync(join(src, f), "utf8");
     const dialog = app("features/code/PullRequestChecks.tsx");
@@ -1860,7 +1870,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     // the dialog's Refresh and its Allow, and the rail's polling, every two minutes while the window has focus and only
     // while the rail is open. The browser demo isn't the app: its harness (demo/main.tsx) reads when its simulated core
     // says they changed. When a new caller reads them, a push's included, this fails and the scene is checked again.
-    expect(useSites(["loadChecks", "openChecks", "pollChecks", "allowChecks", "useChecksPolling"])).toEqual([
+    expect(useSites(["loadChecks", "openChecks", "pollChecks", "allowChecks", "useChecksPolling", "checksAfterPush"])).toEqual([
       "features/code/CodeRail.tsx: useChecksPolling in CodeRail",
       "features/code/PullRequestChecks.tsx: allowChecks in AllowChecksDialog › allow",
       "features/code/PullRequestChecks.tsx: loadChecks in ChecksDialog › refresh",
@@ -1869,7 +1879,9 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
       "features/code/Worktrees.tsx: allowChecks in singleRepoMenu › wt-checks-forget.onSelect",
       "features/code/Worktrees.tsx: loadChecks in singleRepoMenu › wt-checks-refresh.onSelect",
       "features/code/Worktrees.tsx: openChecks in singleRepoMenu › wt-checks.onSelect",
+      "stores/git.ts: checksAfterPush in useGit › push",
       "stores/worktrees.ts: loadChecks in allowChecks",
+      "stores/worktrees.ts: loadChecks in checksAfterPush",
       "stores/worktrees.ts: loadChecks in openChecks",
       "stores/worktrees.ts: loadChecks in pollChecks",
     ]);
@@ -1887,10 +1899,12 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(propertySites("checks")).toEqual(["stores/worktrees.ts: checks in loadChecks", "stores/worktrees.ts: checks in useWorktrees"]);
     expect(store).toContain("if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));");
     expect(store).toMatch(/useWorktrees = create<WorktreesState>\(\(set, get\) => \(\{[\s\S]*?\n {2}checks: \{\},/);
-    // The push is git's alone: it reads nothing of the checks.
+    // The tree's push reads them once it has pushed (D-2619), 0.12.0's didn't: the scene shows 0.12.0's until the 0.13.0
+    // slice, and this fails once 0.13.0 ships, until it does.
     const git = app("stores/git.ts");
-    expect(git).toContain('push: (context, publish = false) =>\n      act(context, "push", () => invoke("git_push", { context, publish }, { timeoutMs: NETWORK_TIMEOUT_MS })),');
-    expect(git).not.toMatch(/checks/i);
+    expect(git).toContain('if (!err && context.type === "workspace") void checksAfterPush(context.workspaceId);');
+    expect(store).toContain("export const CHECKS_AFTER_PUSH_MS = 5 * 60_000;");
+    expect(PUSH_READS, "the CI scene's push waits for the 0.13.0 slice (D-2619)").toBe(false);
     // In the scene: once pushed, the row's badge is pressed again, and the dialog rises again.
     const r = (n: number) => Math.round(n * 100) / 100;
     expect(CI_T.reopen).toBeGreaterThan(CI_T.pushed);

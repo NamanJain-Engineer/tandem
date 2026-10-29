@@ -71,12 +71,14 @@ const PASTE_MARKER = /\[(?=(?:Pasted text|Image|\.\.\.Truncated text|\u2726 Team
 const ULTRA_WORD = /(ultra)(?=code|plan|review|think)/gi;
 
 /** A `/` that opens a word Claude Code could read as a skill's name, which
- * its Skill tool takes as typed by you (`(?<!\S)/name(?=$|\s)`, D-3033): the
- * word runs to the next whitespace with no second `/` (a skill's name is a
- * folder's, so a path keeps its slashes) and starts with a letter, a digit,
- * `_` or anything outside ASCII. Written without lookbehind, which older
- * WebKitGTK lacks. */
-const SKILL_WORD = /(^|\s)\/(?=(?:[A-Za-z0-9_]|\P{ASCII})[^\s/]*(?!\S))/gu;
+ * its Skill tool takes as typed by you (`(?<!\S)/name(?=$|\s)`, D-3033,
+ * D-3035). A skill's name is its folder's, which can start with any character
+ * a name can hold, or `<folder>:<name>` for one found in a nested folder, whose
+ * path has slashes. So the `/` opens a word when the word after it, up to the
+ * next whitespace, isn't empty, doesn't start with `*` or `/` (a comment,
+ * `//`), and has no second `/` unless it holds a `:`: a path keeps its
+ * slashes. Written without lookbehind, which older WebKitGTK lacks. */
+const SKILL_WORD = /(^|\s)\/(?=(?![*/])(?:[^\s/]+|\S*:\S*)(?!\S))/gu;
 
 /** `defang`, and whether it wrote ＠, which `DEFANGED` explains. */
 export function defangMarked(text: string): { text: string; wroteAt: boolean } {

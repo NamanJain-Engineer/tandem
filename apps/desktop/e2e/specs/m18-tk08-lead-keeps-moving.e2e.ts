@@ -226,7 +226,15 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     await needs.$('[data-testid="plan-answer-open"]').click();
     await needs.$('[data-testid="plan-answer-text"]').setValue("Don't push; I'll push it myself.");
     await needs.$('[data-testid="plan-answer-send"]').click();
-    await $('[data-testid="plan-run-needs-you"]').waitForExist({ reverse: true, timeout: 15_000 });
+    // The row goes as the plan re-renders, and WebKit's driver can answer a
+    // find made while it goes with a stale element: read the DOM instead.
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => !document.querySelector('[data-testid="plan-run-needs-you"]'),
+        ) as Promise<boolean>,
+      { timeout: 15_000, timeoutMsg: "Needs you stayed after your answer was sent" },
+    );
     await browser.waitUntil(async () => (await runOf(pushing)).attempt.state === "in_review", {
       timeout: 120_000,
       timeoutMsg: "the run you answered didn't go on to review",

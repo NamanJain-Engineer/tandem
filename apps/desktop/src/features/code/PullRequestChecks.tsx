@@ -12,7 +12,6 @@ import {
   useWorktrees,
 } from "../../stores/worktrees";
 import { SendToAgent } from "./SendToAgent";
-import { useWorkspaceStatus } from "./workspaceStatus";
 
 /** F-WT-08: polls the worktrees' checks every 2 minutes while `active` and
  * the window is focused (see `pollChecks` for which), and once on start. */
@@ -57,14 +56,21 @@ const BADGE_WORDS = {
  * working", "Needs you", "Failed"), or when the row folds it, it's the icon
  * alone (D-2613, D-2614). Its name starts with its words and says which
  * checks failed (WCAG 2.5.3); its title is the checks' summary. */
-export function ChecksBadge({ wt, fold = false }: { wt: WorkspaceSummary; fold?: boolean }) {
+export function ChecksBadge({
+  wt,
+  beside,
+  fold = false,
+}: {
+  wt: WorkspaceSummary;
+  beside: boolean;
+  fold?: boolean;
+}) {
   const checks = useWorktrees((s) => s.checks[wt.id]);
-  const status = useWorkspaceStatus(wt);
   if (checks?.state !== "ready" || !checks.pr || checks.checks.length === 0) return null;
   const failed = failedOf(checks);
   const open = () => useWorktrees.getState().open({ kind: "checks", worktreeId: wt.id });
   const state = checksState(checks.checks);
-  const compact = fold || status.waiting || status.working > 0 || status.failed;
+  const compact = fold || beside;
   const words = t(BADGE_WORDS[state]);
   const summary =
     state === "failed"

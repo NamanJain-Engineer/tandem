@@ -1209,7 +1209,6 @@ impl QueueHost for AppHost {
     }
 
     async fn closing(&self, key: &str, _s: &Session) -> Option<String> {
-        use tandem_core::redact::Redactor;
         let state = self.state();
         let text = if let Some(id) = key.strip_prefix("thread:") {
             crate::services::second_opinion::last_reply(
@@ -1227,8 +1226,7 @@ impl QueueHost for AppHost {
                 .collect();
             lines[lines.len().saturating_sub(3)..].join("\n")
         };
-        let text = Redactor::global().redact(&text).into_owned();
-        (!text.trim().is_empty()).then_some(text)
+        closing_text(&text)
     }
 
     async fn turn_checkpoint(&self, key: &str, s: &Session) -> Option<String> {
@@ -1262,15 +1260,27 @@ impl QueueHost for AppHost {
         // F-EX-06: with "one check at a time" on, it waits for its turn.
         let _turn = crate::services::check_queue::turn().await;
         let (exit, out) = bestof::run_check(command, cwd, &env, CHECK_LIMIT, None).await;
-        let out = tandem_core::redact::Redactor::global()
-            .redact(&bestof::tail(&out, bestof::TAIL_LINES))
-            .into_owned();
-        (exit, out)
+        (exit, check_output(&out))
     }
 
     fn now(&self) -> i64 {
         self.state().clock.now_ms()
     }
+}
+
+/// A review item's closing lines, as Conductor and the phone read them out,
+/// redacted as written and past what's removable, as Conductor's model
+/// reads them (D-3036): `None` when nothing is left.
+fn closing_text(text: &str) -> Option<String> {
+    let text = tandem_core::untrusted::redacted(text);
+    (!text.trim().is_empty()).then_some(text)
+}
+
+/// A check's output as a review item keeps it: its last lines, redacted the
+/// same way (D-3036).
+fn check_output(out: &str) -> String {
+    use crate::services::bestof;
+    tandem_core::untrusted::redacted(&bestof::tail(out, bestof::TAIL_LINES))
 }
 
 /// Builds the queue, seeds it from the status bus and follows it.
@@ -1793,6 +1803,27 @@ mod tests {
                 tandem_core::untrusted::DEFANGED
             )
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_closing_lines_and_check_output_hide_a_credential_behind_what_is_removable() {
+        // Both are read out to Conductor's model, which reads past what's
+        // removable: redacted as written and as it reads them (D-3036).
+        for secret in [
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let text = format!("pushed with {secret}\nok");
+            for out in [closing_text(&text).expect("closing"), check_output(&text)] {
+                assert!(out.contains("pushed with") && out.contains("ok"), "{out}");
+                assert!(
+                    !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
+                    "{out}"
+                );
+            }
+        }
+        // Nothing but what's removable is nothing to read out.
+        assert_eq!(closing_text("\u{200b}\u{2028} "), None);
     }
 
     #[tokio::test]

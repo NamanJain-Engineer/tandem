@@ -217,20 +217,6 @@ pub const MAX_PORTS: usize = 16;
 /// Held across each Add and Remove's read, change and write.
 static PORTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// One lock per home, held across a start's read, change and write of its
-/// `config.toml`: panes on one model starting at once each keep their
-/// folders there (D-3070).
-static HOMES: std::sync::LazyLock<std::sync::Mutex<BTreeMap<PathBuf, Arc<std::sync::Mutex<()>>>>> =
-    std::sync::LazyLock::new(Default::default);
-
-/// The lock for `home`'s `config.toml`.
-fn home_lock(home: &Path) -> Arc<std::sync::Mutex<()>> {
-    let mut homes = HOMES
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    Arc::clone(homes.entry(home.to_path_buf()).or_default())
-}
-
 async fn added_ports(state: &AppState) -> BTreeMap<u16, ServerKind> {
     let value = settings::get(&state.store, SettingKey::LocalModelPorts)
         .await
@@ -361,7 +347,9 @@ pub fn write_config(
     model: &str,
     untrusted: &[String],
 ) -> Result<(), IpcError> {
-    let lock = home_lock(home);
+    // The status hook and the tasks server are written under the same
+    // lock, so a start keeps what another wrote (D-3070, D-3073).
+    let lock = tandem_engines::homes::config_lock(home);
     let _held = lock
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -994,41 +982,81 @@ mod tests {
         assert_eq!(with_codex_reason(both(), None), both());
     }
 
-    /// F-EN-11 follow-up (D-3070): panes on one model starting at once each
-    /// keep their folders in the home's `config.toml`, untrusted: its read,
-    /// change and write happen one start at a time.
+    /// F-EN-11 follow-up (D-3070, D-3073): panes on one model starting at
+    /// once each keep their folders in the home's `config.toml`, untrusted,
+    /// and the status hook and the tasks server stay in it: each of
+    /// Vibezeo's writers of the file (a start's local settings, then the
+    /// hook, then the tasks server) reads, changes and writes it one at a
+    /// time.
     #[test]
     fn f_en_11_2_starts_at_once_keep_every_folder_in_the_home() {
         const PANES: usize = 24;
-        let dir = tempfile::tempdir().expect("dir");
-        let home = dir.path().join("home");
-        std::fs::create_dir_all(&home).expect("home");
-        let barrier = Arc::new(std::sync::Barrier::new(PANES));
-        let starts: Vec<_> = (0..PANES)
-            .map(|i| {
-                let (home, barrier) = (home.clone(), Arc::clone(&barrier));
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    write_config(
-                        &home,
-                        ServerKind::Ollama,
-                        11434,
-                        "qwen3:8b",
-                        &[format!("/work/pane-{i}")],
-                    )
+        let registry = Arc::new(tandem_engines::registry::EngineRegistry::bundled());
+        let server = Arc::new(tandem_engines::chat::StdioServer {
+            name: "tandem_tasks".into(),
+            command: "/x/tandem-tasks".into(),
+            args: vec!["--stdio".into()],
+            env_vars: Vec::new(),
+        });
+        // Several rounds: with any writer outside the lock, most lose some.
+        for round in 0..4 {
+            let dir = tempfile::tempdir().expect("dir");
+            let providers = dir.path().join("providers");
+            let homes = Arc::new(tandem_engines::homes::ProviderHomes::new(&providers));
+            let home = providers.join("codex").join(local_models::home_name(
+                ServerKind::Ollama,
+                11434,
+                "qwen3:8b",
+            ));
+            std::fs::create_dir_all(&home).expect("home");
+            let barrier = Arc::new(std::sync::Barrier::new(PANES));
+            let starts: Vec<_> = (0..PANES)
+                .map(|i| {
+                    let (home, barrier) = (home.clone(), Arc::clone(&barrier));
+                    let (homes, registry, server) = (
+                        Arc::clone(&homes),
+                        Arc::clone(&registry),
+                        Arc::clone(&server),
+                    );
+                    std::thread::spawn(move || {
+                        let codex = registry.get("codex").expect("codex");
+                        barrier.wait();
+                        write_config(
+                            &home,
+                            ServerKind::Ollama,
+                            11434,
+                            "qwen3:8b",
+                            &[format!("/work/pane-{i}")],
+                        )
+                        .expect("written");
+                        homes
+                            .install_hooks(codex, &home, Path::new("/x/tandem-hook"))
+                            .expect("hook");
+                        homes
+                            .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
+                            .expect("tasks");
+                    })
                 })
-            })
-            .collect();
-        for start in starts {
-            start.join().expect("thread").expect("written");
-        }
-        let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
-        for i in 0..PANES {
+                .collect();
+            for start in starts {
+                start.join().expect("thread");
+            }
+            let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
+            for i in 0..PANES {
+                assert!(
+                    config.contains(&format!(
+                        "[projects.\"/work/pane-{i}\"]\ntrust_level = \"untrusted\""
+                    )),
+                    "round {round}: pane-{i} lost:\n{config}"
+                );
+            }
             assert!(
-                config.contains(&format!(
-                    "[projects.\"/work/pane-{i}\"]\ntrust_level = \"untrusted\""
-                )),
-                "pane-{i} lost:\n{config}"
+                config.contains(r#"notify = ["/x/tandem-hook", "codex"]"#),
+                "round {round}: the hook lost:\n{config}"
+            );
+            assert!(
+                config.contains("[mcp_servers.tandem_tasks]"),
+                "round {round}: the tasks server lost:\n{config}"
             );
         }
     }

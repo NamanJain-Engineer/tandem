@@ -76,6 +76,9 @@ pub fn parse(out: &str) -> Option<Learned> {
             Some(serde_json::Value::Array(a)) => Some(
                 a.iter()
                     .filter_map(|x| x.as_str())
+                    // A credential as written, or as a briefing reads it:
+                    // the join can hide where one starts (D-3036).
+                    .filter(|x| !tandem_core::untrusted::holds_credential(x))
                     // As a briefing reads it, so the credential check below
                     // reads the same (D-3031).
                     .map(tandem_core::untrusted::readable)
@@ -278,6 +281,19 @@ mod tests {
         .expect("parsed");
         let texts: Vec<&str> = got.items.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(texts, ["Prefers pnpm.", "Uses tabs."]);
+    }
+
+    #[test]
+    fn f_tk_08_1_a_credential_what_is_removable_sets_apart_is_dropped() {
+        // Set apart from a letter only by what's removable, a credential is
+        // found as written, not once the two join, so the check reads both
+        // (D-3036).
+        let got = parse(
+            "{\"add\": [\"Prefers pnpm.\", \"pushed with abc\\u200bghp_0123456789abcdefghijABCDEFGHIJ012345\"], \"remove\": [], \"rationale\": \"\"}",
+        )
+        .expect("parsed");
+        let texts: Vec<&str> = got.items.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["Prefers pnpm."]);
     }
 
     #[test]

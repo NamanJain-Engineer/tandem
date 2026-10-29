@@ -30,7 +30,7 @@ use tandem_engines::chat::{
 };
 use tandem_engines::events::{
     ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
-    TurnEndReason,
+    ToolVerb, TurnEndReason,
 };
 use tandem_gateway::{ApprovalAnswer, Caller, ToolApproval};
 use tandem_store::repo::attachments::{self as attachments_repo, Attachment, AttachmentKind};
@@ -2080,15 +2080,22 @@ impl ThreadService {
                         // An edit's files claim once, when it succeeded: a
                         // tool's first row comes before its outcome, and an
                         // edit that was refused or failed changed nothing
-                        // (F-TK-07).
+                        // (F-TK-07). A Task's files are its subagent's edits
+                        // that happened, so they claim however it ended
+                        // (D-2622).
                         if let ThreadEvent::Tool {
                             id: tool,
+                            verb,
                             paths: Some(paths),
-                            status: ToolStatus::Ok,
+                            status,
                             ..
                         } = &other
                         {
-                            if run.claimed.insert(tool.clone()) {
+                            let finished =
+                                !matches!(status, ToolStatus::Running | ToolStatus::Pending);
+                            let happened =
+                                *status == ToolStatus::Ok || (*verb == ToolVerb::Task && finished);
+                            if happened && run.claimed.insert(tool.clone()) {
                                 if let Some(sink) = self.edit_sink.get() {
                                     sink(thread, paths);
                                 }
@@ -3442,7 +3449,6 @@ mod tests {
     use tandem_core::ids::ApprovalId;
     use tandem_core::DataDir;
     use tandem_engines::chat::AdapterError;
-    use tandem_engines::events::ToolVerb;
 
     /// What the scripted engine does with a turn.
     type Script = Arc<dyn Fn(TurnId, mpsc::Sender<AdapterEvent>) + Send + Sync>;
@@ -3876,6 +3882,28 @@ mod tests {
         );
         // The rows keep their files.
         assert!(stored(&f).await.contains(&edit_of_a(ToolStatus::Ok)));
+    }
+
+    #[tokio::test]
+    async fn f_tk_07_1_a_task_that_ended_in_error_claims_what_its_subagent_edited() {
+        // claude.rs names the subagent's edits that happened on the Task's
+        // row, whatever its end: those files changed.
+        let mut task = ThreadEvent::tool("t1", ToolVerb::Task, "Rename", ToolStatus::Error);
+        if let ThreadEvent::Tool { paths, .. } = &mut task {
+            *paths = Some(vec!["/w/src/a.ts".to_string()]);
+        }
+        let (f, seen) = claimed_by(vec![
+            ThreadEvent::tool("t1", ToolVerb::Task, "Rename", ToolStatus::Running),
+            task,
+        ])
+        .await;
+        assert_eq!(
+            seen,
+            vec![(
+                f.thread.id.as_str().to_string(),
+                vec!["/w/src/a.ts".to_string()]
+            )]
+        );
     }
 
     #[tokio::test]
@@ -5453,11 +5481,14 @@ mod tests {
         })
     }
 
-    struct FixedTitler(&'static str);
+    /// Answers once the test opens its gate: the first turn ends as soon as
+    /// it's sent, so an ungated title could land before the local one is read.
+    struct FixedTitler(&'static str, Arc<tokio::sync::Notify>);
 
     #[async_trait]
     impl Titler for FixedTitler {
         async fn title(&self, _: &str) -> Option<String> {
+            self.1.notified().await;
             Some(self.0.to_string())
         }
     }
@@ -5483,8 +5514,11 @@ mod tests {
     #[tokio::test]
     async fn f_th_15_the_first_message_names_the_thread_then_the_ai_title_and_a_rename_sticks() {
         let f = fixture(OnStop::Ack, reply("Hi")).await;
-        f.svc
-            .configure(Arc::new(FixedTitler("Login redirect fix")), data(&f));
+        let gate = Arc::new(tokio::sync::Notify::new());
+        f.svc.configure(
+            Arc::new(FixedTitler("Login redirect fix", gate.clone())),
+            data(&f),
+        );
         send(
             &f,
             "fix the login bug where the redirect loops forever",
@@ -5495,6 +5529,7 @@ mod tests {
             now(&f).await.title,
             "Fix the login bug where the redirect loops"
         );
+        gate.notify_one();
         ended(&f, 1).await;
         for _ in 0..300 {
             if now(&f).await.title == "Login redirect fix" {

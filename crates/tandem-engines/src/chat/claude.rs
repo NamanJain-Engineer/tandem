@@ -409,19 +409,46 @@ fn created(text: &str) -> bool {
 }
 
 /// The files an edit tool names, absolute (F-TK-07); `None` for tools that
-/// don't edit.
+/// don't edit. A tool this list doesn't know (an MCP server's, a new one)
+/// edits when its input names a file and what goes in it: it's named, so
+/// the turn says it changed the file, and counts no lines, so the turn's
+/// total says none rather than a partial one (D-2622).
 pub fn edited_paths(tool: &str, input: &Value, cwd: &Path) -> Option<Vec<String>> {
-    let key = match tool {
-        "Edit" | "Write" | "MultiEdit" => "file_path",
-        "NotebookEdit" => "notebook_path",
-        _ => return None,
+    let str_at = |k: &str| {
+        input
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
     };
-    let path = input
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|p| !p.is_empty())?;
+    let path = match tool {
+        "Edit" | "Write" | "MultiEdit" => str_at("file_path")?,
+        "NotebookEdit" => str_at("notebook_path")?,
+        "Read" | "Grep" | "Glob" | "Bash" | "WebFetch" | "WebSearch" | "Task" => return None,
+        _ => {
+            let writes = UNKNOWN_EDIT_KEYS.iter().any(|k| input.get(k).is_some());
+            if !writes {
+                return None;
+            }
+            ["file_path", "path", "notebook_path"]
+                .into_iter()
+                .find_map(str_at)?
+        }
+    };
     Some(vec![crate::events::absolute(cwd, path)])
 }
+
+/// What a tool's input holds when it writes a file: its content, an
+/// edit's replacement, a list of edits, a patch.
+const UNKNOWN_EDIT_KEYS: [&str; 8] = [
+    "content",
+    "file_text",
+    "new_string",
+    "new_str",
+    "new_source",
+    "edits",
+    "patch",
+    "diff",
+];
 
 /// One line for a tool row: the command, path, pattern or URL.
 pub fn arg_summary(tool: &str, input: &Value, cwd: &Path) -> String {
@@ -712,9 +739,10 @@ impl ClaudeParser {
                 mut paths,
                 ..
             } = call;
-            // A Task that finished names the files its subagent edited.
+            // A Task names the files its subagent edited, however it ended:
+            // only the subagent's edits that happened are kept (D-2622).
             if let Some(sub) = self.subagents.remove(id) {
-                if status == ToolStatus::Ok && !sub.paths.is_empty() {
+                if !sub.paths.is_empty() {
                     paths = Some(sub.paths);
                     lines = (!sub.uncounted).then_some(sub.lines);
                 }
@@ -777,7 +805,7 @@ impl ClaudeParser {
                     }
                     let sub = self.subagents.entry(task.to_string()).or_default();
                     for p in call.paths.unwrap_or_default() {
-                        if !sub.paths.contains(&p) {
+                        if !sub.paths.iter().any(|q| crate::events::same_file(q, &p)) {
                             sub.paths.push(p);
                         }
                     }

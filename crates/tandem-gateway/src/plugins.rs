@@ -126,6 +126,14 @@ pub(crate) fn untrusted_reply(label: &str, text: &str, is_error: bool) -> ToolOu
     }
 }
 
+/// What a plugin's reply or error hands an agent, which reads past what's
+/// removable: the connection's own secrets and every credential the
+/// redactor knows go, each found as written and as the agent reads it
+/// (D-3036).
+fn for_agent(http: &PinnedClient, text: &str) -> String {
+    http.redact(&tandem_core::untrusted::redacted(&http.redact(text)))
+}
+
 fn reconnect(label: &str) -> String {
     format!("{label} needs to be reconnected in Settings › Plugins")
 }
@@ -263,7 +271,9 @@ impl Plugins {
             };
             let cx = CallCtx { conn, http: &http };
             match module.call(&cx, tool, args.clone()).await {
-                Ok(out) => return untrusted_reply(label, &http.redact(&out.text), out.is_error),
+                Ok(out) => {
+                    return untrusted_reply(label, &for_agent(&http, &out.text), out.is_error)
+                }
                 Err(VendorError::Unauthorized(_)) if attempt == 0 => {
                     let Some(c) = &cred else {
                         return error(reconnect(label));
@@ -281,7 +291,7 @@ impl Plugins {
                     self.needs_attention(conn).await;
                     return error(reconnect(label));
                 }
-                Err(e) => return error(http.redact(&e.to_string())),
+                Err(e) => return error(for_agent(&http, &e.to_string())),
             }
         }
         error(reconnect(label))
@@ -586,6 +596,8 @@ mod tests {
         manifest: VendorManifest,
         runs: AtomicU64,
         price: AtomicI64,
+        /// What the next call says, or fails with, when set.
+        reply: Mutex<Option<Result<String, String>>>,
     }
 
     fn counting() -> Arc<Counting> {
@@ -610,6 +622,7 @@ mod tests {
             },
             runs: AtomicU64::new(0),
             price: AtomicI64::new(500),
+            reply: Mutex::default(),
         })
     }
 
@@ -636,6 +649,9 @@ mod tests {
             _args: Value,
         ) -> Result<ToolOutput, VendorError> {
             self.runs.fetch_add(1, Ordering::SeqCst);
+            if let Some(reply) = self.reply.lock().expect("reply").clone() {
+                return reply.map(ToolOutput::ok).map_err(VendorError::Unavailable);
+            }
             Ok(ToolOutput::ok(format!("ran {tool}")))
         }
         async fn pre_execute(
@@ -1075,6 +1091,69 @@ mod tests {
         assert!(request.contains("\"title\":\"x\""), "{request}");
         assert_eq!(asks[0].account_label, w.conn.account_label);
         assert_eq!(w.runs(), 0, "denied: nothing ran");
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_plugin_hands_an_agent_no_credential_behind_what_is_removable() {
+        // A plugin's reply and its errors go to an agent, which reads past
+        // what's removable: the connection's own key and every credential
+        // the redactor knows are found as written and as it reads them
+        // (D-3036).
+        let mut w = world(allow_once());
+        let store = CredentialStore::new(Arc::new(tandem_core::keychain::MemoryKeychain::new()));
+        store
+            .save(
+                "acme",
+                &w.conn.id,
+                &Credential::ApiKey {
+                    api_key: "acme-key-for-the-card-7731".into(),
+                },
+            )
+            .expect("save");
+        let plugins = Plugins {
+            modules: vec![w.vendor.clone()],
+            connections: Connections::default(),
+            expose_all: AtomicBool::new(false),
+            leases: Arc::new(Leases::default()),
+            hooks: w.hooks.clone(),
+            credentials: Some(store),
+            remembered: Remembered::default(),
+            net: None,
+        };
+        plugins.connections.replace(vec![w.conn.clone()]);
+        w.plugins = Arc::new(plugins);
+        let lease = w.lease(Attended::Interactive, Access::Edits);
+        for secret in [
+            "acme-key-for\u{200b}-the-card-7731",
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            for reply in [
+                Ok(format!("pushed with {secret}")),
+                Err(format!("refused {secret}")),
+            ] {
+                let failed = reply.is_err();
+                *w.vendor.reply.lock().expect("reply") = Some(reply);
+                let out = w
+                    .plugins
+                    .call(&lease, "acme__read", json!({"repo": "o/r"}))
+                    .await;
+                assert_eq!(out.is_error, failed, "{}", out.text);
+                assert!(
+                    out.text.contains("with") || out.text.contains("refused"),
+                    "{}",
+                    out.text
+                );
+                for part in [
+                    "acme-key-for",
+                    "the-card-7731",
+                    "0123456789",
+                    "ABCDEFGHIJ012345",
+                ] {
+                    assert!(!out.text.contains(part), "{part}: {}", out.text);
+                }
+            }
+        }
     }
 
     /// An OAuth connection whose token is about to expire, with its token
