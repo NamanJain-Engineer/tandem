@@ -295,6 +295,7 @@ pub async fn resume(state: &AppState, key: &str) -> Result<LibraryOpened, IpcErr
         extra_args: Vec::new(),
         home: (!own_home).then(|| found.home.to_string_lossy().into_owned()),
         own_home,
+        local: None,
     };
     sessions::start_with_config(
         &state.store,

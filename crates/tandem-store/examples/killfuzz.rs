@@ -90,6 +90,7 @@ async fn seed(store: &Store, root: &str) -> Result<()> {
             extra_args: Vec::new(),
             home: Some(format!("{root}/home-{i}")),
             own_home: false,
+            local: None,
         };
         sessions::start_with_config(store, &p.id, &ws.id, "claude", None, &config).await?;
         sessions::set_engine_session(store, &p.id, &format!("fuzz-{i}")).await?;

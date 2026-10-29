@@ -58,9 +58,26 @@ release fails when its version has no section.
   (`jj workspace add`) instead of a git worktree, with a git worktree one click
   away and your choice remembered. Its diff and overlap check come from jj,
   agents in it are told to use jj, and Discard forgets the workspace while its
-  commits stay. Folders on this computer only. Landing, pull requests,
+  commits stay (asking first, as for uncommitted changes, when jj didn't keep
+  everything in it). Folders on this computer only. Landing, pull requests,
   previews, setup, second opinion, the intent radar and the git panel aren't
   available for jj workspaces yet.
+- [lin] **Local models.** Settings › Engines › Local models finds Ollama,
+  LM Studio and llama.cpp servers running on this computer and lists their
+  models, with the size and parameter count each server reports. Vibezeo
+  asks only 127.0.0.1, when you open the page or choose Check again. Ollama's
+  cloud models aren't listed: they run on ollama.com.
+- [lin] **Start Codex on a local model.** On an Ollama or LM Studio model,
+  Start in Codex opens a Codex pane in your open folder that says "On this
+  computer". It runs in a provider home of its own for that model, never on
+  your Codex account and never through a proxy, every time it starts, and
+  each start checks that the server still offers the model on this computer.
+  It uses none of the repository's own Codex settings (its
+  `.codex/config.toml`, hooks or MCP servers), and Codex's connectors,
+  plugins, usage metrics and sub-agents are off. Codex asks before each
+  command and edit unless your Codex arguments set an approval policy. It
+  needs Codex 0.149.0 or newer. Your own Codex settings and accounts aren't
+  touched.
 
 ### Changed
 

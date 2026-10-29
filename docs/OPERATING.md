@@ -59,7 +59,8 @@ apt-get install -y zsh fish                      # the shell-integration E2E spe
 apt-get install -y bubblewrap                    # E2E-M18-TL11 and the real-sandbox Rust tests need bwrap (F-TL-11)
 curl -sSL https://github.com/jj-vcs/jj/releases/download/v0.34.0/jj-v0.34.0-x86_64-unknown-linux-musl.tar.gz \
   | tar -xz -C /usr/local/bin ./jj               # jj for F-CD-24's real-jj tests and E2E-M18-CD24 (without it they say so and
-                                                 # return; JJ_REQUIRED=1 makes that a failure)
+                                                 # return; JJ_REQUIRED=1 makes that a failure; CI's checks job
+                                                 # installs the same binary, sha256-checked, with JJ_REQUIRED=1)
 rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
 pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked
@@ -226,9 +227,12 @@ E2E lessons (each cost a debugging round):
   (D-2851). A dev database that ran an older copy needs resetting: delete
   `~/.tandem` (or your `TANDEM_HOME`) and start the app again. Symptoms: before
   round 4, every ledger insert logs `activity.store_failed`; a round-4 copy works but
-  silently lacks `activity_kept`. Reset again after the chain27 merge too: there the
-  migration is renumbered by merge order (D-872), so a dev database that ran it as #6
-  skips main's own #6 and then fails. Released databases never had it.
+  silently lacks `activity_kept`. The chain27 merges kept it as #6 (D-872), made
+  F-CD-24's `lane_vcs` #7 and F-EN-11's `local_model` column #8
+  (`0008_local_models.sql`): a dev database that ran `m16d-teammate-extras`' earlier
+  `0006_local_models.sql` or `0007_local_models.sql` skips a migration and then fails
+  at #8 (a duplicate column), so reset that one too. Released databases never had
+  any of them.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.

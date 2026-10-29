@@ -177,6 +177,25 @@ describe("worktrees (F-CD-15)", () => {
     expect(await screen.findByText("Discarded tandem/fix-auth")).toBeTruthy();
   });
 
+  it("F-CD-24.4 a stale jj workspace's refusal is shown, never forced past", async () => {
+    const stale =
+      "The jj workspace at /code/shop/.tandem/worktrees/fix-auth is out of date: run `jj workspace update-stale` there, then try again";
+    backend({
+      lane_remove: () => {
+        const err: IpcError = { code: "invalid", message: stale, stage: "jj", hint: null, retryable: false };
+        throw err;
+      },
+    });
+    useWorktrees.getState().open({ kind: "discard", worktreeId: "wt_1" });
+    dialogs();
+    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), {
+      target: { value: "tandem/fix-auth" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard worktree" }));
+    expect(await screen.findByText(stale)).toBeTruthy();
+    expect(named("lane_remove").map((c) => c.args?.force)).toEqual([false]);
+  });
+
   it("F-CD-15.2 cancelling the native confirm keeps the worktree, with no error", async () => {
     backend({
       lane_remove: (a) => {

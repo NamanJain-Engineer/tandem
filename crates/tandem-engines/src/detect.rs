@@ -529,6 +529,18 @@ fn is_executable(p: &Path) -> bool {
 /// `<path> --version` (the registry's `version_cmd`), parsed with
 /// `version_regex`; `None` when it fails, times out or doesn't match.
 pub async fn version_of(engine: &EngineSpec, path: &Path, timeout: Duration) -> Option<String> {
+    let text = version_output(engine, path, timeout).await?;
+    let re = regex::Regex::new(&engine.version_regex).ok()?;
+    let caps = re.captures(&text)?;
+    caps.get(1)
+        .or_else(|| caps.get(0))
+        .map(|m| m.as_str().to_string())
+}
+
+/// What `<path> --version` printed, standard output then error, for a
+/// caller that reads it its own way (a local model's Codex, D-3062);
+/// `None` when it fails to run or times out.
+pub async fn version_output(engine: &EngineSpec, path: &Path, timeout: Duration) -> Option<String> {
     let mut cmd = if tandem_core::sandbox::in_flatpak() {
         let args: Vec<std::ffi::OsString> = engine.version_cmd.iter().map(Into::into).collect();
         let argv = tandem_core::sandbox::flatpak_host_argv::<&str, &str>(
@@ -553,16 +565,11 @@ pub async fn version_of(engine: &EngineSpec, path: &Path, timeout: Duration) -> 
         .await
         .ok()?
         .ok()?;
-    let text = format!(
+    Some(format!(
         "{}\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
-    );
-    let re = regex::Regex::new(&engine.version_regex).ok()?;
-    let caps = re.captures(&text)?;
-    caps.get(1)
-        .or_else(|| caps.get(0))
-        .map(|m| m.as_str().to_string())
+    ))
 }
 
 #[cfg(all(test, unix))]

@@ -43,6 +43,7 @@ pub mod launch;
 pub mod learn;
 pub mod library;
 pub mod limits;
+pub mod local_models;
 pub mod lsp;
 pub mod mail;
 pub mod merge_queue;
