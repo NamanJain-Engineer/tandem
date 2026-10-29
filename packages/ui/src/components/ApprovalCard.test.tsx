@@ -416,8 +416,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       fireEvent.pointerDown(allow(), { pointerId: 1 });
       rerender(view("apr_b", b));
       await wait(1_050);
-      fireEvent.pointerDown(document.body, { pointerId: 2 });
-      fireEvent.pointerUp(document.body, { pointerId: 2 });
+      fireEvent.pointerDown(document.body, { pointerId: 2, pointerType: "touch" });
+      fireEvent.pointerUp(document.body, { pointerId: 2, pointerType: "touch" });
       fireEvent.pointerUp(allow(), { pointerId: 1 });
       fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();
@@ -524,6 +524,62 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       act(() => {
         allow().dispatchEvent(click);
       });
+      expect(b).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("SF1/SF4: lost releases and skewed clocks", () => {
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard kind="command" title="run" requestKey={requestKey} onAllow={onAllow} onDeny={() => undefined} />
+      </UiProvider>
+    );
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("SF1: after a release the page never saw, the next click (mousedown, no pointerdown) is judged by its own press", async () => {
+      layout();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", () => undefined));
+      await steady();
+      // Pressed on A; the window goes away and the release is never seen.
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+      rerender(view("apr_b", b));
+      await wait(600);
+      expect(waiting(allow())).toBe(false);
+      // The engine still thinks the button is down: the next press arrives
+      // as a mousedown alone, then its pointerup and click.
+      fireEvent.mouseDown(allow(), { button: 0 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.mouseUp(allow(), { button: 0 });
+      fireEvent.click(allow());
+      expect(b).toHaveBeenCalledTimes(1);
+    });
+
+    it("SF4: an event clock running ahead of performance.now() can't make a press on A look like one on B", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      // The engine stamps events 700 ms ahead (seen as +440 ms after a
+      // clock slew; anything over the 500 ms wait would reopen D-3058).
+      const skew = 700;
+      const down = new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse" } as PointerEventInit);
+      Object.defineProperty(down, "timeStamp", { value: performance.now() + skew });
+      act(() => {
+        allow().dispatchEvent(down);
+      });
+      rerender(view("apr_b", b));
+      await wait(600);
+      const up = new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse" } as PointerEventInit);
+      Object.defineProperty(up, "timeStamp", { value: performance.now() + skew });
+      allow().dispatchEvent(up);
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      Object.defineProperty(click, "timeStamp", { value: performance.now() + skew });
+      act(() => {
+        allow().dispatchEvent(click);
+      });
+      expect(a).not.toHaveBeenCalled();
       expect(b).not.toHaveBeenCalled();
     });
   });

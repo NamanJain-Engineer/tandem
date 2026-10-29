@@ -37,10 +37,14 @@ const MODIFIERS = new Set([
 ]);
 
 /** An event's time on `performance.now()`'s clock (some engines and jsdom
- * stamp events with the epoch instead). */
+ * stamp events with the epoch instead). One that's ahead of now, or more
+ * than a second behind, can't be trusted (an event clock that drifted from
+ * the page's after a clock slew, seen at +440 ms): now is used instead. */
 function stamp(e: Event): number {
-  const t = e.timeStamp;
-  return t > 1e11 ? t - performance.timeOrigin : t;
+  const raw = e.timeStamp;
+  const t = raw > 1e11 ? raw - performance.timeOrigin : raw;
+  const n = performance.now();
+  return t > n || n - t > 1_000 ? n : t;
 }
 
 type Press = { at: number; seen: number; live: boolean };
@@ -68,9 +72,17 @@ function trackPresses() {
       p.seen = stamp(e);
     }
   };
-  const pointer = (e: PointerEvent) => `p:${e.pointerId ?? 0}`;
+  // The mouse is one press whatever its pointerId; touches and pens each
+  // have their own.
+  const pointer = (e: PointerEvent) =>
+    e.pointerType === "mouse" || !e.pointerType ? "p:mouse" : `p:${e.pointerId ?? 0}`;
   const key = (e: KeyboardEvent) => `k:${e.code || e.key}`;
   document.addEventListener("pointerdown", (e) => begin(pointer(e), e), true);
+  // After a release the page never saw (the window went away mid-press),
+  // the engine thinks the button is still down: the next press comes as a
+  // mousedown with no pointerdown. It starts the mouse's press too (for a
+  // normal press, at the same time as its pointerdown).
+  document.addEventListener("mousedown", (e) => e.button === 0 && begin("p:mouse", e), true);
   document.addEventListener("pointerup", (e) => release(pointer(e), e), true);
   document.addEventListener("pointercancel", (e) => release(pointer(e), e), true);
   document.addEventListener(
@@ -153,9 +165,7 @@ function pointsOf(r: DOMRect): [number, number][] {
  * skipped. */
 function covered(el: HTMLElement): boolean {
   if (typeof document.elementFromPoint !== "function") return false;
-  const marked = Array.from(
-    el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`),
-  );
+  const marked = Array.from(el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`));
   const targets: HTMLElement[] = marked.length > 0 ? marked : [el];
   return targets.some((target) => {
     const r = target.getBoundingClientRect();
