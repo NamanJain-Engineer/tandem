@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NAMES_TOOLS, SAMPLE, hookTool, t } from "../../../lib/scenes";
+import { NAMES_TOOLS, SAMPLE, SINCE_START, hookTool, t } from "../../../lib/scenes";
 import { AgentsSegment, AppWindow, Changes, Dot, DotChange, Glyph, StatusBar, fx, type Agents } from "./parts";
 
 const { finished, working, waiting } = SAMPLE.worktrees;
@@ -9,10 +9,7 @@ const { finished, working, waiting } = SAMPLE.worktrees;
  * filter counts and the Review count change then. */
 export const DASH_T = { ask: 2, run: 3.2, done: 4.6 } as const;
 
-/** How long an agent has been in its state when the scene opens: the demo
- * starts every pane 42 minutes back (backend.ts's START), and a change of
- * state starts the clock again. */
-export const SINCE_START = 42;
+export { SINCE_START };
 
 /** Each state's word on a card (AgentCard's STATUS_LABEL). */
 const STATE_LABEL = { working: "agentStatus.working", waiting: "agentStatus.waiting", done: "agentStatus.done" } as const;
@@ -23,23 +20,29 @@ export function cardState(status: keyof typeof STATE_LABEL, minutes: number): st
   return `${t(STATE_LABEL[status])} · ${t("time.minutes", { n: minutes })}`;
 }
 
+/** A card's title as cardTitle writes it (model.ts): the agent's first name
+ * and its work, its pane's title ("{name} · {work}"), cut to the card's
+ * width as AgentCard's is. */
+export const cardTitle = (lane: typeof finished) => `${lane.name} · ${lane.title}`;
+
 /** An agent's card as AgentCard draws it (F-DB-01): the title row (its
- * status, its engine's tile, its first name, and at the right its state and
- * how long it has held it), then cardMeta: its engine and its worktree's
- * name (a worktree's workspace is its own, and its branch, tandem/<name>,
- * is shown as the name, so once: D-1898). Then its line, when it has one:
- * dashboard.rs draws its status's preview, else its tool. A pane's status
- * has no preview, and only one engine's hooks name a tool (NAMES_TOOLS),
- * while its agent works (D-3002, D-3003). The story gives no account, so
- * none shows. */
+ * status, its engine's tile, its title, at the right its state and how long
+ * it has held it, then its menu's room, as the menu shows on hover), then
+ * cardMeta: its engine and its worktree's name (a worktree's workspace is
+ * its own, and its branch, tandem/<name>, is shown as the name, so once:
+ * D-1898). Then its line, when it has one: dashboard.rs draws its status's
+ * preview, else its tool. A pane's status has no preview, and only one
+ * engine's hooks name a tool (NAMES_TOOLS), while its agent works (D-3002,
+ * D-3003). The story gives no account, so none shows. */
 function Card({ lane, dot, state, line }: { lane: typeof finished; dot: ReactNode; state: ReactNode; line?: ReactNode }) {
   return (
     <span className="sc-card">
       <span className="sc-card-head">
         {dot}
         <Glyph engine={lane.engine} />
-        <span className="sc-card-title">{lane.name}</span>
+        <span className="sc-card-title">{cardTitle(lane)}</span>
         <span className="sc-card-state">{state}</span>
+        <span className="sc-card-menu" />
       </span>
       <span className="sc-card-meta">{[lane.engine, lane.branch].join(" · ")}</span>
       {line !== undefined && <span className="sc-card-line">{line}</span>}
@@ -57,14 +60,21 @@ export const DASH_TOOLS: ReadonlyArray<readonly [number, string]> = NAMES_TOOLS.
 for (const w of [working, waiting])
   if (NAMES_TOOLS.has(w.engineId)) throw new Error(`scenes: ${w.name}'s Dashboard card would name its tool, in ${w.engine}, and the scene draws none`);
 
+/** Whether the finished worktree's agent's card has a line until it's done,
+ * so the card gets a line shorter then; and where its group is. */
+const LINED = DASH_TOOLS.length > 0;
+const AT = SAMPLE.order.findIndex((w) => w.branch === finished.branch);
+
 /** The finished worktree's agent's card: at work, its line the tool its
  * hooks name; then done, when the app draws the card again with no line.
- * Both cards are in one place, each its own size, and swap at once, so the
- * card loses its line without moving what's under it (D-3003). */
+ * Both cards are in one place and swap at once (D-3003). The place is the
+ * done card's: the card at work hangs over what's below by its line, which
+ * waits that much lower and moves up when the line goes, as the app's
+ * re-render moves it (D-3004). */
 function Finishing() {
   return (
     <span className="sc-card-swap">
-      <span {...fx("cut", DASH_T.done)}>
+      <span className={LINED ? "sc-card-lined" : undefined} {...fx("cut", DASH_T.done)}>
         <Card
           lane={finished}
           dot={<Dot status="working" />}
@@ -104,7 +114,7 @@ export function DashboardScene() {
   const card = (branch: string) => {
     if (branch === waiting.branch)
       return (
-        <span className="sc-card-wrap sc-card-ask">
+        <span className="sc-card-wrap">
           {/* Its engine asks in its own terminal: no line here, and no
               Vibezeo approval to answer, so no buttons (D-3001, D-3002). */}
           <Card
@@ -119,7 +129,9 @@ export function DashboardScene() {
               />
             }
           />
-          <span className="sc-ring" {...fx("pop", DASH_T.ask)} />
+          {/* AgentCard keeps its surface and draws a waiting agent's
+              border in the waiting colour, from when it's drawn again. */}
+          <span className="sc-card-waiting" {...fx("show", DASH_T.ask)} />
         </span>
       );
     if (branch === finished.branch) return <Finishing />;
@@ -159,16 +171,20 @@ export function DashboardScene() {
           </span>
         </div>
 
-        {/* The repository's group, and in it each worktree's, by branch. */}
+        {/* The repository's group, and in it each worktree's, by branch.
+            When the finished one's card gets a line shorter, the groups
+            below it move up that much, eased (§4.7's move), and its rule's
+            tail goes as they do (D-3004). */}
         <div className="sc-group" {...fx("in", 0.2)}>
           <span className="sc-group-head">{`${SAMPLE.workspace} · ${n}`}</span>
           <span className="sc-group-lanes">
-            {SAMPLE.order.map((w) => (
-              <span key={w.branch} className="sc-group">
+            {SAMPLE.order.map((w, i) => (
+              <span key={w.branch} className="sc-group" {...(LINED && i > AT ? fx("close", DASH_T.done) : {})}>
                 <span className="sc-group-head">{`${w.branch} · 1`}</span>
                 {card(w.branch)}
               </span>
             ))}
+            {LINED && <span className="sc-lanes-tail" {...fx("close", DASH_T.done)} />}
           </span>
         </div>
       </div>

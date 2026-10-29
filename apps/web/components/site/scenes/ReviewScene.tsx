@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AgentsSegment, AppWindow, DiffRows, ReviewCard, ReviewQueue, StatusBar, Toast, fx, visit, type Agents, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, DiffRows, ReviewCard, ReviewQueue, StatusBar, Toast, fx, stint, type Agents, type DiffRow } from "./parts";
 
 /** A second opinion's line comment, in the story's words. */
 type Comment = { file: string; line: number; text: string };
@@ -55,15 +55,15 @@ export function notesFor(
 export const REVIEW_T = { ask: 1.9, reviewing: 2.1, done: 3.8, send: 5.4, finished: 4 } as const;
 const { done: DONE } = REVIEW_T;
 
-/** The agents at work from each time on, as the status bar counts them: the
- * second opinion is a thread ("Second opinion: {branch}"), and the app
- * counts a thread's status as it does a pane's, so it's one at work while it
- * reviews. The finished worktree's agent is done, so nothing else counts
- * (D-3003). */
+/** The agents waiting and at work from each time on, as the status bar
+ * counts them: the story's (one waits, one works; the finished worktree's
+ * agent is done), and the second opinion, a thread ("Second opinion:
+ * {branch}"), whose status the app counts as it does a pane's, while it
+ * reviews (D-3003, D-3004). */
 export const REVIEW_AGENTS: ReadonlyArray<readonly [number, Agents]> = [
-  [0, { waiting: 0, working: 0 }],
-  [REVIEW_T.reviewing, { waiting: 0, working: 1 }],
-  [DONE, { waiting: 0, working: 0 }],
+  [0, SAMPLE.agents],
+  [REVIEW_T.reviewing, { ...SAMPLE.agents, working: SAMPLE.agents.working + 1 }],
+  [DONE, SAMPLE.agents],
 ];
 
 /** Where the comments land: under the rows at their lines, each as
@@ -125,11 +125,12 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
           <DiffRows rows={REVIEW_DIFF} notes={notes(comments)} at={DONE} />
           {/* WorktreeReview's bar: the reviewer at work, with Open thread,
               then the comments' count with Copy review and Send to the
-              worktree's one agent, by its name. With no comments it goes
-              when the review's done, as the app's does. */}
-          <span className="sc-review-bar" {...(n > 0 ? fx("in", REVIEW_T.reviewing) : visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing))}>
+              worktree's one agent, by its name. The app re-renders it, so
+              the reviewer's state is gone at once when the comments come,
+              and with none the bar goes at once when the review's done. */}
+          <span className="sc-review-bar" {...(n > 0 ? fx("in", REVIEW_T.reviewing) : stint(REVIEW_T.reviewing, DONE))}>
             <span className="sc-bar-states">
-              <span className="sc-bar-state" {...(n > 0 ? visit(REVIEW_T.reviewing, DONE - REVIEW_T.reviewing) : {})}>
+              <span className="sc-bar-state" {...(n > 0 ? stint(REVIEW_T.reviewing, DONE) : {})}>
                 <span className="sc-spin" />
                 <span className="sc-review-doing">{t("worktree.opinion.reviewing", { engine: reviewer })}</span>
                 <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("worktree.opinion.openThread")}</span>

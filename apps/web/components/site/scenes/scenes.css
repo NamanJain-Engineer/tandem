@@ -10,14 +10,16 @@
 .scene-box { container-type: inline-size; }
 
 /* One of the app's pixels at the window's scale: the window's em is 16 of
-   them. Registered, so it's worked out once, on the window, and a part
-   anywhere inside can be sized in the app's own pixels, whatever its
-   parent's font size. */
+   them. It's in the scene box's own units, as the window's size is, so it's
+   the same at any depth inside, whatever a part's font size, with or
+   without @property (Firefox has it from 128, Safari from 16.4; the scenes
+   need container units anyway). Registered, it's worked out once, on the
+   window (D-3004). */
 @property --sc-px { syntax: "<length>"; inherits: true; initial-value: 1px; }
 
 .sc-window {
   --sc-line: var(--tn-border);
-  --sc-px: calc(1em / 16);
+  --sc-px: calc(100cqw / 1280);
   position: relative;
   display: grid;
   grid-template-rows: 2.5em 1fr 1.5em;
@@ -56,6 +58,9 @@
 .sc-pane-head { display: flex; align-items: center; gap: 0.5em; height: 2.5em; flex: none; padding-inline: calc(22 * var(--sc-px)) calc(4 * var(--sc-px)); border-bottom: 1px solid var(--sc-line); font-size: 0.75em; }
 .sc-pane-head .sc-dot svg { width: calc(6 * var(--sc-px)); height: calc(6 * var(--sc-px)); }
 .sc-pane-tools { margin-left: auto; display: inline-flex; align-items: center; color: var(--tn-text-muted); opacity: 0.5; }
+/* Elapsed: after the header's spacer, before the buttons (PaneChrome). */
+.sc-pane-elapsed { flex: none; margin-left: auto; font-size: calc(11 * var(--sc-px)); font-variant-numeric: tabular-nums; color: var(--tn-text-subtle); white-space: nowrap; }
+.sc-pane-elapsed + .sc-pane-tools { margin-left: 0; }
 .sc-pane-tools svg { box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(7 * var(--sc-px)); }
 /* The worktree's chip (WorktreeChip): ⎇ and its name in 11 px, subtle. */
 .sc-wt-chip { display: inline-flex; flex: none; align-items: center; gap: calc(2 * var(--sc-px)); max-width: calc(160 * var(--sc-px)); overflow: hidden; font-size: calc(11 * var(--sc-px)); white-space: nowrap; color: var(--tn-text-subtle); }
@@ -88,9 +93,7 @@
 .sc-toast-body { font-size: 0.75em; color: var(--tn-text-muted); }
 .sc-chips { display: flex; flex-wrap: wrap; gap: 0.375em; }
 
-/* A pane that finishes lights its header once; the window catches the
-   light once as it lands. */
-.sc-flash { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--tn-status-done), inset 0 0 2.5em -0.5em var(--tn-status-done-soft); }
+/* The window catches the light once as it lands. */
 .sc-pane { position: relative; }
 .sc-sheen { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(105deg, transparent 35%, var(--tn-edge-hi) 50%, transparent 65%); translate: 100% 0; }
 
@@ -118,6 +121,14 @@
    at once, so nothing under it moves (D-3003). */
 .sc-card-swap { display: grid; }
 .sc-card-swap > * { grid-area: 1 / 1; align-self: start; }
+/* The place is the shorter card's: the card with a line hangs over what's
+   below by its line (the card's gap and the line, at the window's line
+   height), and that waits lower by as much, then moves up as §4.7 moves a
+   thing, over --dur-base, when the line goes (D-3004). The lanes' rule has
+   a tail as long below it, which goes as they move. */
+.sc-group-lanes { --sc-card-line: calc(0.25em + 0.75em * 1.45); position: relative; }
+.sc-card-lined { margin-bottom: calc(-1 * var(--sc-card-line)); }
+.sc-lanes-tail { position: absolute; top: 100%; left: -1px; width: 1px; height: var(--sc-card-line); background: var(--sc-line); transform-origin: top; scale: 1 0; }
 /* An agent's card as AgentCard draws it (D-3002): the title row (its dot,
    its engine's tile, its first name, and at the right its state and how
    long it has held it), then its engine and worktree, then its latest line
@@ -129,12 +140,15 @@
 .sc-card-title { font-size: 0.8125em; font-weight: 500; white-space: nowrap; }
 .sc-card-head .sc-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sc-card-state { flex: none; font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); white-space: nowrap; }
+/* The room AgentCard's menu keeps: a small IconButton, 28 px, shown on hover. */
+.sc-card-menu { flex: none; width: calc(28 * var(--sc-px)); }
 .sc-card-meta { font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-subtle); white-space: nowrap; }
 /* A Dashboard card's meta, under its title row, is sans, as AgentCard's. */
 .sc-card .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
-.sc-card-line { min-width: 0; overflow: hidden; font-size: 0.75em; color: var(--tn-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
-.sc-card-ask .sc-card { background: var(--tn-surface-3); }
-.sc-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 1px var(--tn-status-waiting), 0 0 1.5em -0.25em var(--tn-status-waiting-soft); }
+.sc-card-line { min-width: 0; overflow: hidden; font-size: 0.75em; line-height: 1.45; color: var(--tn-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
+/* A waiting agent's card: AgentCard's own surface, with its 1 px border
+   in the waiting colour in place of the line, as AgentCard's is. */
+.sc-card-waiting { position: absolute; inset: 0; border-radius: 0.625em; pointer-events: none; box-shadow: inset 0 0 0 1px var(--tn-status-waiting); }
 
 /* The review queue (its card is home.css's) and a diff with a second
    opinion's comments. */
@@ -283,7 +297,7 @@
 
 /* A narrow frame (a phone): the rail and two panes go, the rest grows. */
 @container (max-width: 40rem) {
-  .sc-window { font-size: calc(100cqw / 28); aspect-ratio: 28 / 34; }
+  .sc-window { --sc-px: calc(100cqw / 448); font-size: calc(100cqw / 28); aspect-ratio: 28 / 34; }
   .sc-hide-narrow, .sc-omnibox { display: none; }
   .sc-dash { padding: 1em; }
   .sc-dash-group, .sc-seg { display: none; }
@@ -306,7 +320,7 @@
 }
 
 /* Final frame: things that come and go, and things that leave, aren't in it. */
-[data-fx-visit], [data-fx-out], [data-fx-cut] { opacity: 0; }
+[data-fx-visit], [data-fx-out], [data-fx-cut], [data-fx-stint] { opacity: 0; }
 /* The sweep has passed in the final frame (it rests off the window's edge). */
 
 /* ---------- The effects ----------
@@ -342,11 +356,20 @@
    from the scene's start instead, it began a few frames early (D-3001). */
 @keyframes sc-gone  { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sc-shown { from { opacity: 0; } to { opacity: 1; } }
+/* A stint, a value's step between its first and its last: in as words
+   enter, then cut, on one element (Changes). Its enter names where it ends,
+   since the final frame hides it; its cut fills forwards only, so it waits
+   on the clock without showing the step before its enter. */
+@keyframes sc-stint { from { opacity: 0; translate: 0 0.4em; } to { opacity: 1; translate: 0 0; } }
+/* What a shorter card frees moves up into it, as §4.7 moves a thing; the
+   lanes' rule's tail shortens from below as it does. */
+@keyframes sc-close { from { translate: 0 var(--sc-card-line); } }
+@keyframes sc-close-tail { from { scale: 1 1; } }
 @keyframes sc-spin   { to { rotate: 1turn; } }
 
 @media screen and (prefers-reduced-motion: no-preference) {
   :root[data-fx] [data-scene] {
-    & :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin),
+    & :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], .sc-spin),
     & .tn-dot, & .tn-attention { animation-play-state: paused; }
     & [data-fx-in]    { animation: sc-in var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-line]  { animation: sc-line var(--dur-pop) var(--ease-out-site) var(--at) both paused; }
@@ -361,11 +384,14 @@
     & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
     & [data-fx-cut]   { animation: sc-gone 0s linear var(--at) both paused; }
     & [data-fx-show]  { animation: sc-shown 0s linear var(--at) both paused; }
+    & [data-fx-stint] { animation: sc-stint var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear var(--until) forwards paused; }
+    & [data-fx-close] { animation: sc-close var(--dur-base) var(--ease-standard) var(--at) both paused; }
+    & .sc-lanes-tail[data-fx-close] { animation-name: sc-close-tail; }
     /* A spinner turns from when its state comes in (the --at it inherits), twice. */
     & .sc-spin { animation: sc-spin 0.8s linear var(--at, 0s) 2 paused; }
     & [data-fx-count] .sc-sr { display: none; }
     & [data-fx-count]::after { content: attr(data-prefix) counter(sc); }
-    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], .sc-spin, .tn-dot, .tn-attention) {
+    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], .sc-spin, .tn-dot, .tn-attention) {
       animation-play-state: running;
     }
   }

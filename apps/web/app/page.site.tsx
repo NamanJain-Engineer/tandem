@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-// The product scenes' styles load with the pages that show them (D-1880):
-// the home page's own scenes' rules after the shared ones (D-2702).
+// The product scenes' styles load with the pages that show them (D-1880);
+// the home page's own scenes' rules come inlined, after the shared ones, so
+// they cost the first paint no request of their own (D-2702, D-3004).
 import "../components/site/scenes/scenes.css";
-import "../components/site/scenes/home.css";
 import { SiteFrame } from "../components/site/SiteFrame";
+import { sceneCss } from "../lib/sceneCss";
 import { Capabilities } from "../components/site/home/Capabilities";
 import { CtaBand } from "../components/site/home/CtaBand";
 import { DemoStage } from "../components/site/home/DemoStage";
@@ -24,6 +25,9 @@ export const metadata: Metadata = { alternates: { canonical: "/" } };
 export default function HomePage() {
   return (
     <SiteFrame current="/">
+      <style href="scenes/home.css" precedence="scenes">
+        {sceneCss("home.css")}
+      </style>
       <Hero />
       <DemoStage />
       <Features />

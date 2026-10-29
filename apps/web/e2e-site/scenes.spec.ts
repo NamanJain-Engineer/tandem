@@ -22,8 +22,8 @@ const opacity = (page: Page, selector: string) =>
 
 /** The text of each of `selector`'s elements in `scene` that shows: drawn,
  * with its words opaque once every element above them is counted. A value's
- * step sits in a cell that can be opaque while the step itself is cut
- * (Changes, D-3002), and a finished fade can rest a hair above 0. */
+ * step can be cut by an element above the one selected (Changes, D-3002),
+ * and a finished fade can rest a hair above 0. */
 const shownIn = (scene: Locator, selector: string) =>
   scene.locator(selector).evaluateAll((els) =>
     els
@@ -234,6 +234,76 @@ for (const width of [1440, 390] as const) {
   });
 }
 
+test("F-WB-01 AC9 D-3003 every step of a value lays its contents out as the others do: Land's dot and words, the CI rail's spinner and words", async ({ page }) => {
+  // Layout, which the swap test doesn't look at and the design shots see only in the final frame. A step that's cut
+  // is still laid out, so every step is measured at once. A middle step was an entering cell with a cut inside it,
+  // and the rules for a step's contents styled the cut: no gap, no centring (the coordinator's S-1).
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/changelog/0.9.0/");
+  const steps = await page.evaluate(() =>
+    // What's drawn at this width (a part only a phone draws has no boxes here), each step of it.
+    [...document.querySelectorAll("[data-scene] .sc-step > *, [data-scene] .sc-checks > * > *")].filter((el) => el.getClientRects().length > 0).map((el) => {
+      const s = getComputedStyle(el);
+      // Its mark (a dot, the spinner, the tick) and its words, each directly inside it.
+      const mark = el.querySelector(":scope > :is(.sc-dot, .sc-spin, svg)");
+      const words = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== "");
+      const text = (el.textContent ?? "").trim();
+      if (!mark || !words) return { text, display: s.display, gap: null, centre: null };
+      const range = document.createRange();
+      range.selectNodeContents(words);
+      const [m, w] = [mark.getBoundingClientRect(), range.getBoundingClientRect()];
+      return { text, display: s.display, gap: w.left - m.right - Number.parseFloat(s.columnGap), centre: (m.top + m.bottom) / 2 - (w.top + w.bottom) / 2 };
+    }),
+  );
+  // Land's five steps in each of its three lanes, and the rail badge's three checks.
+  expect(steps).toHaveLength(15 + 3);
+  for (const step of steps) {
+    // A flex row: inline-flex, or flex where the step is a grid's item (a swap's), which CSS makes block-level.
+    expect(step.display, step.text).toMatch(/^(inline-)?flex$/);
+    if (step.gap === null || step.centre === null) continue;
+    expect(Math.abs(step.gap), `${step.text}: gap`).toBeLessThan(0.6);
+    expect(Math.abs(step.centre), `${step.text}: centre`).toBeLessThan(1.1);
+  }
+  // Only the failed checks' words sit in a span of their own; every other step has its mark beside its words.
+  expect(new Set(steps.filter((s) => s.gap === null).map((s) => s.text))).toEqual(new Set(["1 check failed: test"]));
+});
+
+for (const width of [1440, 390] as const) {
+  test(`F-WB-01 AC9 D-3004 at ${width} px the Dashboard closes the finished card's line as the app does: what's below waits a line lower, then eases up`, async ({ page }) => {
+    // The app draws the line only when there is one, so what's below the card closes up when it goes. Seeked through
+    // the change: the next group sits the lanes' gap below the card that shows, at work and done, and the lanes' rule
+    // reaches the last card throughout, its tail going as the groups move (the design lead's must-fix on cced2f8f).
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+    const at = (seconds: number) =>
+      page.evaluate((ms) => {
+        const root = document.querySelector('[data-scene="dashboard"]') as Element;
+        for (const a of root.getAnimations({ subtree: true }).filter((x) => String((x as CSSAnimation).animationName).startsWith("sc-") && x.timeline instanceof DocumentTimeline)) {
+          a.pause();
+          a.currentTime = ms;
+        }
+        const swap = root.querySelector(".sc-card-swap") as Element;
+        const card = ([...swap.children].find((c) => Number(getComputedStyle(c).opacity) > 0.5) as Element).querySelector(".sc-card") as Element;
+        const lanes = root.querySelector(".sc-group-lanes") as Element;
+        const groups = [...lanes.children].filter((c) => c.classList.contains("sc-group"));
+        const next = groups[groups.indexOf(swap.closest(".sc-group") as Element) + 1] as Element;
+        const tail = (lanes.querySelector(".sc-lanes-tail") as Element).getBoundingClientRect();
+        const rule = Math.max(lanes.getBoundingClientRect().bottom, tail.height > 0.01 ? tail.bottom : 0);
+        const last = (groups.at(-1)?.querySelector(".sc-card") as Element).getBoundingClientRect().bottom;
+        return { gap: next.getBoundingClientRect().top - card.getBoundingClientRect().bottom, lanesGap: Number.parseFloat(getComputedStyle(lanes).rowGap), rule: rule - last, tail: tail.height };
+      }, seconds * 1000);
+    for (const s of [0, 4.59, 7]) {
+      const m = await at(s);
+      expect(Math.abs(m.gap - m.lanesGap), `${s} s: the next group's gap`).toBeLessThan(0.6);
+      expect(Math.abs(m.rule), `${s} s: the rule to the last card`).toBeLessThan(0.6);
+    }
+    // Mid-move, the rule still reaches the last card; once moved, nothing of the tail is drawn.
+    for (const s of [4.62, 4.66, 4.7, 4.75]) expect(Math.abs((await at(s)).rule), `${s} s: the rule to the last card`).toBeLessThan(0.6);
+    expect((await at(7)).tail).toBeLessThan(0.01);
+  });
+}
+
 // The release pages' scenes (components/site/scenes/releaseScenes.tsx):
 // where each plays, and an element that only its final frame shows.
 const RELEASE_PAGES = [
@@ -345,10 +415,10 @@ test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and
     );
     expect(moving, id).toBe(0);
   }
-  // The final frame: the review item has arrived, the waiting agent needs you, and the Dashboard rings its card.
+  // The final frame: the review item has arrived, the waiting agent needs you, and its Dashboard card has the waiting border.
   expect(await seen(page, "workspace", ".sc-rq-check > .sc-swap > *")).toEqual(["Check passed"]);
   expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
-  expect(await opacity(page, '[data-scene="dashboard"] .sc-card-ask .sc-ring')).toBe(1);
+  expect(await opacity(page, '[data-scene="dashboard"] .sc-card-waiting')).toBe(1);
   await context.close();
 });
 
@@ -382,7 +452,11 @@ for (const [w, h] of [[1440, 900], [1280, 800], [1024, 768], [768, 1024]] as con
       .evaluateAll((els) => els.filter((e) => e.checkVisibility() && e.scrollWidth > e.clientWidth).map((e) => `${e.textContent}: ${e.scrollWidth} > ${e.clientWidth}`));
     expect(cut).toEqual([]);
     expect(await seen(page, "workspace", ".sc-wtrow-name")).toEqual(["checkout-fix", "coupon-rules", "search-ui"]);
-    expect(await seen(page, "workspace", ".sc-wtrow-radar")).toEqual(["Shares applyCoupon", "Shares applyCoupon"]);
+    // The 0.12.0 hero leaves the intent radar out, at a rail width CodeRail allows (D-2704).
+    expect(await scene.locator(".sc-wtrow-radar, .sc-tone-warning").count()).toBe(0);
+    const rail = await scene.locator(".sc-crail").evaluate((e) => e.getBoundingClientRect().width / Number.parseFloat(getComputedStyle(e).getPropertyValue("--sc-px")));
+    expect(Math.round(rail)).toBeGreaterThanOrEqual(180);
+    expect(Math.round(rail)).toBeLessThanOrEqual(360);
     expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
     // The agent's card in the review queue, its check passed; nothing left to review gone, and the toasts too.
     expect(await seen(page, "workspace", ".sc-rq-title")).toEqual(["Ada"]);

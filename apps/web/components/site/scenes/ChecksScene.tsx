@@ -2,7 +2,7 @@ import { Check, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
 import { SAMPLE, failurePrompt, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
-import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, pasted, visit, type Agents, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, pasted, stint, visit, type Agents, type DiffRow } from "./parts";
 
 /** When things happen, in seconds from the scene's start. */
 export const CI_T = {
@@ -419,7 +419,12 @@ export function ChecksScene() {
             branch={agent.branch}
             focused
             solo
-            doneAt={T.done}
+            elapsed={
+              // At work from when the failure is sent, a new state, so its clock starts again then.
+              <span className="sc-pane-elapsed" {...stint(T.sent, T.done)}>
+                {t("time.now")}
+              </span>
+            }
             status={<Changes steps={AGENT} />}
           >
             {/* The end of its first task: it ran the cart's tests only. */}

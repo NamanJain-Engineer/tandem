@@ -9,6 +9,9 @@
 @source "../../../packages/ui/src/components/{Avatar,Badge,Button,Choice,DiffView,EngineGlyph,Field,Kbd,Menu,SegmentedControl,Select,SiteButton,Spinner,StatusDot,Tooltip}.tsx";
 @source "../components";
 @source "../lib";
+/* Tests and browser specs name the app's classes to check them; none of
+   those is the site's (D-3004). */
+@source not "../**/*.{test,spec}.{ts,tsx}";
 
 /* Fonts come from next/font (app/fonts.ts, D-1802), not @tandem/ui/fonts.css. */
 @theme inline {

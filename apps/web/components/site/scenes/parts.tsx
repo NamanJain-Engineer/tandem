@@ -20,7 +20,7 @@ export function at(seconds: number, extra?: Record<string, string | number>): CS
 /** The effects a scene element can have (scenes.css). The element's own
  * styles are its final frame: that's what reduced motion, a page without
  * the scene script and a finished scene all show. */
-export type Fx = "in" | "line" | "enter" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show";
+export type Fx = "in" | "line" | "enter" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show" | "close";
 
 export function fx(kind: Fx, seconds: number, extra?: Record<string, string | number>) {
   return { [`data-fx-${kind}`]: "", style: at(seconds, extra) } as const;
@@ -33,6 +33,13 @@ export type Motion = { style?: CSSProperties } & { [effect: `data-fx-${string}`]
  * Not in the final frame. */
 export function visit(seconds: number, stay: number) {
   return { "data-fx-visit": "", style: at(seconds, { "--stay": secs(stay) }) } as const;
+}
+
+/** A value's step between its first and its last (Changes): in as words
+ * enter at `seconds`, cut at `until`, both on one element, so what it holds
+ * sits where the other steps' does. Not in the final frame. */
+export function stint(seconds: number, until: number) {
+  return { "data-fx-stint": "", style: at(seconds, { "--until": secs(until) }) } as const;
 }
 
 /** An engine's monogram, as the app draws it (EngineGlyph, D-1895): the
@@ -153,27 +160,32 @@ export type Agents = { waiting: number; working: number };
 
 /** The status bar's agents segment (StatusBar's AgentsSegment, after the
  * CI's): how many agents wait on you, in waiting's text, then how many are
- * working, each after its status dot; a count of none isn't drawn. `steps`
- * are the counts from each time on, the last the final frame (D-3002). */
+ * working, each after its status dot; a count of none isn't drawn, and with
+ * none of either the segment isn't (D-3004). `steps` are the counts from
+ * each time on, the last the final frame (D-3002). */
 export function AgentsSegment({ steps }: { steps: ReadonlyArray<readonly [number, Agents]> }) {
+  const none = (n: Agents) => n.waiting === 0 && n.working === 0;
+  if (steps.every(([, n]) => none(n))) return null;
   return (
     <Changes
       steps={steps.map(([seconds, n]) => [
         seconds,
-        <span key={seconds} className="sc-agents">
-          {n.waiting > 0 && (
-            <span className="sc-agents-waiting">
-              <Dot status="waiting" />
-              {t("status.waiting", { n: n.waiting })}
-            </span>
-          )}
-          {n.working > 0 && (
-            <span className="sc-agents-working">
-              <Dot status="working" />
-              {t("status.working", { n: n.working })}
-            </span>
-          )}
-        </span>,
+        none(n) ? null : (
+          <span key={seconds} className="sc-agents">
+            {n.waiting > 0 && (
+              <span className="sc-agents-waiting">
+                <Dot status="waiting" />
+                {t("status.waiting", { n: n.waiting })}
+              </span>
+            )}
+            {n.working > 0 && (
+              <span className="sc-agents-working">
+                <Dot status="working" />
+                {t("status.working", { n: n.working })}
+              </span>
+            )}
+          </span>
+        ),
       ])}
     />
   );
@@ -182,11 +194,11 @@ export function AgentsSegment({ steps }: { steps: ReadonlyArray<readonly [number
 /** A pane: its header as PaneChrome draws it (UI_SPEC §2.20) over a
  * terminal. The header: its agent's status, its engine's glyph, the agent's
  * first name, the title, the worktree's chip (⎇ and its name, which the
- * site shows for its branch: D-1898), and at the far end its buttons,
- * quiet until the header is hovered: Maximize, unless the pane is alone in
- * its tab, then its menu and Close. The app's grip shows only on hover, and
- * the time an agent has been at it isn't drawn: a scene's few seconds
- * aren't it. */
+ * site shows for its branch: D-1898), then at the far end how long its
+ * agent has been at it while it works or waits, by the demo's clock
+ * (Elapsed), and its buttons, quiet until the header is hovered: Maximize,
+ * unless the pane is alone in its tab, then its menu and Close. The app's
+ * grip shows only on hover. */
 export function Pane({
   engine,
   name,
@@ -195,7 +207,7 @@ export function Pane({
   status,
   focused = false,
   solo = false,
-  doneAt,
+  elapsed,
   children,
   className,
 }: {
@@ -209,14 +221,14 @@ export function Pane({
   /** Alone in its tab: no Maximize (F-CD-02), and no focus ring, which
    * only tells panes in a tab apart (PaneGrid); its glyph still lights. */
   solo?: boolean;
-  /** When the pane's agent finishes: its header lights once. */
-  doneAt?: number;
+  /** How long its agent has been at it, while it works or waits
+   * (PaneChrome's Elapsed), with when that shows. */
+  elapsed?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cx("sc-pane", focused && !solo && "sc-pane-on", className)}>
-      {doneAt !== undefined && <span className="sc-flash" {...visit(doneAt, 1.4)} />}
       <div className="sc-pane-head">
         <span className="sc-pane-status">{status}</span>
         {engine ? <Glyph engine={engine} focused={focused} /> : <span className="sc-glyph sc-glyph-shell">$</span>}
@@ -228,6 +240,7 @@ export function Pane({
             {branch}
           </span>
         )}
+        {elapsed}
         <span className="sc-pane-tools">
           {!solo && <AppIcon icon={Maximize2} />}
           <AppIcon icon={MoreHorizontal} />
@@ -386,29 +399,18 @@ export function Count({ to, seconds, prefix = "" }: { to: number; seconds: numbe
  * last one the final frame. The app re-renders a value at once, so a step
  * is gone the moment the next comes, and the next enters as words do
  * (DESIGN §4.7: a fade and a short rise). Two steps are never drawn
- * together, mid-swap either (D-3002). A step between the first and the
- * last enters on its cell, which can move, and is cut inside it. */
+ * together, mid-swap either (D-3002). Each step is one element with what
+ * it holds directly inside, first, last or between (a stint), so a rule
+ * for a step's contents finds them at one depth in every step. */
 export function Changes({ steps, className }: { steps: ReadonlyArray<readonly [number, ReactNode]>; className?: string }) {
   return (
     <span className={cx("sc-swap", className)}>
       {steps.map(([seconds, node], i) => {
         const next = steps[i + 1]?.[0];
-        const gone = next === undefined ? {} : fx("cut", next);
-        if (i === 0)
-          return (
-            <span key={i} {...gone}>
-              {node}
-            </span>
-          );
-        if (next === undefined)
-          return (
-            <span key={i} {...fx("enter", seconds)}>
-              {node}
-            </span>
-          );
+        const effect = i === 0 ? (next === undefined ? {} : fx("cut", next)) : next === undefined ? fx("enter", seconds) : stint(seconds, next);
         return (
-          <span key={i} {...fx("enter", seconds)}>
-            <span {...gone}>{node}</span>
+          <span key={i} {...effect}>
+            {node}
           </span>
         );
       })}

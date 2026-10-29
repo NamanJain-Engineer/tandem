@@ -93,13 +93,13 @@ function over<T>(value: (seconds: number) => T): Array<readonly [number, T]> {
   return out;
 }
 
-/** The agents at work from each time on, as the status bar counts them: a
- * plan's runs are threads, and so are their reviews, and the app counts a
- * thread's status as it does a pane's. So it's the runs running or being
- * reviewed, which the plan's line counts as running, and none once all
- * three are ready to review (D-3003). */
+/** The agents waiting and at work from each time on, as the status bar
+ * counts them: the story's (one waits, one works), and a plan's runs, which
+ * are threads, as their reviews are, whose status the app counts as it does
+ * a pane's. So it's the story's, and the runs running or being reviewed,
+ * which the plan's line counts as running (D-3003, D-3004). */
 export const PLAN_AGENTS: ReadonlyArray<readonly [number, Agents]> = over((at) => PLAN_RUNS.filter((r) => kindOf(stateAt(r, at), r.verdict) === "running").length).map(
-  ([at, working]) => [at, { waiting: 0, working }] as const,
+  ([at, running]) => [at, { ...SAMPLE.agents, working: SAMPLE.agents.working + running }] as const,
 );
 
 const dots = (steps: Array<readonly [number, Status]>) =>

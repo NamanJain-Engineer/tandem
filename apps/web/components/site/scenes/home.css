@@ -6,13 +6,11 @@
    component draws it. */
 
 /* The window's body as AppShell lays it out: the rail, Code mode's main
-   area and the docked sidebar, as at 1,100 px and wider. The rail is as wide
-   as a worktree's row needs to hold its name, its slot, the radar's mark
-   and its count without cutting any: 416 px, past the 360 CodeRail lets it
-   reach, where a marked row's name would be cut to its first letter (the
-   hero is simplified; D-2702). The sidebar is 400 px, between its 320 and
-   its default 470. */
-.sc-code { position: relative; display: grid; grid-template-columns: calc(416 * var(--sc-px)) minmax(0, 1fr) calc(400 * var(--sc-px)); min-height: 0; }
+   area and the docked sidebar, as at 1,100 px and wider. The rail is 320 px,
+   a width CodeRail allows (180 to 360), where every row holds its name, its
+   slot, its count and its menu's room without cutting any (D-2704). The
+   sidebar is 400 px, between its 320 and its default 470. */
+.sc-code { position: relative; display: grid; grid-template-columns: calc(320 * var(--sc-px)) minmax(0, 1fr) calc(400 * var(--sc-px)); min-height: 0; }
 
 /* The rail (CodeRail): WORKSPACES and + on a 36 px row, then the list 6 px
    in from each side, Remote hosts at the foot over a divider. */
@@ -84,6 +82,9 @@
 .sc-pill-count { display: inline-flex; }
 .sc-pill-close { width: calc(16 * var(--sc-px)); margin-right: calc(4 * var(--sc-px)); }
 .sc-side-tools { margin-left: auto; display: inline-flex; }
+/* Pin shows only while the sidebar floats; its icon is 13 px in the same
+   28 px button (Sidebar's header). */
+.sc-side-tools .sc-side-pin { display: none; width: calc(13 * var(--sc-px)); height: calc(13 * var(--sc-px)); padding: calc(7.5 * var(--sc-px)); }
 /* DashboardPanel: its view switch 12 px in, then the view. */
 .sc-side-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .sc-side-body > .sc-seg-sm { align-self: flex-start; margin: calc(12 * var(--sc-px)) calc(12 * var(--sc-px)) 0; }
@@ -134,5 +135,6 @@
   .sc-crail-head, .sc-wsrow, .sc-crail-none, .sc-crail-foot { display: none; }
   .sc-crail-list, .sc-crail-group { padding: calc(4 * var(--sc-px)); }
   .sc-side { position: absolute; grid-area: 2 / 1; inset-block: 0; right: 0; z-index: 2; width: 62%; box-shadow: var(--tn-elev-3); }
+  .sc-side-tools .sc-side-pin { display: block; }
   .sc-tabs-arrange { display: none; }
 }

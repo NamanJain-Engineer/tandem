@@ -1,7 +1,7 @@
-import { ChevronDown, ClipboardCheck, Cloud, Folder, GitBranch, LayoutDashboard, LayoutGrid, Maximize2, Plus, X } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Cloud, Folder, GitBranch, LayoutDashboard, LayoutGrid, Maximize2, Pin, Plus, X } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { cx } from "../../../lib/cx";
-import { LANDS, SAMPLE, t, tabTitle } from "../../../lib/scenes";
+import { RADAR, SAMPLE, SINCE_START, t, tabTitle } from "../../../lib/scenes";
 import { AgentsSegment, AppIcon, AppWindow, Badge, Changes, Dot, DotChange, Lines, Pane, ReviewCard, ReviewQueue, StatusBar, Toast, fx, pasted } from "./parts";
 
 const { finished, working, waiting } = SAMPLE.worktrees;
@@ -9,9 +9,9 @@ const { finished, working, waiting } = SAMPLE.worktrees;
 /** The hero's timeline (D-2702), in seconds from its start: when the
  * waiting worktree's engine asks, and its rail row turns to Needs you; when
  * the intent radar marks the two worktrees that change one symbol, and its
- * notice shows; when Warn both agents is pressed; when the finished one's
- * agent is done, and its card arrives in the review queue; and when the
- * repository's check passes on it. */
+ * notice shows, and when Warn both agents is pressed (from 0.13.0: D-2704);
+ * when the finished one's agent is done, and its card arrives in the review
+ * queue; and when the repository's check passes on it. */
 export const HERO_T = { ask: 2.2, mark: 3.4, notice: 3.8, warn: 4.5, done: 6.4, passed: 8.4 } as const;
 /** When the finished worktree's agent is done: its dot, its rail row, the
  * status bar and the review queue change then. */
@@ -79,8 +79,9 @@ function Trail({ steps }: { steps: ReadonlyArray<readonly [number, ReactNode]> }
  * site shows it for the branch, tandem/<name>: D-1898), then its slot
  * (WorkspaceSlot: its agent at work, "Needs you" in amber once it waits,
  * nothing once it's done), the radar's mark once the radar sees it share a
- * symbol (on 0.9.0, D-128), its count of panes, and room for its menu,
- * which shows on hover. The worktree in view is the selected one. */
+ * symbol (from 0.13.0, D-2704), its count of panes, and room for its menu,
+ * which shows on hover but takes its room throughout (0.12.0's WorktreeRow).
+ * The worktree in view is the selected one. */
 function WorktreeRow({ branch, mark }: { branch: string; mark?: number }) {
   const count = <Badge>{live(branch)}</Badge>;
   const radar = mark !== undefined && (
@@ -136,7 +137,7 @@ function Rail() {
           <span className="sc-crail-none">{t("rail.noSessions")}</span>
           {SAMPLE.order.map((w) => {
             const i = SAMPLE.radar.between.indexOf(w.branch);
-            return <WorktreeRow key={w.branch} branch={w.branch} mark={LANDS && i >= 0 ? HERO_T.mark + i * 0.1 : undefined} />;
+            return <WorktreeRow key={w.branch} branch={w.branch} mark={RADAR && i >= 0 ? HERO_T.mark + i * 0.1 : undefined} />;
           })}
         </span>
       </span>
@@ -188,8 +189,11 @@ function Sidebar() {
             <Pill waiting={1} />
           </span>
         </span>
+        {/* +, then Pin while it floats (on a phone's frame), Full screen
+            and Close (Sidebar's header). */}
         <span className="sc-side-tools">
           <AppIcon icon={Plus} />
+          <AppIcon icon={Pin} className="sc-side-pin" />
           <AppIcon icon={Maximize2} />
           <AppIcon icon={X} />
         </span>
@@ -230,15 +234,15 @@ function Sidebar() {
  * three worktrees, each with its own agent; Code mode is on the finished
  * one's tab, with its agent's pane alone; the sidebar's Dashboard is on
  * Review. The waiting worktree's engine asks to run its tests, so its row
- * turns to Needs you; on 0.9.0 the intent radar marks the two worktrees
+ * turns to Needs you; from 0.13.0 the intent radar marks the two worktrees
  * that change the same function, and its notice warns both agents: the
- * core's note is typed into each. The finished one's agent is done, and its
+ * core's note is typed into each (D-2704). The finished one's agent is done, and its
  * work arrives in the review queue, where the repository's check runs and
  * passes. About 10 s, played once, resting on the last frame. */
 export function WorkspaceScene() {
-  const radar = LANDS;
+  const radar = RADAR;
   const lines = SAMPLE.lines.finished;
-  // The agent's work up to its tests, the radar's note typed in (on 0.9.0), then the tests and its closing words.
+  // The agent's work up to its tests, the radar's note typed in (from 0.13.0), then the tests and its closing words.
   const before = lines.slice(0, -2);
   const tests = lines.slice(-2);
   return (
@@ -261,7 +265,11 @@ export function WorkspaceScene() {
             branch={finished.branch}
             focused
             solo
-            doneAt={HERO_T.done}
+            elapsed={
+              <span className="sc-pane-elapsed" {...fx("cut", HERO_T.done)}>
+                {t("time.minutes", { n: SINCE_START })}
+              </span>
+            }
             status={<DotChange from="working" to="done" seconds={HERO_T.done} />}
           >
             <Lines lines={before} start={0.5} end={radar ? 4.2 : 4.6} />
@@ -300,7 +308,7 @@ export const WORKSPACE_CAPTION = "Three agents work in one repository, each in i
 
 /** What the scene shows, for people who can't see it (its figure's caption). */
 export function workspaceSceneText(): string {
-  const radar = LANDS
+  const radar = RADAR
     ? ` The intent radar marks ${finished.branch} and ${working.branch}, which both change ${SAMPLE.symbol}; Warn both agents types a note about it into each agent, ${finished.name}'s too.`
     : "";
   return `Code mode on ${finished.branch}, one of ${n} worktrees of one repository, each with its own agent, and ${finished.name}'s pane alone in its tab. ${finished.name}, in ${finished.engine}, fixes checkout. ${working.name}, in ${working.engine}, keeps working in ${working.branch}, and ${waiting.name}, in ${waiting.engine}, asks in its terminal to run ${SAMPLE.ask} and waits for you: the rail shows ${waiting.branch} as Needs you.${radar} ${finished.name} finishes, and ${finished.name}'s change arrives in the review queue in the sidebar: ${SAMPLE.diff.files} files, +${SAMPLE.diff.adds} −${SAMPLE.diff.dels}, where the repository's check runs and passes.`;

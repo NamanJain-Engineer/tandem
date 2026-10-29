@@ -27,6 +27,17 @@ export const LANDS = atLeast(SCENE_BUILD, "0.9.0");
  * `＠`, with a note after it (D-3022, after 0.12.0). Until the release the
  * scenes show has it, they type the text as that release did (D-128). */
 export const DEFANGS = atLeast(SCENE_BUILD, "0.13.0");
+/** How long an agent has been in its state when a scene opens: the demo
+ * starts every pane 42 minutes back (backend.ts's START), and a change of
+ * state starts the clock again. */
+export const SINCE_START = 42;
+/** Whether the hero draws the intent radar: its marks on the rail, its
+ * notice, the note Warn both agents types and "Warned both agents". 0.12.0's
+ * mark is words ("Shares {symbol}"), and a row that holds them is wider
+ * than CodeRail lets the rail be (180 to 360 px), so the 0.12.0 hero leaves
+ * the radar out (D-2704). It comes back with 0.13.0's mark, an icon beside a
+ * status (D-2613), and the rail's folding (D-2701). */
+export const RADAR = atLeast(SCENE_BUILD, "0.13.0");
 
 /** One of the app's strings, with its `{name}` values and simple plurals
  * (`{n, plural, one {# file} other {# files}}`) filled in. Throws on a key
@@ -135,6 +146,11 @@ export function failurePrompt(pr: number, check: { name: string; workflow?: stri
 
 /** What a worktree did to a symbol (tandem-git's SymbolChange), as the
  * radar's note says it. */
+/** A worktree's branch, as the core names it (`tandem/<slug>`). The scenes
+ * show the name for it (D-1898), but text the core writes, such as the
+ * radar's note, names the branch whole (radar.rs passes `lane_branch`). */
+export const branchOf = (slug: string) => `tandem/${slug}`;
+
 const CHANGED = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" } as const;
 export type SymbolChange = keyof typeof CHANGED;
 
@@ -261,13 +277,18 @@ export const SAMPLE = {
   worktrees: { finished: lane(finished), working: lane(working), waiting: lane(waiting) },
   /** All of them, in the story's order (the order they land in). */
   order: story.worktrees.map(lane),
+  /** The story's agents that wait on you and that work, as its states
+   * leave them (the finished one's is done). A status bar counts them in
+   * every scene, beside the scene's own threads: AgentsSegment counts every
+   * agent there is (D-3004). */
+  agents: { waiting: story.worktrees.filter((w) => w.state === "waiting").length, working: story.worktrees.filter((w) => w.state === "working").length },
   symbol: story.overlap.symbol,
   /** The two worktrees that both change it, which the intent radar marks,
    * and the note Warn both agents types into the first one's agent about
    * the other (0.9.0's F-WT-10): both changed it, as the demo says. */
   radar: {
     between: story.overlap.between,
-    note: radarNote(story.overlap.between[1] ?? "", [{ qualified: story.overlap.symbol, here: "changed", there: "changed" }]),
+    note: radarNote(branchOf(story.overlap.between[1] ?? ""), [{ qualified: story.overlap.symbol, here: "changed", there: "changed" }]),
   },
   /** What each agent's terminal prints, in order: the story's steps. */
   lines: {
