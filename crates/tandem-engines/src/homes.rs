@@ -40,10 +40,20 @@ pub enum HomeError {
 }
 
 /// One lock per home, held across each of Vibezeo's own reads, changes and
-/// writes of Codex's `config.toml` there: a local model's settings, the
-/// status hook and the tasks server (D-3070, D-3073). Panes on one model
-/// starting at once then each keep what they wrote. Codex itself may still
-/// rewrite the file, and no lock inside Vibezeo covers that.
+/// writes of an engine's settings there (D-3070, D-3073, D-3075): Codex's
+/// `config.toml` (a local model's settings, the status hook, the tasks
+/// server) and Claude Code's `.claude.json` and `settings.json` (onboarding,
+/// a trusted folder, the tasks server, the hooks). Panes starting at once
+/// then each keep what they wrote. The engine itself may still rewrite the
+/// file, and no lock inside Vibezeo covers that.
+///
+/// The key is the home's path as given, not canonicalised. That's enough
+/// because every writer's home comes from [`ProviderHomes`]: its root joined
+/// with plain names ([`ProviderHomes::path`], `create`, a local model's
+/// home), or a saved launch that stored one of those. [`ProviderHomes::owns`]
+/// refuses any other spelling under the root (a `..`), and a local pane's
+/// home must equal its model's own path. A symlink to a home would get a
+/// lock of its own.
 pub fn config_lock(home: &Path) -> Arc<Mutex<()>> {
     static HOMES: LazyLock<Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>> =
         LazyLock::new(Default::default);
@@ -152,9 +162,16 @@ impl ProviderHomes {
         }
     }
 
-    /// True when `path` is one of this root's homes (never a user folder).
+    /// True when `path` is one of this root's homes (never a user folder):
+    /// under the root and spelled with plain names only, so a `..` can't
+    /// lead out of it and a home has one spelling ([`config_lock`]).
     pub fn owns(&self, path: &Path) -> bool {
-        path.starts_with(&self.root) && path != self.root
+        path.strip_prefix(&self.root).is_ok_and(|rel| {
+            rel.components().next().is_some()
+                && rel
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+        })
     }
 
     /// Points the engine's status hooks at `hook_bin` (§6.6), merging into
@@ -168,6 +185,8 @@ impl ProviderHomes {
         if !self.owns(home) {
             return Err(HomeError::NotOwned);
         }
+        let lock = config_lock(home);
+        let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
         match engine.hooks_support {
             HooksSupport::ClaudeHooks => {
                 let file = home.join("settings.json");
@@ -177,8 +196,6 @@ impl ProviderHomes {
             }
             HooksSupport::CodexNotify => {
                 let file = home.join("config.toml");
-                let lock = config_lock(home);
-                let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
                 let mut doc = read_toml(&file)?;
                 let mut notify = toml_edit::Array::new();
                 notify.push(hook_bin.to_string_lossy().into_owned());
@@ -204,6 +221,8 @@ impl ProviderHomes {
         if !self.owns(home) {
             return Err(HomeError::NotOwned);
         }
+        let lock = config_lock(home);
+        let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
         match engine.hooks_support {
             HooksSupport::ClaudeHooks => {
                 let file = home.join(".claude.json");
@@ -237,8 +256,6 @@ impl ProviderHomes {
             }
             HooksSupport::CodexNotify => {
                 let file = home.join("config.toml");
-                let lock = config_lock(home);
-                let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
                 let mut doc = read_toml(&file)?;
                 let had = doc.get("mcp_servers").and_then(|t| t.get(name)).is_some();
                 match server {
@@ -248,6 +265,17 @@ impl ProviderHomes {
                             t.set_implicit(true);
                             doc["mcp_servers"] = toml_edit::Item::Table(t);
                         }
+                        // A hand-edited `mcp_servers = 1` is refused, the file
+                        // left as it is (D-3075).
+                        let Some(servers) = doc
+                            .get_mut("mcp_servers")
+                            .and_then(toml_edit::Item::as_table_like_mut)
+                        else {
+                            return Err(HomeError::Parse {
+                                file: display_name(&file),
+                                kind: "TOML",
+                            });
+                        };
                         let mut t = toml_edit::Table::new();
                         t["command"] = toml_edit::value(s.command.to_string_lossy().into_owned());
                         let mut args = toml_edit::Array::new();
@@ -262,7 +290,7 @@ impl ProviderHomes {
                             }
                             t["env_vars"] = toml_edit::value(vars);
                         }
-                        doc["mcp_servers"][name] = toml_edit::Item::Table(t);
+                        servers.insert(name, toml_edit::Item::Table(t));
                     }
                     None => {
                         if !had {
@@ -297,6 +325,8 @@ impl ProviderHomes {
             return Ok(());
         }
         let file = home.join(".claude.json");
+        let lock = config_lock(home);
+        let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
         let mut doc = read_json(&file)?;
         let key = workspace.to_string_lossy().into_owned();
         merge(
@@ -320,6 +350,8 @@ fn seed_onboarding(engine: &EngineSpec, home: &Path, seed: &Seed) -> Result<(), 
         return Err(HomeError::NotOwned);
     }
     let file = home.join(rel);
+    let lock = config_lock(home);
+    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let mut doc = read_json(&file)?;
     let theme = if seed.theme.is_empty() {
         "dark"
@@ -858,5 +890,162 @@ mod tests {
         assert!(homes
             .set_stdio_server(claude, outside.path(), "tandem_tasks", Some(&server))
             .is_err());
+    }
+
+    fn tasks_server() -> crate::chat::StdioServer {
+        crate::chat::StdioServer {
+            name: "tandem_tasks".into(),
+            command: "/opt/v/tandem-tasks".into(),
+            args: vec!["mcp".into()],
+            env_vars: Vec::new(),
+        }
+    }
+
+    /// F-EN-11 follow-up (D-3075): a hand-edited Codex `mcp_servers` that
+    /// isn't a table is refused as unreadable and left as it is, rather
+    /// than panicking with the home's lock held; an inline table takes the
+    /// server beside its own.
+    #[test]
+    fn f_tk_02_a_codex_mcp_servers_that_isnt_a_table_is_refused() {
+        let (_d, homes, reg) = setup();
+        let codex = reg.get("codex").expect("codex");
+        let home = homes
+            .create(codex, "acc_1", &Seed::default())
+            .expect("home");
+        let server = tasks_server();
+        for odd in [
+            "mcp_servers = 1\n",
+            "mcp_servers = \"x\"\n",
+            "mcp_servers = [1]\n",
+        ] {
+            std::fs::write(home.join("config.toml"), odd).expect("seed");
+            let err = homes
+                .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
+                .expect_err(odd);
+            assert!(matches!(err, HomeError::Parse { .. }), "{odd}: {err}");
+            assert_eq!(
+                std::fs::read_to_string(home.join("config.toml")).expect("read"),
+                odd
+            );
+            assert!(!config_lock(&home).is_poisoned(), "{odd}");
+        }
+        std::fs::write(
+            home.join("config.toml"),
+            "mcp_servers = { other = { command = \"x\" } }\n",
+        )
+        .expect("inline");
+        homes
+            .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
+            .expect("inline table");
+        let text = std::fs::read_to_string(home.join("config.toml")).expect("read");
+        let doc: toml_edit::DocumentMut = text.parse().expect("toml");
+        assert_eq!(
+            doc["mcp_servers"]["tandem_tasks"]["command"].as_str(),
+            Some("/opt/v/tandem-tasks"),
+            "{text}"
+        );
+        assert_eq!(doc["mcp_servers"]["other"]["command"].as_str(), Some("x"));
+    }
+
+    /// F-EN-11 follow-up (D-3075): Claude Code panes on one account starting
+    /// at once each keep their writes to the home's `.claude.json`
+    /// (onboarding at each start, a trusted folder, the tasks server): each
+    /// of Vibezeo's writers reads, changes and writes it one at a time.
+    #[test]
+    fn f_ac_01_4_claude_starts_at_once_keep_every_write_to_claude_json() {
+        const PANES: usize = 24;
+        let (_d, homes, reg) = setup();
+        let homes = std::sync::Arc::new(homes);
+        let reg = std::sync::Arc::new(reg);
+        let server = std::sync::Arc::new(tasks_server());
+        for round in 0..4 {
+            let account = format!("acc_{round}");
+            let home = homes
+                .create(
+                    reg.get("claude").expect("claude"),
+                    &account,
+                    &Seed::default(),
+                )
+                .expect("home");
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(PANES));
+            let starts: Vec<_> = (0..PANES)
+                .map(|i| {
+                    let (homes, reg, server) = (
+                        std::sync::Arc::clone(&homes),
+                        std::sync::Arc::clone(&reg),
+                        std::sync::Arc::clone(&server),
+                    );
+                    let (barrier, account, home) = (
+                        std::sync::Arc::clone(&barrier),
+                        account.clone(),
+                        home.clone(),
+                    );
+                    std::thread::spawn(move || {
+                        let claude = reg.get("claude").expect("claude");
+                        barrier.wait();
+                        // A start's writers, in its order.
+                        homes
+                            .create(claude, &account, &Seed::default())
+                            .expect("seeded");
+                        homes
+                            .trust_workspace(claude, &home, Path::new(&format!("/work/pane-{i}")))
+                            .expect("trusted");
+                        homes
+                            .set_stdio_server(claude, &home, "tandem_tasks", Some(&server))
+                            .expect("tasks");
+                    })
+                })
+                .collect();
+            for start in starts {
+                start.join().expect("thread");
+            }
+            let doc: Value =
+                serde_json::from_slice(&std::fs::read(home.join(".claude.json")).expect("read"))
+                    .expect("json");
+            for i in 0..PANES {
+                assert_eq!(
+                    doc["projects"][format!("/work/pane-{i}")]["hasTrustDialogAccepted"],
+                    json!(true),
+                    "round {round}: pane-{i} lost"
+                );
+            }
+            assert_eq!(
+                doc["mcpServers"]["tandem_tasks"]["command"],
+                json!("/opt/v/tandem-tasks"),
+                "round {round}: the tasks server lost"
+            );
+            assert_eq!(doc["hasCompletedOnboarding"], json!(true), "round {round}");
+        }
+    }
+
+    /// F-EN-11 follow-up (D-3075): a home is spelled one way only: a path
+    /// under the root through `..` (or out of it) isn't one of its homes,
+    /// so nothing is written there and no home has two locks.
+    #[test]
+    fn f_ac_01_4_a_home_reached_through_dotdot_is_not_owned() {
+        let (_d, homes, reg) = setup();
+        let claude = reg.get("claude").expect("claude");
+        let home = homes
+            .create(claude, "acc_1", &Seed::default())
+            .expect("home");
+        assert!(homes.owns(&home));
+        let around = homes
+            .root()
+            .join("claude")
+            .join("..")
+            .join("claude")
+            .join("acc_1");
+        let out = homes.root().join("claude").join("..").join("..");
+        for path in [around, out, homes.root().to_path_buf()] {
+            assert!(!homes.owns(&path), "{}", path.display());
+            assert!(matches!(
+                homes.install_hooks(claude, &path, Path::new("/x/tandem-hook")),
+                Err(HomeError::NotOwned)
+            ));
+            assert!(matches!(
+                homes.trust_workspace(claude, &path, Path::new("/work/app")),
+                Err(HomeError::NotOwned)
+            ));
+        }
     }
 }

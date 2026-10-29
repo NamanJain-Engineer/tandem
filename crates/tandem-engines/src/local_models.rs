@@ -92,15 +92,32 @@ pub fn url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
 }
 
+/// A character that doesn't read as itself: a control, or one that shows
+/// as nothing, as a plain space or reorders the text around it (bidi
+/// controls, zero-width characters, the BOM, odd spaces).
+fn unreadable(c: char) -> bool {
+    c.is_control() || tandem_core::run_request::hidden(c)
+}
+
+/// A server's name for a model (or a detail of it), as listed and used to
+/// start it: refused, never altered, when it has a character that doesn't
+/// read as itself or is longer than `max` (D-3076). An altered name would
+/// be another name, and could be one the server gives a cloud model.
 fn text(v: &Value, key: &str, max: usize) -> Option<String> {
     v.get(key)
         .and_then(Value::as_str)
-        .map(|s| {
-            s.chars()
-                .filter(|c| !c.is_control())
-                .take(max)
-                .collect::<String>()
-        })
+        .filter(|s| s.chars().count() <= max && !s.chars().any(unreadable))
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// A name as the cloud checks read it: without the characters that don't
+/// read as themselves, so none can hide a cloud tag or make a look-alike of
+/// a remote model's name.
+fn bare(v: &Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(|s| s.chars().filter(|c| !unreadable(*c)).collect::<String>())
         .filter(|s| !s.trim().is_empty())
 }
 
@@ -113,10 +130,19 @@ pub fn parse_ollama(body: &Value) -> Option<Vec<LocalModel>> {
             // A cloud model runs on ollama.com, not here: never listed.
             .filter(|m| !ollama_remote(m))
             .filter_map(|m| {
+                // `model` only stands in for a missing name, never for one
+                // that was refused.
+                let named = m
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|n| !n.trim().is_empty());
                 Some(LocalModel {
-                    id: text(m, "name", 200)
-                        .or_else(|| text(m, "model", 200))
-                        .filter(|id| !cloud_name(id))?,
+                    id: if named {
+                        text(m, "name", 200)
+                    } else {
+                        text(m, "model", 200)
+                    }
+                    .filter(|id| !cloud_name(id))?,
                     size: m.get("size").and_then(Value::as_u64),
                     parameters: m.get("details").and_then(|d| text(d, "parameter_size", 16)),
                 })
@@ -134,10 +160,10 @@ fn ollama_remote(m: &Value) -> bool {
         m.get(k)
             .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
     };
-    // As listed: control characters removed, so a name can't hide its tag.
+    // Read bare, so a name can't hide its tag.
     let cloud_tag = ["name", "model"]
         .iter()
-        .any(|k| text(m, k, 200).is_some_and(|n| cloud_name(&n)));
+        .any(|k| bare(m, k).is_some_and(|n| cloud_name(&n)));
     set("remote_host") || set("remote_model") || cloud_tag
 }
 
@@ -160,7 +186,7 @@ pub fn ollama_remote_ids(tags: &Value) -> std::collections::HashSet<String> {
             models
                 .iter()
                 .filter(|m| ollama_remote(m))
-                .flat_map(|m| [text(m, "name", 200), text(m, "model", 200)])
+                .flat_map(|m| [bare(m, "name"), bare(m, "model")])
                 .flatten()
                 .collect()
         })
@@ -393,11 +419,11 @@ pub fn check_codex(output: Option<&str>) -> Result<CodexVersion, String> {
 /// Longest version shown.
 const SHOWN_VERSION: usize = 40;
 
-/// A version word as Start's reason shows it: without control characters,
-/// as server and model names are, and cut at [`SHOWN_VERSION`] characters
-/// with "…" (D-3074).
+/// A version word as Start's reason shows it: its printable ASCII only
+/// (D-3076), so no control, bidi or zero-width character can hide or
+/// reorder it, cut at [`SHOWN_VERSION`] characters with "…" (D-3074).
 fn shown_version(word: &str) -> String {
-    let mut chars = word.chars().filter(|c| !c.is_control());
+    let mut chars = word.chars().filter(char::is_ascii_graphic);
     let shown: String = chars.by_ref().take(SHOWN_VERSION).collect();
     if chars.next().is_some() {
         format!("{shown}…")
@@ -862,6 +888,45 @@ mod tests {
         }
     }
 
+    /// F-EN-11 follow-up (D-3076): a server's name for a model with a
+    /// character that doesn't read as itself (a control, bidi or zero-width
+    /// character, the BOM, an odd space) or past the length limit is never
+    /// listed, rather than listed as a look-alike of another name, and the
+    /// name's `model` field doesn't stand in for it; such characters can't
+    /// hide a cloud tag either.
+    #[test]
+    fn f_en_11_1_a_name_that_doesnt_read_as_itself_is_never_listed() {
+        let tags = json!({"models": [
+            {"name": "qwen\u{200B}3:8b", "model": "qwen3:8b", "size": 1},
+            {"name": "qwen3:8b\u{202E}", "size": 1},
+            {"name": "\u{FEFF}gemma3:4b", "size": 1},
+            {"name": "llama3\u{00A0}:8b", "size": 1},
+            {"name": "llama3\u{2066}:8b\u{2069}", "size": 1},
+            {"name": "x".repeat(201), "size": 1},
+            {"name": "gpt-oss:120b-clo\u{200B}ud", "size": 1},
+            {"name": "mistral:7b", "size": 1, "details": {"parameter_size": "7\u{202E}B"}},
+            {"model": "phi4:14b", "size": 1, "details": {"parameter_size": "14.7B"}},
+            {"name": "y".repeat(200), "size": 1}
+        ]});
+        let listed = parse(ServerKind::Ollama, &tags).expect("tags");
+        let ids: Vec<&str> = listed.iter().map(|m| m.id.as_str()).collect();
+        let long = "y".repeat(200);
+        assert_eq!(ids, vec!["mistral:7b", "phi4:14b", long.as_str()]);
+        // A detail that doesn't read as itself isn't shown.
+        assert_eq!(listed[0].parameters, None);
+        assert_eq!(listed[1].parameters.as_deref(), Some("14.7B"));
+        // Read bare, a hidden cloud tag still marks the model remote.
+        assert!(ollama_remote_ids(&tags).contains("gpt-oss:120b-cloud"));
+        // The same in an OpenAI-style list.
+        let v1 = json!({"data": [{"id": "qwen\u{2066}3:8b"}, {"id": "gemma3:4b"}]});
+        let ids: Vec<String> = parse(ServerKind::LmStudio, &v1)
+            .expect("models")
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(ids, vec!["gemma3:4b"]);
+    }
+
     fn v(text: &str) -> CodexVersion {
         CodexVersion::parse(text).expect("version")
     }
@@ -1021,11 +1086,23 @@ mod tests {
             old("0.148.0+build")
         );
         assert_eq!(check_codex(Some("codex-cli +build")), unknown);
-        // The version shown has no control characters and is at most 40
-        // characters, cut with "…" (D-3074).
+        // The version shown is its printable ASCII, at most 40 characters,
+        // cut with "…" (D-3074, D-3076): no control character, and no bidi
+        // override, zero-width character or BOM to turn `0.941.0` into a
+        // reversed 0.149.0 or flip the sentence around it.
         assert_eq!(
             check_codex(Some("codex-cli 0.148.0-\u{1b}[31mbeta\u{7}\u{9b}2J\n")),
             old("0.148.0-[31mbeta2J")
+        );
+        assert_eq!(
+            check_codex(Some("codex-cli 0.148.0+\u{202E}0.941.0\n")),
+            old("0.148.0+0.941.0")
+        );
+        assert_eq!(
+            check_codex(Some(
+                "codex-cli 0.148.0+\u{2066}a\u{2069}\u{200B}\u{200D}\u{FEFF}b\u{2060}\n"
+            )),
+            old("0.148.0+ab")
         );
         let long = format!("0.148.0+{}", "a".repeat(32));
         assert_eq!(
