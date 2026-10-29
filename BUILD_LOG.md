@@ -3759,6 +3759,20 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - ⋯ on hover takes the count's place and cuts nothing.
   - The radar mark's accessible name begins with its words. "1 with changes requested", "Bea is waiting on you" and an account only when an engine has two are as asked.
   - `app-ui`'s open call was decided as D-2703.
+- `app-ui`'s D-2619 (319e8be9) reads a worktree's checks right after a push and on every poll for 5 minutes. The CI scene's "a push doesn't read the checks" stays true of 0.12.0. The "scenes to 0.13.0" slice changes it, gated on 0.13.0: the row turns "Checks running" after the push, with no reopen.
+- Dashboard card lines, checked in the code: a pane card's line is dashboard.rs's `preview.or(tool)`. Hook reports and pattern matches both set no preview, and only Claude Code's hooks name a tool, while it works. So in 0.12.0, Ada's card shows her tool while she works and nothing once she's done, and Codex's and Gemini's cards never have a line.
+- Design QA of `site-motion` @ 018b37a9 (27c8cd53 and c059d30b: the `Changes` must-fix and the coordinating session's code review).
+  - Approved:
+    - A checker stepping all six scenes every 25 ms finds no text overlaps; only status-dot fades remain, as §4.7 allows.
+    - Words enter with a fade and a 0.4em rise.
+    - Bea's last line is "Allow execution of: 'pnpm test search'?", and her card has no line.
+    - Every card is laid out as AgentCard draws it, ending on "Waiting for you · 0m", "Done · 0m" and "Working · 42m".
+    - The agents segment sits in StatusBar's order in the CI and Dashboard scenes, and the status bars use the footer's sans.
+    - Real playback (0.0 ms spread) and design-shots (24 of 24) are right.
+  - Two must-fixes, both about one sample world:
+    - Ada's "Tests 42 passed" and Arlo's "$ pnpm test coupon" card lines can't be drawn by dashboard.rs.
+    - The CI scene's interim data (+9 −7, "Test refreshSession, getSession's new name", runs/1807/job/5204) must now read story.json's pr, which `app-ui` landed in chain27 (f5b3272a): +12 −8, 54 tests, 6b2e9f4 "Test refreshSession and its renewal", its closing and its log.
+  - The hero's agents segment comes with D-2702.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
