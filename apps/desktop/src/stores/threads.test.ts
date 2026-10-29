@@ -2,9 +2,10 @@ import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Thread, ThreadDetail, ThreadEventEnvelope } from "@tandem/protocol";
 import { setInvokeBackend } from "../ipc/invoke";
-import { fakeBackend, resetStores, type Call } from "../test/fakeBackend";
+import { FREE_VIEW, fakeBackend, resetStores, type Call } from "../test/fakeBackend";
 import { useThreads } from "./threads";
 import { useUi } from "./ui";
+import { useSession } from "./session";
 
 type Channel = { onmessage: (e: ThreadEventEnvelope) => void };
 
@@ -248,5 +249,53 @@ describe("F-TH-01 AC2: a thread is read when it's on screen, not when it's read"
     release();
     await stale;
     expect(listed("thr_a")?.unread).toBe(true);
+  });
+
+  it("SF2: opening a thread while chats aren't showing (a saved grid restored at a launch in Code mode) leaves it unread until they show", async () => {
+    unread.thr_a = true;
+    unread.thr_b = true;
+    act(() => useUi.setState({ mode: "code" }));
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_a");
+    useThreads.getState().addToGrid("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(calls.some((c) => c.cmd === "thread_mark_read")).toBe(false);
+    expect(listed("thr_a")?.unread).toBe(true);
+    // Thread mode shows them: both are read.
+    act(() => useUi.setState({ mode: "thread" }));
+    await waitFor(() => expect(unread.thr_a).toBe(false));
+    await waitFor(() => expect(unread.thr_b).toBe(false));
+  });
+
+  it("SF3: behind another app (the window visible but not focused), a turn that ends stays unread until the window has focus", async () => {
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(useThreads.getState().windowFocused).toBe(false);
+    endTurn("thr_b");
+    await waitFor(() => expect(listed("thr_b")?.unread).toBe(true));
+    expect(unread.thr_b).toBe(true);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(unread.thr_b).toBe(false));
+  });
+
+  it("nit 1: a saved grid that the limit doesn't show isn't on screen: a turn ending on its other cell stays unread", async () => {
+    useSession.setState({ entitlement: { ...FREE_VIEW, limits: { ...FREE_VIEW.limits, threadGrid: 1 } } });
+    await useThreads.getState().refresh();
+    useThreads.getState().select("thr_a");
+    await waitFor(() => expect(channels.thr_a).toBeTruthy());
+    // Saved earlier, under a larger limit.
+    act(() => useThreads.setState({ grid: ["thr_a", "thr_b"] }));
+    void useThreads.getState().open("thr_b");
+    await waitFor(() => expect(channels.thr_b).toBeTruthy());
+    endTurn("thr_b");
+    await waitFor(() => expect(listed("thr_b")?.unread).toBe(true));
+    expect(unread.thr_b).toBe(true);
   });
 });
