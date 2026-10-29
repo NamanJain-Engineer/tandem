@@ -874,7 +874,7 @@ command -v act && act -W .github/workflows/release.yml -j linux --dryrun || true
    - The lane briefing text is sent before the task.
    - Lane menu: Diff vs base (DiffView), Merge into base, Create PR (runs `gh pr create` in a shell pane when `gh` is present), Remove lane. "Open in Files" arrives in M9.
    - A forced remove needs a local confirm dialog. An `Origin` of Conductor or Phone is rejected (`invariant_rule_5_local_review_origin`).
-   - A sweep at startup and every 6 h, which raises a "Clean up lanes" notification and never deletes anything.
+   - A sweep at startup and every 6 h, which raises a "Clean up lanes" notification and never deletes a worktree (later, F-CD-24: except a jj workspace whose making Vibezeo cut short).
 3. **Launch wizard and presets (F-CD-14, UI-12).**
    - Open with `Mod+Shift+L`, from the empty state, or from `+`.
    - Built-in presets Solo, Pair, Bench and Fleet. The seat editor, How many (1–8), a shared task, isolation, and the Will launch preview.

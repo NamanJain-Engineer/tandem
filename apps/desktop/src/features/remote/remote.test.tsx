@@ -168,7 +168,15 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
       });
     });
     expect(await screen.findByText("SHA256:abc")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
+    // It can open on its own while connecting: Trust and connect waits a
+    // moment first, so a click aimed at what was there trusts nothing.
+    const trust = screen.getByRole("button", { name: "Trust and connect" }) as HTMLButtonElement;
+    expect(trust.disabled).toBe(true);
+    expect(trust.title).toBe("Trust and connect turns on once this has been still on screen for a moment.");
+    fireEvent.click(trust);
+    expect(named("ssh_hostkey_decide")).toEqual([]);
+    await waitFor(() => expect(trust.disabled).toBe(false));
+    fireEvent.click(trust);
     await waitFor(() =>
       expect(named("ssh_hostkey_decide")).toEqual([
         { cmd: "ssh_hostkey_decide", args: { opId: "op_7", accept: true } },

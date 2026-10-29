@@ -1,0 +1,23 @@
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { Results } from "./results";
+import { products } from "../../tests/fixtures";
+
+describe("Results", () => {
+  it.each([0, 1, 3, 12])("shows one row for each of %i products", (n) => {
+    render(<Results results={products(n)} onOpen={vi.fn()} />);
+    expect(screen.queryAllByText(/^Product /)).toHaveLength(n);
+  });
+
+  it("says when nothing matches", () => {
+    render(<Results results={[]} onOpen={vi.fn()} />);
+    expect(screen.getByText("No products match.")).toBeTruthy();
+  });
+
+  it("opens a product when its row is clicked", () => {
+    const onOpen = vi.fn();
+    render(<Results results={products(2)} onOpen={onOpen} />);
+    screen.getByText("Product 2").click();
+    expect(onOpen).toHaveBeenCalledWith(products(2)[1]);
+  });
+});

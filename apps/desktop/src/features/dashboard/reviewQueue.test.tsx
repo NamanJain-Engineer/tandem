@@ -122,7 +122,13 @@ describe("Review queue (F-DB-04)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("review-changed").textContent).toBe("Changed since you approved"),
     );
-    fireEvent.click(screen.getByTestId("review-approve"));
+    // S4: Approve waits for the item to have held still a moment.
+    const approve = screen.getByTestId("review-approve") as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(approve);
+    expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
+    await waitFor(() => expect(approve.disabled).toBe(false));
+    fireEvent.click(approve);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h1" }),
     );
@@ -130,6 +136,29 @@ describe("Review queue (F-DB-04)", () => {
     expect(screen.getByTestId("review-item").getAttribute("data-state")).toBe("approved");
     expect(screen.getByTestId("review-approve").textContent).toBe("Unapprove");
     expect(screen.getByRole("region", { name: "Approved" })).toBeTruthy();
+    stop();
+  });
+
+  it("N4: a diff that changes in place starts Approve's wait over, so the hash sent is one that was on screen", async () => {
+    const calls = fakeBackend({
+      review_queue: () => ({ items: [item({})] }),
+      review_approve: () => item({ state: "approved" }),
+    });
+    const stop = followReview();
+    wrap(<ReviewQueue />);
+    const approve = () => screen.getByTestId("review-approve") as HTMLButtonElement;
+    await waitFor(() => expect(approve().disabled).toBe(false));
+    // Same item, same place, a new diff.
+    act(() => emitLocal("review:queue", { items: [item({ diffHash: "h2" })] }));
+    expect(approve().disabled).toBe(true);
+    expect(approve().title).toBe("This diff just changed: Approve turns on in a moment.");
+    fireEvent.click(approve());
+    expect(calls.some((c) => c.cmd === "review_approve")).toBe(false);
+    await waitFor(() => expect(approve().disabled).toBe(false));
+    fireEvent.click(approve());
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "review_approve")?.args).toEqual({ key: "pane:p1", diffHash: "h2" }),
+    );
     stop();
   });
 

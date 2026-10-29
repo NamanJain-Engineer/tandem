@@ -1,16 +1,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DashboardItem,
   FileDiff,
   ImportedComment,
   LaneChecks,
+  PrCheck,
   Tab,
   WorkspaceSummary,
 } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
+import { useLayout } from "../../stores/layout";
+import { useStatus } from "../../stores/status";
 import { useWorkspaces } from "../../stores/workspaces";
 import { CHECKS_IDLE_MS, checksDue, loadChecks, pollChecks, useWorktrees } from "../../stores/worktrees";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
@@ -134,13 +137,16 @@ function withDialogs(node: React.ReactNode) {
 }
 
 describe("CI results and review comments (F-WT-08)", () => {
-  it("F-WT-08.1 the row says 1 check failed: test, and Send failure to agent types the core's fenced prompt on a click", async () => {
+  it("F-WT-08.1 the row says CI failed (1 check failed: test as its name and title), and Send failure to agent types the core's fenced prompt on a click", async () => {
     useDashboard.setState({ items: { "pane:pn_1": agent("pn_1", "wt_1") } });
     withDialogs(<WorktreeRow wt={WT} base="main" />);
     await act(() => loadChecks(["wt_1"]));
     const badge = await screen.findByTestId("worktree-checks");
     expect(badge.dataset.state).toBe("failed");
-    expect(badge.textContent).toBe("1 check failed: test");
+    // D-2700: the status bar's words; its name starts with them (WCAG 2.5.3).
+    expect(badge.textContent).toBe("CI failed");
+    expect(badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
+    expect(badge.title).toBe("1 check failed: test");
     // F-WT-08.4: reading checks never sends anything.
     expect(named("pty_type_prompt")).toHaveLength(0);
     expect(named("lane_check_failure")).toHaveLength(0);
@@ -155,6 +161,91 @@ describe("CI results and review comments (F-WT-08)", () => {
     await waitFor(() => expect(named("pty_type_prompt")).toHaveLength(1));
     expect(named("lane_check_failure")[0]?.args).toEqual({ laneId: "wt_1", name: "test" });
     expect(named("pty_type_prompt")[0]?.args).toEqual({ paneId: "pn_1", text: PROMPT });
+  });
+
+  it("F-WT-08.1 D-2614 D-2700 beside the row's status the badge is its icon alone, its name and title kept", async () => {
+    // The worktree's agent is working: its row says "● 1 working" (D-2603).
+    useLayout.setState({
+      tabs: { tb_wt_1: { tree: null, active: null, maximized: null, panes: { p1: {} as never }, keepEmpty: false } },
+    });
+    useStatus.setState({
+      records: {
+        "pane:p1": { key: "pane:p1", status: "working", reason: null, since: 1, ts: 1, tool: null, title: null, preview: null },
+      },
+    });
+    withDialogs(<WorktreeRow wt={WT} base="main" />);
+    await act(() => loadChecks(["wt_1"]));
+    const badge = await screen.findByRole("button", { name: "CI failed: 1 check failed: test" });
+    expect(badge.dataset.testid).toBe("worktree-checks");
+    expect(badge.hasAttribute("data-compact")).toBe(true);
+    expect(badge.textContent).toBe("");
+    expect(badge.querySelector("svg")).not.toBeNull();
+    expect(badge.title).toBe("1 check failed: test");
+    // With nothing beside it, its words show whole, never cut short.
+    act(() => useStatus.setState({ records: {} }));
+    expect(badge.hasAttribute("data-compact")).toBe(false);
+    expect(badge.textContent).toBe("CI failed");
+    expect(badge.querySelector(".truncate")).toBeNull();
+    fireEvent.click(badge);
+    expect(useWorktrees.getState().ask).toEqual({ kind: "checks", worktreeId: "wt_1" });
+  });
+
+  it("F-WT-08.1 D-2700 the badge says the status bar's words in every state, its title the checks'", async () => {
+    const states: Array<[PrCheck["bucket"], string, string]> = [
+      ["pending", "CI running", "Checks running"],
+      ["cancel", "CI cancelled", "Checks cancelled"],
+      ["pass", "CI passed", "Checks passed"],
+    ];
+    for (const [bucket, words, title] of states) {
+      checks = { ...READY, checks: [{ ...READY.checks[0]!, bucket }] };
+      const { unmount } = withDialogs(<WorktreeRow wt={WT} base="main" />);
+      await act(() => loadChecks(["wt_1"]));
+      const badge = await screen.findByRole("button", { name: words });
+      expect(badge.textContent).toBe(words);
+      expect(badge.title).toBe(title);
+      unmount();
+    }
+  });
+
+  it("F-WT-08.1 D-2700 while a row's contents overflow it, its marks fold to their icons, the radar mark first, then the badge", async () => {
+    useWorktrees.setState({ radar: { wt_1: ["applyCoupon"] } });
+    // The row's contents: 120 px, and 80 more for each mark that shows its words.
+    let room = 200;
+    const row = (el: Element) => el instanceof HTMLElement && el.dataset.testid === "worktree-row";
+    const scroll = vi
+      .spyOn(Element.prototype, "scrollWidth", "get")
+      .mockImplementation(function (this: Element) {
+        return row(this) ? 120 + 80 * this.querySelectorAll("[data-words]").length : 0;
+      });
+    const client = vi
+      .spyOn(Element.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: Element) {
+        return row(this) ? room : 0;
+      });
+    try {
+      withDialogs(<WorktreeRow wt={WT} base="main" />);
+      await act(() => loadChecks(["wt_1"]));
+      const badge = await screen.findByTestId("worktree-checks");
+      const radar = screen.getByTestId("worktree-radar");
+      // Room for one mark's words: the radar mark folds, the badge keeps "CI failed".
+      expect(radar.hasAttribute("data-compact")).toBe(true);
+      expect(radar.getAttribute("aria-label")).toBe("Shares applyCoupon");
+      expect(badge.textContent).toBe("CI failed");
+      // New contents are measured again from nothing folded: room for both now.
+      room = 400;
+      act(() => useWorktrees.setState({ radar: { wt_1: ["applyCoupon", "priceOf"] } }));
+      expect(radar.textContent).toBe("2 symbols");
+      expect(badge.textContent).toBe("CI failed");
+      // Room for neither: both are their icons, never their words cut short.
+      room = 150;
+      act(() => useWorktrees.setState({ radar: { wt_1: ["applyCoupon"] } }));
+      expect(radar.textContent).toBe("");
+      expect(badge.textContent).toBe("");
+      expect(badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
   });
 
   it("F-WT-08.3 Check pull request asks first; Not now runs nothing, Allow allows the repository and shows the checks", async () => {

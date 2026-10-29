@@ -1,0 +1,8 @@
+# shop
+
+A sample storefront for the Vibezeo demo: a cart, coupons, checkout and
+search. Nothing here runs; the agents in the demo are simulated.
+
+    pnpm install
+    pnpm dev     # http://localhost:41003
+    pnpm test

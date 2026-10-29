@@ -1409,10 +1409,10 @@ pub fn run() {
                     }
                 },
             ));
-            // Worktree sweep: at startup, then every 6 h (F-CD-15). It deletes
-            // nothing a person made: finished worktrees become one
-            // notification. Only a jj workspace whose making Vibezeo itself
-            // cut short is forgotten (F-CD-24, its commits kept).
+            // Worktree sweep: at startup, then every 6 h (F-CD-15). Finished
+            // worktrees become one notification. The only folder it removes
+            // is a jj workspace whose making Vibezeo itself cut short (F-CD-24:
+            // its commits kept, and kept whole when jj can't snapshot it).
             let sweep_state = handle.clone();
             tauri::async_runtime::spawn(supervisor::supervise_task(
                 "scheduler/worktree-sweep",
@@ -1498,6 +1498,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // F-TL-12: an agent's running `vibezeo run` ends with the app
                 // (its group killed, its row written), never left holding values.
+                services::agent_run::mark_exiting();
                 services::agent_run::shutdown_all();
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());

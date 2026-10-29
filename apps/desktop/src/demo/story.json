@@ -1,0 +1,231 @@
+{
+  "repo": "shop",
+  "base": "main",
+  "check": "pnpm test",
+  "history": [
+    { "sha": "4f2c9e1", "subject": "Show the cart's total before checkout" },
+    { "sha": "91b07aa", "subject": "Keep the coupon on reload" },
+    { "sha": "0d5e3b2", "subject": "First commit" }
+  ],
+  "remote": "git@github.example:sample/shop.git",
+  "engines": {
+    "claude": { "label": "Claude Code", "version": "2.1.0-sample" },
+    "codex": { "label": "Codex", "version": "0.46.0-sample" },
+    "gemini": { "label": "Gemini CLI", "version": "0.9.0-sample" }
+  },
+  "worktrees": [
+    {
+      "slug": "checkout-fix",
+      "engine": "claude",
+      "agentName": "Ada",
+      "task": "Find why checkout sends people back to /login",
+      "state": "done",
+      "steps": [
+        { "read": "src/auth/session.ts" },
+        { "read": "src/cart/checkout.ts" },
+        { "edit": "src/cart/checkout.ts", "add": 18, "del": 4 },
+        { "edit": "src/cart/coupon.ts", "add": 9, "del": 2 },
+        { "edit": "src/auth/session.ts", "add": 11, "del": 8 },
+        { "edit": "src/cart/checkout.test.ts", "add": 24, "del": 4 },
+        { "run": "pnpm test cart", "passed": 42 }
+      ],
+      "closing": "Sessions that had just expired were dropped, so a second tab bounced back to /login. They renew now, with tests.",
+      "commits": [
+        { "sha": "e5d2a90", "subject": "Test checkout's sign-in round trip" },
+        { "sha": "9c41f7b", "subject": "Keep coupons on renewed sessions" },
+        { "sha": "3b8f1d2", "subject": "Renew sessions that expired a moment ago" }
+      ],
+      "mergeCommit": "a41c9e2"
+    },
+    {
+      "slug": "coupon-rules",
+      "engine": "codex",
+      "agentName": "Arlo",
+      "task": "Stack coupons by priority",
+      "state": "working",
+      "steps": [
+        { "read": "src/cart/coupon.ts" },
+        { "edit": "src/cart/coupon.ts", "add": 31, "del": 12 },
+        { "edit": "src/cart/rules.ts", "add": 40, "del": 0 },
+        { "run": "pnpm test coupon" }
+      ],
+      "commits": [
+        { "sha": "b7e3c10", "subject": "Apply stacked coupons in priority order" },
+        { "sha": "f02a6d4", "subject": "Add stacking rules" },
+        { "sha": "4c9e2b8", "subject": "Give each coupon a priority" },
+        { "sha": "8d1f5a3", "subject": "Add STAFF30 and WELCOME5" },
+        { "sha": "2a7b9e6", "subject": "Read coupon codes as a list" }
+      ],
+      "mergeCommit": "7d03b5f"
+    },
+    {
+      "slug": "search-ui",
+      "engine": "gemini",
+      "agentName": "Bea",
+      "task": "Make search results keyboard friendly",
+      "state": "waiting",
+      "steps": [
+        { "read": "src/search/results.tsx" },
+        { "edit": "src/search/results.tsx", "add": 22, "del": 6 }
+      ],
+      "ask": "pnpm test search",
+      "closing": "Search results move with the arrow keys, Home and End, and Enter opens one.",
+      "commits": [
+        { "sha": "6e4d8f1", "subject": "Open a search result with Enter" },
+        { "sha": "d93b2c5", "subject": "Move through search results with the arrow keys" }
+      ],
+      "mergeCommit": "c18e6a0"
+    }
+  ],
+  "dev": { "command": "pnpm dev", "port": 41003, "requests": ["GET /checkout 200", "GET /cart 200"] },
+  "overlap": { "symbol": "applyCoupon", "file": "src/cart/coupon.ts", "between": ["checkout-fix", "coupon-rules"] },
+  "plan": {
+    "goal": "Add gift cards to checkout, with tests",
+    "tasks": [
+      { "title": "Add gift card balances", "engine": "codex" },
+      { "title": "Redeem gift cards at checkout", "engine": "claude" },
+      { "title": "Show gift cards in the cart", "engine": "gemini" }
+    ]
+  },
+  "secondOpinion": {
+    "worktree": "checkout-fix",
+    "engine": "codex",
+    "comments": [
+      {
+        "file": "src/cart/checkout.ts",
+        "line": 22,
+        "body": "req.url is the whole URL, host and all, so next= hands the login page an absolute address. Pass the path, or the login page has to check the host before it redirects."
+      },
+      { "file": "src/cart/checkout.ts", "line": 25, "body": "Add a test for an expired cart." }
+    ]
+  },
+  "pr": {
+    "number": 42,
+    "worktree": "checkout-fix",
+    "title": "Sample PR: Keep people on checkout after they sign in",
+    "url": "https://github.example/sample/shop/pull/42",
+    "checks": [
+      {
+        "name": "lint",
+        "bucket": "pass",
+        "workflow": "CI",
+        "link": "https://github.example/sample/shop/actions/runs/7104/job/20031"
+      },
+      {
+        "name": "test",
+        "bucket": "fail",
+        "workflow": "CI",
+        "link": "https://github.example/sample/shop/actions/runs/7104/job/20032",
+        "log": [
+          "> shop@1.4.0 test /home/runner/work/shop/shop",
+          "> vitest run",
+          "",
+          "",
+          " RUN  v4.1.11-sample /home/runner/work/shop/shop",
+          "",
+          " ❯ src/auth/session.test.ts (5 tests | 5 failed) 8ms",
+          "     × finds the session a cookie names 5ms",
+          "     × keeps the coupon the customer applied 1ms",
+          "     × has none without a cookie 0ms",
+          "     × has none for a cookie it doesn't know 0ms",
+          "     × drops a session that expired 0ms",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯",
+          "",
+          " FAIL  src/auth/session.test.ts > getSession > finds the session a cookie names",
+          "TypeError: getSession is not a function",
+          " ❯ src/auth/session.test.ts:9:18",
+          "      7| describe(\"getSession\", () => {",
+          "      8|   it(\"finds the session a cookie names\", async () => {",
+          "      9|     expect(await getSession(request(signIn(\"ana\")))).toMatchObject({ c…",
+          "       |                  ^",
+          "     10|   });",
+          "     11|",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯",
+          "",
+          " FAIL  src/auth/session.test.ts > getSession > keeps the coupon the customer applied",
+          "TypeError: getSession is not a function",
+          " ❯ src/auth/session.test.ts:13:19",
+          "     11|",
+          "     12|   it(\"keeps the coupon the customer applied\", async () => {",
+          "     13|     expect((await getSession(request(signIn(\"ana\", \"SPRING10\"))))?.cou…",
+          "       |                   ^",
+          "     14|   });",
+          "     15|",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯",
+          "",
+          " FAIL  src/auth/session.test.ts > getSession > has none without a cookie",
+          "TypeError: getSession is not a function",
+          " ❯ src/auth/session.test.ts:17:18",
+          "     15|",
+          "     16|   it(\"has none without a cookie\", async () => {",
+          "     17|     expect(await getSession(request(null))).toBeNull();",
+          "       |                  ^",
+          "     18|   });",
+          "     19|",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯",
+          "",
+          " FAIL  src/auth/session.test.ts > getSession > has none for a cookie it doesn't know",
+          "TypeError: getSession is not a function",
+          " ❯ src/auth/session.test.ts:21:18",
+          "     19|",
+          "     20|   it(\"has none for a cookie it doesn't know\", async () => {",
+          "     21|     expect(await getSession(request(\"nope\"))).toBeNull();",
+          "       |                  ^",
+          "     22|   });",
+          "     23|",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯",
+          "",
+          " FAIL  src/auth/session.test.ts > getSession > drops a session that expired",
+          "TypeError: getSession is not a function",
+          " ❯ src/auth/session.test.ts:25:18",
+          "     23|",
+          "     24|   it(\"drops a session that expired\", async () => {",
+          "     25|     expect(await getSession(request(signIn(\"ana\", null, -60_000)))).to…",
+          "       |                  ^",
+          "     26|   });",
+          "     27| });",
+          "",
+          "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯",
+          "",
+          "",
+          " Test Files  1 failed | 4 passed (5)",
+          "      Tests  5 failed | 48 passed (53)",
+          "   Start at  09:41:07",
+          "   Duration  1.99s (transform 417ms, setup 0ms, import 697ms, tests 134ms, environment 3.19s)",
+          "",
+          " ELIFECYCLE  Test failed. See above for more details.",
+          "##[error]Process completed with exit code 1."
+        ]
+      },
+      {
+        "name": "build",
+        "bucket": "pass",
+        "workflow": "CI",
+        "link": "https://github.example/sample/shop/actions/runs/7104/job/20033"
+      }
+    ],
+    "comments": [
+      {
+        "author": "sample-reviewer",
+        "file": "src/auth/session.ts",
+        "line": 12,
+        "body": "15 min feels long for a shared computer. could we do 5? anyone who comes back later just signs in again, that's fine"
+      }
+    ],
+    "fix": {
+      "steps": [
+        { "read": "src/auth/session.test.ts" },
+        { "edit": "src/auth/session.test.ts", "add": 12, "del": 8 },
+        { "run": "pnpm test", "passed": 54 }
+      ],
+      "commit": { "sha": "6b2e9f4", "subject": "Test refreshSession and its renewal" },
+      "closing": "CI's tests failed: main's session tests still called getSession, which this branch renamed refreshSession. They test refreshSession and its renewal now, and all 54 tests pass.",
+      "run": 7105
+    }
+  }
+}

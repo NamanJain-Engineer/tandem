@@ -42,11 +42,12 @@ import { parseRunApproval } from "../secrets/runApproval";
 import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 import { answer, closeAgent, closeIdle, handOff, jumpTo, stopAgent } from "./actions";
 import {
+  askingGroup,
   cardMeta,
   cardTitle,
   closeIdleTargets,
   counts,
-  group,
+  groupRest,
   visible,
   type Group,
   type Lanes,
@@ -138,7 +139,7 @@ function AgentCard({
   const unreadable = !!approval && approval.source.type === "pane" && !run;
   // Cards sort and size by what agents report, so Allow can move under the
   // pointer: it waits until its own place has held still (F-TL-12.12).
-  const box = useSteadyBox(!!approval);
+  const box = useSteadyBox(!!approval, key);
   const canAllow = settled && box.steady && (!run || seenEnd) && !unreadable;
   const close = () =>
     busy
@@ -292,6 +293,7 @@ function AgentCard({
               <Button
                 size="sm"
                 variant="primary"
+                data-grant
                 data-testid="card-allow"
                 disabled={!canAllow}
                 title={
@@ -309,6 +311,7 @@ function AgentCard({
                 <Button
                   size="sm"
                   variant="secondary"
+                  data-grant
                   data-testid="card-allow-agent"
                   disabled={!canAllow}
                   title={
@@ -410,7 +413,16 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
       ),
     [workspaces],
   );
-  const groups = group(shown, groupBy, order, t("dashboard.noFolder"), lanes);
+  // Questions first, from every card (no filter or search) and above the
+  // header, so nothing an agent reports can move them (F-TL-12.12).
+  const asking = askingGroup(all);
+  const groups = groupRest(
+    shown.filter((i) => !i.pendingApproval),
+    groupBy,
+    order,
+    t("dashboard.noFolder"),
+    lanes,
+  );
 
   const idle = closeIdleTargets(shown);
   const narrowed = filter !== "all" || query.trim() !== "";
@@ -510,11 +522,17 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   };
 
   return (
-    <div data-testid="dashboard" className="flex flex-col gap-3 p-3">
+    // No scroll anchoring: the browser would scroll to keep a card below in
+    // place, moving the pinned questions under the pointer (F-TL-12.12).
+    <div data-testid="dashboard" className="flex flex-col gap-3 p-3 [overflow-anchor:none]">
+      {/* The view's heading comes first for a screen reader, though the
+          questions are drawn above the visible count. */}
+      <h2 className="sr-only">{t("dashboard.count", { n: c.total })}</h2>
+      {asking && renderGroup(asking)}
       <header className="flex flex-col gap-1.5">
-        <h2 data-testid="dashboard-count" className="text-xl font-semibold text-fg">
+        <p data-testid="dashboard-count" aria-hidden="true" className="text-xl font-semibold text-fg">
           {t("dashboard.count", { n: c.total })}
-        </h2>
+        </p>
         <p data-testid="dashboard-subtitle" className="flex flex-wrap gap-x-1 text-sm text-fg-muted">
           {segments.map((x, i) => (
             <span key={x.status}>
@@ -600,16 +618,18 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
             );
           })}
       </div>
-      {groups.length === 0 ? (
+      {/* Nothing the filter or search would show, questions included: the
+          questions stay pinned above, and this says why nothing else is. */}
+      {shown.length === 0 ? (
         <EmptyState
-          title={t("dashboard.noMatch", { q: query })}
+          title={query.trim() ? t("dashboard.noMatch", { q: query }) : t("dashboard.noMatchFilter")}
           primary={
             <Button
               size="sm"
               variant="secondary"
               onClick={() => useDashboard.setState({ query: "", filter: "all" })}
             >
-              {t("dashboard.clearSearch")}
+              {query.trim() ? t("dashboard.clearSearch") : t("dashboard.clearFilter")}
             </Button>
           }
         />

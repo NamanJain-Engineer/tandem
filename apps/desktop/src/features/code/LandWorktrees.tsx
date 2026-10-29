@@ -193,7 +193,7 @@ export function LandWorktreesDialog({
   const footer = (
     <>
       {plan?.undo && !running ? (
-        <Button variant="danger" onClick={() => void undo()} disabled={busy} data-testid="landing-undo">
+        <Button variant="secondary" onClick={() => void undo()} disabled={busy} data-testid="landing-undo">
           {t("landing.undo")}
         </Button>
       ) : null}

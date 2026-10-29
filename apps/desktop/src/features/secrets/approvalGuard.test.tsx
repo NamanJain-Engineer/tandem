@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SETTLE_MS, useSeenEnd, useSettled } from "./ApprovalGuard";
+import { SETTLE_MS, useSeenEnd, useSettled, waitReason } from "./ApprovalGuard";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
@@ -54,5 +54,18 @@ describe("useSettled (F-TL-12.12)", () => {
     expect(result.current[1]).toBe(false);
     act(() => seen.at(-1)?.([{ isIntersecting: true }]));
     expect(result.current[1]).toBe(true);
+  });
+
+  it("waitReason names the first reason Allow waits", () => {
+    expect(waitReason({ seenEnd: false, settled: false, steady: false })).toBe(
+      "Scroll to the end of the command first.",
+    );
+    expect(waitReason({ seenEnd: true, settled: false, steady: false })).toBe(
+      "This question just changed: Allow turns on in a moment.",
+    );
+    expect(waitReason({ seenEnd: true, settled: true, steady: false })).toBe(
+      "Allow turns on once this has been still on screen for a moment.",
+    );
+    expect(waitReason({ seenEnd: true, settled: true, steady: true })).toBeUndefined();
   });
 });

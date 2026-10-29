@@ -165,6 +165,12 @@ bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --
 sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
 sh scripts/build-tandem-host.sh                             # musl binary + manifest into src-tauri/resources/tandem-host
 cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
+# In a fresh agent container the m14 specs need, in order: the musl target
+# (rustup target add x86_64-unknown-linux-musl), the fixture (pull ubuntu:24.04
+# through mirror.gcr.io on a 429, then build-sshd-image.sh and compose up),
+# tandem-host, then the app's build (no TANDEM_E2E_SKIP_BUILD): an app built
+# before tandem-host has no helper to upload, and connecting stops at
+# install_failed ("Connecting…" in the specs).
 
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
@@ -229,6 +235,15 @@ E2E lessons (each cost a debugging round):
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- A run's temp `TANDEM_HOME` (`/tmp/tandem-e2e-XXXXXX`, up to 810 MB with the
+  voice models) is deleted when the run passes. A failing run keeps it for its
+  logs, marked `e2e-failed` (the runner prints the path, and
+  `test-results/e2e-last-home` names it), and only the last 3 failed homes stay
+  (`e2e/support/homes.ts`). `TANDEM_E2E_KEEP_HOME=1` keeps a passing run's home,
+  for a grep after the run. Homes from before this rule carry no mark and are
+  never pruned: clearing them is the owner's call. The specs' own
+  `/tmp/tandem-e2e-<spec>-<time>` folders still stay behind (about 77 MB after
+  a thousand of them).
 - Conductor specs (`m16-1-*`) talk to `scripts/mock-realtime.ts` on :8794 (the runner
   starts it and starts the API with `REALTIME_MOCK_URL=ws://127.0.0.1:8794/realtime`;
   an API already running from elsewhere lacks it, so stop it first). The mock's

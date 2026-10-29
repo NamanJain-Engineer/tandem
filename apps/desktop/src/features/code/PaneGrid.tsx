@@ -427,9 +427,9 @@ const PaneView = memo(function PaneView({
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} engine={pane.engineId ?? undefined} size={14} active={focused} /> : undefined}
         name={pane.humanName}
         meta={meta}
+        chip={wt && <WorktreeChip wt={wt} />}
         location={
           <>
-            {wt && <WorktreeChip wt={wt} />}
             <AccountChip pane={pane} />
             {pane.localModel && <LocalModelChip label={pane.localModel} />}
             {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}

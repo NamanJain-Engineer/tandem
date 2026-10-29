@@ -79,8 +79,8 @@ test("demo AC2 AC3 the ready message runs the scripted turn; full screen opens o
   await frame.locator('[data-testid="changes-toggle"]').click();
   await expect(frame.locator('[data-testid="change-row"]')).toHaveCount(2);
   const rows = await frame.locator('[data-testid="change-row"]').allTextContents();
-  expect(rows.join(" ")).toContain("redirect.ts");
-  expect(rows.join(" ")).toContain("redirect.test.ts");
+  expect(rows.join(" ")).toContain("session.ts");
+  expect(rows.join(" ")).toContain("session.test.ts");
 
   await page.getByRole("link", { name: "Explore full screen" }).click();
   const stage = page.locator("[data-demo-stage]");

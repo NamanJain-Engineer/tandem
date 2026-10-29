@@ -1,0 +1,32 @@
+import { readCookie } from "../http/cookies";
+
+export type Session = {
+  customer: string;
+  coupon: string | null;
+  expiresAt: number;
+};
+
+const sessions = new Map<string, Session>();
+
+/** How long after it expires a session can still be renewed. */
+export const GRACE_MS = 15 * 60_000;
+
+/** The session a request's cookie names, renewed when it expired less than
+ * GRACE_MS ago. Signing in sets a new cookie in one tab while another tab
+ * still sends the old one, which used to land it back on /login. */
+export async function refreshSession(req: Request): Promise<Session | null> {
+  const id = readCookie(req, "sid");
+  const session = id ? sessions.get(id) : undefined;
+  if (!session) return null;
+  const now = Date.now();
+  if (session.expiresAt + GRACE_MS < now) return null;
+  if (session.expiresAt < now) session.expiresAt = now + GRACE_MS;
+  return session;
+}
+
+/** Starts a session for `customer` and returns its cookie's value. */
+export function signIn(customer: string, coupon: string | null = null, ttlMs = 3_600_000): string {
+  const id = crypto.randomUUID();
+  sessions.set(id, { customer, coupon, expiresAt: Date.now() + ttlMs });
+  return id;
+}

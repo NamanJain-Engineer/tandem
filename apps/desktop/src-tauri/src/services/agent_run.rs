@@ -31,6 +31,7 @@ use tandem_store::Store;
 use tokio::io::AsyncReadExt;
 use zeroize::Zeroizing;
 
+use crate::services::activity::Decider;
 use crate::services::secrets;
 use crate::services::terminal::TerminalService;
 
@@ -235,13 +236,34 @@ pub fn install_crash_kill() {
     }));
 }
 
+/// The app is exiting (or restarting): set at the exit event and before
+/// each `restart()`, so [`resume_all`] can't undo a real exit.
+static EXITING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the app as exiting; see [`EXITING`].
+pub fn mark_exiting() {
+    EXITING.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Undoes [`shutdown_all`]'s quit, for an update whose installer didn't
-/// start after all: new runs are served again.
+/// start after all: new runs are served again. Not once the app is really
+/// exiting (a quit during the failed install's unwind).
 pub fn resume_all() {
-    if let Ok(live) = LIVE.lock() {
-        for runs in live.iter().filter_map(std::sync::Weak::upgrade) {
-            runs.quit.send_replace(false);
-        }
+    let live: Vec<Arc<AgentRuns>> = LIVE
+        .lock()
+        .map(|l| l.iter().filter_map(std::sync::Weak::upgrade).collect())
+        .unwrap_or_default();
+    resume(&EXITING, &live);
+}
+
+/// [`resume_all`] for `live`, unless `exiting` is set: the globals passed
+/// in, so a test can use its own.
+fn resume(exiting: &std::sync::atomic::AtomicBool, live: &[Arc<AgentRuns>]) {
+    if exiting.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    for runs in live {
+        runs.quit.send_replace(false);
     }
 }
 
@@ -581,7 +603,7 @@ impl AgentRuns {
     async fn ledger(
         &self,
         c: &Checked,
-        decided: &'static str,
+        decided: Decided,
         ran: bool,
         reply: Option<&RunReply>,
         duration_ms: Option<i64>,
@@ -606,11 +628,12 @@ impl AgentRuns {
                             None => v.name.clone(),
                         })
                         .collect(),
-                    decided,
+                    decided: decided.code(),
                     exit_code: reply.and_then(|r| r.exit_code),
                     duration_ms,
                     ended,
                     started: ran,
+                    by: decided.by(),
                 },
             )
             .await;
@@ -688,21 +711,21 @@ impl AgentRuns {
         &self,
         c: &Checked,
         gone: impl Future<Output = &'static str>,
-    ) -> Result<&'static str, (&'static str, String)> {
+    ) -> Result<Decided, (Decided, String)> {
         let rules = RunRules::load(&self.data);
         let unasked = if rules.allows(&c.repo, &c.command, dialect(), &c.fingerprint) {
-            Some("rule")
+            Some(Decided::Rule)
         } else if self
             .terminals
             .agent_run_allowed(c.pane.as_str(), &c.allow_key(), &c.fingerprint)
         {
-            Some("allowed_before")
+            Some(Decided::AllowedBefore)
         } else {
             None
         };
         if let Some(by) = unasked {
             if !per_minute(&self.unasked, c.pane.as_str(), UNASKED_RUNS_PER_MINUTE) {
-                return Err(("too_many", TOO_MANY_RUNS.into()));
+                return Err((Decided::TooMany, TOO_MANY_RUNS.into()));
             }
             return Ok(by);
         }
@@ -710,14 +733,14 @@ impl AgentRuns {
             let mut panes = self
                 .asking
                 .lock()
-                .map_err(|_| ("busy", ONE_AT_A_TIME.to_string()))?;
+                .map_err(|_| (Decided::Busy, ONE_AT_A_TIME.to_string()))?;
             if !panes.insert(c.pane.as_str().to_string()) {
-                return Err(("busy", ONE_AT_A_TIME.into()));
+                return Err((Decided::Busy, ONE_AT_A_TIME.into()));
             }
             Asking(self, c.pane.as_str().to_string())
         };
         if !self.may_ask(c.pane.as_str()) {
-            return Err(("too_many", TOO_MANY_QUESTIONS.into()));
+            return Err((Decided::TooMany, TOO_MANY_QUESTIONS.into()));
         }
         let with = if c.vars.is_empty() {
             "with no secrets".to_string()
@@ -750,29 +773,38 @@ impl AgentRuns {
             outcome = ticket.outcome() => outcome,
             why = gone => {
                 self.broker.cancel(&view.id);
-                let code = ended_code(why).unwrap_or("client_gone");
-                self.terminals.activity.approval(c.pane.as_str(), code).await;
+                let code = if why == APP_QUIT {
+                    Decided::AppQuit
+                } else {
+                    Decided::ClientGone
+                };
+                self.terminals
+                    .activity
+                    .approval(c.pane.as_str(), code.code(), Decider::Nobody)
+                    .await;
                 return Err((code, why.into()));
             }
         };
         let (decided, answer) = match &outcome {
             ApprovalOutcome::Allowed { scope, via } => {
                 let who = if *scope == ApprovalScope::Conversation {
-                    "agent"
+                    Decided::Agent
                 } else {
-                    "once"
+                    Decided::Once
                 };
                 (who, format!("allowed:{}", via_name(*via)))
             }
             ApprovalOutcome::Denied { via, .. } => {
-                ("declined", format!("denied:{}", via_name(*via)))
+                (Decided::Declined, format!("denied:{}", via_name(*via)))
             }
-            ApprovalOutcome::Expired => ("expired", "expired".into()),
-            ApprovalOutcome::Cancelled => ("cancelled", "cancelled".into()),
+            ApprovalOutcome::Expired => (Decided::Expired, "expired".into()),
+            ApprovalOutcome::Cancelled => (Decided::Cancelled, "cancelled".into()),
         };
+        // Allowed, denied, run out or cancelled: the person's question,
+        // answered by them or by its time.
         self.terminals
             .activity
-            .approval(c.pane.as_str(), &answer)
+            .approval(c.pane.as_str(), &answer, Decider::Person)
             .await;
         match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
@@ -975,6 +1007,65 @@ fn ended_after_run(
         None if quitting && exit_code.is_none() => Some("app_quit"),
         e => e,
     }
+}
+
+/// Declares [`Decided`] from one list: each variant with the code its
+/// ledger row stores and its [`Decider`], so the enum, `code()`, `by()` and
+/// the tests' `ALL` can't drift apart.
+macro_rules! decided {
+    ($($(#[$doc:meta])* $variant:ident => $code:literal, $by:ident;)+) => {
+        /// Who decided a run, or why nobody did: its ledger row's `decided`
+        /// code and tier.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Decided {
+            $($(#[$doc])* $variant,)+
+        }
+
+        impl Decided {
+            #[cfg(test)]
+            const ALL: &'static [Decided] = &[$(Decided::$variant,)+];
+
+            /// As the ledger stores it.
+            fn code(self) -> &'static str {
+                match self {
+                    $(Decided::$variant => $code,)+
+                }
+            }
+
+            /// Who decided: sets the row's tier, so the person's decisions
+            /// are never pruned by count.
+            fn by(self) -> Decider {
+                match self {
+                    $(Decided::$variant => Decider::$by,)+
+                }
+            }
+        }
+    };
+}
+
+decided! {
+    /// The person: Allow once.
+    Once => "once", Person;
+    /// The person: Allow for this agent.
+    Agent => "agent", Person;
+    /// The person declined.
+    Declined => "declined", Person;
+    /// The person's question ran out.
+    Expired => "expired", Person;
+    /// The person's question was cancelled.
+    Cancelled => "cancelled", Person;
+    /// A repository rule, without asking.
+    Rule => "rule", Unasked;
+    /// This agent's earlier "Allow for this agent", without asking.
+    AllowedBefore => "allowed_before", Unasked;
+    /// Refused before anyone was asked: another question was open.
+    Busy => "busy", Nobody;
+    /// Refused: too many runs or questions.
+    TooMany => "too_many", Nobody;
+    /// The client went away.
+    ClientGone => "client_gone", Nobody;
+    /// The app was quitting.
+    AppQuit => "app_quit", Nobody;
 }
 
 /// How a run ended other than by exiting, as its row stores it.
@@ -1909,5 +2000,37 @@ mod tests {
         )
         .await;
         assert_eq!((reply.exit_code, reply.error), (Some(3), None));
+    }
+
+    #[test]
+    fn f_ex_07_every_decided_code_has_its_decider() {
+        // The match is exhaustive; the codes are distinct and as stored.
+        let codes: std::collections::HashSet<&str> =
+            Decided::ALL.iter().map(|d| d.code()).collect();
+        assert_eq!(codes.len(), Decided::ALL.len());
+        assert_eq!(Decided::Once.by(), Decider::Person);
+        assert_eq!(Decided::Declined.by(), Decider::Person);
+        assert_eq!(Decided::Rule.by(), Decider::Unasked);
+        assert_eq!(Decided::Busy.by(), Decider::Nobody);
+        assert_eq!(Decided::ClientGone.by(), Decider::Nobody);
+        assert_eq!(Decided::AllowedBefore.code(), "allowed_before");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_tl_12_8_a_failed_install_resumes_runs_but_never_a_real_exit() {
+        // Its own exit flag and runs: the process-wide ones stay untouched,
+        // so no other test's runs are resumed or its app marked exiting.
+        let fx = fixture("").await;
+        let exiting = std::sync::atomic::AtomicBool::new(false);
+        let live = [fx.runs.clone()];
+        fx.runs.shutdown(Duration::from_millis(10));
+        // The installer didn't start: runs are served again.
+        resume(&exiting, &live);
+        assert!(!*fx.runs.quit.borrow());
+        // Quitting for real meanwhile: resume does nothing.
+        fx.runs.shutdown(Duration::from_millis(10));
+        exiting.store(true, std::sync::atomic::Ordering::SeqCst);
+        resume(&exiting, &live);
+        assert!(*fx.runs.quit.borrow());
     }
 }

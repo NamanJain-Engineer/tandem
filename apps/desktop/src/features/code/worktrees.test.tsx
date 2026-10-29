@@ -107,6 +107,25 @@ describe("worktrees (F-CD-15)", () => {
     expect(worktreesOf([REPO, FIX, FIX2, PLAIN], "notes")).toEqual([]);
   });
 
+  it("F-CD-15.4 D-2611 a worktree's row is named as its workspace, its branch kept for the tooltip and ⋯, which takes no room", () => {
+    backend();
+    render(
+      <UiProvider>
+        <CodeRail />
+      </UiProvider>,
+    );
+    const rows = screen.getAllByTestId("worktree-row");
+    expect(rows.map((r) => within(r).getByTestId("worktree-row-name").textContent)).toEqual(["fix-auth", "fix-auth-2"]);
+    // The New worktree dialog's name field has its own id: E2E waits for it to go.
+    expect(screen.queryByTestId("worktree-name")).toBeNull();
+    expect(rows.map((r) => r.getAttribute("data-branch"))).toEqual(["tandem/fix-auth", "tandem/fix-auth-2"]);
+    const first = rows[0] as HTMLElement;
+    // The name keeps 10 characters beside a status (D-2603); ⋯ covers the row's end.
+    expect(within(first).getByTestId("worktree-row-name").className).toContain("min-w-[min(10ch,100%)]");
+    const menu = within(first).getByRole("button", { name: "Actions for tandem/fix-auth" });
+    expect(menu.parentElement?.closest(".absolute")).not.toBeNull();
+  });
+
   it("F-CD-15.1 New worktree sends the task text, and the new worktree opens under its repository", async () => {
     let created = false;
     backend({

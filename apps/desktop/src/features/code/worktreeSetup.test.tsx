@@ -309,7 +309,7 @@ describe("overlap check (F-WT-03)", () => {
     expect(verdict.getAttribute("data-verdict")).toBe("conflicts");
     expect(verdict.textContent).toContain("Merging will conflict in 1 file");
     expect(verdict.textContent).toContain("README.md");
-    expect(verdict.textContent).toContain("1 uncommitted change isn't in the forecast");
+    expect(verdict.textContent).toContain("1 uncommitted change isn't in the forecast. Commit it to include it.");
     expect(named("lane_merge")).toHaveLength(0);
   });
 

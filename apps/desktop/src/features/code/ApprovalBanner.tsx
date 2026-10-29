@@ -21,7 +21,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const settled = useSettled(key);
   const [endRef, seenEnd] = useSeenEnd(key);
   // The banner scrolls: Allow waits until its own place has held still.
-  const box = useSteadyBox(approval !== null);
+  const box = useSteadyBox(approval !== null, key);
   if (!approval) return null;
   const run = parseRunApproval(approval);
   const unreadable = approval.source.type === "pane" && !run;
@@ -61,6 +61,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               loading={busy}
               disabled={!canAllow}
               title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
+              data-grant
               data-testid="pane-approval-once"
               onClick={() => box.check() && void decide(true)}
             >
@@ -73,6 +74,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               variant="secondary"
               disabled={busy || !canAllow}
               title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
+              data-grant
               data-testid="pane-approval-agent"
               onClick={() => box.check() && void decide(true, "conversation")}
             >

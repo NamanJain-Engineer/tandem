@@ -33,7 +33,7 @@ describe("the interactive demo's page furniture", () => {
     const c = core;
     const view = mount(
       <>
-        <div data-testid="workspace-row" data-root={DEMO_WAITING.root} />
+        <div data-testid="worktree-row" data-branch={DEMO_WAITING.branch} />
         <button type="button" role="radio" aria-checked="false" value="thread" />
         <DemoCoach core={c} />
       </>,
@@ -42,7 +42,19 @@ describe("the interactive demo's page furniture", () => {
     expect(hint()).toHaveLength(1);
     expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.engine} is waiting on you. Open it to see why.`);
     expect(hint()[0]?.textContent).toContain("1 of 3");
-    // Beside the rail row, never over the rail.
+    // Under the waiting worktree's row, in the rail's free space: over no
+    // row and none of the panes' text.
+    expect(hint()[0]?.dataset.side).toBe("bottom");
+    // Folded, its repository's row carries the hint, beside the rail.
+    view.rerender(
+      <UiProvider theme="dark">
+        <div data-testid="workspace-row" data-root={DEMO_WAITING.repoRoot} />
+        <button type="button" role="radio" aria-checked="false" value="thread" />
+        <DemoCoach core={c} />
+      </UiProvider>,
+    );
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.engine} is waiting on you.`);
     expect(hint()[0]?.dataset.side).toBe("right");
     act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
     // In Code mode the task waits one switch away.

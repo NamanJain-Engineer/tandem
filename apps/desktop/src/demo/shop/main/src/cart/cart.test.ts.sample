@@ -1,0 +1,18 @@
+import { describe, expect, it } from "vitest";
+import { subtotal } from "./cart";
+import { cartFor } from "../../tests/fixtures";
+
+describe("subtotal", () => {
+  it.each([0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233])("adds up %i items", (n) => {
+    expect(subtotal(cartFor(n))).toBe(n * 1000);
+  });
+
+  it("multiplies each price by its quantity", () => {
+    const cart = { ...cartFor(1), items: [{ sku: "tea", name: "Tea", price: 450, qty: 3 }] };
+    expect(subtotal(cart)).toBe(1350);
+  });
+
+  it("ignores how long the prices are held", () => {
+    expect(subtotal({ ...cartFor(2), expiresAt: 0 })).toBe(2000);
+  });
+});

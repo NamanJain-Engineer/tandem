@@ -159,7 +159,11 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     const badge = '[data-testid="worktree-row"][data-branch="tandem/tidy"] [data-testid="worktree-checks"]';
     await $(badge).waitForExist({ timeout: 10_000 });
     expect(await $(badge).getAttribute("data-state")).toBe("failed");
-    expect(String(await $(badge).getProperty("textContent"))).toBe("1 check failed: test");
+    // D-2700: the status bar's words whole, or the icon alone beside the row's
+    // status; its name and title say which check failed.
+    expect(["CI failed", ""]).toContain(String(await $(badge).getProperty("textContent")));
+    expect(await $(badge).getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
+    expect(await $(badge).getAttribute("title")).toBe("1 check failed: test");
   });
 
   it("F-WT-08.2 Import review comments fills the review bar with the pull request's line comments", async () => {

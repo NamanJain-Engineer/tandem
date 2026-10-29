@@ -2,8 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../App";
 import "../styles.css";
+import { useLayout } from "../stores/layout";
 import { useUi } from "../stores/ui";
-import { installDemo } from "./backend";
+import { useWorkspaces } from "../stores/workspaces";
+import { loadChecks } from "../stores/worktrees";
+import { DEMO_ACTIVE, DEMO_WORKTREES, installDemo } from "./backend";
 import { DemoBar } from "./DemoBar";
 import { DemoCoach } from "./DemoCoach";
 import { holdFocusUntilEngaged } from "./embedFocus";
@@ -11,7 +14,16 @@ import { holdFocusUntilEngaged } from "./embedFocus";
 // vibezeo.com/demo: the real interface against a simulated core. On the home
 // page it runs in a same-origin frame (`?embed=1`, D-128).
 const core = installDemo();
+// The rail reads a pull request's checks when the core says they changed;
+// the app would, at its next poll (F-WT-08).
+core.onChecks = (laneId) => void loadChecks([laneId]);
 const embedded = new URLSearchParams(window.location.search).has("embed");
+// Code mode opens on the working agent's worktree (D-1899): a state any
+// visitor reaches by opening it. Each worktree's tab is loaded, as after
+// launching its agent in this session, so the rail shows how every agent
+// is doing from the first frame (F-SH-03).
+useWorkspaces.setState({ activeId: DEMO_ACTIVE });
+for (const id of DEMO_WORKTREES) void useLayout.getState().load(id).catch(() => undefined);
 // Small screens start with the rail collapsed, so every surface fits.
 if (window.innerWidth < 1024) useUi.setState({ railCollapsed: true });
 // Esc that nothing in the app used closes the home page's full-screen view.
