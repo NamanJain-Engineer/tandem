@@ -364,9 +364,16 @@ pub async fn create(
 /// commit), its folder, and a handoff's copy of its source.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
     // The record stays when the forget failed, so the sweep tries again.
-    if jj::forget_workspace(runner.clone(), root, &lane.path, &lane.slug, None)
-        .await
-        .is_ok()
+    if jj::forget_workspace(
+        runner.clone(),
+        root,
+        &lane.path,
+        &lane.slug,
+        Some(&lane.base),
+        None,
+    )
+    .await
+    .is_ok()
     {
         jj::done_adding(lane);
     }
@@ -423,8 +430,9 @@ fn lane_name(lane: &Workspace) -> String {
 
 /// Discard's checks for a jj lane, before anything stops: everything
 /// [`jj::forget_checks`] refuses (even forced), and without `force`
-/// anything jj didn't keep whole ([`jj::kept_whole`]: Conflict, so the
-/// dialog asks for the force as for a git lane's uncommitted changes).
+/// anything jj didn't keep whole ([`jj::kept_whole`]: Dirty is Conflict, so
+/// the dialog asks for the force as for a git lane's uncommitted changes; a
+/// stale working copy is Invalid, saying what to run, never forced past).
 pub async fn preflight(lane: &Workspace, parent: &Workspace, force: bool) -> Result<(), IpcError> {
     gate(Path::new(&parent.root))?;
     let (main, root, name) = (
@@ -461,6 +469,7 @@ pub async fn forget(
         Path::new(&parent.root),
         Path::new(&lane.root),
         &lane_name(lane),
+        lane.lane_base.as_deref(),
         force,
     )
     .await

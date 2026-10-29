@@ -1,7 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { addFolder, fakeLog, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
 import { newWorktree, pick, repoMenu } from "../support/worktrees";
@@ -24,30 +23,29 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: GIT_ENV }).trim();
 const JJ_ENV = { ...process.env, HOME: userHome() };
 
-/** jj where the app finds it (tandem_git::jj::usual_places): the PATH, then
- * the usual install folders. */
+/** jj where the app finds it (`Jj::locate`): the PATH, then
+ * `tandem_git::jj::usual_places` in its order, under the app's HOME. */
 function findJj(): string | null {
   const exe = process.platform === "win32" ? "jj.exe" : "jj";
-  const home = homedir();
+  const home = userHome();
   const dirs = [
     ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
     join(home, ".cargo/bin"),
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
     join(home, ".local/bin"),
     join(home, ".nix-profile/bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
   ];
-  for (const dir of dirs) {
-    const path = join(dir, exe);
-    if (!existsSync(path)) continue;
-    try {
-      execFileSync(path, ["--version"], { stdio: "ignore", env: JJ_ENV });
-      return path;
-    } catch {
-      // Not a jj that runs: the next place.
-    }
+  // The first one there, as Jj::locate picks it; then it must run.
+  const path = dirs.map((dir) => join(dir, exe)).find((p) => existsSync(p));
+  if (path === undefined) return null;
+  try {
+    execFileSync(path, ["--version"], { stdio: "ignore", env: JJ_ENV });
+    return path;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** JJ_REQUIRED set to anything but empty, 0 or false (tandem_git::jj::jj_required). */
