@@ -149,7 +149,7 @@ describe("UI-164 Local models (F-EN-11)", () => {
     expect(screen.getByTestId("local-model-chip").textContent).toBe("On this computer");
   });
 
-  it("F-EN-11.3 the Privacy page says where a local model's prompts go, and what Vibezeo doesn't control", () => {
+  it("F-EN-11.3 the Privacy page says where a local model's prompts go, what Vibezeo doesn't control, and that a repository's Codex settings aren't used", () => {
     fakeBackend({});
     render(
       <UiProvider>
@@ -159,7 +159,10 @@ describe("UI-164 Local models (F-EN-11)", () => {
     const line = screen.getByTestId("privacy-local-models").textContent ?? "";
     expect(line).toContain("go only to its model server at 127.0.0.1");
     expect(line).toContain(
-      "What that server does with them (it could be a gateway or a port-forward), a project's MCP servers and hooks, and settings an administrator manages for Codex are outside Vibezeo's control.",
+      "What that server does with them (it could be a gateway or a port-forward), and settings an administrator manages for Codex, are outside Vibezeo's control.",
+    );
+    expect(line).toContain(
+      "A local pane uses none of the repository's own Codex settings: its .codex/config.toml, hooks and MCP servers.",
     );
     expect(line).not.toMatch(/nothing leaves/i);
   });

@@ -14,7 +14,7 @@ use tandem_core::ids::TabId;
 use tandem_core::settings::SettingKey;
 use tandem_core::{ErrorCode, IpcError};
 use tandem_engines::local_models::{self, CodexVersion, LocalModel, ServerKind};
-use tandem_engines::{EngineSpec, FoundEngine};
+use tandem_engines::EngineSpec;
 use tandem_store::repo::panes;
 use tandem_store::repo::sessions::{LaunchConfig, LocalLaunch};
 use tandem_store::repo::settings;
@@ -249,11 +249,12 @@ pub async fn list(state: &AppState) -> Result<Vec<LocalServer>, IpcError> {
         running = found.iter().filter(|s| s.running).count(),
         "local model servers checked"
     );
-    let codex = state
-        .terminals
-        .engines
-        .report()
-        .and_then(|r| r.get("codex").cloned());
+    // Read now, from the program Start would run, so Check again shows the
+    // Codex there is, not the one detected when the app started (D-3069).
+    let codex = match codex_program(state).await {
+        Some((engine, program)) => Some(read_codex(&engine, &program).await),
+        None => None,
+    };
     Ok(with_codex_reason(found, codex.as_ref()))
 }
 
@@ -261,12 +262,9 @@ pub async fn list(state: &AppState) -> Result<Vec<LocalServer>, IpcError> {
 /// pane can't run (D-3062). Not found, the page says to install it.
 pub fn with_codex_reason(
     mut servers: Vec<LocalServer>,
-    codex: Option<&FoundEngine>,
+    codex: Option<&Result<CodexVersion, String>>,
 ) -> Vec<LocalServer> {
-    let Some(found) = codex else {
-        return servers;
-    };
-    if let Err(reason) = local_models::check_codex(found.version.as_deref()) {
+    if let Some(Err(reason)) = codex {
         for s in servers.iter_mut().filter(|s| s.startable) {
             s.startable = false;
             s.start_reason = Some(reason.clone());
@@ -315,14 +313,15 @@ pub async fn remove_port(state: &AppState, port: u16) -> Result<(), IpcError> {
 }
 
 /// The provider home a server's model runs Codex in, with its `config.toml`
-/// written for that model. Only this folder is written, kept private
-/// (F-EN-11 AC2); a `config.toml` that can't be read is refused, never
-/// replaced.
+/// written for that model, `untrusted` listed as untrusted projects. Only
+/// this folder is written, kept private (F-EN-11 AC2); a `config.toml`
+/// that can't be read is refused, never replaced.
 pub fn prepare_home(
     providers: &std::path::Path,
     kind: ServerKind,
     port: u16,
     model: &str,
+    untrusted: &[String],
 ) -> Result<PathBuf, IpcError> {
     let io =
         |e: std::io::Error| IpcError::new(ErrorCode::Io, format!("Couldn't make the folder: {e}"));
@@ -331,20 +330,22 @@ pub fn prepare_home(
     for dir in [providers, codex.as_path(), home.as_path()] {
         tandem_engines::homes::private_dir(dir).map_err(io)?;
     }
-    write_config(&home, kind, port, model)?;
+    write_config(&home, kind, port, model, untrusted)?;
     Ok(home)
 }
 
 /// Merges the local provider into the home's `config.toml`: the model, the
-/// `vibezeo-local` provider at 127.0.0.1 and no update check. Start writes
-/// it, and so does every later start of the pane, so a deleted or edited
-/// file never leaves Codex on its default provider (D-2519). A file that
+/// `vibezeo-local` provider at 127.0.0.1, no update check, and the pane's
+/// folders as untrusted projects (D-3065). Start writes it, and so does
+/// every later start of the pane, so a deleted or edited file never leaves
+/// Codex on its default provider or a folder trusted (D-2519). A file that
 /// can't be read is refused, never replaced.
 pub fn write_config(
     home: &std::path::Path,
     kind: ServerKind,
     port: u16,
     model: &str,
+    untrusted: &[String],
 ) -> Result<(), IpcError> {
     let file = home.join("config.toml");
     let existing = match std::fs::read_to_string(&file) {
@@ -357,7 +358,7 @@ pub fn write_config(
             ))
         }
     };
-    let config = local_models::codex_config(&existing, kind, port, model)
+    let config = local_models::codex_config(&existing, kind, port, model, untrusted)
         .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
     tandem_core::atomic::atomic_write(&file, config.as_bytes(), Some(0o600)).map_err(|e| {
         IpcError::new(
@@ -367,14 +368,13 @@ pub fn write_config(
     })
 }
 
-/// [`write_config`] for a pane's saved launch, before each start: only into
-/// that model's own home under `$PROVIDERS/codex/`, never a folder a saved
-/// row points elsewhere.
-pub fn refresh_config(
+/// A pane's saved home is that model's own under `$PROVIDERS/codex/`, never
+/// a folder a saved row points elsewhere.
+pub fn own_home(
     providers: &std::path::Path,
     home: &std::path::Path,
     local: &LocalLaunch,
-) -> Result<(), IpcError> {
+) -> Result<ServerKind, IpcError> {
     let kind = kind_of(local)?;
     let own = providers
         .join("codex")
@@ -386,7 +386,19 @@ pub fn refresh_config(
         )
         .with_stage("launch_config"));
     }
-    write_config(home, kind, local.port, &local.model)
+    Ok(kind)
+}
+
+/// [`write_config`] for a pane's saved launch, before each start, with the
+/// folders it starts in untrusted: only into that model's [`own_home`].
+pub fn refresh_config(
+    providers: &std::path::Path,
+    home: &std::path::Path,
+    local: &LocalLaunch,
+    untrusted: &[String],
+) -> Result<(), IpcError> {
+    let kind = own_home(providers, home, local)?;
+    write_config(home, kind, local.port, &local.model, untrusted)
 }
 
 /// A saved launch's server kind, one Codex can start on.
@@ -398,12 +410,24 @@ fn kind_of(local: &LocalLaunch) -> Result<ServerKind, IpcError> {
         .ok_or_else(|| IpcError::new(ErrorCode::Invalid, "This pane's model server isn't known"))
 }
 
-/// The command-line settings every launch of a local pane carries, for the
-/// Codex it runs (D-2519, D-3063): the model and the local provider, above
-/// any project's configuration.
-pub fn launch_overrides(local: &LocalLaunch, codex: CodexVersion) -> Result<Vec<String>, IpcError> {
+/// The command-line settings every launch of a local pane carries
+/// (D-2519, D-3063, D-3065): the model and the local provider, the pane's
+/// folders untrusted and its folder to start in, above any project's
+/// configuration.
+pub fn launch_overrides(
+    local: &LocalLaunch,
+    folder: &Path,
+    untrusted: &[String],
+) -> Result<Vec<String>, IpcError> {
     let kind = kind_of(local)?;
-    local_models::codex_overrides(kind, local.port, &local.model, codex).ok_or_else(|| {
+    local_models::codex_overrides(
+        kind,
+        local.port,
+        &local.model,
+        &folder.to_string_lossy(),
+        untrusted,
+    )
+    .ok_or_else(|| {
         IpcError::new(
             ErrorCode::Unavailable,
             crate::services::engines::LAUNCH_CONFIG_UNAVAILABLE,
@@ -412,11 +436,24 @@ pub fn launch_overrides(local: &LocalLaunch, codex: CodexVersion) -> Result<Vec<
     })
 }
 
+/// The Codex program Start would run: the registry's entry and where it's
+/// installed. `None` when it isn't.
+async fn codex_program(state: &AppState) -> Option<(EngineSpec, PathBuf)> {
+    let codex = state.terminals.engines.get("codex")?;
+    let program = state.terminals.resolve_engine(&codex).await?;
+    Some((codex, program))
+}
+
+/// `program --version`, read now, as a local pane may run it (D-3062).
+async fn read_codex(engine: &EngineSpec, program: &Path) -> Result<CodexVersion, String> {
+    let output = tandem_engines::detect::version_output(engine, program, VERSION_WAIT).await;
+    local_models::check_codex(output.as_deref())
+}
+
 /// The Codex a local pane would run, read from that program at this start
-/// (D-3062): 0.129.0 or newer, or refused saying what's needed.
+/// (D-3062, D-3066): 0.149.0 or newer, or refused saying what's needed.
 pub async fn codex_for_local(engine: &EngineSpec, path: &Path) -> Result<CodexVersion, IpcError> {
-    let shown = tandem_engines::detect::version_of(engine, path, VERSION_WAIT).await;
-    local_models::check_codex(shown.as_deref()).map_err(|reason| {
+    read_codex(engine, path).await.map_err(|reason| {
         IpcError::new(ErrorCode::EngineUnsupported, reason).with_stage("local_model")
     })
 }
@@ -510,7 +547,13 @@ pub async fn start(
     state
         .terminals
         .check_live_limit(state.entitlements.limits().panes)?;
-    let home = prepare_home(engines.homes.root(), kind, port, model)?;
+    let home = prepare_home(
+        engines.homes.root(),
+        kind,
+        port,
+        model,
+        &local_models::untrusted_folders(Path::new(&ws.root)),
+    )?;
     let config = LaunchConfig {
         extra_args: local_models::local_args(&engines.extra_args("codex").await),
         home: Some(home.to_string_lossy().into_owned()),
@@ -608,8 +651,15 @@ mod tests {
     fn f_en_11_2_the_home_is_one_folder_under_codex_with_the_config() {
         let dir = tempfile::tempdir().expect("dir");
         let providers = dir.path().join("providers");
-        let home = prepare_home(&providers, ServerKind::LmStudio, 1234, "openai/gpt-oss-20b")
-            .expect("home");
+        let here = vec!["/".to_string(), "/home/u/repo".to_string()];
+        let home = prepare_home(
+            &providers,
+            ServerKind::LmStudio,
+            1234,
+            "openai/gpt-oss-20b",
+            &here,
+        )
+        .expect("home");
         assert_eq!(
             home,
             providers.join(format!(
@@ -623,6 +673,10 @@ mod tests {
             "{config}"
         );
         assert!(config.contains("model = \"openai/gpt-oss-20b\""));
+        assert!(
+            config.contains("[projects.\"/home/u/repo\"]\ntrust_level = \"untrusted\""),
+            "{config}"
+        );
         // Nothing else was written.
         let written: Vec<_> = walk(dir.path());
         assert_eq!(written, vec![home.join("config.toml")]);
@@ -640,8 +694,14 @@ mod tests {
             }
         }
         // Another model of the same server gets a home of its own.
-        let other =
-            prepare_home(&providers, ServerKind::LmStudio, 1234, "qwen/qwen3-8b").expect("other");
+        let other = prepare_home(
+            &providers,
+            ServerKind::LmStudio,
+            1234,
+            "qwen/qwen3-8b",
+            &here,
+        )
+        .expect("other");
         assert_ne!(other, home);
         assert!(std::fs::read_to_string(home.join("config.toml"))
             .expect("config")
@@ -653,9 +713,14 @@ mod tests {
             let file = other.join("config.toml");
             std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).expect("chmod");
             if std::fs::read_to_string(&file).is_err() {
-                assert!(
-                    prepare_home(&providers, ServerKind::LmStudio, 1234, "qwen/qwen3-8b").is_err()
-                );
+                assert!(prepare_home(
+                    &providers,
+                    ServerKind::LmStudio,
+                    1234,
+                    "qwen/qwen3-8b",
+                    &here
+                )
+                .is_err());
             }
             std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
                 .expect("chmod back");
@@ -883,12 +948,7 @@ mod tests {
     /// already off keep their own reason, and no Codex leaves the page's.
     #[test]
     fn f_en_11_2_start_is_off_with_the_reason_for_an_old_codex() {
-        let codex = |version: Option<&str>| FoundEngine {
-            engine_id: "codex".into(),
-            path: "/usr/bin/codex".into(),
-            version: version.map(str::to_string),
-            source: tandem_engines::FoundSource::Shell,
-        };
+        let codex = |output: &str| local_models::check_codex(Some(output));
         let llama = LocalServer {
             kind: ServerKind::LlamaCpp,
             startable: false,
@@ -896,24 +956,100 @@ mod tests {
             ..server(true, &["gpt-oss-20b"])
         };
         let both = || vec![server(true, &["qwen3:8b"]), llama.clone()];
-        let old = with_codex_reason(both(), Some(&codex(Some("0.128.0"))));
+        let old = with_codex_reason(both(), Some(&codex("codex-cli 0.148.0\n")));
         assert!(!old[0].startable);
         assert_eq!(
             old[0].start_reason.as_deref(),
-            Some("Local models need Codex 0.129.0 or newer, and this computer has Codex 0.128.0. Update Codex, then try again.")
+            Some("Local models need Codex 0.149.0 or newer, and this computer has Codex 0.148.0. Update Codex, then try again.")
         );
         assert_eq!(old[1].start_reason, llama.start_reason);
-        let unknown = with_codex_reason(both(), Some(&codex(None)));
+        let unknown = with_codex_reason(both(), Some(&codex("")));
         assert!(unknown[0]
             .start_reason
             .as_deref()
             .is_some_and(|r| r.contains("couldn't tell")));
         // Recent enough, or not installed: as asked.
         assert_eq!(
-            with_codex_reason(both(), Some(&codex(Some("0.165.0")))),
+            with_codex_reason(both(), Some(&codex("codex-cli 0.165.0\n"))),
             both()
         );
         assert_eq!(with_codex_reason(both(), None), both());
+    }
+
+    /// F-EN-11 review (S3, D-3069): the page's Check again
+    /// (`local_models_list`) reads the version of the Codex Start would run
+    /// each time, so a Codex updated or rolled back after the app started
+    /// turns Start off or on again without a restart.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_en_11_2_check_again_reads_codexs_version_now() {
+        use std::os::unix::fs::PermissionsExt;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let state = AppState::for_tests(data, store);
+        // A stand-in Ollama with one model, at an added port.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 2048];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let answer = if String::from_utf8_lossy(&buf[..n]).starts_with("GET /api/tags ")
+                    {
+                        let body = r#"{"models":[{"name":"qwen3:8b","size":1}]}"#;
+                        format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                    } else {
+                        "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                            .to_string()
+                    };
+                    let _ = sock.write_all(answer.as_bytes()).await;
+                });
+            }
+        });
+        save_ports(&state, &BTreeMap::from([(port, ServerKind::Ollama)]))
+            .await
+            .expect("ports");
+        // A Codex on the login PATH whose `--version` is the file beside it.
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let program = bin.join("codex");
+        std::fs::write(&program, "#!/bin/sh\ncat \"$(dirname \"$0\")/version\"\n").expect("fake");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        state.terminals.set_login_env(tandem_pty::env::LoginEnv {
+            vars: BTreeMap::from([(
+                "PATH".to_string(),
+                format!("{}:/usr/bin:/bin", bin.display()),
+            )]),
+            shell: "/bin/sh".into(),
+            degraded: false,
+        });
+        for (printed, reason) in [
+            ("codex-cli 0.165.0\n", None),
+            (
+                "codex-cli 0.148.0\n",
+                Some("Local models need Codex 0.149.0 or newer, and this computer has Codex 0.148.0. Update Codex, then try again."),
+            ),
+            ("codex-cli 0.149.0\n", None),
+        ] {
+            std::fs::write(bin.join("version"), printed).expect("version");
+            let ours = list(&state)
+                .await
+                .expect("list")
+                .into_iter()
+                .find(|s| s.port == port)
+                .expect("ours");
+            assert!(ours.running, "{ours:?}");
+            assert_eq!(ours.startable, reason.is_none(), "{printed}");
+            assert_eq!(ours.start_reason.as_deref(), reason, "{printed}");
+        }
     }
 
     /// F-EN-11 review (S2): every start asks again; a model gone, re-pointed

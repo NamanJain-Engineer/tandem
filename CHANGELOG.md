@@ -71,7 +71,11 @@ release fails when its version has no section.
   computer". It runs in a provider home of its own for that model, never on
   your Codex account and never through a proxy, every time it starts, and
   each start checks that the server still offers the model on this computer.
-  It needs Codex 0.129.0 or newer. Your own Codex settings and accounts aren't
+  It uses none of the repository's own Codex settings (its
+  `.codex/config.toml`, hooks or MCP servers), and Codex's connectors,
+  plugins, usage metrics and sub-agents are off. Codex asks before each
+  command and edit unless your Codex arguments set an approval policy. It
+  needs Codex 0.149.0 or newer. Your own Codex settings and accounts aren't
   touched.
 
 ### Changed

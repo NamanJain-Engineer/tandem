@@ -5,6 +5,8 @@
 //! Nothing here talks to the network: the app asks the servers, through
 //! [`url`], which only ever builds `http://127.0.0.1:<port>/…`.
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -290,45 +292,75 @@ pub const PROXY_VARS: [&str; 6] = [
     "all_proxy",
 ];
 
-/// The variables that would point Codex at an OpenAI account or endpoint: a
-/// local pane runs without them too.
-pub const ACCOUNT_VARS: [&str; 3] = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"];
+/// The variables that would sign Codex in or send its work off this
+/// computer: a local pane runs without them too (D-2517, D-3068). An OpenAI
+/// key or endpoint; an access token or a workload identity, which Codex
+/// signs in with from the environment; the hosted connectors' token; and a
+/// remote exec server, named outright or through its registry, which would
+/// run the pane's commands and read its files elsewhere.
+pub const ACCOUNT_VARS: [&str; 13] = [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN",
+    "OPENAI_FEDERATION_RULE_ID",
+    "OPENAI_IDENTITY_TOKEN_FILE",
+    "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
+    "CODEX_CONNECTORS_TOKEN",
+    "CODEX_EXEC_SERVER_URL",
+    "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+    "CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID",
+    "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+    "CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID",
+];
 
-/// The oldest Codex a local pane runs (D-3062). From 0.129.0 a project's
-/// `.codex/config.toml` can't set a profile, a provider or providers, and
-/// command-line settings sit above every configuration file but an
-/// administrator's; before it a project's profile outranks them.
-pub const MIN_CODEX: (u64, u64, u64) = (0, 129, 0);
-
-/// From 0.145.0 Codex has `agents.enabled`, and a model's own catalog entry
-/// can turn sub-agents on unless it's false. Before it, an unknown key under
-/// `[agents]` is read as a role, and Codex doesn't start (D-3063).
-pub const AGENTS_ENABLED_SINCE: (u64, u64, u64) = (0, 145, 0);
+/// The oldest Codex a local pane runs (D-3062, D-3066). From 0.129.0 to
+/// 0.148.x Codex can load a thread's settings from a remote endpoint
+/// (`experimental_thread_config_endpoint`) above the command line's; 0.149.0
+/// has none. From 0.129.0 a project's `.codex/config.toml` can't set a
+/// profile or a provider, and command-line settings sit above every
+/// configuration file but an administrator's.
+pub const MIN_CODEX: (u64, u64, u64) = (0, 149, 0);
 
 /// A Codex version as `codex --version` reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CodexVersion {
     pub number: (u64, u64, u64),
-    /// `0.129.0-alpha.1`: it comes before 0.129.0.
+    /// `0.149.0-alpha.1`: it comes before 0.149.0.
     pub pre_release: bool,
 }
 
+/// The version `codex --version` printed: the word after `codex-cli ` at
+/// the start of a line, so another program's version in the output (a
+/// package manager's notice) is never taken for Codex's.
+fn codex_cli_version(output: &str) -> Option<&str> {
+    output
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("codex-cli "))?
+        .split_whitespace()
+        .next()
+}
+
 impl CodexVersion {
-    /// The first `x.y.z` in `text`, and whether a pre-release follows it.
-    pub fn parse(text: &str) -> Option<Self> {
-        let start = text.find(|c: char| c.is_ascii_digit())?;
-        let run = &text[start..];
-        let len = run
-            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
-            .unwrap_or(run.len());
-        let mut parts = run[..len].split('.').map(|p| p.parse::<u64>().ok());
+    /// The version in `codex --version`'s output (`codex-cli 0.149.0`), and
+    /// whether it's a pre-release.
+    pub fn parse(output: &str) -> Option<Self> {
+        Self::from_word(codex_cli_version(output)?)
+    }
+
+    fn from_word(word: &str) -> Option<Self> {
+        let (release, pre_release) = match word.split_once('-') {
+            Some((release, _)) => (release, true),
+            None => (word, false),
+        };
+        let mut parts = release.split('.').map(|p| p.parse::<u64>().ok());
         let number = match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(Some(a)), Some(Some(b)), Some(Some(c)), None) => (a, b, c),
             _ => return None,
         };
         Some(Self {
             number,
-            pre_release: run[len..].starts_with('-'),
+            pre_release,
         })
     }
 
@@ -338,14 +370,15 @@ impl CodexVersion {
     }
 }
 
-/// The Codex a local pane may run, or why not, said plainly (D-3062).
-pub fn check_codex(version: Option<&str>) -> Result<CodexVersion, String> {
+/// The Codex a local pane may run, from what `codex --version` printed, or
+/// why not, said plainly (D-3062).
+pub fn check_codex(output: Option<&str>) -> Result<CodexVersion, String> {
     let (a, b, c) = MIN_CODEX;
-    match version.map(|v| (v, CodexVersion::parse(v))) {
+    let word = output.and_then(codex_cli_version);
+    match word.map(|w| (w, CodexVersion::from_word(w))) {
         Some((_, Some(v))) if v.at_least(MIN_CODEX) => Ok(v),
         Some((shown, Some(_))) => Err(format!(
-            "Local models need Codex {a}.{b}.{c} or newer, and this computer has Codex {}. Update Codex, then try again.",
-            shown.trim()
+            "Local models need Codex {a}.{b}.{c} or newer, and this computer has Codex {shown}. Update Codex, then try again."
         )),
         _ => Err(format!(
             "Local models need Codex {a}.{b}.{c} or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again."
@@ -354,22 +387,33 @@ pub fn check_codex(version: Option<&str>) -> Result<CodexVersion, String> {
 }
 
 /// Codex's command-line settings for a local pane, on every launch, fresh
-/// or `codex resume` (D-2519, D-3063): the model, for `/review` and
-/// memories too; the local provider; sub-agents off, since a sub-agent can
-/// name its own model or a role's configuration file; no update check.
-/// From Codex 0.129.0 they sit above every configuration file but an
-/// administrator's. `None` for a model name that can't be written.
+/// or `codex resume`, from Codex 0.149.0 (D-2519, D-3063, D-3065, D-3067):
+/// - the model, for `/review` and memories too, and the local provider;
+/// - sub-agents off, every way Codex has to start one, since a sub-agent
+///   can name its own model or a role's configuration file;
+/// - approval requests go to the user, never a reviewing sub-agent;
+/// - nothing Codex would fetch or send by itself: the hosted connectors,
+///   plugins (their catalog is synced from GitHub at startup), usage
+///   metrics and the update check;
+/// - every folder in `untrusted` marked untrusted, so Codex loads no
+///   project's settings, hooks or MCP servers, and asks no one to trust it;
+/// - `--cd folder`, so Codex starts in the folder marked, whatever the
+///   login shell's startup files do.
+///
+/// They sit above every configuration file but an administrator's. `None`
+/// for a model name that can't be written.
 pub fn codex_overrides(
     kind: ServerKind,
     port: u16,
     model: &str,
-    codex: CodexVersion,
+    folder: &str,
+    untrusted: &[String],
 ) -> Option<Vec<String>> {
     if !model_ok(model) {
         return None;
     }
     let base = format!("{}/v1", url(port, "").trim_end_matches('/'));
-    let mut settings = vec![
+    let settings = [
         format!("model=\"{model}\""),
         format!("review_model=\"{model}\""),
         format!("memories.extract_model=\"{model}\""),
@@ -383,17 +427,87 @@ pub fn codex_overrides(
         format!("model_providers.{PROVIDER_ID}.wire_api=\"responses\""),
         "features.multi_agent=false".to_string(),
         "features.multi_agent_v2=false".to_string(),
+        "features.enable_fanout=false".to_string(),
+        "agents.enabled=false".to_string(),
+        "approvals_reviewer=\"user\"".to_string(),
+        "features.apps=false".to_string(),
+        "features.plugins=false".to_string(),
+        "analytics.enabled=false".to_string(),
+        "check_for_update_on_startup=false".to_string(),
+        format!("projects={}", untrusted_table(untrusted)),
     ];
-    if codex.at_least(AGENTS_ENABLED_SINCE) {
-        settings.push("agents.enabled=false".to_string());
+    let mut out: Vec<String> = settings
+        .into_iter()
+        .flat_map(|kv| ["-c".to_string(), kv])
+        .collect();
+    out.push("--cd".to_string());
+    out.push(folder.to_string());
+    Some(out)
+}
+
+/// `{ "<folder>" = { trust_level = "untrusted" }, … }`, one line, as Codex
+/// reads a `-c` value. Codex splits a `-c` key at every `.`, so a folder
+/// can only be named inside the value.
+fn untrusted_table(untrusted: &[String]) -> toml_edit::InlineTable {
+    let mut table = toml_edit::InlineTable::new();
+    for folder in untrusted {
+        let mut entry = toml_edit::InlineTable::new();
+        entry.insert("trust_level", UNTRUSTED.into());
+        table.insert(folder, toml_edit::Value::InlineTable(entry));
     }
-    settings.push("check_for_update_on_startup=false".to_string());
-    Some(
-        settings
-            .into_iter()
-            .flat_map(|kv| ["-c".to_string(), kv])
-            .collect(),
-    )
+    table
+}
+
+/// Codex's word for a project whose settings it never loads.
+const UNTRUSTED: &str = "untrusted";
+
+/// The folders a local pane marks untrusted for Codex (D-3065): the one it
+/// starts in and every folder above it, as given and with symlinks
+/// resolved, and for a linked worktree its main checkout too. Codex looks a
+/// folder up by both spellings, from where it starts up to the project
+/// root, then the main checkout, so every entry it could match says
+/// untrusted, and one that says trusted elsewhere (`/etc/codex`) is
+/// outranked.
+pub fn untrusted_folders(folder: &Path) -> Vec<String> {
+    let given: PathBuf = folder.components().collect();
+    let mut starts = vec![given.clone()];
+    starts.extend(std::fs::canonicalize(&given).ok());
+    let mut dirs: Vec<PathBuf> = starts
+        .iter()
+        .flat_map(|start| start.ancestors().map(Path::to_path_buf))
+        .collect();
+    dirs.extend(starts.iter().filter_map(|start| main_checkout(start)));
+    let mut out = std::collections::BTreeSet::new();
+    for dir in dirs {
+        out.extend(std::fs::canonicalize(&dir).ok());
+        out.insert(dir);
+    }
+    out.into_iter()
+        .filter(|d| d.is_absolute())
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// A linked worktree's main checkout, as Codex finds it for trust: the
+/// nearest `.git` above `dir` is a file naming
+/// `<main>/.git/worktrees/<name>`.
+fn main_checkout(dir: &Path) -> Option<PathBuf> {
+    let dot_git = dir
+        .ancestors()
+        .map(|d| d.join(".git"))
+        .find(|g| g.symlink_metadata().is_ok())?;
+    if !dot_git.symlink_metadata().ok()?.is_file() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let target = text.trim().strip_prefix("gitdir:")?.trim();
+    let git_dir = dot_git.parent()?.join(target);
+    let worktrees = git_dir.parent()?;
+    if worktrees.file_name()? != "worktrees" {
+        return None;
+    }
+    let main: PathBuf = worktrees.parent()?.parent()?.components().collect();
+    Some(main)
 }
 
 /// The provider id a local home and its overrides name.
@@ -456,11 +570,13 @@ pub fn wrapped_program(argv: &[String]) -> Option<&str> {
 type Flag = (&'static str, &'static str, fn(&str) -> bool);
 
 /// The user's Codex arguments a local pane keeps (D-2519): an allowlist.
-/// Only sandbox and approval flags, and `-c` settings whose key is in
-/// [`safe_setting`], carry over, in every spelling Codex's parser takes
-/// (`-cK=V`, `-c=K=V`, `-c K=V`, `--config K=V`, `--config=K=V`, and the
-/// same for each flag). Everything else is dropped: a model, provider or
-/// profile, in any form, could send prompts off this computer.
+/// Only sandbox and approval flags with a value Codex 0.149.0 takes, and
+/// `-c` settings whose key is in [`safe_setting`], carry over, in every
+/// spelling Codex's parser takes (`-cK=V`, `-c=K=V`, `-c K=V`,
+/// `--config K=V`, `--config=K=V`, and the same for each flag). Everything
+/// else is dropped: a model, provider or profile, in any form, could send
+/// prompts off this computer, and a flag 0.149.0 retired (`--full-auto`,
+/// `-a untrusted`, `-a on-failure`) would stop Codex starting (D-3066).
 pub fn local_args(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -468,10 +584,7 @@ pub fn local_args(args: &[String]) -> Vec<String> {
         let a = args[i].as_str();
         let next = args.get(i + 1).map(String::as_str);
         // Flags without a value.
-        if matches!(
-            a,
-            "--full-auto" | "--dangerously-bypass-approvals-and-sandbox"
-        ) {
+        if a == "--dangerously-bypass-approvals-and-sandbox" {
             out.push(a.to_string());
             i += 1;
             continue;
@@ -482,7 +595,7 @@ pub fn local_args(args: &[String]) -> Vec<String> {
                 matches!(v, "read-only" | "workspace-write" | "danger-full-access")
             }),
             ("-a", "--ask-for-approval", |v| {
-                matches!(v, "untrusted" | "on-failure" | "on-request" | "never")
+                matches!(v, "on-request" | "never")
             }),
             ("-c", "--config", safe_setting),
         ];
@@ -534,12 +647,17 @@ pub enum ConfigError {
     Toml(String),
     #[error("The home's config.toml has an unexpected model_providers")]
     Providers,
+    #[error("The home's config.toml has an unexpected projects")]
+    Projects,
 }
 
 /// Codex's `config.toml` for a local server, merged into what the home
 /// already has (its status hook, D-2519): the model, a `vibezeo-local`
 /// provider at `http://127.0.0.1:<port>/v1` over the Responses API, and no
 /// update check at startup, which would go off this computer (D-2517).
+/// Every folder in `untrusted` is an untrusted project, and so is every
+/// folder already listed, whoever listed it: a home serves every pane on
+/// its model, and none of them loads a project's settings (D-3065).
 /// Nothing about sandboxing or approvals is written: those stay Codex's
 /// defaults and the user's own arguments.
 pub fn codex_config(
@@ -547,6 +665,7 @@ pub fn codex_config(
     kind: ServerKind,
     port: u16,
     model: &str,
+    untrusted: &[String],
 ) -> Result<String, ConfigError> {
     if !model_ok(model) {
         return Err(ConfigError::Model);
@@ -572,6 +691,35 @@ pub fn codex_config(
     };
     table.set_implicit(true);
     table.insert(PROVIDER_ID, toml_edit::Item::Table(provider));
+    let projects = doc
+        .entry("projects")
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
+    if let Some(inline) = projects.as_inline_table() {
+        *projects = toml_edit::Item::Table(inline.clone().into_table());
+    }
+    let Some(projects) = projects.as_table_mut() else {
+        return Err(ConfigError::Projects);
+    };
+    projects.set_implicit(true);
+    let untrusted_entry = || {
+        let mut entry = toml_edit::Table::new();
+        entry["trust_level"] = toml_edit::value(UNTRUSTED);
+        toml_edit::Item::Table(entry)
+    };
+    // One Codex trusted, or one an earlier start listed: untrusted again.
+    for (_, entry) in projects.iter_mut() {
+        match entry.as_table_like_mut() {
+            Some(entry) => {
+                entry.insert("trust_level", toml_edit::value(UNTRUSTED));
+            }
+            None => *entry = untrusted_entry(),
+        }
+    }
+    for folder in untrusted {
+        if !projects.contains_key(folder) {
+            projects.insert(folder, untrusted_entry());
+        }
+    }
     Ok(doc.to_string())
 }
 
@@ -699,13 +847,28 @@ mod tests {
     }
 
     /// F-EN-11 review: every launch names the model (for `/review` and
-    /// memories too) and the local provider, turns sub-agents off, and puts
-    /// it all last: after `resume <id>`, a pin's `-c` and the user's own.
+    /// memories too) and the local provider; turns sub-agents off every way
+    /// Codex has; sends approvals to the user; turns off what Codex would
+    /// fetch or send itself; marks the pane's folders untrusted and starts
+    /// in its folder; and puts it all last: after `resume <id>`, a pin's
+    /// `-c` and the user's own.
     #[test]
     fn f_en_11_2_every_launch_names_the_model_and_provider_on_the_command_line() {
-        let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b", v("0.165.0"))
-            .expect("overrides");
-        let pairs: Vec<&str> = o
+        let untrusted = vec![
+            "/".to_string(),
+            "/home/u/my.repo".to_string(),
+            "/home/u/it's \"here\"".to_string(),
+        ];
+        let o = codex_overrides(
+            ServerKind::Ollama,
+            11434,
+            "qwen3:8b",
+            "/home/u/my.repo",
+            &untrusted,
+        )
+        .expect("overrides");
+        assert_eq!(&o[o.len() - 2..], ["--cd", "/home/u/my.repo"]);
+        let pairs: Vec<&str> = o[..o.len() - 2]
             .chunks(2)
             .map(|c| {
                 assert_eq!(c[0], "-c");
@@ -713,8 +876,8 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            pairs,
-            vec![
+            pairs[..pairs.len() - 1],
+            [
                 "model=\"qwen3:8b\"",
                 "review_model=\"qwen3:8b\"",
                 "memories.extract_model=\"qwen3:8b\"",
@@ -725,22 +888,40 @@ mod tests {
                 "model_providers.vibezeo-local.wire_api=\"responses\"",
                 "features.multi_agent=false",
                 "features.multi_agent_v2=false",
+                "features.enable_fanout=false",
                 "agents.enabled=false",
+                "approvals_reviewer=\"user\"",
+                "features.apps=false",
+                "features.plugins=false",
+                "analytics.enabled=false",
                 "check_for_update_on_startup=false",
             ]
         );
-        // Each value is TOML, as Codex reads it.
+        // Each value is TOML, as Codex reads it: the text after the first `=`.
         for kv in &pairs {
             let doc: toml_edit::DocumentMut = kv.parse().expect("toml");
             assert_eq!(doc.len(), 1, "{kv}");
         }
-        // Before 0.145.0 `agents.enabled` would be read as a role and stop
-        // Codex starting, so it isn't there; nor for a pre-release of 0.145.0.
-        for older in ["0.129.0", "0.144.9", "0.145.0-alpha.2"] {
-            let o = codex_overrides(ServerKind::Ollama, 11434, "qwen3:8b", v(older))
-                .expect("overrides");
-            assert!(!o.iter().any(|a| a.starts_with("agents.")), "{older}");
-            assert!(o.contains(&"features.multi_agent=false".to_string()));
+        // The folders, one line, every one untrusted and nothing else,
+        // whatever their names hold (a `.` would split a `-c` key).
+        let projects = pairs[pairs.len() - 1];
+        assert!(!projects.contains('\n'), "{projects}");
+        let (key, value) = projects.split_once('=').expect("kv");
+        assert_eq!(key, "projects");
+        let doc: toml_edit::DocumentMut = format!("x = {value}").parse().expect("toml");
+        let table = doc["x"].as_inline_table().expect("inline table");
+        let named: Vec<&str> = table.iter().map(|(k, _)| k).collect();
+        assert_eq!(
+            named,
+            untrusted.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        for (folder, entry) in table.iter() {
+            let entry = entry.as_inline_table().expect("entry");
+            assert_eq!(entry.len(), 1, "{folder}");
+            assert_eq!(
+                entry.get("trust_level").and_then(|t| t.as_str()),
+                Some("untrusted")
+            );
         }
         // Last, after the subcommand, its id and a pin's own `-c`.
         let pinned = vec![
@@ -760,43 +941,112 @@ mod tests {
         assert_eq!(&fresh[..3], ["/bin/codex", "--sandbox", "read-only"]);
         assert_eq!(&fresh[3..], o.as_slice());
         assert_eq!(
-            codex_overrides(ServerKind::Ollama, 1, "-m", v("0.165.0")),
+            codex_overrides(ServerKind::Ollama, 1, "-m", "/", &untrusted),
             None
         );
         assert_eq!(
-            codex_overrides(ServerKind::Ollama, 1, "a\"b", v("0.165.0")),
+            codex_overrides(ServerKind::Ollama, 1, "a\"b", "/", &untrusted),
             None
         );
     }
 
-    /// F-EN-11 review: below 0.129.0 a project's profile outranks the
-    /// command line, so that Codex, a pre-release of 0.129.0 or one whose
-    /// version can't be read is refused, saying what's needed (D-3062).
+    /// F-EN-11 review: before 0.149.0 a remote endpoint's thread settings
+    /// outrank the command line, so that Codex, a pre-release of 0.149.0 or
+    /// one whose version can't be read is refused, saying what's needed;
+    /// only the version `codex-cli` prints counts (D-3062, D-3066).
     #[test]
-    fn f_en_11_2_codex_below_0_129_0_or_unknown_is_refused() {
+    fn f_en_11_2_codex_below_0_149_0_or_unknown_is_refused() {
+        let ok = |out: &str| check_codex(Some(out)).map(|v| v.number);
+        assert_eq!(ok("codex-cli 0.149.0\n"), Ok((0, 149, 0)));
+        assert_eq!(ok("codex-cli 0.165.0"), Ok((0, 165, 0)));
+        assert_eq!(ok("codex-cli 1.2.3 (test engine)\n"), Ok((1, 2, 3)));
+        // A package manager's notice before it isn't Codex's version.
         assert_eq!(
-            check_codex(Some("0.129.0")).map(|v| v.number),
-            Ok((0, 129, 0))
+            ok("npm notice New major version of npm available! 10.2.0 -> 11.0.0\r\ncodex-cli 0.150.0\r\n"),
+            Ok((0, 150, 0))
         );
+        let old = |shown: &str| {
+            Err(format!("Local models need Codex 0.149.0 or newer, and this computer has Codex {shown}. Update Codex, then try again."))
+        };
+        assert_eq!(check_codex(Some("codex-cli 0.148.0\n")), old("0.148.0"));
+        assert_eq!(check_codex(Some("codex-cli 0.129.0")), old("0.129.0"));
         assert_eq!(
-            check_codex(Some("0.165.0")).map(|v| v.number),
-            Ok((0, 165, 0))
+            check_codex(Some("codex-cli 0.149.0-alpha.1\n")),
+            old("0.149.0-alpha.1")
         );
-        assert_eq!(check_codex(Some("1.2.3")).map(|v| v.number), Ok((1, 2, 3)));
-        assert_eq!(
-            check_codex(Some("0.128.0")),
-            Err("Local models need Codex 0.129.0 or newer, and this computer has Codex 0.128.0. Update Codex, then try again.".into())
+        let unknown = Err("Local models need Codex 0.149.0 or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again.".to_string());
+        for out in [
+            "",
+            "codex-cli dev",
+            "codex-cli 1.2",
+            // Not after `codex-cli `: never read as Codex's.
+            "0.165.0",
+            "codex 0.165.0",
+            "node v22.1.0",
+            "error: codex-cli 0.165.0 isn't installed",
+        ] {
+            assert_eq!(check_codex(Some(out)), unknown, "{out:?}");
+        }
+        assert_eq!(check_codex(None), unknown);
+        assert!(v("codex-cli 0.150.0-alpha.1").pre_release);
+        assert!(!v("codex-cli 0.150.0-alpha.1").at_least((0, 150, 0)));
+        assert!(v("codex-cli 0.150.0-alpha.1").at_least((0, 149, 0)));
+    }
+
+    /// F-EN-11 review (D-3065): every folder Codex could look a local pane
+    /// up by is marked untrusted: the pane's folder and each one above it,
+    /// as given and through a symlink, nested deeper or not, and a linked
+    /// worktree's main checkout.
+    #[cfg(unix)]
+    #[test]
+    fn f_en_11_2_a_local_panes_folders_are_untrusted_as_given_and_resolved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let real = std::fs::canonicalize(dir.path()).expect("real");
+        let main = real.join("main");
+        let nested = main.join("packages/app");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).expect("git");
+        std::fs::create_dir_all(&nested).expect("nested");
+        let link = real.join("link");
+        std::os::unix::fs::symlink(&main, &link).expect("symlink");
+        let s = |p: &Path| p.to_string_lossy().into_owned();
+        let marked = untrusted_folders(&link.join("packages/app/"));
+        for want in [
+            link.join("packages/app"),
+            link.join("packages"),
+            link.clone(),
+            nested.clone(),
+            main.join("packages"),
+            main.clone(),
+            real.clone(),
+            PathBuf::from("/"),
+        ] {
+            assert!(marked.contains(&s(&want)), "{want:?} in {marked:?}");
+        }
+        assert!(
+            !marked.iter().any(|m| m.ends_with('/') && m != "/"),
+            "{marked:?}"
         );
-        assert!(check_codex(Some("0.129.0-alpha.1")).is_err());
-        let unknown = "Local models need Codex 0.129.0 or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again.";
-        assert_eq!(check_codex(None), Err(unknown.into()));
-        assert_eq!(check_codex(Some("codex-cli dev")), Err(unknown.into()));
-        assert_eq!(check_codex(Some("1.2")), Err(unknown.into()));
-        // What `codex --version` prints, parsed as detection does.
-        assert_eq!(v("codex-cli 0.165.0").number, (0, 165, 0));
-        assert!(v("0.145.0-alpha.1").pre_release);
-        assert!(v("0.145.1").at_least(AGENTS_ENABLED_SINCE));
-        assert!(!v("0.145.0-rc.1").at_least(AGENTS_ENABLED_SINCE));
+        // A linked worktree elsewhere: its main checkout too, as written.
+        let wt = real.join("elsewhere/wt");
+        std::fs::create_dir_all(&wt).expect("wt");
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", s(&link.join(".git/worktrees/wt"))),
+        )
+        .expect("gitdir");
+        let marked = untrusted_folders(&wt);
+        for want in [
+            wt.clone(),
+            real.join("elsewhere"),
+            link.clone(),
+            main.clone(),
+        ] {
+            assert!(marked.contains(&s(&want)), "{want:?} in {marked:?}");
+        }
+        // A main checkout or a `.git` that isn't a worktree's adds nothing.
+        std::fs::write(wt.join(".git"), "gitdir: /nowhere/modules/x\n").expect("gitdir");
+        assert!(!untrusted_folders(&wt).contains(&s(&main)));
+        assert_eq!(main_checkout(&nested), None);
     }
 
     #[test]
@@ -807,25 +1057,25 @@ mod tests {
             local_args(&v(&[
                 "--sandbox",
                 "read-only",
-                "-auntrusted",
+                "-aon-request",
                 "-c",
                 "model_reasoning_effort=high",
                 "-csandbox_workspace_write.network_access=false",
                 "--config=approval_policy=never",
-                "--full-auto",
+                "--dangerously-bypass-approvals-and-sandbox",
             ])),
             v(&[
                 "--sandbox",
                 "read-only",
                 "--ask-for-approval",
-                "untrusted",
+                "on-request",
                 "--config",
                 "model_reasoning_effort=high",
                 "--config",
                 "sandbox_workspace_write.network_access=false",
                 "--config",
                 "approval_policy=never",
-                "--full-auto",
+                "--dangerously-bypass-approvals-and-sandbox",
             ])
         );
         // Dropped, every spelling the review found and more.
@@ -851,6 +1101,13 @@ mod tests {
             v(&["-sfull"]),
             v(&["-a", "always"]),
             v(&["--ask-for-approval=yolo"]),
+            // Retired in Codex 0.149.0: it wouldn't start with them.
+            v(&["--full-auto"]),
+            v(&["-a", "untrusted"]),
+            v(&["--ask-for-approval=on-failure"]),
+            // Approvals reviewed by a sub-agent: the user's, always.
+            v(&["--approve-for-me"]),
+            v(&["-c", "approvals_reviewer=\"auto_review\""]),
         ] {
             assert_eq!(local_args(&bad), Vec::<String>::new(), "{bad:?}");
         }
@@ -878,8 +1135,15 @@ mod tests {
     #[test]
     fn f_en_11_2_the_codex_config_names_the_model_and_a_loopback_provider_and_keeps_the_hook() {
         let existing = "notify = [\"/opt/vibezeo/tandem-hook\", \"codex\"]\n";
-        let out =
-            codex_config(existing, ServerKind::Ollama, 11434, "qwen3-coder:30b").expect("config");
+        let here = vec!["/".to_string(), "/home/u/repo".to_string()];
+        let out = codex_config(
+            existing,
+            ServerKind::Ollama,
+            11434,
+            "qwen3-coder:30b",
+            &here,
+        )
+        .expect("config");
         let doc: toml_edit::DocumentMut = out.parse().expect("toml");
         assert_eq!(doc["model"].as_str(), Some("qwen3-coder:30b"));
         assert_eq!(doc["model_provider"].as_str(), Some("vibezeo-local"));
@@ -892,18 +1156,22 @@ mod tests {
             ServerKind::Ollama,
             11434,
             "qwen3:8b",
+            &here,
         )
         .expect("config");
         assert!(!profiled.contains("profile"), "{profiled}");
         // Writing it again replaces, never duplicates.
-        let again = codex_config(&out, ServerKind::Ollama, 11434, "gemma3:4b").expect("again");
+        let again =
+            codex_config(&out, ServerKind::Ollama, 11434, "gemma3:4b", &here).expect("again");
         assert_eq!(again.matches("[model_providers.vibezeo-local]").count(), 1);
-        assert!(codex_config("", ServerKind::Ollama, 11434, "bad\"name").is_err());
+        assert_eq!(again.matches("[projects.\"/home/u/repo\"]").count(), 1);
+        assert!(codex_config("", ServerKind::Ollama, 11434, "bad\"name", &here).is_err());
         assert!(codex_config(
             "",
             ServerKind::Ollama,
             11434,
-            "x\nmodel_provider = \"openai\""
+            "x\nmodel_provider = \"openai\"",
+            &here
         )
         .is_err());
         assert_eq!(doc["check_for_update_on_startup"].as_bool(), Some(false));
@@ -913,7 +1181,7 @@ mod tests {
                 "{key} is left to Codex and the user"
             );
         }
-        assert!(codex_config("", ServerKind::Ollama, 11434, "--yolo").is_err());
+        assert!(codex_config("", ServerKind::Ollama, 11434, "--yolo", &here).is_err());
         let name = home_name(ServerKind::LmStudio, 1234, "openai/gpt-oss-20b");
         assert!(
             name.starts_with("local-lm_studio-1234-openai-gpt-oss-20b-"),
@@ -941,5 +1209,98 @@ mod tests {
                 && ServerKind::LmStudio.startable()
                 && !ServerKind::LlamaCpp.startable()
         );
+    }
+
+    /// F-EN-11 review (D-3065): the home lists the pane's folders as
+    /// untrusted projects, and every folder already listed stays listed and
+    /// becomes untrusted: one Codex trusted when asked, in either spelling
+    /// it writes, or another pane's on the same model.
+    #[test]
+    fn f_en_11_2_the_home_lists_every_folder_untrusted_and_keeps_the_others() {
+        let existing = concat!(
+            "[projects.\"/home/u/other\"]\n",
+            "trust_level = \"untrusted\"\n\n",
+            "[projects.\"/home/u/trusted-by-codex\"]\n",
+            "trust_level = \"trusted\"\n",
+        );
+        let here = vec![
+            "/".to_string(),
+            "/home/u/my.repo".to_string(),
+            "/home/u/it's \"here\"".to_string(),
+        ];
+        let out =
+            codex_config(existing, ServerKind::Ollama, 11434, "qwen3:8b", &here).expect("config");
+        let doc: toml_edit::DocumentMut = out.parse().expect("toml");
+        let projects = doc["projects"].as_table().expect("projects");
+        let mut listed: Vec<&str> = projects.iter().map(|(k, _)| k).collect();
+        listed.sort_unstable();
+        assert_eq!(
+            listed,
+            [
+                "/",
+                "/home/u/it's \"here\"",
+                "/home/u/my.repo",
+                "/home/u/other",
+                "/home/u/trusted-by-codex"
+            ]
+        );
+        for (folder, entry) in projects.iter() {
+            assert_eq!(entry["trust_level"].as_str(), Some("untrusted"), "{folder}");
+        }
+        // Codex's inline spelling, under a `projects` written inline too.
+        let inline = codex_config(
+            "projects = { \"/a\" = { trust_level = \"trusted\" } }\n",
+            ServerKind::Ollama,
+            11434,
+            "qwen3:8b",
+            &here,
+        )
+        .expect("inline");
+        let doc: toml_edit::DocumentMut = inline.parse().expect("toml");
+        assert_eq!(
+            doc["projects"]["/a"]["trust_level"].as_str(),
+            Some("untrusted")
+        );
+        assert_eq!(
+            doc["projects"]["/"]["trust_level"].as_str(),
+            Some("untrusted")
+        );
+        // Something Codex would never write: refused, not replaced.
+        assert_eq!(
+            codex_config(
+                "projects = \"x\"\n",
+                ServerKind::Ollama,
+                11434,
+                "qwen3:8b",
+                &here
+            ),
+            Err(ConfigError::Projects)
+        );
+    }
+
+    /// F-EN-11 review (D-3068): a local pane runs without every variable
+    /// that would sign Codex in or run its work elsewhere.
+    #[test]
+    fn f_en_11_3_no_account_token_or_remote_exec_server_reaches_codex() {
+        for var in [
+            "OPENAI_API_KEY",
+            "CODEX_API_KEY",
+            "CODEX_ACCESS_TOKEN",
+            "OPENAI_FEDERATION_RULE_ID",
+            "OPENAI_IDENTITY_TOKEN_FILE",
+            "CODEX_CONNECTORS_TOKEN",
+            "CODEX_EXEC_SERVER_URL",
+            "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+            "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+        ] {
+            assert!(ACCOUNT_VARS.contains(&var), "{var}");
+        }
+        let argv = env_argv(vec!["/bin/codex".into()], "/h", "127.0.0.1").expect("argv");
+        for var in ACCOUNT_VARS {
+            assert!(
+                argv.windows(2).any(|w| w[0] == "-u" && w[1] == var),
+                "{var}"
+            );
+        }
     }
 }
