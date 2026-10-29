@@ -3280,6 +3280,19 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - the slash vectors (the app's run without its slash rule, which was written first);
       - the core's guard and behaviour tests on `no_command`'s inside.
     - The list tests' SHA-256 check was written with the fixture's new field, so it never ran red.
+  - **Gate:** the first run, on 8880d5cf, failed in the app's tests.
+    - The behaviour test over every code point called `defang` once a code point and ran past vitest's 5 s while the whole suite ran at once.
+    - 6a56ec4f makes it one call a chunk of 4,096 (1.9 s alone), with a chunk that differs read again one code point at a time to name it. It gives both tests over every code point 20 s. What they assert is unchanged.
+  - Passed on 6a56ec4f:
+    - 2,628 Rust tests (6 ignored) and 1,823 TypeScript;
+    - the rule-8 invariants, 15 of 15;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 193, and protocol drift with 592 types (none added by this slice).
+  - E2E on 8880d5cf's app, 21 specs and 75 tests in the suite's name order, all passing (6a56ec4f changes only a test file):
+    - what reaches an agent: m9-4-picker 4, m10-2-briefing-learning 4, m10-5-mail 5, m17-5-prompts 3, m17-wt-2-review 1, m18-wt05-second-opinion 2, m7-12-acp 4, m18-en10-acp-agents 5;
+    - what's typed or sent: m16-7-auto 5, m16-1-conductor 15, m6-5-handoff 2, m7-11-handoff-thread 1, m18-th17-library 4, m6-7-limits 1;
+    - launches: m6-1-launch 4, m4-1-launch-grid 3;
+    - plans, runs and the tracker: m11-1-tasks 3, m11-2-execute 4, m18-tk06 1, m18-tk07 3, m18-tk08 1.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
