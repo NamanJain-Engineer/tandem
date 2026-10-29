@@ -186,11 +186,42 @@ fn defang_keywords(text: &str) -> String {
 
 /// Text from elsewhere, made safe to put in a message to an engine: what's
 /// [`removable`] goes first ([`readable`], D-3030), no `@` names a file
-/// ([`defang_mentions`]), no paste marker stands in for a paste, and no
-/// word Claude Code acts on is left whole (D-3023, D-3025, D-3029). The
-/// app's TypeScript makes the same text (`tests/fixtures/defang.json`).
+/// ([`defang_mentions`]), no word names a skill ([`defang_slashes`],
+/// D-3033), no paste marker stands in for a paste, and no word Claude Code
+/// acts on is left whole (D-3023, D-3025, D-3029). The app's TypeScript makes
+/// the same text (`tests/fixtures/defang.json`).
 pub fn defang(text: &str) -> String {
     defang_marked(text).0
+}
+
+/// A `/` that opens a word Claude Code could read as a skill's name, which
+/// its Skill tool takes as typed by you (`(?<!\S)/name(?=$|\s)`), becomes
+/// `／` (D-3033). The word runs to the next whitespace with no second `/`
+/// (a skill's name is a folder's, so a path keeps its slashes) and starts
+/// with a letter, a digit, `_` or anything outside ASCII.
+fn defang_slashes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut after_space = true;
+    for (at, c) in text.char_indices() {
+        if c == '/' && after_space {
+            let word = text[at + 1..]
+                .split(char::is_whitespace)
+                .next()
+                .unwrap_or_default();
+            let opens = word
+                .chars()
+                .next()
+                .is_some_and(|f| f.is_ascii_alphanumeric() || f == '_' || !f.is_ascii());
+            if opens && !word.contains('/') {
+                out.push('\u{FF0F}');
+                after_space = false;
+                continue;
+            }
+        }
+        out.push(c);
+        after_space = c.is_whitespace();
+    }
+    out
 }
 
 /// [`defang`], and whether it wrote `＠`, which [`DEFANGED`] explains.
@@ -198,7 +229,10 @@ pub fn defang_marked(text: &str) -> (String, bool) {
     let visible = readable(text);
     let mentions = defang_mentions(&visible);
     let wrote = mentions != visible;
-    (defang_keywords(&defang_markers(&mentions)), wrote)
+    (
+        defang_keywords(&defang_markers(&defang_slashes(&mentions))),
+        wrote,
+    )
 }
 
 /// The line a message adds after [`defang`] wrote `＠`. It holds no `@`

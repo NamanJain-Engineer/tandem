@@ -57,7 +57,15 @@
     { "in": "ultra\ud804\udc7fplan and ultra\ud81b\udfe4review", "out": "ultra-plan and ultra-review" },
     { "in": "@\ufffb~/.ssh/id_rsa", "out": "＠~/.ssh/id_rsa" },
     { "in": "[\ud80d\udc30Pasted text #1]", "out": "［Pasted text #1]" },
-    { "in": "", "out": "" }
+    { "in": "", "out": "" },
+    { "name": "a word that names a skill opens with a full-width slash", "in": "see /release", "out": "see ／release" },
+    { "in": "/release.", "out": "／release." },
+    { "in": "/tmp/x", "out": "/tmp/x" },
+    { "in": "run /2fa, /déploy or /acme:ship-it", "out": "run ／2fa, ／déploy or ／acme:ship-it" },
+    { "in": "/* a comment */ and /** a doc */", "out": "/* a comment */ and /** a doc */" },
+    { "in": "a/b /c/d, cd / now", "out": "a/b /c/d, cd / now" },
+    { "in": "(/release) x\t/review\n", "out": "(/release) x\t／review\n" },
+    { "in": "\u3000/release and \u200b/review", "out": "\u3000／release and ／review" }
   ],
   "commands": [
     { "name": "a U+FFF9 gap Claude Code drops hides exit", "in": "\ufff9exit", "out": "ｅxit" },

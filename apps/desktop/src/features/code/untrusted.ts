@@ -70,6 +70,14 @@ const PASTE_MARKER = /\[(?=(?:Pasted text|Image|\.\.\.Truncated text|\u2726 Team
  * `ultraplan`), in any ASCII case. */
 const ULTRA_WORD = /(ultra)(?=code|plan|review|think)/gi;
 
+/** A `/` that opens a word Claude Code could read as a skill's name, which
+ * its Skill tool takes as typed by you (`(?<!\S)/name(?=$|\s)`, D-3033): the
+ * word runs to the next whitespace with no second `/` (a skill's name is a
+ * folder's, so a path keeps its slashes) and starts with a letter, a digit,
+ * `_` or anything outside ASCII. Written without lookbehind, which older
+ * WebKitGTK lacks. */
+const SKILL_WORD = /(^|\s)\/(?=(?:[A-Za-z0-9_]|\P{ASCII})[^\s/]*(?!\S))/gu;
+
 /** `defang`, and whether it wrote ＠, which `DEFANGED` explains. */
 export function defangMarked(text: string): { text: string; wroteAt: boolean } {
   const shown = readable(text);
@@ -78,15 +86,16 @@ export function defangMarked(text: string): { text: string; wroteAt: boolean } {
   // included, since a run joins whatever follows it (D-3025).
   const mentions = shown.replace(/@+(?![@ \t\n\r])/g, (run) => "\uFF20".repeat(run.length));
   return {
-    text: mentions.replace(PASTE_MARKER, "\uFF3B").replace(ULTRA_WORD, "$1-"),
+    text: mentions.replace(SKILL_WORD, "$1\uFF0F").replace(PASTE_MARKER, "\uFF3B").replace(ULTRA_WORD, "$1-"),
     wroteAt: mentions !== shown,
   };
 }
 
 /** Text from elsewhere, made safe to put in a message to an engine: what's
  * removable goes first, no `@` names a file (Claude Code attaches the file
- * an `@path` names, with no tool call, D-2839), no paste marker stands in for
- * a paste, and no word Claude Code acts on is left whole (D-3029). */
+ * an `@path` names, with no tool call, D-2839), no word names a skill
+ * (D-3033), no paste marker stands in for a paste, and no word Claude Code
+ * acts on is left whole (D-3029). */
 export function defang(text: string): string {
   return defangMarked(text).text;
 }
