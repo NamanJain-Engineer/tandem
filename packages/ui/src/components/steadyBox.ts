@@ -20,44 +20,98 @@ const PRESS_GRACE_MS = 250;
  * event), and no longer holds anything back. */
 const PRESS_STALE_MS = 2_000;
 
-/** The person's latest press: pointerdown, or a key that isn't a repeat,
- * until its release. A held key's repeats keep it live but never start a
- * new one. */
-let press: { at: number; seen: number; live: boolean } | null = null;
+/** Keys that only modify another: they never start a press. */
+const MODIFIERS = new Set([
+  "Shift",
+  "Control",
+  "Alt",
+  "AltGraph",
+  "Meta",
+  "OS",
+  "Super",
+  "Hyper",
+  "Fn",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
+]);
+
+/** An event's time on `performance.now()`'s clock (some engines and jsdom
+ * stamp events with the epoch instead). */
+function stamp(e: Event): number {
+  const t = e.timeStamp;
+  return t > 1e11 ? t - performance.timeOrigin : t;
+}
+
+type Press = { at: number; seen: number; live: boolean };
+/** Every press the person is making or just made, by pointer
+ * (`p:<pointerId>`) and by key (`k:<code>`): a second press (a key tapped,
+ * another finger) while one is held doesn't take its place. A held key's
+ * repeats keep its press live but never start a new one. */
+const presses = new Map<string, Press>();
+/** The time of the event being handled now (a click, a key), so a slow
+ * handler is judged by when the event happened. */
+let handling: number | null = null;
 let tracking = false;
 
 function trackPresses() {
   if (tracking || typeof document === "undefined") return;
   tracking = true;
-  const start = () => {
-    const now = performance.now();
-    press = { at: now, seen: now, live: true };
+  const begin = (id: string, e: Event) => {
+    const t = stamp(e);
+    presses.set(id, { at: t, seen: t, live: true });
   };
-  const end = () => {
-    if (press) {
-      press.live = false;
-      press.seen = performance.now();
+  const release = (id: string, e: Event) => {
+    const p = presses.get(id);
+    if (p) {
+      p.live = false;
+      p.seen = stamp(e);
     }
   };
-  document.addEventListener("pointerdown", start, true);
+  const pointer = (e: PointerEvent) => `p:${e.pointerId ?? 0}`;
+  const key = (e: KeyboardEvent) => `k:${e.code || e.key}`;
+  document.addEventListener("pointerdown", (e) => begin(pointer(e), e), true);
+  document.addEventListener("pointerup", (e) => release(pointer(e), e), true);
+  document.addEventListener("pointercancel", (e) => release(pointer(e), e), true);
   document.addEventListener(
     "keydown",
     (e) => {
-      if (!e.repeat) start();
-      else if (press) press.seen = performance.now();
+      if (MODIFIERS.has(e.key)) return;
+      const p = presses.get(key(e));
+      if (e.repeat && p) p.seen = stamp(e);
+      else if (!e.repeat) begin(key(e), e);
     },
     true,
   );
-  document.addEventListener("pointerup", end, true);
-  document.addEventListener("pointercancel", end, true);
-  document.addEventListener("keyup", end, true);
+  document.addEventListener("keyup", (e) => release(key(e), e), true);
+  // Focus left the window: whatever was held, its release won't be seen.
+  window.addEventListener("blur", () => presses.clear());
+  for (const type of ["click", "keydown", "keyup"] as const) {
+    document.addEventListener(
+      type,
+      (e) => {
+        handling = stamp(e);
+        setTimeout(() => (handling = null), 0);
+      },
+      true,
+    );
+  }
 }
 
-/** When the press a click or key now belongs to began, if there is one. */
-function pressBegan(now: number): number | null {
-  if (press === null) return null;
-  const current = press.live ? now - press.seen < PRESS_STALE_MS : now - press.seen < PRESS_GRACE_MS;
-  return current ? press.at : null;
+/** When the earliest press a click or key may belong to began: one still
+ * held (and not stale), or released within the grace. None: null. */
+function pressBegan(): number | null {
+  const now = handling ?? performance.now();
+  let earliest: number | null = null;
+  for (const [id, p] of presses) {
+    const current = p.live ? now - p.seen < PRESS_STALE_MS : now - p.seen < PRESS_GRACE_MS;
+    if (!current) {
+      if (now - p.seen > PRESS_STALE_MS) presses.delete(id);
+      continue;
+    }
+    if (earliest === null || p.at < earliest) earliest = p.at;
+  }
+  return earliest;
 }
 
 /** The box an element takes on the screen (the window's place included,
@@ -114,22 +168,21 @@ function covered(el: HTMLElement): boolean {
   });
 }
 
-/** Whether the whole element is in view, by an IntersectionObserver
- * (clipped by its scroller, scrolled partly or wholly away counts as out).
- * Without one (a test), it's in view. */
+/** Whether any of the element is in view, by an IntersectionObserver
+ * (clipped by its scroller or scrolled away counts as out). Without one (a
+ * test), it's in view. Whether each control that grants is wholly visible is
+ * `covered()`'s to judge, so a box taller than its scroller still works once
+ * its controls are scrolled into view. */
 function useInView(el: HTMLElement | null): boolean {
   const [inView, setInView] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
     if (el === null || typeof IntersectionObserver === "undefined") return;
     // A new element starts out of view until the observer says otherwise.
     setInView(false);
-    const io = new IntersectionObserver(
-      (entries) => {
-        const last = entries[entries.length - 1];
-        if (last) setInView(last.isIntersecting && (last.intersectionRatio ?? 1) >= 0.99);
-      },
-      { threshold: [0, 0.99, 1] },
-    );
+    const io = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last) setInView(last.isIntersecting);
+    });
     io.observe(el);
     return () => io.disconnect();
   }, [el]);
@@ -192,7 +245,7 @@ export function useSteadyBox(
   const check = useCallback((): boolean => {
     if (!active || el === null || !inView || hidden(el)) return false;
     if (!sample(true) || last.current === null) return false;
-    const began = pressBegan(performance.now());
+    const began = pressBegan();
     return began === null || began >= last.current.since + SETTLE_MS;
   }, [active, el, inView, sample]);
   useEffect(() => {

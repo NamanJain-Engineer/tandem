@@ -38,6 +38,7 @@ export function Checkbox({
         checked={checked}
         disabled={disabled}
         aria-disabled={waiting || undefined}
+        data-waiting={waiting || undefined}
         onCheckedChange={(v) => !waiting && onCheckedChange?.(v === true)}
         aria-describedby={
           [description ? `${cid}-desc` : null, waiting && waitingReason ? `${cid}-wait` : null]
@@ -46,10 +47,11 @@ export function Checkbox({
         }
         title={waiting ? waitingReason : undefined}
         className={cx(
-          "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface-4",
+          "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border",
+          // Waiting: a fainter box (an unchecked one has no mark to dim),
+          // the mark dimmed, and the focus ring at full strength.
+          waiting ? "cursor-not-allowed border-border bg-surface-2 [&>*]:opacity-40" : "border-border-strong bg-surface-4",
           "focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
-          // Waiting stays focusable: the mark dims, the focus ring doesn't.
-          waiting && "cursor-not-allowed border-border [&>*]:opacity-40",
           "data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-fg",
           "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-fg",
         )}

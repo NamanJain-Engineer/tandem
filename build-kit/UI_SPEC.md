@@ -514,7 +514,7 @@ Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**r
 - Combobox adds type-to-filter and an "Add {query}…" creatable row when `onCreate` is given.
 
 ### 2.5 Checkbox, Radio, Switch
-- Checkbox: 16px, radius xs, accent when checked, supports indeterminate. `waiting` (with `waitingReason`) works as Button's: `aria-disabled`, still focusable, the mark and the label dim, and the reason is the box's accessible description.
+- Checkbox: 16px, radius xs, accent when checked, supports indeterminate. `waiting` (with `waitingReason`) works as Button's: `aria-disabled`, still focusable; the box turns fainter (border `border`, background surface-2, also when unchecked), its mark and label dim, its focus ring stays full strength, and the reason is the box's accessible description and title.
 - Switch: 28×16 track, accent when on, with a label to the left in settings rows.
 - **All have visible labels; clicking the label toggles.**
 

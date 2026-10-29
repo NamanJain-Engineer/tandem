@@ -404,3 +404,36 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     rect.mockRestore();
   });
 });
+
+describe("S1: a short, narrow pane", () => {
+  it("its banner's buttons, partly clipped as a whole but each in view, take a click once still", async () => {
+    // The banner's scroll area is shorter than its wrapped button row: the
+    // observer says the row is partly in view (0.953), never wholly.
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private cb: IntersectionObserverCallback) {}
+        observe(el: Element) {
+          queueMicrotask(() =>
+            this.cb([{ isIntersecting: true, intersectionRatio: 0.953, target: el } as IntersectionObserverEntry], {} as never),
+          );
+        }
+        disconnect() {}
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+    const calls = fakeBackend({ approval_resolve: () => null });
+    withApproval(approval);
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    await settled();
+    fireEvent.click(screen.getByTestId("pane-approval-once"));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
+  });
+});

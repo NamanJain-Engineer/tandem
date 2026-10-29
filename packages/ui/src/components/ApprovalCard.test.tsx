@@ -380,4 +380,66 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       fireEvent.keyUp(card, { key: "a" });
     });
   });
+
+  describe("S2: a second press while one is held doesn't take its place", () => {
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard kind="command" title="run" requestKey={requestKey} onAllow={onAllow} onDeny={() => undefined} />
+      </UiProvider>
+    );
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("mouse held on A, B replaces it, Esc tapped 500 ms after B settled, mouse released: nothing is allowed", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      rerender(view("apr_b", b));
+      await wait(1_050);
+      // Esc to "cancel" when the card changed under the pointer.
+      fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+      fireEvent.keyUp(document.body, { key: "Escape", code: "Escape" });
+      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.click(allow());
+      expect(a).not.toHaveBeenCalled();
+      expect(b).not.toHaveBeenCalled();
+    });
+
+    it("mouse held on A, B replaces it, another finger taps elsewhere, mouse released: nothing is allowed", async () => {
+      layout();
+      const a = vi.fn();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", a));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      rerender(view("apr_b", b));
+      await wait(1_050);
+      fireEvent.pointerDown(document.body, { pointerId: 2 });
+      fireEvent.pointerUp(document.body, { pointerId: 2 });
+      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.click(allow());
+      expect(b).not.toHaveBeenCalled();
+      // A fresh press on B, once it has held still, allows it.
+      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.click(allow());
+      expect(b).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("N1: a held A answers once: its repeats on the same card answer nothing more", async () => {
+    layout();
+    const h = card();
+    await steady();
+    const el = screen.getByTestId("approval-card");
+    el.focus();
+    fireEvent.keyDown(el, { key: "a", code: "KeyA" });
+    expect(h.onAllow).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(el, { key: "a", code: "KeyA", repeat: true });
+    fireEvent.keyDown(el, { key: "Enter", code: "Enter", ctrlKey: true, repeat: true });
+    expect(h.onAllow).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(el, { key: "a", code: "KeyA" });
+  });
 });

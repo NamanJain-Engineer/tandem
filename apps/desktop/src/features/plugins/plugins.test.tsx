@@ -456,6 +456,49 @@ describe("F-PL-08 held actions", () => {
     expect(calls.filter((c) => c.cmd === "held_draft_run").map((c) => c.args?.draftId)).toEqual(["hd_13"]);
   });
 
+  it("M1: a draft taller than the list can be picked and run once its pick, then its buttons, are in view", async () => {
+    // The observer says each box is partly in view; the row is far taller
+    // than the window, its pick near the top and its buttons near the bottom.
+    class PartIO {
+      constructor(private cb: IntersectionObserverCallback) {}
+      observe(el: Element) {
+        queueMicrotask(() =>
+          this.cb([{ isIntersecting: true, intersectionRatio: 0.57, target: el } as IntersectionObserverEntry], {} as never),
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", PartIO);
+    const rect = (top: number, height: number) =>
+      ({ left: 0, top, width: 200, height, right: 200, bottom: top + height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "LI") return rect(-300, 1_600);
+      if (this.closest('[data-testid^="held-run-"], [data-testid="held-run-selected"]') || this.querySelector?.('[data-testid^="held-run-"]'))
+        return rect(600, 30);
+      return rect(40, 20);
+    });
+    Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+    try {
+      ui(<HeldActions />);
+      const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+      const pick = screen.getByRole("checkbox", { name: "Select D-12" }) as HTMLButtonElement;
+      await waitFor(() => expect(waiting(pick)).toBe(false));
+      await waitFor(() => expect(waiting(run)).toBe(false));
+      fireEvent.click(pick);
+      expect(pick.getAttribute("aria-checked")).toBe("true");
+      fireEvent.click(run);
+      await waitFor(() => expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(true));
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
+    }
+  });
+
   describe("N3: a draft arriving on top", () => {
     // Rows laid out top to bottom, 200 apart, in list order.
     beforeEach(() => {
