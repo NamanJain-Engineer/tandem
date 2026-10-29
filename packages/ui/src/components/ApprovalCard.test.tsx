@@ -541,7 +541,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     );
     const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
 
-    it("SF1: after a release the page never saw, the next click (mousedown, no pointerdown) is judged by its own press", async () => {
+    it("SF1: after a release the page never saw, the next click (a pointermove with the button newly down, no pointerdown) is judged by its own press", async () => {
       layout();
       const b = vi.fn();
       const { rerender } = render(view("apr_a", () => undefined));
@@ -552,7 +552,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       await wait(600);
       expect(waiting(allow())).toBe(false);
       // The engine still thinks the button is down: the next press arrives
-      // as a mousedown alone, then its pointerup and click.
+      // as a pointermove with the button newly down and a mousedown (no
+      // pointerdown), then its pointerup and click.
       fireEvent.pointerMove(allow(), { pointerId: 1, pointerType: "mouse", button: 0, buttons: 1 });
       fireEvent.mouseDown(allow(), { button: 0, buttons: 1 });
       fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
@@ -607,6 +608,21 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       rerender(view("apr_b", b));
       await wait(1_050);
       document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.click(allow());
+      expect(b).not.toHaveBeenCalled();
+    });
+
+    it("D-3117: a pointermove with an empty pointerType while the mouse is held on A can't restart its press", async () => {
+      layout();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", () => undefined));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+      rerender(view("apr_b", b));
+      await wait(1_050);
+      // A synthetic event built without one has pointerType "".
+      fireEvent.pointerMove(document.body, { pointerId: 1, pointerType: "", button: 0, buttons: 1 });
       fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();

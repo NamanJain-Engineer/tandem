@@ -84,13 +84,14 @@ function trackPresses() {
   // After a release the page never saw (the window went away mid-press),
   // the engine thinks the button is still down: the next press comes as a
   // pointermove with the primary button newly down (button 0, buttons 1)
-  // and a mousedown, with no pointerdown. That pointermove starts the
-  // mouse's press. A mousedown alone never does: a tap's compatibility
+  // and a mousedown, with no pointerdown. That pointermove, from a pointer
+  // that says it's the mouse, starts the mouse's press (one with no
+  // pointerType is synthetic). A mousedown alone never does: a tap's compatibility
   // mousedown (WebView2) or a synthetic one would let another finger restart
   // a held mouse press.
   document.addEventListener(
     "pointermove",
-    (e) => pointer(e) === "p:mouse" && e.button === 0 && (e.buttons & 1) === 1 && begin("p:mouse", e),
+    (e) => e.pointerType === "mouse" && e.button === 0 && (e.buttons & 1) === 1 && begin("p:mouse", e),
     true,
   );
   document.addEventListener("pointerup", (e) => release(pointer(e), e), true);
