@@ -470,16 +470,18 @@ mod tests {
     #[test]
     fn f_cd_16_a_brief_typed_into_the_new_agent_runs_no_command() {
         // It's the first prompt, typed with Enter: a leading / or ! would run
-        // a slash or shell command (D-3026).
+        // a slash or shell command (D-3026), and what typing or Claude Code
+        // drops in front goes first (D-3030).
         let dir = tempfile::tempdir().expect("tmp");
         let pane = PaneId::from_db("pn_1".to_string());
         for (brief, typed) in [
             ("/compact first", "\u{FF0F}compact first"),
             ("!rm -rf ~", "\u{FF01}rm -rf ~"),
-            ("\u{1}!x", "\u{1}\u{FF01}x"),
-            ("\u{7f}/x", "\u{7f}\u{FF0F}x"),
-            ("\u{9b}!x", "\u{9b}\u{FF01}x"),
+            ("\u{1}!x", "\u{FF01}x"),
+            ("\u{7f}/x", "\u{FF0F}x"),
+            ("\u{9b}!x", "\u{FF01}x"),
             ("exit", "\u{FF45}xit"),
+            ("\u{fff9}exit", "\u{FF45}xit"),
         ] {
             assert_eq!(
                 deliver(brief, dir.path(), &pane).expect("short"),
@@ -496,14 +498,16 @@ mod tests {
     #[test]
     fn f_cd_16_a_brief_sent_to_a_thread_runs_no_command() {
         // A Thread's turn runs a slash command too: 2.1.312 ran `/cost` sent
-        // in stream-json, as a string or a text block (D-3026).
+        // in stream-json, as a string or a text block (D-3026), and it drops
+        // what its prompt drops before it reads the turn (D-3030).
         for (brief, sent) in [
             ("  /compact first\n", "\u{FF0F}compact first"),
             ("!rm -rf ~", "\u{FF01}rm -rf ~"),
-            ("\u{1}!x", "\u{1}\u{FF01}x"),
-            ("\u{7f}/x", "\u{7f}\u{FF0F}x"),
-            ("\u{9b}!x", "\u{9b}\u{FF01}x"),
+            ("\u{1}!x", "\u{FF01}x"),
+            ("\u{7f}/x", "\u{FF0F}x"),
+            ("\u{9b}!x", "\u{FF01}x"),
             (" :wq ", "\u{FF1A}wq"),
+            ("\u{fff9}exit", "\u{FF45}xit"),
         ] {
             assert_eq!(thread_message(brief).expect("brief"), sent, "{brief:?}");
         }

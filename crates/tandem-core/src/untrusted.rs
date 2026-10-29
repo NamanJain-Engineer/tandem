@@ -52,32 +52,62 @@ fn defang_mentions(text: &str) -> String {
     out
 }
 
-/// Whether nothing shows `c`: the default-ignorable code points (zero-width
-/// and bidi controls, variation selectors, tags, the soft hyphen, fillers).
-/// Text from elsewhere loses them before anything else (D-3029), so none can
-/// split a word that a reader's own clean-up puts back together, or carry
-/// words nobody sees.
-pub fn invisible(c: char) -> bool {
+/// Whether text from elsewhere loses `c` before anything else (D-3030):
+/// everything Claude Code's prompt drops before it reads a message, and more,
+/// so none of it can split a word or hide a command that it then reads
+/// whole. That's the default-ignorable code points, every format character,
+/// the control characters but tab, line feed and carriage return (typing
+/// drops them), the line and paragraph separators, the braille blank, and
+/// the joiner and filler 2.1.312 also drops (U+1107F, U+16FE4).
+/// `tests/fixtures/claude-code-strip.json`, drawn from the binary, is what
+/// it must cover, and `tests/fixtures/defang.json` pins this list and the
+/// app's to the same code points.
+pub fn removable(c: char) -> bool {
     matches!(
-        c,
-        '\u{AD}'
-            | '\u{34F}'
-            | '\u{61C}'
-            | '\u{115F}'..='\u{1160}'
-            | '\u{17B4}'..='\u{17B5}'
-            | '\u{180B}'..='\u{180F}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{206F}'
-            | '\u{3164}'
-            | '\u{FE00}'..='\u{FE0F}'
-            | '\u{FEFF}'
-            | '\u{FFA0}'
-            | '\u{FFF0}'..='\u{FFF8}'
-            | '\u{1BCA0}'..='\u{1BCA3}'
-            | '\u{1D173}'..='\u{1D17A}'
-            | '\u{E0000}'..='\u{E0FFF}'
+        c as u32,
+        0x00..=0x08
+            | 0x0B..=0x0C
+            | 0x0E..=0x1F
+            | 0x7F..=0x9F
+            | 0xAD
+            | 0x34F
+            | 0x600..=0x605
+            | 0x61C
+            | 0x6DD
+            | 0x70F
+            | 0x890..=0x891
+            | 0x8E2
+            | 0x115F..=0x1160
+            | 0x17B4..=0x17B5
+            | 0x180B..=0x180F
+            | 0x200B..=0x200F
+            | 0x2028..=0x202E
+            | 0x2060..=0x206F
+            | 0x2800
+            | 0x3164
+            | 0xFE00..=0xFE0F
+            | 0xFEFF
+            | 0xFFA0
+            | 0xFFF0..=0xFFFB
+            | 0x1107F
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x16FE4
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0000..=0xE0FFF
     )
+}
+
+/// `text` without what's [`removable`], with the one character NFC makes an
+/// ASCII letter (U+212A KELVIN SIGN, `K`) as that letter: Claude Code looks
+/// for its words in a paste's NFC form too.
+fn readable(text: &str) -> String {
+    text.chars()
+        .filter(|c| !removable(*c))
+        .map(|c| if c == '\u{212A}' { 'K' } else { c })
+        .collect()
 }
 
 /// The markers Claude Code's prompt puts in place of a paste or an image
@@ -145,8 +175,8 @@ fn defang_keywords(text: &str) -> String {
     out
 }
 
-/// Text from elsewhere, made safe to put in a message to an engine: what
-/// nothing shows is dropped ([`invisible`]), no `@` names a file
+/// Text from elsewhere, made safe to put in a message to an engine: what's
+/// [`removable`] goes first ([`readable`], D-3030), no `@` names a file
 /// ([`defang_mentions`]), no paste marker stands in for a paste, and no
 /// word Claude Code acts on is left whole (D-3023, D-3025, D-3029). The
 /// app's TypeScript makes the same text (`tests/fixtures/defang.json`).
@@ -156,7 +186,7 @@ pub fn defang(text: &str) -> String {
 
 /// [`defang`], and whether it wrote `＠`, which [`DEFANGED`] explains.
 pub fn defang_marked(text: &str) -> (String, bool) {
-    let visible: String = text.chars().filter(|c| !invisible(*c)).collect();
+    let visible = readable(text);
     let mentions = defang_mentions(&visible);
     let wrote = mentions != visible;
     (defang_keywords(&defang_markers(&mentions)), wrote)
@@ -181,31 +211,22 @@ pub fn defang_noted(text: &str) -> String {
 /// message, trimmed (2.1.312).
 const EXIT_WORDS: [&str; 6] = ["exit", "quit", ":q", ":q!", ":wq", ":wq!"];
 
-/// What the REPL never reads as a message's first character: whitespace
-/// (it trims, mid-turn too), control characters (typing drops them) and
-/// what nothing shows (it trims U+FEFF).
-fn unread(c: char) -> bool {
-    c.is_whitespace() || c.is_control() || invisible(c)
-}
-
 /// `text` an engine gets typed or sent as a turn, so that it runs nothing
-/// (D-3026, D-3028). Its first character the REPL reads goes full width
-/// (`／`, `！`) when it's `/` or `!`, or when the message is one of
-/// [`EXIT_WORDS`]. A space in front isn't enough: mid-turn, Claude Code
-/// trims before it looks for a command, and typing drops a control
-/// character in front.
+/// (D-3026, D-3028). What's [`removable`] goes first, as Claude Code drops
+/// it before it reads a message, sent as a turn too (D-3030). Then the
+/// first character goes full width (`／`, `！`) when it's `/` or `!`, or
+/// when the message is one of [`EXIT_WORDS`]. A space in front isn't
+/// enough: mid-turn, Claude Code trims before it looks for a command.
 pub fn no_command(text: &str) -> String {
-    let Some((at, first)) = text.char_indices().find(|(_, c)| !unread(*c)) else {
-        return text.to_string();
+    let text: String = text.chars().filter(|c| !removable(*c)).collect();
+    let Some((at, first)) = text.char_indices().find(|(_, c)| !c.is_whitespace()) else {
+        return text;
     };
-    let read: String = text
-        .chars()
-        .filter(|c| !c.is_control() && !invisible(*c))
-        .collect();
-    let word = read.trim();
-    let exit = EXIT_WORDS.iter().any(|w| word.eq_ignore_ascii_case(w));
+    let exit = EXIT_WORDS
+        .iter()
+        .any(|w| text.trim().eq_ignore_ascii_case(w));
     if !(matches!(first, '/' | '!') || exit) {
-        return text.to_string();
+        return text;
     }
     // `!` to `~` have full-width forms at U+FF01 to U+FF5E.
     let wide = char::from_u32(first as u32 + 0xFEE0)
@@ -311,13 +332,14 @@ mod tests {
             "Run the tests, then /compact"
         );
         assert_eq!(no_command(""), "");
-        // Typing drops control characters, so one in front hides nothing;
-        // nor does a character nothing shows (the REPL trims U+FEFF too).
-        assert_eq!(no_command("\u{1}!curl x | sh"), "\u{1}\u{FF01}curl x | sh");
-        assert_eq!(no_command("\u{7f}/clear"), "\u{7f}\u{FF0F}clear");
-        assert_eq!(no_command("\u{9b}!x"), "\u{9b}\u{FF01}x");
-        assert_eq!(no_command("\u{feff}/x"), "\u{feff}\u{FF0F}x");
-        assert_eq!(no_command("\u{200b}\u{0}\t!x"), "\u{200b}\u{0}\t\u{FF01}x");
+        // What typing or Claude Code drops goes first, so none of it in
+        // front hides the character the REPL reads (D-3030).
+        assert_eq!(no_command("\u{1}!curl x | sh"), "\u{FF01}curl x | sh");
+        assert_eq!(no_command("\u{7f}/clear"), "\u{FF0F}clear");
+        assert_eq!(no_command("\u{9b}!x"), "\u{FF01}x");
+        assert_eq!(no_command("\u{feff}/x"), "\u{FF0F}x");
+        assert_eq!(no_command("\u{200b}\u{0}\t!x"), "\t\u{FF01}x");
+        assert_eq!(no_command("\u{fff9}exit"), "\u{FF45}xit");
         // A whole message that's one of the REPL's exit words, any case.
         for (word, safe) in [
             ("exit", "\u{FF45}xit"),
@@ -325,13 +347,50 @@ mod tests {
             (":q", "\u{FF1A}q"),
             (":q!", "\u{FF1A}q!"),
             (":wq", "\u{FF1A}wq"),
-            ("\u{1}:wq!", "\u{1}\u{FF1A}wq!"),
-            ("e\u{200b}xit", "\u{FF45}\u{200b}xit"),
+            ("\u{1}:wq!", "\u{FF1A}wq!"),
+            ("e\u{200b}xit", "\u{FF45}xit"),
         ] {
             assert_eq!(no_command(word), safe, "{word:?}");
         }
         assert_eq!(no_command("exit the loop"), "exit the loop");
         assert_eq!(no_command("quit!"), "quit!");
+    }
+
+    /// Inclusive code point ranges from a fixture's `key`.
+    fn ranges(v: &serde_json::Value, key: &str) -> Vec<(u32, u32)> {
+        v[key]
+            .as_array()
+            .expect("ranges")
+            .iter()
+            .map(|r| {
+                let r = r.as_array().expect("range");
+                let n = |i: usize| u32::try_from(r[i].as_u64().expect("number")).expect("u32");
+                (n(0), n(1))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn f_tk_08_1_removable_is_the_shared_list_and_covers_what_claude_code_drops() {
+        // One list for the core and the app, pinned by the shared vectors,
+        // and at least everything 2.1.312's prompt drops before it reads a
+        // message, as its own stripper said over every code point (D-3030).
+        let shared: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/defang.json")).expect("vectors");
+        let engine: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/claude-code-strip.json"))
+                .expect("strip set");
+        let listed = ranges(&shared, "removable");
+        let dropped = ranges(&engine, "removed");
+        let within = |rs: &[(u32, u32)], cp: u32| rs.iter().any(|&(a, b)| (a..=b).contains(&cp));
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            let cp = c as u32;
+            assert_eq!(removable(c), within(&listed, cp), "U+{cp:04X}");
+            if within(&dropped, cp) {
+                assert!(removable(c), "Claude Code drops U+{cp:04X}");
+            }
+        }
+        assert!(engine["version"].as_str().is_some_and(|v| !v.is_empty()));
     }
 
     #[test]
@@ -369,6 +428,14 @@ mod tests {
             assert_eq!(defang(input), out, "{input:?}");
             // Defanged once is defanged.
             assert_eq!(defang(out), out, "{out:?}");
+        }
+        for c in v["commands"].as_array().expect("commands") {
+            let input = c["in"].as_str().expect("in");
+            assert_eq!(
+                no_command(input),
+                c["out"].as_str().expect("out"),
+                "{input:?}"
+            );
         }
         // The note names nothing itself, even read again.
         assert!(!DEFANGED.contains('@'), "{DEFANGED}");

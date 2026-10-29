@@ -467,21 +467,56 @@ fn invariant_rule_8_typing_defanged_text_names_no_file() {
     }
 }
 
-/// What 2.1.312's prompt does with a typed message before sending it, as
-/// read from it (D-3028): it trims (JavaScript's trim, U+FEFF included),
-/// quits on an exit word, takes a leading `!` as shell mode and a leading
-/// `/` as a command, mid-turn too.
+/// What Claude Code's prompt reads of a message: what its own stripper
+/// leaves, with line breaks where it makes them. That's the fixture drawn
+/// from the binary, never the app's own list (D-3030).
+fn engine_reads(text: &str) -> String {
+    use std::sync::OnceLock;
+    type Ranges = Vec<(u32, u32)>;
+    static STRIP: OnceLock<(Ranges, Ranges)> = OnceLock::new();
+    let (removed, newline) = STRIP.get_or_init(|| {
+        let v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../crates/tandem-core/tests/fixtures/claude-code-strip.json"
+        ))
+        .expect("strip set");
+        let ranges = |key: &str| -> Ranges {
+            v[key]
+                .as_array()
+                .expect("ranges")
+                .iter()
+                .map(|r| {
+                    let n = |i: usize| u32::try_from(r[i].as_u64().expect("number")).expect("u32");
+                    (n(0), n(1))
+                })
+                .collect()
+        };
+        (ranges("removed"), ranges("newline"))
+    });
+    let within = |rs: &Ranges, cp: u32| rs.iter().any(|&(a, b)| (a..=b).contains(&cp));
+    text.chars()
+        .filter(|c| !within(removed, *c as u32))
+        .map(|c| if within(newline, c as u32) { '\n' } else { c })
+        .collect()
+}
+
+/// What 2.1.312's prompt does with a message before sending it, as read
+/// from it (D-3028, D-3030). It reads it through its stripper (a paste and
+/// a turn sent in alike), and trims it (JavaScript's trim). It quits on an
+/// exit word, and takes a leading `!` as shell mode and a leading `/` as a
+/// command, mid-turn too.
 fn runs(message: &str) -> bool {
-    let trimmed = message.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    let read = engine_reads(message);
+    let trimmed = read.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
     trimmed.starts_with(['/', '!'])
         || ["exit", "quit", ":q", ":q!", ":wq", ":wq!"]
             .iter()
             .any(|w| trimmed.eq_ignore_ascii_case(w))
 }
 
-/// D-3028: guarded text, typed as the app types it, runs no command and
-/// quits nothing, whatever comes before it: typing drops control
-/// characters, and the REPL trims.
+/// D-3028, D-3030: guarded text, typed as the app types it or sent as a
+/// turn, runs no command and quits nothing, whatever comes before it:
+/// typing drops control characters, Claude Code drops what its stripper
+/// drops, and the REPL trims.
 #[test]
 fn invariant_rule_8_guarded_text_runs_no_command_typed_or_trimmed() {
     use tandem_pty::typing::prompt_writes;
@@ -501,6 +536,14 @@ fn invariant_rule_8_guarded_text_runs_no_command_typed_or_trimmed() {
         "\u{2028}",
         "\u{3000}",
         " \u{1}\u{feff}\t",
+        "\u{fff9}",
+        "\u{fffb}",
+        "\u{1107f}",
+        "\u{13430}",
+        "\u{16fe4}",
+        "\u{1d173}",
+        "\u{e0041}",
+        "\u{2800}",
     ];
     let payloads = [
         "/exit",
@@ -511,6 +554,7 @@ fn invariant_rule_8_guarded_text_runs_no_command_typed_or_trimmed() {
         ":wq!",
         " :q ",
         "/add-dir /",
+        "e\u{fff9}xit",
     ];
     for b in before {
         for p in payloads {
@@ -527,31 +571,37 @@ fn invariant_rule_8_guarded_text_runs_no_command_typed_or_trimmed() {
                         .trim_end_matches("\u{1b}[201~");
                     assert!(!runs(message), "{hostile:?} typed as {typed:?}");
                 }
-                // Sent as a turn, nothing is dropped on the way.
+                // Sent as a turn: Claude Code strips it, then reads it.
                 assert!(!runs(&guarded), "{hostile:?} sent as {guarded:?}");
             }
         }
     }
-    // The port finds what it should.
+    // The port finds what it should, the review's case among them.
     assert!(runs(" /exit") && runs("\u{feff}!x") && runs(" Exit\n"));
-    assert!(!runs("exit now") && !runs("\u{FF0F}exit"));
+    assert!(runs("\u{fff9}exit") && runs("\u{1}/clear"));
+    assert!(!runs("exit now") && !runs("\u{FF0F}exit") && !runs("\u{2800}/exit"));
 }
 
-/// What 2.1.312's prompt acts on in a message, as read from it: the words
-/// it dispatches on (whole words, any case; a clean-up that drops what
-/// nothing shows runs first, to be safe) and its paste markers (D-3029).
+/// What 2.1.312's prompt acts on in a message, as read from it (D-3029,
+/// D-3030): the words it dispatches on (whole words, any case) in what its
+/// stripper leaves, and in that text's NFC form too, as a paste is checked,
+/// where the Kelvin sign is `K` (the only character NFC makes an ASCII
+/// letter); and its paste markers.
 fn acts(text: &str) -> bool {
-    let shown: String = text.chars().filter(|c| !untrusted::invisible(*c)).collect();
-    let lower = shown.to_ascii_lowercase();
+    let read = engine_reads(text);
+    let nfc: String = read.replace('\u{212A}', "K");
     let word_char = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
-    let keyword = ["ultraplan", "ultrareview", "ultrathink", "ultracode"]
-        .iter()
-        .any(|w| {
-            lower.match_indices(w).any(|(i, _)| {
-                !word_char(lower[..i].chars().next_back())
-                    && !word_char(lower[i + w.len()..].chars().next())
+    let keyword = |lower: &str| {
+        ["ultraplan", "ultrareview", "ultrathink", "ultracode"]
+            .iter()
+            .any(|w| {
+                lower.match_indices(w).any(|(i, _)| {
+                    !word_char(lower[..i].chars().next_back())
+                        && !word_char(lower[i + w.len()..].chars().next())
+                })
             })
-        });
+    };
+    let lower = read.to_ascii_lowercase();
     let marker = [
         "[pasted text #",
         "[image #",
@@ -564,11 +614,12 @@ fn acts(text: &str) -> bool {
             .match_indices(m)
             .any(|(i, _)| lower[i + m.len()..].starts_with(|c: char| c.is_ascii_digit()))
     });
-    keyword || marker
+    keyword(&lower) || keyword(&nfc.to_ascii_lowercase()) || marker
 }
 
-/// D-3029: defanged text carries no word Claude Code acts on and no paste
-/// marker, typed or sent, whatever hides in it.
+/// D-3029, D-3030: defanged text carries no word Claude Code acts on and no
+/// paste marker, typed or sent, whatever hides in it, by the model of what
+/// Claude Code reads.
 #[test]
 fn invariant_rule_8_defanged_text_carries_no_keyword_or_paste_marker() {
     use tandem_pty::typing::prompt_writes;
@@ -580,9 +631,16 @@ fn invariant_rule_8_defanged_text_carries_no_keyword_or_paste_marker() {
         "ul\u{200b}tra\u{200d}plan",
         "ultra\u{feff}review",
         "ultra\u{e0041}think",
+        "ultra\u{fff9}plan",
+        "ultra\u{1}plan",
+        "ultrathin\u{212a}",
+        "ultra\u{1107f}plan",
+        "ultra\u{16fe4}review",
+        "ul\u{13430}traplan",
         "[Pasted text #1]",
         "[Pasted text #2 +40 lines] then [Image #3]",
         "[\u{200b}Image #2]",
+        "[\u{fffa}Pasted text #1]",
         "[...Truncated text #3 +4 lines...]",
         "[\u{2726} Team setup guide #5]",
         "[pasted TEXT #1]",

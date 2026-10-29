@@ -1,17 +1,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFANGED, defang, defangMarked } from "./untrusted";
+import { DEFANGED, defang, defangMarked, removable } from "./untrusted";
 
-type Vectors = { note: string; cases: { in: string; out: string }[] };
+type Ranges = [number, number][];
+type Vectors = { note: string; cases: { in: string; out: string }[]; removable: Ranges };
 
+const fixture = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, "../../../../../crates/tandem-core/tests/fixtures", name), "utf8"),
+  );
 // The core reads the same file, so both make the same text (D-3023).
-const vectors = JSON.parse(
-  readFileSync(
-    join(import.meta.dirname, "../../../../../crates/tandem-core/tests/fixtures/defang.json"),
-    "utf8",
-  ),
-) as Vectors;
+const vectors = fixture("defang.json") as Vectors;
+// What Claude Code's prompt drops, from its own stripper (D-3030).
+const engine = fixture("claude-code-strip.json") as { version: string; removed: Ranges };
+const within = (rs: Ranges, cp: number) => rs.some(([lo, hi]) => cp >= lo && cp <= hi);
 
 describe("untrusted text for an agent (D-3023)", () => {
   it("F-WT-02.1 makes the core's text of every shared vector, and its note names nothing", () => {
@@ -24,14 +27,15 @@ describe("untrusted text for an agent (D-3023)", () => {
     }
   });
 
-  it("F-WT-02.1 drops exactly the characters the core drops: every default-ignorable code point", () => {
-    // The list is the core's, not this engine's tables; they must agree.
-    const ignorable = /^\p{Default_Ignorable_Code_Point}$/u;
+  it("F-WT-02.1 drops the core's list, which covers every code point Claude Code's prompt drops", () => {
+    expect(engine.version).toMatch(/^\d+\.\d+\.\d+/);
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue;
-      const ch = String.fromCodePoint(cp);
-      if (ignorable.test(ch) !== (defang(`a${ch}b`) === "ab")) {
-        throw new Error(`U+${cp.toString(16).toUpperCase()} is treated differently`);
+      if (removable(cp) !== within(vectors.removable, cp)) {
+        throw new Error(`U+${cp.toString(16).toUpperCase()} isn't the core's`);
+      }
+      if (within(engine.removed, cp) && !removable(cp)) {
+        throw new Error(`Claude Code ${engine.version} drops U+${cp.toString(16).toUpperCase()}`);
       }
     }
   });
