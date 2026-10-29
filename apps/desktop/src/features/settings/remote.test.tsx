@@ -7,6 +7,7 @@ import { setInvokeBackend } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
 import { FREE, FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RemotePage } from "./RemotePage";
+import { waiting } from "../../test/waiting";
 
 const PRO_VIEW = { ...FREE_VIEW, plan: "pro" as const, limits: { ...FREE, phone: true } };
 
@@ -118,10 +119,16 @@ describe("F-RM-03 Settings › Remote", () => {
   });
 
   it("F-RM-03 populated: grants start off and toggle one at a time; revoke confirms first", async () => {
-    setup({ phone_pairings_list: () => [PHONE], phone_pairing_set_grants: () => null, phone_pairing_revoke: () => null });
+    setup({
+      phone_pairings_list: () => [PHONE],
+      phone_pairing_set_grants: () => null,
+      phone_pairing_revoke: () => null,
+    });
     expect(await screen.findByText("iPhone · Safari")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
-    const terminal = screen.getByTestId("remote-grant-terminal").querySelector("button,[role=switch]") as HTMLElement;
+    const terminal = screen
+      .getByTestId("remote-grant-terminal")
+      .querySelector("button,[role=switch]") as HTMLElement;
     expect(terminal.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(terminal);
     await waitFor(() => expect(named("phone_pairing_set_grants")).toHaveLength(1));
@@ -155,10 +162,11 @@ describe("F-RM-03 Settings › Remote", () => {
     expect(await screen.findByText("iPhone · Safari asked to allow: Run pnpm test")).toBeTruthy();
     // The list reloads after each answer: Allow waits for its row first.
     const allow = screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement;
-    expect(allow.disabled).toBe(true);
+    expect(allow.hasAttribute("data-grant")).toBe(true);
+    expect(waiting(allow)).toBe(true);
     fireEvent.click(allow);
     expect(named("phone_queue_decide")).toEqual([]);
-    await waitFor(() => expect(allow.disabled).toBe(false));
+    await waitFor(() => expect(waiting(allow)).toBe(false));
     fireEvent.click(allow);
     await waitFor(() =>
       expect(named("phone_queue_decide")[0]?.args).toEqual({ itemId: item.id, apply: true }),
@@ -205,7 +213,14 @@ describe("F-RM-04 Settings › Remote › Local network", () => {
   });
 
   it("F-RM-04.1 error: a port in use is shown; an org policy keeps it off", async () => {
-    setup({ phone_lan_state: () => ({ ...LAN_ON, running: false, addresses: [], error: "Port 47800 is in use. Pick another port." }) });
+    setup({
+      phone_lan_state: () => ({
+        ...LAN_ON,
+        running: false,
+        addresses: [],
+        error: "Port 47800 is in use. Pick another port.",
+      }),
+    });
     expect(await screen.findByTestId("remote-lan-error")).toBeTruthy();
     expect(screen.queryByTestId("remote-pair-lan")).toBeNull();
     act(() =>

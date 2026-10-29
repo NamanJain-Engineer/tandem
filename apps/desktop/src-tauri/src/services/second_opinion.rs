@@ -182,20 +182,10 @@ fn split_finding(line: &str) -> Option<(&str, u32, &str)> {
 /// everything else that isn't a heading (nothing is dropped).
 pub fn parse(reply: &str, files: &[FileDiff]) -> (Vec<OpinionComment>, Option<String>) {
     let shown = shown_lines(files);
-    let resolve = |p: &str| -> Option<&str> {
-        // The diff it read had ＠ for @ (D-3022).
-        let p = p.replace('\u{FF20}', "@");
-        let p = p.as_str();
-        if shown.contains_key(p) {
-            return shown.get_key_value(p).map(|(k, _)| *k);
-        }
-        let suffix = format!("/{}", p.trim_start_matches("./"));
-        let mut hits = shown.keys().filter(|k| k.ends_with(&suffix));
-        match (hits.next(), hits.next()) {
-            (Some(k), None) => Some(*k),
-            _ => None,
-        }
-    };
+    // The path as written first, since ＠ can be in a file's own name; then
+    // with @ for ＠, since the diff it read had ＠ for @ (D-3022).
+    let resolve =
+        |p: &str| shown_path(&shown, p).or_else(|| shown_path(&shown, &p.replace('\u{FF20}', "@")));
     let mut comments = Vec::new();
     let mut general = Vec::new();
     for line in reply.lines() {
@@ -220,6 +210,20 @@ pub fn parse(reply: &str, files: &[FileDiff]) -> (Vec<OpinionComment>, Option<St
     }
     let general = (!general.is_empty()).then(|| general.join("\n"));
     (comments, general)
+}
+
+/// The shown file a finding's path names: that path, or the one shown file
+/// it's the end of.
+fn shown_path<'a>(shown: &HashMap<&'a str, HashMap<u32, String>>, p: &str) -> Option<&'a str> {
+    if let Some((k, _)) = shown.get_key_value(p) {
+        return Some(*k);
+    }
+    let suffix = format!("/{}", p.trim_start_matches("./"));
+    let mut hits = shown.keys().filter(|k| k.ends_with(&suffix));
+    match (hits.next(), hits.next()) {
+        (Some(k), None) => Some(*k),
+        _ => None,
+    }
 }
 
 /// What starting needs from the app, so the flow is tested with fakes.
@@ -522,6 +526,27 @@ mod tests {
             (comments[0].path.as_str(), comments[0].line),
             ("app/@modal/page.tsx", 2)
         );
+    }
+
+    #[test]
+    fn f_wt_05_2_a_path_with_a_fullwidth_at_in_its_name_is_found_as_written() {
+        // ＠ can be in a file's own name: the path as written comes first,
+        // then the one with @ for ＠ (D-3022).
+        let files = vec![
+            file(
+                "docs/\u{FF20}notes.md",
+                "--- a/docs/\u{FF20}notes.md\n+++ b/docs/\u{FF20}notes.md\n@@ -1 +1,2 @@\n one\n+two\n",
+            ),
+            file(
+                "docs/@notes.md",
+                "--- a/docs/@notes.md\n+++ b/docs/@notes.md\n@@ -1 +1,2 @@\n one\n+two\n",
+            ),
+        ];
+        let (comments, general) = parse("docs/\u{FF20}notes.md:2: say why\n", &files);
+        assert_eq!(comments.len(), 1, "{general:?}");
+        assert_eq!(comments[0].path, "docs/\u{FF20}notes.md");
+        let (comments, _) = parse("docs/@notes.md:2: and here\n", &files);
+        assert_eq!(comments[0].path, "docs/@notes.md");
     }
 
     #[test]

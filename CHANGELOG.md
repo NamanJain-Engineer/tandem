@@ -97,6 +97,13 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **A finished chat stays unread until you look at it.** A chat you'd
+  opened earlier and left could lose its unread dot when its turn ended in the
+  background, and one you were looking at could get the dot back. Now a chat is
+  marked read when you open it, or when it's the selected chat (or in the grid)
+  while chats are showing: its turn ends while you're in Thread mode with
+  Settings closed and the window in front, or you come back to Thread mode or
+  the window.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything
@@ -104,19 +111,36 @@ release fails when its version has no section.
   sliding into place, or a new held draft arriving on top, can't take a click
   or a double-click meant for something else. A chat card's keys answer only
   the card you're on, and only once its Allow would. A phone's queued Allow in
-  Settings › Remote and Trust and connect for a new SSH host key wait the same
-  way.
+  Settings › Remote, Trust and connect for a new SSH host key and Trust and run
+  for a repository's worktree setup wait the same way. A waiting Allow can
+  still be reached with Tab, and a card scrolled out of view takes no key.
+- [lin] **The task list keeps your latest changes.** When changes came quickly,
+  an earlier refresh that finished last could show the list as it was before
+  them until the next change.
 - [lin] **A plan's runs show where they are.** When a plan started, a run that
   finished while Plan with Lead was first reading the runs could stay shown as
   in setup or running, with no verdict, until you opened the plan again.
 
 ### Security
 
-- [lin] **Nothing an agent reviews can hand it a file.** A worktree's diff sent
-  for a second opinion, a pull request's review comments, a failed check's log
-  sent to an agent, and Warn both agents' note about another worktree's symbols
-  can't make Claude Code read a file on your computer: any `@` there that could
-  name one is written ＠, and the message says so.
+- [lin] **Text from elsewhere can't hand an agent a file or run a command.**
+  What Vibezeo passes an agent from somewhere else can't make Claude Code read a
+  file on your computer: a worktree's diff and a second opinion's words, in the
+  review you send or for the second opinion itself, a pull request's review
+  comments, a failed check's log, Warn both agents' note, a teammate's mail, the
+  terminal selection, clipboard, file name or branch name in a prompt, a
+  branch's name in a review you send back, a web page's elements, the turn a
+  teammate learns from, a teammate's briefing for an ACP agent, a handoff brief,
+  the summary that continues work on another account, and what Auto and
+  Conductor send. Any `@` there that could name a file is written ＠, and the
+  message says so. Characters nobody can see, and any that Claude Code or typing
+  would drop, go first, so they can't hide a word or a command. A paste marker
+  such as [Pasted text #1] can't stand in for something you pasted, words such
+  as ultrathink get a hyphen, and a word such as /release, which could run one
+  of your skills, gets a full-width slash. A handoff brief, or what Auto or
+  Conductor sends an agent, that starts with `/` or `!`, or is just "exit" or
+  "quit", has its first character written full width (／, ！), so it runs no slash
+  or shell command and quits nothing, mid-turn too.
 
 ## 0.12.0
 

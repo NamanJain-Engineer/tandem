@@ -109,10 +109,17 @@ pub fn expand(seats: &[Seat]) -> Vec<Seat> {
         .collect()
 }
 
+/// The task without the note `untrusted::defang_noted` adds for the agent
+/// to Conductor's tasks (D-3023): the note names no branch or tab.
+fn named(task: &str) -> &str {
+    task.strip_suffix(tandem_core::untrusted::DEFANGED)
+        .map_or(task, str::trim_end)
+}
+
 /// The shared tab's name: the task's first words, or "Agents".
 pub fn tab_name(task: Option<&str>) -> String {
     let mut name = String::new();
-    for word in task.unwrap_or("").split_whitespace() {
+    for word in named(task.unwrap_or("")).split_whitespace() {
         if name.chars().count() + word.chars().count() + 1 > 28 {
             break;
         }
@@ -134,7 +141,7 @@ fn slug_source(seat: &Seat, task: Option<&str>) -> String {
     [seat.task.as_deref(), task, seat.role.as_deref()]
         .into_iter()
         .flatten()
-        .map(str::trim)
+        .map(|s| named(s).trim())
         .find(|s| !s.is_empty())
         .unwrap_or("")
         .to_string()
@@ -542,5 +549,20 @@ mod tests {
             ),
             "seat job"
         );
+    }
+
+    #[test]
+    fn f_cn_03_conductors_note_names_no_worktree_or_tab() {
+        // Conductor's task carries the note for the agent (D-3023); the
+        // branch and the tab are named from the task alone.
+        let spoken = format!("ping \u{FF20}alice {}", tandem_core::untrusted::DEFANGED);
+        let noted = tandem_core::untrusted::defang_noted("ping @alice");
+        for task in [spoken.as_str(), noted.as_str()] {
+            assert_eq!(tab_name(Some(task)), "ping \u{FF20}alice");
+            assert_eq!(
+                slug_source(&Seat::agent("x"), Some(task)),
+                "ping \u{FF20}alice"
+            );
+        }
     }
 }

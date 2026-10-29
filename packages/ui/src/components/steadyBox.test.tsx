@@ -187,4 +187,88 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     fireEvent.click(allow());
     expect(onAllow).not.toHaveBeenCalled();
   });
+
+  it("nit: a cover that comes and goes between samples still counts, caught at the press", async () => {
+    const onAllow = vi.fn();
+    render(<Row n={0} onAllow={onAllow} />);
+    const allow = () => screen.getByTestId("allow-0") as HTMLButtonElement;
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // An overlay up for 20 ms: the first press of a double-click lands on
+    // it (and closes it), the second on Allow.
+    covering = document.createElement("div");
+    document.body.append(covering);
+    fireEvent.pointerDown(covering);
+    fireEvent.pointerUp(covering);
+    covering.remove();
+    covering = null;
+    fireEvent.click(allow());
+    expect(onAllow).not.toHaveBeenCalled();
+  });
+
+  it('nit: data-grant="false" is not a grant: a cover over it holds nothing off', async () => {
+    function Marked({ onAllow }: { onAllow: () => void }) {
+      const box = useSteadyBox(true, "m");
+      return (
+        <div ref={box.ref} data-row={0}>
+          <button type="button" data-grant data-testid="allow" onClick={() => box.check() && onAllow()}>
+            Allow
+          </button>
+          <button type="button" data-grant="false">
+            Deny
+          </button>
+        </div>
+      );
+    }
+    const onAllow = vi.fn();
+    render(<Marked onAllow={onAllow} />);
+    await wait(SETTLE_MS + 100);
+    covering = document.createElement("div");
+    document.body.append(covering);
+    coverX = [100, 200];
+    fireEvent.click(screen.getByTestId("allow"));
+    expect(onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  it("M1: a box taller than the view (a held draft with long args) works once its control is in view, and waits while it's past the edge", async () => {
+    // The observer says the box is partly in view, never wholly.
+    class PartIO {
+      constructor(private cb: IntersectionObserverCallback) {}
+      observe(el: Element) {
+        queueMicrotask(() =>
+          this.cb(
+            [{ isIntersecting: true, intersectionRatio: 0.57, target: el } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          ),
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", PartIO);
+    let grantTop = 100;
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      // The box runs from 400 px above the window to well below it.
+      const r = this.tagName === "BUTTON" ? { left: 10, top: grantTop, width: 90, height: 30 } : { left: 0, top: -400, width: 300, height: 1_400 };
+      return { ...r, right: r.left + r.width, bottom: r.top + r.height, x: r.left, y: r.top, toJSON: () => ({}) } as DOMRect;
+    });
+    const onAllow = vi.fn();
+    render(<Row n={0} onAllow={onAllow} />);
+    const allow = () => screen.getByTestId("allow-0") as HTMLButtonElement;
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    // Scrolled so Allow is past the window's bottom edge: it waits.
+    grantTop = window.innerHeight + 20;
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    // Back in view: it waits its moment, then works again.
+    grantTop = 200;
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(2);
+  });
 });

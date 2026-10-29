@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use super::answer::AnswerFailed;
 use super::{
-    block_body, blocking, clean, cut, hidden, nonce, not_found, PlanQuestion, PlanService,
-    PlanView, QuestionState, REPLY_MAX,
+    block_body, blocking, clean, cut, nonce, not_found, PlanQuestion, PlanService, PlanView,
+    QuestionState, REPLY_MAX,
 };
 use crate::services::tasks_exec::{Question, QuestionEvent, Supervision, QUESTION_MAX};
 
@@ -229,11 +229,13 @@ fn latin(c: char) -> char {
 }
 
 /// Text as the word check reads it: compatibility forms (full-width,
-/// ligatures, styled letters) and accents folded, hidden characters gone,
-/// lower case, and look-alike letters read as Latin.
+/// ligatures, styled letters) and accents folded, lower case, and look-alike
+/// letters read as Latin. What Lead's prompt drops is gone too: it shows the
+/// question defanged, without what's `untrusted::removable` (D-3030), so a
+/// character there splits no word that Lead reads whole.
 fn folded(text: &str) -> String {
     text.nfkd()
-        .filter(|c| !is_combining_mark(*c) && !hidden(*c))
+        .filter(|c| !is_combining_mark(*c) && !untrusted::removable(*c))
         .flat_map(char::to_lowercase)
         .map(latin)
         .collect()
@@ -358,7 +360,7 @@ pub fn answer_prompt(
         for (name, text) in files {
             out.push_str(&format!(
                 "\n\n`{name}`:\n{}",
-                untrusted::fence("markdown", &untrusted::defang_mentions(text))
+                untrusted::fence("markdown", &untrusted::defang(text))
             ));
         }
         out
@@ -377,9 +379,9 @@ pub fn answer_prompt(
          Or, to send the question to the user, reply with one line:\n\
          ESCALATE-{code}: {WHY_PLACEHOLDER}",
         untrusted::label("the task"),
-        untrusted::fence("text", &untrusted::defang_mentions(task)),
+        untrusted::fence("text", &untrusted::defang(task)),
         untrusted::label("the run's agent"),
-        untrusted::fence("text", &untrusted::defang_mentions(question)),
+        untrusted::fence("text", &untrusted::defang(question)),
     )
 }
 
@@ -388,7 +390,7 @@ pub fn answer_prompt(
 pub fn answer_message(answer: &str) -> String {
     format!(
         "{LABEL}:\n{}\n{AUTHORITY}",
-        untrusted::fence("text", &untrusted::defang_mentions(answer))
+        untrusted::fence("text", &untrusted::defang(answer))
     )
 }
 
@@ -538,7 +540,15 @@ impl PlanService {
         let Some((view, q)) = self.answering(plan_id, qid) else {
             return;
         };
-        let files = self.instructions_of(&view).await;
+        let files = match self.instructions_of(&view).await {
+            Ok(files) => files,
+            // Lead isn't told there are none: the question comes to you.
+            Err(_) => {
+                let why = "Lead couldn't read the repository's instructions files.";
+                self.escalate(plan_id, qid, why.into(), None).await;
+                return;
+            }
+        };
         // The plan's own text of the task: the run can rewrite the live one.
         let task = view
             .issue_ids
@@ -746,8 +756,8 @@ impl PlanService {
             // message: no `@` here names a file either.
             let body = format!(
                 "{LABEL} to this task's run:\n\n> {}\n\n{}",
-                untrusted::defang_mentions(&q.question),
-                untrusted::defang_mentions(&text)
+                untrusted::defang(&q.question),
+                untrusted::defang(&text)
             );
             let by = Writer {
                 actor: lead.as_str().to_string(),
@@ -995,25 +1005,44 @@ impl PlanService {
             return;
         };
         if let Some(commit) = &view.base_commit {
-            self.instructions_at(&view, commit).await;
+            // A read that fails keeps nothing: the first question reads again.
+            let _ = self.instructions_at(&view, commit).await;
         }
     }
 
     /// The instructions Lead answers a question of `view` from: what
     /// Execute all kept, or, for a plan kept before there were snapshots,
-    /// what its base commit has now (kept from then on).
-    async fn instructions_of(&self, view: &PlanView) -> Vec<(String, String)> {
+    /// what its base commit has now (kept from then on). An error is a read
+    /// that failed: nothing is kept, so a later question reads again.
+    async fn instructions_of(&self, view: &PlanView) -> Result<Vec<(String, String)>, String> {
         match &view.base_commit {
             Some(commit) => self.instructions_at(view, commit).await,
-            None => Vec::new(),
+            None => Ok(Vec::new()),
         }
     }
 
-    async fn instructions_at(&self, view: &PlanView, commit: &str) -> Vec<(String, String)> {
+    async fn instructions_at(
+        &self,
+        view: &PlanView,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String> {
         if let Some(kept) = self.kept_instructions(&view.id, commit) {
-            return kept;
+            return Ok(kept);
         }
-        let files = within_max(self.host.instructions(&view.workspace_id, commit).await);
+        let files = match self.host.instructions(&view.workspace_id, commit).await {
+            Ok(files) => within_max(files),
+            Err(why) => {
+                tracing::warn!(code = "plan.instructions_unread", error = %why, "the instructions files couldn't be read");
+                return Err(why);
+            }
+        };
+        // Written outside the plans' lock, then kept for a plan still there.
+        // Remove plan takes the plan, then its file; one that ran meanwhile
+        // has its file taken here, so a removed plan keeps none (ids don't
+        // repeat).
+        if self.get(&view.id).is_err() {
+            return Ok(files);
+        }
         if let Some(path) = self.instructions_file(&view.id) {
             let kept = Snapshot {
                 version: 1,
@@ -1034,10 +1063,17 @@ impl PlanService {
                 tracing::warn!(code = "plan.instructions_unkept", error = %e, "a plan's instructions weren't kept");
             }
         }
-        if let Some(e) = self.lock().get_mut(&view.id) {
-            e.instructions = Some(files.clone());
+        let kept = match self.lock().get_mut(&view.id) {
+            Some(entry) => {
+                entry.instructions = Some(files.clone());
+                true
+            }
+            None => false,
+        };
+        if !kept {
+            self.forget_instructions(&view.id);
         }
-        files
+        Ok(files)
     }
 
     /// The plan's kept instructions at `commit`, from memory or its file.
@@ -1206,6 +1242,29 @@ mod tests {
             sensitive("Should I d\u{0435}ploy?"),
             Some("deploys or publishing")
         );
+    }
+
+    #[test]
+    fn f_tk_08_3_what_leads_prompt_drops_hides_no_topic() {
+        // Lead reads the question defanged, so without what's removable: a
+        // control character, a line separator or a blank there joins what
+        // the check would read as two words (D-3030).
+        for q in [
+            "Should I pu\u{1}sh the branch?",
+            "Should I pu\u{7f}sh the branch?",
+            "Should I pu\u{b}sh the branch?",
+            "Should I pu\u{85}sh the branch?",
+            "Should I pu\u{2028}sh the branch?",
+            "Should I pu\u{2800}sh the branch?",
+            "Should I pu\u{fff9}sh the branch?",
+            "Should I pu\u{1107f}sh the branch?",
+        ] {
+            assert_eq!(sensitive(q), Some("pushing"), "{q:?}");
+            let read = untrusted::defang(q);
+            assert!(read.contains("push"), "{read:?}");
+        }
+        // A line break Lead reads stays one.
+        assert_eq!(sensitive("Should I pu\nsh the branch?"), None);
     }
 
     #[test]

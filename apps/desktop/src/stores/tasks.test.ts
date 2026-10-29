@@ -141,6 +141,42 @@ describe("the tracker's first read (F-TK-01)", () => {
     expect(useTasks.getState().issues.map((i) => i.title)).toEqual(["Add the OAuth routes"]);
   });
 
+  it("F-TK-01 an earlier read that settles last takes back neither the tracker nor its status", async () => {
+    // Several views and every tasks:changed read the tracker; the latest
+    // read's list is the one shown.
+    // The first and third reads wait for the test to settle them.
+    const settle: Array<(fail: boolean) => void> = [];
+    let reads = 0;
+    setInvokeBackend(async (cmd) => {
+      if (cmd === "tasks_meta") return META;
+      if (cmd !== "tasks_list") return null;
+      reads += 1;
+      if (reads === 1 || reads === 3) {
+        const fail = await new Promise<boolean>((ok) => settle.push(ok));
+        if (fail) throw new Error("the store was busy");
+        return { items: [issue("TAN-1", "Add the routes")], next_cursor: null };
+      }
+      return { items: [issue("TAN-1", "Add the OAuth routes")], next_cursor: null };
+    });
+    const titles = () => useTasks.getState().issues.map((i) => i.title);
+    const older = useTasks.getState().load();
+    await tick();
+    await useTasks.getState().load();
+    expect(titles()).toEqual(["Add the OAuth routes"]);
+    settle[0]!(false);
+    await older;
+    expect(titles()).toEqual(["Add the OAuth routes"]);
+    // Nor does one that fails last.
+    const failing = useTasks.getState().load();
+    await tick();
+    await useTasks.getState().load();
+    settle[1]!(true);
+    await failing;
+    expect(useTasks.getState().status).toBe("ready");
+    expect(useTasks.getState().error).toBeNull();
+    expect(titles()).toEqual(["Add the OAuth routes"]);
+  });
+
   it("F-TK-01 a listener that can't start fails the read with its reason, and Retry listens again", async () => {
     vi.mocked(listen).mockRejectedValueOnce(new Error("no event bridge"));
     let issues = [issue("TAN-1", "Add the routes")];

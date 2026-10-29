@@ -21,6 +21,7 @@ import { engineOptionsFor, restoreAfterFailure } from "./ThreadComposer";
 import { age, groupThreads } from "./groups";
 import { ThreadMain } from "./ThreadMain";
 import { ThreadRail } from "./ThreadRail";
+import { waiting } from "../../test/waiting";
 
 let n = 0;
 function thread(extra: Partial<Thread> = {}): Thread {
@@ -205,8 +206,8 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
       name: "Allow for this thread",
     }) as HTMLButtonElement;
     // S4: Allow waits for the card to have held still a moment.
-    expect(allowThread.disabled).toBe(true);
-    await waitFor(() => expect(allowThread.disabled).toBe(false));
+    expect(waiting(allowThread)).toBe(true);
+    await waitFor(() => expect(waiting(allowThread)).toBe(false));
     fireEvent.click(allowThread);
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
     expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({

@@ -5,6 +5,7 @@
 // comes from the in-app demo's story.json (D-1899, D-2609).
 import en from "../../desktop/src/i18n/en.json";
 import story from "../../desktop/src/demo/story.json";
+import { DEFANGED, defangMarked } from "../../desktop/src/features/code/untrusted";
 import { RELEASE } from "./release";
 
 const CATALOG = en as Record<string, string>;
@@ -93,30 +94,24 @@ function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
-/** Whitespace as the core counts it: Rust's `char::is_whitespace` and
- * `str::trim` follow Unicode's White_Space property, which JS names
- * exactly. JS's `\s` and `trim()` differ from it on U+0085 and U+FEFF. */
-const SPACE = /\p{White_Space}/u;
+/** Whitespace as the core trims it: Rust's `str::trim` follows Unicode's
+ * White_Space property, which JS names exactly. JS's `trim()` differs from
+ * it on U+0085 and U+FEFF. */
 const coreTrim = (text: string) => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
 
-/** `text` with every `@` that could start a mention made a full-width `＠`
- * (`untrusted::defang_mentions`): an `@` before whitespace, another `@` or
- * the end stays. */
-function defangMentions(text: string): string {
-  const chars = [...text];
-  return chars.map((c, i) => (c === "@" && chars[i + 1] !== undefined && !SPACE.test(chars[i + 1] ?? "") && chars[i + 1] !== "@" ? "\uFF20" : c)).join("");
-}
+/** The line after untrusted text the defang wrote ＠ in
+ * (`untrusted::DEFANGED`): the app's own words. */
+export { DEFANGED };
 
-/** The line after untrusted text that `defangMentions` changed
- * (`untrusted::DEFANGED`). */
-export const DEFANGED = "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
-
-/** `fence` for untrusted text an agent is sent: no `@` in it names a file
- * for the agent to attach, and DEFANGED follows when one was changed
- * (`untrusted::fence_defanged`, D-3022). */
+/** `fence` for untrusted text an agent is sent, through the app's defang,
+ * its TypeScript side of the core's (`tests/fixtures/defang.json` pins the
+ * two to the same text): what's removable goes first, no `@` names a file,
+ * no word names a skill, and no paste marker or word an engine acts on is
+ * left whole; DEFANGED follows when it wrote ＠ (`untrusted::fence_defanged`,
+ * D-3022, D-3023 to D-3033). */
 function fenceDefanged(lang: string, text: string): string {
-  const safe = defangMentions(text);
-  return safe === text ? fence(lang, safe) : `${fence(lang, safe)}\n${DEFANGED}`;
+  const safe = defangMarked(text);
+  return safe.wroteAt ? `${fence(lang, safe.text)}\n${DEFANGED}` : fence(lang, safe.text);
 }
 
 /** What "Send failure to agent" types into the agent for a failed check:

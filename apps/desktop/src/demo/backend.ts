@@ -1459,6 +1459,9 @@ export class DemoCore {
         };
       case "thread_get":
         return this.detail(this.thread(args));
+      case "thread_mark_read":
+        this.thread(args).thread.unread = false;
+        return null;
       case "thread_events": {
         const page: ThreadEventPage = { items: this.thread(args).events, nextBeforeId: null };
         return page;

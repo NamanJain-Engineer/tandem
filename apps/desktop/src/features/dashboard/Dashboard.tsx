@@ -11,6 +11,7 @@ import {
 import type { AgentStatus, DashboardItem, PaneUsage } from "@tandem/protocol";
 import { formatBytes, formatCpu, usePaneUsage } from "../../stores/resources";
 import {
+  offscreenRow,
   Badge,
   Button,
   ConfirmDialog,
@@ -203,6 +204,8 @@ function AgentCard({
       aria-label={`${title}, ${STATUS_LABEL[item.status]()}`}
       onClick={() => void jumpTo(item)}
       onKeyDown={onKey}
+      // Off screen, a card skips layout, paint and hit tests.
+      style={offscreenRow(104)}
       className={cx(
         "group flex cursor-pointer flex-col gap-1 rounded-md border bg-surface-2 px-3 py-2 outline-none hover:bg-surface-3 focus-visible:shadow-focus",
         item.status === "waiting" ? "border-waiting" : "border-border",
@@ -288,14 +291,14 @@ function AgentCard({
               )}
             </p>
           )}
-          <div ref={box.ref} className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+          <div ref={box.ref} className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
             {!unreadable && (
               <Button
                 size="sm"
                 variant="primary"
                 data-grant
                 data-testid="card-allow"
-                disabled={!canAllow}
+                waiting={!canAllow}
                 title={
                   canAllow ? undefined : waitReason({ seenEnd: !run || seenEnd, settled, steady: box.steady })
                 }
@@ -313,7 +316,7 @@ function AgentCard({
                   variant="secondary"
                   data-grant
                   data-testid="card-allow-agent"
-                  disabled={!canAllow}
+                  waiting={!canAllow}
                   title={
                     canAllow
                       ? undefined

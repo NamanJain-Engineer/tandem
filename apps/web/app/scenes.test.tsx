@@ -1047,21 +1047,28 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(readFileSync(join(dir, "failure_prompts.rs"), "utf8")).toContain('assert_eq!(prompt, case.prompt, "{}", case.why);');
     for (const c of cases) expect(failurePrompt(c.pr, { name: c.name, workflow: c.workflow, link: c.link }, c.log), c.why).toBe(c.prompt);
     expect(cases[0]).toEqual({ why: expect.any(String), pr: pr.number, name: failed?.name, workflow: SAMPLE.pr.workflow, link: SAMPLE.pr.link, log: SAMPLE.pr.log, prompt });
-    // Between them: the instruction and the label, a path defanged with the note, the @s that stay, a fence that outlasts
-    // a backtick run in the log, a check with no workflow or link, and a log of blank lines.
+    // Between them: the instruction and the label, a path defanged with the note, the @ runs that stay and those that
+    // don't, a fence that outlasts a backtick run in the log, a check with no workflow or link, and a log of blank lines.
     const all = cases.map((c) => c.prompt);
     expect(prompt.startsWith(`A CI check failed on this worktree's pull request #${pr.number}. Find the cause, fix it, commit, and say what you changed.\n\n${untrustedLabel("the CI check")}\n\`\`\`text\nCheck: ${failed?.name}\n`)).toBe(true);
-    expect(all.some((x) => x.includes("\uFF20~/.npm/_logs/x.log\n@@ -1,2 +1,3 @@\n```\n" + DEFANGED))).toBe(true);
-    expect(all.some((x) => x.includes("mail me@ example\n@\uFF20both\ntrailing @\n```\n" + DEFANGED))).toBe(true);
+    expect(all.some((x) => x.includes("\uFF20~/.npm/_logs/x.log\n@@ -1,2 +1,3 \uFF20\uFF20\n```\n" + DEFANGED))).toBe(true);
+    expect(all.some((x) => x.includes("mail me@ example\n\uFF20\uFF20both\ntrailing \uFF20\n```\n" + DEFANGED))).toBe(true);
     expect(all.some((x) => x.includes("`````text\nCheck: build\n\nFailed steps' log (last lines):\n```\n"))).toBe(true);
     expect(all.some((x) => x.endsWith("Workflow: CI\n\n(The failed steps printed nothing.)\n```"))).toBe(true);
-    // Whitespace as the core counts it, Unicode's White_Space (char::is_whitespace, str::trim): an @ before U+3000 or
-    // U+0085 stays and one before U+FEFF doesn't, and a log of U+0085 printed nothing while one of U+FEFF did (the
-    // coordinator's S2 on 2966da74). JS's \s and trim() differ from it on those two, so the port names the property.
-    expect(all.some((x) => x.includes("@ a @\u3000b @\u0085c \uFF20\uFEFFd @@\uFF20e\n```\n" + DEFANGED))).toBe(true);
+    // The defang is the app's own TypeScript (D-3023 to D-3033), which the core's defang.json pins to the core: what's
+    // removable goes first (U+0085 and U+FEFF among it, D-3030), and an @ run stays only before a space, a tab or a line
+    // break (D-3025), so one before U+3000 is defanged too. Its note is the app's words.
+    expect(readFileSync(join(import.meta.dirname, "../lib/scenes.ts"), "utf8")).toContain('import { DEFANGED, defangMarked } from "../../desktop/src/features/code/untrusted";');
+    const vectors = JSON.parse(readFileSync(join(import.meta.dirname, "../../../crates/tandem-core/tests/fixtures/defang.json"), "utf8")) as { note: string };
+    expect(DEFANGED).toBe(vectors.note);
+    expect(DEFANGED).toBe("Vibezeo wrote \uFF20 for each at sign in the text above, so none of it attaches a file; read \uFF20 as an at sign.");
+    expect(all.some((x) => x.includes("@ a \uFF20\u3000b \uFF20c \uFF20d \uFF20\uFF20\uFF20e\n```\n" + DEFANGED))).toBe(true);
+    // The trim before the fence is the core's str::trim, Unicode's White_Space (the coordinator's S2 on 2966da74): a log
+    // of U+0085 and U+3000 printed nothing, and one of U+FEFF was printed, then emptied by the defang. JS's trim() differs
+    // from it on those two, so the port names the property.
     expect(cases.some((c) => c.log.join("\n") === "\u0085\n \u3000" && c.prompt.endsWith("\n\n(The failed steps printed nothing.)\n```"))).toBe(true);
-    expect(cases.some((c) => c.log.join("\n") === "\uFEFF" && c.prompt.endsWith("Failed steps' log (last lines):\n\uFEFF\n```"))).toBe(true);
-    expect([/\s/.test("\u0085"), /\s/.test("\uFEFF"), /\p{White_Space}/u.test("\u0085"), /\p{White_Space}/u.test("\uFEFF")]).toEqual([false, true, true, false]);
+    expect(cases.some((c) => c.log.join("\n") === "\uFEFF" && c.prompt.endsWith("Failed steps' log (last lines):\n\n```"))).toBe(true);
+    expect(["\u0085".trim(), "\uFEFF".trim(), "\u0085".replace(/\p{White_Space}/u, ""), "\uFEFF".replace(/\p{White_Space}/u, "")]).toEqual(["\u0085", "", "", "\uFEFF"]);
     // The sample's log has no @, so the scene's prompt has no note.
     expect(prompt).not.toContain(DEFANGED);
     // The agent's pane prints it a line at a time, once it's sent.

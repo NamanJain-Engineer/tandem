@@ -422,6 +422,7 @@ macro_rules! app_commands {
             commands::threads::thread_create,
             commands::threads::thread_list,
             commands::threads::thread_get,
+            commands::threads::thread_mark_read,
             commands::threads::thread_events,
             commands::threads::thread_subscribe,
             commands::threads::thread_send,
