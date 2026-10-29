@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FAILED_MARK, REMOVE_HOME, cleanHomes, endRun } from "../../e2e/support/homes";
+import { FAILED_MARK, REMOVE_HOME, REMOVE_TRIES, cleanHomes, endRun } from "../../e2e/support/homes";
 
 let root = "";
 afterEach(() => {
@@ -64,7 +64,7 @@ describe("the E2E runner's temp homes (OPERATING, E2E lessons)", () => {
     expect(existsSync(running)).toBe(true);
   });
 
-  it("every removal asks Node to try again on ENOTEMPTY, EBUSY and EPERM: 5 times, 200 ms more apart each", () => {
+  it("every removal asks Node to try its rmdir again on ENOTEMPTY, EBUSY and EPERM: 5 times, 200 ms more apart each", () => {
     root = mkdtempSync(join(tmpdir(), "e2e-homes-"));
     home("old1", 400);
     home("old2", 300);
@@ -83,23 +83,53 @@ describe("the E2E runner's temp homes (OPERATING, E2E lessons)", () => {
       join(root, "tandem-e2e-old2"),
       join(root, "tandem-e2e-old1"),
     ]);
-    // A shell from the last spec recreating `home/` while the folder is
-    // walked is ENOTEMPTY, which Node's rmSync retries with these options.
+    // A handle that closes late fails the rmdir, which rmSync retries with these options.
     for (const [, options] of removed) expect(options).toBe(REMOVE_HOME);
     expect(REMOVE_HOME).toEqual({ recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     expect(existsSync(join(root, "tandem-e2e-pass"))).toBe(false);
   });
 
+  it("D-2625 a removal that throws ENOTEMPTY runs again and walks the home anew, so what's written after the walk goes too", () => {
+    root = mkdtempSync(join(tmpdir(), "e2e-homes-"));
+    const passed = home("pass");
+    const tries: string[] = [];
+    // The web app's dev server writes Next.js's config into $HOME as it
+    // stops, after rmSync's walk: every retry of its rmdir fails.
+    const late = (path: string, options: RmOptions) => {
+      tries.push(path);
+      if (tries.length === 1) {
+        rmSync(join(path, "app.log"));
+        mkdirSync(join(path, "home/.config/nextjs-nodejs"), { recursive: true });
+        writeFileSync(join(path, "home/.config/nextjs-nodejs/config.json"), "{}");
+        throw notEmpty(path);
+      }
+      rmSync(path, options);
+    };
+    const warn = vi.fn();
+    expect(endRun(passed, 0, false, false, warn, late)).toBe(0);
+    expect(tries).toEqual([passed, passed]);
+    expect(existsSync(passed)).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+    // An error that trying again can't fix isn't retried.
+    const denied = vi.fn((path: string) => {
+      throw Object.assign(new Error(`EACCES: permission denied, rmdir '${path}'`), { code: "EACCES" });
+    });
+    expect(endRun(home("denied"), 0, false, false, warn, denied)).toBe(0);
+    expect(denied).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("a cleanup that still fails is a warning naming the folder, and the run keeps its exit code", () => {
     root = mkdtempSync(join(tmpdir(), "e2e-homes-"));
     const passed = home("pass");
-    // Retried and still not empty: what rmSync throws after its last try.
-    const stuck = (path: string) => {
+    // Not empty however often it runs.
+    const stuck = vi.fn((path: string) => {
       throw notEmpty(path);
-    };
+    });
     const warn = vi.fn();
     // Every spec passed and the checks found nothing: the run passes.
     expect(endRun(passed, 0, false, false, warn, stuck)).toBe(0);
+    expect(stuck).toHaveBeenCalledTimes(REMOVE_TRIES);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain(passed);
     expect(String(warn.mock.calls[0]?.[0])).toContain("ENOTEMPTY");

@@ -1,12 +1,12 @@
 // CI results and review comments back to the agent (F-WT-08), simulated on
 // the sample pull request (`story.json`'s `pr`). The prompts follow the
 // core's (pr_checks.rs, untrusted.rs): CI's text and a reviewer's words go
-// behind the untrusted label and a fence, with no `@` in them that names a
-// file for the agent (D-3022). Nothing here runs gh: the demo asks for it as
-// the app does, and answers from the story. drift.test.ts holds this text to
-// the core's sources.
+// behind the untrusted label and a fence, defanged by the app's `defang`
+// (rule 8, D-3023), so nothing in them names a file, a skill or a paste for
+// the agent. Nothing here runs gh: the demo asks for it as the app does, and
+// answers from the story. drift.test.ts holds this text to the core's.
 import type { ImportedComment, ImportedComments, LaneChecks, PrCheck } from "@tandem/protocol";
-import { DEFANGED } from "../features/code/untrusted";
+import { DEFANGED, defangMarked } from "../features/code/untrusted";
 import { STORY, type StoryCheck } from "./story";
 
 /** untrusted.rs `label`. */
@@ -21,29 +21,12 @@ export function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
-/** untrusted.rs `defang_mentions`: every `@` that could start a mention
- * made a full-width `＠`, since Claude Code reads a file a message names as
- * `@<path>`; one before whitespace, another `@` or the end stays. */
-export function defangMentions(text: string): string {
-  const chars = [...text];
-  return chars
-    .map((c, i) => {
-      const next = chars[i + 1];
-      return c === "@" && next !== undefined && !/\s/u.test(next) && next !== "@" ? "\uFF20" : c;
-    })
-    .join("");
-}
-
-/** untrusted.rs `DEFANGED`: what follows text `defangMentions` changed. The
- * app's copy, which the shared vectors pin to the core's. */
-export { DEFANGED };
-
-/** untrusted.rs `fence_defanged`: `fence`, for text a message to an engine
- * carries, with `DEFANGED` after it when an `@` was changed. */
+/** untrusted.rs `fence_defanged`: the text `defang` makes, fenced, with
+ * `DEFANGED` after it when `defang` wrote ＠. */
 export function fenceDefanged(lang: string, text: string): string {
-  const safe = defangMentions(text);
+  const { text: safe, wroteAt } = defangMarked(text);
   const fenced = fence(lang, safe);
-  return safe === text ? fenced : `${fenced}\n${DEFANGED}`;
+  return wroteAt ? `${fenced}\n${DEFANGED}` : fenced;
 }
 
 /** The sample CI job's failed step, as gh names it in each log line. */

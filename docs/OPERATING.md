@@ -249,7 +249,13 @@ E2E lessons (each cost a debugging round):
   logs, marked `e2e-failed` (the runner prints the path, and
   `test-results/e2e-last-home` names it), and only the last 3 failed homes stay
   (`e2e/support/homes.ts`). `TANDEM_E2E_KEEP_HOME=1` keeps a passing run's home,
-  for a grep after the run. Homes from before this rule carry no mark and are
+  for a grep after the run. A removal that fails with ENOTEMPTY, EBUSY or EPERM
+  runs again, up to 3 times; one that still fails is a warning naming the
+  folder, and the run keeps its exit code (D-2625). The web app's dev server
+  runs with your real HOME and `NEXT_TELEMETRY_DISABLED=1`: as `next dev` exits,
+  a detached process makes Next.js's config folder in HOME, which would bring a
+  removed home back.
+  Homes from before this rule carry no mark and are
   never pruned: clearing them is the owner's call. The specs' own
   `/tmp/tandem-e2e-<spec>-<time>` folders still stay behind (about 77 MB after
   a thousand of them).

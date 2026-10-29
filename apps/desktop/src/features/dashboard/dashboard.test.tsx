@@ -261,6 +261,38 @@ describe("Dashboard (F-DB-01)", () => {
     expect(screen.getByTestId("dashboard-subtitle").textContent).toContain("1 done");
   });
 
+  it("F-DB-01 D-2627 a status change draws the card's line as dashboard.rs does: the preview, else the tool", async () => {
+    // Loaded while Claude Code runs Edit: dashboard.rs's line is the tool.
+    const card = item("working", "build", { preview: "Edit" });
+    setup([card]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    followDashboard();
+    const line = () => screen.queryByTestId("agent-card-preview")?.textContent ?? null;
+    const change = (status: AgentStatus, tool: string | null, preview: string | null = null) =>
+      act(() =>
+        emitLocal("status:changed", {
+          records: [
+            { key: card.key, status, reason: null, since: Date.now(), ts: 2, tool, title: "build", preview },
+          ],
+          removed: [],
+        }),
+      );
+    expect(line()).toBe("Edit");
+    change("working", "Bash");
+    expect(line()).toBe("Bash");
+    // Its Stop names no tool: no line, not the last tool's.
+    change("done", null);
+    expect(line()).toBeNull();
+    // A record's preview comes before its tool.
+    change("working", "Read", "Reading the logs");
+    expect(line()).toBe("Reading the logs");
+  });
+
   it("empty and filter-empty states", async () => {
     setup([]);
     const { unmount } = render(

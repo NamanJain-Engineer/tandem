@@ -41,7 +41,8 @@ import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
 import { NOTIFY_HREF } from "../features/billing/ComesWithAccounts";
 import { DEMO_ACTIVE, DEMO_MESSAGE_LIMIT, DEMO_WAITING, DEMO_WORKTREES, DemoCore, FIRST_MESSAGE } from "./backend";
-import { DEFANGED, ghLog } from "./ci";
+import { DEFANGED, defang } from "../features/code/untrusted";
+import { ghLog } from "./ci";
 import { MAIN, changedIn, diffsOf, testRun } from "./repo";
 import { wrapWords } from "./shell";
 import { STORY, askLine, branchOf, editsOf, totalsOf, worktreeIn } from "./story";
@@ -1048,7 +1049,7 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
     expect(log.match(/@/g)).toHaveLength(1);
     expect(log).toContain("> shop@1.4.0 test");
     expect(prompt).toContain(
-      `\`\`\`text\nCheck: test\nWorkflow: CI\nLink: ${failed?.link}\n\nFailed steps' log (last lines):\n${log.replace("@", "＠")}\n\`\`\`\n${DEFANGED}`,
+      `\`\`\`text\nCheck: test\nWorkflow: CI\nLink: ${failed?.link}\n\nFailed steps' log (last lines):\n${defang(log)}\n\`\`\`\n${DEFANGED}`,
     );
     expect(prompt).not.toContain("shop@");
     // A check that passed has no failure to send.

@@ -404,7 +404,15 @@ async function main() {
     process.env.E2E_RELAY_LOG = relayLog;
   }
   if (!OFFLINE && !(await up(`${WEB}/api/health`))) {
-    web = startDetached("pnpm", ["--filter", "web", "dev"], { API_INTERNAL_URL: API });
+    // The real HOME: the web app reads nothing from it, and as `next dev`
+    // exits it starts a detached process that makes Next.js's config folder
+    // in HOME a second later, after this run's home is gone (D-2625).
+    // Telemetry stays off: it reports the dev server's use to Vercel.
+    web = startDetached("pnpm", ["--filter", "web", "dev"], {
+      HOME: REAL_HOME,
+      API_INTERNAL_URL: API,
+      NEXT_TELEMETRY_DISABLED: "1",
+    });
     await waitUp(`${WEB}/api/health`, 120);
   }
   // The dev server compiles a page on its first request, and the scripted

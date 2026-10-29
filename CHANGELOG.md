@@ -138,6 +138,10 @@ release fails when its version has no section.
   in setup or running, with no verdict, until you opened the plan again.
 - [lin] **A plan's counts read right for one.** A plan says "1 with changes
   requested", where it said "1 changes requested".
+- [lin] **A Dashboard card's line follows its agent.** While Claude Code works,
+  its card names the tool it's running, and the name goes when it stops.
+  Before, an open Dashboard named no tool, and a card that opened mid-tool kept
+  that tool's name after Claude Code had finished.
 
 ### Security
 
