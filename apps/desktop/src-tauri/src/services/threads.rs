@@ -5453,11 +5453,14 @@ mod tests {
         })
     }
 
-    struct FixedTitler(&'static str);
+    /// Answers once the test opens its gate: the first turn ends as soon as
+    /// it's sent, so an ungated title could land before the local one is read.
+    struct FixedTitler(&'static str, Arc<tokio::sync::Notify>);
 
     #[async_trait]
     impl Titler for FixedTitler {
         async fn title(&self, _: &str) -> Option<String> {
+            self.1.notified().await;
             Some(self.0.to_string())
         }
     }
@@ -5483,8 +5486,11 @@ mod tests {
     #[tokio::test]
     async fn f_th_15_the_first_message_names_the_thread_then_the_ai_title_and_a_rename_sticks() {
         let f = fixture(OnStop::Ack, reply("Hi")).await;
-        f.svc
-            .configure(Arc::new(FixedTitler("Login redirect fix")), data(&f));
+        let gate = Arc::new(tokio::sync::Notify::new());
+        f.svc.configure(
+            Arc::new(FixedTitler("Login redirect fix", gate.clone())),
+            data(&f),
+        );
         send(
             &f,
             "fix the login bug where the redirect loops forever",
@@ -5495,6 +5501,7 @@ mod tests {
             now(&f).await.title,
             "Fix the login bug where the redirect loops"
         );
+        gate.notify_one();
         ended(&f, 1).await;
         for _ in 0..300 {
             if now(&f).await.title == "Login redirect fix" {

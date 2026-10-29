@@ -977,12 +977,17 @@ pub fn verify_base(
 /// resolves the quoted id to that same change, with no children, no
 /// workspace's working copy, no bookmark or tag, and, with `empty_only`,
 /// empty and undescribed (jj's own rule for a working-copy commit it
-/// drops). It's abandoned by the commit id read on that same line (no git
-/// ref named like that either), so a rewrite or divergence in between
-/// can't redirect it. Returns whether it was abandoned. What's left: the
-/// abandon is a second jj process, so a child made in the instant between
-/// would follow it (jj rebases a child onto the parent, so no content is
-/// lost).
+/// drops). It's abandoned as `"<commit id>" & "<change id>"`, the commit
+/// id read on that same line (no git ref named like it either): a rewrite,
+/// or a jj bookmark or tag named like either id, made since, leaves an
+/// empty set, and nothing is abandoned; a divergence since makes the change
+/// id name both versions (or jj refuses it), so the set is still exactly
+/// the commit that was read, or the abandon fails. Returns whether it was
+/// abandoned. What's left: the abandon is a second jj process, so in the
+/// instant between, a child made would follow it (jj rebases it onto the
+/// parent, so no content is lost), and a bookmark or working copy set on
+/// that very commit would go with it (jj's abandon deletes a bookmark on an
+/// abandoned commit by default).
 pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_only: bool) -> bool {
     if !is_change_id(id) || shadowed_by_ref(repo_root, id).unwrap_or(true) {
         return false;
@@ -1031,17 +1036,24 @@ pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_onl
         }
         _ => return false,
     };
-    // By the commit id just read: a rewrite in between (a new commit id)
-    // makes it a no-op, not another commit.
+    // The commit id just read, and the change id: a rewrite in between (a
+    // new commit id), or a bookmark or tag jj shows that's named like
+    // either, leaves an empty set, and nothing is abandoned.
     if shadowed_by_ref(repo_root, &commit).unwrap_or(true) {
         return false;
     }
     checked(
         jj,
         repo_root,
-        &["--ignore-working-copy", "abandon", &format!("\"{commit}\"")],
+        &[
+            "--ignore-working-copy",
+            "abandon",
+            &format!("\"{commit}\" & {quoted}"),
+        ],
     )
-    .is_ok_and(|o| o.success())
+    .is_ok_and(|o| {
+        o.success() && !o.stdout.contains("No revisions") && !o.stderr.contains("No revisions")
+    })
 }
 
 /// The workspace's changes since `base`, working copy included, as git
@@ -1162,7 +1174,8 @@ fn in_sparse(path: &str, patterns: &[String]) -> bool {
 
 /// Whether a file (or symlink) is on disk in the lane outside its sparse
 /// `patterns`, ignored or not: every folder that isn't inside a pattern is
-/// looked into, except the lane's own `.jj`; symlinks aren't followed.
+/// looked into, except the lane's own `.jj`; symlinks aren't followed;
+/// Finder's `.DS_Store` files (regular files only) don't count.
 /// Fails closed (true) when a folder can't be read.
 fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
     let mut stack = vec![ws_root.to_path_buf()];
@@ -1175,7 +1188,13 @@ fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
                 return true;
             };
             let path = e.path();
-            if dir == ws_root && e.file_name() == ".jj" {
+            // The lane's own `.jj`, and Finder's `.DS_Store` file (macOS
+            // writes one wherever a folder was looked at; it holds view
+            // settings). Only a regular file: `file_type` doesn't follow
+            // links, so a folder or a symlink of that name counts as usual.
+            if (dir == ws_root && e.file_name() == ".jj")
+                || (e.file_name() == ".DS_Store" && e.file_type().is_ok_and(|t| t.is_file()))
+            {
                 continue;
             }
             let Ok(rel) = path.strip_prefix(ws_root) else {
@@ -1207,9 +1226,12 @@ fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
 ///
 /// Inside the patterns the walk reads ignore rules as jj does, rooted at
 /// the lane: its `.gitignore` files, the repository's `info/exclude` and the
-/// global excludes. Known differences, all over-refusing there (a file jj
-/// snapshots because it doesn't ignore it is in its commit anyway, and a
-/// file jj ignores but the walk doesn't only makes Discard ask): the `ignore`
+/// global excludes. Known differences, all over-refusing there with jj's
+/// default `snapshot.auto-track` (a file jj snapshots because it doesn't
+/// ignore it is in its commit anyway, and a file jj ignores but the walk
+/// doesn't only makes Discard ask; with auto-track narrowed, a file jj
+/// doesn't ignore but the walk does is caught only by `jj status`'s
+/// "Untracked paths:", which [`kept_whole`] checks): the `ignore`
 /// crate gives the global excludes precedence over `info/exclude` (git and
 /// jj: the reverse), and finds `core.excludesFile` only in `~/.gitconfig`
 /// and the XDG config. Outside the patterns no ignore rule is read. `jj
@@ -1271,7 +1293,8 @@ fn not_kept_on_disk(jj: &dyn JjRunner, repo_root: &Path, ws_root: &Path) -> bool
             return true;
         };
         let rel = slashed(&rel.to_string_lossy());
-        if !tracked.contains(&rel) || !in_sparse(&rel, &sparse) {
+        // Outside the patterns is `on_disk_outside`'s (above).
+        if in_sparse(&rel, &sparse) && !tracked.contains(&rel) {
             return true;
         }
     }
@@ -2229,7 +2252,7 @@ mod tests {
         assert!(fake.calls().contains(&vec![
             "--ignore-working-copy".to_string(),
             "abandon".into(),
-            format!("\"{HEX}\"")
+            format!("\"{HEX}\" & \"{CID}\"")
         ]));
         // A summary jj didn't print as fixed (a word, a short id, nothing):
         // refused, nothing made.
@@ -2639,7 +2662,7 @@ mod tests {
         let abandon = vec![
             "--ignore-working-copy".to_string(),
             "abandon".into(),
-            format!("\"{HEX}\""),
+            format!("\"{HEX}\" & \"{CID}\""),
         ];
         let cases = [
             (
@@ -2745,6 +2768,25 @@ mod tests {
         };
         assert!(!abandon_leftover(&fake, &main, CID, true));
         assert!(fake.calls().is_empty());
+        // jj finding nothing to abandon (the commit was rewritten, or a
+        // bookmark named like an id redirected the symbol since the read):
+        // not abandoned.
+        std::fs::remove_file(main.join(format!(".git/refs/tags/{CID}"))).expect("untag");
+        let mut answers = leftover(CID, &format!("{CID}|{HEX}|true|0|||"), "");
+        answers.push((
+            "--ignore-working-copy abandon".into(),
+            ok("No revisions to abandon.\n"),
+        ));
+        let fake = FakeJj {
+            answers,
+            ..FakeJj::default()
+        };
+        assert!(!abandon_leftover(&fake, &main, CID, true));
+        assert!(fake.calls().contains(&vec![
+            "--ignore-working-copy".to_string(),
+            "abandon".into(),
+            format!("\"{HEX}\" & \"{CID}\""),
+        ]));
     }
 
     #[test]
@@ -2889,8 +2931,31 @@ mod tests {
             assert!(not_kept_on_disk(&fake(), &main, &ws), "{name}");
             std::fs::remove_file(&path).expect("rm");
         }
-        // An empty folder outside them holds nothing to lose.
+        // An empty folder outside them holds nothing to lose, and Finder's
+        // `.DS_Store` doesn't count.
         assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        std::fs::write(ws.join(".DS_Store"), "finder").expect("write");
+        std::fs::write(ws.join("target/.DS_Store"), "finder").expect("write");
+        assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        // Only a regular file of that name: a folder named `.DS_Store` is
+        // walked, and a symlink of that name counts.
+        std::fs::remove_file(ws.join("target/.DS_Store")).expect("rm");
+        std::fs::create_dir_all(ws.join("target/.DS_Store")).expect("mkdir");
+        std::fs::write(ws.join("target/.DS_Store/work.txt"), "w").expect("write");
+        assert!(
+            not_kept_on_disk(&fake(), &main, &ws),
+            "a folder named .DS_Store"
+        );
+        std::fs::remove_dir_all(ws.join("target/.DS_Store")).expect("rm");
+        assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(ws.join("svc"), ws.join("target/.DS_Store")).expect("link");
+            assert!(
+                not_kept_on_disk(&fake(), &main, &ws),
+                "a symlink named .DS_Store"
+            );
+        }
     }
 
     #[tokio::test]
