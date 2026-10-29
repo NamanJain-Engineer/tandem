@@ -32,7 +32,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Launcher } from "@wdio/cli";
 import { E2E_KNOWN_SENTENCE } from "./support/phone";
-import { KEEP_FAILED_HOMES, cleanHomes } from "./support/homes";
+import { KEEP_FAILED_HOMES, endRun } from "./support/homes";
 
 const WIN = process.platform === "win32";
 /** Executables' suffix on this platform. */
@@ -499,9 +499,9 @@ async function main() {
   const problems = checkArtifacts(home);
   for (const p of problems) console.error(`E2E check failed: ${p}`);
   const failed = problems.length > 0 || code !== 0;
-  cleanHomes(home, failed, process.env.TANDEM_E2E_KEEP_HOME === "1");
+  const exit = endRun(home, code, failed, process.env.TANDEM_E2E_KEEP_HOME === "1");
   if (failed) console.log(`E2E: kept ${home} for its logs (the last ${KEEP_FAILED_HOMES} failed runs' homes stay)`);
-  process.exit(failed ? 1 : code);
+  process.exit(exit);
 }
 
 void main();

@@ -44,7 +44,7 @@ import { DEMO_ACTIVE, DEMO_MESSAGE_LIMIT, DEMO_WAITING, DEMO_WORKTREES, DemoCore
 import { DEFANGED, ghLog } from "./ci";
 import { MAIN, changedIn, diffsOf, testRun } from "./repo";
 import { wrapWords } from "./shell";
-import { STORY, branchOf, editsOf, totalsOf, worktreeIn } from "./story";
+import { STORY, askLine, branchOf, editsOf, totalsOf, worktreeIn } from "./story";
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
@@ -860,7 +860,7 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
       paneId,
       channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
     });
-    await until(() => screen.includes(`${w.ask}?`));
+    await until(() => screen.includes(askLine(w)));
     const status: Array<{ key: string; status: string }> = [];
     const stop = await listen<{ records: Array<{ key: string; status: string }> }>("status:changed", (e) => void status.push(...e.records));
     core.handle("pty_write", { paneId, data: "maybe\r" });
@@ -882,7 +882,7 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
       paneId: DEMO_WAITING.paneId,
       channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
     });
-    await until(() => screen.includes("(y/n)"));
+    await until(() => screen.includes(askLine(waiting())));
     core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "n\r" });
     expect(screen).toContain("won't run");
     expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug)]);
@@ -1122,6 +1122,46 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
       expect(() => core?.handle("lane_check_failure", { laneId: prLane, name: "test" })).toThrow();
       core.handle("git_push", { context: { type: "workspace", workspaceId: prLane }, publish: false });
       expect(changed).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("F-DB-01 D-2624 a pane's card says what its status record does: Ada's tool while she works, then nothing", () => {
+    vi.useFakeTimers();
+    try {
+      core = new DemoCore(1);
+      const line = (paneId: string) =>
+        (core?.handle("status_snapshot", {}) as DashboardItem[]).find((d) => d.key === `pane:${paneId}`)
+          ?.preview;
+      // The opening frame: Ada has finished, Arlo is Codex, Bea is Gemini CLI.
+      const panes = (core.handle("status_snapshot", {}) as DashboardItem[]).filter(
+        (d) => d.source.type === "pane",
+      );
+      expect(panes.map((d) => [d.humanName, d.preview])).toEqual(
+        STORY.worktrees.map((w) => [w.agentName, null]),
+      );
+      core.handle("pty_spawn", { paneId: claude, channel: { onmessage: () => undefined } });
+      vi.advanceTimersByTime(100);
+      core.handle("pr_checks_allow", { workspaceId: prLane, allow: true });
+      const prompt = core.handle("lane_check_failure", { laneId: prLane, name: "test" }) as string;
+      core.handle("pty_type_prompt", { paneId: claude, text: prompt });
+      // Claude Code's hooks name each tool as it starts it.
+      const seen = new Set<string>();
+      for (let t = 0; t < 20_000; t += 100) {
+        vi.advanceTimersByTime(100);
+        const now = line(claude);
+        if (now) seen.add(now);
+      }
+      expect([...seen].sort()).toEqual(["Bash", "Edit", "Read"]);
+      // Finished, it names none.
+      expect(line(claude)).toBeNull();
+      // Bea answers in her terminal; her Gemini CLI never names a tool.
+      core.handle("pty_spawn", { paneId: DEMO_WAITING.paneId, channel: { onmessage: () => undefined } });
+      vi.advanceTimersByTime(100);
+      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "y\r" });
+      vi.advanceTimersByTime(5_000);
+      expect(line(DEMO_WAITING.paneId)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

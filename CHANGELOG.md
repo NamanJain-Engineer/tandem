@@ -82,9 +82,10 @@ release fails when its version has no section.
 - [lin] **The rail never cuts a row off.** A row too narrow for everything it
   shows folds it: a worktree's Preview to its globe, its marks to their icons,
   and last its agents' status to a dot that still says Needs you or 2 working
-  when you hover it. The rail stops at the width of a fully folded row, 246 px
-  rather than 180. A row's ⋯ shows in place of its agents' count, never over
-  a mark.
+  when you hover it. The rail stops at the width of a fully folded row, about
+  250 px rather than 180, a little wider while a row shows a jj badge or a
+  preview, and widens itself to fit one. A row's ⋯ shows in place of its
+  agents' count, never over a mark.
 - [lin] **Checks follow a push.** After you push from a worktree, its pull
   request's checks are read at once and every 2 minutes for the next 5, so
   its row moves to CI running when GitHub starts the new run instead of up

@@ -371,6 +371,42 @@ describe("F-SH-03 D-2701 a rail row never cuts its contents off", () => {
     expect(row.className.split(" ")).toEqual(expect.arrayContaining(["px-2", "gap-1.5"]));
   });
 
+  it("F-SH-03 D-2701 contents that run into the row's end padding fold, though WebKitGTK reports no overflow for them", () => {
+    marks();
+    // WebKitGTK's scrollWidth leaves out contents inside the end padding:
+    // the row reports none, while its last part ends 3 px into its 8 px.
+    room = 1000;
+    const row = (el: Element) => el instanceof HTMLElement && el.dataset.testid === "worktree-row";
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const at = (left: number, right: number) =>
+        ({ left, right, width: right - left, top: 0, bottom: 28, height: 28, x: left, y: 0 }) as DOMRect;
+      if (row(this)) return at(0, 200);
+      // The count, the row's last part, while any part still shows words.
+      const words =
+        this.closest('[data-testid="worktree-row"]')?.querySelectorAll("[data-words]").length ?? 0;
+      return this.getAttribute("data-testid") === "worktree-live" ? at(180, words > 0 ? 195 : 190) : at(0, 0);
+    });
+    const style = window.getComputedStyle;
+    const computed = vi.spyOn(window, "getComputedStyle").mockImplementation((el, pseudo) => {
+      const s = style(el, pseudo);
+      return row(el)
+        ? new Proxy(s, { get: (t, k) => (k === "paddingRight" ? "8px" : Reflect.get(t, k)) })
+        : s;
+    });
+    try {
+      show(1000);
+      // Folded until nothing ends past the content box (200 - 8).
+      expect(words("worktree-preview")).toBeNull();
+      expect(words("worktree-radar")).toBeNull();
+      expect(words("worktree-checks")).toBeNull();
+    } finally {
+      rect.mockRestore();
+      computed.mockRestore();
+    }
+  });
+
   it("F-SH-03 D-2701 new contents are measured again from nothing folded", () => {
     marks();
     show(200);

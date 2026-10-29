@@ -3,12 +3,17 @@
 // sources: a change there that the demo doesn't follow fails here, as
 // D-3022's `@` did (F-WT-08, F-WT-10).
 import { describe, expect, it } from "vitest";
+import HEURISTICS from "../../../../crates/tandem-core/src/status_heuristics.rs?raw";
+import REPORT from "../../../../crates/tandem-core/src/status_report.rs?raw";
 import UNTRUSTED from "../../../../crates/tandem-core/src/untrusted.rs?raw";
+import HOOK from "../../../../crates/tandem-engines/src/hook.rs?raw";
+import REGISTRY from "../../../../crates/tandem-engines/registry.json";
+import DASHBOARD from "../../src-tauri/src/services/dashboard.rs?raw";
 import PR_CHECKS from "../../src-tauri/src/services/pr_checks.rs?raw";
 import RADAR from "../../src-tauri/src/services/radar.rs?raw";
 import { DemoCore } from "./backend";
 import { DEFANGED, commentFenced, defangMentions, failurePrompt, fence, ghLog, untrustedLabel } from "./ci";
-import { STORY, worktree } from "./story";
+import { STORY, askLine, previewOf, worktree, worktreeIn, type StoryWorktree } from "./story";
 
 /** A Rust string literal's text: a `\` at a line's end joins the next line
  * without its indent, and `\n`, `\t`, `\"` and `\\` are what they say. */
@@ -101,5 +106,65 @@ describe("F-WT-08 F-WT-10 D-3022 the demo's prompts are the core's (D-1899)", ()
     expect(`${body.split("\n")[0]}\n`).toBe(other);
     const line = literal(RADAR, "- {}: {} here, {} there").replace(/\n$/, "");
     for (const row of body.split("\n").slice(1)) expect(row).toMatch(new RegExp(`^${line.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{\}/g, ".+")}$`));
+  });
+});
+
+/** An engine's entry in the app's registry. */
+const engine = (id: string) =>
+  (REGISTRY as Array<{ id: string; waitingPatterns: string[]; hooksSupport: string }>).find(
+    (e) => e.id === id,
+  );
+
+/** The body of the first `Some(StatusUpdate { … })` in a Rust source. */
+function statusUpdate(source: string): string {
+  const at = source.indexOf("Some(StatusUpdate {");
+  expect(at).toBeGreaterThanOrEqual(0);
+  return source.slice(at, source.indexOf("})", at));
+}
+
+describe("F-DB-01 F-SH-03 D-2624 the waiting agent and the Dashboard's cards are what the app shows (D-1899)", () => {
+  it("the waiting agent asks in its engine's words, a line its registry waitingPatterns match", () => {
+    const w = worktreeIn("waiting");
+    const patterns = engine(w.engine)?.waitingPatterns ?? [];
+    expect(patterns.length).toBeGreaterThan(0);
+    // terminal.rs watches an agent pane's screen with these: a question
+    // they don't match leaves the agent working, never waiting.
+    expect(patterns.some((p) => new RegExp(p).test(askLine(w)))).toBe(true);
+    expect(askLine(w)).toBe(`Allow execution of: '${w.ask}'?`);
+    // 0.12.0's demo line matched none of them.
+    expect(patterns.some((p) => new RegExp(p).test(`Allow running ${w.ask}? (y/n)`))).toBe(false);
+  });
+
+  it("each story engine reports what its registry entry says it can", () => {
+    for (const [id, e] of Object.entries(STORY.engines))
+      expect(e.hooksSupport, id).toBe(engine(id)?.hooksSupport);
+  });
+
+  it("a pane's card line is its status record's preview, else its tool; only Claude Code's hooks name a tool, while it works", () => {
+    // dashboard.rs draws the card's line from the agent's status record.
+    expect(DASHBOARD).toContain("preview: redact(rec.preview.or(rec.tool))");
+    // Without hooks, the status comes from the screen: no tool, no preview.
+    expect(statusUpdate(HEURISTICS)).toMatch(/tool: None,[\s\S]*preview: None,/);
+    // A hook's report carries no preview, and the tool its hook named.
+    expect(statusUpdate(REPORT)).toMatch(/tool: self\.payload\.tool\.clone\(\),[\s\S]*preview: None,/);
+    // Claude Code's PreToolUse names its tool; its Stop and Codex's
+    // turn-complete name none.
+    expect(HOOK).toMatch(/"PreToolUse" => \{\s*payload\.tool = field\("tool_name"\)/);
+    expect(HOOK).toContain(`"Stop" => ReportEvent::Done,`);
+    expect(HOOK).toContain(`"agent-turn-complete" => ReportEvent::Done,`);
+    // So the opening frame's cards have no line: Ada has finished, Arlo's
+    // Codex names no tools, and Bea's Gemini CLI has no hooks.
+    for (const w of STORY.worktrees) expect(previewOf(w), w.slug).toBeNull();
+    // A Claude Code agent at work names the tool it's running.
+    const at = (w: StoryWorktree, steps: StoryWorktree["steps"]): StoryWorktree => ({
+      ...w,
+      state: "working",
+      steps,
+    });
+    expect(previewOf(at(worktreeIn("done"), [{ read: "src/a.ts" }]))).toBe("Read");
+    expect(previewOf(at(worktreeIn("done"), [{ edit: "src/a.ts", add: 1, del: 1 }]))).toBe("Edit");
+    expect(previewOf(at(worktreeIn("done"), [{ run: "pnpm test" }]))).toBe("Bash");
+    expect(previewOf(at(worktreeIn("waiting"), [{ run: "pnpm test" }]))).toBeNull();
+    expect(previewOf(at(worktreeIn("working"), [{ run: "pnpm test" }]))).toBeNull();
   });
 });

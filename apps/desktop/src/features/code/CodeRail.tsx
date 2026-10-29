@@ -5,6 +5,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   AlertTriangle,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import type { SavedSession, WorkspaceSummary } from "@tandem/protocol";
 import {
+  Badge,
   Button,
   ConfirmDialog,
   Count,
@@ -41,7 +43,7 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { isMultiRepo } from "../../stores/launch";
 import { useRemote } from "../../stores/remote";
 import { RailList } from "../rail/RailList";
-import { topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
+import { isJj, topLevel, useWorktrees, worktreesOf } from "../../stores/worktrees";
 import { useChecksPolling } from "./PullRequestChecks";
 import { useIntentRadar } from "./IntentRadar";
 import { useMarkFolds } from "./markFolds";
@@ -54,14 +56,41 @@ import { pickAndAddWorkspace, switchMode } from "../shell/actions";
 import { useBoot } from "../shell/useBoot";
 
 /** D-2701: the rail is never narrower than its rows. Its minimum is a fully
- * folded worktree row at the deepest indent, measured in the app's own CSS
- * (Inter, UI_SPEC §1.2): the rail's border (1), the list's padding (6 + 6),
- * a worktree's indent (24) and the row's padding (8 + 8); in the row, the
- * branch icon (12), the name's 10 characters (75.7 at 12 px), the status dot
- * (6), the checks badge's icon (20), the radar mark's (24) and a two-digit
- * count (24.9), with the five gaps between them (6 each). railFold.test.tsx
- * holds the row to those parts. */
-export const RAIL_MIN = Math.ceil(1 + 12 + 24 + 16 + 12 + 75.7 + 6 + 20 + 24 + 24.9 + 5 * 6);
+ * folded worktree row at the deepest indent: the rail's border (1), the
+ * list's padding (6 + 6), a worktree's indent (24) and the row's padding
+ * (8 + 8); in the row, the branch icon (12), the status dot (6), the checks
+ * badge's icon (20), the radar mark's (24) and the five gaps between the
+ * parts (6 each); then its text parts, `RailParts`. railFold.test.tsx holds
+ * the row to those parts. */
+const RAIL_FIXED = 1 + 12 + 24 + 16 + 12 + 6 + 20 + 24 + 5 * 6;
+/** The widest count a fully folded row allows for: two digits. */
+const WIDEST_COUNT = 88;
+/** The gap before a part a row adds (D-2703), and the Preview's globe folded. */
+const GAP = 6;
+const GLOBE = 20;
+
+/** A fully folded row's text parts as an engine draws them: the name's 10
+ * characters, a two-digit count and F-CD-24's jj badge. */
+export type RailParts = { name: number; count: number; jj: number };
+/** Chromium's, in Inter at 12 px (UI_SPEC §1.2): what the rail uses until
+ * this engine's are measured, and where nothing is laid out (tests). */
+export const PARTS: RailParts = { name: 75.7, count: 24.9, jj: 19 };
+
+/** D-2701, D-2703: the rail's minimum: a fully folded worktree row, its
+ * text parts as measured, and the widest of what the rows it shows add (a
+ * jj badge, a Preview's globe, each with its gap), with a scrollbar's
+ * width where scrollbars take room. */
+export function railMin(
+  parts: RailParts,
+  rows: Array<{ jj: boolean; preview: boolean }>,
+  scrollbar = 0,
+): number {
+  const more = Math.max(0, ...rows.map((r) => (r.jj ? parts.jj + GAP : 0) + (r.preview ? GLOBE + GAP : 0)));
+  return Math.ceil(RAIL_FIXED + parts.name + parts.count + more) + scrollbar;
+}
+
+/** The minimum in Chromium with no jj or Preview row: 246. */
+export const RAIL_MIN = railMin(PARTS, []);
 export const RAIL_MAX = 360;
 /** Dragging the edge below this collapses the rail to icons (UI_SPEC §3.3). */
 const COLLAPSE_BELOW = 160;
@@ -79,6 +108,43 @@ function useScrollbarWidth(): number {
     probe.remove();
   }, []);
   return width;
+}
+
+/** D-2701: the rail's text parts as this engine draws them, measured from
+ * hidden copies once its fonts are in and the rail is open (WebKitGTK draws
+ * a name's 10 characters 80 px wide where Chromium draws 75.7). */
+function useRailParts(probe: RefObject<HTMLElement | null>, open: boolean): RailParts {
+  const [parts, setParts] = useState(PARTS);
+  useLayoutEffect(() => {
+    if (!open) return;
+    let live = true;
+    const width = (part: string) =>
+      probe.current?.querySelector(`[data-part="${part}"]`)?.getBoundingClientRect().width ?? 0;
+    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
+      if (!live) return;
+      const next = { name: width("name"), count: width("count"), jj: width("jj") };
+      // Nothing laid out: Chromium's stand.
+      if (next.name > 0 && next.count > 0 && next.jj > 0) setParts(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [probe, open]);
+  return parts;
+}
+
+/** D-2703: what each worktree row the rail shows adds to a fully folded
+ * row: F-CD-24's jj badge, a running Preview's globe. Rows under a
+ * collapsed repository aren't shown. */
+function useShownMarks(list: WorkspaceSummary[]): Array<{ jj: boolean; preview: boolean }> {
+  const previews = useWorktrees((s) => s.previews);
+  return topLevel(list)
+    .filter((ws) => !ws.collapsed)
+    .flatMap((ws) => worktreesOf(list, ws.id))
+    .map((wt) => ({
+      jj: isJj(wt),
+      preview: previews[wt.id]?.status === "ready" && Boolean(previews[wt.id]?.url),
+    }));
 }
 
 /** The rail's right edge: drag or arrow keys resize it (its minimum to 360
@@ -348,10 +414,29 @@ export function CodeRail() {
   const collapsed = useUi((s) => s.railCollapsed);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const saved = useSetting("rail_width", 248);
+  // While the edge is dragged: its width, not yet saved.
   const [width, setWidth] = useState<number | null>(null);
+  const dragging = width !== null;
   const { show } = useToast();
-  const min = RAIL_MIN + useScrollbarWidth();
+  const probe = useRef<HTMLDivElement | null>(null);
+  const min = railMin(useRailParts(probe, !collapsed), useShownMarks(list), useScrollbarWidth());
   const shown = Math.min(RAIL_MAX, Math.max(min, width ?? saved));
+  // D-2703: a rail narrower than its minimum widens to it, and keeps that
+  // width when the marks that asked for it go; never while it's dragged.
+  useEffect(() => {
+    if (!dragging && !collapsed && saved < min) void useSettings.getState().set("rail_width", min);
+  }, [dragging, collapsed, saved, min]);
+  // Its width eases once it has drawn: not while it opens or collapses,
+  // nor mid-drag, when the edge follows the pointer.
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    if (collapsed) {
+      setDrawn(false);
+      return;
+    }
+    const frame = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(frame);
+  }, [collapsed]);
   const localWorktrees = list
     .filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local" && !w.missing)
     .map((w) => w.id);
@@ -441,9 +526,28 @@ export function CodeRail() {
   return (
     <nav
       aria-label={t("rail.workspaces")}
-      className="relative flex h-full shrink-0 flex-col border-r border-border bg-surface-1"
+      className={cx(
+        "relative flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
+        drawn && !dragging && "transition-[width] duration-[var(--dur-base)] ease-[var(--ease-standard)]",
+      )}
       style={{ width: collapsed ? "var(--rail-collapsed)" : shown }}
     >
+      {/* The text parts of the rail's minimum, measured in its own CSS. */}
+      {!collapsed && (
+        <div
+          ref={probe}
+          aria-hidden="true"
+          className="pointer-events-none invisible absolute left-0 top-0 flex text-sm"
+        >
+          <span data-part="name" className="block w-[10ch] shrink-0" />
+          <span data-part="count" className="shrink-0">
+            <Badge>{WIDEST_COUNT}</Badge>
+          </span>
+          <span data-part="jj" className="shrink-0">
+            <Badge variant="outline">{t("worktree.jj.badge")}</Badge>
+          </span>
+        </div>
+      )}
       <div className={cx("flex h-9 items-center gap-1 px-2", collapsed && "justify-center")}>
         {!collapsed && (
           <h2 className="flex-1 px-1 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">

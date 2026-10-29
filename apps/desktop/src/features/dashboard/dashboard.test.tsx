@@ -353,6 +353,34 @@ describe("Dashboard model", () => {
     expect(screen.queryByText(/Default/)).toBeNull();
   });
 
+  it("F-DB-01 D-2620 a Dashboard that isn't on screen reads no accounts; shown, it reads them once", async () => {
+    // A hidden sidebar costs no read, and keeps no list that can go stale
+    // before anything shows it (E2E-M16-5 adds an account behind the app's back).
+    let reads = 0;
+    fakeBackend({
+      status_snapshot: () => [],
+      accounts_list: () => {
+        reads += 1;
+        return [];
+      },
+      accounts_overrides: () => [],
+    });
+    useAccounts.setState({ list: [], overrides: [], loaded: false, failed: false, signIn: {} });
+    const view = render(
+      <UiProvider>
+        <Dashboard onScreen={false} />
+      </UiProvider>,
+    );
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(reads).toBe(0);
+    view.rerender(
+      <UiProvider>
+        <Dashboard onScreen />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(reads).toBe(1));
+  });
+
   it("search is AND over the fields, case- and accent-insensitive", () => {
     const i = item("idle", "✳ Fix the auth guard", { humanName: "Zoë", branch: "tandem/fix-auth" });
     expect(cardTitle(i)).toBe("Zoë · Fix the auth guard");

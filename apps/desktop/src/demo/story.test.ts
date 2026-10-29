@@ -114,12 +114,13 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     const w = worktreeIn("waiting");
     // The engine's own question in its terminal: 0.12.0 raises no approval
     // for an engine's question, only for `vibezeo run` (D-1899).
-    expect(askLine(w)).toBe(`Allow running ${w.ask}? (y/n)`);
-    expect(previewOf(w)).toBe(`Allow running ${w.ask}?`);
-    // The others: the finished agent's closing words, the working one's
-    // last command.
-    expect(previewOf(worktreeIn("done"))).toBe(worktreeIn("done").closing);
-    expect(previewOf(worktreeIn("working"))).toMatch(/^Running /);
+    expect(askLine(w)).toBe(`Allow execution of: '${w.ask}'?`);
+    // Its card waits with no line: Gemini CLI has no hooks (D-2624).
+    expect(previewOf(w)).toBeNull();
+    // Nor do the others': Ada has finished, and Arlo's Codex names no
+    // tools (drift.test.ts holds the rule to the app's sources).
+    expect(previewOf(worktreeIn("done"))).toBeNull();
+    expect(previewOf(worktreeIn("working"))).toBeNull();
   });
 
   it("F-WB-01 D-2609 the pull request's checks are lint, test and build, with test failing", () => {

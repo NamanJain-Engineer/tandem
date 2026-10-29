@@ -251,7 +251,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Appearance toggle (cycles Dark, Light, System).
   - Settings button.
   - An **Update ready** row appears only when an update is staged.
-- The rail can be resized from the width of a fully folded worktree row (246 px, D-2701) to 360 px, and its width persists. A row never runs past the rail: while it's too narrow for its contents, its marks fold to their icons and its status words to their dot.
+- The rail can be resized from the width of a fully folded worktree row, as the app's engine draws it (246 px in Chromium, D-2701), to 360 px, and its width persists. While a row the rail shows has a jj badge or a running Preview, the minimum adds them; a rail narrower than its minimum widens to it, eased, and keeps that width (D-2703). A row never runs past the rail: while it's too narrow for its contents, its marks fold to their icons and its status words to their dot.
 
 **Data:** SQLite `rail_items` (mode, item_id, pinned, sort_key).
 

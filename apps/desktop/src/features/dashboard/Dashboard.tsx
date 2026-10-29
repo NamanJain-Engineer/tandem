@@ -395,11 +395,12 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
   useEffect(() => {
     if (!loaded) void useDashboard.getState().load();
   }, [loaded]);
-  // Which engines have more than one account, for the cards' meta line.
+  // Which engines have more than one account, for the cards' meta line:
+  // read once the Dashboard shows, not while the sidebar hides it.
   const accountsLoaded = useAccounts((s) => s.loaded);
   useEffect(() => {
-    if (!accountsLoaded) void useAccounts.getState().load();
-  }, [accountsLoaded]);
+    if (onScreen && !accountsLoaded) void useAccounts.getState().load();
+  }, [onScreen, accountsLoaded]);
 
   const all = useMemo(() => Object.values(items), [items]);
   const titles = useMemo(() => {

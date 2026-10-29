@@ -64,7 +64,9 @@ export type Story = {
   /** The base branch's commits, newest first. */
   history: StoryCommit[];
   remote: string;
-  engines: Record<string, { label: string; version: string }>;
+  /** Each engine's label and sample version, and what its hooks report
+   * (registry.json's `hooksSupport`, which drift.test.ts holds it to). */
+  engines: Record<string, { label: string; version: string; hooksSupport: string }>;
   worktrees: StoryWorktree[];
   dev: { command: string; port: number; requests: string[] };
   /** The symbol two worktrees both change (the intent radar), and those two. */
@@ -113,21 +115,38 @@ export function engineLabel(engine: string): string {
   return STORY.engines[engine]?.label ?? engine;
 }
 
+/** Each engine's own question before it runs a command, as its terminal
+ * puts it. The app sees an agent pane wait only when its screen matches
+ * the engine's waitingPatterns (registry.json), so the demo asks in words
+ * they match (D-2624). */
+const ASKS: Record<string, (command: string) => string> = {
+  gemini: (command) => `Allow execution of: '${command}'?`,
+};
+
 /** The waiting agent's question in its terminal: the engine's own, since
  * 0.12.0 raises no approval for it (only `vibezeo run` does). The demo's
  * pane and the site's scenes both read it from here (D-1899). */
 export function askLine(w: StoryWorktree): string {
-  return `Allow running ${w.ask ?? ""}? (y/n)`;
+  const ask = ASKS[w.engine];
+  if (!ask) throw new Error(`story.json: no question in ${w.engine}'s words`);
+  return ask(w.ask ?? "");
 }
 
-/** What the Dashboard's card and the status preview say for each agent:
- * done with its closing words, running its last command, or asking to run
- * one. */
-export function previewOf(w: StoryWorktree): string {
-  if (w.state === "done") return w.closing ?? "Done.";
-  if (w.state === "waiting") return `Allow running ${w.ask ?? ""}?`;
-  const run = [...w.steps].reverse().find((s): s is { run: string } => "run" in s);
-  return run ? `Running ${run.run}` : "Working";
+/** The tool Claude Code's hooks name for a step (hook.rs's PreToolUse). */
+export function toolOf(step: StoryStep): string {
+  return "read" in step ? "Read" : "edit" in step ? "Edit" : "Bash";
+}
+
+/** The line under an agent's title on its Dashboard card, as dashboard.rs
+ * draws it from its status record: the preview, else the tool. An agent
+ * pane's record has no preview, and a tool only while Claude Code's hooks
+ * report one at work; Codex's notify and an engine without hooks name
+ * none (D-2624). So no card in the opening frame has a line: Ada has
+ * finished, Arlo is Codex, and Bea's Gemini CLI has no hooks. */
+export function previewOf(w: StoryWorktree): string | null {
+  if (w.state !== "working" || STORY.engines[w.engine]?.hooksSupport !== "claude-hooks") return null;
+  const step = w.steps.at(-1);
+  return step ? toolOf(step) : null;
 }
 
 export function editsOf(w: StoryWorktree): StoryEdit[] {

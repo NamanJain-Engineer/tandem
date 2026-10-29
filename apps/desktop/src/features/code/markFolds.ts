@@ -13,6 +13,22 @@ export function folded(folds: number, part: Fold): boolean {
   return folds > FOLDS.indexOf(part);
 }
 
+/** Whether a row's contents run past its content box, into its end padding
+ * or beyond. Chromium's scrollWidth counts that; WebKitGTK's leaves out
+ * whatever stays inside the padding, so the in-flow parts' right edge is
+ * read too (D-2701, D-2626): a row that ended under ⋯ there never folded. */
+function overflows(el: HTMLElement): boolean {
+  if (el.scrollWidth > el.clientWidth + 1) return true;
+  const style = getComputedStyle(el);
+  const end =
+    el.getBoundingClientRect().right -
+    (parseFloat(style.paddingRight) || 0) -
+    (parseFloat(style.borderRightWidth) || 0);
+  return Array.from(el.children).some(
+    (part) => getComputedStyle(part).position !== "absolute" && part.getBoundingClientRect().right > end + 1,
+  );
+}
+
 /** D-2700, D-2701: a rail row's parts show their words whole or not at all,
  * and the row never runs past the rail. While the row's contents are wider
  * than the row, one more part folds, up to `max`. `contents` names what the
@@ -44,7 +60,7 @@ export function useMarkFolds<T extends HTMLElement = HTMLDivElement>(
       }
     }
     const el = target();
-    if (el && folds < max && el.scrollWidth > el.clientWidth + 1) setFolds(folds + 1);
+    if (el && folds < max && overflows(el)) setFolds(folds + 1);
     // `round` is a new width, measured even when nothing was folded.
   }, [contents, folds, round, max]);
   useLayoutEffect(() => {

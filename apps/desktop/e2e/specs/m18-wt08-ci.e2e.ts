@@ -234,10 +234,17 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
         const parts = Array.from(row.querySelectorAll<HTMLElement>("*")).filter(
           (e) => !e.closest(".pointer-events-none"),
         );
+        // WebKitGTK's scrollWidth leaves out contents in the end padding.
+        const style = getComputedStyle(row);
+        const end =
+          row.getBoundingClientRect().right -
+          parseFloat(style.paddingRight) -
+          parseFloat(style.borderRightWidth);
         return {
           row: row.dataset.branch ?? name?.textContent ?? "",
           overflow: row.scrollWidth - row.clientWidth,
           past: Math.max(...parts.map((e) => e.getBoundingClientRect().right)) - edge,
+          padding: Math.max(...parts.map((e) => e.getBoundingClientRect().right)) - end,
           name: (name?.getBoundingClientRect().width ?? 0) - ch10,
           folded: Array.from(row.querySelectorAll("[data-compact], [data-folded]")).map((e) =>
             e.getAttribute("data-testid"),
@@ -246,8 +253,11 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
       });
     });
     expect(rows.length).toBeGreaterThanOrEqual(3);
-    // Rows that run past the rail, cut their name short or overflow: none.
-    expect(JSON.stringify(rows.filter((r) => r.overflow > 1 || r.past > 0.5 || r.name < -0.5))).toBe("[]");
+    // Rows that run past the rail or into their own end padding, cut their
+    // name short or overflow: none.
+    expect(
+      JSON.stringify(rows.filter((r) => r.overflow > 1 || r.past > 0.5 || r.padding > 1 || r.name < -0.5)),
+    ).toBe("[]");
     // The failed check shows its words whole or its icon alone, never cut.
     const badge = $(
       '[data-testid="worktree-row"][data-branch="tandem/tidy"] [data-testid="worktree-checks"]',
@@ -273,7 +283,20 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
         return cover !== undefined && r.width > 0 && r.right > cover.left + 0.5 && r.left < cover.right - 0.5;
       };
       const parts = Array.from(row?.children ?? []).filter((c) => c !== menu);
+      const box = (e: Element | null | undefined) => {
+        const r = e?.getBoundingClientRect();
+        return r ? [Math.round(r.left * 10) / 10, Math.round(r.right * 10) / 10] : null;
+      };
       return {
+        // Where everything is, should the step fail.
+        geometry: JSON.stringify({
+          row: box(row),
+          cover: box(menu),
+          button: box(menu?.querySelector("button")),
+          parts: parts.map((c) => [c.getAttribute("data-testid") ?? c.tagName, box(c)]),
+        }),
+        // The row's last part: its count, or the room it keeps for ⋯.
+        end: parts.at(-1)?.getAttribute("data-testid") ?? null,
         shown: menu ? getComputedStyle(menu).opacity : null,
         under: parts.filter(under).map((c) => c.getAttribute("data-testid")),
         // Whatever it covers, it covers whole.
@@ -283,10 +306,13 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
           .map((c) => c.getAttribute("data-testid")),
       };
     });
-    expect(seen.shown).toBe("1");
-    expect(seen.cut).toEqual([]);
-    expect(seen.under.length).toBe(1);
-    expect(["worktree-live", "worktree-menu-room"]).toContain(seen.under[0]);
+    expect(["worktree-live", "worktree-menu-room"]).toContain(seen.end);
+    expect({ shown: seen.shown, under: seen.under, cut: seen.cut, at: seen.geometry }).toEqual({
+      shown: "1",
+      under: [seen.end],
+      cut: [],
+      at: seen.geometry,
+    });
     await browser.keys("Escape");
   });
 });
