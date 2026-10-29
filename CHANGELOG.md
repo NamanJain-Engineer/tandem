@@ -58,7 +58,8 @@ release fails when its version has no section.
   (`jj workspace add`) instead of a git worktree, with a git worktree one click
   away and your choice remembered. Its diff and overlap check come from jj,
   agents in it are told to use jj, and Discard forgets the workspace while its
-  commits stay. Folders on this computer only. Landing, pull requests,
+  commits stay (asking first, as for uncommitted changes, when jj didn't keep
+  everything in it). Folders on this computer only. Landing, pull requests,
   previews, setup, second opinion, the intent radar and the git panel aren't
   available for jj workspaces yet.
 - [lin] **Local models.** Settings › Engines › Local models finds Ollama,
