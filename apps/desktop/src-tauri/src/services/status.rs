@@ -478,12 +478,15 @@ impl StatusService {
             // The engine's first report is its session starting: it waits
             // for input. Without this a hooked agent had no status (missing
             // from the Dashboard) or kept "working" from its startup banner,
-            // depending on which arrived first.
+            // depending on which arrived first. The engine can report before
+            // it prints the banner and the app read the banner first, so the
+            // report counts at the later of the two times (D-3039).
             ReportEvent::Session if first => {
+                let current = self.store.get(&SessionKey::pane(&pane)).map(|c| c.ts);
                 let update = StatusUpdate {
                     status: tandem_core::status::AgentStatus::Idle,
                     reason: None,
-                    ts: report.ts,
+                    ts: current.map_or(report.ts, |ts| report.ts.max(ts)),
                     tool: None,
                     title: None,
                     preview: None,
@@ -849,6 +852,30 @@ mod tests {
         s.on_report(working);
         s.on_report(session(clock.now_ms() + 10));
         assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+    }
+
+    #[test]
+    fn f_en_05_a_session_report_made_before_the_banner_still_makes_the_agent_idle() {
+        // The engine reports its session starting, then prints its banner,
+        // and the app reads the banner first: the report's time is older
+        // than the "working" the banner made, and it still wins (D-3039).
+        let (s, clock) = service();
+        s.watch("pn_1", &[], &[], None);
+        let made = clock.now_ms();
+        clock.advance(Duration::from_millis(5));
+        s.output("pn_1", || Some("Claude Code".into()));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+        s.on_report(StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts: made,
+            payload: ReportPayload {
+                session_id: Some("ses-1".into()),
+                ..ReportPayload::default()
+            },
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Idle));
     }
 
     #[test]

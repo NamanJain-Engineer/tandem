@@ -3437,6 +3437,14 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - m6-1-launch's F-CD-14.4: the same stale element, at `m6-1-launch.e2e.ts:197`.
       - m16-7-auto: the first run never got a turn, and the three tests after it found Auto still running. The pane's first hook report, its session start, was made at 16:51:45.819 by the engine's clock, before its banner. The app read the banner first and marked the pane "working" at a later app time. So the store dropped the session's idle as stale, and the report had marked the pane hooked, so the heuristics never moved it on.
       - The fix belongs in `services/status.rs` (F-EN-05), not this slice: the first session report should take `report.ts.max(cur.ts)`, as the title report does. It's proposed to the coordinator, not changed here.
+- [x] The coordinator's answers to a106fbf1's READY (D-3038, D-3039), in one commit on a106fbf1.
+  - **Question 1 (D-3038).** F-TH-16's summary for the next engine is redacted, as written and past what's removable, before its defang. The spec's line says so.
+  - **Question 3 (D-3039).** An agent's first session report makes it idle even when the app read its banner first: it counts at the later of its time and the current record's.
+  - **Question 2.** The redactor's `*_expires_at` key waits for 0.14.0: F-TL-02's suffixes, with corpus tests. Over-redaction fails safe.
+  - **m6-1-launch's F-CD-14.4** waits for the preset name field to go by reading the DOM, as m18-tk08 has since 60df905d. Same timeout, same assertion.
+  - **Tests**, both failing on a106fbf1 first:
+    - `f_th_16_1_a_credential_said_in_the_thread_reaches_the_next_engine_redacted`: a token whole, split by what's removable, and set apart by it, said by you and by the agent;
+    - `f_en_05_a_session_report_made_before_the_banner_still_makes_the_agent_idle`: it read `Working` where `Idle` was due. `f_en_05_a_started_hooked_agent_is_idle_whichever_arrives_first` had only the report newer than the banner.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3778,7 +3786,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Left as they are:
     - the local log file, the UI's lists, notifications and the phone, which a person reads as written;
     - the checks that warn about a launch's arguments and environment;
-    - a thread's summary for the next engine (F-TH-16), which isn't redacted at all, as its spec has it. The handoff's brief is redacted (F-CD-16).
+    - a thread's summary for the next engine (F-TH-16), which wasn't redacted at all, as its spec had it. The handoff's brief is redacted (F-CD-16). Amended by D-3038: the summary is redacted now.
 - D-3037: Conductor's typed chunks can't join (the review of eea2125f, SF3).
   - `prompt_pane` with `send: false` leaves its chunk in the engine's input, and the next chunk lands right after it. Each was defanged and guarded alone, so these got through:
     - `e` then `xit` sent `exit`, and `qu` then `it` sent `quit`;
@@ -3786,6 +3794,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - `see [` then `Pasted text #1]` sent a paste marker.
   - Now each chunk opens with a space, and one typed without Enter ends with one. A chunk can't join what the input already held either, or whatever is typed after it. The engine trims a message before it reads a command, so the spaces change nothing else.
   - 2.1.312 keeps both spaces: a short paste goes in as written, and a paste that starts with a space never switches the prompt to bash mode (`WS`).
+- D-3038: A thread's summary for its next engine is redacted (the coordinator's answer to a106fbf1's READY, question 1).
+  - F-TH-16 sends the last 20 messages to the engine the thread switches to, which can be another vendor's. A token pasted in the thread went with them, where F-CD-16's handoff brief, the same move for a terminal, redacts.
+  - The body goes through `untrusted::redacted`, as written and past what's removable (D-3036), then through the defang, as before. The spec's line says so.
+- D-3039: An agent's first session report makes it idle even when the app read its banner first (the coordinator's answer to a106fbf1's READY, question 3).
+  - An engine can report its session starting before it prints its banner, and the app can read the banner first. The heuristics marked the pane "working" at the app's later time, and `StatusStore::apply` dropped the report's idle as older. The report had marked the pane hooked, so the heuristics stopped, and the agent showed "working" until its first prompt: on the Dashboard, and to Auto, which waits for an idle prompt (the m16-7-auto flake).
+  - The first session report's idle takes the later of its own time and the current record's, as a title report already does.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

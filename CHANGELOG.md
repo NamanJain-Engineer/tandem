@@ -97,6 +97,10 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **A new agent no longer looks busy before its first prompt.** An
+  engine that reported starting before Vibezeo read its banner could show
+  "working" on the Dashboard, and to Auto, until you typed to it. Its report
+  of starting now counts, whichever arrives first.
 - [lin] **A finished chat stays unread until you look at it.** A chat you'd
   opened earlier and left could lose its unread dot when its turn ended in the
   background, and one you were looking at could get the dot back. Now a chat is
@@ -150,7 +154,8 @@ release fails when its version has no section.
   what it says, the review queue's lines, a plugin's replies and errors, a
   teammate's brief and memory, crash reports, usage statistics and Copy
   diagnostics. A plugin's replies now lose every key Vibezeo recognises, not
-  only the connection's own.
+  only the connection's own. A thread that switches engines hides keys in the
+  summary it hands the next engine too, as a handoff's brief does.
 
 ## 0.12.0
 
