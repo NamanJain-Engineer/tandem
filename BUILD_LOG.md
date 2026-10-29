@@ -3398,6 +3398,33 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - what's typed or sent: m16-7-auto 5, m16-1-conductor 15, m6-5-handoff 2, m7-11-handoff-thread 1, m18-th17-library 4, m6-7-limits 1;
     - launches: m6-1-launch 4, m4-1-launch-grid 3;
     - plans, runs and the tracker: m11-1-tasks 3, m11-2-execute 4, m18-tk06 1, m18-tk07 3, m18-tk08 1.
+- [x] The review of eea2125f ("approved with should-fix"): SF1 to SF3 and the nits (D-3035 to D-3037), on chain27 at 836a8a47.
+  - **SF1 (D-3035).** A `/` gets `／` before any word a skill's name can be: anything not empty that doesn't start with `*` or `/`, with no second `/` unless it holds a `:`, as a skill in a nested folder is named `<folder>:<name>`. D-3033's line on skill names says what 2.1.312's shown-name rule refuses.
+  - **Nit 1 (D-3035).** The app and the core read the same spaces after a `/`: one outside ASCII opens no word in either.
+  - **SF2 (D-3036).** Text a model reads, or that leaves the machine, is redacted as written and as its reader reads it:
+    - the review's seven sites;
+    - a plugin's errors, a teammate's brief and Conductor's memory check;
+    - crash reports, telemetry strings and the diagnostics bundle.
+  - **Found on the way (D-3036).** `untrusted::redacted` missed a credential that what's removable set apart from a letter, at every site D-3031 moved to it and in learn's note check. It now redacts as written, then as read, and checks read both (`untrusted::holds_credential`).
+  - **SF3 (D-3037).** Conductor pads each chunk with a space, and an unsent one at its end too, so no two chunks join.
+  - **Nit 2.** D-3034 says what typing and 2.1.312's REPL do with a removable character in a person's own brief.
+  - **Tests (F-TK-08):**
+    - New:
+      - core: `f_tk_08_1_a_slash_opens_a_skill_word_before_any_code_point_but_a_space` and `f_tk_08_1_redacted_hides_a_credential_what_is_removable_splits_or_sets_apart`; one each for Conductor's memory check, crash reports with telemetry, and the diagnostics bundle;
+      - app: "F-TK-08.1 writes a full-width slash before every code point but a space, * or /";
+      - store: the teammate memory check, with four gaps;
+      - engines: the brief and memory in a briefing, and learn's set-apart note;
+      - gateway: a plugin's reply and errors, with the connection's own key split;
+      - voice: a tool's output, the doer's answer, the workspace summary, and the four joins;
+      - desktop: the review queue's closing lines and check output, now two small functions.
+    - Changed:
+      - the vectors: 7 slash cases, and the `about` line names the slash rule;
+      - Conductor's five typing tests pin the leading space;
+      - the gateway's test vendor can answer or fail with a set text.
+    - These failed on the old code first:
+      - every new test;
+      - the set-apart case on D-3031's `redacted`, which gave `abcghp_…` whole;
+      - learn's, against D-3031's code, which kept the note.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3702,14 +3729,51 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - 2.1.312, as read from its binary:
     - For a prompt you type, the `skill_mentions` attachment finds `(^|[\s。、？！])(\/[a-zA-Z][a-zA-Z0-9.:\-_]*)`, trims trailing dots, and keeps a token with whitespace or the start before it and whitespace or the end after it. For a skill that one names, it adds a note asking the model to call the Skill tool, inside fences too. A skill marked user-only counts only when typed, not pasted.
     - The Skill tool takes a skill as typed this turn, which lifts `disable-model-invocation`, when a user message of the turn matches `(?<!\S)/<the skill's name, escaped>(?=$|\s)`.
-    - Skill names are folder names (or `plugin:skill`), and only parentheses, commas and control characters are refused. So a name can start with a digit, or hold `+` or `é`, which the review's charset would leave.
-  - `defang`, in the core and the app, writes `／` for a `/` that opens a word, at the start or after whitespace. The word runs to the next whitespace with no second `/` and starts with a letter, a digit, `_` or anything outside ASCII.
+    - Skill names are folder names (or `plugin:skill`). Corrected by D-3035: the loader offers a skill only if its name passes the shown-name rule (`MG`). That refuses control, hidden, format, private-use and unassigned characters, `<` and `>`, any blank but a single space inside, a space next to `:`, stray combining marks, and more than 256 characters. Everything else passes: a leading digit, `-`, `.`, `+` or `~`, brackets, parentheses and commas. A name repeated in a nested `.claude/skills` folder is offered as `<folder>:<name>`, the folder's relative path with its `/`s. This line had said parentheses and commas were refused; they pass.
+  - `defang`, in the core and the app, writes `／` for a `/` that opens a word, at the start or after whitespace. The word runs to the next whitespace with no second `/` and starts with a letter, a digit, `_` or anything outside ASCII. Amended by D-3035: the word after the `/` isn't empty, doesn't start with `*` or `/`, and has no second `/` unless it holds a `:`.
   - Paths (`/tmp/x`, `/src/app.ts`), comments (`/*`, `/**`) and a lone `/` stay. It changes silently, like a marker or a keyword: no note.
   - The app writes it without lookbehind, which older WebKitGTK lacks.
 - D-3034: `no_command` changes only the start (the review of b6f1b58a, N3).
   - It rewrote the whole text, a person's own edits to a handoff brief included: emoji joiners, VS16 and flag tags went.
   - Now what's removable goes only in the run the REPL reads past, and a line break there (VT, FF, NEL, U+2028, U+2029) becomes `\n`, as 2.1.312 reads it. Exit words are judged on a copy without what's removable, and only the first character after the run changes. So a path that only guards (a brief as you edit it) can't join `@<LS>/etc/passwd` into a mention.
-  - Typing still drops a VT, FF or NEL inside a person's own text (`sanitize_prompt`), as it did. Generated text has none, since `offered` defangs it.
+  - Typing still drops a VT, FF or NEL inside a person's own text (`sanitize_prompt`), as it did, and that can join words: a brief edited to `ultra\u{B}plan` is typed as `ultraplan`. Generated text has none, since `offered` defangs it.
+  - A removable character kept inside a person's own text reaches 2.1.312's REPL, which strips it and holds the first Enter for review. It puts what's left back in the input with a notice (`prompt-invisible-removed`) and sends only on the next Enter, the joined text then. Both are a person's own words, which `no_command` leaves as written past the start (the review of eea2125f, Nit 2).
+- D-3035: A `/` opens a skill word before anything a skill's name can start with (the review of eea2125f, SF1 and Nit 1).
+  - D-3033's rule took only a letter, a digit, `_` or anything outside ASCII after the `/`, and no second `/`. 2.1.312's Skill tool lifts any name that `(?<!\S)/<name>(?=$|\s)` matches, and a name is a folder's, offered when it passes the shown-name rule (D-3033, corrected). So `/-release`, `/.release`, `/+deploy` and `/~ship` were left as written, and so was `/apps/web:release`, the name a skill in a nested `apps/web` folder gets.
+  - Now the `/` becomes `／` when the word after it, to the next whitespace, isn't empty, doesn't start with `*` or `/`, and has no second `/` unless it holds a `:`.
+    - Paths (`/usr/bin/env`, `/tmp/x`, `//cdn.example/x.js`), comments (`/*`, `/**`) and a lone `/` stay.
+    - `*` first is left for comments, though a folder's name could start with one.
+    - A path with a `:` in it (`/usr/lib:/lib`) gets `／`: harmless, as a marker or a keyword is.
+  - The app's `\P{ASCII}` took a space outside ASCII (U+00A0, U+2003, U+3000) right after the `/` as a word, where the core's whitespace split ended it. So `x /\u{A0}y` got `／` in the app only.
+    - Both now read the same spaces: JavaScript's `\s` and Rust's whitespace agree once what's removable is gone.
+    - A test over every code point in each suite pins them.
+- D-3036: Text a model reads, or that leaves the machine, is redacted as written and as its reader reads it (the review of eea2125f, SF2).
+  - D-3031 redacted the readable text where a `defang` follows. Text a model reads with no `defang` still went through the plain redactor, which misses a credential split by what's removable. That was:
+    - Conductor's tool output (`read_pane`, `read_thread` and the rest), the doer's answer and the workspace summary;
+    - the review queue's closing lines and check output;
+    - a plugin's replies;
+    - the teammate memory's check (`has_credentials`), which let one into NOTES.md.
+  - Found on the way:
+    - `untrusted::redacted` redacted only the readable text, which misses a credential that only what's removable set apart from a letter. The redactor's rules start or end at a word boundary, and the join hides it: `abc\u{200B}ghp_…` came back as `abcghp_…`, whole, where the plain redactor caught it. Every site D-3031 moved to `redacted` had this, and so did learn's note check, which read only the readable text: both regressions from D-3031.
+    - Conductor's memory check (`looks_like_credential`: facts, the Settings editor, the journal, reflection's proposals) missed a split credential, and a `password is` split by U+2060.
+    - A plugin's errors go to the agent too, and a teammate's brief to its engine.
+    - What leaves the machine: crash reports (`scrub_crash`), telemetry's string values and the diagnostics bundle.
+  - Now `redacted` redacts as written, then again once what's removable is gone, and `untrusted::holds_credential` reads both forms for a check. Each site goes through one or the other.
+  - A plugin's reply and errors (`plugins::for_agent`) lose the connection's own secrets, as written and as read, and every credential the redactor knows, which they didn't before (ARCHITECTURE §11.5 says they should).
+    - Over common vendor JSON, the redactor hid a Stripe `client_secret` and a `sessionId`.
+    - It also hid one timestamp, `access_token_expires_at`, whose key it reads as a credential's.
+    - IDs, SHAs and `node_id`s stay.
+  - Left as they are:
+    - the local log file, the UI's lists, notifications and the phone, which a person reads as written;
+    - the checks that warn about a launch's arguments and environment;
+    - a thread's summary for the next engine (F-TH-16), which isn't redacted at all, as its spec has it. The handoff's brief is redacted (F-CD-16).
+- D-3037: Conductor's typed chunks can't join (the review of eea2125f, SF3).
+  - `prompt_pane` with `send: false` leaves its chunk in the engine's input, and the next chunk lands right after it. Each was defanged and guarded alone, so these got through:
+    - `e` then `xit` sent `exit`, and `qu` then `it` sent `quit`;
+    - `ultra` then `think it over` sent the keyword;
+    - `see [` then `Pasted text #1]` sent a paste marker.
+  - Now each chunk opens with a space, and one typed without Enter ends with one. A chunk can't join what the input already held either, or whatever is typed after it. The engine trims a message before it reads a command, so the spaces change nothing else.
+  - 2.1.312 keeps both spaces: a short paste goes in as written, and a paste that starts with a space never switches the prompt to bash mode (`WS`).
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.
