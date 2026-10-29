@@ -979,8 +979,10 @@ pub fn verify_base(
 /// empty and undescribed (jj's own rule for a working-copy commit it
 /// drops). It's abandoned as `"<commit id>" & "<change id>"`, the commit
 /// id read on that same line (no git ref named like it either): a rewrite,
-/// a divergence, or a jj bookmark or tag named like either id, made since,
-/// leaves an empty set, and nothing is abandoned. Returns whether it was
+/// or a jj bookmark or tag named like either id, made since, leaves an
+/// empty set, and nothing is abandoned; a divergence since makes the change
+/// id name both versions (or jj refuses it), so the set is still exactly
+/// the commit that was read, or the abandon fails. Returns whether it was
 /// abandoned. What's left: the abandon is a second jj process, so in the
 /// instant between, a child made would follow it (jj rebases it onto the
 /// parent, so no content is lost), and a bookmark or working copy set on
@@ -1173,7 +1175,7 @@ fn in_sparse(path: &str, patterns: &[String]) -> bool {
 /// Whether a file (or symlink) is on disk in the lane outside its sparse
 /// `patterns`, ignored or not: every folder that isn't inside a pattern is
 /// looked into, except the lane's own `.jj`; symlinks aren't followed;
-/// Finder's `.DS_Store` files don't count.
+/// Finder's `.DS_Store` files (regular files only) don't count.
 /// Fails closed (true) when a folder can't be read.
 fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
     let mut stack = vec![ws_root.to_path_buf()];
@@ -1186,9 +1188,13 @@ fn on_disk_outside(ws_root: &Path, patterns: &[String]) -> bool {
                 return true;
             };
             let path = e.path();
-            // The lane's own `.jj`, and Finder's `.DS_Store` (macOS writes
-            // one wherever a folder was looked at; it holds view settings).
-            if (dir == ws_root && e.file_name() == ".jj") || e.file_name() == ".DS_Store" {
+            // The lane's own `.jj`, and Finder's `.DS_Store` file (macOS
+            // writes one wherever a folder was looked at; it holds view
+            // settings). Only a regular file: `file_type` doesn't follow
+            // links, so a folder or a symlink of that name counts as usual.
+            if (dir == ws_root && e.file_name() == ".jj")
+                || (e.file_name() == ".DS_Store" && e.file_type().is_ok_and(|t| t.is_file()))
+            {
                 continue;
             }
             let Ok(rel) = path.strip_prefix(ws_root) else {
@@ -2931,6 +2937,25 @@ mod tests {
         std::fs::write(ws.join(".DS_Store"), "finder").expect("write");
         std::fs::write(ws.join("target/.DS_Store"), "finder").expect("write");
         assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        // Only a regular file of that name: a folder named `.DS_Store` is
+        // walked, and a symlink of that name counts.
+        std::fs::remove_file(ws.join("target/.DS_Store")).expect("rm");
+        std::fs::create_dir_all(ws.join("target/.DS_Store")).expect("mkdir");
+        std::fs::write(ws.join("target/.DS_Store/work.txt"), "w").expect("write");
+        assert!(
+            not_kept_on_disk(&fake(), &main, &ws),
+            "a folder named .DS_Store"
+        );
+        std::fs::remove_dir_all(ws.join("target/.DS_Store")).expect("rm");
+        assert!(!not_kept_on_disk(&fake(), &main, &ws));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(ws.join("svc"), ws.join("target/.DS_Store")).expect("link");
+            assert!(
+                not_kept_on_disk(&fake(), &main, &ws),
+                "a symlink named .DS_Store"
+            );
+        }
     }
 
     #[tokio::test]
