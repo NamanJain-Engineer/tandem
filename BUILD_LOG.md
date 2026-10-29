@@ -2473,7 +2473,7 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **The Review and Plan scenes' status bars count their threads** (the coordinator's and the design lead's answer). A thread's status goes into the store a pane's does (state.rs's status sink), and AgentsSegment counts every record in it. The second opinion is a thread, and so are a plan's runs and their reviews.
     - Review: "1 working" while Codex reviews, and nothing before or after, since Ada is done.
     - Plan: the runs that show Running or Reviewing, which its line counts as running: 3 from 0.9 s, then 2, 1 and none as each is ready to review.
-    - Land has none: every agent is done by then, so the app's segment would draw nothing.
+    - Land has none: every agent is done by then, so the app's segment would draw nothing. (D-3004: every status bar counts the story's whole world, so Land's says 1 waiting · 1 working throughout.)
   - **The waiting agent's question isn't drawn.** The one worktree in view is Ada's, so Bea's question is in a pane the hero doesn't show. Its row says "Needs you", the pill and the status bar count it, and nothing answers it. The text says Bea asks in its terminal, in Gemini CLI's own words (D-3002).
   - **The sidebar on Review:**
     - The Dashboard pill, its waiting count from when Bea asks, then +, Full screen and Close.
@@ -2514,7 +2514,9 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - **Every status bar counts every agent** (S1). The story's agents count beside a scene's own threads: Bea waits and Arlo works, from story.json's states (`SAMPLE.agents`).
     - Review: 1 waiting and 1 working, then 2 working while the second opinion reviews.
     - Plan: 1 waiting, and 1 working plus its runs: 1, 4, 3, 2, then 1.
+    - Land: 1 waiting and 1 working throughout.
     - A segment with nobody waiting or working isn't drawn, as the app's isn't.
+    - The coordinator and the design lead confirmed it: every scene's status bar counts the story's whole world, and the design lead withdrew "a scene's count matches the agents it draws".
   - **A value's middle step is one element** (S-1 on the fix pass). Changes drew a step between the first and the last as an entering cell with a cut inside it. So the rules for a step's contents (Land's `.sc-step > *`, the CI rail's `.sc-checks > * > *`) styled the cut: Land's middle steps lost the dot's gap and centring, and "Checks running" its spinner's.
     - A stint (`data-fx-stint`) does both on one element: in as words enter at `--at`, cut at `--until`. Its enter names where it ends, since the final frame hides it. Its cut fills forwards only, so nothing of it shows before it enters.
     - A spinner in a stint turns from when its step comes in. The CI rail's turned from when it was cut before.
@@ -2532,7 +2534,8 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - Main-thread work and the DOM are no larger than cced2f8f's, and the requests before the paint are the same ones.
     - Tests no longer feed Tailwind: globals.css keeps test and spec files out of its scan, so every page's stylesheet is 1.4 KB smaller, without utilities only tests named.
   - **An app pixel is in the scene box's units** (nit 7): `calc(100cqw / 1280)`, and `/ 448` on a phone's frame, as the window's em is 16 of them. It never compounds, with or without @property, and the scenes need container units anyway.
-  - **Still to decide:** the CI pane's ⋮ (nit 3, the design lead's call). The app animates no exit (base.css: "closing content never animates"; a toast is removed when dismissed), while UI_SPEC §1.8 gives a toast, a dialog and a menu a fade. The scenes keep the spec's.
+  - **The CI pane keeps its ⋮** (nit 3, the design lead's call): the scene is what Vibezeo hands the agent, the prompt's start and the untrusted label, which a terminal scrolled as it really is would lose. It reads as the scene's elision, not output: its own line, fg-subtle, in the site's face, with room above and below (`ELISION`, `.sc-elide`).
+  - **Still to decide:** the app animates no exit (base.css: "closing content never animates"; a toast is removed when dismissed), while UI_SPEC §1.8 gives a toast, a dialog and a menu a fade. The scenes keep the spec's.
 - D-3005: the site imports only four of the app's files: i18n/en.json (its words), demo/story.json (the demo's world), demo/story.ts (the story's helpers: the waiting agent's question, a step's tool and a branch, one copy for the demo and the site, since chain27 65c7b5d7) and features/code/untrusted.ts (the core's defang, in TypeScript). Each is pure data or a pure function that imports nothing but the story, so the site's build takes nothing else of the app. Each is held to its source by tests: the words by `t()`, the story and its helpers by the scenes' and the demo's tests, the defang by the core's defang.json. The tests may read any app file. A test lists what the site imports and fails on anything else. Nothing moves (the code review of cced2f8f, nit 5).
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
@@ -2822,6 +2825,11 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - TypeScript: 2,042 tests (web 196, ui 497, desktop 1,043, api 235, remote 33, mobile 24, protocol 14).
     - Rust: 2,717 passed, 9 ignored.
     - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- Two follow-ups on 23cf1fa0 (D-3004), from messages that came after its READY:
+  - The CI pane's ⋮ stays (the design lead's call on nit 3), drawn as the scene's elision: `.sc-elide`, its own line, fg-subtle, in the site's face, with room above and below, never a terminal line.
+  - Land's status bar counts the story's agents, 1 waiting and 1 working throughout, as every scene's does (the coordinator's S1).
+  - Tests: the elision's markup and rule, and Land's segment against `SAMPLE.agents`. Checks: web lint, web vitest 196/196, `build:site` (58 pages), site Playwright 77/77, design-shots 24 of 24 ok.
+  - The gate passed: TypeScript 2,042 tests, Rust 2,717 passed and 9 ignored, and the rest.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.

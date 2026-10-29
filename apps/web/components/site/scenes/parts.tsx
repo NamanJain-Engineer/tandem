@@ -257,6 +257,11 @@ export function Pane({
  * (a pane printing story.json's steps, before what comes next in it). An
  * empty line is a little space, as a prompt's blank lines are; the lines
  * `fold` picks are left out on a phone, where a pane has less room. */
+/** A line that's only this marks lines left out: an elision of the scene's,
+ * drawn as one, not as something the terminal printed (DESIGN §4.6's
+ * "simplified"; the design lead's condition on the CI pane's ⋮). */
+export const ELISION = "⋮";
+
 export function Lines({
   lines,
   start,
@@ -277,6 +282,12 @@ export function Lines({
     <>
       {lines.map((l, i) => {
         const narrow = fold?.(l, i) && "sc-hide-narrow";
+        if (l === ELISION)
+          return (
+            <span key={i} className={cx("sc-elide", narrow)} {...fx("line", start + i * gap)}>
+              {l}
+            </span>
+          );
         return l === "" ? (
           <span key={i} className={cx("sc-line-gap", narrow)} />
         ) : (

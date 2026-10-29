@@ -10,7 +10,7 @@ import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
 import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
-import { AgentsSegment, Changes, Glyph, pasted } from "../components/site/scenes/parts";
+import { AgentsSegment, Changes, ELISION, Glyph, pasted } from "../components/site/scenes/parts";
 import { PLAN_AGENTS, PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
 import { RELEASES, addedCard } from "../lib/changelog";
@@ -1201,6 +1201,8 @@ describe("F-WB-01 AC9 product scenes", () => {
       [1, 2],
       [1, 1],
     ]);
+    // Land: the story's, throughout, as every status bar counts them.
+    expect(segment(renderToStaticMarkup(<LandScene />))).toEqual([[0, SAMPLE.agents]]);
     // A segment with nobody waiting or at work isn't drawn, as the app's isn't: no empty segment, no gap.
     expect(renderToStaticMarkup(<AgentsSegment steps={[[0, { waiting: 0, working: 0 }]]} />)).toBe("");
     expect(renderToStaticMarkup(<AgentsSegment steps={[[0, { waiting: 0, working: 1 }], [1, { waiting: 0, working: 0 }]]} />)).not.toContain('<span class="sc-agents"></span>');
@@ -1782,7 +1784,13 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const lines = pasted(prompt);
     const head = lines.indexOf("  Failed steps' log (last lines):");
     expect(head).toBeGreaterThan(0);
-    expect(echoed(prompt)).toEqual([...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))]);
+    expect(echoed(prompt)).toEqual([...lines.slice(0, head + 1), ELISION, ...lines.slice(-(LOG_TAIL + 1))]);
+    // The ⋮ is the scene's elision, not something the terminal printed: its own line, subtle, in the site's face, with
+    // room above and below (the design lead's condition on keeping it, nit 3 on cced2f8f).
+    expect(ELISION).toBe("⋮");
+    expect(h).toMatch(new RegExp(`<span class="sc-elide" data-fx-line="" style="--at:[\\d.]+s">${ELISION}</span>`));
+    expect(h).not.toMatch(new RegExp(`<span class="sc-line[^"]*"[^>]*>\\s*${ELISION}<`));
+    expect(css).toContain(".sc-elide { flex: none; margin-block: 0.35em; font-family: var(--font-sans); line-height: 1; color: var(--tn-text-subtle); }");
     expect(lines.at(-1)).toBe("  ```");
     let at: number = CI_T.send;
     for (const shown of echoed(prompt).filter((l) => l !== "")) {
@@ -1795,11 +1803,11 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     // to leave lines out keeps them all. Only blank lines and the link fold then.
     const kept = (typed: string[]) => typed.filter((l, i) => !foldEchoed(typed)(l, i));
     const typed = echoed(prompt);
-    expect(kept(typed)).toEqual(typed.filter((l, i) => l !== "" && !l.startsWith("  Link: ") && (i <= typed.indexOf("  ⋮") || i >= typed.length - 3)));
+    expect(kept(typed)).toEqual(typed.filter((l, i) => l !== "" && !l.startsWith("  Link: ") && (i <= typed.indexOf(ELISION) || i >= typed.length - 3)));
     expect(kept(typed)[0]).toBe(`› ${prompt.split("\n")[0]}`);
-    expect(kept(typed).slice(-4)).toEqual(["  ⋮", ...lines.slice(-3)]);
+    expect(kept(typed).slice(-4)).toEqual([ELISION, ...lines.slice(-3)]);
     const short = echoed(failurePrompt(pr.number, check, SAMPLE.pr.log.slice(-2)));
-    expect(short).not.toContain("  ⋮");
+    expect(short).not.toContain(ELISION);
     expect(kept(short)).toEqual(short.filter((l) => l !== "" && !l.startsWith("  Link: ")));
     expect(kept(short)).toContain(`  ${SAMPLE.pr.log.at(-1)}`);
     // The fix it then makes is the story's: the test file, +12 −8, the tests all passing, its commit, its words.

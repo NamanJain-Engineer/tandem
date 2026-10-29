@@ -240,6 +240,9 @@
    wraps at the pane's edge, its next lines under its text, after the
    indent or the prompt mark. */
 .sc-line-gap { height: 0.5em; flex: none; }
+/* Lines left out: the scene's elision, not output. Subtle, in the site's
+   face, on a line of its own with room above and below. */
+.sc-elide { flex: none; margin-block: 0.35em; font-family: var(--font-sans); line-height: 1; color: var(--tn-text-subtle); }
 .sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
 
 /* WorktreeReview's bar under a diff (the Review and CI scenes). */

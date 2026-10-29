@@ -2,7 +2,7 @@ import { Check, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
 import { SAMPLE, failurePrompt, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
-import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, pasted, stint, visit, type Agents, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, ELISION, Lines, Pane, StatusBar, Toast, at, fx, pasted, stint, visit, type Agents, type DiffRow } from "./parts";
 
 /** When things happen, in seconds from the scene's start. */
 export const CI_T = {
@@ -102,14 +102,14 @@ export function echoed(prompt: string): string[] {
   const lines = pasted(prompt);
   const head = lines.findIndex((l) => l.trim() === "Failed steps' log (last lines):");
   if (head < 0 || lines.length - head - 1 <= LOG_TAIL + 1) return lines;
-  return [...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))];
+  return [...lines.slice(0, head + 1), ELISION, ...lines.slice(-(LOG_TAIL + 1))];
 }
 
 /** What of the echoed failure a phone's pane leaves out, where it has less
  * room: the blank lines, the link and, past the ⋮ when there is one, the
  * log's lines but its last two and the fence's end. */
 export function foldEchoed(typed: readonly string[]): (line: string, i: number) => boolean {
-  const gap = typed.indexOf("  ⋮");
+  const gap = typed.indexOf(ELISION);
   return (l, i) => l === "" || l.startsWith("  Link: ") || (gap >= 0 && i > gap && i < typed.length - 3);
 }
 

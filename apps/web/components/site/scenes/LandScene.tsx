@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
+import { AgentsSegment, AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
 
 /** The worktrees in the order they land, each with its commits and the
  * merge commit it lands as (the story's, D-2609). */
@@ -69,7 +69,9 @@ export function LandScene() {
           </span>
         </div>
       </div>
-      <StatusBar branch={SAMPLE.base} />
+      {/* The story's agents, as every status bar counts them: one waits and
+          one works throughout (D-3004). */}
+      <StatusBar branch={SAMPLE.base} segments={<AgentsSegment steps={[[0, SAMPLE.agents]]} />} />
     </AppWindow>
   );
 }
