@@ -42,6 +42,7 @@ import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, moveToNewTab, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
 import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
+import { LocalModelChip } from "./LocalModelChip";
 import { PaneChrome } from "./PaneChrome";
 import { BrowserPane } from "./BrowserPane";
 import { SimulatorPane } from "../simulator/SimulatorPane";
@@ -430,6 +431,7 @@ const PaneView = memo(function PaneView({
         location={
           <>
             <AccountChip pane={pane} />
+            {pane.localModel && <LocalModelChip label={pane.localModel} />}
             {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}
             <ResourceChip paneId={pane.id} />
           </>

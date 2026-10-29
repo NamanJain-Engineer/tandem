@@ -674,9 +674,9 @@ pub fn copy_to_worktrees(
 /// base commit in the main checkout, so nothing an agent writes in its
 /// worktree, and nothing left uncommitted, reaches Lead. Git's replace refs
 /// are ignored, so a ref under `refs/replace/` (which every worktree
-/// shares) can't swap other content in. Folders, missing files and files
-/// over `max` bytes are left out, a file's size is asked before it's read,
-/// and `commit` must be a commit id.
+/// shares) can't swap other content in. Folders, links, missing files and
+/// files over `max` bytes are left out, a file's size is asked before it's
+/// read, and `commit` must be a commit id.
 pub async fn at_commit(
     git: &Git,
     root: &Path,
@@ -686,7 +686,19 @@ pub async fn at_commit(
 ) -> Result<Vec<(String, String)>, GitError> {
     let is_id = (7..=64).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit());
     if !is_id {
-        return Ok(Vec::new());
+        return Err(GitError::Invalid("That isn't a commit id".into()));
+    }
+    // The commit is there, in a repository: one a history rewrite collected,
+    // or a folder that's no longer a repository, is an error, never "no
+    // instructions files", which a plan would keep (D-3024).
+    let found = git_read(
+        git,
+        root,
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+    )
+    .await?;
+    if !found.status.success() {
+        return Err(failed("cat-file -e", &found));
     }
     let mut out = Vec::new();
     for name in names {
@@ -697,54 +709,100 @@ pub async fn at_commit(
         if !plain {
             continue;
         }
-        if let Some(text) = committed(git, root, &format!("{commit}:{name}"), max).await? {
+        if let Some(text) = committed(git, root, commit, name, max).await? {
             out.push((name.clone(), text));
         }
     }
     Ok(out)
 }
 
-/// The blob at `spec` as text, without replace refs, when it's at most
-/// `max` bytes: its size first, then at most `max` bytes of it, so a large
-/// file is never read whole.
+/// A read-only git command's output, without replace refs.
+async fn git_read(git: &Git, root: &Path, args: &[&str]) -> Result<std::process::Output, GitError> {
+    let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+    let mut cmd = git.command(Mode::Read, root, &args);
+    cmd.env("GIT_NO_REPLACE_OBJECTS", "1")
+        .env("GIT_LITERAL_PATHSPECS", "1");
+    cmd.output().await.map_err(started)
+}
+
+fn started(e: std::io::Error) -> GitError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        GitError::NotInstalled
+    } else {
+        GitError::Io(e)
+    }
+}
+
+fn failed(op: &str, out: &std::process::Output) -> GitError {
+    GitError::Command {
+        op: op.into(),
+        code: out.status.code(),
+        stderr: String::from_utf8_lossy(&out.stderr)
+            .trim()
+            .chars()
+            .take(500)
+            .collect(),
+    }
+}
+
+/// The file `name` at `commit` (from the repository's top) as text, without
+/// replace refs, when it's a file of at most `max` bytes: its size first,
+/// then at most `max` bytes of it, so a large file is never read whole.
+/// `None` when the commit has nothing there, or a folder or a link, or the
+/// file is over `max`; an error when git can't read what the commit has
+/// (D-3024).
 async fn committed(
     git: &Git,
     root: &Path,
-    spec: &str,
+    commit: &str,
+    name: &str,
     max: usize,
 ) -> Result<Option<String>, GitError> {
     use std::process::Stdio;
     use tokio::io::AsyncReadExt;
 
-    let command = |args: &[&OsStr]| {
-        let mut cmd = git.command(Mode::Read, root, args);
-        cmd.env("GIT_NO_REPLACE_OBJECTS", "1").stderr(Stdio::null());
-        cmd
+    let listed = git_read(
+        git,
+        root,
+        &["ls-tree", "-z", "--full-tree", commit, "--", name],
+    )
+    .await?;
+    if !listed.status.success() {
+        return Err(failed("ls-tree", &listed));
+    }
+    let entry = String::from_utf8_lossy(&listed.stdout);
+    let Some((meta, _)) = entry.split_once('\t') else {
+        return Ok(None);
     };
-    let started = |e: std::io::Error| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            GitError::NotInstalled
-        } else {
-            GitError::Io(e)
-        }
+    let mut meta = meta.split(' ');
+    let (Some(mode), Some(kind), Some(object)) = (meta.next(), meta.next(), meta.next()) else {
+        return Err(GitError::Invalid(format!("git ls-tree said {entry:?}")));
     };
-    let size = command(&[OsStr::new("cat-file"), OsStr::new("-s"), OsStr::new(spec)])
-        .output()
-        .await
-        .map_err(started)?;
-    let fits = size.status.success()
-        && String::from_utf8_lossy(&size.stdout)
-            .trim()
-            .parse::<usize>()
-            .is_ok_and(|n| n <= max);
-    if !fits {
+    // A file's mode is 100…; a link's blob is the path it points to.
+    if kind != "blob" || !mode.starts_with("100") {
         return Ok(None);
     }
-    let mut child = command(&[OsStr::new("cat-file"), OsStr::new("blob"), OsStr::new(spec)])
-        .spawn()
-        .map_err(started)?;
-    let Some(stdout) = child.stdout.take() else {
+    let size = git_read(git, root, &["cat-file", "-s", object]).await?;
+    if !size.status.success() {
+        return Err(failed("cat-file -s", &size));
+    }
+    let size: usize = String::from_utf8_lossy(&size.stdout)
+        .trim()
+        .parse()
+        .map_err(|_| GitError::Invalid("git cat-file -s gave no size".into()))?;
+    if size > max {
         return Ok(None);
+    }
+    let args = [
+        OsStr::new("cat-file"),
+        OsStr::new("blob"),
+        OsStr::new(object),
+    ];
+    let mut cmd = git.command(Mode::Read, root, &args);
+    cmd.env("GIT_NO_REPLACE_OBJECTS", "1").stderr(Stdio::null());
+    let mut child = cmd.spawn().map_err(started)?;
+    let Some(stdout) = child.stdout.take() else {
+        return Err(GitError::Invalid("git cat-file gave no output".into()));
     };
     let mut bytes = Vec::new();
     stdout.take(max as u64 + 1).read_to_end(&mut bytes).await?;
@@ -753,9 +811,14 @@ async fn committed(
         return Ok(None);
     }
     let done = child.wait().await?;
-    Ok(done
-        .success()
-        .then(|| String::from_utf8_lossy(&bytes).into_owned()))
+    if !done.success() {
+        return Err(GitError::Command {
+            op: "cat-file blob".into(),
+            code: done.code(),
+            stderr: String::new(),
+        });
+    }
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 #[cfg(test)]

@@ -148,6 +148,18 @@ impl AutoHost for AppHost {
     }
 }
 
+/// Auto sends a pane's last lines to Vibezeo's servers, so it never runs on
+/// a pane started on a local model (F-EN-11).
+fn local_stays_here(record: &panes::PaneRecord) -> Result<(), IpcError> {
+    if record.local_model.is_some() {
+        return Err(IpcError::new(
+            ErrorCode::Invalid,
+            "Auto sends this pane's last lines to Vibezeo's servers, so it doesn't run on a model on this computer.",
+        ));
+    }
+    Ok(())
+}
+
 /// Starts Auto on an agent pane (F-AU-01).
 #[tauri::command]
 pub async fn auto_start(
@@ -165,6 +177,7 @@ pub async fn auto_start(
     if record.kind != "agent" || record.engine_id.is_none() {
         return Err(only_agents());
     }
+    local_stays_here(&record)?;
     if !state.terminals.status.is_watched(pane_id.as_str()) {
         return Err(IpcError::new(
             ErrorCode::Invalid,
@@ -234,4 +247,36 @@ pub async fn auto_stop(
 #[tauri::command]
 pub fn auto_dismiss(state: State<'_, AppState>, run_id: AutoRunId) {
     state.auto.dismiss(&run_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tandem_core::ids::{TabId, WorkspaceId};
+
+    /// F-EN-11 review: Auto never reads a local model's pane.
+    #[test]
+    fn f_en_11_3_auto_refuses_a_local_model_pane() {
+        let mut record = panes::PaneRecord {
+            id: PaneId::from_db("pan_1".into()),
+            tab_id: TabId::from_db("tab_1".into()),
+            workspace_id: WorkspaceId::from_db("ws_1".into()),
+            kind: "agent".into(),
+            cwd: None,
+            engine_id: Some("codex".into()),
+            account_id: None,
+            human_name: None,
+            title: None,
+            restore_state: "none".into(),
+            created_at: 1,
+            browser_url: None,
+            local_model: None,
+        };
+        assert!(local_stays_here(&record).is_ok());
+        record.local_model = Some("qwen3:8b · Ollama".into());
+        assert_eq!(
+            local_stays_here(&record).expect_err("refused").code,
+            ErrorCode::Invalid
+        );
+    }
 }

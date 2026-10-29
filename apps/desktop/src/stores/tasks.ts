@@ -92,6 +92,8 @@ let unlistenAttempts: (() => void) | null = null;
 let listeningAttempts: Promise<void> | null = null;
 /** The latest `task_attempts_list` read: only it writes the runs (F-TK-07). */
 let attemptsRead = 0;
+/** The latest tracker read: only it writes the tracker and its status (F-TK-01). */
+let trackerRead = 0;
 /** Runs `tasks:attempt` moved since that read began: newer than its list. */
 let movedMeanwhile = new Map<string, AttemptView>();
 
@@ -194,6 +196,10 @@ export const useTasks = create<TasksState>((set, get) => ({
       );
       listening = pending;
     }
+    // Views and every tasks:changed read the tracker; only the latest read
+    // writes it, so an earlier one settling last can't bring back an old
+    // list or an error.
+    const read = ++trackerRead;
     if (get().status !== "ready") set({ status: "loading" });
     try {
       // The read goes out once the listener is up: a change in between
@@ -203,8 +209,10 @@ export const useTasks = create<TasksState>((set, get) => ({
         invoke<TasksMeta>("tasks_meta"),
         allIssues(get().showArchived),
       ]);
+      if (read !== trackerRead) return;
       set((s) => ({ meta, issues, status: "ready", error: null, version: s.version + 1 }));
     } catch (e) {
+      if (read !== trackerRead) return;
       set({ status: "error", error: asError(e).message });
     }
   },
@@ -298,6 +306,7 @@ export function resetTasks(): void {
   listeningAttempts = null;
   // A read still in flight from before goes stale and never writes.
   attemptsRead++;
+  trackerRead++;
   movedMeanwhile = new Map();
   useTasks.setState({
     meta: null,

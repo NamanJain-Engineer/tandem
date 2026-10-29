@@ -6,6 +6,7 @@
 // the app does, and answers from the story. drift.test.ts holds this text to
 // the core's sources.
 import type { ImportedComment, ImportedComments, LaneChecks, PrCheck } from "@tandem/protocol";
+import { DEFANGED } from "../features/code/untrusted";
 import { STORY, type StoryCheck } from "./story";
 
 /** untrusted.rs `label`. */
@@ -33,8 +34,9 @@ export function defangMentions(text: string): string {
     .join("");
 }
 
-/** untrusted.rs `DEFANGED`: what follows text `defangMentions` changed. */
-export const DEFANGED = "Vibezeo wrote ＠ for each @ in the text above, so none of it attaches a file; read it as @.";
+/** untrusted.rs `DEFANGED`: what follows text `defangMentions` changed. The
+ * app's copy, which the shared vectors pin to the core's. */
+export { DEFANGED };
 
 /** untrusted.rs `fence_defanged`: `fence`, for text a message to an engine
  * carries, with `DEFANGED` after it when an `@` was changed. */

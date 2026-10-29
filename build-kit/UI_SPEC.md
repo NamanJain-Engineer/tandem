@@ -485,6 +485,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 | `loading` | boolean | false |
 | `kbd` | string (e.g. `"⌘↩"`), rendered as a trailing `Kbd` | — |
 | `fullWidth` | boolean | false |
+| `waiting` | boolean: off for now but still focusable (a control that waits until it has held still, F-TL-12.12) | false |
 
 **Visuals:**
 - *primary:* bg accent, fg accent-fg; hover accent-hover; pressed accent-press.
@@ -495,6 +496,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 
 **Loading:** replaces `iconLeft` with a 14px spinner, keeps the label, sets `aria-busy`, and blocks clicks.
 **Disabled:** 40% opacity, `cursor: not-allowed`, no hover change; the tooltip explains why if `disabledReason` is passed.
+**Waiting:** `aria-disabled`, not `disabled`: Tab still reaches it, and clicks, Enter and Space do nothing. Its content dims to 40% and its focus ring stays at full strength; `title` says why it's waiting. Every control that grants something (Allow, Approve, Trust) uses it while it waits, and carries `data-grant`.
 
 ### 2.2 IconButton
 Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**required**; used for the `aria-label` and the tooltip). Optional `badge` (number or dot) at top-right, and `pressed` (toggle state → `aria-pressed`, bg accent-soft, icon accent).
@@ -512,7 +514,7 @@ Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**r
 - Combobox adds type-to-filter and an "Add {query}…" creatable row when `onCreate` is given.
 
 ### 2.5 Checkbox, Radio, Switch
-- Checkbox: 16px, radius xs, accent when checked, supports indeterminate.
+- Checkbox: 16px, radius xs, accent when checked, supports indeterminate. `waiting` (with `waitingReason`) works as Button's: `aria-disabled`, still focusable; the box turns fainter (border `border`, background surface-2, also when unchecked), its mark and label dim, its focus ring stays full strength, and the reason is the box's accessible description and title.
 - Switch: 28×16 track, accent when on, with a label to the left in settings rows.
 - **All have visible labels; clicking the label toggles.**
 
@@ -1125,10 +1127,18 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
     - "Fill in:" then **Goose** (ghost).
     - Fields: Name, Command (hint "A command on your PATH, or its full path"), Arguments (the extra-arguments parser; an open quote is an error), and Environment variables: rows of name and value with a remove button, **Add a variable**, and the hint "Settings the agent reads, not keys: keep keys in the agent's own sign-in."
     - Footer: Cancel, **Test** (secondary), **Add** (primary). Both are disabled until Name and Command are filled and the arguments parse.
-  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
-  - The launch sheet never lists added agents: they run in threads only (D-2513).
     - A passed test shows a success `Banner`: "{name} answered, version {version}." plus "It signs in with: {methods}." A failure or a refused value shows an error `Banner` with the core's message ("Not an ACP agent: …"). Any change clears both.
   - In the Thread engine picker, an added agent reads "{label} · via ACP".
+  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
+  - The launch sheet never lists added agents: they run in threads only (D-2513).
+- **UI-164 Local models** (a section of Settings › Engines, under ACP agents; F-EN-11). Heading "Local models" with **Add a port…** (ghost, `Plus`) and **Check again** (secondary, `RefreshCw`; a `Spinner` while asking).
+  - Body line: "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only, when you open this page or check again."
+  - Rows, one per server that's running or added: the kind ("Ollama", "LM Studio", "llama.cpp"), `127.0.0.1:{port}` in `font-mono` `fg-muted`, the state ("Running · {n} models" or "Not running") and, for an added port, **Remove** (ghost). Under a running server, its models: "{name} · {size} · {parameters}" in `font-mono` `fg-muted` (only what the server reports) and **Start in Codex** (secondary).
+  - Start in Codex is disabled with its reason as the tooltip: "Codex can't use {kind} servers yet." (llama.cpp), "Install Codex to use a local model.", "Open a local folder first." or, with a Codex older than 0.149.0 or a pre-release of it, "Local models need Codex 0.149.0 or newer, and this computer has Codex {version}. Update Codex, then try again." (when its version can't be read, "…and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again."). The version is read again each time the list loads, so Check again shows the Codex installed now. A start shows a success toast "Started {model} in Codex." and switches to Code mode.
+  - States: loading (`Spinner`), error (`Banner` with Try again), empty ("No model servers are running on this computer. Start Ollama or LM Studio, then check again.").
+  - **Add a port** (dialog, `sm`): description "Another port on this computer to ask for models." Fields: Kind (`Select`), Host (`Input`, `127.0.0.1`; only `127.0.0.1` and `localhost` are accepted), Port (`Input`, numeric; "Ports run from 1 to 65535"). Footer: Cancel, **Add** (primary). A refused host shows the error in a `Banner`.
+  - A pane started from a local model shows the chip "On this computer" (`Cpu` icon, `surface-3`) in its header where an account chip would be; its tooltip is "{model} · {kind}".
+  - Settings › Privacy, under "What leaves this machine": "Local models: a local model's prompts, and the code they carry, go only to its model server at 127.0.0.1. What that server does with them (it could be a gateway or a port-forward), and settings an administrator manages for Codex, are outside Vibezeo's control. A local pane uses none of the repository's own Codex settings: its .codex/config.toml, hooks and MCP servers."
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -2191,7 +2201,7 @@ Conductor operates Tandem by voice through a closed tool catalog that mirrors th
   - Voice or screen: closing panes, executing tasks, creating a teammate, other plugin writes.
   - If the target changes first, the row expires: "Expired — {pane} changed."
 - **Errors:** "Couldn't connect to Conductor. [Try again]" · "You're offline. Conductor needs a connection." · "Your microphone isn't delivering audio. [Switch mic]" · "This call reached its 30-minute limit. [Start a new call]" · "Out of credits." (UI-122; nothing to buy, no action, D-2914) · "Sign in to use Conductor. [Sign in]". Startup errors always show; nothing pops up after hang-up.
-- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search.
+- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search. Its results' heading is "Find work · ranked by Vibezeo's AI" when the hosted ranking ordered them, and "Find work · ranked by Vibezeo's AI and on this computer" when local model panes, which it's never sent, were ranked here among its answer (F-EN-11).
 - **Ending:** hang-up, sign-out, an unrecoverable mic, the 30-minute cap or 0 credits. Audio stops at once, pending deliveries are cancelled and queued actions never run. A 3s receipt replaces the HUD: "Call ended · 4:12 · 520 credits · 6 actions [Call log]".
 - **Acceptance:** a voice "yes" never confirms a shell command; hang-up during a pending prompt delivers nothing; a waiting pane never receives Conductor input; after 5 actions the HUD shows 3 chips and "+2"; a hidden window stops the ring's animation loop.
 
@@ -2733,6 +2743,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |
 | UI-163 | ACP agents | §4.4 | EN |
+| UI-164 | Local models | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.

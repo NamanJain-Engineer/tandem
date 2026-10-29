@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, invoke, settled, userHome } from "../support/app";
+import { addFolder, clickAllow, freshOffline, invoke, settled, userHome } from "../support/app";
 import { newWorktree, pick } from "../support/worktrees";
 
 // E2E-M18-WT09-1 Previews per worktree (F-WT-09): a repository whose file
@@ -85,7 +85,7 @@ describe("E2E-M18-WT09-1 previews", function () {
     });
     expect(before[0]?.status).toBe("down");
     await settled();
-    await $('[data-testid="worktree-review-trust"]').click();
+    await clickAllow('[data-testid="worktree-review-trust"]');
     await review.waitForExist({ reverse: true, timeout: 10_000 });
     await browser.waitUntil(
       async () =>

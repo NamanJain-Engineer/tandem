@@ -2104,7 +2104,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## M18 · Next features: jj workspaces (M)
 
-**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599 and D-2660–D-2679 (D-874).
+**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599, D-2660–D-2699 and D-3090–D-3109 (D-874).
 
 **Owns:** F-CD-24 (P2)
 **Prerequisites.** F-CD-15 (worktrees), F-WT-02 (the worktree diff), F-WT-03 (the overlap check), F-CD-22's single-repository guard.
@@ -2133,7 +2133,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
 
-**Owns:** F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-TH-17 (P2)
+**Owns:** F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-TH-17 (P2)
 **Prerequisites.** M4 (engine registry and detection), M17's F-WT-01 (worktree copy patterns).
 
 **Ordered tasks**
@@ -2142,6 +2142,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 3. **Engine versions (F-EN-08).** The registry's `updates` table (npm package, native versions folder and installer, Pin switch, self-updating methods); `tandem_engines::versions` (install method from where the command resolves, the version book, rollback commands); `$DATA/engine-versions.json` fed by Thread turn results; Pin in the pane launch; the background process list behind a `ProcessTable` trait; commands `engine_versions`, `engine_check_update`, `engine_pin`, `engine_rollback_command`, `engine_background`, `engine_background_stop`; UI-161 in Settings › Engines and the thread's banner.
 4. **Session library (F-TH-17).** `tandem_engines::library` (Claude Code's `projects/*/*.jsonl` and Codex's `sessions/**/*.jsonl` through a `SessionFs`, never through a link), every account's home and each engine's own; commands `library_list`, `library_transcript`, `library_resume`, `library_brief`, `library_continue`, `library_search`, `library_search_set`; the `sessionSearch` limit and the `session_search` setting; `$DATA/session-index.db` (FTS5); UI-162 from the command palette, Continue through UI-13.
 5. **ACP agents (F-EN-10).** Gemini CLI's `--acp` as a built-in Thread engine; `tandem_engines::acp_agents` (the form's rules, an agent as a registry entry) and `chat::acp::probe` (`initialize` with a 10 s limit); `$DATA/acp-agents.json` merged into the engine service's registry and detection; commands `acp_agents_list`, `acp_agent_test`, `acp_agent_add`, `acp_agent_remove`; UI-163 in Settings › Engines and "via ACP" in the Thread engine picker.
+6. **Local models (F-EN-11).** `tandem_engines::local_models` (server kinds and their documented ports and paths, model lists parsed, Codex's `config.toml` for a local provider); `services::local_models` (a `LocalHttp` trait, a no-proxy client that asks only `http://127.0.0.1`, the finder, a provider home per server and model under `$PROVIDERS/codex/`); commands `local_models_list`, `local_models_add_port`, `local_models_remove_port`, `local_model_start`; `panes.local_model` (migration 0008) for the "On this computer" chip and `panes.launch_config` for every start, each of which reads the Codex version (0.149.0 or newer), marks the pane's folders untrusted in the home and on the command line, and passes the model and provider on Codex's command line, last; UI-164, whose list reads Codex's version at each call, and the Privacy page's line.
 
 **Verification**
 ```bash
@@ -2154,6 +2155,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
 - **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; Antigravity isn't chat-capable, and Kiro is, through its ACP mode (F-EN-10, D-2510).
 - **E2E-M18-EN10 ACP agents.** `/bin/sleep 30` added as an agent; then the fake engine linked as `my-agent` outside the login PATH, added by its full path with `acp`. Expected: "Not an ACP agent: it didn't answer within 10 seconds" after 10 s and nothing saved; an `OPENAI_API_KEY` of `sk-proj-…` refused; the fake agent's test shows its name and version, Add lists it, `engines_list` has it `added`; the picker offers "My agent · via ACP" and a thread with it answers "You said: hello" with no account (D-869); after Remove the thread says the agent was removed, and the same label added again gets a new id.
+- **E2E-M18-EN11 Local models.** A stand-in Ollama on 127.0.0.1 answering `/api/tags` with one model, added by its port; a fake `codex` on the login PATH; a `.codex/config.toml` in the folder naming a cloud model, a remote thread-config endpoint, `approvals_reviewer = "auto_review"`, an MCP server and the folder as trusted. Expected: `192.168.1.5` refused as a host; the server listed with "qwen3-coder:30b · 18.6 GB · 30.5B" and `/api/tags` asked; Start in Codex opens a Codex pane whose spawn has `CODEX_HOME` at `$PROVIDERS/codex/local-ollama-<port>`, whose `config.toml` names the model and `http://127.0.0.1:<port>/v1`, lists the folder as untrusted and holds nothing from the folder's own settings, and whose header says "On this computer". Every spawn ends with the local settings on Codex's command line (the model, also for review and memories, the provider, sub-agents off, approvals to the user, connectors, plugins and metrics off, `projects={…}` with the folder, `/tmp` and `/` untrusted, `--cd <folder>`). With the fake reporting Codex 0.148.0, Start is refused naming 0.149.0 and nothing spawns, and the page's list, read again with no new engine detection, turns Start off with the same reason. After a crash and a relaunch with the server stopped, the card's Start fresh says the server isn't running and nothing starts; with the server back on its port, the restore starts Codex with the same settings.
 - **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` waits for the Privacy switch (never for a plan, D-2900), finds the session by a prompt word once it's on, and turning search off deletes `session-index.db`.
 - **E2E-M18-EN08 Engine versions.** A fake Codex installed under `node_modules` at 1.2.0 and a recording `npm` on the login PATH. Expected: "1.2.0 · npm" with no npm call until Check for updates, which runs `npm view @openai/codex version`; pinned Codex and Claude Code panes start with `check_for_update_on_startup=false` and `DISABLE_AUTOUPDATER`; a failure since 1.3.0 shows the banner and Roll back shows `npm install -g @openai/codex@1.2.0` without running it; a detached Codex is listed alone and Stop ends it after a confirm.
 
@@ -2321,7 +2323,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **193 features** (65 P0, 67 P1, 61 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 27 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (65 P0, 67 P1, 62 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 28 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2345,7 +2347,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **193 features** (6
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
 | F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
-| F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | | | |
+| F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | F-EN-11 | P2 | M18 |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2372,7 +2374,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **193 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 27 = 193 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 28 = 194 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

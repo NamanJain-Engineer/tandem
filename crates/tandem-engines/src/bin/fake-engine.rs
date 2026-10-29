@@ -2,7 +2,8 @@
 //! CLI, chosen by the name it runs as (`claude`, `codex`, …) or
 //! `TANDEM_FAKE_ENGINE`. Built only with `--features fixtures`.
 //!
-//! - `--version` prints `<name> 1.2.3 (test engine)`.
+//! - `--version` prints `<name> 1.2.3 (test engine)`; as `codex`, what the
+//!   real CLI prints, `codex-cli 1.2.3`, then ` (test engine)`.
 //! - Otherwise it is a small TUI: bracketed paste on, a banner, the cwd; each
 //!   read from the terminal is logged as hex (so separate writes stay
 //!   separate) and every line is answered.
@@ -590,7 +591,12 @@ fn main() {
             .unwrap_or_default()
     });
     if argv.iter().skip(1).any(|a| a == "--version" || a == "-v") {
-        println!("{name} {} (test engine)", version(&name));
+        let shown = if name == "codex" {
+            "codex-cli"
+        } else {
+            name.as_str()
+        };
+        println!("{shown} {} (test engine)", version(&name));
         return;
     }
     let args = &argv[1.min(argv.len())..];

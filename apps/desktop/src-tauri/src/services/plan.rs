@@ -249,49 +249,17 @@ fn cut(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
-/// A character that shows nothing but can split or hide a word: Unicode's
-/// format characters (bidi controls, zero-width characters and tags among
-/// them), and the Hangul fillers that show as blanks (D-2839).
-pub(crate) fn hidden(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{0600}'..='\u{0605}'
-            | '\u{061C}'
-            | '\u{06DD}'
-            | '\u{070F}'
-            | '\u{0890}'..='\u{0891}'
-            | '\u{08E2}'
-            | '\u{115F}'..='\u{1160}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{206F}'
-            | '\u{3164}'
-            | '\u{FEFF}'
-            | '\u{FFA0}'
-            | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{110BD}'
-            | '\u{110CD}'
-            | '\u{13430}'..='\u{1343F}'
-            | '\u{1BCA0}'..='\u{1BCA3}'
-            | '\u{1D173}'..='\u{1D17A}'
-            | '\u{E0001}'
-            | '\u{E0020}'..='\u{E007F}'
-    )
-}
-
 /// Text from a plan without the characters that can hide words from you:
-/// controls (a description keeps its line breaks and tabs) and the
-/// [`hidden`] ones. A title is one line.
+/// controls (a description keeps its line breaks and tabs) and what's
+/// `untrusted::removable`, which a run's briefing and Lead's prompt drop too,
+/// so you read what they read (D-2839, D-3031). A title is one line.
 fn clean(text: &str, multiline: bool) -> String {
     let kept: String = text
         .chars()
         .filter(|c| match c {
             '\n' | '\t' => true,
             c if c.is_control() => false,
-            c => !hidden(*c),
+            c => !untrusted::removable(*c),
         })
         .collect();
     if multiline {
@@ -516,8 +484,13 @@ pub trait PlanHost: Send + Sync {
     /// The commit the workspace's main checkout is on (F-TK-08).
     async fn base_commit(&self, ws: &WorkspaceId) -> Option<String>;
     /// The repository's instructions files as committed at `commit` in the
-    /// workspace's main checkout: never a run's worktree (F-TK-08).
-    async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)>;
+    /// workspace's main checkout: never a run's worktree (F-TK-08). An error
+    /// says why they couldn't be read; it's never kept as "none".
+    async fn instructions(
+        &self,
+        ws: &WorkspaceId,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String>;
     /// Lead's engine can answer in a session with every tool off (D-2838).
     fn can_answer(&self, engine: &str) -> bool;
     /// Lead's reply to `prompt` from a fresh session of its engine with
@@ -1566,26 +1539,24 @@ impl PlanHost for AppHost {
         repo.head().await.ok()?
     }
 
-    async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)> {
+    async fn instructions(
+        &self,
+        ws: &WorkspaceId,
+        commit: &str,
+    ) -> Result<Vec<(String, String)>, String> {
         let state = self.state();
-        let Ok(w) = tandem_store::repo::workspaces::get(&state.store, ws).await else {
-            return Vec::new();
-        };
-        let Ok(root) = crate::services::instructions::root_of(&w) else {
-            return Vec::new();
-        };
+        let w = tandem_store::repo::workspaces::get(&state.store, ws)
+            .await
+            .map_err(|e| e.to_string())?;
+        let root = crate::services::instructions::root_of(&w).map_err(|e| e.to_string())?;
         let names =
             crate::services::instructions::file_names(state.terminals.engines.registry().all());
         let login = state.terminals.login_env().await;
-        let Ok(git) = crate::services::lanes::git_for(&state.data, &login) else {
-            return Vec::new();
-        };
+        let git =
+            crate::services::lanes::git_for(&state.data, &login).map_err(|e| e.to_string())?;
         tandem_git::instructions::at_commit(&git, &root, commit, &names, supervisor::FILE_MAX)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(code = "plan.instructions_unread", error = %e, "the instructions files couldn't be read");
-                Vec::new()
-            })
+            .map_err(|e| e.to_string())
     }
 
     fn can_answer(&self, engine: &str) -> bool {
@@ -1739,6 +1710,10 @@ mod tests {
         /// The instructions files at the base commit, and who read them.
         files: Mutex<Vec<(String, String)>>,
         read: Mutex<Vec<(WorkspaceId, String)>>,
+        /// git can't read them.
+        unreadable: Mutex<bool>,
+        /// The next read waits until the test lets it go.
+        hold: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
         answers: Mutex<Vec<Answered>>,
         /// The run no longer waits for an answer.
         gone: Mutex<bool>,
@@ -1903,16 +1878,27 @@ mod tests {
                     .unwrap_or_else(|| BASE.into()),
             )
         }
-        async fn instructions(&self, ws: &WorkspaceId, commit: &str) -> Vec<(String, String)> {
+        async fn instructions(
+            &self,
+            ws: &WorkspaceId,
+            commit: &str,
+        ) -> Result<Vec<(String, String)>, String> {
             self.read
                 .lock()
                 .expect("l")
                 .push((ws.clone(), commit.to_string()));
-            if commit == BASE {
+            let held = self.hold.lock().expect("l").take();
+            if let Some(held) = held {
+                let _ = held.await;
+            }
+            if *self.unreadable.lock().expect("l") {
+                return Err("git couldn't read them".into());
+            }
+            Ok(if commit == BASE {
                 self.files.lock().expect("l").clone()
             } else {
                 Vec::new()
-            }
+            })
         }
         fn can_answer(&self, engine: &str) -> bool {
             engine == "claude" && !self.no_answers
@@ -2296,6 +2282,24 @@ mod tests {
             parse(&hidden, n, &engines, "claude"),
             Err("A task in Lead's plan has no title".to_string())
         );
+    }
+
+    #[test]
+    fn f_tk_06_2_a_tasks_text_is_kept_as_its_run_reads_it() {
+        // You approve the text a run's briefing gets, and the briefing is
+        // defanged: what that drops goes here too, so nothing splits a word
+        // you read that the run reads whole (D-3031).
+        let engines = offered();
+        let n = "ab12cd34";
+        let raw = serde_json::json!({"tasks": [{
+            "title": "Pu\u{2800}sh the\u{FFF0} branch",
+            "description": "Then pu\u{2028}sh\u{2029} it",
+            "engine": "codex"
+        }]})
+        .to_string();
+        let tasks = parse(&reply(n, &raw), n, &engines, "claude").expect("plan");
+        assert_eq!(tasks[0].title, "Push the branch");
+        assert_eq!(tasks[0].description, "Then push it");
     }
 
     /// Lead's draft of two tasks: Routes on Claude, Page on Codex.
@@ -3098,6 +3102,7 @@ mod tests {
             "Should I delete the old feature branch?",
             "Should I widen the scope to the admin pages?",
             "Should I p\u{200B}ush it?",
+            "Should I pu\u{2800}sh it?",
         ];
         for (i, q) in topics.iter().enumerate() {
             plans.ask(asks(&view, "TAN-1", &format!("at_{i}"), q)).await;
@@ -3128,6 +3133,13 @@ mod tests {
         // The hidden character is gone from the question you see.
         assert_eq!(reasons[9], "It's about pushing, which always comes to you.");
         assert_eq!(questions[9].question, "Should I push it?");
+        // A blank defang drops is gone too, so Lead and the check read the
+        // same words (D-3031).
+        assert_eq!(
+            reasons[10],
+            "It's about pushing, which always comes to you."
+        );
+        assert_eq!(questions[10].question, "Should I push it?");
         let told = fake.notified.lock().expect("l").clone();
         assert_eq!(told.len(), topics.len());
         assert_eq!(
@@ -3740,6 +3752,75 @@ mod tests {
         // Remove plan: they go with it.
         after.discard(&view.id).expect("remove");
         assert!(!kept.exists());
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_failed_instructions_read_isnt_kept_and_its_question_comes_to_you() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files, Lead::Answer("Vitest.".into()));
+        // git can't read them as Execute all starts the runs.
+        *fake.unreadable.lock().expect("l") = true;
+        let view = running(&fake, &plans, true).await;
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        assert!(!kept.exists(), "a failed read isn't kept");
+        // A question meanwhile comes to you: Lead isn't told there are none.
+        plans
+            .ask(asks(&view, "TAN-1", "at_1", "Which test runner?"))
+            .await;
+        assert!(prompts(&fake).is_empty(), "no answer session");
+        let q = plans.get(&view.id).expect("plan").questions[0].clone();
+        assert_eq!(q.state, QuestionState::Escalated);
+        assert_eq!(
+            q.reason.as_deref(),
+            Some("Lead couldn't read the repository's instructions files.")
+        );
+        // Once they can be read, the next question is answered from them,
+        // and they're kept.
+        *fake.unreadable.lock().expect("l") = false;
+        plans
+            .ask(asks(&view, "TAN-2", "at_2", "Which test runner?"))
+            .await;
+        let asked = prompts(&fake);
+        assert!(asked[0].contains("Use vitest."), "{}", asked[0]);
+        assert!(kept.is_file());
+        assert_eq!(fake.read.lock().expect("l").len(), 3);
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_a_plan_removed_while_its_instructions_are_read_keeps_no_file() {
+        let files = vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())];
+        let (dir, fake, plans) = rig_with(files.clone(), Lead::Answer("Vitest.".into()));
+        let view = running(&fake, &plans, true).await;
+        let kept = dir
+            .path()
+            .join("plan-instructions")
+            .join(format!("{}.json", view.id));
+        // A plan kept before there were snapshots reads them at its first
+        // question.
+        std::fs::remove_file(&kept).expect("no snapshot");
+        let (fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        *fake2.files.lock().expect("l") = files;
+        *fake2.lead.lock().expect("l") = Lead::Answer("Vitest.".into());
+        let (go, held) = tokio::sync::oneshot::channel();
+        *fake2.hold.lock().expect("l") = Some(held);
+        let asking = tokio::spawn({
+            let after = after.clone();
+            let q = asks(&view, "TAN-1", "at_1", "Which test runner?");
+            async move { after.ask(q).await }
+        });
+        // Remove plan while the read is under way.
+        until("the read starts", || {
+            !fake2.read.lock().expect("l").is_empty()
+        })
+        .await;
+        after.discard(&view.id).expect("remove");
+        go.send(()).expect("released");
+        asking.await.expect("asked");
+        assert!(!kept.exists(), "no file for a removed plan");
+        assert!(prompts(&fake2).is_empty());
     }
 
     #[tokio::test]

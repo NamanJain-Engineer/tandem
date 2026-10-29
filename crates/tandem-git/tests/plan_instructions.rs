@@ -61,12 +61,12 @@ async fn f_tk_08_1_instructions_come_from_the_base_commit_never_a_worktree() {
             ),
         ]
     );
-    // Something that isn't a commit id reads nothing, so it can't pass for
-    // an option; a file over the cap is left out.
+    // Something that isn't a commit id is refused, so it can't pass for an
+    // option and is never "no files" (D-3024); a file over the cap is left
+    // out.
     assert!(at_commit(&f.git(), &f.repo, "--output=x", &names, 1024)
         .await
-        .expect("read")
-        .is_empty());
+        .is_err());
     // "Use vitest.\n" is 12 bytes: kept at 12, left out at 11.
     assert_eq!(
         at_commit(&f.git(), &f.repo, &base, &names, 12)
@@ -112,5 +112,69 @@ async fn f_tk_08_1_a_replace_ref_cant_change_what_lead_reads() {
     assert_eq!(
         files,
         vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())]
+    );
+}
+
+/// D-3024: a commit that's gone (a history rewritten and collected), a folder
+/// that's no longer a repository, or a file git can't read is an error,
+/// never "no instructions files", which a plan would keep for its life. A
+/// file the commit doesn't have is just left out.
+#[tokio::test]
+async fn f_tk_08_1_a_missing_commit_or_an_unreadable_file_is_an_error_not_none() {
+    let f = Fixture::new();
+    std::fs::write(f.repo.join("CLAUDE.md"), "Use vitest.\n").expect("write");
+    f.commit_all(&f.repo, "instructions");
+    let base = git(&f.repo, &["rev-parse", "HEAD"]);
+    let names = vec!["CLAUDE.md".to_string(), "AGENTS.md".to_string()];
+    assert_eq!(
+        at_commit(&f.git(), &f.repo, &base, &names, 64 * 1024)
+            .await
+            .expect("read"),
+        vec![("CLAUDE.md".to_string(), "Use vitest.\n".to_string())]
+    );
+    let gone = "0123456789abcdef0123456789abcdef01234567";
+    assert!(at_commit(&f.git(), &f.repo, gone, &names, 64 * 1024)
+        .await
+        .is_err());
+    let plain = tempfile::tempdir().expect("dir");
+    assert!(at_commit(&f.git(), plain.path(), &base, &names, 64 * 1024)
+        .await
+        .is_err());
+    // The file's own object is gone.
+    let blob = git(&f.repo, &["rev-parse", &format!("{base}:CLAUDE.md")]);
+    let loose = f
+        .repo
+        .join(".git/objects")
+        .join(&blob[..2])
+        .join(&blob[2..]);
+    std::fs::remove_file(&loose).expect("a loose object");
+    assert!(at_commit(&f.git(), &f.repo, &base, &names, 64 * 1024)
+        .await
+        .is_err());
+}
+
+/// A link isn't a file: git keeps the path it points to as its blob, which
+/// Lead would read as the file's text. It's left out, as a folder is.
+#[cfg(unix)]
+#[tokio::test]
+async fn f_tk_08_1_a_linked_instructions_file_is_left_out() {
+    let f = Fixture::new();
+    std::fs::write(f.repo.join("AGENTS.md"), "Keep functions small.\n").expect("write");
+    std::os::unix::fs::symlink("AGENTS.md", f.repo.join("CLAUDE.md")).expect("link");
+    std::os::unix::fs::symlink("/etc/passwd", f.repo.join("GEMINI.md")).expect("link");
+    f.commit_all(&f.repo, "linked");
+    let base = git(&f.repo, &["rev-parse", "HEAD"]);
+    let names: Vec<String> = ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        at_commit(&f.git(), &f.repo, &base, &names, 64 * 1024)
+            .await
+            .expect("read"),
+        vec![(
+            "AGENTS.md".to_string(),
+            "Keep functions small.\n".to_string()
+        )]
     );
 }

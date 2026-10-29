@@ -58,7 +58,7 @@ Give the same prompt to two or three agents at once, each in its own worktree, t
 Save prompts you reuse as Markdown files and drop them into any message box or pane.
 
 - **Where.** `.tandem/prompts/*.md` in a repository (shared with your team through git) and `~/.tandem/prompts/*.md` (yours, in every workspace). Front matter can set `title:` and `description:`. Files over 64 KB, and links that lead outside their folder, are skipped.
-- **Variables.** `{{branch}}`, `{{file}}` (the editor's active file), `{{selection}}` (the selected text in the terminal pane you're inserting into) and `{{clipboard}}` are filled in for you; any other `{{name}}` is asked for before inserting. `\{{` keeps a literal `{{`. Selection and clipboard text go in marked as untrusted input.
+- **Variables.** `{{branch}}`, `{{file}}` (the editor's active file), `{{selection}}` (the selected text in the terminal pane you're inserting into) and `{{clipboard}}` are filled in for you; any other `{{name}}` is asked for before inserting. `\{{` keeps a literal `{{`. Selection and clipboard text go in marked as untrusted input. An `@` in them, or in the file or branch name, that could make Claude Code attach a file goes in as ＠, and the prompt says so; your prompt's own text, and what you type for its other variables, stay as written.
 - **Insert** with <kbd>Mod+Alt+P</kbd> (**Insert prompt…**): the text lands in the focused message box or pane and is never sent. **New prompt…** creates a file and opens it in the editor; <kbd>Mod+Enter</kbd> on a prompt edits it.
 - Older worktree setups hid `.tandem/` in `.git/info/exclude`; the list says so and **Share with the repository** narrows that line so `.tandem/prompts/` can be committed.
 

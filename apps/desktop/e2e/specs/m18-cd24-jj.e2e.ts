@@ -1,7 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { addFolder, fakeLog, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
 import { newWorktree, pick, repoMenu } from "../support/worktrees";
 
@@ -22,8 +22,55 @@ const GIT_ENV = {
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: GIT_ENV }).trim();
 const JJ_ENV = { ...process.env, HOME: userHome() };
+
+/** jj where the app finds it (`Jj::locate`): the PATH, then
+ * `tandem_git::jj::usual_places` in its order, under the app's HOME. One
+ * difference: this reads the test runner's PATH, where the app reads the
+ * login shell's. */
+function findJj(): string | null {
+  const exe = process.platform === "win32" ? "jj.exe" : "jj";
+  const home = userHome();
+  const dirs = [
+    ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
+    join(home, ".cargo/bin"),
+    join(home, ".local/bin"),
+    join(home, ".nix-profile/bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+  ];
+  // The first file there (not a folder), as Jj::locate picks it; then it
+  // must run.
+  const isFile = (p: string) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const path = dirs.map((dir) => join(dir, exe)).find(isFile);
+  if (path === undefined) return null;
+  try {
+    execFileSync(path, ["--version"], { stdio: "ignore", env: JJ_ENV });
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+/** JJ_REQUIRED set to anything but empty, 0 or false (tandem_git::jj::jj_required). */
+const jjRequired = (): boolean => {
+  const v = (process.env.JJ_REQUIRED ?? "").trim().toLowerCase();
+  return v !== "" && v !== "0" && v !== "false";
+};
+
+const JJ = findJj();
 const jj = (cwd: string, ...args: string[]) =>
-  execFileSync("jj", ["--no-pager", "--color=never", ...args], { cwd, encoding: "utf8", env: JJ_ENV }).trim();
+  execFileSync(JJ ?? "jj", ["--no-pager", "--color=never", ...args], {
+    cwd,
+    encoding: "utf8",
+    env: JJ_ENV,
+  }).trim();
 
 type Ws = { id: string; root: string; laneBranch: string | null; laneVcs?: string };
 type Diff = { path: string; additions: number; deletions: number; patch: string };
@@ -70,7 +117,14 @@ describe("E2E-M18-CD24-1 jj workspaces", function () {
   const path = join(repo, ".tandem/worktrees/tidy");
   let lane: Ws;
 
-  before(async () => {
+  before(async function () {
+    // Without jj this spec says so and is skipped, as the Rust real-jj
+    // tests return; JJ_REQUIRED=1 makes that a failure.
+    if (JJ === null) {
+      if (jjRequired()) throw new Error("JJ_REQUIRED is set but jj isn't installed");
+      console.log("E2E-M18-CD24-1: jj isn't installed here; skipped (JJ_REQUIRED=1 makes this a failure)");
+      this.skip();
+    }
     mkdirSync(repo, { recursive: true });
     git(repo, "init", "-q", "-b", "main");
     writeFileSync(join(repo, "app.txt"), "one\nthree\n");
