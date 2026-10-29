@@ -170,7 +170,14 @@ export const useThreads = create<ThreadsState>((set, get) => {
         const now = await w.isFocused();
         if (!heard) focused(now);
       })
-      .catch(() => undefined);
+      .catch((e: unknown) => {
+        // Fails closed: unfocused, so nothing is marked read. Only the
+        // error's kind is logged, never thread content.
+        console.warn(
+          "Vibezeo: the window focus listener failed; threads stay unread until the app restarts",
+          e instanceof Error ? e.name : typeof e,
+        );
+      });
   } else if (typeof window !== "undefined") {
     window.addEventListener("focus", () => focused(true));
     window.addEventListener("blur", () => focused(false));
