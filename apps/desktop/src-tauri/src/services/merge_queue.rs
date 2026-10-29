@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use tandem_core::ids::WorkspaceId;
-use tandem_core::redact::Redactor;
 use tandem_core::{untrusted, DataDir, ErrorCode, IpcError};
 use tandem_git::overlap::{forecast, Forecast};
 use tandem_git::queue::{self, Merged};
@@ -248,6 +247,12 @@ pub fn order(candidates: &mut [LandingCandidate]) {
         Forecast::Conflicts { files } => (1, files.len()),
         Forecast::Unavailable { .. } => (2, 0),
     });
+}
+
+/// A check's output as its step keeps it and its prompt fences it: the last
+/// lines, redacted as defang leaves them (D-3031).
+fn check_output(out: &str) -> String {
+    untrusted::redacted(&tail(out, TAIL_LINES))
 }
 
 /// "Send failure to agent": what failed, then the output as data, with no
@@ -751,9 +756,7 @@ async fn drive(
                 Some(slot.clone()),
             )
             .await;
-            let out = Redactor::global()
-                .redact(&tail(&out, TAIL_LINES))
-                .into_owned();
+            let out = check_output(&out);
             if stopping() {
                 step(key, i, |s| s.output = Some(out));
                 return halt(key, i, LandingStepState::Stopped, None);
@@ -1153,6 +1156,16 @@ mod tests {
 
     fn states(run: &LandingRun) -> Vec<LandingStepState> {
         run.steps.iter().map(|s| s.state).collect()
+    }
+
+    #[test]
+    fn f_wt_07_2_a_secret_split_by_what_defang_drops_is_redacted() {
+        // The prompt defangs the output, which joins what it drops: the
+        // redactor reads it as that leaves it (D-3031).
+        let out = check_output("pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\n");
+        let p = failure_prompt("tandem/fix", "pnpm test", Some(1), &out);
+        assert!(!p.contains("ghp_0123456789"), "{p}");
+        assert!(!p.contains("abcdefghijABCDEFGHIJ012345"), "{p}");
     }
 
     #[tokio::test]

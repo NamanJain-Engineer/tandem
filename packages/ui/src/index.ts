@@ -6,6 +6,7 @@ export {
   type ApprovalCardProps,
 } from "./components/ApprovalCard";
 export { COVER_EVERY_MS, GRANT_ATTR, SETTLE_MS, useSteadyBox } from "./components/steadyBox";
+export { offscreenRow } from "./components/offscreen";
 export {
   AVATAR_HUES,
   Avatar,

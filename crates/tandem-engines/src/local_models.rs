@@ -349,6 +349,9 @@ impl CodexVersion {
     }
 
     fn from_word(word: &str) -> Option<Self> {
+        // Build metadata (`+…`) names the same release, as in semver
+        // (D-3071); a pre-release before it is still one.
+        let word = word.split_once('+').map_or(word, |(version, _)| version);
         let (release, pre_release) = match word.split_once('-') {
             Some((release, _)) => (release, true),
             None => (word, false),
@@ -377,12 +380,29 @@ pub fn check_codex(output: Option<&str>) -> Result<CodexVersion, String> {
     let word = output.and_then(codex_cli_version);
     match word.map(|w| (w, CodexVersion::from_word(w))) {
         Some((_, Some(v))) if v.at_least(MIN_CODEX) => Ok(v),
-        Some((shown, Some(_))) => Err(format!(
-            "Local models need Codex {a}.{b}.{c} or newer, and this computer has Codex {shown}. Update Codex, then try again."
+        Some((word, Some(_))) => Err(format!(
+            "Local models need Codex {a}.{b}.{c} or newer, and this computer has Codex {}. Update Codex, then try again.",
+            shown_version(word)
         )),
         _ => Err(format!(
             "Local models need Codex {a}.{b}.{c} or newer, and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again."
         )),
+    }
+}
+
+/// Longest version shown.
+const SHOWN_VERSION: usize = 40;
+
+/// A version word as Start's reason shows it: without control characters,
+/// as server and model names are, and cut at [`SHOWN_VERSION`] characters
+/// with "…" (D-3074).
+fn shown_version(word: &str) -> String {
+    let mut chars = word.chars().filter(|c| !c.is_control());
+    let shown: String = chars.by_ref().take(SHOWN_VERSION).collect();
+    if chars.next().is_some() {
+        format!("{shown}…")
+    } else {
+        shown
     }
 }
 
@@ -988,6 +1008,34 @@ mod tests {
             assert_eq!(check_codex(Some(out)), unknown, "{out:?}");
         }
         assert_eq!(check_codex(None), unknown);
+        // Build metadata names the same release (semver); a pre-release
+        // with it is still a pre-release (D-3071).
+        assert_eq!(ok("codex-cli 0.149.0+build.7\n"), Ok((0, 149, 0)));
+        assert_eq!(ok("codex-cli 0.165.0+0a1b2c3"), Ok((0, 165, 0)));
+        assert_eq!(
+            check_codex(Some("codex-cli 0.149.0-alpha.1+build\n")),
+            old("0.149.0-alpha.1+build")
+        );
+        assert_eq!(
+            check_codex(Some("codex-cli 0.148.0+build")),
+            old("0.148.0+build")
+        );
+        assert_eq!(check_codex(Some("codex-cli +build")), unknown);
+        // The version shown has no control characters and is at most 40
+        // characters, cut with "…" (D-3074).
+        assert_eq!(
+            check_codex(Some("codex-cli 0.148.0-\u{1b}[31mbeta\u{7}\u{9b}2J\n")),
+            old("0.148.0-[31mbeta2J")
+        );
+        let long = format!("0.148.0+{}", "a".repeat(32));
+        assert_eq!(
+            check_codex(Some(&format!("codex-cli {long}\n"))),
+            old(&long)
+        );
+        assert_eq!(
+            check_codex(Some(&format!("codex-cli {long}b{}", "c".repeat(500)))),
+            old(&format!("{long}…"))
+        );
         assert!(v("codex-cli 0.150.0-alpha.1").pre_release);
         assert!(!v("codex-cli 0.150.0-alpha.1").at_least((0, 150, 0)));
         assert!(v("codex-cli 0.150.0-alpha.1").at_least((0, 149, 0)));

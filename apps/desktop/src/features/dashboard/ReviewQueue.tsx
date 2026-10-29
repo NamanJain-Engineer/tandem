@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import type {
   FileDiff,
@@ -9,6 +9,7 @@ import type {
   TaskClaimOverlap,
 } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Button,
   Callout,
@@ -210,6 +211,20 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   // place) starts the wait over too, so Approve never sends a hash for a
   // diff that was on screen for less than a moment.
   const settled = useSettled(approved ? null : item.diffHash);
+  // "This diff just changed" from a change of diff until its wait is over;
+  // a card that just arrived, or one approved and unapproved, waits with
+  // the plain reason.
+  const prevHash = useRef(item.diffHash);
+  const [changed, setChanged] = useState(false);
+  useEffect(() => {
+    if (item.diffHash !== prevHash.current) {
+      prevHash.current = item.diffHash;
+      setChanged(true);
+    }
+  }, [item.diffHash]);
+  useEffect(() => {
+    if (settled) setChanged(false);
+  }, [settled]);
   const box = useSteadyBox(!approved, item.diffHash);
   const canApprove = approved || (settled && box.steady);
   return (
@@ -217,6 +232,8 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
       data-testid="review-item"
       data-key={item.key}
       data-state={item.state}
+      // Off screen, a card skips layout, paint and hit tests.
+      style={offscreenRow(272)}
       className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2">
@@ -270,8 +287,14 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
         <Button
           size="sm"
           variant={approved ? "ghost" : "primary"}
-          disabled={!canApprove}
-          title={canApprove ? undefined : settled ? t("approval.waitingApprove") : t("approval.waitingDiff")}
+          waiting={!canApprove}
+          title={
+            canApprove
+              ? undefined
+              : !settled && changed
+                ? t("approval.waitingDiff")
+                : t("approval.waitingApprove")
+          }
           onClick={() =>
             (approved || (settled && box.check())) &&
             act(

@@ -59,7 +59,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               size="sm"
               variant="primary"
               loading={busy}
-              disabled={!canAllow}
+              waiting={!canAllow}
               title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
               data-grant
               data-testid="pane-approval-once"
@@ -72,7 +72,8 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy || !canAllow}
+              disabled={busy}
+              waiting={!canAllow}
               title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
               data-grant
               data-testid="pane-approval-agent"

@@ -9,12 +9,26 @@ export type CheckboxProps = {
   checked: boolean | "indeterminate";
   onCheckedChange?: (checked: boolean) => void;
   disabled?: boolean;
+  /** Off for now but still focusable (`aria-disabled`), as Button's. */
+  waiting?: boolean;
+  /** Why it's waiting, read out as its description while it waits. */
+  waitingReason?: string;
   description?: string;
   className?: string;
   id?: string;
 };
 
-export function Checkbox({ label, checked, onCheckedChange, disabled, description, className, id }: CheckboxProps) {
+export function Checkbox({
+  label,
+  checked,
+  onCheckedChange,
+  disabled,
+  waiting = false,
+  waitingReason,
+  description,
+  className,
+  id,
+}: CheckboxProps) {
   const auto = useId();
   const cid = id ?? auto;
   return (
@@ -23,10 +37,20 @@ export function Checkbox({ label, checked, onCheckedChange, disabled, descriptio
         id={cid}
         checked={checked}
         disabled={disabled}
-        onCheckedChange={(v) => onCheckedChange?.(v === true)}
-        aria-describedby={description ? `${cid}-desc` : undefined}
+        aria-disabled={waiting || undefined}
+        data-waiting={waiting || undefined}
+        onCheckedChange={(v) => !waiting && onCheckedChange?.(v === true)}
+        aria-describedby={
+          [description ? `${cid}-desc` : null, waiting && waitingReason ? `${cid}-wait` : null]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        title={waiting ? waitingReason : undefined}
         className={cx(
-          "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border border-border-strong bg-surface-4",
+          "mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-xs border",
+          // Waiting: a fainter box (an unchecked one has no mark to dim),
+          // the mark dimmed, and the focus ring at full strength.
+          waiting ? "cursor-not-allowed border-border bg-surface-2 [&>*]:opacity-40" : "border-border-strong bg-surface-4",
           "focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40",
           "data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-fg",
           "data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-fg",
@@ -37,9 +61,14 @@ export function Checkbox({ label, checked, onCheckedChange, disabled, descriptio
         </C.Indicator>
       </C.Root>
       <div className="flex flex-col">
-        <label htmlFor={cid} className={cx("text-base text-fg", disabled && "opacity-40")}>
+        <label htmlFor={cid} className={cx("text-base text-fg", (disabled || waiting) && "opacity-40")}>
           {label}
         </label>
+        {waiting && waitingReason && (
+          <span id={`${cid}-wait`} className="sr-only">
+            {waitingReason}
+          </span>
+        )}
         {description && (
           <span id={`${cid}-desc`} className="text-sm text-fg-subtle">
             {description}

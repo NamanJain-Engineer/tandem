@@ -347,6 +347,12 @@ pub fn write_config(
     model: &str,
     untrusted: &[String],
 ) -> Result<(), IpcError> {
+    // The status hook and the tasks server are written under the same
+    // lock, so a start keeps what another wrote (D-3070, D-3073).
+    let lock = tandem_engines::homes::config_lock(home);
+    let _held = lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let file = home.join("config.toml");
     let existing = match std::fs::read_to_string(&file) {
         Ok(text) => text,
@@ -974,6 +980,85 @@ mod tests {
             both()
         );
         assert_eq!(with_codex_reason(both(), None), both());
+    }
+
+    /// F-EN-11 follow-up (D-3070, D-3073): panes on one model starting at
+    /// once each keep their folders in the home's `config.toml`, untrusted,
+    /// and the status hook and the tasks server stay in it: each of
+    /// Vibezeo's writers of the file (a start's local settings, then the
+    /// hook, then the tasks server) reads, changes and writes it one at a
+    /// time.
+    #[test]
+    fn f_en_11_2_starts_at_once_keep_every_folder_in_the_home() {
+        const PANES: usize = 24;
+        let registry = Arc::new(tandem_engines::registry::EngineRegistry::bundled());
+        let server = Arc::new(tandem_engines::chat::StdioServer {
+            name: "tandem_tasks".into(),
+            command: "/x/tandem-tasks".into(),
+            args: vec!["--stdio".into()],
+            env_vars: Vec::new(),
+        });
+        // Several rounds: with any writer outside the lock, most lose some.
+        for round in 0..4 {
+            let dir = tempfile::tempdir().expect("dir");
+            let providers = dir.path().join("providers");
+            let homes = Arc::new(tandem_engines::homes::ProviderHomes::new(&providers));
+            let home = providers.join("codex").join(local_models::home_name(
+                ServerKind::Ollama,
+                11434,
+                "qwen3:8b",
+            ));
+            std::fs::create_dir_all(&home).expect("home");
+            let barrier = Arc::new(std::sync::Barrier::new(PANES));
+            let starts: Vec<_> = (0..PANES)
+                .map(|i| {
+                    let (home, barrier) = (home.clone(), Arc::clone(&barrier));
+                    let (homes, registry, server) = (
+                        Arc::clone(&homes),
+                        Arc::clone(&registry),
+                        Arc::clone(&server),
+                    );
+                    std::thread::spawn(move || {
+                        let codex = registry.get("codex").expect("codex");
+                        barrier.wait();
+                        write_config(
+                            &home,
+                            ServerKind::Ollama,
+                            11434,
+                            "qwen3:8b",
+                            &[format!("/work/pane-{i}")],
+                        )
+                        .expect("written");
+                        homes
+                            .install_hooks(codex, &home, Path::new("/x/tandem-hook"))
+                            .expect("hook");
+                        homes
+                            .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
+                            .expect("tasks");
+                    })
+                })
+                .collect();
+            for start in starts {
+                start.join().expect("thread");
+            }
+            let config = std::fs::read_to_string(home.join("config.toml")).expect("config");
+            for i in 0..PANES {
+                assert!(
+                    config.contains(&format!(
+                        "[projects.\"/work/pane-{i}\"]\ntrust_level = \"untrusted\""
+                    )),
+                    "round {round}: pane-{i} lost:\n{config}"
+                );
+            }
+            assert!(
+                config.contains(r#"notify = ["/x/tandem-hook", "codex"]"#),
+                "round {round}: the hook lost:\n{config}"
+            );
+            assert!(
+                config.contains("[mcp_servers.tandem_tasks]"),
+                "round {round}: the tasks server lost:\n{config}"
+            );
+        }
     }
 
     /// F-EN-11 review (S3, D-3069): the page's Check again

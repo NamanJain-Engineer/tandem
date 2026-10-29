@@ -6,6 +6,7 @@ import { emitLocal } from "../../ipc/events";
 import { followNotifications, useNotifications } from "../../stores/notifications";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { NotificationsBell } from "./NotificationsPopover";
+import { waiting } from "../../test/waiting";
 
 const note = (id: string, extra: Partial<Notification>): Notification => ({
   id,
@@ -175,7 +176,9 @@ describe("notification center (F-DB-02)", () => {
           .getAllByTestId("notification")
           .find((r) => r.textContent?.includes(title)) as HTMLElement,
       ).getByTestId("notification-allow") as HTMLButtonElement;
-    await waitFor(() => expect(allowFor("Bea").disabled).toBe(false));
+    await waitFor(() => expect(waiting(allowFor("Bea"))).toBe(false));
+    // S4: the bell's Allow once is marked as a control that grants.
+    expect(allowFor("Bea").hasAttribute("data-grant")).toBe(true);
     // An agent's approval lands on top, pushing Bea's row down, just as the
     // person clicks where Bea's Allow once was.
     act(() =>
@@ -193,7 +196,7 @@ describe("notification center (F-DB-02)", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
     // Once still, Bea's answers.
-    await waitFor(() => expect(allowFor("Bea").disabled).toBe(false));
+    await waitFor(() => expect(waiting(allowFor("Bea"))).toBe(false));
     fireEvent.click(allowFor("Bea"));
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toMatchObject({ approvalId: "ap_1" }),

@@ -8,6 +8,7 @@ import { useSettings } from "../../stores/settings";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { Dashboard } from "./Dashboard";
 import { cardTitle, closeIdleTargets, group, matches } from "./model";
+import { waiting } from "../../test/waiting";
 
 let n = 0;
 function item(status: AgentStatus, title: string, extra: Partial<DashboardItem> = {}): DashboardItem {
@@ -130,8 +131,8 @@ describe("Dashboard (F-DB-01)", () => {
     );
     const allow = (await screen.findByTestId("card-allow")) as HTMLButtonElement;
     // F-TL-12.12: Allow ignores clicks until the approval has been on screen a moment.
-    expect(allow.disabled).toBe(true);
-    await waitFor(() => expect(allow.disabled).toBe(false));
+    expect(waiting(allow)).toBe(true);
+    await waitFor(() => expect(waiting(allow)).toBe(false));
     fireEvent.click(allow);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
@@ -387,7 +388,7 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
     const card = (key: string) =>
       screen.getAllByTestId("agent-card").find((c) => c.dataset.key === key) as HTMLElement;
     const allow = () => within(card(alpha.key)).getByTestId("card-allow") as HTMLButtonElement;
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    await waitFor(() => expect(waiting(allow())).toBe(false));
     return { alpha, beta, card, allow, calls };
   }
 
@@ -412,7 +413,7 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
         })),
       );
       await new Promise((r) => setTimeout(r, 100));
-      expect(allow().disabled).toBe(false);
+      expect(waiting(allow())).toBe(false);
     }
     fireEvent.click(allow());
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
@@ -421,22 +422,22 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
   it("Allow waits until its own place has held still: a scroll moves it", async () => {
     const { allow } = await cards();
     scrolled = 60;
-    await waitFor(() => expect(allow().disabled).toBe(true));
+    await waitFor(() => expect(waiting(allow())).toBe(true));
     expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
     await new Promise((r) => setTimeout(r, 300));
-    expect(allow().disabled).toBe(true);
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    expect(waiting(allow())).toBe(true);
+    await waitFor(() => expect(waiting(allow())).toBe(false));
     // Back where it was: it moved again, so it waits again.
     scrolled = 0;
-    await waitFor(() => expect(allow().disabled).toBe(true));
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    await waitFor(() => expect(waiting(allow())).toBe(true));
+    await waitFor(() => expect(waiting(allow())).toBe(false));
   });
 
   it("a click in the frame Allow moves, before it looks disabled, does nothing", async () => {
     const { allow, calls } = await cards();
     scrolled = 200;
     // Still enabled: the next frame hasn't sampled the move yet.
-    expect(allow().disabled).toBe(false);
+    expect(waiting(allow())).toBe(false);
     fireEvent.click(allow());
     await new Promise((r) => setTimeout(r, 50));
     expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
@@ -453,7 +454,7 @@ describe("Dashboard Allow and moving cards (F-TL-12.12)", () => {
     expect(order.slice(0, 2)).toEqual([alpha.key, beta.key]);
     expect(within(card(alpha.key)).getByTestId("card-allow")).toBe(allow());
     await new Promise((r) => setTimeout(r, 100));
-    expect(allow().disabled).toBe(false);
+    expect(waiting(allow())).toBe(false);
   });
 });
 
@@ -546,7 +547,7 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     const card = (key: string) =>
       screen.queryAllByTestId("agent-card").find((c) => c.dataset.key === key) as HTMLElement | undefined;
     const allow = () => within(card(gamma.key)!).getByTestId("card-allow") as HTMLButtonElement;
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    await waitFor(() => expect(waiting(allow())).toBe(false));
     return { alpha, gamma, beta, card, allow, calls };
   }
   const flip = (it: DashboardItem, patch: Partial<DashboardItem>) =>
@@ -555,20 +556,20 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
   it("S7a: the Waiting filter or a search never takes a question out, so the next one doesn't move", async () => {
     const { alpha, gamma, card, allow } = await three();
     act(() => useDashboard.setState({ filter: "waiting" }));
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    await waitFor(() => expect(waiting(allow())).toBe(false));
     for (let n = 0; n < 6; n++) {
       // alpha's agent flips between working and waiting.
       flip(alpha, { status: n % 2 === 0 ? "working" : "waiting" });
       await new Promise((r) => setTimeout(r, 100));
       expect(card(alpha.key)).toBeTruthy();
-      expect(allow().disabled).toBe(false);
+      expect(waiting(allow())).toBe(false);
     }
     // A search that matches neither question still shows both.
     act(() => useDashboard.setState({ query: "beta" }));
     expect(card(alpha.key)).toBeTruthy();
     expect(card(gamma.key)).toBeTruthy();
     await new Promise((r) => setTimeout(r, 100));
-    expect(allow().disabled).toBe(false);
+    expect(waiting(allow())).toBe(false);
   });
 
   it("S7b: nothing an agent reports above the questions: they come first, before the header", async () => {
@@ -591,7 +592,7 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
       flip(beta, { status, since: Date.now() });
       await new Promise((r) => setTimeout(r, 80));
       expect(box()).toEqual(before);
-      expect(allow().disabled).toBe(false);
+      expect(waiting(allow())).toBe(false);
     }
     fireEvent.click(allow());
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
@@ -601,10 +602,10 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     const { allow, calls } = await three();
     covering = document.createElement("div");
     document.body.append(covering);
-    await waitFor(() => expect(allow().disabled).toBe(true));
+    await waitFor(() => expect(waiting(allow())).toBe(true));
     expect(allow().title).toBe("Allow turns on once this has been still on screen for a moment.");
     await new Promise((r) => setTimeout(r, 700));
-    expect(allow().disabled).toBe(true);
+    expect(waiting(allow())).toBe(true);
     // The overlay closes (a double-click's first click): the second click
     // right after does nothing.
     covering.remove();
@@ -612,28 +613,32 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     fireEvent.click(allow());
     expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
     await new Promise((r) => setTimeout(r, 250));
-    expect(allow().disabled).toBe(true);
-    await waitFor(() => expect(allow().disabled).toBe(false));
+    expect(waiting(allow())).toBe(true);
+    await waitFor(() => expect(waiting(allow())).toBe(false));
   });
 
   it("M1: a cover over Allow for this agent alone turns both Allows off, and a click on it does nothing", async () => {
     const { gamma, card, allow, calls } = await three(["once", "conversation"]);
     const agent = () => within(card(gamma.key)!).getByTestId("card-allow-agent") as HTMLButtonElement;
-    await waitFor(() => expect(agent().disabled).toBe(false));
+    // S4: both are marked as controls that grant; Deny isn't.
+    expect(allow().hasAttribute("data-grant")).toBe(true);
+    expect(agent().hasAttribute("data-grant")).toBe(true);
+    expect(within(card(gamma.key)!).getByTestId("card-deny").hasAttribute("data-grant")).toBe(false);
+    await waitFor(() => expect(waiting(agent())).toBe(false));
     // Over the second button's right half only: Allow once's middle and
     // corners, and the second button's middle, are all clear.
     covering = document.createElement("div");
     document.body.append(covering);
     coverX = [160, 200];
-    await waitFor(() => expect(agent().disabled).toBe(true));
-    expect(allow().disabled).toBe(true);
+    await waitFor(() => expect(waiting(agent())).toBe(true));
+    expect(waiting(allow())).toBe(true);
     fireEvent.click(agent());
     fireEvent.click(allow());
     expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
     covering.remove();
     covering = null;
     coverX = null;
-    await waitFor(() => expect(agent().disabled).toBe(false));
+    await waitFor(() => expect(waiting(agent())).toBe(false));
   });
 
   it("N5: a toast over Deny alone leaves Allow on; covers count only over what grants", async () => {
@@ -644,7 +649,7 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
     coverX = [100, 200];
     await new Promise((r) => setTimeout(r, 400));
     expect(within(card(gamma.key)!).getByTestId("card-deny")).toBeTruthy();
-    expect(allow().disabled).toBe(false);
+    expect(waiting(allow())).toBe(false);
     fireEvent.click(allow());
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
     covering.remove();

@@ -15,7 +15,10 @@ export function RemotePrompts() {
   // The dialog can open on its own whenever a connection starts: Trust and
   // connect waits until it has held still, uncovered, so a click aimed at
   // what was there can't trust a key (F-TL-12.12).
-  const box = useSteadyBox(prompt?.kind === "hostkey", ask ? `${ask.opId}` : null);
+  const box = useSteadyBox(
+    prompt?.kind === "hostkey",
+    ask && prompt?.kind === "hostkey" ? `${ask.opId}\n${prompt.host}\n${prompt.fingerprint}` : null,
+  );
   if (prompt?.kind === "hostkey") {
     return (
       <Dialog
@@ -37,7 +40,7 @@ export function RemotePrompts() {
               variant="primary"
               data-grant
               data-testid="remote-hostkey-accept"
-              disabled={!box.steady}
+              waiting={!box.steady}
               title={box.steady ? undefined : t("approval.waitingTrust")}
               onClick={() => box.check() && useRemote.getState().answerHostKey(true)}
             >

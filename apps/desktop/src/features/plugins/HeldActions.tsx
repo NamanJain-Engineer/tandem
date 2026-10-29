@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { RiskClass, HeldDraft, IpcError, ToolResultView } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Banner,
   Button,
@@ -99,7 +100,8 @@ export function HeldActions({ originId, compact = false }: { originId?: string; 
           <Button
             size="sm"
             variant="secondary"
-            disabled={busy || chosen.length === 0 || !selectedBox.steady}
+            disabled={busy || chosen.length === 0}
+            waiting={!selectedBox.steady}
             title={chosen.length > 0 && !selectedBox.steady ? t("approval.waitingApprove") : undefined}
             onClick={() =>
               selectedBox.check() &&
@@ -170,24 +172,29 @@ function HeldRow({
   onEdit: () => void;
   onDiscard: () => void;
 }) {
-  // The whole row: a draft arriving on top moves it, and both its pick and
-  // its Approve & run wait for it to hold still again (a pick feeds
-  // Approve & run {n}).
-  const box = useSteadyBox(true, `${d.id}\n${JSON.stringify(d.args)}`);
+  // Two boxes, one key: the pick and the buttons each wait on their own
+  // place, so a row taller than the list still works once each is scrolled
+  // into view. A draft arriving on top moves both, and both wait again (a
+  // pick feeds Approve & run {n}).
+  const key = `${d.id}\n${JSON.stringify(d.args)}`;
+  const pickBox = useSteadyBox(true, key);
+  const box = useSteadyBox(true, key);
   return (
     <li
-      ref={box.ref}
       data-testid={`held-${d.displayNo}`}
+      // Off screen, a row skips layout, paint and hit tests (up to 500 drafts).
+      style={offscreenRow(220)}
       className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <div className="flex items-center gap-2">
         {/* Unpicking never waits; picking does. */}
-        <span data-grant className="flex">
+        <span ref={pickBox.ref} data-grant className="flex">
           <Checkbox
             label={<span className="sr-only">{t("held.select", { id: `D-${d.displayNo}` })}</span>}
             checked={picked}
-            disabled={!picked && !box.steady}
-            onCheckedChange={(v) => (v ? box.check() && onPick(true) : onPick(false))}
+            waiting={!picked && !pickBox.steady}
+            waitingReason={t("approval.waitingPick")}
+            onCheckedChange={(v) => (v ? pickBox.check() && onPick(true) : onPick(false))}
           />
         </span>
         <EngineGlyph letters={d.logo} size={16} />
@@ -202,12 +209,15 @@ function HeldRow({
         code={JSON.stringify(d.args, null, 2)}
         copyLabel={t("thread.copy")}
         copiedLabel={t("thread.copied")}
+        // Long args scroll within the row.
+        className="[&_pre]:max-h-64 [&_pre]:overflow-y-auto"
       />
-      <div className="flex gap-2">
+      <div ref={box.ref} className="flex gap-2">
         <Button
           size="sm"
           variant="primary"
-          disabled={busy || !box.steady}
+          disabled={busy}
+          waiting={!box.steady}
           title={box.steady ? undefined : t("approval.waitingApprove")}
           onClick={() => box.check() && onRun()}
           data-grant
