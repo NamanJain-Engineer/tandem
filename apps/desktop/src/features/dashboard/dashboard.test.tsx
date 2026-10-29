@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, DashboardItem } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
+import { useAccounts } from "../../stores/accounts";
 import { followDashboard, useDashboard } from "../../stores/dashboard";
 import { useSettings } from "../../stores/settings";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { Dashboard } from "./Dashboard";
-import { cardTitle, closeIdleTargets, group, matches } from "./model";
+import { cardMeta, cardTitle, closeIdleTargets, group, matches } from "./model";
 
 let n = 0;
 function item(status: AgentStatus, title: string, extra: Partial<DashboardItem> = {}): DashboardItem {
@@ -284,6 +285,74 @@ describe("Dashboard (F-DB-01)", () => {
 });
 
 describe("Dashboard model", () => {
+  it("F-DB-01 D-2620 a card names its account only when its engine has more than one", () => {
+    const i = item("working", "Stack coupons by priority", {
+      engineId: "codex",
+      engineLabel: "Codex",
+      workspace: "coupon-rules",
+      branch: "tandem/coupon-rules",
+      accountLabel: "Default",
+    });
+    expect(cardMeta(i, 1)).toBe("Codex · coupon-rules · tandem/coupon-rules");
+    expect(cardMeta(i, 0)).toBe("Codex · coupon-rules · tandem/coupon-rules");
+    expect(cardMeta({ ...i, accountLabel: "Work" }, 2)).toBe(
+      "Codex · coupon-rules · tandem/coupon-rules · Work",
+    );
+  });
+
+  it("F-DB-01 D-2620 the cards read the engines' accounts: Default alone is left out", async () => {
+    const one = item("working", "Stack coupons by priority", {
+      engineId: "codex",
+      engineLabel: "Codex",
+      accountLabel: "Default",
+    });
+    const two = item("working", "Fix the auth guard", { accountLabel: "Work" });
+    fakeBackend({
+      status_snapshot: () => [one, two],
+      accounts_list: () => [
+        {
+          id: "a1",
+          engineId: "codex",
+          label: "Default",
+          homePath: "/p/1",
+          isDefault: true,
+          planLabel: null,
+          createdAt: 0,
+        },
+        {
+          id: "a2",
+          engineId: "claude",
+          label: "Work",
+          homePath: "/p/2",
+          isDefault: true,
+          planLabel: null,
+          createdAt: 0,
+        },
+        {
+          id: "a3",
+          engineId: "claude",
+          label: "Personal",
+          homePath: "/p/3",
+          isDefault: false,
+          planLabel: null,
+          createdAt: 0,
+        },
+      ],
+      accounts_overrides: () => [],
+    });
+    useDashboard.setState({ items: { [one.key]: one, [two.key]: two } });
+    // The cards before these loaded no accounts: read them afresh.
+    useAccounts.setState({ list: [], overrides: [], loaded: false, failed: false, signIn: {} });
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("Claude Code · shop · Work")).toBeTruthy());
+    expect(screen.getByText("Codex · shop")).toBeTruthy();
+    expect(screen.queryByText(/Default/)).toBeNull();
+  });
+
   it("search is AND over the fields, case- and accent-insensitive", () => {
     const i = item("idle", "✳ Fix the auth guard", { humanName: "Zoë", branch: "tandem/fix-auth" });
     expect(cardTitle(i)).toBe("Zoë · Fix the auth guard");

@@ -10,7 +10,8 @@ import { useWorkspaces } from "../../stores/workspaces";
 
 /** UI_SPEC §2.29 AccountChip on an agent pane (F-AC-03): the account this
  * pane runs on. Choosing another sets it for *new* panes of the engine in
- * this workspace; a running session never switches. */
+ * this workspace; a running session never switches. An engine with one
+ * account shows none: "Default" alone tells nothing apart (D-2620). */
 export function AccountChip({ pane }: { pane: PaneRecord }) {
   const list = useAccounts((s) => s.list);
   const overrides = useAccounts((s) => s.overrides);
@@ -32,6 +33,7 @@ export function AccountChip({ pane }: { pane: PaneRecord }) {
 
   const current = list.find((a) => a.id === pane.accountId);
   if (pane.kind !== "agent" || !pane.engineId || !current) return null;
+  if (accountsFor(list, pane.engineId).length < 2) return null;
   // A worktree's new panes follow its repository's choice.
   const scope = workspace?.parentId ?? pane.workspaceId;
   const scopeName = useWorkspaces.getState().list.find((w) => w.id === scope)?.name ?? "";

@@ -7,7 +7,7 @@ import UNTRUSTED from "../../../../crates/tandem-core/src/untrusted.rs?raw";
 import PR_CHECKS from "../../src-tauri/src/services/pr_checks.rs?raw";
 import RADAR from "../../src-tauri/src/services/radar.rs?raw";
 import { DemoCore } from "./backend";
-import { DEFANGED, commentFenced, defangMentions, failurePrompt, fence, untrustedLabel } from "./ci";
+import { DEFANGED, commentFenced, defangMentions, failurePrompt, fence, ghLog, untrustedLabel } from "./ci";
 import { STORY, worktree } from "./story";
 
 /** A Rust string literal's text: a `\` at a line's end joins the next line
@@ -51,7 +51,9 @@ describe("F-WT-08 F-WT-10 D-3022 the demo's prompts are the core's (D-1899)", ()
     const check = STORY.pr.checks.find((c) => c.bucket === "fail");
     if (!check) throw new Error("story.json has no failing check");
     const prompt = failurePrompt(STORY.pr.number, check);
-    const log = (check.log ?? []).join("\n");
+    // The failed step's log as gh prints it (pr_checks.rs keeps its lines).
+    const log = ghLog(check);
+    expect(log.split("\n")[0]).toMatch(/^test\tRun pnpm test\t\S+Z > shop@1\.4\.0 test /);
     const ci = [
       fill(literal(PR_CHECKS, "Check: {}"), {}, [check.name]),
       fill(literal(PR_CHECKS, "\\nWorkflow: {w}"), { w: check.workflow }),

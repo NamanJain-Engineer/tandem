@@ -9,6 +9,7 @@ import { create } from "zustand";
 import type { Branch, Committed, FileContext, FileDiff, GitPanel, IpcError } from "@tandem/protocol";
 import { invoke } from "../ipc/invoke";
 import { useStatus } from "./status";
+import { checksAfterPush } from "./worktrees";
 
 /** A commit runs the repository's hooks, which can take a while. */
 const LOCAL_TIMEOUT_MS = 300_000;
@@ -186,8 +187,16 @@ export const useGit = create<GitState>((set, get) => {
       return err;
     },
 
-    push: (context, publish = false) =>
-      act(context, "push", () => invoke("git_push", { context, publish }, { timeoutMs: NETWORK_TIMEOUT_MS })),
+    push: async (context, publish = false) => {
+      // Another action still running: nothing is pushed (act says null).
+      if (get().byKey[gitKey(context)]?.busy) return null;
+      const err = await act(context, "push", () =>
+        invoke("git_push", { context, publish }, { timeoutMs: NETWORK_TIMEOUT_MS }),
+      );
+      // CI runs again on what was pushed: the rail's checks badge follows.
+      if (!err && context.type === "workspace") void checksAfterPush(context.workspaceId);
+      return err;
+    },
     pull: (context) => act(context, "pull", () => invoke("git_pull", { context }, { timeoutMs: NETWORK_TIMEOUT_MS })),
 
     loadBranches: async (context) => {

@@ -47,7 +47,7 @@ import { useIntentRadar } from "./IntentRadar";
 import { useMarkFolds } from "./markFolds";
 import { WorktreeRow, usePreviewPolling } from "./Worktrees";
 import { WorkspaceSlot } from "./WorkspaceSlot";
-import { useWorkspaceStatus } from "./workspaceStatus";
+import { showsStatus, useWorkspaceStatus } from "./workspaceStatus";
 import { browserSources, paneTitles } from "./titles";
 import { useBrowser } from "../../stores/browser";
 import { pickAndAddWorkspace, switchMode } from "../shell/actions";
@@ -179,7 +179,9 @@ function SessionDot({ paneId }: { paneId: string }) {
  * its live panes. The status words fold to their dot while the row is too
  * narrow for them (D-2701), so the row never runs past the rail. */
 function WorkspaceTrailing({ ws, selected }: { ws: WorkspaceSummary; selected: boolean }) {
+  // Read once for the row's parts: beside the status the branch gives way.
   const s = useWorkspaceStatus(ws);
+  const beside = showsStatus(s);
   const { ref, folds } = useMarkFolds<HTMLSpanElement>(
     JSON.stringify([ws.name, s, ws.branch, ws.repos?.length ?? null, ws.liveCount]),
     1,
@@ -187,14 +189,14 @@ function WorkspaceTrailing({ ws, selected }: { ws: WorkspaceSummary; selected: b
   );
   return (
     <span ref={ref} className="flex min-w-0 items-center justify-end gap-1.5">
-      {isMultiRepo(ws) ? (
+      {beside ? null : isMultiRepo(ws) ? (
         <BranchChip ws={ws} selected={selected} testId="workspace-repos">
           {t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}
         </BranchChip>
       ) : (
         ws.branch && <BranchChip ws={ws} selected={selected} />
       )}
-      <WorkspaceSlot ws={ws} fold={folds >= 1} />
+      <WorkspaceSlot status={s} fold={folds >= 1} />
       {ws.liveCount > 0 && <Count value={ws.liveCount} label={t("rail.live", { n: ws.liveCount })} />}
     </span>
   );
@@ -214,8 +216,6 @@ function BranchChip({
   /** Instead of the branch (a multi-repo workspace's repository count). */
   children?: ReactNode;
 }) {
-  const s = useWorkspaceStatus(ws);
-  if (s.waiting || s.working > 0 || s.failed) return null;
   return (
     <span
       data-testid={testId}

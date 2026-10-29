@@ -1,15 +1,13 @@
-import type { WorkspaceSummary } from "@tandem/protocol";
 import { Badge, StatusDot, cx } from "@tandem/ui";
 import { t } from "../../i18n";
-import { useWorkspaceStatus } from "./workspaceStatus";
+import type { WorkspaceStatus } from "./workspaceStatus";
 
 /** A rail row's status, quiet, never a box (D-2603): amber "Needs you", a
  * working dot and its count, or "Failed"; then the unread dot when something
  * finished unseen. Folded (D-2701), the words are their dot, the StatusDot of
  * their state with the words as its name and tooltip, and the unread dot sits
  * on it as it does on a pane's row. */
-export function WorkspaceSlot({ ws, fold = false }: { ws: WorkspaceSummary; fold?: boolean }) {
-  const s = useWorkspaceStatus(ws);
+export function WorkspaceSlot({ status: s, fold = false }: { status: WorkspaceStatus; fold?: boolean }) {
   const words = s.waiting
     ? t("rail.waiting")
     : s.working > 0

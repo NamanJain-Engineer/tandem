@@ -30,10 +30,11 @@ export function useMarkFolds<T extends HTMLElement = HTMLDivElement>(
 } {
   const ref = useRef<T | null>(null);
   const [folds, setFolds] = useState(0);
-  // A new width is measured even when nothing was folded: a render forces it.
-  const [, setRound] = useState(0);
   const measured = useRef(contents);
+  const [round, setRound] = useState(0);
   const target = (): HTMLElement | null => (ref.current && row ? row(ref.current) : ref.current);
+  // Measured when the contents, the folds or the width change, not on
+  // every render: each measure is a layout.
   useLayoutEffect(() => {
     if (measured.current !== contents) {
       measured.current = contents;
@@ -44,7 +45,8 @@ export function useMarkFolds<T extends HTMLElement = HTMLDivElement>(
     }
     const el = target();
     if (el && folds < max && el.scrollWidth > el.clientWidth + 1) setFolds(folds + 1);
-  });
+    // `round` is a new width, measured even when nothing was folded.
+  }, [contents, folds, round, max]);
   useLayoutEffect(() => {
     const el = target();
     if (!el || typeof ResizeObserver === "undefined") return;

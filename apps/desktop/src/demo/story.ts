@@ -113,6 +113,23 @@ export function engineLabel(engine: string): string {
   return STORY.engines[engine]?.label ?? engine;
 }
 
+/** The waiting agent's question in its terminal: the engine's own, since
+ * 0.12.0 raises no approval for it (only `vibezeo run` does). The demo's
+ * pane and the site's scenes both read it from here (D-1899). */
+export function askLine(w: StoryWorktree): string {
+  return `Allow running ${w.ask ?? ""}? (y/n)`;
+}
+
+/** What the Dashboard's card and the status preview say for each agent:
+ * done with its closing words, running its last command, or asking to run
+ * one. */
+export function previewOf(w: StoryWorktree): string {
+  if (w.state === "done") return w.closing ?? "Done.";
+  if (w.state === "waiting") return `Allow running ${w.ask ?? ""}?`;
+  const run = [...w.steps].reverse().find((s): s is { run: string } => "run" in s);
+  return run ? `Running ${run.run}` : "Working";
+}
+
 export function editsOf(w: StoryWorktree): StoryEdit[] {
   return w.steps.filter((s): s is StoryEdit => "edit" in s);
 }

@@ -299,7 +299,8 @@ describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
     paths: [path],
     ...(lines ? { lines } : {}),
   });
-  const turn = (...events: ThreadEvent[]) => {
+  /** A finished turn of `events`, in a thread whose folder is `cwd`. */
+  const turnIn = (cwd: string, ...events: ThreadEvent[]) => {
     seq = 0;
     return toRows(
       play(
@@ -307,8 +308,10 @@ describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
         ...events.map((e) => env("t1", e)),
         env("t1", { type: "turn_end", reason: "completed", blockedActions: 0 }),
       ),
+      cwd,
     );
   };
+  const turn = (...events: ThreadEvent[]) => turnIn("/work/shop", ...events);
 
   it("F-TH-12.4 a turn of Edit, MultiEdit and a new file's Write says Changed 3 files +7 −4", () => {
     const rows = turn(
@@ -373,12 +376,75 @@ describe("F-TH-12 Claude Code's edits in the turn summary (D-2608)", () => {
   });
 
   it("F-TH-12.4 a file reported by its diff and by its absolute path counts once", () => {
-    const withDiff: ThreadEvent = {
+    // One event names the file only by its diff's header, relative to the
+    // thread's folder; the other by its absolute path.
+    const diffOnly: ThreadEvent = {
       ...(claudeEdit("a", "edit", "/work/shop/src/b.ts", undefined) as ToolEvent),
+      paths: undefined,
       diff: "--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1 @@\n-a\n+b\n",
     };
-    const again = claudeEdit("b", "edit", "/work/shop/src/b.ts", { added: 1, removed: 0 });
-    expect(turn(withDiff, again).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 2, del: 1 });
+    const named = claudeEdit("b", "edit", "/work/shop/src/b.ts", { added: 1, removed: 0 });
+    expect(turn(diffOnly, named).find((r) => r.kind === "summary")).toMatchObject({
+      files: 1,
+      add: 2,
+      del: 1,
+    });
+    expect(turn(named, diffOnly).find((r) => r.kind === "summary")).toMatchObject({
+      files: 1,
+      add: 2,
+      del: 1,
+    });
+    // A different file stays a file of its own.
+    const other = {
+      ...(diffOnly as ToolEvent),
+      id: "c",
+      diff: "--- a/src/c.ts\n+++ b/src/c.ts\n@@ -1 +1 @@\n-a\n+b\n",
+    };
+    expect(turn(diffOnly, named, other).find((r) => r.kind === "summary")).toMatchObject({ files: 2 });
+  });
+
+  it("F-TH-12.6 D-2622 a Windows path counts once whatever its case and slashes; elsewhere case counts", () => {
+    const win = (id: string, path: string) => ({
+      ...(claudeEdit(id, "edit", path, { added: 1, removed: 1 }) as ToolEvent),
+      argSummary: "src\\B.ts",
+    });
+    const rows = turnIn(
+      "C:\\work\\shop",
+      win("a", "C:\\work\\shop\\src\\B.ts"),
+      win("b", "c:/Work/Shop/src/b.ts"),
+    );
+    expect(rows.find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 2, del: 2 });
+    // A diff's header under a Windows folder is the same file again.
+    const diffOnly: ThreadEvent = {
+      ...win("c", "C:\\work\\shop\\src\\b.ts"),
+      paths: undefined,
+      lines: undefined,
+      diff: "--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1 @@\n-a\n+b\n",
+    };
+    expect(
+      turnIn("C:\\work\\shop", win("a", "C:\\work\\shop\\src\\B.ts"), diffOnly).find(
+        (r) => r.kind === "summary",
+      ),
+    ).toMatchObject({ files: 1 });
+    // On Linux and macOS paths, case is a different file.
+    const upper = claudeEdit("d", "edit", "/work/shop/src/B.ts", { added: 1, removed: 0 });
+    const lower = claudeEdit("e", "edit", "/work/shop/src/b.ts", { added: 1, removed: 0 });
+    expect(turn(upper, lower).find((r) => r.kind === "summary")).toMatchObject({ files: 2 });
+  });
+
+  it("F-TH-12.6 D-2622 a Task that ended in error still counts what its subagent edited", () => {
+    // Its subagent's edits happened before the Task failed (claude.rs names
+    // them on the Task's row whatever its end).
+    const task: ThreadEvent = {
+      ...(claudeEdit("t", "edit", "/work/shop/docs/a.md", { added: 4, removed: 1 }, "error") as ToolEvent),
+      verb: "task",
+      argSummary: "Update the docs",
+      paths: ["/work/shop/docs/a.md"],
+    };
+    expect(turn(task).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 4, del: 1 });
+    // An edit of its own that failed still counts nothing.
+    const failed = claudeEdit("f", "edit", "/work/shop/docs/b.md", { added: 9, removed: 9 }, "error");
+    expect(turn(task, failed).find((r) => r.kind === "summary")).toMatchObject({ files: 1, add: 4, del: 1 });
   });
 
   it("F-TH-12.4 a row's counts read as words", () => {

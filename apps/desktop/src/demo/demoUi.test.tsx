@@ -10,6 +10,7 @@ import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspaces";
 import { resetStores } from "../test/fakeBackend";
 import { DEMO_MESSAGE_LIMIT, DEMO_WAITING, DemoCore } from "./backend";
+import { worktreeIn } from "./story";
 import { DemoBar } from "./DemoBar";
 import { DemoCoach, HINT_KEY } from "./DemoCoach";
 
@@ -40,7 +41,9 @@ describe("the interactive demo's page furniture", () => {
     );
     const hint = () => screen.getAllByTestId("coachmark");
     expect(hint()).toHaveLength(1);
-    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.engine} is waiting on you. Open it to see why.`);
+    // The agent by its first name, as 0.12.0 names every agent (F-CD-12).
+    expect(DEMO_WAITING.name).toBe(worktreeIn("waiting").agentName);
+    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.name} is waiting on you. Open it to see why.`);
     expect(hint()[0]?.textContent).toContain("1 of 3");
     // Under the waiting worktree's row, in the rail's free space: over no
     // row and none of the panes' text.
@@ -54,7 +57,7 @@ describe("the interactive demo's page furniture", () => {
       </UiProvider>,
     );
     await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
-    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.engine} is waiting on you.`);
+    expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.name} is waiting on you.`);
     expect(hint()[0]?.dataset.side).toBe("right");
     act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
     // In Code mode the task waits one switch away.

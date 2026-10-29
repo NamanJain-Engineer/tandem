@@ -115,7 +115,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
     expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => ["queued", "running", "reviewing", "in_review"]));
     expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
-    // It ends on 2 approved · 1 changes requested, with Land 2 approved…
+    // It ends on 2 approved · 1 with changes requested, with Land 2 approved…
     // primary and Close ghost (PlanWithLead's started footer).
     const end = planAt(Infinity);
     expect(end.summary).toBe(`${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`);

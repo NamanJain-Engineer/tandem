@@ -8,7 +8,6 @@ import { listen } from "../../ipc/events";
 import { useDashboard } from "../../stores/dashboard";
 import { loadRadar, radarNote, useWorktrees } from "../../stores/worktrees";
 import { worktreeAgents } from "./WorktreeReview";
-import { useWorkspaceStatus } from "./workspaceStatus";
 
 type Side = { laneId: string; branch: string | null };
 type Overlap = { a: Side; b: Side; symbols: string[] };
@@ -19,19 +18,31 @@ type Overlap = { a: Side; b: Side; symbols: string[] };
  * what it shares, and its title every symbol. Beside the row's status ("● 1
  * working", "Needs you", "Failed"), or when the row folds it, it's the radar
  * alone, so the row's name keeps its room (D-2603, D-2611, D-2613). */
-export function RadarMark({ wt, fold = false }: { wt: WorkspaceSummary; fold?: boolean }) {
+export function RadarMark({
+  wt,
+  beside,
+  fold = false,
+}: {
+  wt: WorkspaceSummary;
+  beside: boolean;
+  fold?: boolean;
+}) {
   const symbols = useWorktrees((s) => s.radar[wt.id]);
-  const status = useWorkspaceStatus(wt);
   if (!symbols || symbols.length === 0) return null;
   const one = symbols.length === 1 ? symbols[0] : undefined;
-  const compact = fold || status.waiting || status.working > 0 || status.failed;
+  const compact = fold || beside;
+  // Its name starts with its visible words (D-2701, WCAG 2.5.3), and is
+  // its tooltip too.
+  const name = one
+    ? t("radar.mark.one", { symbol: one })
+    : t("radar.mark.many", { n: symbols.length, symbols: symbols.join(", ") });
   return (
     <button
       type="button"
       data-testid="worktree-radar"
       data-compact={compact ? "" : undefined}
-      aria-label={one ? t("radar.mark.one", { symbol: one }) : t("radar.mark.many", { n: symbols.length })}
-      title={t("radar.mark.title", { symbols: symbols.join(", ") })}
+      aria-label={name}
+      title={name}
       onClick={(e) => {
         e.stopPropagation();
         useWorktrees.getState().open({ kind: "overlap", worktreeId: wt.id });

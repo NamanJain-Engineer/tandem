@@ -15,7 +15,15 @@ import { useDashboard } from "../../stores/dashboard";
 import { useLayout } from "../../stores/layout";
 import { useStatus } from "../../stores/status";
 import { useWorkspaces } from "../../stores/workspaces";
-import { CHECKS_IDLE_MS, checksDue, loadChecks, pollChecks, useWorktrees } from "../../stores/worktrees";
+import {
+  CHECKS_AFTER_PUSH_MS,
+  CHECKS_IDLE_MS,
+  checksDue,
+  loadChecks,
+  pollChecks,
+  useWorktrees,
+} from "../../stores/worktrees";
+import { useGit } from "../../stores/git";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
 import { checksState } from "./PullRequestChecks";
@@ -103,10 +111,12 @@ const agent = (paneId: string, workspaceId: string): DashboardItem => ({
 let calls: Call[] = [];
 const named = (cmd: string) => calls.filter((c) => c.cmd === cmd);
 let checks: LaneChecks = READY;
+let pushFails = false;
 
 beforeEach(() => {
   resetStores();
   checks = READY;
+  pushFails = false;
   useWorktrees.setState({ checks: {}, ask: null });
   useDashboard.setState({ items: {} });
   useReviews.setState({ byLane: {}, next: 1, importedIds: {} });
@@ -122,6 +132,11 @@ beforeEach(() => {
     pty_type_prompt: () => null,
     lane_forge: () => "github",
     lane_runtime: () => null,
+    git_push: () => {
+      if (pushFails)
+        throw { code: "io", message: "rejected: fetch first", stage: "git", hint: null, retryable: false };
+      return null;
+    },
   });
   useWorkspaces.setState({ list: [REPO, WT], activeId: "shop", activeTab: {} });
 });
@@ -229,7 +244,7 @@ describe("CI results and review comments (F-WT-08)", () => {
       const radar = screen.getByTestId("worktree-radar");
       // Room for one mark's words: the radar mark folds, the badge keeps "CI failed".
       expect(radar.hasAttribute("data-compact")).toBe(true);
-      expect(radar.getAttribute("aria-label")).toBe("Shares applyCoupon");
+      expect(radar.getAttribute("aria-label")).toBe("applyCoupon, shared with another worktree");
       expect(badge.textContent).toBe("CI failed");
       // New contents are measured again from nothing folded: room for both now.
       room = 400;
@@ -337,6 +352,46 @@ describe("CI results and review comments (F-WT-08)", () => {
     // Finished: the next poll skips it.
     await pollChecks(["wt_1"]);
     expect(named("lane_checks")).toHaveLength(1);
+  });
+
+  it("F-WT-08.5 D-2619 a push reads the worktree's checks again at once, and each poll reads them until CI's new run shows", async () => {
+    // The rail has read wt_1's checks: CI failed, every check finished, so
+    // polls leave it alone for 15 minutes.
+    await act(() => loadChecks(["wt_1"]));
+    await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(1);
+    // A push starts CI again: the checks are read right after it.
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await waitFor(() => expect(named("lane_checks")).toHaveLength(2));
+    const order = calls.map((c) => c.cmd).filter((c) => c === "git_push" || c === "lane_checks");
+    expect(order).toEqual(["lane_checks", "git_push", "lane_checks"]);
+    // gh may list the new run a minute later: until then each poll reads
+    // the checks, though the last answer had finished.
+    await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(3);
+    const now = 10_000_000;
+    expect(checksDue(READY, now - 1_000, now, now - 1_000)).toBe(true);
+    expect(checksDue(READY, now - 1_000, now, now - CHECKS_AFTER_PUSH_MS)).toBe(false);
+    expect(checksDue(READY, now - 1_000, now, undefined)).toBe(false);
+  });
+
+  it("F-WT-08.5 F-WT-08.3 D-2619 a push that failed reads no checks, nor does one in a repository not allowed", async () => {
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    await act(() => loadChecks(["wt_1"]));
+    pushFails = true;
+    expect((await act(() => useGit.getState().push(context)))?.message).toBe("rejected: fetch first");
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("lane_checks")).toHaveLength(1);
+    pushFails = false;
+    // Not allowed: the core would run no gh, and the rail asks it nothing.
+    checks = { ...READY, state: "not_allowed", pr: null, checks: [] };
+    await act(() => loadChecks(["wt_1"]));
+    const before = named("lane_checks").length;
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("lane_checks")).toHaveLength(before);
+    expect(named("git_push")).toHaveLength(2);
   });
 
   it("F-WT-08 the dialog says when there's no pull request, no gh, or GitLab", async () => {

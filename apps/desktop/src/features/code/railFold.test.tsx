@@ -2,7 +2,7 @@
 // off. A worktree row folds its preview to its icon, then its radar mark,
 // its checks badge, and last its status words to their dot; whatever folds
 // keeps its words as its accessible name and tooltip.
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentStatus, LaneChecks, Tab, WorkspaceSummary } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
@@ -105,12 +105,16 @@ function marks() {
 
 /** The row's contents: 120 px, and 80 more for each part showing its words. */
 let room = 1000;
+/** How many times a row's width was read. */
+let measures = 0;
 function measureRows() {
   const row = (el: Element) => el instanceof HTMLElement && el.dataset.testid === "worktree-row";
   const scroll = vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (
     this: Element,
   ) {
-    return row(this) ? 120 + 80 * this.querySelectorAll("[data-words]").length : 0;
+    if (!row(this)) return 0;
+    measures += 1;
+    return 120 + 80 * this.querySelectorAll("[data-words]").length;
   });
   const client = vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (
     this: Element,
@@ -180,7 +184,9 @@ describe("F-SH-03 D-2701 a rail row never cuts its contents off", () => {
     expect(screen.getByTestId("worktree-checks").getAttribute("aria-label")).toBe(
       "CI failed: 1 check failed: test",
     );
-    expect(screen.getByTestId("worktree-radar").getAttribute("aria-label")).toBe("Shares applyCoupon");
+    expect(screen.getByTestId("worktree-radar").getAttribute("aria-label")).toBe(
+      "applyCoupon, shared with another worktree",
+    );
   });
 
   it("F-SH-03 D-2603 D-2701 the status words fold last, to their dot; the words stay its name and tooltip, and the unread dot sits on it", () => {
@@ -270,6 +276,99 @@ describe("F-SH-03 D-2701 a rail row never cuts its contents off", () => {
     expect(radar?.querySelector("svg")?.getAttribute("width")).toBe("10");
     expect(screen.getByTestId("worktree-live").firstElementChild?.className.split(" ")).toContain("px-1.5");
     expect(RAIL_MIN).toBe(246);
+  });
+
+  it("F-SH-03 D-2701 a render that changes nothing the row shows measures nothing", () => {
+    marks();
+    panes(["working"]);
+    show(200);
+    const before = measures;
+    expect(before).toBeGreaterThan(0);
+    // Selecting the worktree draws the row again, with the same contents.
+    act(() => useWorkspaces.setState({ activeId: "wt_1" }));
+    expect(screen.getByTestId("worktree-row").getAttribute("aria-selected")).toBe("true");
+    expect(measures).toBe(before);
+    // New contents are measured.
+    act(() => useWorktrees.setState({ radar: { wt_1: ["applyCoupon", "priceOf"] } }));
+    expect(measures).toBeGreaterThan(before);
+  });
+
+  it("F-SH-03 D-2700 ⋯ takes the place of the marks under it, whole, never the end of one", () => {
+    marks();
+    panes(["waiting"]);
+    // Where the row's parts are: the radar mark's end is under ⋯'s button.
+    const at: Record<string, [number, number]> = {
+      "worktree-row-name": [20, 120],
+      "workspace-status": [126, 132],
+      "worktree-checks": [138, 158],
+      "worktree-radar": [164, 226],
+      "worktree-live": [232, 244],
+      menu: [224, 252],
+    };
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const key = this.closest('[data-testid="worktree-row-menu"]')
+        ? "menu"
+        : this.getAttribute("data-testid");
+      const [left, right] = (key && at[key]) || [0, 0];
+      return { left, right, width: right - left, top: 0, bottom: 28, height: 28, x: left, y: 0 } as DOMRect;
+    });
+    try {
+      show(1000);
+      const row = screen.getByTestId("worktree-row");
+      const menu = screen.getByTestId("worktree-row-menu");
+      const button = within(menu).getByRole("button", { name: "Actions for tandem/fix" });
+      // As ⋯ shows, it covers the radar mark from its start, and the count.
+      fireEvent.pointerEnter(row);
+      expect(menu.style.paddingLeft).toBe("60px");
+      // Whenever ⋯ shows, on hover or focus, the cover is the row's colour.
+      expect(row.className.split(" ")).toEqual(
+        expect.arrayContaining(["hover:bg-surface-4", "focus-within:bg-surface-4"]),
+      );
+      expect(menu.className.split(" ")).toContain("bg-surface-4");
+      // A click on the cover is the row's, never a mark's under it; ⋯'s is
+      // its menu's.
+      fireEvent.click(button);
+      expect(useWorkspaces.getState().activeId).toBe("shop");
+      fireEvent.click(menu);
+      expect(useWorkspaces.getState().activeId).toBe("wt_1");
+      expect(useWorktrees.getState().ask).toBeNull();
+      // With the radar mark clear of ⋯, the cover is ⋯'s own.
+      at["worktree-radar"] = [164, 218];
+      act(() => button.focus());
+      expect(menu.style.paddingLeft).toBe("0px");
+      // The name isn't a mark: ⋯ covers its end, as any text cut short.
+      at["worktree-row-name"] = [20, 250];
+      fireEvent.pointerEnter(row);
+      expect(menu.style.paddingLeft).toBe("0px");
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("F-SH-03 D-2700 with no count, the row keeps ⋯'s room at its end, so ⋯ never covers a mark", () => {
+    marks();
+    useWorkspaces.setState({ list: [REPO, { ...WT, liveCount: 0 }] });
+    render(
+      <UiProvider>
+        <WorktreeRow wt={{ ...WT, liveCount: 0 }} base="main" />
+      </UiProvider>,
+    );
+    const row = screen.getByTestId("worktree-row");
+    const parts = [...row.children].filter((c) => !/\babsolute\b/.test(c.className));
+    expect(screen.queryByTestId("worktree-live")).toBeNull();
+    // As wide as a one-digit count: ⋯ covers 20 px of the row's contents
+    // (its 28 px at the row's edge, less the row's 8 px padding), and the
+    // room and the gap before it are 22.
+    const room = parts.at(-1);
+    expect(room?.getAttribute("data-testid")).toBe("worktree-menu-room");
+    expect(room?.getAttribute("aria-hidden")).toBe("true");
+    expect(room?.className.split(" ")).toEqual(expect.arrayContaining(["w-4", "shrink-0"]));
+    const menu = screen.getByTestId("worktree-row-menu");
+    expect(menu.className.split(" ")).toEqual(expect.arrayContaining(["absolute", "right-0"]));
+    expect(within(menu).getByRole("button").className.split(" ")).toContain("size-7");
+    expect(row.className.split(" ")).toEqual(expect.arrayContaining(["px-2", "gap-1.5"]));
   });
 
   it("F-SH-03 D-2701 new contents are measured again from nothing folded", () => {

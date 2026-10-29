@@ -44,11 +44,28 @@ export function fenceDefanged(lang: string, text: string): string {
   return safe === text ? fenced : `${fenced}\n${DEFANGED}`;
 }
 
+/** The sample CI job's failed step, as gh names it in each log line. */
+const FAILED_STEP = "Run pnpm test";
+/** When that step started, for its lines' timestamps. */
+const STEP_STARTED = Date.UTC(2026, 9, 27, 9, 14, 5, 120);
+
+/** The failed step's log as `gh run view --job <id> --log-failed` prints
+ * it, which the core passes on as it is (pr_checks.rs `log_tail`): each
+ * line after its job, its step and the timestamp Actions gave it. */
+export function ghLog(check: StoryCheck): string {
+  return (check.log ?? [])
+    .map((line, i) => {
+      const at = new Date(STEP_STARTED + i * 11).toISOString().replace(/Z$/, "0000Z");
+      return `${check.name}\t${FAILED_STEP}\t${at} ${line}`;
+    })
+    .join("\n");
+}
+
 /** "Send failure to agent" (pr_checks.rs `failure_prompt`): the instruction
  * is ours; the check's name, link and log are CI's. */
 export function failurePrompt(pr: number, check: StoryCheck): string {
   let ci = `Check: ${check.name}\nWorkflow: ${check.workflow}\nLink: ${check.link}`;
-  const log = (check.log ?? []).join("\n");
+  const log = ghLog(check);
   ci += log.trim()
     ? `\n\nFailed steps' log (last lines):\n${log}`
     : "\n\n(The failed steps printed nothing.)";

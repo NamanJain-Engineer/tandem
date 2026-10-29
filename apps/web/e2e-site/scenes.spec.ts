@@ -120,7 +120,7 @@ for (const r of RELEASE_PAGES) {
   }
 }
 
-test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
+test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 with changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.12.0/");
   const scene = page.locator('[data-scene="plan"]');
@@ -128,7 +128,7 @@ test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved ·
   await expect.poll(() => states(page, "plan"), { timeout: 20_000 }).toEqual(["finished"]);
   const shown = (selector: string) =>
     scene.locator(selector).evaluateAll((els) => els.filter((e) => getComputedStyle(e).opacity === "1").map((e) => e.textContent));
-  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 changes requested"]);
+  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 with changes requested"]);
   expect(await shown(".sc-plan-foot > .sc-swap:last-child > *")).toEqual(["Land 2 approved…"]);
 });
 

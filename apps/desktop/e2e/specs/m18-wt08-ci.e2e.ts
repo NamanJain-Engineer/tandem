@@ -255,4 +255,38 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     expect(["CI failed", ""]).toContain(String(await badge.getProperty("textContent")));
     expect(await badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
   });
+
+  it("F-SH-03 D-2700 ⋯ shows in place of the row's count, or in the room the row keeps for it, and covers no mark", async () => {
+    // Focus shows ⋯ as hover does.
+    await browser.execute(() =>
+      document.querySelector<HTMLElement>('button[aria-label="Actions for tandem/tidy"]')?.focus(),
+    );
+    await browser.pause(300);
+    const seen = await browser.execute(() => {
+      const row = document.querySelector<HTMLElement>(
+        '[data-testid="worktree-row"][data-branch="tandem/tidy"]',
+      );
+      const menu = row?.querySelector<HTMLElement>('[data-testid="worktree-row-menu"]');
+      const cover = menu?.getBoundingClientRect();
+      const under = (e: Element) => {
+        const r = e.getBoundingClientRect();
+        return cover !== undefined && r.width > 0 && r.right > cover.left + 0.5 && r.left < cover.right - 0.5;
+      };
+      const parts = Array.from(row?.children ?? []).filter((c) => c !== menu);
+      return {
+        shown: menu ? getComputedStyle(menu).opacity : null,
+        under: parts.filter(under).map((c) => c.getAttribute("data-testid")),
+        // Whatever it covers, it covers whole.
+        cut: parts
+          .filter(under)
+          .filter((c) => cover !== undefined && c.getBoundingClientRect().left < cover.left - 0.5)
+          .map((c) => c.getAttribute("data-testid")),
+      };
+    });
+    expect(seen.shown).toBe("1");
+    expect(seen.cut).toEqual([]);
+    expect(seen.under.length).toBe(1);
+    expect(["worktree-live", "worktree-menu-room"]).toContain(seen.under[0]);
+    await browser.keys("Escape");
+  });
 });
