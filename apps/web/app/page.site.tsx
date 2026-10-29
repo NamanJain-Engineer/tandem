@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-// The product scenes' styles load with the pages that show them (D-1880).
+// The product scenes' styles load with the pages that show them (D-1880):
+// the home page's own scenes' rules after the shared ones (D-2702).
 import "../components/site/scenes/scenes.css";
+import "../components/site/scenes/home.css";
 import { SiteFrame } from "../components/site/SiteFrame";
 import { Capabilities } from "../components/site/home/Capabilities";
 import { CtaBand } from "../components/site/home/CtaBand";

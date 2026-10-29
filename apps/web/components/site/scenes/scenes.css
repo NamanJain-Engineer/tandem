@@ -9,8 +9,15 @@
 
 .scene-box { container-type: inline-size; }
 
+/* One of the app's pixels at the window's scale: the window's em is 16 of
+   them. Registered, so it's worked out once, on the window, and a part
+   anywhere inside can be sized in the app's own pixels, whatever its
+   parent's font size. */
+@property --sc-px { syntax: "<length>"; inherits: true; initial-value: 1px; }
+
 .sc-window {
   --sc-line: var(--tn-border);
+  --sc-px: calc(1em / 16);
   position: relative;
   display: grid;
   grid-template-rows: 2.5em 1fr 1.5em;
@@ -27,39 +34,40 @@
   user-select: none;
 }
 
-/* Title bar: the mark, the mode switch and the omnibox. */
+/* Title bar: the mark, the mode switch, in Code mode the workspace menu's
+   button (a small ghost Button: the workspace's name and ⌄), and the
+   omnibox. */
 .sc-titlebar { display: flex; align-items: center; gap: 1.25em; padding-inline: 1em; border-bottom: 1px solid var(--sc-line); background: var(--tn-surface-1); }
 .sc-mark { width: 1.25em; height: 1.25em; }
 .sc-modes { display: inline-flex; gap: 0.125em; padding: 0.1875em; border-radius: 0.4375em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
 .sc-mode { padding: 0.125em 0.75em; border-radius: 0.3125em; font-size: 0.8125em; font-weight: 500; color: var(--tn-text-muted); }
 .sc-mode-on { color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 1px 0 var(--tn-edge-hi); }
+.sc-ws-button { gap: calc(6 * var(--sc-px)); height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); }
+.sc-ws-button-icon { width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); }
 .sc-omnibox { margin-left: auto; width: 16em; padding: 0.25em 0.75em; border-radius: 0.375em; font-size: 0.75em; color: var(--tn-text-subtle); background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
 
-.sc-body { position: relative; display: grid; grid-template-columns: 14em 1fr; min-height: 0; }
 
-/* The rail: the workspace and its worktrees. */
-.sc-rail { display: flex; flex-direction: column; gap: 0.25em; padding: 0.875em 0.625em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
-.sc-rail-head { padding: 0 0.5em 0.375em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; color: var(--tn-text-subtle); }
-.sc-ws { display: flex; align-items: center; justify-content: space-between; padding: 0.375em 0.5em; border-radius: 0.375em; font-size: 0.8125em; font-weight: 600; background: var(--tn-surface-3); }
-.sc-ws-count { display: inline-flex; align-items: center; gap: 0.375em; font-family: var(--font-mono); font-size: 0.875em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
-.sc-lane { display: grid; grid-template-columns: 1em 1fr; align-items: center; column-gap: 0.5em; row-gap: 0.125em; padding: 0.3125em 0.5em 0.3125em 1em; font-size: 0.75em; color: var(--tn-text-muted); }
-.sc-lane-name { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-radar { grid-column: 2; justify-self: start; padding: 0 0.5em; border-radius: 0.25em; font-size: 0.875em; color: var(--tn-status-waiting-text); background: var(--tn-status-waiting-soft); }
-
-/* Panes: four in a 2 × 2 grid, 6 px apart as in the app. */
-.sc-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 0.375em; padding: 0.375em; min-height: 0; }
 .sc-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 0.5em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
 .sc-pane-on { box-shadow: inset 0 0 0 1px var(--tn-border-strong), inset 0 2px 0 var(--tn-accent); }
-.sc-pane-head { display: flex; align-items: center; gap: 0.5em; height: 1.875em; flex: none; padding-inline: 0.625em; border-bottom: 1px solid var(--sc-line); font-size: 0.75em; }
+/* PaneChrome (UI_SPEC §2.20): 30 px, 12 px text, 6 px apart; the status
+   dot first, after the grip that only shows on hover (12 px, so the dot
+   sits 22 px in), and its buttons at the far end, at half strength until
+   the header is hovered, each 28 px around its icon. */
+.sc-pane-head { display: flex; align-items: center; gap: 0.5em; height: 2.5em; flex: none; padding-inline: calc(22 * var(--sc-px)) calc(4 * var(--sc-px)); border-bottom: 1px solid var(--sc-line); font-size: 0.75em; }
+.sc-pane-head .sc-dot svg { width: calc(6 * var(--sc-px)); height: calc(6 * var(--sc-px)); }
+.sc-pane-tools { margin-left: auto; display: inline-flex; align-items: center; color: var(--tn-text-muted); opacity: 0.5; }
+.sc-pane-tools svg { box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(7 * var(--sc-px)); }
+/* The worktree's chip (WorktreeChip): ⎇ and its name in 11 px, subtle. */
+.sc-wt-chip { display: inline-flex; flex: none; align-items: center; gap: calc(2 * var(--sc-px)); max-width: calc(160 * var(--sc-px)); overflow: hidden; font-size: calc(11 * var(--sc-px)); white-space: nowrap; color: var(--tn-text-subtle); }
+.sc-wt-chip-icon { flex: none; width: calc(11 * var(--sc-px)); height: calc(11 * var(--sc-px)); }
 .sc-pane-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--tn-text); white-space: nowrap; }
 /* PaneChrome: the first name in fg, then the title muted. */
 .sc-pane-name { flex: none; font-weight: 600; color: var(--tn-text); white-space: nowrap; }
 .sc-pane-name + .sc-pane-title { font-weight: 400; color: var(--tn-text-muted); }
 .sc-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.9375em; color: var(--tn-text-subtle); }
-.sc-pane-status { margin-left: auto; display: inline-flex; }
+.sc-pane-status { display: inline-flex; }
 .sc-term { position: relative; display: flex; flex-direction: column; gap: 0.1em; flex: 1; min-height: 0; padding: 0.625em 0.75em; overflow: hidden; font-family: var(--font-mono); font-size: 0.6875em; line-height: 1.6; color: var(--tn-text-muted); white-space: pre; background: var(--tn-bg); }
 .sc-line:first-child { color: var(--tn-text); }
-.sc-caret { width: 0.6em; height: 1.1em; background: var(--tn-text-muted); }
 
 /* EngineGlyph (D-1895): letters in fg on a 4 px tile in the engine's tint, at 80 % until its pane has focus. */
 .sc-glyph { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 1.5em; height: 1.5em; border-radius: 0.3em; font-size: 0.75em; font-weight: 600; line-height: 1; letter-spacing: -0.01em; color: var(--tn-text); background: var(--tn-surface-4); opacity: 0.8; }
@@ -70,31 +78,15 @@
 .sc-dot-swap { display: inline-grid; }
 .sc-dot-swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; }
 
-/* Buttons as the app draws them, and a row of them. */
-.sc-ask-actions { display: flex; gap: 0.5em; }
+/* Buttons as the app draws them. */
 .sc-btn { display: inline-flex; align-items: center; height: 1.875em; padding-inline: 0.75em; border-radius: 0.375em; font-family: var(--font-sans); font-size: 0.75em; font-weight: 500; white-space: nowrap; color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
 .sc-btn-primary { color: var(--tn-accent-fg); background: var(--tn-accent); box-shadow: none; }
-/* A status as text: its StatusDot shape and a sentence-case label (T3). */
-.sc-status { display: inline-flex; align-items: center; gap: 0.5em; font-family: var(--font-sans); font-size: 0.75em; white-space: nowrap; color: var(--tn-text-muted); }
 .sc-swap { display: inline-grid; justify-items: start; }
 .sc-swap > * { grid-area: 1 / 1; }
 
-/* Toasts and cards floating over the panes. */
-.sc-toast { position: absolute; right: 1em; display: flex; flex-direction: column; gap: 0.5em; width: 22em; padding: 0.875em 1em; border-radius: 0.75em; background: var(--tn-surface-3); box-shadow: inset 0 1px 0 var(--tn-edge-hi), var(--tn-elev-3); }
-/* Under the panes' headers (the grid's 0.375em, then a header's 1.875em in
-   its 0.75em font), so it never cuts through one. */
-.sc-toast-top { top: 2.25em; }
-.sc-toast-bottom { bottom: 1em; }
-.sc-toast-row { display: flex; align-items: center; gap: 0.5em; }
-.sc-toast-title { font-size: 0.8125em; font-weight: 600; }
+/* A dialog's body text. */
 .sc-toast-body { font-size: 0.75em; color: var(--tn-text-muted); }
-.sc-stat { font-family: var(--font-mono); font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
-.sc-add { color: var(--tn-diff-add-fg); }
-.sc-del { color: var(--tn-diff-del-fg); }
 .sc-chips { display: flex; flex-wrap: wrap; gap: 0.375em; }
-/* T3 (D-1887): a risk is an outlined tag, as the review queue's Badge; a check's result is text. */
-.sc-chip { padding: 0.125em 0.5em; border-radius: 0.25em; font-size: 0.6875em; font-weight: 500; color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
-.sc-chip-ok { padding-inline: 0.25em; box-shadow: none; }
 
 /* A pane that finishes lights its header once; the window catches the
    light once as it lands. */
@@ -121,6 +113,11 @@
    groups them by project. */
 .sc-group-lanes { display: flex; flex-direction: column; gap: 0.5em; margin-left: 0.375em; padding-left: 0.625em; border-left: 1px solid var(--sc-line); }
 .sc-card-wrap { position: relative; display: block; border-radius: 0.625em; }
+/* A card the app draws again in a new shape (the finished agent's, losing
+   its line when it's done): both in one place, each its own size, swapped
+   at once, so nothing under it moves (D-3003). */
+.sc-card-swap { display: grid; }
+.sc-card-swap > * { grid-area: 1 / 1; align-self: start; }
 /* An agent's card as AgentCard draws it (D-3002): the title row (its dot,
    its engine's tile, its first name, and at the right its state and how
    long it has held it), then its engine and worktree, then its latest line
@@ -133,17 +130,16 @@
 .sc-card-head .sc-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sc-card-state { flex: none; font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); white-space: nowrap; }
 .sc-card-meta { font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-subtle); white-space: nowrap; }
-/* A review card's line under its title is sans, as ReviewQueue's: engine, workspace and branch. */
-:is(.sc-item, .sc-toast, .sc-card) .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
+/* A Dashboard card's meta, under its title row, is sans, as AgentCard's. */
+.sc-card .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
 .sc-card-line { min-width: 0; overflow: hidden; font-size: 0.75em; color: var(--tn-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
 .sc-card-ask .sc-card { background: var(--tn-surface-3); }
 .sc-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 1px var(--tn-status-waiting), 0 0 1.5em -0.25em var(--tn-status-waiting-soft); }
 
-/* The review queue and a diff with a second opinion's comments. */
+/* The review queue (its card is home.css's) and a diff with a second
+   opinion's comments. */
 .sc-rev { position: relative; display: grid; grid-template-columns: 26em 1fr; min-height: 0; }
-.sc-rev-list { display: flex; flex-direction: column; gap: 0.625em; padding: 1.25em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
-.sc-item { display: flex; flex-direction: column; gap: 0.625em; padding: 0.875em; border-radius: 0.625em; background: var(--tn-surface-2); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--sc-line); }
-.sc-item-on { background: var(--tn-surface-3); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--tn-border-strong); }
+.sc-rev-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
 .sc-diff { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .sc-diff-head { display: flex; align-items: center; justify-content: space-between; height: 2.25em; padding-inline: 1em; border-bottom: 1px solid var(--sc-line); }
 .sc-diff-body { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding-block: 0.5em; font-family: var(--font-mono); font-size: 0.6875em; line-height: 1.9; }
@@ -164,8 +160,6 @@
 .sc-diff-note { display: flex; align-items: center; gap: 0.5em; padding: 0.5em 1em 0.5em calc(7em / 1.1); border-block: 1px solid var(--tn-border); font-family: var(--font-sans); font-size: 1.1em; line-height: 1.45; white-space: normal; color: var(--tn-text); background: var(--tn-surface-2); }
 .sc-diff-note-text { flex: 1; min-width: 0; }
 .sc-diff-note .sc-btn { font-size: 0.9em; }
-/* The card's actions wrap, as ReviewQueue's do. */
-.sc-item-actions { flex-wrap: wrap; gap: 0.375em; }
 
 /* Land worktrees: the dialog over the workspace. */
 .sc-land-body { display: grid; place-items: center; min-height: 0; padding: 1.5em; background: radial-gradient(60% 60% at 50% 40%, var(--tn-surface-1), var(--tn-bg)); }
@@ -228,8 +222,11 @@
 /* Spinner (UI_SPEC §2.18): a faint ring and its arc in the text's colour. */
 .sc-spin { display: inline-block; flex: none; width: 0.85em; height: 0.85em; border-radius: 50%; border: 0.14em solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; }
 
-/* A terminal's blank line (Lines draws "" as a short gap). */
+/* A terminal's blank line (Lines draws "" as a short gap), and a line that
+   wraps at the pane's edge, its next lines under its text, after the
+   indent or the prompt mark. */
 .sc-line-gap { height: 0.5em; flex: none; }
+.sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
 
 /* WorktreeReview's bar under a diff (the Review and CI scenes). */
 .sc-review-bar { display: flex; align-items: center; gap: 0.5em; margin: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; background: var(--tn-surface-3); box-shadow: inset 0 0 0 1px var(--sc-line); }
@@ -241,11 +238,43 @@
 .sc-review-doing { font-size: 0.75em; color: var(--tn-text-muted); white-space: nowrap; }
 .sc-btn-sm { height: 1.75em; padding-inline: 0.625em; font-size: 0.6875em; }
 
-/* A toast, bottom right, as the app's (UI_SPEC §2.12): a bar in its tone,
-   its title, and its action under it. */
-.sc-note-toast { position: absolute; right: 1em; bottom: 1em; z-index: 4; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; width: 22em; padding: 0.75em 1em 0.75em 1.25em; overflow: hidden; border-radius: 0.5em; background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), inset 0 0 0 1px var(--tn-border); }
-.sc-note-toast::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 0.25em; background: var(--tn-success); }
-.sc-note-toast-title { font-size: 0.8125em; font-weight: 500; }
+/* A toast as the app's (Toast.tsx, UI_SPEC §2.12): 360 px on surface-3,
+   its border and e2 shadow, 10 px corners, a 3 px bar in its tone down its
+   left edge; its title, body and action (a small secondary Button), and ×
+   at the right. The app stacks them 16 px in from the window's right edge
+   and 32 px above its bottom one, which is 10 above its status bar: a
+   scene places one in the window's body, above its status bar. */
+.sc-note-toast { position: absolute; right: calc(16 * var(--sc-px)); bottom: calc(10 * var(--sc-px)); z-index: 4; display: flex; gap: calc(12 * var(--sc-px)); width: calc(360 * var(--sc-px)); padding: calc(12 * var(--sc-px)) calc(8 * var(--sc-px)) calc(12 * var(--sc-px)) calc(16 * var(--sc-px)); overflow: hidden; border-radius: calc(10 * var(--sc-px)); background: var(--tn-surface-3); box-shadow: var(--tn-elev-2), inset 0 0 0 1px var(--tn-border); }
+.sc-note-toast::before { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(3 * var(--sc-px)); background: var(--tn-info); }
+.sc-tone-success::before { background: var(--tn-success); }
+.sc-tone-warning::before { background: var(--tn-warning); }
+.sc-tone-error::before { background: var(--tn-danger); }
+.sc-note-toast-text { display: flex; flex: 1; flex-direction: column; gap: calc(2 * var(--sc-px)); min-width: 0; }
+.sc-note-toast-title { font-size: calc(13 * var(--sc-px)); line-height: calc(20 * var(--sc-px)); font-weight: 500; }
+.sc-note-toast-body { font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-note-toast-action { display: flex; margin-top: calc(4 * var(--sc-px)); }
+.sc-note-toast-action .sc-btn { height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); box-shadow: inset 0 0 0 1px var(--tn-border); }
+.sc-note-toast-x { flex: none; box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(5 * var(--sc-px)); color: var(--tn-text-subtle); }
+
+/* The app's Badge (Badge.tsx, UI_SPEC §2.13): 18 px tall, 6 px in from its
+   4 px corners, 10 px medium text in its tone's text colour, a 1 px border
+   in its tone, mixed as the app's `border-done/40` compiles, inside its
+   18 px (the site's border-box, as the app's), and no fill; the neutral
+   one is filled instead, with no border. A quiet one is its 11 px text
+   alone (D-2601). */
+.sc-badge, .sc-badge-quiet { display: inline-flex; flex: none; align-items: center; height: calc(18 * var(--sc-px)); font-weight: 500; line-height: 1; white-space: nowrap; }
+.sc-badge { padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); }
+.sc-badge-quiet { font-size: calc(11 * var(--sc-px)); }
+.sc-badge-neutral { color: var(--tn-text-muted); }
+.sc-badge-outline { color: var(--tn-text-muted); }
+.sc-badge-waiting { color: var(--tn-status-waiting-text); }
+.sc-badge-done { color: var(--tn-status-done-text); }
+.sc-badge-error { color: var(--tn-status-error); }
+.sc-badge.sc-badge-neutral { background: var(--tn-surface-4); }
+.sc-badge.sc-badge-waiting { border: 1px solid color-mix(in oklab, var(--tn-status-waiting) 50%, transparent); }
+.sc-badge.sc-badge-done { border: 1px solid color-mix(in oklab, var(--tn-status-done) 40%, transparent); }
+.sc-badge.sc-badge-error { border: 1px solid color-mix(in oklab, var(--tn-status-error) 40%, transparent); }
+.sc-badge.sc-badge-outline { border: 1px solid var(--tn-border-strong); }
 
 /* A count's final number is text; while it counts, a CSS counter shows. */
 @property --sc-n { syntax: "<integer>"; inherits: false; initial-value: 0; }
@@ -255,10 +284,7 @@
 /* A narrow frame (a phone): the rail and two panes go, the rest grows. */
 @container (max-width: 40rem) {
   .sc-window { font-size: calc(100cqw / 28); aspect-ratio: 28 / 34; }
-  .sc-body { grid-template-columns: 1fr; }
-  .sc-rail, .sc-hide-narrow, .sc-omnibox { display: none; }
-  .sc-grid { grid-template-columns: 1fr; }
-  .sc-toast { left: 1em; right: 1em; width: auto; }
+  .sc-hide-narrow, .sc-omnibox { display: none; }
   .sc-dash { padding: 1em; }
   .sc-dash-group, .sc-seg { display: none; }
   .sc-rev { grid-template-columns: 1fr; }

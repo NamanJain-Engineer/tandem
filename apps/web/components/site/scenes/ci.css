@@ -1,9 +1,18 @@
 /* The CI scene's own rules (0.9.0's "CI results and review comments back
-   to the agent", D-3001): the rail row's checks, the status bar's CI, the
-   agent's pane, the Files panel and its branch menu, Open diff and the
-   Checks dialog. Only a page that plays that scene inlines them
+   to the agent", D-3001): its rail and the row's checks, the status bar's
+   CI, the agent's pane, the Files panel and its branch menu, Open diff and
+   the Checks dialog. Only a page that plays that scene inlines them
    (releaseScenes.tsx's `css`), so the home page and the other release
    pages don't load them. They build on scenes.css, which comes first. */
+
+/* The window's body: the rail with the repository and its worktrees, and
+   the main area. */
+.sc-body { position: relative; display: grid; grid-template-columns: 14em 1fr; min-height: 0; }
+.sc-rail { display: flex; flex-direction: column; gap: 0.25em; padding: 0.875em 0.625em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
+.sc-rail-head { padding: 0 0.5em 0.375em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; color: var(--tn-text-subtle); }
+.sc-ws { display: flex; align-items: center; justify-content: space-between; padding: 0.375em 0.5em; border-radius: 0.375em; font-size: 0.8125em; font-weight: 600; background: var(--tn-surface-3); }
+.sc-lane { display: grid; grid-template-columns: 1em 1fr; align-items: center; column-gap: 0.5em; row-gap: 0.125em; padding: 0.3125em 0.5em 0.3125em 1em; font-size: 0.75em; color: var(--tn-text-muted); }
+.sc-lane-name { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The agent's pane beside the side panel; the rail's selected row and its
    checks (on a phone, a strip over the pane). */
@@ -25,9 +34,12 @@
 .sc-ci-seg-fail { color: var(--tn-danger); }
 .sc-ci-seg-pass { color: var(--tn-status-done-text); }
 
-/* The agent's pane: what it ran before, the prompt as typed, its fix. */
+/* The agent's pane: what it ran before, dimmed. */
 .sc-term .sc-line-old { color: var(--tn-text-subtle); }
-.sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
+
+/* A diff's size, its lines added and removed in their colours. */
+.sc-add { color: var(--tn-diff-add-fg); }
+.sc-del { color: var(--tn-diff-del-fg); }
 
 /* The side: the Files panel, then Open diff in its place. */
 .sc-ci-side { display: grid; min-height: 0; }
@@ -71,20 +83,15 @@
 .sc-ci-check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
 .sc-ci-check-head { display: flex; align-items: center; gap: 0.5em; align-self: stretch; font-size: 0.75em; }
 .sc-ci-check-flow { font-size: calc(11em / 12); color: var(--tn-text-subtle); }
-/* A check's result as the app's Badge draws it (Badge.tsx): a box 18 px tall
-   with 4 px corners, 6 px of padding and a 1 px border inside it, in its
-   tone at 40 %, mixed as the app's `border-done/40` compiles; its text 10 px
-   in its tone's text colour; no fill and no pill (DESIGN §4.5). Sized in
-   its row's 12 px (text-sm). */
-.sc-badge { margin-left: auto; display: inline-flex; align-items: center; height: 1.8em; padding-inline: 0.6em; border-radius: 0.4em; font-size: calc(10em / 12); font-weight: 500; line-height: 1; white-space: nowrap; }
-.sc-badge-done { color: var(--tn-status-done-text); border: 1px solid color-mix(in oklab, var(--tn-status-done) 40%, transparent); }
-.sc-badge-error { color: var(--tn-status-error); border: 1px solid color-mix(in oklab, var(--tn-status-error) 40%, transparent); }
-.sc-badge-outline { color: var(--tn-text-muted); border: 1px solid var(--tn-border-strong); }
+/* A check's result is the app's Badge (scenes.css), at the row's end. */
+.sc-ci-check-head .sc-badge { margin-left: auto; }
 .sc-ci-foot { gap: 0.5em; }
 /* Refresh reading: its spinner, then its label (the app's loading Button). */
 .sc-ci-foot .sc-btn { gap: 0.5em; }
 
 @container (max-width: 40rem) {
+  .sc-body { grid-template-columns: 1fr; }
+  .sc-rail { display: none; }
   .sc-ci-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .sc-ci-strip { display: grid; padding-left: 0.75em; }
   .sc-ci-side { display: contents; }

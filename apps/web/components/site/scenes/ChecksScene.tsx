@@ -2,7 +2,7 @@ import { Check, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
 import { SAMPLE, failurePrompt, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
-import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, visit, type Agents, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, pasted, visit, type Agents, type DiffRow } from "./parts";
 
 /** When things happen, in seconds from the scene's start. */
 export const CI_T = {
@@ -90,6 +90,28 @@ NOTES.set(
     <span className="sc-btn sc-btn-ghost">{t("worktree.review.remove")}</span>
   </span>,
 );
+
+/** How many of the log's last lines the agent's pane shows. */
+export const LOG_TAIL = 6;
+
+/** The failure as the agent's terminal shows it once it's typed in, as one
+ * paste: the prompt's start, down to its log's heading, then, past the
+ * lines that scrolled by, the log's last lines and the fence's end. The
+ * prompt the agent gets is the core's whole (a test reads it). */
+export function echoed(prompt: string): string[] {
+  const lines = pasted(prompt);
+  const head = lines.findIndex((l) => l.trim() === "Failed steps' log (last lines):");
+  if (head < 0 || lines.length - head - 1 <= LOG_TAIL + 1) return lines;
+  return [...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))];
+}
+
+/** What of the echoed failure a phone's pane leaves out, where it has less
+ * room: the blank lines, the link and, past the ⋮ when there is one, the
+ * log's lines but its last two and the fence's end. */
+export function foldEchoed(typed: readonly string[]): (line: string, i: number) => boolean {
+  const gap = typed.indexOf("  ⋮");
+  return (l, i) => l === "" || l.startsWith("  Link: ") || (gap >= 0 && i > gap && i < typed.length - 3);
+}
 
 /** The agent through the scene: done with its first task, working once the
  * failure is sent, done again after its commit. */
@@ -370,15 +392,7 @@ function Review() {
  * ready to send on. About 14 s, played once. */
 export function ChecksScene() {
   const failure = failed[0];
-  const prompt = failurePrompt(pr.number, { name: failure?.name ?? "", workflow: pr.workflow, link: pr.link }, pr.log).split("\n");
-  // Typed as one paste: the first line after the prompt mark, the rest under it.
-  let first = true;
-  const typed = prompt.map((l) => {
-    if (l === "") return "";
-    const line = `${first ? "› " : "  "}${l}`;
-    first = false;
-    return line;
-  });
+  const typed = echoed(failurePrompt(pr.number, { name: failure?.name ?? "", workflow: pr.workflow, link: pr.link }, pr.log));
   return (
     <AppWindow className="sc-ci">
       <div className="sc-body">
@@ -404,6 +418,7 @@ export function ChecksScene() {
             title={agent.title}
             branch={agent.branch}
             focused
+            solo
             doneAt={T.done}
             status={<Changes steps={AGENT} />}
           >
@@ -414,9 +429,9 @@ export function ChecksScene() {
               </span>
             ))}
             {/* The failure, typed in when it's sent, behind the dialog. On a
-                phone the link, the blank lines and the agent's last words
-                fold away, so the commit still shows. */}
-            <Lines lines={typed} start={T.sent} step={0.08} className="sc-line-wrap" fold={(l) => l === "" || l.startsWith("  Link: ")} />
+                phone the link, the blank lines, most of the log and the
+                agent's last words fold away, so the commit still shows. */}
+            <Lines lines={typed} start={T.sent} step={0.08} className="sc-line-wrap" fold={foldEchoed(typed)} />
             <Lines lines={pr.fix.lines} start={T.work} end={T.done} className="sc-line-wrap" fold={(_, i) => i === pr.fix.lines.length - 1} />
           </Pane>
           <div className="sc-ci-side">
@@ -424,9 +439,9 @@ export function ChecksScene() {
             <Review />
           </div>
         </div>
-        <Toast title={t("failure.sent", { name: agent.name })} at={T.sent} />
-        <Toast title={t("git.pushed", { branch: pr.branch })} at={T.pushed} />
-        <Toast title={t("worktree.review.imported", { n: pr.comments.length })} at={T.imported} />
+        <Toast tone="success" title={t("failure.sent", { name: agent.name })} at={T.sent} />
+        <Toast tone="success" title={t("git.pushed", { branch: pr.branch })} at={T.pushed} />
+        <Toast tone="success" title={t("worktree.review.imported", { n: pr.comments.length })} at={T.imported} />
       </div>
       <StatusBar
         branch={agent.branch}

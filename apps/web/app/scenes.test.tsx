@@ -5,25 +5,25 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { DASHBOARD_CAPTION, DASH_AGENTS, DASH_T, DashboardScene, SINCE_START, cardState, dashboardSceneText } from "../components/site/scenes/DashboardScene";
+import { DASHBOARD_CAPTION, DASH_AGENTS, DASH_T, DASH_TOOLS, DashboardScene, SINCE_START, cardState, dashboardSceneText } from "../components/site/scenes/DashboardScene";
 import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
-import { HERO_ASK, HERO_DONE, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
-import { Changes, Glyph } from "../components/site/scenes/parts";
-import { PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
+import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
+import { Changes, Glyph, pasted } from "../components/site/scenes/parts";
+import { PLAN_AGENTS, PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
 import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE } from "../lib/release";
-import { DEFANGED, LANDS, SAMPLE, SCENE_BUILD, atLeast, failurePrompt, promptTitle, t, untrustedLabel } from "../lib/scenes";
+import { DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, SAMPLE, SCENE_BUILD, atLeast, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
 import { SCENE_PAGES, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import story from "../../desktop/src/demo/story.json";
-import { REVIEW_DIFF, REVIEW_FILE, REVIEW_T, notesFor } from "../components/site/scenes/ReviewScene";
-import { CI_AGENTS, CI_T, ChecksScene, SESSION_DIFF, ciSceneText } from "../components/site/scenes/ChecksScene";
+import { REVIEW_AGENTS, REVIEW_DIFF, REVIEW_FILE, REVIEW_T, notesFor } from "../components/site/scenes/ReviewScene";
+import { CI_AGENTS, CI_T, ChecksScene, LOG_TAIL, SESSION_DIFF, ciSceneText, echoed, foldEchoed } from "../components/site/scenes/ChecksScene";
 import names from "../../desktop/src/data/names.json";
 import { parsePatch } from "@tandem/ui/components/DiffView";
 
@@ -47,16 +47,36 @@ type Row = readonly [string, string, number | null, number | null];
  * It's what the app shows, since its diffs are git's. */
 function gitDiff(place: string, file: string): Row[][] {
   const shop = join(import.meta.dirname, "../../desktop/src/demo/shop");
-  const args = ["diff", "--no-index", "--no-color", "--no-ext-diff", "-U3", join(shop, "main", `${file}.sample`), join(shop, place, `${file}.sample`)];
+  // git's defaults, whatever the machine running the test has set: its
+  // algorithm and context named, no external diff, no config file read,
+  // no GIT_* variable passed on, and run from an empty folder that's no
+  // repository's.
+  const args = [
+    "diff",
+    "--no-index",
+    "--no-color",
+    "--no-ext-diff",
+    "--diff-algorithm=myers",
+    "--indent-heuristic",
+    "-U3",
+    join(shop, "main", `${file}.sample`),
+    join(shop, place, `${file}.sample`),
+  ];
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("GIT_")) delete env[k];
+  Object.assign(env, { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
+  const cwd = mkdtempSync(join(tmpdir(), "scenes-diff-"));
   let patch = "";
   try {
-    execFileSync("git", args, { encoding: "utf8" });
+    execFileSync("git", args, { encoding: "utf8", cwd, env });
   } catch (e) {
     const err = e as { code?: string; status?: number; stdout?: string; stderr?: string };
     if (err.code === "ENOENT") throw new Error("scenes.test needs git: the scenes' diffs are checked against git's own diff of the sample files");
     // git diff exits 1 when the files differ; anything else is a failure.
     if (err.status !== 1) throw new Error(`git diff failed (${err.status}): ${err.stderr ?? ""}`);
     patch = err.stdout ?? "";
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
   const hunks: Row[][] = [];
   for (const l of parsePatch(patch)) {
@@ -368,53 +388,65 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(new Set(story.worktrees.map((w) => w.agentName)).size).toBe(story.worktrees.length);
   });
 
-  it("F-WB-01 AC9 D-3000 an agent goes by its first name, and its pane by the first words of its task, as the app titles them", () => {
+  it("F-WB-01 AC9 D-3000 D-2702 an agent goes by its first name, its pane by the first words of its task and its tab by the first five, as the app titles them", () => {
     // promptTitle (features/code/titles.ts): the first eight words, then an ellipsis.
     const titles = readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/titles.ts"), "utf8");
     expect(titles).toContain("const head = words.slice(0, 8).join(\" \");");
     expect(titles).toContain("return words.length > 8 ? `${head}…` : head;");
     expect(promptTitle("one two three four five six seven eight")).toBe("one two three four five six seven eight");
     expect(promptTitle("  one two three four five six seven eight nine ")).toBe("one two three four five six seven eight…");
-    const w = renderToStaticMarkup(<WorkspaceScene />);
+    // tabLabel: a tab still on its default name takes its first agent's task, to five words.
+    expect(titles).toContain("export function tabLabel(name: string, workspace: string, task: string | null = null, words = 5): string {");
+    expect(titles).toContain('return parts.length > words ? `${parts.slice(0, words).join(" ")}…` : parts.join(" ");');
+    expect(tabTitle("one two three four five")).toBe("one two three four five");
+    expect(tabTitle(" one two three four five six ")).toBe("one two three four five…");
     for (const role of ["finished", "working", "waiting"] as const) {
-      const { name, title } = SAMPLE.worktrees[role];
-      expect(title).toBe(promptTitle(story.worktrees.find((x) => x.agentName === name)?.task ?? ""));
-      // PaneChrome: the first name, then the title.
-      expect(w, role).toContain(`<span class="sc-pane-name">${name}</span><span class="sc-pane-title">${esc(title)}</span>`);
+      const { name, title, task } = SAMPLE.worktrees[role];
+      expect(task).toBe(story.worktrees.find((x) => x.agentName === name)?.task);
+      expect(title).toBe(promptTitle(task));
     }
-    // The shell is "Shell · {folder}".
-    expect(w).toContain(`<span class="sc-pane-title">${esc(t("pane.shellIn", { folder: SAMPLE.workspace }))}</span>`);
+    // The hero's one pane is the finished worktree's agent's (PaneChrome: the first name, then the title), in its tab.
+    const w = renderToStaticMarkup(<WorkspaceScene />);
+    const { finished } = SAMPLE.worktrees;
+    expect(w.match(/<div class="sc-pane[ "]/g)).toHaveLength(1);
+    expect(w).toContain(`<span class="sc-pane-name">${finished.name}</span><span class="sc-pane-title">${esc(finished.title)}</span>`);
+    expect(w).toContain(`<span class="sc-tab">${esc(tabTitle(finished.task))}</span>`);
     for (const engine of Object.values(story.engines)) expect(w).not.toContain(`>${esc(t("pane.engine", { engine: engine.label, n: 1 }))}<`);
   });
 
-  it("F-WB-01 AC9 D-3000 the hero's panes print every story line before what comes next in them, however many lines the story has", () => {
+  it("F-WB-01 AC9 D-3000 D-2702 the hero's pane prints every story line before what comes next in it, however many lines the story has", () => {
     const h = renderToStaticMarkup(<WorkspaceScene />);
-    // Each pane, from its root (not its head) to the next one's.
-    const panes = h.split(/<div class="sc-pane(?:"| )/).slice(1);
-    const pane = (name: string) => panes.find((p) => p.includes(`<span class="sc-pane-name">${name}</span>`)) ?? "";
+    const pane = /<div class="sc-pane[ "][\s\S]*?<div class="sc-term">([\s\S]*?)<\/div><\/div>/.exec(h);
+    const term = pane?.[1] ?? "";
     const times = (p: string, re: RegExp) => [...p.matchAll(re)].map((m) => Number(m[1]));
-    const lines = (p: string) => times(p, /<span class="sc-line" data-fx-line="" style="--at:([\d.]+)s">/g);
-    const { finished, working, waiting } = SAMPLE.worktrees;
-    // The finished one: all its lines, then done, when its header flashes.
-    const c = pane(finished.name);
-    expect(lines(c).length).toBe(SAMPLE.lines.finished.length);
-    expect(times(c, /class="sc-flash" data-fx-visit="" style="--at:([\d.]+)s/g)).toEqual([HERO_DONE]);
-    expect(Math.max(...lines(c))).toBeLessThan(HERO_DONE);
-    // The working one: all its lines, then the caret waiting on its tests.
-    const x = pane(working.name);
-    expect(Math.max(...lines(x).slice(0, SAMPLE.lines.working.length))).toBeLessThan(times(x, /class="sc-line sc-caret" data-fx-line="" style="--at:([\d.]+)s/g)[0] ?? 0);
-    // The waiting one: all its lines, then its ask to run the tests.
-    const g = pane(waiting.name);
-    expect(Math.max(...lines(g).slice(0, SAMPLE.lines.waiting.length))).toBeLessThan(times(g, /class="sc-line sc-line-ask" data-fx-line="" style="--at:([\d.]+)s/g)[0] ?? 0);
-    // The radar sees the shared function only once both panes have edited
-    // its file: its rail marks and its notice come after both coupon.ts lines.
-    const edited = (p: string) => times(p, new RegExp(`data-fx-line="" style="--at:([\\d.]+)s">  editing ${re(story.overlap.file)}`, "g"));
-    const both = Math.max(...edited(c), ...edited(x));
-    expect(edited(c).length * edited(x).length).toBe(1);
+    const at = (line: string) => times(term, new RegExp(`data-fx-line="" style="--at:([\\d.]+)s">${re(esc(line))}</span>`, "g"));
+    const { finished } = SAMPLE.worktrees;
+    // Every line of the finished one's story, in order, each once, then its closing words when it's done and its header flashes.
+    const printed = SAMPLE.lines.finished.map((l) => at(l));
+    for (const [i, a] of printed.entries()) expect(a, SAMPLE.lines.finished[i]).toHaveLength(1);
+    const when = printed.map((a) => a[0] ?? 0);
+    expect([...when].sort((a, b) => a - b)).toEqual(when);
+    expect(Math.max(...when)).toBeLessThan(HERO_DONE);
+    expect(at(`  ${finished.closing}`)).toEqual([HERO_DONE]);
+    expect(times(pane?.[0] ?? "", /class="sc-flash" data-fx-visit="" style="--at:([\d.]+)s/g)).toEqual([HERO_DONE]);
+    expect(finished.closing).toBe(story.worktrees.find((w) => w.state === "done")?.closing);
     if (LANDS) {
-      const radar = [...times(h, /<span class="sc-radar" data-fx-enter="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-toast sc-toast-top" data-fx-slide="" style="--at:([\d.]+)s">/g)];
-      expect(radar.length).toBe(3);
-      for (const r of radar) expect(r).toBeGreaterThan(both);
+      // The radar sees the shared function once the agent has edited its file: its rail marks and its notice come after
+      // that line, and the note it types arrives in the pane after the press, before the tests run.
+      const edited = at(SAMPLE.lines.finished.find((l) => l.startsWith(`  editing ${story.overlap.file}`)) ?? "");
+      expect(edited).toHaveLength(1);
+      const radar = [...times(h, /<span class="sc-wtrow-radar" data-fx-enter="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-note-toast sc-tone-warning" data-fx-visit="" style="--at:([\d.]+)s;/g)];
+      expect(radar.length).toBeGreaterThanOrEqual(3);
+      for (const r of radar) expect(r).toBeGreaterThan(edited[0] ?? 0);
+      const note = pasted(SAMPLE.radar.note).filter((l) => l !== "");
+      const typed = note.map((l) => times(term, new RegExp(`<span class="sc-line sc-line-wrap sc-hide-narrow" data-fx-line="" style="--at:([\\d.]+)s">${re(esc(l))}</span>`, "g")));
+      for (const [i, a] of typed.entries()) expect(a, note[i]).toHaveLength(1);
+      const run = at(SAMPLE.lines.finished.at(-2) ?? "")[0] ?? 0;
+      const press = Number(/<span class="sc-btn sc-btn-sm" data-fx-press="" style="--at:([\d.]+)s">/.exec(h)?.[1]);
+      for (const a of typed) {
+        expect(a[0]).toBeGreaterThan(press);
+        expect(a[0]).toBeLessThan(run);
+      }
     }
   });
 
@@ -422,9 +454,15 @@ describe("F-WB-01 AC9 product scenes", () => {
     const h = renderToStaticMarkup(<LandScene />);
     const rows = h.split('<span class="sc-lane-row"').slice(1);
     expect(rows.length).toBe(story.worktrees.length);
+    // The pull request's worktree has its agent's fix for the failed check too: the demo adds the fix's commit to its
+    // own once it's made (backend.ts's fixCi), and the CI scene shows it made.
+    const backend = readFileSync(join(import.meta.dirname, "../../desktop/src/demo/backend.ts"), "utf8");
+    expect(backend).toContain("this.madeHere[w.slug] = [fix.commit, ...(this.madeHere[w.slug] ?? [])];");
+    expect(backend).toContain("return [...(this.madeHere[slug] ?? []), ...(STORY.worktrees.find((w) => w.slug === slug)?.commits ?? [])];");
     story.worktrees.forEach((w, i) => {
       expect(rows[i], w.slug).toContain(`>${w.slug}<`);
-      expect(rows[i], w.slug).toContain(`${t("landing.commits", { n: w.commits.length })} · ${t("landing.forecast.clean")}`);
+      const n = w.commits.length + (w.slug === story.pr.worktree ? 1 : 0);
+      expect(rows[i], w.slug).toContain(`${t("landing.commits", { n })} · ${t("landing.forecast.clean")}`);
       expect(rows[i], w.slug).toContain(esc(t("landing.step.landed", { commit: w.mergeCommit })));
     });
     expect(h).toContain(`<span class="sc-input">${esc(story.check)}</span>`);
@@ -455,7 +493,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(h).toContain(`>${esc(t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name }))}<`);
     expect(h).not.toContain(`>${t("worktree.review.send")}<`);
     // The card is titled by its first name (ReviewQueue).
-    expect(h).toContain(`<span class="sc-card-title">${SAMPLE.worktrees.finished.name}</span>`);
+    expect(h).toContain(`<span class="sc-rq-title">${SAMPLE.worktrees.finished.name}</span>`);
     // Its meta line is ReviewQueue's: the engine, the workspace, the branch, how long ago it finished ("4m", its ago()).
     const queue = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/ReviewQueue.tsx"), "utf8");
     expect(queue).toContain('{[engine, item.workspace, item.branch, ago(item.finishedAt, now)].filter(Boolean).join(" · ")}');
@@ -468,13 +506,13 @@ describe("F-WB-01 AC9 product scenes", () => {
     const lanesRs = readFileSync(join(import.meta.dirname, "../../desktop/src-tauri/src/services/lanes.rs"), "utf8");
     expect(lanesRs).toContain("name: lane.slug.clone(),");
     const fin = SAMPLE.worktrees.finished;
-    expect(h).toContain(`<span class="sc-card-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: REVIEW_T.finished })}`)}</span>`);
+    expect(h).toContain(`<span class="sc-rq-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: REVIEW_T.finished })}`)}</span>`);
     expect(h).not.toContain(`${esc(fin.engine)} · ${SAMPLE.workspace} ·`);
     // The hero's card is the same line, arriving as the work finishes: 0m.
-    expect(renderToStaticMarkup(<WorkspaceScene />)).toContain(`<span class="sc-card-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: 0 })}`)}</span>`);
+    expect(renderToStaticMarkup(<WorkspaceScene />)).toContain(`<span class="sc-rq-meta">${esc(`${fin.engine} · ${fin.branch} · ${t("time.minutes", { n: 0 })}`)}</span>`);
     expect(h).not.toContain(esc(t("review.diffTitle", { name: SAMPLE.worktrees.finished.engine })));
     // Only finished work waits for review: one card.
-    expect(h.match(/class="sc-item[ "]/g)?.length).toBe(1);
+    expect(h.match(/class="sc-rq-card"/g)).toHaveLength(1);
     // A note starts where the code does: the gutter's width in the diff's
     // font, over the note's own font size (D-3000).
     const gutter = (/\.sc-diff-line \{[^}]*grid-template-columns: ([\d.]+)em ([\d.]+)em ([\d.]+)em /.exec(css) ?? []).slice(1, 4).reduce((a, b) => a + Number(b), 0);
@@ -516,7 +554,7 @@ describe("F-WB-01 AC9 product scenes", () => {
   it("F-WB-01 AC9 D-3000 Codex's comments arrive together, with its done toast, as review:second_opinion adds them, and no gap waits for them", () => {
     const h = renderToStaticMarkup(<ReviewScene />);
     const doneAt = String(REVIEW_T.done);
-    expect(h).toMatch(new RegExp(`<div class="sc-note-toast" data-fx-visit="" style="--at:${doneAt}s;[^"]*"><span class="sc-note-toast-title">${re(t("worktree.opinion.done", { engine: SAMPLE.reviewer, n: SAMPLE.comments.length }))}<`));
+    expect(h).toMatch(new RegExp(`<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:${doneAt}s;[^"]*"><span class="sc-note-toast-text"><span class="sc-note-toast-title">${re(t("worktree.opinion.done", { engine: SAMPLE.reviewer, n: SAMPLE.comments.length }))}<`));
     // Above the first commented line nothing changes. Under it, the rows as
     // they were leave as the same rows with the comments under their lines
     // come in, both when Codex is done, stacked in one cell, so the lines
@@ -546,19 +584,49 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(Number(enterBefore(h, t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name })))).toBeGreaterThan(Number(doneAt));
   });
 
-  it("F-WB-01 AC9 D-3001 the review queue's buttons are ReviewQueue's: Approve the primary, Open diff secondary, the rest ghosts, Second opinion pressed", () => {
-    const h = renderToStaticMarkup(<ReviewScene />);
-    const item = /<div class="sc-item[^"]*"[\s\S]*?<\/div>/.exec(h)?.[0] ?? "";
-    const buttons = [...item.matchAll(/<span class="sc-btn ([^"]*)"[^>]*>([^<]*)<\/span>/g)].map((m) => [m[2], m[1]]);
-    expect(buttons).toEqual([
-      [t("review.approve"), "sc-btn-sm sc-btn-primary"],
-      [t("review.openDiff"), "sc-btn-sm"],
-      [t("review.sendBack"), "sc-btn-sm sc-btn-ghost"],
-      [t("review.secondOpinion"), "sc-btn-sm sc-btn-ghost"],
-      [t("review.merge"), "sc-btn-sm sc-btn-ghost"],
-    ]);
-    expect(item).toContain(`<span class="sc-btn sc-btn-sm sc-btn-ghost" data-fx-press="" style="--at:${REVIEW_T.ask}s">${t("review.secondOpinion")}</span>`);
-    expect(item.match(/data-fx-press/g)?.length).toBe(1);
+  it("F-WB-01 AC9 D-3001 D-2702 a review card's buttons are ReviewCard's, in its order: Approve the primary, Open diff secondary, the rest ghosts", () => {
+    // ReviewCard's buttons as its source lists them: those a worktree's item has (Last turn needs a turn's checkpoint,
+    // which the demo's item hasn't; Snooze while it isn't snoozed), each with its variant.
+    const queue = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/ReviewQueue.tsx"), "utf8");
+    const card = queue.slice(queue.indexOf("function ReviewCard("), queue.indexOf("function Section("));
+    const BUTTONS = [
+      ["review-approve", "review.approve", "primary"],
+      ["review-open-diff", "review.openDiff", "secondary"],
+      ["review-send-back", "review.sendBack", "ghost"],
+      ["review-opinion", "review.secondOpinion", "ghost"],
+      ["review-merge", "review.merge", "ghost"],
+      ["review-run-check", "review.runCheck", "ghost"],
+      ["review-snooze", "review.snooze", "ghost"],
+      ["review-jump", "review.jump", "ghost"],
+      ["review-repo", "review.repo.menu", "ghost"],
+    ] as const;
+    const ids = [...card.matchAll(/data-testid="(review-[\w-]+)"/g)].map((m) => m[1]);
+    expect(ids.filter((id) => BUTTONS.some(([b]) => b === id))).toEqual(BUTTONS.map(([id]) => id));
+    expect(ids).toContain("review-turn");
+    for (const [id, key, variant] of BUTTONS) {
+      const at = card.indexOf(`data-testid="${id}"`);
+      const button = card.slice(card.lastIndexOf("<Button", at), at);
+      expect(button, id).toMatch(variant === "primary" ? /variant=\{approved \? "ghost" : "primary"\}/ : new RegExp(`variant="${variant}"`));
+      expect(card.slice(at, card.indexOf("</Button>", at)), id).toContain(id === "review-approve" ? 't("review.approve")' : `t("${key}")`);
+    }
+    // Run check once the check isn't running.
+    expect(card).toContain('{item.check && item.check.state !== "running" && (');
+    const drawn = (h: string) =>
+      [...h.matchAll(/<span class="sc-btn sc-btn-sm( sc-btn-primary| sc-btn-ghost)?"[^>]*>([^<]*)<\/span>/g)].map((m) => [m[2], m[1] === " sc-btn-primary" ? "primary" : m[1] === " sc-btn-ghost" ? "ghost" : "secondary"]);
+    const all = BUTTONS.map(([, key, variant]) => [esc(t(key)), variant]);
+    // The Review scene's card, its check passed: all of them, Second opinion pressed.
+    const review = /<span class="sc-rq-card">[\s\S]*$/.exec(renderToStaticMarkup(<ReviewScene />))?.[0] ?? "";
+    const actions = /<span class="sc-rq-actions">(?:<span[^>]*>[^<]*<\/span>)*<\/span>/.exec(review)?.[0] ?? "";
+    expect(drawn(actions)).toEqual(all);
+    expect(actions).toContain(`<span class="sc-btn sc-btn-sm sc-btn-ghost" data-fx-press="" style="--at:${REVIEW_T.ask}s">${t("review.secondOpinion")}</span>`);
+    expect(actions.match(/data-fx-press/g)).toHaveLength(1);
+    // The hero's, its check running then passed: without Run check, then with it, at once.
+    const hero = renderToStaticMarkup(<WorkspaceScene />);
+    const set = '(<span class="sc-rq-actions">(?:<span[^>]*>[^<]*</span>)*</span>)';
+    const swap = new RegExp(`<span class="sc-rq-actions-swap"><span data-fx-cut="" style="--at:([\\d.]+)s">${set}</span><span data-fx-show="" style="--at:([\\d.]+)s">${set}</span></span>`).exec(hero);
+    expect([Number(swap?.[1]), Number(swap?.[3])]).toEqual([HERO_T.passed, HERO_T.passed]);
+    expect(drawn(swap?.[2] ?? "")).toEqual(all.filter(([label]) => label !== esc(t("review.runCheck"))));
+    expect(drawn(swap?.[4] ?? "")).toEqual(all);
   });
 
   it("F-WB-01 AC9 D-3001 the second opinion shows where the app shows it: reviewing in the review bar, done as a toast with Show diff, then 2 comments · Copy review · Send", () => {
@@ -580,7 +648,7 @@ describe("F-WB-01 AC9 product scenes", () => {
       `<span class="sc-bar-state" data-fx-in="" style="--at:${REVIEW_T.done}s"><span class="sc-review-count">${t("worktree.review.count", { n })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-enter="" style="--at:${REVIEW_T.send}s">${esc(t("worktree.review.sendTo", { name: SAMPLE.worktrees.finished.name }))}</span></span>`,
     );
     // The done toast (SecondOpinion.tsx's notify), with its Show diff action; Send waits for it to go, as it covers the bar.
-    const toast = /<div class="sc-note-toast" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-title">([^<]*)<\/span><span class="sc-btn sc-btn-sm">([^<]*)<\/span><\/div>/.exec(h);
+    const toast = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">([^<]*)<\/span><span class="sc-note-toast-action"><span class="sc-btn sc-btn-sm">([^<]*)<\/span><\/span><\/span><svg[^>]*class="[^"]*sc-note-toast-x"[^>]*>[\s\S]*?<\/svg><\/div>/.exec(h);
     expect(toast?.slice(3)).toEqual([t("worktree.opinion.done", { engine: reviewer, n }), t("worktree.opinion.showDiff")]);
     expect(Number(toast?.[1])).toBe(REVIEW_T.done);
     expect(Number(toast?.[1]) + Number(toast?.[2])).toBeLessThan(REVIEW_T.send);
@@ -590,37 +658,85 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(/<div class="sc-diff-head">[\s\S]*?<\/div>/.exec(h)?.[0]).not.toContain(reviewer);
   });
 
-  it("F-WB-01 AC9 D-3001 the hero follows the story's states: the waiting agent ends on its ask, the working one at work", () => {
+  it("F-WB-01 AC9 D-2702 the hero's rail is CodeRail's: the repository with its branch and no panes of its own, then each worktree's row", () => {
+    const h = renderToStaticMarkup(<WorkspaceScene />);
+    const rail = /<nav class="sc-crail">[\s\S]*?<\/nav>/.exec(h)?.[0] ?? "";
+    expect(rail).toContain(`<span class="sc-crail-title">${t("rail.workspacesHeader")}</span>`);
+    // The repository's row: its folder and name, and its branch, since none of its own panes is busy (BranchChip).
+    const repo = /<span class="sc-wsrow">([\s\S]*?)<\/span><span class="sc-crail-group">/.exec(rail)?.[1] ?? "";
+    expect(repo).toContain("lucide-folder");
+    expect(repo).toContain(`<span class="sc-wsrow-name">${SAMPLE.workspace}</span>`);
+    expect(text(repo).endsWith(SAMPLE.base)).toBe(true);
+    // Its panes, none (every pane the demo opens is in a worktree), then its worktrees, in the story's order.
+    const code = readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/CodeRail.tsx"), "utf8");
+    expect(code).toMatch(/<WorkspaceSessions ws=\{ws\} \/>\s*\{worktreesOf\(list, ws\.id\)\.map\(\(wt\) => \(\s*<WorktreeRow/);
+    expect(code).toContain("if (s.waiting || s.working > 0 || s.failed) return null;");
+    const backend = readFileSync(join(import.meta.dirname, "../../desktop/src/demo/backend.ts"), "utf8");
+    expect(backend).toContain("...STORY.worktrees.map((w) => pane(agentPane(w), \"agent\", w.engine, w.slug, w.agentName)),");
+    expect(backend).toContain('pane("pn_shell", "terminal", null, WORKING.slug),');
+    expect(rail).toContain(`<span class="sc-crail-none">${t("rail.noSessions")}</span>`);
+    const rows = rail.split(/<span class="sc-wtrow[ "]/).slice(1);
+    expect(rows.map((r) => /<span class="sc-wtrow-name">([^<]*)<\/span>/.exec(r)?.[1])).toEqual(SAMPLE.order.map((w) => w.branch));
+    // Remote hosts at its foot, and no "running sessions" line: in 0.12.0 that's only a count badge's name.
+    expect(rail).toContain(`${t("rail.remoteHosts")}</span></span></nav>`);
+    expect(code).toContain("{t(\"rail.remoteHosts\")}");
+    expect(rail).not.toMatch(/running sessions?/);
+  });
+
+  it("F-WB-01 AC9 D-3001 D-2702 the hero follows the story's states: the rail's rows and the status bar follow each agent, the waiting one's Needs you", () => {
     const h = renderToStaticMarkup(<WorkspaceScene />);
     const { finished, working, waiting } = SAMPLE.worktrees;
-    const panes = h.split(/<div class="sc-pane(?:"| )/).slice(1);
-    const pane = (name: string) => panes.find((p) => p.includes(`<span class="sc-pane-name">${name}</span>`)) ?? "";
-    // The waiting one: working until it asks, then waiting, to the end; its ask stays, with the answer in place and unanswered.
-    const g = pane(waiting.name);
-    const swap = (to: string) => new RegExp(`<span class="sc-dot-swap"><span data-fx-out="" style="--at:${HERO_ASK}s">[\\s\\S]*?</span><span data-fx-pop="" style="--at:${HERO_ASK}s"><span class="sc-dot"><svg[^>]*data-status="${to}"`);
-    expect(g).toMatch(swap("waiting"));
-    // The engine asks in its own terminal (the demo's line), and waits: 0.12.0 raises no approval for an engine's own question.
-    expect(g).toContain(`<span class="sc-line sc-line-ask" data-fx-line="" style="--at:${HERO_ASK}s">${esc(SAMPLE.question.terminal)}</span></div>`);
-    for (const s of [t("dashboard.allowOnce"), t("dashboard.deny"), t("dashboard.wants", { summary: "" }).trim()]) expect(g, s).not.toContain(s);
-    expect(g).not.toContain("data-fx-press");
-    expect(g).not.toContain(`$ ${SAMPLE.ask}`);
-    // Its rail row says the same.
-    const rail = /<aside class="sc-rail">[\s\S]*?<\/aside>/.exec(h)?.[0] ?? "";
-    const row = (branch: string) => rail.split('<span class="sc-lane">').find((r) => r.includes(`>${branch}<`)) ?? "";
-    expect(row(waiting.branch)).toMatch(swap("waiting"));
-    // The working one stays at work, in its pane and its row; the finished one turns done.
-    for (const p of [pane(working.name), row(working.branch)]) {
-      expect(p).not.toContain("sc-dot-swap");
-      expect(p).toMatch(/data-status="working"/);
+    const rail = /<nav class="sc-crail">[\s\S]*?<\/nav>/.exec(h)?.[0] ?? "";
+    const row = (branch: string) => rail.split(/(?=<span class="sc-wtrow[ "])/).find((r) => r.includes(`<span class="sc-wtrow-name">${branch}</span>`)) ?? "";
+    // A row's trailing parts from each time on: [when it shows, when it's cut, what it holds].
+    const steps = (r: string) =>
+      [...r.matchAll(/<span class="sc-wtrow-step"(?: data-fx-show="" style="--at:([\d.]+)s")?><span class="sc-wtrow-parts"(?: data-fx-cut="" style="--at:([\d.]+)s")?>([\s\S]*?)<\/span><\/span>(?=<span class="sc-wtrow-step"|<\/span><span class="sc-wtrow-menu")/g)].map((m) => [
+        Number(m[1] ?? 0),
+        m[2] === undefined ? Infinity : Number(m[2]),
+        text(m[3] ?? ""),
+      ]);
+    const working1 = t("rail.working", { n: 1 });
+    const mark = t("radar.mark.one", { symbol: SAMPLE.symbol });
+    // Each shows until the next one: one row's parts at a time.
+    for (const w of SAMPLE.order) {
+      const all = steps(row(w.branch));
+      for (const [i, [, cut]] of all.entries()) expect(cut, w.branch).toBe(all[i + 1]?.[0] ?? Infinity);
     }
-    expect(row(finished.branch)).toMatch(new RegExp(`data-fx-pop="" style="--at:${HERO_DONE}s"><span class="sc-dot"><svg[^>]*data-status="done"`));
-    // The repository's working count follows: all of them, less the one that asks, less the one that finishes.
-    const count = /<span class="sc-ws-count">([\s\S]*?)<\/span><\/span><span class="sc-lane">/.exec(rail)?.[1] ?? "";
-    const n = SAMPLE.order.length;
-    expect(count).toContain(
-      `<span data-fx-cut="" style="--at:${HERO_ASK}s">${n}</span><span data-fx-enter="" style="--at:${HERO_ASK}s"><span data-fx-cut="" style="--at:${HERO_DONE}s">${n - 1}</span></span><span data-fx-enter="" style="--at:${HERO_DONE}s">${n - 2}</span>`,
+    const [m1 = 0, m2 = 0] = SAMPLE.radar.between.map((b) => Number(new RegExp(`<span class="sc-wtrow-name">${re(b)}</span>[\\s\\S]*?<span class="sc-wtrow-radar" data-fx-enter="" style="--at:([\\d.]+)s">`).exec(rail)?.[1]));
+    expect(SAMPLE.radar.between).toEqual([finished.branch, working.branch]);
+    // The finished one: at work, marked by the radar, then done, so only its mark and its pane.
+    expect(steps(row(finished.branch)).map(([at, , parts]) => [at, parts])).toEqual(
+      LANDS
+        ? [[0, `${working1}1`], [m1, `${working1}${mark}1`], [HERO_DONE, `${mark}1`]]
+        : [[0, `${working1}1`], [HERO_DONE, "1"]],
     );
-    // Three agents (and a shell), as the caption says.
+    // The working one stays at work, beside its shell: two panes.
+    expect(steps(row(working.branch)).map(([at, , parts]) => [at, parts])).toEqual(LANDS ? [[0, `${working1}2`], [m2, `${working1}${mark}2`]] : [[0, `${working1}2`]]);
+    // The waiting one turns to Needs you, in waiting's quiet badge, when its engine asks, and stays so.
+    expect(steps(row(waiting.branch)).map(([at, , parts]) => [at, parts])).toEqual([[0, `${working1}1`], [HERO_ASK, `${t("rail.waiting")}1`]]);
+    expect(row(waiting.branch)).toContain(`<span class="sc-badge-quiet sc-badge-waiting">${t("rail.waiting")}</span>`);
+    // The worktree in view is the selected row.
+    expect(rail.match(/<span class="sc-wtrow sc-wtrow-on">/g)).toHaveLength(1);
+    expect(row(finished.branch).startsWith('<span class="sc-wtrow sc-wtrow-on">')).toBe(true);
+    // The status bar's agents: waiting first, then working, as each changes (AgentsSegment).
+    const n = SAMPLE.order.length;
+    expect(HERO_AGENTS).toEqual([
+      [0, { waiting: 0, working: n }],
+      [HERO_ASK, { waiting: 1, working: n - 1 }],
+      [HERO_DONE, { waiting: 1, working: n - 2 }],
+    ]);
+    const bar = /<div class="sc-statusbar">[\s\S]*?<\/div>/.exec(h)?.[0] ?? "";
+    const counts = (k: string) => ({ waiting: Number(/(\d+) waiting/.exec(text(k))?.[1] ?? 0), working: Number(/(\d+) working/.exec(text(k))?.[1] ?? 0) });
+    const segment = stepsAt(bar, bar.indexOf('<span class="sc-swap">')).map(([when, k]) => [when, counts(k)] as const);
+    expect(segment).toEqual(HERO_AGENTS);
+    expect(bar).toContain(`<span class="sc-agents"><span class="sc-agents-working"><span class="sc-dot"><svg`);
+    expect(bar).toContain(`<span class="sc-agents"><span class="sc-agents-waiting"><span class="sc-dot"><svg`);
+    // At every change the segment holds the rail's count: the rows whose slot says Needs you, and those at work.
+    for (const [when, held] of HERO_AGENTS) {
+      const now = SAMPLE.order.map((w) => heldAt(steps(row(w.branch)).map(([at, , parts]) => [Number(at), String(parts)] as const), when) ?? "");
+      expect({ waiting: now.filter((p) => p.startsWith(t("rail.waiting"))).length, working: now.filter((p) => p.startsWith(working1)).length }, `${when}s`).toEqual(held);
+    }
+    // Three agents, as the caption says.
     expect(WORKSPACE_CAPTION.split(" ")[0]).toBe(["None", "One", "Two", "Three", "Four", "Five"][n]);
   });
 
@@ -649,8 +765,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(heuristics).toMatch(/StatusUpdate \{\s*status,\s*reason,\s*ts: now,\s*tool: None,\s*title: None,\s*preview: None,\s*\}/);
     expect(repo("apps/desktop/src-tauri/src/services/dashboard.rs").match(/preview: redact\(rec\.preview\.or\(rec\.tool\)\),/g)).toHaveLength(2);
     expect(repo("apps/desktop/src/features/dashboard/Dashboard.tsx")).toMatch(/showPreview &&\s*item\.preview && \(/);
-    // In the scenes: the hero's pane ends on the question, and the Dashboard's card for the agent has no line at all.
-    expect(renderToStaticMarkup(<WorkspaceScene />)).toContain(`<span class="sc-line sc-line-ask" data-fx-line="" style="--at:${HERO_ASK}s">${esc(SAMPLE.question.terminal)}</span>`);
+    // In the scenes: the Dashboard's card for the agent has no line at all (the hero shows another worktree's pane:
+    // D-2702, below).
     const dash = renderToStaticMarkup(<DashboardScene />);
     const card = /<span class="sc-card-wrap sc-card-ask">([\s\S]*?)<span class="sc-ring"/.exec(dash)?.[1] ?? "";
     expect(card).toContain(`<span class="sc-card-title">${SAMPLE.worktrees.waiting.name}</span>`);
@@ -661,10 +777,10 @@ describe("F-WB-01 AC9 product scenes", () => {
       expect(s).not.toMatch(/answer in place|Allow once|Deny/);
     }
     expect(workspaceSceneText()).toContain(`asks in its terminal to run ${SAMPLE.ask} and waits for you`);
-    // The hero's rail ends with its last worktree: 0.12.0's rail has no "running sessions" line (that's only a badge's name).
-    const rail = /<aside class="sc-rail">[\s\S]*?<\/aside>/.exec(renderToStaticMarkup(<WorkspaceScene />))?.[0] ?? "";
-    expect(rail).not.toContain("sc-rail-foot");
-    expect(rail).not.toMatch(/running sessions?/);
+    // In the hero, whose pane is another worktree's, the rail says so: Needs you, and nothing answers it.
+    const hero = renderToStaticMarkup(<WorkspaceScene />);
+    expect(hero).not.toContain(esc(SAMPLE.question.terminal));
+    for (const s of [t("dashboard.allowOnce"), t("dashboard.deny")]) expect(hero, s).not.toContain(s);
   });
 
   it("F-WB-01 AC9 D-3001 D-3002 the Dashboard is the story's: one repository, its worktrees' agents by first name, and the waiting one on you", () => {
@@ -681,7 +797,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     for (const w of SAMPLE.order)
       expect(h, w.branch).toMatch(new RegExp(`<span class="sc-card-title">${w.name}</span><span class="sc-card-state">[\\s\\S]*?</span></span><span class="sc-card-meta">${re(esc(`${w.engine} · ${w.branch}`))}</span>`));
     expect(story.worktrees.some((w) => "account" in w)).toBe(false);
-    expect(h.match(/<span class="sc-card">/g)?.length).toBe(n);
+    // One card per agent; the finished one's twice, at work and then done, one at a time (D-3003, below).
+    expect(h.match(/<span class="sc-card">/g)?.length).toBe(n + 1);
     for (const engine of Object.values(story.engines)) expect(h).not.toContain(`>${esc(t("pane.engine", { engine: engine.label, n: 1 }))}<`);
     // The waiting one's engine asks in its own terminal, so its card has the waiting border, no line (found by a pattern,
     // its waiting has no preview: D-3002) and no buttons: AgentCard draws Allow and Deny only for a pending approval, and
@@ -695,9 +812,6 @@ describe("F-WB-01 AC9 product scenes", () => {
     for (const s of [t("dashboard.allowOnce"), t("dashboard.deny"), t("dashboard.wants", { summary: "" }).trim()]) expect(h, s).not.toContain(s);
     const source = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/Dashboard.tsx"), "utf8");
     expect(source).toMatch(/\{approval \? \(/);
-    // The finished one finishes; the working one's line is its last step.
-    expect(h).toContain(`<span data-fx-enter="" style="--at:${DASH_T.done}s">${esc((SAMPLE.lines.finished.at(-1) ?? "").trim())}</span>`);
-    expect(h).toContain(`<span class="sc-card-line">${esc((SAMPLE.lines.working.at(-1) ?? "").trim())}</span>`);
     expect(h.indexOf(`>${finished.name}<`)).toBeGreaterThan(-1);
     expect(h.indexOf(`>${working.name}<`)).toBeGreaterThan(-1);
     // The counts end where the story is: one each waiting, working and done, and one to review.
@@ -728,8 +842,15 @@ describe("F-WB-01 AC9 product scenes", () => {
     // the one that finishes change theirs then, and the other keeps its own.
     const h = renderToStaticMarkup(<DashboardScene />);
     const { waiting, finished, working } = SAMPLE.worktrees;
+    // A card's state from each time on: its title row's end, a value that changes, or, for a card the app draws again (the
+    // finished one's, at Done: D-3003), each card's from when it shows.
+    const stateOf = (card: string) => text(/<span class="sc-card-state">([\s\S]*?)<\/span><\/span><span class="sc-card-meta">/.exec(card)?.[1] ?? "");
     const states = (name: string): ReadonlyArray<readonly [number, string]> => {
       const title = h.indexOf(`<span class="sc-card-title">${name}</span><span class="sc-card-state">`);
+      const swap = h.lastIndexOf('<span class="sc-card-swap">', title);
+      const again = swap < 0 ? [] : kids(h, swap);
+      if (again.length === 2 && again.every((k) => k.includes(`<span class="sc-card-title">${name}</span>`)))
+        return again.map((k, i) => [i === 0 ? 0 : Number(/^<span data-fx-show="" style="--at:([\d.]+)s">/.exec(k)?.[1]), stateOf(k)] as const);
       const inner = h.indexOf(">", h.indexOf('<span class="sc-card-state">', title)) + 1;
       if (h.startsWith('<span class="sc-swap">', inner)) return stepsAt(h, inner).map(([at, k]) => [at, text(k)] as const);
       return [[0, /^([^<]*)<\/span>/.exec(h.slice(inner))?.[1] ?? ""]];
@@ -761,6 +882,99 @@ describe("F-WB-01 AC9 product scenes", () => {
     }
   });
 
+  it("F-WB-01 AC9 D-3003 a Dashboard card has a line only where the app draws one: the tool an agent's hooks name while it works", () => {
+    // dashboard.rs draws a pane card's line as its status's preview, else its tool. A pane's status gets no preview: hook
+    // reports and pattern matches both leave it None. Only Claude Code's PreToolUse names a tool, as the agent works;
+    // Codex's notify names none, and each report replaces the tool, so a done report clears it (the coordinator's and the
+    // design lead's must-fix on 018b37a9).
+    const repo = (f: string) => readFileSync(join(import.meta.dirname, "../../..", f), "utf8");
+    expect(repo("apps/desktop/src-tauri/src/services/dashboard.rs").match(/preview: redact\(rec\.preview\.or\(rec\.tool\)\),/g)).toHaveLength(2);
+    const report = repo("crates/tandem-core/src/status_report.rs");
+    expect(report.match(/StatusUpdate \{/g)).toHaveLength(1);
+    expect(report).toMatch(/tool: self\.payload\.tool\.clone\(\),\s*title: self\.payload\.title\.clone\(\),\s*preview: None,/);
+    expect(repo("crates/tandem-core/src/status_heuristics.rs")).toMatch(/tool: None,\s*title: None,\s*preview: None,/);
+    expect(repo("crates/tandem-core/src/status.rs").match(/tool: update\.tool,/g)).toHaveLength(2);
+    const hook = repo("crates/tandem-engines/src/hook.rs");
+    const claude = hook.slice(hook.indexOf("pub fn claude_report("), hook.indexOf("pub fn codex_report("));
+    expect(claude.match(/payload\.tool = /g)).toHaveLength(1);
+    expect(claude).toMatch(/"PreToolUse" => \{\s*payload\.tool = field\("tool_name"\)[\s\S]*?ReportEvent::Working\s*\}/);
+    expect(hook.slice(hook.indexOf("pub fn codex_report("), hook.indexOf("fn short("))).not.toContain("tool");
+    type Engine = { id: string; hooksSupport: string };
+    const registry = JSON.parse(repo("crates/tandem-engines/registry.json")) as Engine[];
+    expect(registry.filter((e) => e.hooksSupport === "claude-hooks").map((e) => e.id)).toEqual([...NAMES_TOOLS]);
+    // In the scene: only an engine whose hooks name a tool gives its card a line, only while its agent works, and the line is
+    // the tool for the step it's at: the finished one's edits, then its tests.
+    const { finished, working, waiting } = SAMPLE.worktrees;
+    expect([finished, working, waiting].map((w) => NAMES_TOOLS.has(w.engineId))).toEqual([true, false, false]);
+    expect(finished.steps.slice(-2).map(hookTool)).toEqual(["Edit", "Bash"]);
+    expect(DASH_TOOLS).toEqual([
+      [0, "Edit"],
+      [DASH_T.run, "Bash"],
+    ]);
+    const h = renderToStaticMarkup(<DashboardScene />);
+    expect(h.match(/<span class="sc-card-line">/g)).toHaveLength(1);
+    // The finished one's card at work, then done with no line, drawn again in one place at once.
+    const [atWork = "", done = ""] = kids(h, h.indexOf('<span class="sc-card-swap">'));
+    expect(atWork).toMatch(new RegExp(`^<span data-fx-cut="" style="--at:${DASH_T.done}s"><span class="sc-card">`));
+    expect(done).toMatch(new RegExp(`^<span data-fx-show="" style="--at:${DASH_T.done}s"><span class="sc-card">`));
+    expect(done).not.toContain("sc-card-line");
+    const line = atWork.indexOf('<span class="sc-swap">', atWork.indexOf('<span class="sc-card-line">'));
+    expect(stepsAt(atWork, line).map(([at, k]) => [at, text(k)])).toEqual(DASH_TOOLS);
+    expect(sheet("scenes.css")).toContain(".sc-card-swap > * { grid-area: 1 / 1; align-self: start; }");
+    // No step's output is on a card, and the text says the agent turns Done.
+    for (const l of Object.values(SAMPLE.lines).flat().map((x) => x.trim()).filter((x) => x.startsWith("$") || x.startsWith("Tests"))) expect(text(h), l).not.toContain(l);
+    expect(dashboardSceneText()).toContain(`${finished.name}, in ${finished.engine}, turns Done, and its card names the tool its hooks report until then: Edit, then Bash.`);
+    expect(dashboardSceneText()).not.toMatch(/finishes its tests/);
+  });
+
+  it("F-WB-01 AC9 D-3003 the Review and Plan status bars count the threads at work: the second opinion while it reviews, a plan's runs and their reviews", () => {
+    // A thread's status goes into the store a pane's does (state.rs's status sink: "Threads are Dashboard items too"), and
+    // the status bar's AgentsSegment counts every record in it. The second opinion is a thread (second_opinion.rs), and so
+    // are a plan's runs and their reviews (tasks_exec.rs's start_session, a run's, then its review's): the coordinator's
+    // and the design lead's answer for D-2702. Each count is only what its frame draws.
+    const repo = (f: string) => readFileSync(join(import.meta.dirname, "../../..", f), "utf8");
+    const state = repo("apps/desktop/src-tauri/src/state.rs");
+    expect(state).toContain("// Threads are Dashboard items too (F-DB-01, D-6).");
+    expect(state).toMatch(/threads\.set_status_sink\(Arc::new\(move \|th\| \{[\s\S]*?ThreadState::Working => \(AgentStatus::Working, None\),[\s\S]*?status\.set_external\(/);
+    expect(repo("apps/desktop/src-tauri/src/services/status.rs")).toMatch(/pub fn set_external\([\s\S]*?if let Some\(rec\) = self\.store\.apply\(&key, update\) \{\s*self\.queue\(rec\);/);
+    expect(repo("apps/desktop/src/features/shell/StatusBar.tsx")).toMatch(
+      /const all = Object\.values\(records\);\s*return \{\s*working: all\.filter\(\(r\) => r\.status === "working"\)\.length,\s*waiting: all\.filter\(\(r\) => r\.status === "waiting"\)\.length,/,
+    );
+    expect(repo("apps/desktop/src-tauri/src/services/second_opinion.rs")).toMatch(/\.create_thread\(\s*&a\.lane,\s*&a\.engine,\s*a\.account\.clone\(\),\s*format!\("Second opinion: \{branch\}"\),/);
+    const exec = repo("apps/desktop/src-tauri/src/services/tasks_exec.rs");
+    expect([...exec.matchAll(/\.start_session\(SessionStart \{[\s\S]*?review: (true|false),/g)].map((m) => m[1])).toEqual(["false", "true"]);
+    const bar = (h: string) => /<div class="sc-statusbar">[\s\S]*?<\/div>/.exec(h)?.[0] ?? "";
+    const counts = (k: string) => ({ waiting: Number(/(\d+) waiting/.exec(text(k))?.[1] ?? 0), working: Number(/(\d+) working/.exec(text(k))?.[1] ?? 0) });
+    const segment = (h: string) => {
+      const b = bar(h);
+      return stepsAt(b, b.indexOf('<span class="sc-swap">')).map(([at, k]) => [at, counts(k)] as const);
+    };
+    // Review: one at work while "Codex is reviewing…" shows, and none before or after (the finished agent is done).
+    const review = renderToStaticMarkup(<ReviewScene />);
+    expect(segment(review)).toEqual(REVIEW_AGENTS);
+    const doing = review.indexOf('<span class="sc-review-doing">');
+    const [from = 0, stay = 0] = ([...review.slice(0, doing).matchAll(/data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"/g)].at(-1) ?? []).slice(1).map(Number);
+    expect(REVIEW_AGENTS.map(([at, n]) => [Math.round(at * 100) / 100, n.working])).toEqual([
+      [0, 0],
+      [from, 1],
+      [Math.round((from + stay) * 100) / 100, 0],
+    ]);
+    // Plan: at every change, the runs the dialog shows Running or Reviewing, which its line counts as running.
+    const plan = renderToStaticMarkup(<PlanScene />);
+    expect(segment(plan)).toEqual(PLAN_AGENTS);
+    const labels = [...plan.matchAll(/<span class="sc-run-label">/g)].map((m) => stepsAt(plan, plan.indexOf('<span class="sc-swap">', m.index)).map(([at, k]) => [at, text(k)] as const));
+    expect(labels).toHaveLength(PLAN_RUNS.length);
+    const busy = [t("tasks.runs.state.running"), t("tasks.runs.state.reviewing")];
+    for (const at of planTimes()) {
+      const working = labels.filter((l) => busy.some((b) => (heldAt(l, at) ?? "").endsWith(` · ${b}`))).length;
+      expect(heldAt(PLAN_AGENTS, at)?.working, `${at}s`).toBe(working);
+      if (working > 0) expect(planAt(at).summary, `${at}s`).toContain(t("plan.count.running", { n: working }));
+    }
+    expect(PLAN_AGENTS.map(([, n]) => n.working)).toEqual([0, 3, 2, 1, 0]);
+    // Both draw nothing once no agent is at work, as the app's segment does.
+    for (const h of [review, plan]) expect(text(bar(h).slice(bar(h).lastIndexOf('<span data-fx-enter=""')))).not.toMatch(/working|waiting/);
+  });
+
   it("F-WB-01 AC9 the app's own words come from its catalog, with plurals, and a missing one fails the build", () => {
     expect(t("review.stat", { n: SAMPLE.diff.files, adds: 62, dels: 18 })).toBe("4 files · +62 −18");
     expect(t("review.stat", { n: 1, adds: 1, dels: 0 })).toBe("1 file · +1 −0");
@@ -771,8 +985,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(t("landing.done", { n: 1, base: "main" })).toBe("Landed 1 worktree in main");
     expect(() => t("no.such.key")).toThrow(/no "no.such.key"/);
     const w = renderToStaticMarkup(<WorkspaceScene />);
-    for (const s of [t("titlebar.mode.code"), t("pane.shellIn", { folder: SAMPLE.workspace }), t("review.stat", { n: SAMPLE.diff.files, adds: 0, dels: 0 }).split(" · ")[0] ?? ""])
-      expect(w, s).toContain(s);
+    for (const s of [t("titlebar.mode.code"), t("rail.noSessions"), t("code.arrange"), t("review.viewReview", { n: 1 }), t("review.stat", SAMPLE.diff && { n: SAMPLE.diff.files, adds: SAMPLE.diff.adds, dels: SAMPLE.diff.dels })])
+      expect(w, s).toContain(esc(s));
   });
 
   it("F-WB-01 AC9 D-128 the 0.9.0 scenes and the intent radar show only once that release is out", async () => {
@@ -868,16 +1082,20 @@ describe("F-WB-01 AC9 product scenes", () => {
   });
 
   it("F-WB-01 AC9 the scenes follow app-ui's T2 and T3: lit raised surfaces, status as text rather than pills (D-1887)", () => {
-    for (const cls of ["sc-toast", "sc-note-toast", "sc-dialog"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-[23]\\)`).test(css), cls).toBe(true);
+    for (const cls of ["sc-note-toast", "sc-dialog"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-[23]\\)`).test(css), cls).toBe(true);
     // A line comment isn't raised: it's DiffView's annotation row under its line (D-3000).
     expect(/\.sc-diff-note \{[^}]*\}/.exec(css)?.[0]).not.toMatch(/elev|shadow/);
-    for (const cls of ["sc-card", "sc-item"]) expect(new RegExp(`\\.${cls} \\{[^}]*var\\(--tn-elev-1\\)`).test(css), cls).toBe(true);
-    // A risk is an outlined tag, a check's result is text, a warning sent is a status.
-    expect(/\.sc-chip \{([^}]*)\}/.exec(css)?.[1]).not.toMatch(/status-waiting/);
-    expect(css).not.toMatch(/\.sc-chip-ok \{[^}]*background/);
+    expect(/\.sc-card \{[^}]*var\(--tn-elev-1\)/.test(css)).toBe(true);
+    // A review card is ReviewCard's: bordered on surface-2, no shadow.
+    const queue = readFileSync(join(import.meta.dirname, "../../desktop/src/features/dashboard/ReviewQueue.tsx"), "utf8");
+    expect(queue).toContain('className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"');
+    expect(home).toBeDefined();
+    expect(sheet("home.css")).toMatch(/\.sc-rq-card \{ display: flex; flex-direction: column; gap: calc\(8 \* var\(--sc-px\)\); padding: calc\(12 \* var\(--sc-px\)\); border-radius: calc\(10 \* var\(--sc-px\)\); background: var\(--tn-surface-2\); box-shadow: inset 0 0 0 1px var\(--tn-border\); \}/);
+    // A risk is an outlined Badge, a check's result is text (a details summary), never a pill.
+    const card = /<span class="sc-rq-card">[\s\S]*?<span class="sc-rq-check">/.exec(renderToStaticMarkup(<ReviewScene />))?.[0] ?? "";
+    expect(card).toContain(`<span class="sc-rq-risks"><span class="sc-badge sc-badge-outline">${t("review.rule.auth")}</span></span>`);
+    expect(sheet("home.css")).not.toMatch(/\.sc-rq-check \{[^}]*(background|box-shadow|border-radius)/);
     expect(css).not.toContain(".sc-btn-done");
-    const w = renderToStaticMarkup(<WorkspaceScene />);
-    if (LANDS) expect(w).toMatch(new RegExp(`<span class="sc-status"[^>]*><span class="sc-dot">[\\s\\S]*?</span> ${t("radar.notice.warned")}</span>`));
   });
 
   it("F-WB-01 AC9 D-3000 D-3001 every var() the site draws with is defined, in its stylesheets and inline in its pages, and a dialog's scrim is the app's modal scrim", () => {
@@ -887,7 +1105,7 @@ describe("F-WB-01 AC9 product scenes", () => {
       ...["tokens.css", "brand.css", "base.css", "site.css"].map((f) => join(styles, f)),
       join(import.meta.dirname, "globals.css"),
       join(import.meta.dirname, "docs/docs.css"),
-      ...["scenes.css", "ci.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
+      ...["scenes.css", "ci.css", "home.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
     ];
     const globals = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
     for (const f of ["tokens", "brand", "base", "site"]) expect(globals).toContain(`@import "@tandem/ui/${f}.css";`);
@@ -920,9 +1138,13 @@ describe("F-WB-01 AC9 product scenes", () => {
     // Its own classes: the ones no other scene file draws.
     const dir = join(import.meta.dirname, "../components/site/scenes");
     const classes = (f: string) => new Set([...readFileSync(join(dir, f), "utf8").matchAll(/\bsc-[a-z0-9-]*[a-z0-9]/g)].map((m) => m[0]));
-    const others = new Set(readdirSync(dir).filter((f) => f.endsWith(".tsx") && f !== "ChecksScene.tsx").flatMap((f) => [...classes(f)]));
+    // The Badge part draws a class per variant it's given, so each of its variants is a shared class.
+    const variants = (/export type BadgeVariant = ([^;]+);/.exec(readFileSync(join(dir, "parts.tsx"), "utf8"))?.[1] ?? "").match(/[a-z]+/g) ?? [];
+    expect(variants).toEqual(["neutral", "waiting", "done", "error", "outline"]);
+    const others = new Set([...readdirSync(dir).filter((f) => f.endsWith(".tsx") && f !== "ChecksScene.tsx").flatMap((f) => [...classes(f)]), ...variants.map((v) => `sc-badge-${v}`)]);
     const own = [...classes("ChecksScene.tsx")].filter((c) => !others.has(c));
-    expect(own).toEqual(expect.arrayContaining(["sc-ci-layer", "sc-badge", "sc-branch-chip", "sc-menu", "sc-checks"]));
+    expect(own).toEqual(expect.arrayContaining(["sc-ci-layer", "sc-branch-chip", "sc-menu", "sc-checks"]));
+    expect(own).not.toContain("sc-badge");
     const named = (sel: string) => own.some((c) => new RegExp(`\\.${c}(?![\\w-])`).test(sel));
     const selectors = (text: string) => [...text.matchAll(/([^{}]+)\{/g)].map((m) => (m[1] ?? "").trim()).filter((x) => !x.startsWith("@"));
     // scenes.css, which every page with a scene loads, has none of its rules; ci.css has only those, and no effects:
@@ -984,11 +1206,46 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(css).toMatch(/\.sc-window \{[^}]*position: relative;/);
   });
 
-  it("F-WB-01 AC9 D-3001 the hero's radar notice sits under the panes' headers, never across one", () => {
-    const pad = Number(/\.sc-grid \{[^}]*padding: ([\d.]+)em;/.exec(css)?.[1]);
-    const head = /\.sc-pane-head \{[^}]*height: ([\d.]+)em;[^}]*font-size: ([\d.]+)em;/.exec(css);
-    const top = Number(/\.sc-toast-top \{ top: ([\d.]+)em; \}/.exec(css)?.[1]);
-    expect(top).toBeGreaterThan(pad + Number(head?.[1]) * Number(head?.[2]));
+  it("F-WB-01 AC9 D-2702 the radar's notice and Warned both agents are the app's toasts, at the bottom right: its tone's bar, its body and action, and ×", () => {
+    const app = (f: string) => readFileSync(join(import.meta.dirname, "../../..", f), "utf8");
+    const toast = app("packages/ui/src/components/Toast.tsx");
+    expect(toast).toContain('className="tn-toast relative flex w-[360px] gap-3 overflow-hidden rounded-md border border-border bg-surface-3 py-3 pl-4 pr-2 shadow-e2"');
+    expect(toast).toContain('<span aria-hidden="true" className={cx("absolute inset-y-0 left-0 w-[3px]", BAR[tone])} />');
+    expect(toast).toContain("fixed bottom-8 right-4");
+    expect(toast).toMatch(/info: "bg-info",\s*success: "bg-success",\s*warning: "bg-warning",\s*error: "bg-danger",/);
+    expect(toast).toContain("const remaining = useRef(item.duration ?? 5000);");
+    expect(toast).toContain("onClick={() => { item.action?.onClick(); onDismiss(); }}");
+    // The scene's, in the app's pixels: 360 wide, 16 in from the right, 32 over the window's bottom (10 over its status bar).
+    expect(css).toMatch(/\.sc-note-toast \{ position: absolute; right: calc\(16 \* var\(--sc-px\)\); bottom: calc\(10 \* var\(--sc-px\)\); z-index: 4; display: flex; gap: calc\(12 \* var\(--sc-px\)\); width: calc\(360 \* var\(--sc-px\)\); padding: calc\(12 \* var\(--sc-px\)\) calc\(8 \* var\(--sc-px\)\) calc\(12 \* var\(--sc-px\)\) calc\(16 \* var\(--sc-px\)\);[^}]*border-radius: calc\(10 \* var\(--sc-px\)\); background: var\(--tn-surface-3\); box-shadow: var\(--tn-elev-2\), inset 0 0 0 1px var\(--tn-border\); \}/);
+    expect(css).toMatch(/\.sc-note-toast::before \{[^}]*width: calc\(3 \* var\(--sc-px\)\); background: var\(--tn-info\); \}/);
+    for (const [tone, token] of [["success", "--tn-success"], ["warning", "--tn-warning"], ["error", "--tn-danger"]]) expect(css).toContain(`.sc-tone-${tone}::before { background: var(${token}); }`);
+    const statusbar = Number(/--statusbar-h:\s*(\d+)px/.exec(app("packages/ui/src/styles/tokens.css"))?.[1]);
+    expect(32 - statusbar).toBe(10);
+    // IntentRadar's: the notice a warning with its body and Warn both agents, then a success once both notes are typed.
+    const radar = app("apps/desktop/src/features/code/IntentRadar.tsx");
+    expect(radar).toMatch(/tone: "warning",\s*title: t\("radar\.notice\.title", [^\n]*\n\s*body: t\("radar\.notice\.body"\),/);
+    expect(radar).toContain('else show({ tone: "success", title: t("radar.notice.warned") });');
+    if (!LANDS) return;
+    const { finished, working } = SAMPLE.worktrees;
+    const hero = renderToStaticMarkup(<WorkspaceScene />);
+    const notice = /<div class="sc-note-toast sc-tone-warning" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">([^<]*)<\/span><span class="sc-note-toast-body">([^<]*)<\/span><span class="sc-note-toast-action"><span class="sc-btn sc-btn-sm" data-fx-press="" style="--at:([\d.]+)s">([^<]*)<\/span><\/span><\/span><svg[^>]*sc-note-toast-x/.exec(hero);
+    expect(notice?.slice(3, 5)).toEqual([esc(t("radar.notice.title", { a: finished.branch, b: working.branch, symbols: SAMPLE.symbol })), esc(t("radar.notice.body"))]);
+    expect(notice?.[6]).toBe(t("radar.notice.warn"));
+    const [shown, stay, press] = [notice?.[1], notice?.[2], notice?.[5]].map(Number) as [number, number, number];
+    expect([shown, press]).toEqual([HERO_T.notice, HERO_T.warn]);
+    // The press dismisses it: from the click that ends it (260 ms), it leaves over its fade (the site's --dur-pop), the
+    // visit's last stretch.
+    const pressMs = Number(/& \[data-fx-press\][^{]*\{ animation: sc-press (\d+)ms/.exec(css)?.[1]);
+    const popMs = Number(/--dur-pop:\s*(\d+)ms/.exec(app("packages/ui/src/styles/site.css"))?.[1]);
+    expect(css).toMatch(/& \[data-fx-visit\] \{ animation: sc-visit var\(--dur-pop\)[^,]*, sc-leave var\(--dur-pop\) var\(--ease-exit\) calc\(var\(--at\) \+ var\(--stay\) - var\(--dur-pop\)\)/);
+    expect(Math.round((shown + stay) * 100)).toBe(Math.round((press + pressMs / 1000 + popMs / 1000) * 100));
+    const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">([^<]*)<\/span><\/span><svg[^>]*sc-note-toast-x/.exec(hero);
+    expect(warned?.[3]).toBe(t("radar.notice.warned"));
+    // Once the notice has gone, for the 5 s a toast stays: one toast at a time in one place.
+    expect(Math.round(Number(warned?.[1]) * 100)).toBe(Math.round((shown + stay) * 100));
+    expect(Number(warned?.[2])).toBe(5);
+    // Both are the window's own, over the sidebar, never inside a pane.
+    expect(/<div class="sc-pane[ "][\s\S]*?<\/div><\/div>/.exec(hero)?.[0]).not.toContain("sc-note-toast");
   });
 
   it("F-WB-01 AC9 a scene's status bar is the download's: the branch, then the version, and no connection (D-816, D-1888)", () => {
@@ -1008,6 +1265,152 @@ describe("F-WB-01 AC9 product scenes", () => {
       expect(h, id).toMatch(/^<div data-theme="dark" class="sc-window/);
       expect(h, id).not.toMatch(/sample data/i);
     }
+  });
+});
+
+describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree in view", () => {
+  const h = renderToStaticMarkup(<WorkspaceScene />);
+  const { finished, working, waiting } = SAMPLE.worktrees;
+  const app = (f: string) => readFileSync(join(import.meta.dirname, "../../desktop/src", f), "utf8");
+  const homeCss = sheet("home.css");
+
+  it("F-WB-01 AC9 D-2702 its title bar is TitleBar's: Agent, Code and Thread, and in Code mode the workspace's button", () => {
+    const bar = app("features/shell/TitleBar.tsx");
+    expect([...(/const MODES[\s\S]*?\n\];/.exec(bar)?.[0] ?? "").matchAll(/id: "(\w+)"/g)].map((m) => m[1])).toEqual(["agent", "code", "thread"]);
+    expect(bar).toContain('{mode === "code" && !settingsOpen && active && (');
+    const modes = ["agent", "code", "thread"].map((m) => t(`titlebar.mode.${m}`));
+    for (const [id, el] of Object.entries(ALL)) {
+      const titlebar = /<div class="sc-titlebar">[\s\S]*?<\/div>/.exec(renderToStaticMarkup(el))?.[0] ?? "";
+      expect([...titlebar.matchAll(/<span class="sc-mode[^"]*">([^<]*)<\/span>/g)].map((m) => m[1]), id).toEqual(modes);
+    }
+    // The workspace in view is the finished worktree, named for it; the button is a small ghost one with its chevron.
+    expect(h).toMatch(new RegExp(`<span class="sc-mode sc-mode-on">${t("titlebar.mode.code")}</span><span class="sc-mode">${t("titlebar.mode.thread")}</span></span><span class="sc-btn sc-btn-ghost sc-ws-button">${re(finished.branch)}<svg[^>]*lucide-chevron-down`));
+    expect(renderToStaticMarkup(<PlanScene />)).not.toContain("sc-ws-button");
+  });
+
+  it("F-WB-01 AC9 D-2702 Code mode is on the finished worktree's tab, its agent's pane alone in it, its header PaneChrome's", () => {
+    const tabs = /<div class="sc-tabs">([\s\S]*?)<\/div>/.exec(h)?.[1] ?? "";
+    expect(tabs).toMatch(new RegExp(`^<span class="sc-tab">${re(esc(tabTitle(finished.task)))}</span><svg[^>]*lucide-plus[^>]*>[\\s\\S]*?</svg><span class="sc-btn sc-btn-sm sc-btn-ghost sc-tabs-arrange"><svg[^>]*lucide-layout-grid[\\s\\S]*?</svg>${t("code.arrange")}</span>$`));
+    const head = /<div class="sc-pane-head">([\s\S]*?)<\/div>/.exec(h)?.[1] ?? "";
+    // The status dot first, then the engine's glyph, the first name, the title and the worktree's chip; then its buttons.
+    expect(head.startsWith('<span class="sc-pane-status">')).toBe(true);
+    expect(head.indexOf("sc-glyph")).toBeGreaterThan(head.indexOf("sc-pane-status"));
+    expect(head).toMatch(new RegExp(`<span class="sc-wt-chip"><svg[^>]*lucide-git-branch[\\s\\S]*?</svg>${re(finished.branch)}</span><span class="sc-pane-tools">`));
+    // Alone in its tab: no Maximize, and no focus ring, which tells a tab's panes apart (PaneGrid); its menu and Close.
+    const tools = /<span class="sc-pane-tools">([\s\S]*)<\/span>$/.exec(head)?.[1] ?? "";
+    expect([...tools.matchAll(/lucide-([\w-]+)/g)].map((m) => m[1])).toEqual(["ellipsis", "x"]);
+    expect(h).not.toContain("sc-pane-on");
+    const chrome = app("features/code/PaneChrome.tsx");
+    expect(chrome.indexOf('<StatusDot status={status} size={6} />')).toBeLessThan(chrome.indexOf("{glyph ?? <SquareTerminal size={13} />}"));
+    expect(chrome).toContain("{!solo && (");
+    expect(chrome).toMatch(/className="flex shrink-0 items-center opacity-50 /);
+    expect(app("features/code/PaneGrid.tsx")).toContain('focused && !solo ? "border-border-strong" : "border-border",');
+    expect(css).toMatch(/\.sc-pane-tools \{[^}]*opacity: 0\.5;/);
+    expect(css).toMatch(/\.sc-pane-head \{[^}]*height: 2\.5em;[^}]*font-size: 0\.75em;/);
+    // The worktree in view, as the status bar names it.
+    expect(h).toMatch(new RegExp(`<span class="sc-statusbar-branch"><svg[^>]*>[\\s\\S]*?</svg>${re(finished.branch)}</span>`));
+  });
+
+  it("F-WB-01 AC9 D-2702 the sidebar's Dashboard is on Review: nothing to review until the agent finishes, then its card, its check running until it passes", () => {
+    const side = /<aside class="sc-side">[\s\S]*?<\/aside>/.exec(h)?.[0] ?? "";
+    // The Dashboard tab's pill, its waiting count from when the engine asks (Sidebar's Pill).
+    const pills = /<span class="sc-pills"><span data-fx-cut="" style="--at:([\d.]+)s">([\s\S]*?)<\/span><span data-fx-show="" style="--at:([\d.]+)s">([\s\S]*?)<\/span><\/span><span class="sc-side-tools">/.exec(side);
+    expect([Number(pills?.[1]), Number(pills?.[3])]).toEqual([HERO_ASK, HERO_ASK]);
+    expect(text(pills?.[2] ?? "")).toBe(t("sidebar.dashboard"));
+    expect(text(pills?.[4] ?? "")).toBe(`${t("sidebar.dashboard")}1`);
+    expect(pills?.[4]).toContain('<span class="sc-badge sc-badge-waiting">1</span>');
+    // DashboardPanel's switch, on Review: 0, then 1 when the agent's done.
+    const seg = /<span class="sc-seg sc-seg-sm"><span class="sc-mode">([^<]*)<\/span><span class="sc-mode sc-mode-on">([\s\S]*?)<\/span><\/span><span class="sc-rq-views">/.exec(side);
+    expect(seg?.[1]).toBe(t("review.viewAgents", { n: SAMPLE.order.length }));
+    expect(seg?.[2]).toBe(`<span class="sc-swap"><span data-fx-cut="" style="--at:${HERO_DONE}s">${t("review.viewReview", { n: 0 })}</span><span data-fx-enter="" style="--at:${HERO_DONE}s">${t("review.viewReview", { n: 1 })}</span></span>`);
+    // "Nothing to review" (ReviewQueue's EmptyState) until then; the queue, at once, from then.
+    const empty = /<span class="sc-rq-empty" data-fx-cut="" style="--at:([\d.]+)s">([\s\S]*?)<\/span><span class="sc-rq" data-fx-show="" style="--at:([\d.]+)s">/.exec(side);
+    expect([Number(empty?.[1]), Number(empty?.[3])]).toEqual([HERO_DONE, HERO_DONE]);
+    expect(empty?.[2]).toContain("lucide-clipboard-check");
+    expect(text(empty?.[2] ?? "")).toBe(`${t("review.emptyTitle")}${esc(t("review.emptyBody"))}`);
+    // Its sort, by risk, and Refresh; To review · 1; the agent's card, 0m ago, with its closing words.
+    const queue = side.slice(side.indexOf('<span class="sc-rq" '));
+    expect(queue).toContain(`<span class="sc-rq-sort"><span class="sc-seg sc-seg-sm"><span class="sc-mode sc-mode-on">${t("review.byRisk")}</span><span class="sc-mode">${t("review.byTime")}</span></span><span class="sc-btn sc-btn-sm sc-btn-ghost">${t("review.refresh")}</span></span>`);
+    expect(queue).toContain(`<span class="sc-rq-section">${t("review.toReview")} · 1</span>`);
+    expect(queue).toContain(`<span class="sc-rq-closing">${esc(finished.closing)}</span>`);
+    expect(queue).toContain(`<span class="sc-rq-stat">${t("review.stat", { n: SAMPLE.diff.files, adds: SAMPLE.diff.adds, dels: SAMPLE.diff.dels })}</span>`);
+    // The repository's check runs on it as it arrives, then passes (the design lead's addendum).
+    expect(queue).toContain(`<span class="sc-rq-check"><span class="sc-swap"><span data-fx-cut="" style="--at:${HERO_T.passed}s">${t("review.check.running")}</span><span data-fx-enter="" style="--at:${HERO_T.passed}s">${t("review.check.passed")}</span></span></span>`);
+    expect(HERO_T.passed).toBeGreaterThan(HERO_DONE);
+    const rq = app("features/dashboard/ReviewQueue.tsx");
+    expect(rq).toMatch(/\{item\.check\.state === "running"\s*\? t\("review\.check\.running"\)\s*: item\.check\.state === "passed"\s*\? t\("review\.check\.passed"\)/);
+    expect(rq).toMatch(/icon=\{<ClipboardCheck size=\{20\} \/>\}\s*title=\{t\("review\.emptyTitle"\)\}\s*body=\{t\("review\.emptyBody"\)\}/);
+    // The finished work goes to the queue, not to a toast over the panes.
+    expect(h).not.toMatch(/<div class="sc-note-toast[^>]*>(?:(?!<\/div>).)*sc-rq/s);
+  });
+
+  it("F-WB-01 AC9 D-2702 the note Warn both agents types into the agent is the core's: radar.rs's note_text, for the two that share the symbol", () => {
+    // The core's own output: tests/radar_notes.rs checks each case against note_text (cargo test), and the port gives the
+    // same note for each. The hero's is the first: no @ in it, so 0.12.0's fence and the tree's fence_defanged agree.
+    const dir = join(import.meta.dirname, "../../desktop/src-tauri/tests");
+    type Case = { why: string; other: string; symbols: Array<{ name: string; qualified: string; here: "added" | "changed" | "removed" | "used"; there: "added" | "changed" | "removed" | "used" }>; note: string };
+    const cases = JSON.parse(readFileSync(join(dir, "fixtures/radar_notes.json"), "utf8")) as Case[];
+    expect(readFileSync(join(dir, "radar_notes.rs"), "utf8")).toContain('assert_eq!(note, case.note, "{}", case.why);');
+    for (const c of cases) expect(radarNote(c.other, c.symbols, true), c.why).toBe(c.note);
+    expect(radarNote(working.branch, cases[0]?.symbols ?? [], false)).toBe(cases[0]?.note);
+    expect(cases.length).toBeGreaterThanOrEqual(4);
+    expect(cases[0]).toEqual({ why: expect.any(String), other: working.branch, symbols: [{ name: SAMPLE.symbol, qualified: SAMPLE.symbol, here: "changed", there: "changed" }], note: SAMPLE.radar.note });
+    expect(SAMPLE.radar.note).not.toMatch(/[@\uFF20]/);
+    // Between them: several symbols with each side's change, an @ defanged with the note, one that stays, a fence that
+    // outlasts a backtick run.
+    const all = cases.map((c) => c.note);
+    expect(all.some((x) => x.includes("- Cart.total: changed here, renamed or removed there\n- Coupon: used here, added there"))).toBe(true);
+    expect(all.some((x) => x.endsWith("```\n" + DEFANGED))).toBe(true);
+    expect(all.some((x) => x.includes("- mail @ home: added here, used there"))).toBe(true);
+    expect(all.some((x) => x.includes("````text\n"))).toBe(true);
+    // Its end trimmed as the core's trim_end trims it, by Unicode's White_Space, before the defang removes what's
+    // removable (D-3030): a branch name ending in a space, U+0085, a space and U+FEFF keeps both spaces, where JS's
+    // trimEnd() would stop at the U+0085 and leave one.
+    expect(cases.some((c) => c.symbols.length === 0 && c.other === "tandem/edge \u0085 \uFEFF" && c.note.endsWith("Other worktree: tandem/edge  \n```"))).toBe(true);
+    expect(SAMPLE.radar.note.startsWith(`Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository,`)).toBe(true);
+    expect(SAMPLE.radar.note).toContain(`${untrustedLabel("the overlapping symbols")}\n\`\`\`text\nOther worktree: ${working.branch}\n- ${SAMPLE.symbol}: changed here, changed there\n\`\`\``);
+    // The demo marks the same two and types the same note (backend.ts's radarNote).
+    expect(app("demo/backend.ts")).toContain('return [{ name: o.symbol, qualified: o.symbol, here: "changed", there: "changed" }];');
+    // Into the agent, the way its terminal echoes a paste, and only on a wide frame.
+    expect(h).toContain(`<span class="sc-line sc-line-wrap sc-hide-narrow" data-fx-line="" style="--at:`);
+  });
+
+  it("F-WB-01 AC9 D-2702 the hero's own rules come only with the home page, after the shared ones", () => {
+    const page = (f: string) => readFileSync(join(import.meta.dirname, f), "utf8");
+    const homePage = page("page.site.tsx");
+    expect(homePage.indexOf('import "../components/site/scenes/home.css";')).toBeGreaterThan(homePage.indexOf('import "../components/site/scenes/scenes.css";'));
+    expect(page("changelog/[version]/page.site.tsx")).not.toContain("home.css");
+    // Every class it styles is one a home-page scene draws, and none that only a release page's scenes draw.
+    const dir = join(import.meta.dirname, "../components/site/scenes");
+    const classes = (f: string) => new Set([...readFileSync(join(dir, f), "utf8").matchAll(/\bsc-[a-z0-9-]*[a-z0-9]/g)].map((m) => m[0]));
+    const homeDraws = new Set(["WorkspaceScene.tsx", "ReviewScene.tsx", "DashboardScene.tsx", "parts.tsx"].flatMap((f) => [...classes(f)]));
+    const styled = new Set([...homeCss.matchAll(/\.(sc-[a-z0-9-]*[a-z0-9])/g)].map((m) => m[1] ?? ""));
+    expect([...styled].filter((c) => !homeDraws.has(c))).toEqual([]);
+    expect(homeCss).not.toMatch(/animation|@keyframes/);
+    for (const f of ["ChecksScene.tsx", "LandScene.tsx", "PlanScene.tsx"]) for (const c of ["sc-crail", "sc-side", "sc-code", "sc-tabs"]) expect(classes(f).has(c), `${c} in ${f}`).toBe(false);
+  });
+
+  it("F-WB-01 AC9 D-2702 on a phone the worktrees' rows are a strip over the pane, and the sidebar floats over the pane as the app's does below 1,100 px", () => {
+    expect(app("stores/sidebar.ts")).toContain("export const FLOAT_BELOW = 1_100;");
+    expect(app("features/shell/Sidebar.tsx")).toContain('? "absolute inset-y-0 right-0 border-l border-border shadow-e3"');
+    const narrow = /@container \(max-width: 40rem\) \{([\s\S]*)\}\s*$/.exec(homeCss)?.[1] ?? "";
+    expect(narrow).toContain(".sc-code { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }");
+    expect(narrow).toContain(".sc-crail-head, .sc-wsrow, .sc-crail-none, .sc-crail-foot { display: none; }");
+    expect(narrow).toMatch(/\.sc-side \{ position: absolute; grid-area: 2 \/ 1; inset-block: 0; right: 0;[^}]*box-shadow: var\(--tn-elev-3\); \}/);
+    // Docked from 1,100 px: the rail, the main area and the sidebar side by side, the rail wide enough that a worktree's
+    // row holds its name, its slot, the radar's mark and its count (the e2e test measures it).
+    expect(homeCss).toMatch(/\.sc-code \{ position: relative; display: grid; grid-template-columns: calc\(416 \* var\(--sc-px\)\) minmax\(0, 1fr\) calc\(400 \* var\(--sc-px\)\);/);
+    // The radar's note folds on a phone, where the pane has no room for it.
+    expect(h.match(/sc-line sc-line-wrap sc-hide-narrow/g)?.length).toBe(pasted(SAMPLE.radar.note).filter((l) => l !== "").length);
+  });
+
+  it("F-WB-01 AC9 D-2702 its caption and its text say what happens, by the agents' names", () => {
+    expect(WORKSPACE_CAPTION).toBe("Three agents work in one repository, each in its own worktree, and the rail shows the one that needs you.");
+    const text = workspaceSceneText();
+    for (const s of [`Code mode on ${finished.branch}`, `${finished.name}'s pane alone in its tab`, `${waiting.name}, in ${waiting.engine}, asks in its terminal to run ${SAMPLE.ask} and waits for you`, `the rail shows ${waiting.branch} as Needs you`, `${working.name}, in ${working.engine}, keeps working in ${working.branch}`, "review queue", "check runs and passes"])
+      expect(text, s).toContain(s);
+    if (LANDS) expect(text).toContain(`marks ${finished.branch} and ${working.branch}, which both change ${SAMPLE.symbol}`);
+    for (const s of [text, WORKSPACE_CAPTION]) expect(s).not.toMatch(/\b(she|her|hers|he|him|his)\b/i);
   });
 });
 
@@ -1038,15 +1441,19 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
   });
 
   it("F-WB-01 AC9 D-3001 the failure reaches the agent as the core writes it: its instruction, the untrusted-data label and the fenced check", () => {
-    const prompt = failurePrompt(pr.number, { name: failed?.name ?? "", workflow: SAMPLE.pr.workflow, link: SAMPLE.pr.link }, SAMPLE.pr.log);
+    const check = { name: failed?.name ?? "", workflow: SAMPLE.pr.workflow, link: SAMPLE.pr.link };
+    const prompt = failurePrompt(pr.number, check, SAMPLE.pr.log);
     // The core's own output: tests/failure_prompts.rs checks each case against pr_checks.rs's failure_prompt (cargo
-    // test), and the port gives the same prompt for each. The scene's own is the first.
+    // test), and the port, as the tree writes it, gives the same prompt for each. The scene's own is the first: the
+    // story's failed check, workflow, link and log, word for word.
     const dir = join(import.meta.dirname, "../../desktop/src-tauri/tests");
     type Case = { why: string; pr: number; name: string; workflow?: string; link?: string; log: string[]; prompt: string };
     const cases = JSON.parse(readFileSync(join(dir, "fixtures/failure_prompts.json"), "utf8")) as Case[];
     expect(readFileSync(join(dir, "failure_prompts.rs"), "utf8")).toContain('assert_eq!(prompt, case.prompt, "{}", case.why);');
-    for (const c of cases) expect(failurePrompt(c.pr, { name: c.name, workflow: c.workflow, link: c.link }, c.log), c.why).toBe(c.prompt);
-    expect(cases[0]).toEqual({ why: expect.any(String), pr: pr.number, name: failed?.name, workflow: SAMPLE.pr.workflow, link: SAMPLE.pr.link, log: SAMPLE.pr.log, prompt });
+    for (const c of cases) expect(failurePrompt(c.pr, { name: c.name, workflow: c.workflow, link: c.link }, c.log, true), c.why).toBe(c.prompt);
+    const listed = story.pr.checks.find((c) => c.bucket === "fail");
+    expect([SAMPLE.pr.workflow, SAMPLE.pr.link, SAMPLE.pr.log]).toEqual([listed?.workflow, listed?.link, listed?.log]);
+    expect(cases[0]).toEqual({ why: expect.any(String), pr: pr.number, ...check, log: SAMPLE.pr.log, prompt: failurePrompt(pr.number, check, SAMPLE.pr.log, true) });
     // Between them: the instruction and the label, a path defanged with the note, the @ runs that stay and those that
     // don't, a fence that outlasts a backtick run in the log, a check with no workflow or link, and a log of blank lines.
     const all = cases.map((c) => c.prompt);
@@ -1069,20 +1476,50 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(cases.some((c) => c.log.join("\n") === "\u0085\n \u3000" && c.prompt.endsWith("\n\n(The failed steps printed nothing.)\n```"))).toBe(true);
     expect(cases.some((c) => c.log.join("\n") === "\uFEFF" && c.prompt.endsWith("Failed steps' log (last lines):\n\n```"))).toBe(true);
     expect(["\u0085".trim(), "\uFEFF".trim(), "\u0085".replace(/\p{White_Space}/u, ""), "\uFEFF".replace(/\p{White_Space}/u, "")]).toEqual(["\u0085", "", "", "\uFEFF"]);
-    // The sample's log has no @, so the scene's prompt has no note.
-    expect(prompt).not.toContain(DEFANGED);
-    // The agent's pane prints it a line at a time, once it's sent.
+    // The story's log has an @ (the package's version), which the tree writes as ＠ with its note after the fence. That's
+    // D-3022, after 0.12.0, whose core fenced CI's text as it was: so the scene, on 0.12.0, types it so (D-128).
+    expect(SAMPLE.pr.log.some((l) => l.includes("@"))).toBe(true);
+    expect(DEFANGS).toBe(atLeast(SCENE_BUILD, "0.13.0"));
+    expect(prompt).toBe(DEFANGS ? cases[0]?.prompt : (cases[0]?.prompt ?? "").replace(`\n${DEFANGED}`, "").replaceAll("\uFF20", "@"));
+    if (!DEFANGS) expect(prompt).not.toContain(DEFANGED);
+    // The agent's pane prints its start, a line at a time once it's sent, then, past what scrolled by, the log's last
+    // lines and the fence's end.
+    const lines = pasted(prompt);
+    const head = lines.indexOf("  Failed steps' log (last lines):");
+    expect(head).toBeGreaterThan(0);
+    expect(echoed(prompt)).toEqual([...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))]);
+    expect(lines.at(-1)).toBe("  ```");
     let at: number = CI_T.send;
-    prompt
-      .split("\n")
-      .filter((l) => l !== "")
-      .forEach((l, i) => {
-        const shown = `${i === 0 ? "› " : "  "}${l}`;
-        const m = new RegExp(`data-fx-line="" style="--at:([\\d.]+)s">${re(esc(shown))}<`).exec(h);
-        expect(m, shown).not.toBeNull();
-        expect(Number(m?.[1]), shown).toBeGreaterThan(at);
-        at = Number(m?.[1]);
-      });
+    for (const shown of echoed(prompt).filter((l) => l !== "")) {
+      const m = new RegExp(`data-fx-line="" style="--at:([\\d.]+)s">${re(esc(shown))}<`).exec(h);
+      expect(m, shown).not.toBeNull();
+      expect(Number(m?.[1]), shown).toBeGreaterThan(at);
+      at = Number(m?.[1]);
+    }
+    // On a phone it keeps the prompt's start, the ⋮ and the log's last two lines with the fence's end; a log too short
+    // to leave lines out keeps them all. Only blank lines and the link fold then.
+    const kept = (typed: string[]) => typed.filter((l, i) => !foldEchoed(typed)(l, i));
+    const typed = echoed(prompt);
+    expect(kept(typed)).toEqual(typed.filter((l, i) => l !== "" && !l.startsWith("  Link: ") && (i <= typed.indexOf("  ⋮") || i >= typed.length - 3)));
+    expect(kept(typed)[0]).toBe(`› ${prompt.split("\n")[0]}`);
+    expect(kept(typed).slice(-4)).toEqual(["  ⋮", ...lines.slice(-3)]);
+    const short = echoed(failurePrompt(pr.number, check, SAMPLE.pr.log.slice(-2)));
+    expect(short).not.toContain("  ⋮");
+    expect(kept(short)).toEqual(short.filter((l) => l !== "" && !l.startsWith("  Link: ")));
+    expect(kept(short)).toContain(`  ${SAMPLE.pr.log.at(-1)}`);
+    // The fix it then makes is the story's: the test file, +12 −8, the tests all passing, its commit, its words.
+    const fix = story.pr.fix;
+    expect(SAMPLE.pr.fix.lines).toEqual([
+      `  reading ${SAMPLE.pr.fix.file}`,
+      `  editing ${SAMPLE.pr.fix.file}  +12 −8`,
+      `  $ ${story.check}`,
+      "  Tests  54 passed",
+      `  $ git commit -m "${fix.commit.subject}"`,
+      `  ${fix.closing}`,
+    ]);
+    expect(fix.steps).toEqual([{ read: SAMPLE.pr.fix.file }, { edit: SAMPLE.pr.fix.file, add: 12, del: 8 }, { run: story.check, passed: 54 }]);
+    expect(SAMPLE.pr.fix.commit).toEqual({ sha: "6b2e9f4", subject: "Test refreshSession and its renewal" });
+    for (const l of SAMPLE.pr.fix.lines) expect(h).toMatch(new RegExp(`data-fx-line="" style="--at:[\\d.]+s">${re(esc(l))}<`));
   });
 
   it("F-WB-01 AC9 D-3001 Send failure to agent leaves the Checks dialog open: its toast names the agent, then Close closes it", () => {
@@ -1092,7 +1529,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(send).toContain('show({ tone: "success", title: t("failure.sent", { name: agentName(chosen) }) });');
     // In the scene: Send is pressed, the toast names the agent by its first name, then Close is pressed and the dialog goes.
     expect(h).toContain(`<span class="sc-btn sc-btn-sm" data-fx-press="" style="--at:${CI_T.send}s">${t("failure.send")}</span>`);
-    expect(h).toContain(`<div class="sc-note-toast" data-fx-visit="" style="--at:${CI_T.sent}s;--stay:1.5s"><span class="sc-note-toast-title">${esc(t("failure.sent", { name: agent.name }))}</span></div>`);
+    expect(h).toMatch(new RegExp(`<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:${CI_T.sent}s;--stay:1.5s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">${re(esc(t("failure.sent", { name: agent.name })))}</span></span><svg[^>]*sc-note-toast-x`));
     expect(h).toContain(`<span class="sc-btn sc-btn-primary" data-fx-press="" style="--at:${CI_T.close}s">${t("common.close")}</span>`);
     expect(CI_T.close).toBeGreaterThan(CI_T.sent);
     const layer = /<div class="sc-ci-layer" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(h);
@@ -1269,7 +1706,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     }
   });
 
-  it("F-WB-01 AC9 D-3001 a check's result is the app's Badge: a small box in its tone's text, a 40 % border, no fill, no pill", () => {
+  it("F-WB-01 AC9 D-3001 D-2702 a check's result is the app's Badge, as every badge the scenes draw: a small box in its tone's text, a 1 px border inside it (neutral's a fill), never a pill", () => {
     const app = (f: string) => readFileSync(join(import.meta.dirname, "../../..", f), "utf8");
     const dialog = app("apps/desktop/src/features/code/PullRequestChecks.tsx");
     const badge = app("packages/ui/src/components/Badge.tsx");
@@ -1279,29 +1716,46 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const variants = Object.fromEntries([...(/const BUCKET_VARIANT = \{([^}]*)\}/.exec(dialog)?.[1] ?? "").matchAll(/(\w+): "(\w+)"/g)].map((m) => [m[1], m[2]]));
     expect(variants).toMatchObject({ pass: "done", fail: "error", pending: "outline" });
     for (const c of pr.checks) expect(h).toContain(`<span class="sc-badge sc-badge-${variants[c.bucket]}">${t(`checks.bucket.${c.bucket}`)}</span>`);
-    for (const v of new Set(Object.values(variants))) {
+    // Every variant the scenes draw: the checks', the hero's (the radar's mark and Needs you in waiting's, a pane count
+    // neutral) and a review card's risk (outline). Each as Badge.tsx classes it: its text, then its border or fill.
+    const hero = renderToStaticMarkup(<WorkspaceScene />);
+    const drawn = new Set([...[h, hero].join("").matchAll(/class="sc-badge(?:-quiet)? sc-badge-(\w+)"/g)].map((m) => m[1]));
+    expect([...drawn].sort()).toEqual(["done", "error", "neutral", "outline", "waiting"]);
+    for (const v of drawn) {
       const classes = new RegExp(`\\n  ${v}: "([^"]+)",`).exec(/const BADGE[^=]*= \{([\s\S]*?)\n\};/.exec(badge)?.[1] ?? "")?.[1] ?? "";
-      const [, line, pct] = /border-([\w-]+?)(?:\/(\d+))? /.exec(`${classes} `) ?? [];
+      const quiet = new RegExp(`\\n  ${v}: "([^"]+)",`).exec(/const QUIET[^=]*= \{([\s\S]*?)\n\};/.exec(badge)?.[1] ?? "")?.[1] ?? "";
       const text = /text-([\w-]+)/.exec(classes)?.[1] ?? "";
-      const ring = pct ? `color-mix(in oklab, var(${token(line ?? "")}) ${pct}%, transparent)` : `var(${token(line ?? "")})`;
-      expect(css, v).toContain(`.sc-badge-${v} { color: var(${token(text)}); border: 1px solid ${ring}; }`);
+      expect(quiet, v).toBe(`text-${text}`);
+      expect(css, v).toContain(`.sc-badge-${v} { color: var(${token(text)}); }`);
+      const [, line, pct] = /border-([\w-]+?)(?:\/(\d+))? /.exec(`${classes} `) ?? [];
+      const fill = /bg-([\w-]+)/.exec(classes)?.[1];
+      if (line) {
+        const ring = pct ? `color-mix(in oklab, var(${token(line)}) ${pct}%, transparent)` : `var(${token(line)})`;
+        expect(css, v).toContain(`.sc-badge.sc-badge-${v} { border: 1px solid ${ring}; }`);
+      } else expect(css, v).toContain(`.sc-badge.sc-badge-${v} { background: var(${token(fill ?? "")}); }`);
     }
-    // Badge's box: h-4.5, px-1.5, rounded-xs, text-2xs and a 1 px border inside the box (the site's border-box, as the
-    // app's), in the check row's text-sm, 12 px (ChecksDialog's row: the coordinator's nit 6 on 2966da74).
-    const box = /className=\{cx\("inline-flex h-4\.5 shrink-0 items-center gap-1 rounded-xs px-1\.5 text-2xs font-medium"/;
-    expect(badge).toMatch(box);
+    // Badge's box: h-4.5, px-1.5, rounded-xs, text-2xs, medium, and a 1 px border inside the box (the site's border-box,
+    // as the app's: the coordinator's nit 6 on 2966da74); quiet, no box and text-xs. In the app's pixels.
+    expect(badge).toMatch(/className=\{cx\("inline-flex h-4\.5 shrink-0 items-center gap-1 rounded-xs px-1\.5 text-2xs font-medium"/);
+    expect(badge).toMatch(/className=\{cx\("inline-flex h-4\.5 shrink-0 items-center gap-1\.5 text-xs font-medium"/);
+    const px = (v: string) => Number(new RegExp(`--${v}:\\s*(\\d+)px`).exec(tokens)?.[1]);
+    expect([px("text-2xs"), px("text-xs"), px("radius-xs")]).toEqual([10, 11, 4]);
+    const rule = (sel: string) => new RegExp(`(?:^|\\n)${re(sel)} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    expect(rule(".sc-badge, .sc-badge-quiet")).toContain("height: calc(18 * var(--sc-px)); font-weight: 500;");
+    expect(rule(".sc-badge")).toBe(" padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); ");
+    expect(rule(".sc-badge-quiet")).toBe(" font-size: calc(11 * var(--sc-px)); ");
+    expect(css).not.toMatch(/\.sc-badge[^{]*\{[^}]*(box-shadow|999px)/);
+    // One of the app's pixels: the window's em is 16 of them, worked out once on the window.
+    expect(css).toContain('@property --sc-px { syntax: "<length>"; inherits: true; initial-value: 1px; }');
+    expect(css).toMatch(/\.sc-window \{[^}]*--sc-px: calc\(1em \/ 16\);/);
+    expect(css).toMatch(/\.sc-window \{[^}]*font-size: calc\(100cqw \/ 80\);/);
+    // A check's row is ChecksDialog's: text-sm, 12 px, its workflow text-xs (nit 6 on 2966da74).
     expect(dialog).toContain('<div className="flex items-center gap-2 text-sm">');
     expect(dialog).toContain('<span className="truncate text-xs text-fg-subtle">{c.workflow}</span>');
-    const px = (v: string) => Number(new RegExp(`--${v}:\\s*(\\d+)px`).exec(tokens)?.[1]);
-    const [font, radius, row, flow] = [px("text-2xs"), px("radius-xs"), px("text-sm"), px("text-xs")];
-    expect([font, radius, row, flow]).toEqual([10, 4, 12, 11]);
+    const [row, flow] = [px("text-sm"), px("text-xs")];
+    expect([row, flow]).toEqual([12, 11]);
     expect(Number(/\.sc-ci-check-head \{[^}]*font-size: ([\d.]+)em;/.exec(css)?.[1]) * 16).toBe(row);
     expect(css).toMatch(new RegExp(`\\.sc-ci-check-flow \\{ font-size: calc\\(${flow}em / ${row}\\);`));
-    const rule = /\.sc-badge \{([^}]*)\}/.exec(css)?.[1] ?? "";
-    for (const d of [`height: ${18 / font}em`, `padding-inline: ${6 / font}em`, `border-radius: ${radius / font}em`, `font-size: calc(${font}em / ${row})`, "font-weight: 500"]) expect(rule, d).toContain(d);
-    expect(css).not.toMatch(/\.sc-badge[\w-]* \{[^}]*box-shadow/);
-    expect(rule).not.toMatch(/background|999px/);
-    expect(css).not.toMatch(/\.sc-badge[\w-]* \{[^}]*background/);
   });
 
   it("F-WB-01 AC9 D-3001 the imported comment is the reviewer's own, from the pull request, under its line, with Remove and no Edit", () => {
@@ -1319,7 +1773,7 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(runsIn(SESSION_DIFF, gitDiff(pr.worktree, c?.file ?? ""))).toBe(true);
     expect(SESSION_DIFF.some(([, , , newNo]) => newNo === c?.line)).toBe(true);
     expect(h).toContain(`>${esc(t("worktree.review.import", { n: pr.number }))}<`);
-    expect(h).toContain(`<div class="sc-note-toast" data-fx-visit="" style="--at:${CI_T.imported}s;--stay:1.5s"><span class="sc-note-toast-title">${t("worktree.review.imported", { n: pr.comments.length })}</span></div>`);
+    expect(h).toMatch(new RegExp(`<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:${CI_T.imported}s;--stay:1.5s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">${re(t("worktree.review.imported", { n: pr.comments.length }))}</span></span><svg[^>]*sc-note-toast-x`));
   });
 
   it("F-WB-01 AC9 D-3001 its final frame tells the story: checks passed, the agent's summary, the comment in the review, and 1 comment · Copy review · Send to Ada", () => {

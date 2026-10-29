@@ -39,6 +39,9 @@ const shownIn = (scene: Locator, selector: string) =>
       .map((e) => e.textContent?.trim()),
   );
 
+/** `shownIn` for the scene `id` on the page. */
+const seen = (page: Page, id: string, selector: string) => shownIn(page.locator(`[data-scene="${id}"]`), selector);
+
 for (const [w, h] of [[1440, 900], [1366, 768], [1280, 800]] as const) {
   test(`F-WB-01 AC9 the product is in the first viewport at ${w}×${h} (DESIGN §5.1)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
@@ -73,9 +76,9 @@ test("F-WB-01 AC9 with the scene player blocked, every scene shows its final fra
     await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
     expect(await states(page, id), id).toEqual([]);
   }
-  expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  // The waiting agent's question stays: it's still waiting on you (D-3001).
-  expect(await opacity(page, '[data-scene="workspace"] .sc-line-ask')).toBe(1);
+  // The finished work is in the review queue, its check passed, and the waiting agent still needs you (D-2702).
+  expect(await seen(page, "workspace", ".sc-rq-check > .sc-swap > *")).toEqual(["Check passed"]);
+  expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
   expect(await opacity(page, '[data-scene="review"] .sc-review-bar .sc-btn-primary')).toBe(1);
   await context.close();
 });
@@ -298,7 +301,7 @@ test("F-WB-01 AC9 D-3001 the CI scene's rules load only on the page that plays i
     page.evaluate(() =>
       [...document.styleSheets].flatMap((s) => {
         const walk = (rules: CSSRuleList): string[] =>
-          [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && /\.sc-(ci|badge|checks|menu|branch-chip)\b/.test(r.selectorText) ? [r.selectorText] : []));
+          [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && /\.sc-(ci|checks|menu|branch-chip)\b|\.sc-(body|rail|lane)(?![\w-])/.test(r.selectorText) ? [r.selectorText] : []));
         return walk(s.cssRules);
       }),
     );
@@ -342,9 +345,9 @@ test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and
     );
     expect(moving, id).toBe(0);
   }
-  // The final frame: the review item has arrived, and the waiting agent's question is in its pane and on its card.
-  expect(await opacity(page, '[data-scene="workspace"] .sc-toast-bottom')).toBe(1);
-  expect(await opacity(page, '[data-scene="workspace"] .sc-line-ask')).toBe(1);
+  // The final frame: the review item has arrived, the waiting agent needs you, and the Dashboard rings its card.
+  expect(await seen(page, "workspace", ".sc-rq-check > .sc-swap > *")).toEqual(["Check passed"]);
+  expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
   expect(await opacity(page, '[data-scene="dashboard"] .sc-card-ask .sc-ring')).toBe(1);
   await context.close();
 });
@@ -363,4 +366,75 @@ test("F-WB-01 AC9 the hero's scene plays without moving anything else on the pag
   await expect.poll(() => states(page, "workspace"), { timeout: 20_000 }).toEqual(["finished"]);
   const shift = await page.evaluate(() => (window as unknown as { shift: number }).shift);
   expect(shift).toBeLessThan(0.01);
+});
+
+// The hero as one worktree's window (D-2702).
+for (const [w, h] of [[1440, 900], [1280, 800], [1024, 768], [768, 1024]] as const) {
+  test(`F-WB-01 AC9 D-2702 at ${w} px the hero's rail holds every worktree's row whole, and it ends with the agent's card in review`, async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: w, height: h } });
+    await context.route(/\/demo\/app\//, (route) => route.fulfill({ status: 204, body: "" }));
+    const page = await context.newPage();
+    await page.goto("/");
+    const scene = page.locator('[data-scene="workspace"]');
+    // Nothing in the rail is cut, nor the sidebar's pill and switch, nor the card's line.
+    const cut = await scene
+      .locator(".sc-wtrow-name, .sc-wsrow-name, .sc-badge, .sc-badge-quiet, .sc-slot-working, .sc-pill, .sc-seg-sm .sc-mode, .sc-rq-meta, .sc-wt-chip")
+      .evaluateAll((els) => els.filter((e) => e.checkVisibility() && e.scrollWidth > e.clientWidth).map((e) => `${e.textContent}: ${e.scrollWidth} > ${e.clientWidth}`));
+    expect(cut).toEqual([]);
+    expect(await seen(page, "workspace", ".sc-wtrow-name")).toEqual(["checkout-fix", "coupon-rules", "search-ui"]);
+    expect(await seen(page, "workspace", ".sc-wtrow-radar")).toEqual(["Shares applyCoupon", "Shares applyCoupon"]);
+    expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
+    // The agent's card in the review queue, its check passed; nothing left to review gone, and the toasts too.
+    expect(await seen(page, "workspace", ".sc-rq-title")).toEqual(["Ada"]);
+    expect(await seen(page, "workspace", ".sc-rq-check > .sc-swap > *")).toEqual(["Check passed"]);
+    expect(await seen(page, "workspace", ".sc-rq-empty, .sc-note-toast")).toEqual([]);
+    expect(await seen(page, "workspace", ".sc-agents")).toEqual(["1 waiting1 working"]);
+    // The pane's last line, the agent's closing words, inside its terminal.
+    const inside = await scene.locator(".sc-pane .sc-term .sc-line").last().evaluate((e) => e.getBoundingClientRect().bottom <= (e.closest(".sc-term") as Element).getBoundingClientRect().bottom + 0.5);
+    expect(inside).toBe(true);
+    await context.close();
+  });
+}
+
+test("F-WB-01 AC9 D-2702 on a phone the hero's worktrees are a strip over the pane, the one that needs you in view, and the sidebar floats over the pane", async ({ browser }) => {
+  const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 390, height: 844 } });
+  await context.route(/\/demo\/app\//, (route) => route.fulfill({ status: 204, body: "" }));
+  const page = await context.newPage();
+  await page.goto("/");
+  const scene = page.locator('[data-scene="workspace"]');
+  const box = async (selector: string) => {
+    const b = await scene.locator(selector).first().boundingBox();
+    expect(b, selector).not.toBeNull();
+    return b ?? { x: 0, y: 0, width: 0, height: 0 };
+  };
+  const [strip, pane, side] = [await box(".sc-crail"), await box(".sc-pane"), await box(".sc-side")];
+  expect(strip.y + strip.height).toBeLessThanOrEqual(pane.y);
+  expect(side.y).toBeGreaterThanOrEqual(strip.y + strip.height - 1);
+  expect(side.x).toBeGreaterThan(pane.x);
+  expect(side.x).toBeLessThan(pane.x + pane.width);
+  expect(await seen(page, "workspace", ".sc-wtrow-name")).toEqual(["checkout-fix", "coupon-rules", "search-ui"]);
+  expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
+  const drawn = (selector: string) => scene.locator(selector).evaluateAll((els) => els.filter((e) => e.checkVisibility()).length);
+  expect(await drawn(".sc-crail-head, .sc-wsrow, .sc-crail-none, .sc-crail-foot")).toBe(0);
+  // The radar's note folds: the pane has no room for it.
+  expect(await drawn(".sc-term .sc-hide-narrow")).toBe(0);
+  await context.close();
+});
+
+test("F-WB-01 AC9 D-2702 the hero's rules load only on the home page, after the shared scene rules", async ({ page }) => {
+  const heroRules = () =>
+    page.evaluate(() =>
+      [...document.styleSheets].flatMap((s) => {
+        const walk = (rules: CSSRuleList): string[] =>
+          [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && /\.sc-(code|crail|wsrow|wtrow|tabs?|side|pills?|rq)(?![\w-])/.test(r.selectorText) ? [r.selectorText] : []));
+        return walk(s.cssRules);
+      }),
+    );
+  for (const path of ["/changelog/0.9.0/", "/changelog/0.12.0/"]) {
+    await page.goto(path);
+    expect(await heroRules(), path).toEqual([]);
+  }
+  await page.goto("/");
+  expect((await heroRules()).length).toBeGreaterThan(10);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="workspace"] .sc-code') as Element).display)).toBe("grid");
 });

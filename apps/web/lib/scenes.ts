@@ -23,6 +23,10 @@ export function atLeast(version: string, min: string): boolean {
  * that release ships, the scenes leave them out (D-128). */
 export const SCENE_BUILD = RELEASE.version;
 export const LANDS = atLeast(SCENE_BUILD, "0.9.0");
+/** Whether the core writes an `@` in untrusted text it sends an agent as
+ * `＠`, with a note after it (D-3022, after 0.12.0). Until the release the
+ * scenes show has it, they type the text as that release did (D-128). */
+export const DEFANGS = atLeast(SCENE_BUILD, "0.13.0");
 
 /** One of the app's strings, with its `{name}` values and simple plurals
  * (`{n, plural, one {# file} other {# files}}`) filled in. Throws on a key
@@ -94,10 +98,11 @@ function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
-/** Whitespace as the core trims it: Rust's `str::trim` follows Unicode's
- * White_Space property, which JS names exactly. JS's `trim()` differs from
- * it on U+0085 and U+FEFF. */
+/** Whitespace as the core trims it: Rust's `str::trim` and `trim_end`
+ * follow Unicode's White_Space property, which JS names exactly. JS's
+ * `trim()` differs from it on U+0085 and U+FEFF. */
 const coreTrim = (text: string) => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+const coreTrimEnd = (text: string) => text.replace(/\p{White_Space}+$/u, "");
 
 /** The line after untrusted text the defang wrote ＠ in
  * (`untrusted::DEFANGED`): the app's own words. */
@@ -114,20 +119,55 @@ function fenceDefanged(lang: string, text: string): string {
   return safe.wroteAt ? `${fence(lang, safe.text)}\n${DEFANGED}` : fence(lang, safe.text);
 }
 
+/** `fence`, or `fenceDefanged` from the release that defangs (DEFANGS). */
+const fenced = (lang: string, text: string, defang: boolean) => (defang ? fenceDefanged(lang, text) : fence(lang, text));
+
 /** What "Send failure to agent" types into the agent for a failed check:
- * pr_checks.rs's `failure_prompt`, word for word (a test reads it). */
-export function failurePrompt(pr: number, check: { name: string; workflow?: string; link?: string }, log: readonly string[]): string {
+ * pr_checks.rs's `failure_prompt`, word for word (a test reads it), as the
+ * release the scenes show writes it, or the tree's with `defang`. */
+export function failurePrompt(pr: number, check: { name: string; workflow?: string; link?: string }, log: readonly string[], defang = DEFANGS): string {
   let ci = `Check: ${check.name}`;
   if (check.workflow) ci += `\nWorkflow: ${check.workflow}`;
   if (check.link) ci += `\nLink: ${check.link}`;
   ci += coreTrim(log.join("\n")) ? `\n\nFailed steps' log (last lines):\n${log.join("\n")}` : "\n\n(The failed steps printed nothing.)";
-  return `A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\n${untrustedLabel("the CI check")}\n${fenceDefanged("text", ci)}`;
+  return `A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\n${untrustedLabel("the CI check")}\n${fenced("text", ci, defang)}`;
+}
+
+/** What a worktree did to a symbol (tandem-git's SymbolChange), as the
+ * radar's note says it. */
+const CHANGED = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" } as const;
+export type SymbolChange = keyof typeof CHANGED;
+
+/** What Warn both agents types into a worktree's agent about a sibling that
+ * changes symbols its own changes touch: radar.rs's `note_text`, word for
+ * word (a test reads it), as the release the scenes show writes it, or the
+ * tree's with `defang`. Its end is trimmed as the core's `trim_end` does. */
+export function radarNote(other: string, symbols: ReadonlyArray<{ qualified: string; here: SymbolChange; there: SymbolChange }>, defang = DEFANGS): string {
+  let data = `Other worktree: ${other}\n`;
+  for (const s of symbols) data += `- ${s.qualified}: ${CHANGED[s.here]} here, ${CHANGED[s.there]} there\n`;
+  return `Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository, is changing code that your changes also touch. Check that your work still fits theirs (a renamed or changed symbol you use, or the same one changed twice), and adjust before you finish.\n\n${untrustedLabel("the overlapping symbols")}\n${fenced("text", coreTrimEnd(data), defang)}`;
 }
 
 /** One thing an agent did, as story.json says it: read a file, edit one
  * (lines added and removed), or run a command (and the tests that passed). */
 type Step = { read: string } | { edit: string; add: number; del: number } | { run: string; passed?: number };
 type Edit = Extract<Step, { edit: string }>;
+
+/** The engines whose hooks name the tool an agent is using, by registry
+ * id: the one whose PreToolUse hook reports its tool_name (hook.rs's
+ * claude_report). The notify hook names none, and an engine with no hooks
+ * is read by its patterns, which name none either. A Dashboard card's line
+ * is a pane's tool, so only these engines' agents have one, and only while
+ * they work (D-3003). */
+export const NAMES_TOOLS: ReadonlySet<string> = new Set(["claude"]);
+
+/** The tool those hooks name for a step: Read, Edit, or Bash for a
+ * command. */
+export function hookTool(step: Step): string {
+  if ("read" in step) return "Read";
+  if ("edit" in step) return "Edit";
+  return "Bash";
+}
 type EngineId = keyof typeof story.engines;
 
 /** The first eight words of a prompt: how the app titles an agent's pane
@@ -136,6 +176,13 @@ export function promptTitle(prompt: string): string {
   const words = prompt.trim().split(/\s+/).filter(Boolean);
   const head = words.slice(0, 8).join(" ");
   return words.length > 8 ? `${head}…` : head;
+}
+
+/** A tab's label once its first agent has a task: the task's first five
+ * words (tabLabel, features/code/titles.ts), where its default name was. */
+export function tabTitle(task: string): string {
+  const words = task.trim().split(/\s+/).filter(Boolean);
+  return words.length > 5 ? `${words.slice(0, 5).join(" ")}…` : words.join(" ");
 }
 
 /** The story's worktree in `state`: one is done, one working and one
@@ -147,16 +194,18 @@ function worktree(state: "done" | "working" | "waiting") {
   return { ...w, steps: w.steps as readonly Step[] };
 }
 
+/** An agent's steps as the scenes print them in its terminal. */
+function stepLines(steps: readonly Step[]): string[] {
+  return steps.flatMap((s): string[] => {
+    if ("read" in s) return [`  reading ${s.read}`];
+    if ("edit" in s) return [`  editing ${s.edit}  +${s.add}${s.del ? ` −${s.del}` : ""}`];
+    return [`  $ ${s.run}`, ...(s.passed ? [`  Tests  ${s.passed} passed`] : [])];
+  });
+}
+
 /** An agent's terminal as the scenes print it: its task, then each step. */
 function terminal(w: { task: string; steps: readonly Step[] }): string[] {
-  return [
-    `› ${w.task}`,
-    ...w.steps.flatMap((s): string[] => {
-      if ("read" in s) return [`  reading ${s.read}`];
-      if ("edit" in s) return [`  editing ${s.edit}  +${s.add}${s.del ? ` −${s.del}` : ""}`];
-      return [`  $ ${s.run}`, ...(s.passed ? [`  Tests  ${s.passed} passed`] : [])];
-    }),
-  ];
+  return [`› ${w.task}`, ...stepLines(w.steps)];
 }
 
 const finished = worktree("done");
@@ -176,15 +225,26 @@ const label = (engine: string) => {
   if (!e) throw new Error(`scenes: story.json has no engine ${engine}`);
   return e.label;
 };
-/** A worktree as the scenes draw it: its engine, its agent's first name
- * (F-CD-12), its pane's title, its branch, and its commits and the merge
- * commit it lands as. */
-const lane = (w: { engine: string; agentName: string; task: string; slug: string; commits: readonly unknown[]; mergeCommit: string }) => ({
+/** The pull request's failed check, and the agent's fix for it. */
+const failed = story.pr.checks.find((c) => c.bucket === "fail");
+const fixSteps = story.pr.fix.steps as readonly Step[];
+const fixEdit = fixSteps.find((s): s is Edit => "edit" in s);
+/** A worktree as the scenes draw it: its engine (its name, and its id in
+ * the registry), its agent's first name (F-CD-12), its task and its pane's
+ * title, its branch, the agent's closing words once it's done, its steps,
+ * and its commits (the pull request's worktree has its agent's fix for the
+ * failed check too, as the demo's does once it's made) and the merge commit
+ * it lands as. */
+const lane = (w: { engine: string; agentName: string; task: string; slug: string; closing?: string; steps: readonly unknown[]; commits: readonly unknown[]; mergeCommit: string }) => ({
   engine: label(w.engine),
+  engineId: w.engine,
   name: w.agentName,
+  task: w.task,
   title: promptTitle(w.task),
   branch: w.slug,
-  commits: w.commits.length,
+  closing: w.closing ?? "",
+  steps: w.steps as readonly Step[],
+  commits: w.commits.length + (w.slug === story.pr.worktree ? 1 : 0),
   merge: w.mergeCommit,
 });
 
@@ -202,6 +262,13 @@ export const SAMPLE = {
   /** All of them, in the story's order (the order they land in). */
   order: story.worktrees.map(lane),
   symbol: story.overlap.symbol,
+  /** The two worktrees that both change it, which the intent radar marks,
+   * and the note Warn both agents types into the first one's agent about
+   * the other (0.9.0's F-WT-10): both changed it, as the demo says. */
+  radar: {
+    between: story.overlap.between,
+    note: radarNote(story.overlap.between[1] ?? "", [{ qualified: story.overlap.symbol, here: "changed", there: "changed" }]),
+  },
   /** What each agent's terminal prints, in order: the story's steps. */
   lines: {
     finished: terminal(finished),
@@ -224,28 +291,23 @@ export const SAMPLE = {
   /** The engine that gives the second opinion, and its line comments. */
   reviewer: label(story.secondOpinion.engine),
   comments: story.secondOpinion.comments.map((c) => ({ file: c.file, line: c.line, text: c.body })),
-  failedCheck: story.pr.checks.find((c) => c.bucket === "fail")?.name ?? "",
-  /** The finished worktree's pull request (0.9.0's F-WT-08): its checks as
-   * gh reports them and the reviewer's comment on it, from story.json. The
-   * failed check's workflow, link and log, and the agent's fix, are the
-   * scenes' own until story.json has them (app-ui adds them; D-3001). */
+  failedCheck: failed?.name ?? "",
+  /** The finished worktree's pull request (0.9.0's F-WT-08), from
+   * story.json: its checks as gh reports them, the failed one's workflow,
+   * link and log, the reviewer's comment on it, and the agent's fix: the
+   * file it edits, what its terminal prints (its steps, its commit, its
+   * closing words) and its commit. */
   pr: {
     number: story.pr.number,
     branch: story.pr.worktree,
     checks: story.pr.checks,
-    workflow: "CI",
-    link: `${story.pr.url.replace(/\/pull\/\d+$/, "")}/actions/runs/1807/job/5204`,
-    log: [" FAIL  src/auth/session.test.ts > getSession > finds the session a cookie names", "TypeError: getSession is not a function"],
+    workflow: failed?.workflow ?? "",
+    link: failed?.link ?? "",
+    log: failed?.log ?? [],
     fix: {
-      file: "src/auth/session.test.ts",
-      lines: [
-        "  reading src/auth/session.test.ts",
-        "  editing src/auth/session.test.ts  +9 −7",
-        `  $ ${story.check}`,
-        "  Tests  54 passed",
-        '  $ git commit -m "Test refreshSession, getSession\'s new name"',
-        "  The session tests still called getSession, which this branch renamed. They test refreshSession now, its grace period too.",
-      ],
+      file: fixEdit?.edit ?? "",
+      lines: [...stepLines(fixSteps), `  $ git commit -m "${story.pr.fix.commit.subject}"`, `  ${story.pr.fix.closing}`],
+      commit: story.pr.fix.commit,
     },
     /** The review comments imported from it: a reviewer's own words. */
     comments: story.pr.comments.map((c) => ({ author: c.author, file: c.file, line: c.line, text: c.body })),

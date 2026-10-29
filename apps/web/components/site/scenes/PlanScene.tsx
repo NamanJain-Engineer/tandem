@@ -1,7 +1,7 @@
 import type { Status } from "@tandem/ui/components/StatusDot";
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, StatusBar, fx } from "./parts";
+import { AgentsSegment, AppWindow, Changes, Dot, StatusBar, fx, type Agents } from "./parts";
 
 /** A task run's states, as the plan's list shows them (F-TK-07). */
 type RunState = "queued" | "running" | "reviewing" | "in_review";
@@ -93,6 +93,15 @@ function over<T>(value: (seconds: number) => T): Array<readonly [number, T]> {
   return out;
 }
 
+/** The agents at work from each time on, as the status bar counts them: a
+ * plan's runs are threads, and so are their reviews, and the app counts a
+ * thread's status as it does a pane's. So it's the runs running or being
+ * reviewed, which the plan's line counts as running, and none once all
+ * three are ready to review (D-3003). */
+export const PLAN_AGENTS: ReadonlyArray<readonly [number, Agents]> = over((at) => PLAN_RUNS.filter((r) => kindOf(stateAt(r, at), r.verdict) === "running").length).map(
+  ([at, working]) => [at, { waiting: 0, working }] as const,
+);
+
 const dots = (steps: Array<readonly [number, Status]>) =>
   steps.map(([at, status]) => [at, <Dot key={at} status={status} />] as const);
 
@@ -138,7 +147,7 @@ export function PlanScene() {
           ))}
         </span>
       </div>
-      <StatusBar branch={SAMPLE.base} />
+      <StatusBar branch={SAMPLE.base} segments={<AgentsSegment steps={PLAN_AGENTS} />} />
       {/* Over the whole window, as the app's overlay is (fixed, inset 0). */}
       <div className="sc-plan-layer">
         <div className="sc-dialog sc-plan-dialog" {...fx("rise", 0.2)}>

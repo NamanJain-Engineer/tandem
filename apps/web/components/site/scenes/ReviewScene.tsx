@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Count, DiffRows, Glyph, StatusBar, Toast, fx, visit, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, DiffRows, ReviewCard, ReviewQueue, StatusBar, Toast, fx, visit, type Agents, type DiffRow } from "./parts";
 
 /** A second opinion's line comment, in the story's words. */
 type Comment = { file: string; line: number; text: string };
@@ -55,6 +55,17 @@ export function notesFor(
 export const REVIEW_T = { ask: 1.9, reviewing: 2.1, done: 3.8, send: 5.4, finished: 4 } as const;
 const { done: DONE } = REVIEW_T;
 
+/** The agents at work from each time on, as the status bar counts them: the
+ * second opinion is a thread ("Second opinion: {branch}"), and the app
+ * counts a thread's status as it does a pane's, so it's one at work while it
+ * reviews. The finished worktree's agent is done, so nothing else counts
+ * (D-3003). */
+export const REVIEW_AGENTS: ReadonlyArray<readonly [number, Agents]> = [
+  [0, { waiting: 0, working: 0 }],
+  [REVIEW_T.reviewing, { waiting: 0, working: 1 }],
+  [DONE, { waiting: 0, working: 0 }],
+];
+
 /** Where the comments land: under the rows at their lines, each as
  * DiffView's annotation row, two on one line both drawn. They're the
  * review's own, to edit or remove, and only they fade in. */
@@ -88,53 +99,21 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
     <AppWindow className="sc-review">
       <div className="sc-rev">
         <div className="sc-rev-list">
-          <div className="sc-dash-head">
-            <span className="sc-dash-title">{t("review.toReview")}</span>
-            <span className="sc-dash-group">
-              {t("review.sortBy")} <span className="sc-mode sc-mode-on">{t("review.byRisk")}</span>
+          {/* The queue as ReviewQueue draws it, the card as its ReviewCard:
+              Second opinion is pressed on it. */}
+          <ReviewQueue count={1}>
+            <span {...fx("slide", 0.2)}>
+              <ReviewCard
+                lane={done}
+                minutes={REVIEW_T.finished}
+                closing={done.closing}
+                diff={SAMPLE.diff}
+                risks={[t("review.rule.auth")]}
+                count={0.5}
+                opinion={REVIEW_T.ask}
+              />
             </span>
-          </div>
-          <div className="sc-item sc-item-on" {...fx("slide", 0.2)}>
-            <span className="sc-toast-row">
-              <Glyph engine={done.engine} focused />
-              {/* ReviewQueue's card: the agent's first name, then its engine,
-                  its workspace (a worktree's is its own, named for it) and
-                  branch (tandem/<name>, which the site shows as the name, so
-                  once: D-1898), and how long ago it finished. */}
-              <span className="sc-card-main">
-                <span className="sc-card-title">{done.name}</span>
-                <span className="sc-card-meta">{[done.engine, done.branch, t("time.minutes", { n: REVIEW_T.finished })].join(" · ")}</span>
-              </span>
-            </span>
-            <span className="sc-stat">
-              {t("review.stat", { n: SAMPLE.diff.files, adds: 0, dels: 0 }).split(" · ")[0]} ·{" "}
-              <span className="sc-add">
-                <Count to={SAMPLE.diff.adds} seconds={0.5} prefix="+" />
-              </span>{" "}
-              <span className="sc-del">
-                <Count to={SAMPLE.diff.dels} seconds={0.5} prefix="−" />
-              </span>
-            </span>
-            <span className="sc-chips">
-              <span className="sc-chip" {...fx("enter", 1)}>
-                {t("review.rule.auth")}
-              </span>
-              <span className="sc-chip sc-chip-ok" {...fx("enter", 1.2)}>
-                {t("review.check.passed")}
-              </span>
-            </span>
-            {/* ReviewQueue's actions, as it styles them: Approve the primary,
-                Open diff secondary, the worktree's own ghosts. */}
-            <span className="sc-ask-actions sc-item-actions">
-              <span className="sc-btn sc-btn-sm sc-btn-primary">{t("review.approve")}</span>
-              <span className="sc-btn sc-btn-sm">{t("review.openDiff")}</span>
-              <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("review.sendBack")}</span>
-              <span className="sc-btn sc-btn-sm sc-btn-ghost" {...fx("press", REVIEW_T.ask)}>
-                {t("review.secondOpinion")}
-              </span>
-              <span className="sc-btn sc-btn-sm sc-btn-ghost">{t("review.merge")}</span>
-            </span>
-          </div>
+          </ReviewQueue>
         </div>
 
         <div className="sc-diff" {...fx("in", 0.4)}>
@@ -167,15 +146,15 @@ export function ReviewScene({ comments = SAMPLE.comments }: { comments?: readonl
             </span>
           </span>
         </div>
-        {/* The reviewer's done toast (SecondOpinion.tsx), with Show diff, or
-            its no-comments one. */}
+        {/* The reviewer's done toast (SecondOpinion.tsx), a success with
+            Show diff, or its no-comments one, which has the default tone. */}
         {n > 0 ? (
-          <Toast title={t("worktree.opinion.done", { engine: reviewer, n })} action={t("worktree.opinion.showDiff")} at={DONE} stay={REVIEW_T.send - 0.1 - DONE} />
+          <Toast tone="success" title={t("worktree.opinion.done", { engine: reviewer, n })} action={t("worktree.opinion.showDiff")} at={DONE} stay={REVIEW_T.send - 0.1 - DONE} />
         ) : (
           <Toast title={t("worktree.opinion.none", { engine: reviewer })} at={DONE} />
         )}
       </div>
-      <StatusBar branch={done.branch} />
+      <StatusBar branch={done.branch} segments={<AgentsSegment steps={REVIEW_AGENTS} />} />
     </AppWindow>
   );
 }
