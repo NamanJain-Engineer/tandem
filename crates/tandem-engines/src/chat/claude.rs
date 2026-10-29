@@ -410,9 +410,11 @@ fn created(text: &str) -> bool {
 
 /// The files an edit tool names, absolute (F-TK-07); `None` for tools that
 /// don't edit. A tool this list doesn't know (an MCP server's, a new one)
-/// edits when its input names a file and what goes in it: it's named, so
-/// the turn says it changed the file, and counts no lines, so the turn's
-/// total says none rather than a partial one (D-2622).
+/// edits when its input names a file by an absolute path and what goes in
+/// it: it's named, so the turn says it changed the file, and counts no
+/// lines, so the turn's total says none rather than a partial one (D-2622).
+/// A relative path is a forge's, in a repository somewhere else (GitHub's
+/// `create_or_update_file`), so it names no file here.
 pub fn edited_paths(tool: &str, input: &Value, cwd: &Path) -> Option<Vec<String>> {
     let str_at = |k: &str| {
         input
@@ -431,7 +433,8 @@ pub fn edited_paths(tool: &str, input: &Value, cwd: &Path) -> Option<Vec<String>
             }
             ["file_path", "path", "notebook_path"]
                 .into_iter()
-                .find_map(str_at)?
+                .find_map(str_at)
+                .filter(|p| crate::events::is_absolute(p))?
         }
     };
     Some(vec![crate::events::absolute(cwd, path)])

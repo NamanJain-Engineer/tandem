@@ -142,6 +142,12 @@ release fails when its version has no section.
   its card names the tool it's running, and the name goes when it stops.
   Before, an open Dashboard named no tool, and a card that opened mid-tool kept
   that tool's name after Claude Code had finished.
+- [lin] **A Dashboard card keeps up while the cards load.** An agent that
+  changed while the Dashboard was reading its cards could show its earlier
+  state until it changed again.
+- [lin] **Screen readers name the rail's unread dots.** The dot on a workspace
+  or a pane that finished while you were away is read as "Finished while you
+  were away". Before, screen readers skipped its label.
 
 ### Security
 

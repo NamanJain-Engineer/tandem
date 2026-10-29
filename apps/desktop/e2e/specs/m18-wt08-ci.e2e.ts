@@ -240,12 +240,17 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
           row.getBoundingClientRect().right -
           parseFloat(style.paddingRight) -
           parseFloat(style.borderRightWidth);
+        // A workspace row's end is right-aligned: what it can't hold runs
+        // out at its start, over the name, where no scrollWidth counts it (D-2618).
+        const trailing = row.querySelector<HTMLElement>('[data-testid="workspace-trailing"]');
+        const starts = Array.from(trailing?.children ?? []).map((e) => e.getBoundingClientRect().left);
         return {
           row: row.dataset.branch ?? name?.textContent ?? "",
           overflow: row.scrollWidth - row.clientWidth,
           past: Math.max(...parts.map((e) => e.getBoundingClientRect().right)) - edge,
           padding: Math.max(...parts.map((e) => e.getBoundingClientRect().right)) - end,
           name: (name?.getBoundingClientRect().width ?? 0) - ch10,
+          over: starts.length > 0 ? (name?.getBoundingClientRect().right ?? 0) - Math.min(...starts) : 0,
           folded: Array.from(row.querySelectorAll("[data-compact], [data-folded]")).map((e) =>
             e.getAttribute("data-testid"),
           ),
@@ -254,9 +259,11 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     });
     expect(rows.length).toBeGreaterThanOrEqual(3);
     // Rows that run past the rail or into their own end padding, cut their
-    // name short or overflow: none.
+    // name short, overflow or lay their end over their name: none.
     expect(
-      JSON.stringify(rows.filter((r) => r.overflow > 1 || r.past > 0.5 || r.padding > 1 || r.name < -0.5)),
+      JSON.stringify(
+        rows.filter((r) => r.overflow > 1 || r.past > 0.5 || r.padding > 1 || r.name < -0.5 || r.over > 0.5),
+      ),
     ).toBe("[]");
     // The failed check shows its words whole or its icon alone, never cut.
     const badge = $(

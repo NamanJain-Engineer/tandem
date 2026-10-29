@@ -18,6 +18,7 @@ export function WorkspaceSlot({ status: s, fold = false }: { status: WorkspaceSt
   const unread = (className: string) => (
     <span
       data-testid="workspace-unread"
+      role="img"
       aria-label={t("rail.unread")}
       className={cx("size-1.5 shrink-0 rounded-full bg-accent", className)}
     />

@@ -142,7 +142,8 @@ describe("F-DB-01 F-SH-03 D-2624 the waiting agent and the Dashboard's cards are
     // terminal.rs watches an agent pane's screen with these: a question
     // they don't match leaves the agent working, never waiting.
     expect(patterns.some((p) => new RegExp(p).test(askLine(w)))).toBe(true);
-    expect(askLine(w)).toBe(`Allow execution of: '${w.ask}'?`);
+    // Gemini CLI 0.66.0 asks this under the command, for its shell tool.
+    expect(askLine(w)).toBe("Allow execution of [Shell]?");
     // 0.12.0's demo line matched none of them.
     expect(patterns.some((p) => new RegExp(p).test(`Allow running ${w.ask}? (y/n)`))).toBe(false);
   });

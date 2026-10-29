@@ -29,6 +29,21 @@ function overflows(el: HTMLElement): boolean {
   );
 }
 
+/** Whether a right-aligned part holds more than it has room for. What it
+ * can't hold runs out at its start, over the name before it, and no
+ * scrollWidth counts overflow on that side (D-2618): a workspace row's
+ * status never folded in a real engine. */
+function spillsAtStart(el: HTMLElement): boolean {
+  const style = getComputedStyle(el);
+  const start =
+    el.getBoundingClientRect().left +
+    (parseFloat(style.paddingLeft) || 0) +
+    (parseFloat(style.borderLeftWidth) || 0);
+  return Array.from(el.children).some(
+    (part) => getComputedStyle(part).position !== "absolute" && part.getBoundingClientRect().left < start - 1,
+  );
+}
+
 /** D-2700, D-2701: a rail row's parts show their words whole or not at all,
  * and the row never runs past the rail. While the row's contents are wider
  * than the row, one more part folds, up to `max`. `contents` names what the
@@ -60,7 +75,10 @@ export function useMarkFolds<T extends HTMLElement = HTMLDivElement>(
       }
     }
     const el = target();
-    if (el && folds < max && overflows(el)) setFolds(folds + 1);
+    // A part inside a row it doesn't draw is right-aligned in it: it can
+    // also run out at its own start.
+    const part = ref.current !== el ? ref.current : null;
+    if (el && folds < max && (overflows(el) || (part !== null && spillsAtStart(part)))) setFolds(folds + 1);
     // `round` is a new width, measured even when nothing was folded.
   }, [contents, folds, round, max]);
   useLayoutEffect(() => {

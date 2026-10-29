@@ -62,7 +62,7 @@ import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
 import {
   STORY,
-  askLine,
+  askScreen,
   branchOf,
   engineLabel,
   previewOf,
@@ -490,7 +490,7 @@ function screenOf(w: StoryWorktree): string {
   }
   lines.push("");
   if (w.state === "done") lines.push(w.closing ?? "Done.");
-  else if (w.state === "waiting") lines.push(askLine(w));
+  else if (w.state === "waiting") lines.push(...askScreen(w));
   else lines.push("Working…");
   return agentScreen(engineLabel(w.engine), w.task, lines);
 }
@@ -512,7 +512,6 @@ type Pty = {
   seq: number;
   screen: string;
   shell: DemoShell | null;
-  typed?: string;
   /** Its terminal's width, once the pane has said (pty_resize). */
   cols?: number;
   /** An agent's text before it's wrapped, which its terminal UI draws again
@@ -1013,6 +1012,8 @@ export class DemoCore {
       this.setStatus(paneId, "done");
       return;
     }
+    // It runs the command: working until it's done.
+    this.setStatus(paneId, "working");
     const id = wsOf(w.slug);
     const filter = (w.ask ?? "").replace(/^pnpm test ?/, "");
     const run = testRun(this.filesOf(id), filter);
@@ -1135,25 +1136,14 @@ export class DemoCore {
     return true;
   }
 
-  /** Keys typed at the waiting agent's question: y or n, then Enter. */
+  /** Keys at the waiting agent's question, a Gemini CLI select: 1, 2 or
+   * Enter (its first choice, highlighted) allow; 3 or Esc say no. Any other
+   * key, an arrow's sequence among them, does nothing here. */
   private answer(pty: Pty, data: string): void {
+    if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) return;
     for (const ch of data) {
-      if (ch === "\r") {
-        const said = (pty.typed ?? "").trim().toLowerCase();
-        pty.typed = "";
-        if (said === "y" || said === "yes") this.answerWaiting(pty, true);
-        else if (said === "n" || said === "no") this.answerWaiting(pty, false);
-        else this.say(pty, "\nType y or n, then Enter.\n");
-      } else if (ch === "\x7f" || ch === "\b") {
-        if (pty.typed) {
-          pty.typed = pty.typed.slice(0, -1);
-          if (pty.logical !== undefined) pty.logical = pty.logical.slice(0, -1);
-          this.frame(pty, "\b \b");
-        }
-      } else if (ch >= " " && ch !== "\x1b") {
-        pty.typed = (pty.typed ?? "") + ch;
-        this.say(pty, ch);
-      }
+      if (ch === "1" || ch === "2" || ch === "\r") return this.answerWaiting(pty, true);
+      if (ch === "3" || ch === "\x1b") return this.answerWaiting(pty, false);
     }
   }
 

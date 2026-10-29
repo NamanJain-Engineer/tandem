@@ -346,6 +346,12 @@ pub fn same_file(a: &str, b: &str) -> bool {
     }
 }
 
+/// Whether `p` is absolute, in Unix's form or Windows', whatever this
+/// computer is: an engine's events can come from another one.
+pub fn is_absolute(p: &str) -> bool {
+    p.starts_with('/') || windows_path(p)
+}
+
 /// A drive letter and a slash, or a `\\` share.
 fn windows_path(p: &str) -> bool {
     let b = p.as_bytes();

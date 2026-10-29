@@ -291,6 +291,44 @@ describe("Dashboard (F-DB-01)", () => {
     // A record's preview comes before its tool.
     change("working", "Read", "Reading the logs");
     expect(line()).toBe("Reading the logs");
+    // dashboard.rs drops a blank line, and so does an update.
+    change("working", "  ");
+    expect(line()).toBeNull();
+  });
+
+  it("F-DB-01 an update that arrives while the cards load isn't undone by the older snapshot", async () => {
+    const card = item("working", "build");
+    // Every snapshot asked for waits until it's let go: the update's
+    // unknown card asks for another.
+    const waiting: Array<(items: DashboardItem[]) => void> = [];
+    const release = (items: DashboardItem[]) => waiting.splice(0).forEach((done) => done(items));
+    fakeBackend({ status_snapshot: () => new Promise<DashboardItem[]>((done) => waiting.push(done)) });
+    followDashboard();
+    const loading = useDashboard.getState().load();
+    await waitFor(() => expect(waiting.length).toBeGreaterThan(0));
+    // Read while the snapshot is on its way: the agent finished.
+    act(() =>
+      emitLocal("status:changed", {
+        records: [
+          {
+            key: card.key,
+            status: "done",
+            reason: null,
+            since: 2,
+            ts: 2,
+            tool: null,
+            title: "build",
+            preview: null,
+          },
+        ],
+        removed: [],
+      }),
+    );
+    await act(async () => {
+      release([card]);
+      await loading;
+    });
+    expect(useDashboard.getState().items[card.key]?.status).toBe("done");
   });
 
   it("empty and filter-empty states", async () => {

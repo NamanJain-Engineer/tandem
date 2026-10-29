@@ -575,6 +575,13 @@ const checkedAt = new Map<string, number>();
 const pushedAt = new Map<string, number>();
 let polling = false;
 
+/** Forgets when each worktree's checks were read and pushed, between tests. */
+export function resetChecksPolling(): void {
+  checkedAt.clear();
+  pushedAt.clear();
+  polling = false;
+}
+
 /** Whether a poll should read this worktree now (S6), given when it was
  * last read and when it was last pushed. */
 export function checksDue(

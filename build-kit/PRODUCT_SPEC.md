@@ -1213,7 +1213,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 3. Five consecutive tool calls render as "+4 tool calls" (latest visible).
 4. A Claude Code turn that changes two lines of one file with Edit, two more with a MultiEdit of another, and creates a third with a three-line Write closes with "Changed 3 files +7 −4"; each of those rows shows its own counts.
 5. An edit Claude Code was refused, or that failed, adds no file and no lines to the summary.
-6. A Task whose subagent edited a file and that then ended in an error counts that file; a tool Vibezeo doesn't know whose input names a file and its content counts the file and leaves the summary without line counts; `C:\work\a.ts` and `c:/Work/A.ts` count as one file.
+6. A Task whose subagent edited a file and that then ended in an error counts that file; a tool Vibezeo doesn't know whose input names a file by its absolute path and its content counts the file and leaves the summary without line counts, while a relative path (a forge's file, such as GitHub's `create_or_update_file`) counts nothing; `C:\work\a.ts` and `c:/Work/A.ts` count as one file.
 
 #### F-TH-13 Changes panel and thread inspector (P1)
 **Behavior:**
@@ -2129,7 +2129,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 
     Only the files' paths are kept, never the edit. An edit that was refused or failed claims nothing. This holds for every chat thread in a git folder on this computer, not only task runs.
 - **The plan follows its runs.** Once its tasks are created, the plan lists each task with its latest run (F-TK-04), as a status shape and a word: not started, queued (with its place), setting up, running, reviewing, in review with the review's verdict (Approve or Changes requested), stopped, failed or done.
-  - A line above the list counts them ("2 running · 1 approved · 1 changes requested").
+  - A line above the list counts them ("2 running · 1 approved · 1 with changes requested").
   - Each row opens its task, where its runs are.
   - While the runs are being read the list says it's loading, and if they can't be read it says why, with Retry.
   - The plan stays in the Tasks page's header until you remove it. A started plan's shape there follows its runs: working while one runs, waiting while one waits on you, done when they've all ended.

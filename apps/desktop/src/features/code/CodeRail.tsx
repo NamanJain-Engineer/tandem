@@ -135,11 +135,14 @@ function useRailParts(probe: RefObject<HTMLElement | null>, open: boolean): Rail
 
 /** D-2703: what each worktree row the rail shows adds to a fully folded
  * row: F-CD-24's jj badge, a running Preview's globe. Rows under a
- * collapsed repository aren't shown. */
-function useShownMarks(list: WorkspaceSummary[]): Array<{ jj: boolean; preview: boolean }> {
+ * collapsed repository, or in a folded Pinned band, aren't shown. */
+function useShownMarks(
+  list: WorkspaceSummary[],
+  pinnedOpen: boolean,
+): Array<{ jj: boolean; preview: boolean }> {
   const previews = useWorktrees((s) => s.previews);
   return topLevel(list)
-    .filter((ws) => !ws.collapsed)
+    .filter((ws) => !ws.collapsed && (pinnedOpen || !ws.pinned))
     .flatMap((ws) => worktreesOf(list, ws.id))
     .map((wt) => ({
       jj: isJj(wt),
@@ -233,6 +236,7 @@ function SessionDot({ paneId }: { paneId: string }) {
       {unread && (
         <span
           data-testid="unread-dot"
+          role="img"
           aria-label={t("rail.unread")}
           className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent"
         />
@@ -254,7 +258,11 @@ function WorkspaceTrailing({ ws, selected }: { ws: WorkspaceSummary; selected: b
     (el) => el.closest<HTMLElement>('[role="treeitem"]'),
   );
   return (
-    <span ref={ref} className="flex min-w-0 items-center justify-end gap-1.5">
+    <span
+      ref={ref}
+      data-testid="workspace-trailing"
+      className="flex min-w-0 items-center justify-end gap-1.5"
+    >
       {beside ? null : isMultiRepo(ws) ? (
         <BranchChip ws={ws} selected={selected} testId="workspace-repos">
           {t("worktree.multi.count", { n: ws.repos?.length ?? 0 })}
@@ -414,18 +422,22 @@ export function CodeRail() {
   const collapsed = useUi((s) => s.railCollapsed);
   const platform = useBoot((s) => s.boot?.platform ?? "linux");
   const saved = useSetting("rail_width", 248);
+  const read = useSettings((s) => s.loaded);
   // While the edge is dragged: its width, not yet saved.
   const [width, setWidth] = useState<number | null>(null);
   const dragging = width !== null;
   const { show } = useToast();
   const probe = useRef<HTMLDivElement | null>(null);
-  const min = railMin(useRailParts(probe, !collapsed), useShownMarks(list), useScrollbarWidth());
+  // The Pinned band's fold: kept here, as the minimum counts only the rows shown.
+  const [pinnedOpen, setPinnedOpen] = useState(true);
+  const min = railMin(useRailParts(probe, !collapsed), useShownMarks(list, pinnedOpen), useScrollbarWidth());
   const shown = Math.min(RAIL_MAX, Math.max(min, width ?? saved));
   // D-2703: a rail narrower than its minimum widens to it, and keeps that
-  // width when the marks that asked for it go; never while it's dragged.
+  // width when the marks that asked for it go; never while it's dragged,
+  // nor over a saved width the settings couldn't read.
   useEffect(() => {
-    if (!dragging && !collapsed && saved < min) void useSettings.getState().set("rail_width", min);
-  }, [dragging, collapsed, saved, min]);
+    if (read && !dragging && !collapsed && saved < min) void useSettings.getState().set("rail_width", min);
+  }, [read, dragging, collapsed, saved, min]);
   // Its width eases once it has drawn: not while it opens or collapses,
   // nor mid-drag, when the edge follows the pointer.
   const [drawn, setDrawn] = useState(false);
@@ -568,6 +580,8 @@ export function CodeRail() {
         collapsed={collapsed}
         expanded={Object.fromEntries(list.map((w) => [w.id, !w.collapsed]))}
         onExpand={(ws, open) => setCollapsed(ws.id, !open)}
+        pinnedOpen={pinnedOpen}
+        onPinnedOpen={setPinnedOpen}
         row={(ws) => ({
           testId: "workspace-row",
           data: { root: ws.root },

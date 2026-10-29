@@ -238,7 +238,20 @@ describe("browser demo (vibezeo.com/demo)", () => {
       const before = MAIN[path] ?? "";
       expect(before.split(input.old_string)).toHaveLength(2);
       expect(before.replace(input.old_string, input.new_string)).toBe(thread[path]);
-      expect(e.output).toBe(`The file /home/you/shop/${path} has been updated.`);
+      // Claude Code's result: updated, then the edited lines as `cat -n`
+      // numbers them (claude/edits.golden.json).
+      const [said, ...snippet] = (e.output ?? "").split("\n");
+      expect(said).toBe(
+        `The file /home/you/shop/${path} has been updated. Here's the result of running \`cat -n\` on a snippet of the edited file:`,
+      );
+      const fixed = (thread[path] ?? "").split("\n");
+      expect(snippet.length).toBeGreaterThan(0);
+      for (const row of snippet) {
+        const at = /^ {0,5}(\d+)→(.*)$/.exec(row);
+        expect(at, row).not.toBeNull();
+        expect(at?.[2]).toBe(fixed[Number(at?.[1]) - 1]);
+      }
+      expect(snippet.map((row) => row.replace(/^ *\d+→/, "")).join("\n")).toBe(input.new_string);
     }
     // Each edit's first row, while it runs, names its file and input too.
     const running = seen.filter((e) => e.type === "tool" && e.verb === "edit" && e.status === "running");
@@ -864,13 +877,24 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
     await until(() => screen.includes(askLine(w)));
     const status: Array<{ key: string; status: string }> = [];
     const stop = await listen<{ records: Array<{ key: string; status: string }> }>("status:changed", (e) => void status.push(...e.records));
-    core.handle("pty_write", { paneId, data: "maybe\r" });
-    expect(screen).toContain("Type y or n, then Enter.");
-    core.handle("pty_write", { paneId, data: "y\r" });
+    // A Gemini CLI select: a key it doesn't know does nothing, and Enter
+    // takes the highlighted first choice, Allow once.
+    core.handle("pty_write", { paneId, data: "x" });
+    core.handle("pty_write", { paneId, data: "\x1b[B" });
+    expect(status.filter((s) => s.key === `pane:${paneId}`)).toEqual([]);
+    core.handle("pty_write", { paneId, data: "\r" });
+    // Answered: the next key isn't a second answer.
+    core.handle("pty_write", { paneId, data: "1" });
     await until(() => screen.includes(w.closing ?? "?"));
     for (const c of w.commits) expect(screen).toContain(`[${branchOf(w.slug)} ${c.sha}] ${c.subject}`);
     expect(screen).toContain(`✓ ${testRun({ ...MAIN, ...changedIn(w.slug) }, "search").at(-1)?.match(/(\d+) passed/)?.[1]} tests passed`);
     expect(status.at(-1)).toMatchObject({ key: `pane:${paneId}`, status: "done" });
+    // Working while it runs the command, then done, once.
+    expect(status.filter((s) => s.key === `pane:${paneId}`).map((s) => s.status)).toEqual([
+      "working",
+      "done",
+    ]);
+    expect(screen.split(w.closing ?? "?").length - 1).toBe(1);
     expect((core.handle("git_status", ws(idOf(w.slug))) as GitPanel).status.unstaged).toEqual([]);
     expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug), branchOf(w.slug)]);
     stop();
@@ -884,7 +908,8 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
       channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
     });
     await until(() => screen.includes(askLine(waiting())));
-    core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "n\r" });
+    // Its third choice, "No, suggest changes (esc)".
+    core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "3" });
     expect(screen).toContain("won't run");
     expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug)]);
   });
@@ -1160,7 +1185,7 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
       // Bea answers in her terminal; her Gemini CLI never names a tool.
       core.handle("pty_spawn", { paneId: DEMO_WAITING.paneId, channel: { onmessage: () => undefined } });
       vi.advanceTimersByTime(100);
-      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "y\r" });
+      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "1" });
       vi.advanceTimersByTime(5_000);
       expect(line(DEMO_WAITING.paneId)).toBeNull();
     } finally {

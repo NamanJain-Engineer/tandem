@@ -116,20 +116,45 @@ export function engineLabel(engine: string): string {
 }
 
 /** Each engine's own question before it runs a command, as its terminal
- * puts it. The app sees an agent pane wait only when its screen matches
- * the engine's waitingPatterns (registry.json), so the demo asks in words
- * they match (D-2624). */
-const ASKS: Record<string, (command: string) => string> = {
-  gemini: (command) => `Allow execution of: '${command}'?`,
+ * puts it: Gemini CLI 0.66.0's ToolConfirmationMessage, for its shell tool,
+ * shows the command in a rounded box, asks, then lists its choices,
+ * numbered, the first highlighted. The app sees an agent pane wait only
+ * when its screen matches the engine's waitingPatterns (registry.json), and
+ * "Allow execution" does (D-2624). */
+const ASKS: Record<string, { question: string; choices: string[] }> = {
+  gemini: {
+    question: "Allow execution of [Shell]?",
+    choices: ["Allow once", "Allow for this session", "No, suggest changes (esc)"],
+  },
 };
+
+function askOf(w: StoryWorktree): { question: string; choices: string[] } {
+  const ask = ASKS[w.engine];
+  if (!ask) throw new Error(`story.json: no question in ${w.engine}'s words`);
+  return ask;
+}
 
 /** The waiting agent's question in its terminal: the engine's own, since
  * 0.12.0 raises no approval for it (only `vibezeo run` does). The demo's
  * pane and the site's scenes both read it from here (D-1899). */
 export function askLine(w: StoryWorktree): string {
-  const ask = ASKS[w.engine];
-  if (!ask) throw new Error(`story.json: no question in ${w.engine}'s words`);
-  return ask(w.ask ?? "");
+  return askOf(w).question;
+}
+
+/** All the waiting agent's terminal shows when it asks: the command it
+ * wants to run in a box, the question, and its choices. */
+export function askScreen(w: StoryWorktree): string[] {
+  const { question, choices } = askOf(w);
+  const command = w.ask ?? "";
+  const rule = "─".repeat(command.length + 2);
+  return [
+    `╭${rule}╮`,
+    `│ ${command} │`,
+    `╰${rule}╯`,
+    question,
+    "",
+    ...choices.map((c, i) => `${i === 0 ? "●" : " "} ${i + 1}. ${c}`),
+  ];
 }
 
 /** The tool Claude Code's hooks name for a step (hook.rs's PreToolUse). */

@@ -119,6 +119,28 @@ describe("the E2E runner's temp homes (OPERATING, E2E lessons)", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  it("D-2625 a removal that fails is a warning naming its own folder, and the homes after it still go", () => {
+    root = mkdtempSync(join(tmpdir(), "e2e-homes-"));
+    home("old1", 400);
+    home("old2", 300);
+    home("old3", 200);
+    home("old4", 100);
+    const now = home("now");
+    // Newest first, the two past the three kept are old2, then old1.
+    const old2 = join(root, "tandem-e2e-old2");
+    const remove = (path: string, options: RmOptions) => {
+      if (path === old2) throw notEmpty(path);
+      rmSync(path, options);
+    };
+    const warn = vi.fn();
+    expect(endRun(now, 2, true, false, warn, remove)).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(old2);
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain(now);
+    expect(existsSync(join(root, "tandem-e2e-old1"))).toBe(false);
+    expect(existsSync(join(now, FAILED_MARK))).toBe(true);
+  });
+
   it("a cleanup that still fails is a warning naming the folder, and the run keeps its exit code", () => {
     root = mkdtempSync(join(tmpdir(), "e2e-homes-"));
     const passed = home("pass");

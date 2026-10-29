@@ -480,7 +480,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 | Prop | Type | Default |
 |---|---|---|
 | `variant` | `"primary" \| "secondary" \| "ghost" \| "danger" \| "link"` | `"secondary"` |
-| `size` | `"sm" \| "md" \| "lg"` (28/32/40px) | `"md"` |
+| `size` | `"sm" \| "md" \| "lg"` (28/32/40px); `"xl"` (44px) for the public site's calls to action; `"mark"` (28px, 4px sides) for a mark at a rail row's end, whose icon alone is 20px wide (D-2701) | `"md"` |
 | `iconLeft`, `iconRight` | ReactNode | — |
 | `loading` | boolean | false |
 | `kbd` | string (e.g. `"⌘↩"`), rendered as a trailing `Kbd` | — |
@@ -1735,7 +1735,7 @@ One live wall of every agent in every mode: Code panes, Threads and Teammate cha
 - **Agent card** (`AgentCard`, surface-2, radius md, 1px border; waiting cards use a 1px `status-waiting` border):
   - Line 1: StatusDot, EngineGlyph or Avatar (teammate chats), title (truncate), then right-aligned "{Status} · {elapsed}" in tabular-nums, the ⋯ menu and × (hover or focus only).
   - Line 2 (fg-muted, text-sm): "{Engine} · {workspace or teammate} · ⎇ {branch} · {account}". Omit missing parts; the account only when its engine has more than one (D-2620).
-  - Lines 3–4 (optional, fg-subtle, up to 2 lines, passed through the shared secret redactor): the latest activity: the pending request ("Wants to run: {cmd}", "Asks: {question}"), the last ToolCallBlock summary, or the start of the last message. The setting "Show status previews on Dashboard cards" (on) controls it.
+  - Lines 3–4 (optional, fg-subtle, up to 2 lines, passed through the shared secret redactor as the cards load; a status update draws the record's line without it, since today that is only a hook's tool name and no status source sets a preview, so a source that ever does must be redacted on that path too, D-2627; a blank line shows none): the latest activity: the pending request ("Wants to run: {cmd}", "Asks: {question}"), the last ToolCallBlock summary, or the start of the last message. The setting "Show status previews on Dashboard cards" (on) controls it.
   - Waiting cards show compact ApprovalCard actions for kinds `command`, `file_write` and `question` ("Allow once" / "Deny" / "Open"; questions show only "Answer…", which jumps). High-risk requests show only "Open", so the full card is reviewed in context.
   - Badges: "Auto" (accent-outline) and "Remote · {host}". The "Lite" badge is pane-only and never appears on cards.
 - **Grouping:** by Status (group order Waiting, Working, Done, Failed, Idle), or by Project (workspaces in rail order, "Teammates" and "No folder" last, each group header showing its own mini counts). Group headers are collapsible 2xs caps rows; collapse state persists.

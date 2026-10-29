@@ -22,6 +22,7 @@ import { resetSuggestions } from "../features/agents/Suggestions";
 import { resetFiles } from "../stores/files";
 import { resetIntel } from "../stores/intel";
 import { resetGit } from "../stores/git";
+import { resetChecksPolling } from "../stores/worktrees";
 import { resetBrowser } from "../stores/browser";
 import { resetScratchpad } from "../stores/scratchpad";
 import { resetTasks } from "../stores/tasks";
@@ -135,6 +136,7 @@ export function resetStores(): void {
   resetFiles();
   resetIntel();
   resetGit();
+  resetChecksPolling();
   resetBrowser();
   useDictate.setState({ status: null, models: null, stats: null, take: null, level: 0, historyRev: 0 });
   resetScratchpad();

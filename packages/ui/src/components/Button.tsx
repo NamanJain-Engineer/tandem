@@ -4,7 +4,7 @@ import { Kbd } from "./Kbd";
 import { Spinner } from "./Spinner";
 
 export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "link";
-export type ButtonSize = "sm" | "md" | "lg" | "xl";
+export type ButtonSize = "sm" | "md" | "lg" | "xl" | "mark";
 
 export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   variant?: ButtonVariant;
@@ -40,6 +40,8 @@ const SIZES: Record<ButtonSize, string> = {
   lg: "h-10 px-4 text-md gap-2",
   /** 44 px: calls to action on the public site. */
   xl: "h-11 px-5 text-lg gap-2",
+  /** A mark at a rail row's end (D-2701): its 12 px icon alone is 20 px wide. */
+  mark: "h-7 px-1 text-sm gap-1",
 };
 
 /** The button's classes, for links that look like buttons (the public site's

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bell, Folder, PanelLeft, Plus, Settings, Terminal } from "lucide-react";
+import { Bell, Folder, Globe, PanelLeft, Plus, Settings, Terminal } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Avatar, AvatarStack } from "../components/Avatar";
 import { Badge, Chip, Count } from "../components/Badge";
@@ -130,6 +130,7 @@ export const galleryEntries: GalleryEntry[] = [
         render: () => <Button variant={v}>Continue</Button>,
       })),
       { name: "sizes", render: () => (<div className="flex gap-2"><Button size="sm">Small</Button><Button size="md">Medium</Button><Button size="lg">Large</Button></div>) },
+      { name: "mark", render: () => (<div className="flex gap-2"><Button variant="ghost" size="mark" iconLeft={<Globe size={12} aria-hidden="true" />}>Preview</Button><Button variant="ghost" size="mark" aria-label="Open the preview of tandem/fix" iconLeft={<Globe size={12} aria-hidden="true" />} /></div>) },
       { name: "loading", render: () => <Button variant="primary" loading>Saving</Button> },
       { name: "disabled", render: () => <Button disabled disabledReason="Comes with Vibezeo accounts">Connect</Button> },
       { name: "with kbd and icon", render: () => <Button variant="primary" iconLeft={<Plus size={14} />} kbd="⌘↩">Send</Button> },
