@@ -315,12 +315,8 @@ impl Executor {
             facts = self.typable(pane).await?;
         }
         self.effect()?;
-        // The model reads panes anyone can write to: no `@` it types names a
-        // file (D-3023), the note goes on the same line, and it runs no
-        // slash or shell command (D-3026).
-        let clean = tandem_core::untrusted::no_command(&strip_controls(
-            &tandem_core::untrusted::defang_noted(text),
-        ));
+        // The model reads panes anyone can write to (D-3023, D-3026).
+        let clean = words(text);
         if clean.trim().is_empty() {
             return Err("There was nothing to type.".into());
         }
@@ -506,6 +502,21 @@ fn capitalized(s: &str) -> String {
 
 fn humanized(tool: &str) -> String {
     capitalized(&tool.replace('_', " "))
+}
+
+/// The model's words as Conductor types or sends them: one line first, so
+/// no line break `defang` has read can join a paste marker after it
+/// (D-3032); then defanged, so no `@` names a file, with the note on the
+/// same line (D-3023); then guarded, so it runs no slash or shell command
+/// (D-3026).
+pub fn words(text: &str) -> String {
+    let (safe, wrote) = tandem_core::untrusted::defang_marked(&strip_controls(text));
+    let line = if wrote {
+        format!("{safe} {}", tandem_core::untrusted::DEFANGED)
+    } else {
+        safe
+    };
+    tandem_core::untrusted::no_command(&line)
 }
 
 /// Control characters out (newlines become spaces): typed text can't
@@ -781,6 +792,29 @@ pub(crate) mod tests {
             let typed = host.typed.lock().clone()[0].1.clone();
             assert_eq!(typed, safe, "{text:?}");
             assert!(!typed.chars().any(char::is_control), "{typed:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_cn_03_a_line_break_flattened_forms_no_paste_marker() {
+        // One line first, then defanged: a marker can't form from a line
+        // break the defang read (D-3032).
+        for (text, typed) in [
+            ("[Pasted\ntext #1]", "\u{FF3B}Pasted text #1]"),
+            ("[Image\t#2]", "\u{FF3B}Image #2]"),
+            // A line break becomes a space, which joins nothing.
+            ("ultra\nplan", "ultra plan"),
+        ] {
+            let host = FakeHost::with_panes();
+            let (e, _) = exec(host.clone());
+            let r = e
+                .run(&call(
+                    "prompt_pane",
+                    json!({"pane": "agent", "text": text, "send": true}),
+                ))
+                .await;
+            assert!(r.result.ok, "{}", r.result.output);
+            assert_eq!(host.typed.lock().clone()[0].1, typed, "{text:?}");
         }
     }
 

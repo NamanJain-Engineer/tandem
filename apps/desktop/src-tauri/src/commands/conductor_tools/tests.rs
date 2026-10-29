@@ -677,6 +677,19 @@ fn f_cn_03_spoken_words_hide_no_keyword_or_exit_word_in_what_is_dropped() {
 }
 
 #[test]
+fn f_cn_03_spoken_words_flattened_form_no_paste_marker() {
+    // One line first, then defanged: a marker can't form from a line break
+    // the defang read (D-3032).
+    assert_eq!(
+        super::spoken(
+            &json!({"text": "[Pasted\ntext #1] and [Image\t#2]"}),
+            "text"
+        ),
+        "\u{FF3B}Pasted text #1] and \u{FF3B}Image #2]"
+    );
+}
+
+#[test]
 fn f_cn_03_every_tool_sends_the_models_words_through_spoken() {
     // launch_agents' task, new_thread, send_to_thread, message_teammate and
     // review_send_back: none reads the text raw (D-3023, D-3026).

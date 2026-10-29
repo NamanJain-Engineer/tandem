@@ -33,13 +33,11 @@ fn s(args: &Value, k: &str) -> String {
     args[k].as_str().unwrap_or_default().trim().to_string()
 }
 
-/// The model's words a tool sends an agent: it read panes anyone can write
-/// to, so no `@` names a file (D-3023), it runs no slash or shell command
-/// (D-3026), and it's one line, as `prompt_pane` types.
+/// The model's words a tool sends an agent, as `prompt_pane` types them
+/// (`exec::words`): it read panes anyone can write to (D-3023, D-3026,
+/// D-3032).
 fn spoken(args: &Value, k: &str) -> String {
-    tandem_core::untrusted::no_command(&tandem_voice::conductor::exec::strip_controls(
-        &tandem_core::untrusted::defang_noted(&s(args, k)),
-    ))
+    tandem_voice::conductor::exec::words(&s(args, k))
 }
 
 fn ipc(e: tandem_core::IpcError) -> String {
