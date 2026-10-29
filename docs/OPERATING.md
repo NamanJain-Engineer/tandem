@@ -169,6 +169,10 @@ pnpm db:migrate && pnpm db:seed                             # inside with-infra,
 # order: a spec that leaves panes open closes them in an `after` hook, or the next
 # launch shows the "still running" dialog (closeAllPanes, stopLeftovers).
 
+# The E2E runner starts openbox under Xvfb (maximize, placement and window focus
+# need a window manager). With TANDEM_E2E_NO_WM=1 the window may never get focus,
+# so chats are never marked read (D-3116): no spec reads a chat's unread dot today.
+
 # Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
 bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
 sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first

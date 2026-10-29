@@ -418,6 +418,11 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       await wait(1_050);
       fireEvent.pointerDown(document.body, { pointerId: 2, pointerType: "touch" });
       fireEvent.pointerUp(document.body, { pointerId: 2, pointerType: "touch" });
+      // The tap's compatibility mouse events (WebView2 fires them).
+      fireEvent.mouseDown(document.body, { button: 0 });
+      fireEvent.mouseUp(document.body, { button: 0 });
+      fireEvent.click(document.body);
+      await wait(300);
       fireEvent.pointerUp(allow(), { pointerId: 1 });
       fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();
@@ -548,7 +553,8 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       expect(waiting(allow())).toBe(false);
       // The engine still thinks the button is down: the next press arrives
       // as a mousedown alone, then its pointerup and click.
-      fireEvent.mouseDown(allow(), { button: 0 });
+      fireEvent.pointerMove(allow(), { pointerId: 1, pointerType: "mouse", button: 0, buttons: 1 });
+      fireEvent.mouseDown(allow(), { button: 0, buttons: 1 });
       fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.mouseUp(allow(), { button: 0 });
       fireEvent.click(allow());
@@ -580,6 +586,44 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
         allow().dispatchEvent(click);
       });
       expect(a).not.toHaveBeenCalled();
+      expect(b).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("round 16: what can restart the mouse's press", () => {
+    const view = (requestKey: string, onAllow: () => void) => (
+      <UiProvider theme="dark">
+        <ApprovalCard kind="command" title="run" requestKey={requestKey} onAllow={onAllow} onDeny={() => undefined} />
+      </UiProvider>
+    );
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+    it("M1: a bare synthetic mousedown while the mouse is held on A can't restart its press", async () => {
+      layout();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", () => undefined));
+      await steady();
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+      rerender(view("apr_b", b));
+      await wait(1_050);
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.click(allow());
+      expect(b).not.toHaveBeenCalled();
+    });
+
+    it("SF1: a press stamped 1.1 s in the past (begun before B appeared) isn't taken as a new one", async () => {
+      layout();
+      const b = vi.fn();
+      const { rerender } = render(view("apr_a", () => undefined));
+      await steady();
+      rerender(view("apr_b", b));
+      await wait(600);
+      const down = new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse" } as PointerEventInit);
+      Object.defineProperty(down, "timeStamp", { value: performance.now() - 1_100 });
+      allow().dispatchEvent(down);
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();
     });
   });
