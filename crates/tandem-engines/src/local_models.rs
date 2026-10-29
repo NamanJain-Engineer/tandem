@@ -349,6 +349,9 @@ impl CodexVersion {
     }
 
     fn from_word(word: &str) -> Option<Self> {
+        // Build metadata (`+…`) names the same release, as in semver
+        // (D-3071); a pre-release before it is still one.
+        let word = word.split_once('+').map_or(word, |(version, _)| version);
         let (release, pre_release) = match word.split_once('-') {
             Some((release, _)) => (release, true),
             None => (word, false),
@@ -988,6 +991,19 @@ mod tests {
             assert_eq!(check_codex(Some(out)), unknown, "{out:?}");
         }
         assert_eq!(check_codex(None), unknown);
+        // Build metadata names the same release (semver); a pre-release
+        // with it is still a pre-release (D-3071).
+        assert_eq!(ok("codex-cli 0.149.0+build.7\n"), Ok((0, 149, 0)));
+        assert_eq!(ok("codex-cli 0.165.0+0a1b2c3"), Ok((0, 165, 0)));
+        assert_eq!(
+            check_codex(Some("codex-cli 0.149.0-alpha.1+build\n")),
+            old("0.149.0-alpha.1+build")
+        );
+        assert_eq!(
+            check_codex(Some("codex-cli 0.148.0+build")),
+            old("0.148.0+build")
+        );
+        assert_eq!(check_codex(Some("codex-cli +build")), unknown);
         assert!(v("codex-cli 0.150.0-alpha.1").pre_release);
         assert!(!v("codex-cli 0.150.0-alpha.1").at_least((0, 150, 0)));
         assert!(v("codex-cli 0.150.0-alpha.1").at_least((0, 149, 0)));
