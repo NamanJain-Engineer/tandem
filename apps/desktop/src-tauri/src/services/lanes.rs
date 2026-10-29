@@ -1524,7 +1524,7 @@ mod tests {
     async fn jj_fixture() -> Option<(Fx, std::sync::Arc<dyn tandem_git::jj::JjRunner>)> {
         let Some(jj) = jj_lanes::runner().await else {
             assert!(
-                std::env::var("JJ_REQUIRED").is_err(),
+                !tandem_git::jj::jj_required(),
                 "JJ_REQUIRED is set but jj isn't installed"
             );
             eprintln!("F-CD-24: jj isn't installed here; the real-jj checks didn't run");

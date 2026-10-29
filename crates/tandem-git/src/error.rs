@@ -18,6 +18,11 @@ pub enum GitError {
     Dirty,
     #[error("{0}")]
     Conflict(String),
+    /// A jj working copy left behind by a rewrite elsewhere: the message
+    /// names the folder and what to run. Never a Conflict, so nothing
+    /// offers to force past it (F-CD-24).
+    #[error("{0}")]
+    Stale(String),
     #[error("{0}")]
     Invalid(String),
     /// The remote wants credentials git couldn't get without a prompt.
@@ -38,7 +43,7 @@ impl GitError {
             GitError::NotInstalled => ErrorCode::EngineMissing,
             GitError::NotARepo => ErrorCode::NotFound,
             GitError::Dirty | GitError::Conflict(_) => ErrorCode::Conflict,
-            GitError::Invalid(_) => ErrorCode::Invalid,
+            GitError::Invalid(_) | GitError::Stale(_) => ErrorCode::Invalid,
             GitError::Auth(_) => ErrorCode::Unauthenticated,
             GitError::LocalOnly => ErrorCode::PermissionDenied,
             GitError::Io(_) => ErrorCode::Io,

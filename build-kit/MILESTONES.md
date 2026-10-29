@@ -2104,7 +2104,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## M18 · Next features: jj workspaces (M)
 
-**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599 and D-2660–D-2679 (D-874).
+**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599 and D-2660–D-2699 (D-874).
 
 **Owns:** F-CD-24 (P2)
 **Prerequisites.** F-CD-15 (worktrees), F-WT-02 (the worktree diff), F-WT-03 (the overlap check), F-CD-22's single-repository guard.

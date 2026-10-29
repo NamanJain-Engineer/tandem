@@ -41,7 +41,7 @@ fn real_jj(dir: &Path) -> Option<Arc<dyn JjRunner>> {
         Some(j) => Some(Arc::new(j)),
         None => {
             assert!(
-                std::env::var("JJ_REQUIRED").is_err(),
+                !tandem_git::jj::jj_required(),
                 "JJ_REQUIRED is set but jj isn't installed"
             );
             eprintln!("F-CD-24: jj isn't installed here; the real-jj checks didn't run");
@@ -676,8 +676,8 @@ async fn f_cd_24_a_squash_in_the_main_checkout_keeps_the_lanes_base() {
     change(&lane.path);
     let _ = jj.run(&lane.path, &["status"]);
     let before = start_of(jj.as_ref(), &fx.repo, &lane.base);
-    // The person squashes work into the lane's base in the main checkout:
-    // the base commit is rewritten (a new commit id, the same change).
+    // The person squashes work into the commit the lane started from (its
+    // first commit's parent) in the main checkout: that commit is rewritten.
     std::fs::write(fx.repo.join("main.txt"), "m\n").expect("write");
     let out = jj.run(&fx.repo, &["squash"]).expect("squash");
     assert!(out.success(), "{}", out.stderr);
@@ -688,6 +688,14 @@ async fn f_cd_24_a_squash_in_the_main_checkout_keeps_the_lanes_base() {
         .await
         .expect_err("stale");
     assert_eq!(e.to_string(), jj::stale(&lane.path));
+    // Discard says the same, and never as a Conflict a dialog would force
+    // past: the folder stays.
+    let e = jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, None)
+        .await
+        .expect_err("stale");
+    assert_eq!(e.to_string(), jj::stale(&lane.path));
+    assert_eq!(e.code(), tandem_core::ErrorCode::Invalid);
+    assert!(lane.path.join("new.txt").exists());
     let out = jj
         .run(&lane.path, &["workspace", "update-stale"])
         .expect("update-stale");
@@ -841,4 +849,136 @@ async fn f_cd_24_an_alias_named_like_the_base_cant_move_the_diff() {
         .await
         .expect("files");
     assert_eq!(files, vec!["a.txt".to_string(), "new.txt".to_string()]);
+}
+
+/// Every commit in the repository's log: (change id, empty, description).
+fn log_all(jj: &dyn JjRunner, root: &Path) -> Vec<String> {
+    let out = jj
+        .run(
+            root,
+            &[
+                "--ignore-working-copy",
+                "log",
+                "-r",
+                "all()",
+                "--no-graph",
+                "-T",
+                "self.change_id() ++ \"\\n\"",
+            ],
+        )
+        .expect("log");
+    out.stdout.lines().map(str::to_string).collect()
+}
+
+#[tokio::test]
+async fn f_cd_24_4_an_unused_lane_leaves_nothing_in_jj_log() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let before = log_all(jj.as_ref(), &fx.repo);
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, None)
+        .await
+        .expect("discard");
+    assert_eq!(
+        log_all(jj.as_ref(), &fx.repo),
+        before,
+        "its empty first commit went"
+    );
+    // A lane with work keeps it (and its first commit, which the work sits on).
+    let used = jj::add_workspace(jj.clone(), &repo, "used", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    change(&used.path);
+    jj::forget_workspace(jj.clone(), &fx.repo, &used.path, &used.slug, None)
+        .await
+        .expect("discard");
+    let after = log_all(jj.as_ref(), &fx.repo);
+    assert!(
+        after.contains(&used.base),
+        "the first commit stays under the work"
+    );
+    assert_eq!(after.len(), before.len() + 2);
+}
+
+#[tokio::test]
+async fn f_cd_24_a_lane_beside_a_merge_is_refused_and_leaves_nothing() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    // The person's working copy is a merge of main and another commit.
+    let run = |args: &[&str]| {
+        let out = jj.run(&fx.repo, args).expect("jj");
+        assert!(out.success(), "{}", out.stderr);
+    };
+    run(&["new", "-m", "other", "root()"]);
+    std::fs::write(fx.repo.join("other.txt"), "o\n").expect("write");
+    run(&["new", "@", "main"]);
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    let before = log_all(jj.as_ref(), &fx.repo);
+    let e = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect_err("a merge");
+    assert_eq!(e.to_string(), jj::MERGE_BASE);
+    assert!(!fx.repo.join(".tandem/worktrees/tidy").exists());
+    assert!(!jj::workspace_names(jj.as_ref(), &fx.repo)
+        .expect("names")
+        .contains("tidy"));
+    assert_eq!(
+        log_all(jj.as_ref(), &fx.repo),
+        before,
+        "nothing left in jj log"
+    );
+}
+
+#[tokio::test]
+async fn f_cd_24_4_ignored_files_go_and_files_jj_skipped_dont() {
+    let fx = Fixture::new();
+    let Some(jj) = real_jj(fx.dir.path()) else {
+        return;
+    };
+    colocated(&fx, jj.as_ref());
+    let repo = Repo::discover(&fx.repo).expect("discover").expect("repo");
+    // Ignored content (by the lane's .gitignore, and by the repository's
+    // info/exclude), even a nested clone in it, goes without force, as a
+    // git lane's ignored files do.
+    let lane = jj::add_workspace(jj.clone(), &repo, "tidy", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    std::fs::write(lane.path.join(".gitignore"), "vendor/\n").expect("write");
+    let nested = lane.path.join("vendor/lib");
+    std::fs::create_dir_all(&nested).expect("mkdir");
+    git(&nested, &["init", "-q"]);
+    std::fs::write(nested.join("x.txt"), "x\n").expect("write");
+    let exclude = fx.repo.join(".git/info/exclude");
+    let mut text = std::fs::read_to_string(&exclude).unwrap_or_default();
+    text.push_str("\n*.scratch\n");
+    std::fs::write(&exclude, text).expect("exclude");
+    std::fs::write(lane.path.join("notes.scratch"), "n\n").expect("write");
+    jj::forget_workspace(jj.clone(), &fx.repo, &lane.path, &lane.slug, None)
+        .await
+        .expect("ignored content needs no force");
+    assert!(!lane.path.exists());
+    // A file outside the workspace's sparse patterns: jj never snapshots it.
+    let sparse = jj::add_workspace(jj.clone(), &repo, "sparse", &HashSet::new(), None, None)
+        .await
+        .expect("jj workspace");
+    std::fs::create_dir_all(sparse.path.join("kept")).expect("mkdir");
+    let out = jj
+        .run(&sparse.path, &["sparse", "set", "--clear", "--add", "kept"])
+        .expect("sparse");
+    assert!(out.success(), "{}", out.stderr);
+    std::fs::write(sparse.path.join("outside.txt"), "o\n").expect("write");
+    let e = jj::forget_workspace(jj.clone(), &fx.repo, &sparse.path, &sparse.slug, None)
+        .await
+        .expect_err("outside the sparse patterns");
+    assert!(matches!(e, tandem_git::GitError::Dirty), "{e}");
+    assert!(sparse.path.join("outside.txt").exists());
 }

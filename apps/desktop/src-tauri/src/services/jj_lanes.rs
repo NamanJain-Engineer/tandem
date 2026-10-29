@@ -106,18 +106,22 @@ pub async fn runner() -> Option<Arc<dyn JjRunner>> {
 }
 
 /// Tests' jj never reads the developer's config: a home and a config of
-/// its own (an identity only), the same for the whole run.
+/// its own (an identity only). One folder for every run (not one per
+/// process, which would pile up), its config written whole by rename so
+/// runs side by side never see half of it.
 #[cfg(test)]
 fn isolated(mut vars: Vec<(String, String)>) -> Vec<(String, String)> {
     static HOME: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let home = HOME.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("tandem-jj-home-{}", std::process::id()));
+        let dir = std::env::temp_dir().join("tandem-jj-test-home");
         std::fs::create_dir_all(&dir).ok()?;
+        let part = dir.join(format!("jj-config.toml.{}", std::process::id()));
         std::fs::write(
-            dir.join("jj-config.toml"),
+            &part,
             "[user]\nname = \"Test\"\nemail = \"test@example.invalid\"\n",
         )
         .ok()?;
+        std::fs::rename(&part, dir.join("jj-config.toml")).ok()?;
         Some(dir)
     });
     vars.retain(|(k, _)| k != "HOME" && !k.starts_with("JJ_"));
@@ -356,14 +360,22 @@ pub async fn create(
     Ok(row)
 }
 
-/// Nothing half-made stays behind.
+/// Nothing half-made stays behind: the workspace (and its empty first
+/// commit), its folder, and a handoff's copy of its source.
 async fn undo(runner: Arc<dyn JjRunner>, root: &Path, lane: &jj::JjLane) {
     // The record stays when the forget failed, so the sweep tries again.
-    if jj::forget_workspace(runner, root, &lane.path, &lane.slug, None)
+    if jj::forget_workspace(runner.clone(), root, &lane.path, &lane.slug, None)
         .await
         .is_ok()
     {
         jj::done_adding(lane);
+    }
+    if let Some(copy) = lane.copy.clone() {
+        let root = root.to_path_buf();
+        let _ = tokio::task::spawn_blocking(move || {
+            jj::abandon_leftover(runner.as_ref(), &root, &copy, false)
+        })
+        .await;
     }
 }
 

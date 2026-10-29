@@ -14,7 +14,10 @@
 //! in a repository the person trusts, whose `.jj` is jj's own (not committed
 //! to git, its store pointing at this repository's `.git`: [`check_repo`]).
 //! It never installs jj, never writes its config, and never runs a command
-//! that rewrites or publishes history (`abandon`, `rebase`, `git push`, ...).
+//! that rewrites or publishes the person's history (`rebase`, `git push`,
+//! ...). It abandons only commits it made that hold nothing: a lane's empty
+//! first commit after its Discard, and a failed handoff's copy
+//! ([`abandon_leftover`]).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -291,6 +294,9 @@ pub struct JjLane {
     pub base: String,
     /// Its record in the pending folder until its row exists.
     pub pending: Option<PathBuf>,
+    /// A handoff's copy of its source's working copy (a change id): the
+    /// caller abandons it ([`abandon_leftover`]) if the lane is undone.
+    pub copy: Option<String>,
 }
 
 /// jj's default workspace: never one of Vibezeo's (a lane's slug is made
@@ -358,6 +364,15 @@ pub fn tracked_under(repo_root: &Path, slug: &str) -> bool {
     tracked
 }
 
+/// Whether tests must have jj: `JJ_REQUIRED` set to anything but empty,
+/// `0` or `false` (the same rule as the E2E spec's).
+pub fn jj_required() -> bool {
+    std::env::var("JJ_REQUIRED").is_ok_and(|v| {
+        let v = v.trim().to_ascii_lowercase();
+        !v.is_empty() && v != "0" && v != "false"
+    })
+}
+
 /// jj's own words for a working copy that a rewrite elsewhere left behind.
 const STALE_WORDS: &str = "working copy is stale";
 
@@ -375,7 +390,7 @@ pub fn stale(folder: &Path) -> String {
 fn checked(jj: &dyn JjRunner, cwd: &Path, args: &[&str]) -> Result<JjOutput, GitError> {
     let out = jj.run(cwd, args)?;
     if !out.success() && out.stderr.contains(STALE_WORDS) {
-        return Err(GitError::Conflict(stale(cwd)));
+        return Err(GitError::Stale(stale(cwd)));
     }
     Ok(out)
 }
@@ -457,9 +472,13 @@ pub fn base_of(jj: &dyn JjRunner, ws_root: &Path) -> Result<String, GitError> {
 /// A handoff's starting point: a copy of the source workspace's working-copy
 /// commit (`jj duplicate @`, run in the source, which snapshots it first).
 /// The new lane sits on the copy, so the source's later edits (which
-/// rewrite its working-copy commit) never rebase the lane or leave it stale.
-/// The copy has what jj snapshotted: files jj refused or doesn't track in
-/// the source aren't in it. Returns the copy's change id.
+/// rewrite its working-copy commit) don't rebase the lane. The copy is a
+/// child of the source's `@-`, though: a rewrite of that (an agent's
+/// `jj squash` in the source) rebases the copy and leaves the new lane
+/// stale, which its diff says how to fix. The copy has what jj
+/// snapshotted: files jj refused or doesn't track in the source aren't in
+/// it. Returns the copy's change id; a copy jj made but that didn't read
+/// back as itself is abandoned (one whose id couldn't be read stays).
 fn fork_of(jj: &dyn JjRunner, main: &Path, source: &Path) -> Result<String, GitError> {
     // jj prints the copy with `templates.commit_summary`, and says nothing
     // with `ui.quiet`, both of which config can set: fixed for this call.
@@ -487,23 +506,29 @@ fn fork_of(jj: &dyn JjRunner, main: &Path, source: &Path) -> Result<String, GitE
         .ok_or_else(|| GitError::Invalid("jj duplicate gave an unexpected answer".into()))?;
     // And jj, in the repository, knows that change as itself.
     let quoted = format!("\"{id}\"");
-    let back = ok_or(
-        checked(
-            jj,
-            main,
-            &[
-                "--ignore-working-copy",
-                "log",
-                "-r",
-                &quoted,
-                "--no-graph",
-                "-T",
-                "self.change_id() ++ \"\\n\"",
-            ],
-        )?,
-        "log",
-    )?;
+    let back = checked(
+        jj,
+        main,
+        &[
+            "--ignore-working-copy",
+            "log",
+            "-r",
+            &quoted,
+            "--no-graph",
+            "-T",
+            "self.change_id() ++ \"\\n\"",
+        ],
+    )
+    .and_then(|o| ok_or(o, "log"));
+    let back = match back {
+        Ok(back) => back,
+        Err(e) => {
+            abandon_leftover(jj, main, &id, false);
+            return Err(e);
+        }
+    };
     if back.stdout.trim() != id {
+        abandon_leftover(jj, main, &id, false);
         return Err(GitError::Invalid(
             "jj duplicate gave an unexpected answer".into(),
         ));
@@ -563,11 +588,11 @@ pub async fn add_workspace(
                 if main_of_workspace(&source).as_deref() != Some(repo_key.as_path()) {
                     return Err(GitError::Invalid(FOREIGN_WORKSPACE.into()));
                 }
-                Some(format!("\"{}\"", fork_of(jj.as_ref(), &main, &source)?))
+                Some(fork_of(jj.as_ref(), &main, &source)?)
             }
             None => None,
         };
-        let start = fork.clone();
+        let start = fork.as_ref().map(|id| format!("\"{id}\""));
         let made = (|| {
             // A slug another create took meanwhile: the next one.
             for _ in 0..8 {
@@ -609,23 +634,16 @@ pub async fn add_workspace(
                     unmark();
                     return Err(e);
                 }
-                let base = match ok_or(checked(&*jj, &path, &["new"])?, "new")
+                let base = match checked(&*jj, &path, &["new"])
+                    .and_then(|o| ok_or(o, "new"))
                     .and_then(|_| base_of(jj.as_ref(), &path))
                     .and_then(|b| verify_base(jj.as_ref(), &path, &main, &b).map(|_| b))
                 {
                     Ok(b) => b,
                     Err(e) => {
-                        // Nothing half-made stays behind.
-                        let _ = checked(
-                            &*jj,
-                            &main,
-                            &[
-                                "--ignore-working-copy",
-                                "workspace",
-                                "forget",
-                                slug.as_str(),
-                            ],
-                        );
+                        // Nothing half-made stays behind: the workspace, its
+                        // empty first commit, its folder and its record.
+                        let _ = forget_and_tidy(jj.as_ref(), &main, &slug);
                         let _ = std::fs::remove_dir_all(&path);
                         unmark();
                         return Err(e);
@@ -636,6 +654,7 @@ pub async fn add_workspace(
                     slug,
                     base,
                     pending: marker,
+                    copy: fork.clone(),
                 });
             }
             Err(GitError::Conflict(
@@ -644,11 +663,7 @@ pub async fn add_workspace(
         })();
         // The handoff's copy goes with a create that failed.
         if let (Err(_), Some(copy)) = (&made, &fork) {
-            let _ = checked(
-                &*jj,
-                &main,
-                &["--ignore-working-copy", "abandon", copy.as_str()],
-            );
+            abandon_leftover(jj.as_ref(), &main, copy, false);
         }
         made
     })
@@ -862,13 +877,30 @@ pub const GONE_BASE: &str = "This jj workspace's first commit was abandoned, so 
 
 pub const SHADOWED_BASE: &str =
     "A ref named like this worktree's base commit hides it, so Vibezeo won't use it";
+pub const DIVERGENT_BASE: &str = "This jj workspace's first commit has more than one version (it's divergent), so Vibezeo can't tell which to diff from. Abandon the one you don't want with `jj abandon`, then try again";
+pub const MERGE_BASE: &str = "The main checkout's working copy is a merge, so a jj workspace beside it would start from more than one commit and Vibezeo couldn't diff it. Start the jj workspace from a single commit (for example after `jj new` on one parent), or make a git worktree";
+
+/// Whether a git ref other than jj's own `refs/jj/keep/<id>` (they keep its
+/// commits alive, named after commits) is named like `id`: a tag, branch or
+/// remote ref of that name is resolved before a change or commit id.
+fn shadowed_by_ref(repo_root: &Path, id: &str) -> Result<bool, GitError> {
+    let git = git2::Repository::open(repo_root)?;
+    let shadowed = git.references()?.flatten().any(|r| {
+        r.name().is_some_and(|n| {
+            !n.starts_with("refs/jj/") && (n == id || n.ends_with(&format!("/{id}")))
+        })
+    });
+    Ok(shadowed)
+}
 
 /// The base, checked before it's used as a revset: the folder is a jj
 /// workspace of the repository at `repo_root` (else nothing is run), the
 /// base is a change id (or, from before them, a commit id), no git ref has
 /// its name (a tag or branch named like it would be resolved first, and
-/// comes with a clone, no config needed), and jj resolves it to itself.
-/// Returns the revset to diff from (the base's parent, for a change id).
+/// comes with a clone, no config needed), jj resolves it to itself, once
+/// (not divergent), and a change-id base has one parent (a lane started
+/// beside a merge can't be diffed). Returns the revset to diff from (the
+/// base's parent, for a change id).
 pub fn verify_base(
     jj: &dyn JjRunner,
     ws_root: &Path,
@@ -880,19 +912,12 @@ pub fn verify_base(
     if main.is_none() || main_of_workspace(ws_root) != main {
         return Err(GitError::Invalid(FOREIGN_WORKSPACE.into()));
     }
-    let git = git2::Repository::open(repo_root)?;
-    // jj's own `refs/jj/keep/<id>` refs (they keep its commits alive) are
-    // named after commits; a tag, branch or remote ref isn't.
-    let shadowed = git.references()?.flatten().any(|r| {
-        r.name().is_some_and(|n| {
-            !n.starts_with("refs/jj/") && (n == base || n.ends_with(&format!("/{base}")))
-        })
-    });
-    if shadowed {
+    if shadowed_by_ref(repo_root, base)? {
         return Err(GitError::Invalid(SHADOWED_BASE.into()));
     }
-    let template = if is_change_id(base) {
-        "self.change_id() ++ \"\\n\""
+    let change = is_change_id(base);
+    let template = if change {
+        "self.change_id() ++ \" \" ++ self.parents().len() ++ \"\\n\""
     } else {
         "self.commit_id() ++ \"\\n\""
     };
@@ -904,17 +929,94 @@ pub fn verify_base(
     if !out.success() && out.stderr.contains("doesn't exist") {
         return Err(GitError::Invalid(GONE_BASE.into()));
     }
+    if !out.success() && out.stderr.contains("divergent") {
+        return Err(GitError::Invalid(DIVERGENT_BASE.into()));
+    }
     let out = ok_or(out, "log")?;
-    if out.stdout.trim() != base {
-        return Err(GitError::Invalid(SHADOWED_BASE.into()));
+    let lines: Vec<&str> = out
+        .stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    if lines.len() > 1 {
+        return Err(GitError::Invalid(DIVERGENT_BASE.into()));
+    }
+    let line = lines.first().map(|l| l.trim()).unwrap_or("");
+    if !change {
+        return if line == base {
+            Ok(revset)
+        } else {
+            Err(GitError::Invalid(SHADOWED_BASE.into()))
+        };
     }
     // A lane's base is its own first commit: its changes are from that
-    // commit's parent. An older base (a commit id) is the parent itself.
-    if is_change_id(base) {
-        Ok(format!("{revset}-"))
-    } else {
-        Ok(revset)
+    // commit's parent, which must be one commit.
+    match line.split_once(' ') {
+        Some((id, _)) if id != base => Err(GitError::Invalid(SHADOWED_BASE.into())),
+        Some((_, "1")) => Ok(format!("{revset}-")),
+        Some(_) => Err(GitError::Invalid(MERGE_BASE.into())),
+        None => Err(GitError::Invalid(SHADOWED_BASE.into())),
     }
+}
+
+/// Abandons a commit Vibezeo made, by change id, only when that loses
+/// nothing: jj (asked just now, in the repository, without a snapshot)
+/// resolves the quoted id to that same change and no git ref is named like
+/// it, it has no children, isn't any workspace's working copy, has no
+/// bookmark or tag, and, with `empty_only`, is empty and undescribed (jj's
+/// own rule for a working-copy commit it drops). Returns whether it was
+/// abandoned.
+pub fn abandon_leftover(jj: &dyn JjRunner, repo_root: &Path, id: &str, empty_only: bool) -> bool {
+    if !is_change_id(id) || shadowed_by_ref(repo_root, id).unwrap_or(true) {
+        return false;
+    }
+    let quoted = format!("\"{id}\"");
+    let read = |rev: &str, template: &str| {
+        checked(
+            jj,
+            repo_root,
+            &[
+                "--ignore-working-copy",
+                "log",
+                "-r",
+                rev,
+                "--no-graph",
+                "-T",
+                template,
+            ],
+        )
+        .ok()
+        .filter(JjOutput::success)
+        .map(|o| o.stdout)
+    };
+    let Some(state) = read(
+        &quoted,
+        "self.change_id() ++ \"|\" ++ self.empty() ++ \"|\" ++ self.description().len() ++ \"|\" ++ self.working_copies() ++ \"|\" ++ self.bookmarks() ++ \"|\" ++ self.tags() ++ \"\\n\"",
+    ) else {
+        return false;
+    };
+    let fields: Vec<&str> = state.trim_end_matches('\n').split('|').collect();
+    let holds_nothing = match fields.as_slice() {
+        [cid, empty, described, wc, bookmarks, tags] => {
+            *cid == id
+                && wc.is_empty()
+                && bookmarks.is_empty()
+                && tags.is_empty()
+                && (!empty_only || (*empty == "true" && *described == "0"))
+        }
+        _ => false,
+    };
+    let childless = read(&format!("{quoted}+"), "self.change_id() ++ \"\\n\"")
+        .is_some_and(|o| o.trim().is_empty());
+    if !holds_nothing || !childless {
+        return false;
+    }
+    checked(
+        jj,
+        repo_root,
+        &["--ignore-working-copy", "abandon", &quoted],
+    )
+    .is_ok_and(|o| o.success())
 }
 
 /// The workspace's changes since `base`, working copy included, as git
@@ -1014,63 +1116,131 @@ fn working_copy(jj: &dyn JjRunner, cwd: &Path, rev: &str) -> Option<String> {
     (out.success() && is_commit_id(&id)).then_some(id)
 }
 
-/// A folder in a lane that holds another repository (`.git` or `.jj`
-/// below the lane's own `.jj`): jj never snapshots it, so removing the lane
-/// would lose its history. Symlinks aren't followed.
-fn nested_repository(ws_root: &Path) -> bool {
-    let mut stack = vec![ws_root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+/// Whether the lane at `ws_root` has something on disk jj didn't keep in
+/// its working-copy commit: a file (not ignored) that `jj file list -r @`
+/// doesn't list (refused, left untracked, outside sparse patterns, or a
+/// reason a later jj words differently), or a folder holding another
+/// repository (a nested `.git` or `.jj`, which jj never snapshots). Ignored
+/// files and folders aren't looked into: they go with the folder, as a git
+/// lane's do. Symlinks aren't followed. Fails closed (true) when jj or the
+/// walk fails.
+fn not_kept_on_disk(jj: &dyn JjRunner, repo_root: &Path, ws_root: &Path) -> bool {
+    let Ok(out) = checked(
+        jj,
+        ws_root,
+        &["--ignore-working-copy", "file", "list", "-r", "@"],
+    ) else {
+        return true;
+    };
+    if !out.success() {
+        return true;
+    }
+    let tracked: HashSet<String> = out.stdout.lines().map(|l| l.replace('\\', "/")).collect();
+    let mut walk = ignore::WalkBuilder::new(ws_root);
+    walk.hidden(false)
+        .parents(false)
+        .ignore(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(false)
+        .require_git(false)
+        .follow_links(false)
+        // The lane's own `.jj` is jj's.
+        .filter_entry(|e| !(e.depth() == 1 && e.file_name() == ".jj"));
+    // jj reads the repository's `info/exclude` for every workspace.
+    let exclude = repo_root.join(".git").join("info").join("exclude");
+    if exclude.is_file() && walk.add_ignore(&exclude).is_some() {
+        return true;
+    }
+    for entry in walk.build() {
+        let Ok(e) = entry else {
+            return true;
         };
-        for e in entries.flatten() {
-            let Ok(kind) = e.file_type() else {
-                continue;
-            };
-            let name = e.file_name();
-            let top_jj = dir == ws_root && name == ".jj";
-            if (name == ".git" || name == ".jj") && !top_jj {
-                return true;
-            }
-            if kind.is_dir() && !top_jj {
-                stack.push(e.path());
-            }
+        if e.depth() == 0 {
+            continue;
+        }
+        if e.file_name() == ".git" || e.file_name() == ".jj" {
+            return true;
+        }
+        if e.file_type().is_some_and(|t| t.is_dir()) {
+            continue;
+        }
+        let Ok(rel) = e.path().strip_prefix(ws_root) else {
+            return true;
+        };
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        if !tracked.contains(&rel) {
+            return true;
         }
     }
     false
 }
 
+/// The `Warning:` lines jj printed.
+fn warnings(stderr: &str) -> HashSet<&str> {
+    stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("Warning:"))
+        .collect()
+}
+
 /// Whether jj kept everything in the workspace at `ws_root`, named `name`,
-/// in its commit: `jj status` there (which snapshots it) ran and printed no
-/// warning at all (a refused file, or any other: one a later jj words
-/// differently still counts), left nothing untracked, and found its
-/// working copy; jj still lists `name`, the folder's working-copy commit
-/// reads back, and no nested repository is in it. Otherwise Dirty (a stale
-/// working copy: Conflict, saying what to run).
+/// in its commit: `jj status` there (which snapshots it) ran, printed no
+/// warning that a command without a snapshot doesn't also print (so a
+/// refused file, or anything a later jj words differently, counts, and a
+/// persistent one such as a deprecated setting doesn't), left nothing
+/// untracked and found its working copy; the folder's working-copy commit
+/// reads back, jj still lists `name`, and every file on disk is in its
+/// commit ([`not_kept_on_disk`]). Otherwise Dirty. A stale working copy is
+/// [`GitError::Stale`], saying what to run, so nothing offers to force past
+/// it.
 pub fn kept_whole(
     jj: &dyn JjRunner,
     repo_root: &Path,
     ws_root: &Path,
     name: &str,
 ) -> Result<(), GitError> {
-    let out = match checked(jj, ws_root, &["status"]) {
+    let status = match checked(jj, ws_root, &["status"]) {
         Ok(out) => out,
-        Err(e @ GitError::Conflict(_)) => return Err(e),
+        Err(e @ GitError::Stale(_)) => return Err(e),
         Err(_) => return Err(GitError::Dirty),
     };
-    if !out.success()
-        || out.stderr.contains("Warning:")
-        || out.stdout.contains("Untracked paths:")
-        || out.stdout.contains("No working copy")
+    if !status.success()
+        || status.stdout.contains("Untracked paths:")
+        || status.stdout.contains("No working copy")
     {
         return Err(GitError::Dirty);
     }
-    // jj snapshots only a workspace still in its view: one forgotten (or
-    // undone) while the agent kept editing has nothing of it kept.
-    if working_copy(jj, ws_root, "@").is_none() || !workspace_names(jj, repo_root)?.contains(name) {
+    // The same environment without a snapshot: its warnings are the
+    // baseline, and it reads the folder's working-copy commit back (jj
+    // snapshots only a workspace still in its view: one forgotten or undone
+    // while the agent kept editing has nothing of it kept).
+    let Ok(here) = checked(
+        jj,
+        ws_root,
+        &[
+            "--ignore-working-copy",
+            "log",
+            "-r",
+            "@",
+            "--no-graph",
+            "-T",
+            "self.commit_id() ++ \"\\n\"",
+        ],
+    ) else {
+        return Err(GitError::Dirty);
+    };
+    if !here.success() || !is_commit_id(here.stdout.trim()) {
         return Err(GitError::Dirty);
     }
-    if nested_repository(ws_root) {
+    if !warnings(&status.stderr).is_subset(&warnings(&here.stderr)) {
+        return Err(GitError::Dirty);
+    }
+    if !workspace_names(jj, repo_root)?.contains(name) {
+        return Err(GitError::Dirty);
+    }
+    if not_kept_on_disk(jj, repo_root, ws_root) {
         return Err(GitError::Dirty);
     }
     Ok(())
@@ -1132,18 +1302,48 @@ fn forget_name(jj: &dyn JjRunner, repo_root: &Path, name: &str) -> Result<(), Gi
     Ok(())
 }
 
+/// `jj workspace forget <name>` (jj drops the working-copy commit when it
+/// holds nothing), then the commit below it when that holds nothing either
+/// (a lane's empty first commit, [`abandon_leftover`]), so an unused lane
+/// leaves nothing in `jj log`.
+fn forget_and_tidy(jj: &dyn JjRunner, repo_root: &Path, name: &str) -> Result<(), GitError> {
+    let below = checked(
+        jj,
+        repo_root,
+        &[
+            "--ignore-working-copy",
+            "log",
+            "-r",
+            &format!("\"{name}\"@-"),
+            "--no-graph",
+            "-T",
+            "self.change_id() ++ \"\\n\"",
+        ],
+    )
+    .ok()
+    .filter(JjOutput::success)
+    .map(|o| o.stdout.trim().to_string())
+    .filter(|id| is_change_id(id));
+    forget_name(jj, repo_root, name)?;
+    if let Some(id) = below {
+        abandon_leftover(jj, repo_root, &id, true);
+    }
+    Ok(())
+}
+
 /// Discard: snapshot the working copy (so what's in it stays in the
-/// workspace's commit), `jj workspace forget <name>` in the repository,
-/// then remove the folder. The workspace's commits stay.
+/// workspace's commit), `jj workspace forget <name>` in the repository
+/// (then the lane's empty first commit, if nothing was built on it), then
+/// remove the folder. The workspace's commits stay.
 ///
 /// Without `force` (a person's confirmation, [`ForceConfirm`]), anything
 /// [`kept_whole`] can't vouch for is [`GitError::Dirty`], as a git lane's
 /// uncommitted changes are: removing the folder would lose what's only on
-/// disk. Even forced, a folder [`forget_checks`] refuses is never removed,
-/// and the name is forgotten only when it's this folder's workspace (the
-/// same working-copy commit read from both sides). A folder already gone:
-/// its registration is forgotten when jj lists the name (Vibezeo's slugs
-/// are never names jj already had, so it's the lane's).
+/// disk; a stale working copy is [`GitError::Stale`]. Even forced, a folder
+/// [`forget_checks`] refuses is never removed, and a name jj gives another
+/// working copy than this folder's is never forgotten. A folder already
+/// gone: its registration is forgotten when jj lists the name (Vibezeo's
+/// slugs are never names jj already had, so it's the lane's).
 pub async fn forget_workspace(
     jj: Arc<dyn JjRunner>,
     repo_root: &Path,
@@ -1159,7 +1359,7 @@ pub async fn forget_workspace(
         let known = workspace_names(jj.as_ref(), &repo_root)?;
         if folder == Folder::Gone {
             if known.contains(&name) {
-                forget_name(jj.as_ref(), &repo_root, &name)?;
+                forget_and_tidy(jj.as_ref(), &repo_root, &name)?;
             }
             return Ok(());
         }
@@ -1170,11 +1370,13 @@ pub async fn forget_workspace(
             let named = named_working_copy(jj.as_ref(), &repo_root, &name);
             let here = working_copy(jj.as_ref(), &ws_root, "@");
             match (named, here) {
-                (Some(n), Some(h)) if n == h => forget_name(jj.as_ref(), &repo_root, &name)?,
-                // The folder's workspace is gone from jj's view (forced):
-                // the name now belongs to something else; it stays.
-                (_, None) => {}
-                _ => return Err(GitError::Invalid(FOREIGN_WORKSPACE.into())),
+                (Some(n), Some(h)) if n != h => {
+                    return Err(GitError::Invalid(FOREIGN_WORKSPACE.into()))
+                }
+                // The same working copy, or (forced) the folder's couldn't be
+                // read: jj still lists the name, so the folder's going would
+                // leave it pointing nowhere.
+                _ => forget_and_tidy(jj.as_ref(), &repo_root, &name)?,
             }
         }
         match std::fs::remove_dir_all(&ws_root) {
@@ -1200,6 +1402,9 @@ mod tests {
         calls: Mutex<Vec<(PathBuf, Vec<String>)>>,
         answers: Vec<(String, JjOutput)>,
         makes: Option<PathBuf>,
+        /// Argument prefixes the runner itself fails on (a timeout, jj
+        /// that won't start).
+        broken: Vec<String>,
     }
 
     impl FakeJj {
@@ -1211,7 +1416,12 @@ mod tests {
                     .map(|(p, o)| (p.to_string(), o))
                     .collect(),
                 makes: None,
+                broken: Vec::new(),
             }
+        }
+        fn breaking(mut self, prefix: &str) -> Self {
+            self.broken.push(prefix.to_string());
+            self
         }
         fn making(mut self, main: &Path) -> Self {
             self.makes = Some(main.to_path_buf());
@@ -1245,6 +1455,9 @@ mod tests {
                 )?;
             }
             let joined = args.join(" ");
+            if self.broken.iter().any(|p| joined.starts_with(p)) {
+                return Err(GitError::Invalid("jj didn't answer within 120 s".into()));
+            }
             Ok(self
                 .answers
                 .iter()
@@ -1366,6 +1579,10 @@ mod tests {
             &["tandem/b".into()],
         );
         assert!(b.contains("Use `jj`, not `git`"), "{b}");
+        assert!(
+            b.contains("Record your work with `jj commit` or `jj new`; never squash, absorb or edit into the commits below your working copy."),
+            "{b}"
+        );
         assert!(b.contains("`tandem/b`"));
         assert!(!b.contains("git worktree"));
     }
@@ -1386,6 +1603,11 @@ mod tests {
 
     const HEX: &str = "0123456789abcdef0123456789abcdef01234567";
     const CID: &str = "zzkkxyzwqrstuvwxyzkllmmnnoppqqrs";
+
+    /// jj's answer to `verify_base`'s log: the change, and one parent.
+    fn verified() -> JjOutput {
+        ok(&format!("{CID} 1\n"))
+    }
 
     /// A git repository with a `.jj` of jj's shape beside `.git` (no jj
     /// needed): `.jj/repo/store/git_target` points at `.git`.
@@ -1634,6 +1856,18 @@ mod tests {
         ]
     }
 
+    /// `verify_base`'s log of a change-id base: the change and its parents.
+    fn verify_log(rev: &str) -> Vec<String> {
+        vec![
+            "log".to_string(),
+            "-r".into(),
+            rev.into(),
+            "--no-graph".into(),
+            "-T".into(),
+            "self.change_id() ++ \" \" ++ self.parents().len() ++ \"\\n\"".into(),
+        ]
+    }
+
     #[tokio::test]
     async fn f_cd_24_the_exact_jj_commands_for_add_handoff_and_diff() {
         let (_t, main) = colocated_fixture();
@@ -1654,7 +1888,8 @@ mod tests {
                     },
                 ),
                 ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
-                ("log -r", ok(&format!("{CID}\n"))),
+                ("log -r @-", ok(&format!("{CID}\n"))),
+                ("log -r", verified()),
             ])
             .making(&main),
         );
@@ -1716,7 +1951,7 @@ mod tests {
         // The lane's own first commit, empty: its base.
         expected.push(at(&path, vec!["new".to_string()]));
         expected.push(at(&path, log("@-", "change_id")));
-        expected.push(at(&path, log(&quoted, "change_id")));
+        expected.push(at(&path, verify_log(&quoted)));
         assert_eq!(calls, expected);
         // Refused before jj runs: a handoff from a name Vibezeo doesn't make,
         // or from a folder that isn't this repository's workspace.
@@ -1757,7 +1992,7 @@ mod tests {
         assert_eq!(
             fake.calls()[before..].to_vec(),
             vec![
-                log(&quoted, "change_id"),
+                verify_log(&quoted),
                 vec![
                     "diff".to_string(),
                     "--git".into(),
@@ -1801,6 +2036,26 @@ mod tests {
         )]));
         let e = diff(gone, &main, &path, CID).await.expect_err("gone");
         assert_eq!(e.to_string(), GONE_BASE);
+        // A divergent base (two versions printed, or jj saying so) and a
+        // base with two parents (made beside a merge) each say what's wrong.
+        for (why, out, msg) in [
+            (
+                "two lines",
+                ok(&format!("{CID} 1\n{CID} 1\n")),
+                DIVERGENT_BASE,
+            ),
+            (
+                "jj says so",
+                failing(&format!("Error: Change ID `{CID}` is divergent")),
+                DIVERGENT_BASE,
+            ),
+            ("a merge", ok(&format!("{CID} 2\n")), MERGE_BASE),
+        ] {
+            let fake = Arc::new(FakeJj::answering(vec![("log -r", out)]));
+            let e = diff(fake.clone(), &main, &path, CID).await.expect_err(why);
+            assert_eq!(e.to_string(), msg, "{why}");
+            assert_eq!(fake.calls().len(), 1, "{why}: no diff ran");
+        }
     }
 
     #[tokio::test]
@@ -1823,8 +2078,16 @@ mod tests {
                     stderr: format!("Duplicated 0123abcd4567 as {CID}\n"),
                 },
             ),
+            // The copy, read back just before it's abandoned: itself, no
+            // working copy, bookmark or tag, and no children.
+            (
+                &format!("--ignore-working-copy log -r \"{CID}\" --no-graph -T self.change_id() ++ \"|\""),
+                ok(&format!("{CID}|false|5|||\n")),
+            ),
+            (&format!("--ignore-working-copy log -r \"{CID}\"+"), ok("")),
             ("--ignore-working-copy log -r", ok(&format!("{CID}\n"))),
-            ("log -r", ok(&format!("{CID}\n"))),
+            ("log -r @-", ok(&format!("{CID}\n"))),
+            ("log -r", verified()),
         ]));
         add_workspace(
             fake.clone(),
@@ -1885,7 +2148,7 @@ mod tests {
     fn f_cd_24_verify_base_fails_closed_and_checks_git_refs_first() {
         let (_t, main) = colocated_fixture();
         let ws = workspace_folder(&main, "tidy");
-        let fake = FakeJj::answering(vec![("log -r", ok(&format!("{CID}\n")))]);
+        let fake = FakeJj::answering(vec![("log -r", verified())]);
         verify_base(&fake, &ws, &main, CID).expect("verified");
         assert_eq!(fake.calls().len(), 1);
         // Not this repository's workspace (or none): refused, jj never runs.
@@ -1980,12 +2243,24 @@ mod tests {
                 ok("The working copy has no changes.\n"),
                 gone_from_view.clone(),
             ),
+            // Listed, but the folder's working copy doesn't read back.
+            (
+                "not read back",
+                ok("The working copy has no changes.\n"),
+                listed.clone(),
+            ),
         ];
         for (why, status, list) in cases {
             let ws = workspace_folder(&main, "tidy");
+            let here = if why == "not read back" {
+                failing("Error: Workspace `tidy` doesn't have a working-copy commit")
+            } else {
+                ok(&format!("{HEX}\n"))
+            };
             let fake = Arc::new(FakeJj::answering(vec![
                 ("status", status.clone()),
                 ("--ignore-working-copy workspace list", list.clone()),
+                ("--ignore-working-copy log -r @", here),
                 same.clone(),
             ]));
             let e = forget_workspace(fake.clone(), &main, &ws, "tidy", None)
@@ -2008,17 +2283,42 @@ mod tests {
             let forgot = fake.calls().iter().any(|a| a.iter().any(|x| x == "forget"));
             assert_eq!(forgot, list == listed, "{why}");
         }
-        // A whole snapshot: forgotten and removed without force.
-        let ws = workspace_folder(&main, "tidy");
+        // A whole snapshot: forgotten and removed without force; so is one
+        // whose only warning jj prints without a snapshot too (a
+        // deprecated setting).
+        let persistent = "Warning: Deprecated user-level config: ui.diff.format is renamed\n";
+        for (why, stderr) in [("clean", ""), ("persistent warning", persistent)] {
+            let ws = workspace_folder(&main, "tidy");
+            let fake = Arc::new(FakeJj::answering(vec![
+                (
+                    "status",
+                    JjOutput {
+                        code: Some(0),
+                        stdout: "The working copy has no changes.\n".into(),
+                        stderr: stderr.into(),
+                    },
+                ),
+                ("--ignore-working-copy workspace list", listed.clone()),
+                (
+                    "--ignore-working-copy log -r @",
+                    JjOutput {
+                        code: Some(0),
+                        stdout: format!("{HEX}\n"),
+                        stderr: stderr.into(),
+                    },
+                ),
+                same.clone(),
+            ]));
+            forget_workspace(fake.clone(), &main, &ws, "tidy", None)
+                .await
+                .expect(why);
+            assert!(!ws.exists(), "{why}");
+        }
         let fake = Arc::new(FakeJj::answering(vec![
             ("status", ok("The working copy has no changes.\n")),
             ("--ignore-working-copy workspace list", listed.clone()),
             same.clone(),
         ]));
-        forget_workspace(fake.clone(), &main, &ws, "tidy", None)
-            .await
-            .expect("clean");
-        assert!(!ws.exists());
         // A nested repository (jj never snapshots it): kept until forced.
         let ws = workspace_folder(&main, "tidy");
         std::fs::create_dir_all(ws.join("vendor/lib/.git")).expect("mkdir");
@@ -2042,9 +2342,11 @@ mod tests {
             .await
             .expect_err("stale");
         assert!(
-            matches!(e, GitError::Conflict(ref m) if *m == stale(&ws)),
+            matches!(e, GitError::Stale(ref m) if *m == stale(&ws)),
             "{e}"
         );
+        // Never a Conflict: nothing offers to force past it.
+        assert_eq!(e.code(), tandem_core::ErrorCode::Invalid);
         // A runner that can't run jj at all (timeout, missing) is Dirty.
         struct Broken;
         impl JjRunner for Broken {
@@ -2153,6 +2455,144 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_cd_24_a_create_whose_jj_new_fails_leaves_nothing() {
+        let (_t, main) = colocated_fixture();
+        let repo = Repo::discover(&main).expect("discover").expect("repo");
+        let tmp = tempfile::tempdir().expect("tmp");
+        let pending = tmp.path().join("jj-pending");
+        // `jj new` never answers (the time limit), then fails outright.
+        for fake in [
+            FakeJj::answering(vec![(
+                "--ignore-working-copy workspace list",
+                ok("default\n"),
+            )])
+            .breaking("new"),
+            FakeJj::answering(vec![
+                ("--ignore-working-copy workspace list", ok("default\n")),
+                ("new", failing("Error: The working copy is locked")),
+            ]),
+        ] {
+            let fake = Arc::new(fake.making(&main));
+            add_workspace(
+                fake.clone(),
+                &repo,
+                "tidy",
+                &HashSet::new(),
+                None,
+                Some(pending.clone()),
+            )
+            .await
+            .expect_err("new failed");
+            assert!(fake.calls().contains(&vec![
+                "--ignore-working-copy".to_string(),
+                "workspace".into(),
+                "forget".into(),
+                "tidy".into()
+            ]));
+            assert!(
+                !main.join(WORKTREES_DIR).join("tidy").exists(),
+                "folder removed"
+            );
+            assert!(read_pending(&pending).is_empty(), "record removed");
+        }
+    }
+
+    /// The answers for a commit read back just before it's abandoned.
+    fn leftover(id: &str, state: &str, children: &str) -> Vec<(String, JjOutput)> {
+        vec![
+            (
+                format!(
+                    "--ignore-working-copy log -r \"{id}\" --no-graph -T self.change_id() ++ \"|\""
+                ),
+                ok(&format!("{state}\n")),
+            ),
+            (
+                format!("--ignore-working-copy log -r \"{id}\"+"),
+                ok(children),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn f_cd_24_discard_abandons_the_lanes_empty_first_commit_only_when_it_holds_nothing() {
+        let (_t, main) = colocated_fixture();
+        let abandon = vec![
+            "--ignore-working-copy".to_string(),
+            "abandon".into(),
+            format!("\"{CID}\""),
+        ];
+        let cases = [
+            (
+                "empty, undescribed, childless",
+                format!("{CID}|true|0|||"),
+                "",
+                true,
+            ),
+            ("described", format!("{CID}|true|9|||"), "", false),
+            ("not empty", format!("{CID}|false|0|||"), "", false),
+            ("a child", format!("{CID}|true|0|||"), "kkkk\n", false),
+            (
+                "a working copy",
+                format!("{CID}|true|0|default@||"),
+                "",
+                false,
+            ),
+            ("a bookmark", format!("{CID}|true|0||keep|"), "", false),
+            (
+                "another change",
+                format!("{}|true|0|||", "k".repeat(32)),
+                "",
+                false,
+            ),
+        ];
+        for (why, state, children, abandoned) in cases {
+            let ws = workspace_folder(&main, "tidy");
+            let mut answers: Vec<(String, JjOutput)> = vec![
+                ("status".into(), ok("The working copy has no changes.\n")),
+                (
+                    "--ignore-working-copy workspace list".into(),
+                    ok("default\ntidy\n"),
+                ),
+                // The commit below the lane's working copy: its first.
+                (
+                    "--ignore-working-copy log -r \"tidy\"@-".into(),
+                    ok(&format!("{CID}\n")),
+                ),
+            ];
+            answers.extend(leftover(CID, &state, children));
+            answers.push((
+                "--ignore-working-copy log -r".into(),
+                ok(&format!("{HEX}\n")),
+            ));
+            let fake = Arc::new(FakeJj {
+                answers,
+                ..FakeJj::default()
+            });
+            forget_workspace(fake.clone(), &main, &ws, "tidy", None)
+                .await
+                .expect(why);
+            assert_eq!(fake.calls().contains(&abandon), abandoned, "{why}");
+        }
+        // A tag named like it: never read, never abandoned.
+        let git = git2::Repository::open(&main).expect("open");
+        let sig = git2::Signature::now("t", "t@t").expect("sig");
+        let tree = git
+            .find_tree(git.index().expect("index").write_tree().expect("tree"))
+            .expect("tree");
+        let commit = git
+            .commit(Some("HEAD"), &sig, &sig, "first", &tree, &[])
+            .expect("commit");
+        git.reference(&format!("refs/tags/{CID}"), commit, false, "shadow")
+            .expect("tag");
+        let fake = FakeJj {
+            answers: leftover(CID, &format!("{CID}|true|0|||"), ""),
+            ..FakeJj::default()
+        };
+        assert!(!abandon_leftover(&fake, &main, CID, true));
+        assert!(fake.calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn f_cd_24_a_lane_is_never_named_default() {
         let (_t, main) = colocated_fixture();
         let repo = Repo::discover(&main).expect("discover").expect("repo");
@@ -2160,7 +2600,8 @@ mod tests {
         let fake = Arc::new(
             FakeJj::answering(vec![
                 ("--ignore-working-copy workspace list", ok("home\n")),
-                ("log -r", ok(&format!("{CID}\n"))),
+                ("log -r @-", ok(&format!("{CID}\n"))),
+                ("log -r", verified()),
             ])
             .making(&main),
         );
