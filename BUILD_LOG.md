@@ -3209,6 +3209,32 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
       - plans, runs and the tracker: m11-1-tasks 3, m11-2-execute 4, m18-tk06 1, m18-tk07 3, m18-tk08 1.
     - The run on 8c97f6e8 before this had m11-1-tasks fail because of my list's order. The plan specs ran first, and the reset archives tasks but keeps their numbers, so the `TAN-1` it read was theirs.
     - The sinks' tests moved to the new guard after the core changed. A continue elsewhere's brief test passes on the old desktop code once the fallback is fixed; the fallback's own test failed first.
+- [x] The review of e388a4a0 ("merge after M1 + M2"): what text from elsewhere loses first is one list, a superset of what Claude Code drops, checked against Claude Code's own (D-3030).
+  - **M1.** `untrusted::removable`, in the core and the app, goes before every other rule, in `defang` (before the `@` rule, the paste markers and the `ultra` words) and in `no_command` (before the exit words and the first character the REPL reads).
+    - It's the controls but tab, line feed and carriage return, U+2028 and U+2029, every default-ignorable and format character, U+2800, and what 2.1.312 drops besides (U+FFF9 to U+FFFB, U+1107F, U+13430 to U+1343F, U+16FE4, U+1D173 to U+1D17A): 4,273 code points in 32 ranges.
+    - D-3029's list was the default ignorables. `ultra\u{FFF9}plan` and `ultra\u{1}plan` came out as written and reached Claude Code as `ultraplan` (its stripper drops U+FFF9, and `sanitize_prompt` drops U+0001), and `\u{FFF9}exit` passed the guard and quit.
+    - The Kelvin sign (U+212A) reads as `K`. Claude Code checks a paste's NFC form for its words too, and that's the one character NFC turns into an ASCII letter.
+    - Combining marks (`\p{M}`) reach neither the dispatch nor the keyword test; see D-3030.
+  - **Found on the way.** F-TK-08's topic check (`sensitive`) read a run's question with control characters, line separators and U+2800 left in, and split its words there. Lead's prompt shows the question defanged, which now joins them, so `pu\u{1}sh` named no topic to the check and `push` to Lead. A control character already did that through Claude Code's own stripper. The check now drops what's `removable` too.
+  - **M2.** The tests check against what Claude Code drops, never the app's own list or a Unicode table:
+    - `scripts/agent/claude-code-strip.mjs` extracts the submit-time stripper from the installed binary and runs it over every code point. Its fixture, `crates/tandem-core/tests/fixtures/claude-code-strip.json`, names 2.1.312: 4,254 code points dropped, in 24 ranges, and 6 read as a line break (VT, FF, CR, NEL, U+2028 and U+2029). OPERATING §5 says when to run it again.
+    - The core's test and the app's assert, over every code point, that `removable` is `defang.json`'s list and covers the fixture's.
+    - The rule-8 invariants model what Claude Code reads from the fixture alone (its drops, its line breaks, and the NFC form for its words).
+    - The three inputs are named cases in `defang.json` (`commands` for the guard) and in each guard sink's tests, typed through `sanitize_prompt` and sent: Auto, Conductor's `prompt_pane` and `spoken`, and a handoff brief through `deliver` and `thread_message`.
+  - **Tests:**
+    - New: the core's list test, the app's, and a test per sink with the three inputs (Auto, `prompt_pane`, `spoken`, a generated brief typed and sent).
+    - Changed:
+      - both vector tests: 7 new cases (the three inputs named), 5 outputs that lost a control or line separator, and the guard's 6 cases in `commands`;
+      - the core's guard test (controls go first, so they're gone from its output);
+      - `deliver`'s and a Thread's guard tests (the same, and `\u{FFF9}exit`);
+      - both invariants, against the fixture, with 8 more leading characters, one more payload and 7 more hostile inputs.
+    - New, found on the way: F-TK-08's topic check with what Lead's prompt drops.
+    - These failed on the old code:
+      - the core's list, vector and guard tests (against a stub);
+      - both invariants, with e388a4a0's core put back: `"ultra\u{fff9}plan" defanged as "ultra\u{fff9}plan"`, `"e\u{fff9}xit" typed as "\u{1b}[200~e\u{fff9}xit\u{1b}[201~"`;
+      - every sink's new test and the two changed guard tests, the same way (on `"ultra\u{fff9}plan"` and `"\u{1}!x"`);
+      - the topic check, on `"Should I pu\u{1}sh the branch?"`.
+    - The app's two tests were written with its code.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3392,7 +3418,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - An `@` at the start of a line or after whitespace (a space, a tab, a no-break space) attaches, inside a code fence too. One after a quote, a word character, a bracket (`(`, `[`, `{`, `<`) or a backtick doesn't, and `＠` never does.
     - Nothing in `--append-system-prompt-file` attaches.
     - The defang stays wider than that: the rule isn't documented, and it moves with versions.
-  - The rule, one for the core and the app (`untrusted::defang_mentions`, `defangMentions`, pinned by `crates/tandem-core/tests/fixtures/defang.json`): every `@` becomes ＠ except one before a space, a tab, a line break, another `@` or the end. Amended by D-3025: a whole run of `@` stays only before a space, a tab or a line break. Amended by D-3029: callers use `untrusted::defang` and the app's `defang`, which also drop what nothing shows, a paste marker's `[` and a whole `ultra` word; the `@` step on its own is private.
+  - The rule, one for the core and the app (`untrusted::defang_mentions`, `defangMentions`, pinned by `crates/tandem-core/tests/fixtures/defang.json`): every `@` becomes ＠ except one before a space, a tab, a line break, another `@` or the end. Amended by D-3025: a whole run of `@` stays only before a space, a tab or a line break. Amended by D-3029: callers use `untrusted::defang` and the app's `defang`, which also drop what nothing shows, a paste marker's `[` and a whole `ultra` word; the `@` step on its own is private. Amended by D-3030: what goes first is `untrusted::removable`, a superset of what Claude Code drops.
     - Not "any whitespace": Rust's and JavaScript's differ (U+0085), and typing into a terminal drops every other control character, a form feed too, which would join the `@` to what follows.
     - The note says "read ＠ as an at sign" and holds no `@`: "@." after a space could name the current folder.
   - The review prompt Send to agent types (F-WT-02, built in the app) defangs the diff's lines and paths and the second opinion's words. Your own comments stay as you wrote them.
@@ -3453,6 +3479,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - idle, `！echo` and `／cost` reached the model as text.
   - Auto re-checks readiness after the supervisor answers. A turn the agent started meanwhile drops the answer, and the next one is asked when the agent is back at its prompt. Conductor already waits for idle, and a handoff types into a new pane.
   - D-3026's sinks keep the guard: Auto, Conductor's `prompt_pane` and `spoken`, `deliver` and `thread_message`. A continue elsewhere goes through `deliver`.
+  - Amended by D-3030: the guard first removes `untrusted::removable`, which covers everything Claude Code or typing drops, not only control characters and the characters nothing shows.
 - D-3029: Text from elsewhere loses what nothing shows, and no paste marker or keyword in it acts (the verification of 8c97f6e8, should-fix 6).
   - `untrusted::defang` is what every user of D-3023 calls, and the app's `defang` is the same (`tests/fixtures/defang.json`). In order:
     - The default-ignorable code points go (zero-width and bidi controls, variation selectors, tags, the soft hyphen, fillers). None can split a word that a reader's own clean-up puts back together, or carry words nobody sees.
@@ -3464,6 +3491,30 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - That was read from the installed binary, not run: thinking was already at its largest budget, so `ultrathink` showed nothing.
   - The note follows only an `@` it wrote (`defang_marked`); a marker or a keyword changes silently.
   - The app lists the invisible characters as the core does, not from its engine's tables. A test checks the list against the engine's `Default_Ignorable_Code_Point` over every code point.
+  - Amended by D-3030: the first step removes `untrusted::removable`, not only the default ignorables, and both lists are checked against what Claude Code drops, read from its binary.
+- D-3030: Text from elsewhere first loses everything Claude Code's prompt drops before it reads a message, and more; the tests check that against Claude Code's own list (the review of e388a4a0, M1 and M2).
+  - `untrusted::removable`, in the core and the app (`defang.json`'s `removable` pins both): 4,273 code points in 32 ranges.
+    - the C0 and C1 controls and DEL, but tab, line feed and carriage return;
+    - U+2028 and U+2029;
+    - the default-ignorable code points and every format character (Cf);
+    - U+2800, a blank;
+    - what 2.1.312 drops besides: U+FFF9 to U+FFFB, U+1107F, U+13430 to U+1343F, U+16FE4 and U+1D173 to U+1D17A.
+  - `defang` and `no_command` remove it before anything else. Then `defang` reads the Kelvin sign (U+212A) as `K`: Claude Code checks a paste's NFC form for its words too, and NFC turns no other character into an ASCII letter (checked over every code point).
+  - Why: D-3029 dropped the default ignorables, and D-3028's guard skipped those and the controls. 2.1.312 drops more, and typing drops the controls after `defang` has run. So `ultra\u{FFF9}plan` and `ultra\u{1}plan` reached it as `ultraplan`, and `\u{FFF9}exit` quit it.
+  - Removing more than Claude Code does is fine; removing less isn't.
+    - The 19 extra code points are VT, FF, NEL, U+2028 and U+2029, which it reads as a line break, the 13 format characters it keeps, and U+2800.
+    - Removed, a line break joins what was on either side: the `@` rule then sees `@/etc/passwd`, and writes ＠.
+    - So a check that reads text before `defang` reads it without what's removable too. F-TK-08's topic check (`sensitive`) does now: Lead's prompt shows the question defanged.
+  - What Claude Code drops is read from its binary by `scripts/agent/claude-code-strip.mjs`:
+    - It finds the submit-time stripper's module by what the stripper counts, not by its minified name, and stubs the module's imports.
+    - It runs the stripper in a `vm` over every code point, in six contexts. The binary itself isn't run.
+    - It writes `crates/tandem-core/tests/fixtures/claude-code-strip.json`, with the version it read (2.1.312).
+    - Run it again when the Claude Code version the app supports moves (OPERATING §5).
+  - The core's and the app's tests assert, over every code point, that `removable` is the shared list and covers the fixture's. The rule-8 invariants model what Claude Code reads from the fixture alone, never from `removable`.
+  - Combining marks (`\p{M}`) reach neither the dispatch nor the keyword test.
+    - 2.1.312's `\p{M}` classes are in its name and label checks (how many marks may stack).
+    - Its stripper drops 265 marks, and `removable` has every one: the default-ignorable ones (U+034F, U+17B4 and U+17B5, the Mongolian selectors, the variation selectors) and two that aren't (U+1107F and U+16FE4).
+    - NFC composes the others onto a letter rather than dropping them, so a mark keeps a word split, as it looks on screen.
 
 ## M18 · Next features: engines
 Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; branch `product-research`). Owns F-EN-07, F-EN-08, F-EN-09, F-EN-10 and F-TH-17 (PRODUCT_SPEC §4.3 and §4.4, MILESTONES "M18 · Next features: engines"), then F-TH-17; decisions D-2400–D-2419.

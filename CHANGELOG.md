@@ -83,7 +83,8 @@ release fails when its version has no section.
   teammate learns from, a teammate's briefing for an ACP agent, a handoff brief,
   the summary that continues work on another account, and what Auto and
   Conductor send. Any `@` there that could name a file is written ＠, and the
-  message says so. Characters nobody can see are dropped, a paste marker such as
+  message says so. Characters nobody can see, and any that Claude Code or typing
+  would drop, go first, so they can't hide a word or a command. A paste marker such as
   [Pasted text #1] can't stand in for something you pasted, and words such as
   ultrathink get a hyphen. A handoff brief, or what Auto or Conductor sends an
   agent, that starts with `/` or `!`, or is just "exit" or "quit", has its first
