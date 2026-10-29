@@ -146,18 +146,29 @@ export const useThreads = create<ThreadsState>((set, get) => {
   // The window shown again or focused, Thread mode entered, Settings
   // closed: what threads show is read.
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", markShown);
+  const nativeFocus = inTauri() && !usingFakeBackend();
   const focused = (on: boolean) => {
     set({ windowFocused: on });
     if (on) markShown();
   };
-  if (inTauri() && !usingFakeBackend()) {
+  if (nativeFocus) {
     // The native window's focus: focus inside a browser pane (a child
-    // webview) leaves this document without it, but the window has it.
+    // webview) leaves this document without it, but the window has it, on
+    // Linux and macOS. On Windows a browser pane is a raw child WebView2:
+    // focusing it blurs the window, so marking waits until focus returns
+    // (delayed, never lost). The listener goes first, so a change while the
+    // first query runs isn't missed; an event that arrived wins over the
+    // query's older answer.
     void import("@tauri-apps/api/window")
       .then(async ({ getCurrentWindow }) => {
         const w = getCurrentWindow();
-        focused(await w.isFocused());
-        await w.onFocusChanged(({ payload }) => focused(payload));
+        let heard = false;
+        await w.onFocusChanged(({ payload }) => {
+          heard = true;
+          focused(payload);
+        });
+        const now = await w.isFocused();
+        if (!heard) focused(now);
       })
       .catch(() => undefined);
   } else if (typeof window !== "undefined") {
@@ -191,7 +202,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
     listError: null,
     selectedId: null,
     showArchived: false,
-    windowFocused: true,
+    // Under Tauri the window starts hidden (until app_ready), and unmapping
+    // doesn't set document.hidden in WebKitGTK: unfocused until the window
+    // says otherwise. In a browser (the demo, tests) it's taken as focused.
+    windowFocused: !(inTauri() && !usingFakeBackend()),
     byId: {},
     refresh: async () => {
       try {
