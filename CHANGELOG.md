@@ -100,10 +100,10 @@ release fails when its version has no section.
 - [lin] **A finished chat stays unread until you look at it.** A chat you'd
   opened earlier and left could lose its unread dot when its turn ended in the
   background, and one you were looking at could get the dot back. Now a chat is
-  marked read when you open it, or when it's the selected chat (or in the grid)
-  while chats are showing: its turn ends while you're in Thread mode with
-  Settings closed and the window in front, or you come back to Thread mode or
-  the window.
+  marked read only while Thread mode shows it (the selected chat, or a chat in
+  the grid) with Settings closed and Vibezeo's window in front and focused:
+  when you open it, when its turn ends, or when you come back to Thread mode or
+  to the window.
 - [lin] **Allow can't move under your click.** A chat's Allow and Allow for
   this thread, held actions' Approve & run and the review queue's Approve now
   wait until they've held still on screen for half a second, and while anything
