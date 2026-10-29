@@ -141,10 +141,11 @@ pub fn assemble(input: &BriefingInput<'_>) -> Briefing {
         access_word(input.access),
         unattended
     ));
-    // The brief is the user's own words: credentials are still redacted.
+    // The brief is the user's own words: credentials are still redacted,
+    // as written and as the engine reads it, past what's removable (D-3036).
     text.push_str(&format!(
         "<brief>{}</brief>\n",
-        tandem_core::redact::redact(input.brief)
+        untrusted::redacted(input.brief)
     ));
     let notes = fence_text(&capped(input.notes, input.notes_cap), &mut hits);
     let about = fence_text(&capped(input.about, input.about_cap), &mut hits);
@@ -305,6 +306,34 @@ mod tests {
             !untrusted::defang(&out).contains("ghp_0123456789"),
             "{out:?}"
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_no_credential_hides_behind_what_is_removable_in_a_briefing() {
+        // The brief is the user's own words and the memory isn't, but the
+        // engine reads both past what's removable: each is redacted as
+        // written and as the engine reads it (D-3036).
+        let skills = three();
+        for secret in [
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{2060}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let note = format!("- pushed with {secret}");
+            let mut i = input(&skills, &note);
+            let brief = format!("You keep the changelog. Deploy with {secret}.");
+            i.brief = &brief;
+            let b = assemble(&i);
+            assert!(
+                b.text.contains("<brief>You keep the changelog."),
+                "{}",
+                b.text
+            );
+            assert!(
+                !b.text.contains("0123456789") && !b.text.contains("ABCDEFGHIJ012345"),
+                "{}",
+                b.text
+            );
+        }
     }
 
     #[test]

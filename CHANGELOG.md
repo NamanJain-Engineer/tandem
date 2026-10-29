@@ -124,23 +124,33 @@ release fails when its version has no section.
 ### Security
 
 - [lin] **Text from elsewhere can't hand an agent a file or run a command.**
-  What Vibezeo passes an agent from somewhere else can't make Claude Code read a
-  file on your computer: a worktree's diff and a second opinion's words, in the
-  review you send or for the second opinion itself, a pull request's review
-  comments, a failed check's log, Warn both agents' note, a teammate's mail, the
-  terminal selection, clipboard, file name or branch name in a prompt, a
-  branch's name in a review you send back, a web page's elements, the turn a
-  teammate learns from, a teammate's briefing for an ACP agent, a handoff brief,
-  the summary that continues work on another account, and what Auto and
-  Conductor send. Any `@` there that could name a file is written ＠, and the
-  message says so. Characters nobody can see, and any that Claude Code or typing
-  would drop, go first, so they can't hide a word or a command. A paste marker
-  such as [Pasted text #1] can't stand in for something you pasted, words such
-  as ultrathink get a hyphen, and a word such as /release, which could run one
-  of your skills, gets a full-width slash. A handoff brief, or what Auto or
-  Conductor sends an agent, that starts with `/` or `!`, or is just "exit" or
-  "quit", has its first character written full width (／, ！), so it runs no slash
-  or shell command and quits nothing, mid-turn too.
+  What Vibezeo passes an agent from somewhere else can't make Claude Code read
+  a file on your computer: a worktree's diff and a second opinion's words, in
+  the review you send or for the second opinion itself, a pull request's
+  review comments, a failed check's log, Warn both agents' note, a teammate's
+  mail, the terminal selection, clipboard, file name or branch name in a
+  prompt, a branch's name in a review you send back, a web page's elements,
+  the turn a teammate learns from, a teammate's briefing for an ACP agent, a
+  handoff brief, the summary that continues work on another account, and what
+  Auto and Conductor send. Any `@` there that could name a file is written ＠,
+  and the message says so. Characters nobody can see, and any that Claude Code
+  or typing would drop, go first, so they can't hide a word or a command. A
+  paste marker such as [Pasted text #1] can't stand in for something you
+  pasted, words such as ultrathink get a hyphen, and a word such as /release
+  or /apps/web:release, which could run one of your skills, gets a full-width
+  slash. A handoff brief, or what Auto or Conductor sends an agent, that
+  starts with `/` or `!`, or is just "exit" or "quit", has its first character
+  written full width (／, ！), so it runs no slash or shell command and quits
+  nothing, mid-turn too. What Conductor types in parts, without Enter between
+  them, can't join into such a word either.
+- [lin] **A key split by a character nobody can see is still hidden.** Vibezeo
+  hides keys and tokens before text reaches a model or leaves your computer,
+  and now also finds one that an invisible character splits, or sets apart
+  from the word before it: in what Conductor reads from panes and threads and
+  what it says, the review queue's lines, a plugin's replies and errors, a
+  teammate's brief and memory, crash reports, usage statistics and Copy
+  diagnostics. A plugin's replies now lose every key Vibezeo recognises, not
+  only the connection's own.
 
 ## 0.12.0
 
