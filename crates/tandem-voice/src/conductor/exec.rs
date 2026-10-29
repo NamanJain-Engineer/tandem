@@ -322,7 +322,16 @@ impl Executor {
         if clean.trim().is_empty() {
             return Err("There was nothing to type.".into());
         }
-        self.host.type_prompt(pane, &clean, send).await?;
+        // It lands after whatever the input holds, and an unsent chunk waits
+        // for whatever comes next: a space on each side keeps two chunks
+        // from joining into an exit word, a keyword or a paste marker
+        // (D-3037). The engine trims a message before it reads a command.
+        let padded = if send {
+            format!(" {clean}")
+        } else {
+            format!(" {clean} ")
+        };
+        self.host.type_prompt(pane, &padded, send).await?;
         Ok(if send {
             format!("Sent to {}.", facts.title)
         } else {
@@ -716,9 +725,10 @@ pub(crate) mod tests {
             ))
             .await;
         assert!(r.result.ok, "{}", r.result.output);
+        // Each chunk opens with a space (D-3037).
         assert_eq!(
             host.typed.lock().clone(),
-            vec![("agent".into(), "run[2J the tests".into(), true)]
+            vec![("agent".into(), " run[2J the tests".into(), true)]
         );
     }
 
@@ -739,7 +749,7 @@ pub(crate) mod tests {
         assert_eq!(
             typed[0].1,
             format!(
-                "look at \u{FF20}~/.ssh/id_rsa\u{FF20}~/.aws {}",
+                " look at \u{FF20}~/.ssh/id_rsa\u{FF20}~/.aws {}",
                 tandem_core::untrusted::DEFANGED
             )
         );
@@ -766,7 +776,11 @@ pub(crate) mod tests {
                 ))
                 .await;
             assert!(r.result.ok, "{}", r.result.output);
-            assert_eq!(host.typed.lock().clone()[0].1, typed, "{text:?}");
+            assert_eq!(
+                host.typed.lock().clone()[0].1,
+                format!(" {typed}"),
+                "{text:?}"
+            );
         }
     }
 
@@ -792,7 +806,7 @@ pub(crate) mod tests {
                 .await;
             assert!(r.result.ok, "{}", r.result.output);
             let typed = host.typed.lock().clone()[0].1.clone();
-            assert_eq!(typed, safe, "{text:?}");
+            assert_eq!(typed, format!(" {safe}"), "{text:?}");
             assert!(!typed.chars().any(char::is_control), "{typed:?}");
         }
     }
@@ -816,7 +830,56 @@ pub(crate) mod tests {
                 ))
                 .await;
             assert!(r.result.ok, "{}", r.result.output);
-            assert_eq!(host.typed.lock().clone()[0].1, typed, "{text:?}");
+            assert_eq!(
+                host.typed.lock().clone()[0].1,
+                format!(" {typed}"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_08_1_chunks_typed_without_enter_join_into_no_command_keyword_or_marker() {
+        // `prompt_pane` with `send: false` leaves a chunk in the engine's
+        // input, and the next one lands right after it. Each chunk opens
+        // with a space and an unsent one ends with one, so no two join into
+        // a word the engine acts on (D-3037).
+        for (first, second) in [
+            ("e", "xit"),
+            ("qu", "it"),
+            ("ultra", "think it over"),
+            ("see [", "Pasted text #1]"),
+        ] {
+            let host = FakeHost::with_panes();
+            let (e, _) = exec(host.clone());
+            for args in [
+                json!({"pane": "agent", "text": first, "send": false}),
+                json!({"pane": "agent", "text": second, "send": true}),
+            ] {
+                let r = e.run(&call("prompt_pane", args)).await;
+                assert!(r.result.ok, "{}", r.result.output);
+            }
+            let typed = host.typed.lock().clone();
+            assert_eq!(typed.iter().map(|t| t.2).collect::<Vec<_>>(), [false, true]);
+            // What the engine reads once Enter sends both: trimmed, as it
+            // trims before it looks for a command.
+            let input: String = typed.iter().map(|t| t.1.as_str()).collect();
+            let read = input.trim();
+            assert!(
+                !["exit", "quit"]
+                    .iter()
+                    .any(|w| read.eq_ignore_ascii_case(w)),
+                "{input:?}"
+            );
+            assert!(
+                !read.to_ascii_lowercase().contains("ultrathink"),
+                "{input:?}"
+            );
+            assert!(!read.contains("[Pasted text #"), "{input:?}");
+            assert!(
+                read.starts_with(first) && read.ends_with(second),
+                "{input:?}"
+            );
         }
     }
 
@@ -1023,6 +1086,31 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_08_1_a_tools_output_hides_a_credential_behind_what_is_removable() {
+        // What a tool found goes to Conductor's cloud model, which reads
+        // past what's removable: redacted as written and as it reads it
+        // (D-3036). read_thread, find_work and the rest end the same way.
+        for secret in [
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let host = FakeHost::with_panes();
+            *host.tail.lock() = format!("pushed with {secret}\nok");
+            let (e, _) = exec(host.clone());
+            let r = e
+                .run(&call("read_pane", json!({"pane": "agent", "lines": 20})))
+                .await;
+            assert!(r.result.ok);
+            let out = &r.result.output;
+            assert!(out.contains("pushed with") && out.contains("ok"), "{out}");
+            assert!(
+                !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
+                "{out}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn f_cn_02_unknown_tools_and_bad_arguments_never_reach_the_app() {
         let host = FakeHost::with_panes();
         let (e, _) = exec(host.clone());
@@ -1046,31 +1134,6 @@ pub(crate) mod tests {
                 .ok
         );
         assert_eq!(host.ui.lock()[0].action, "switch_mode");
-    }
-
-    #[tokio::test]
-    async fn f_tk_08_1_a_tools_output_hides_a_credential_behind_what_is_removable() {
-        // What a tool found goes to Conductor's cloud model, which reads
-        // past what's removable: redacted as written and as it reads it
-        // (D-3036). read_thread, find_work and the rest end the same way.
-        for secret in [
-            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
-            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
-        ] {
-            let host = FakeHost::with_panes();
-            *host.tail.lock() = format!("pushed with {secret}\nok");
-            let (e, _) = exec(host.clone());
-            let r = e
-                .run(&call("read_pane", json!({"pane": "agent", "lines": 20})))
-                .await;
-            assert!(r.result.ok);
-            let out = &r.result.output;
-            assert!(out.contains("pushed with") && out.contains("ok"), "{out}");
-            assert!(
-                !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
-                "{out}"
-            );
-        }
     }
 
     #[tokio::test]
