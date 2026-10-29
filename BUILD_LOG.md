@@ -2335,7 +2335,7 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - "Codex is reviewing…" sits in WorktreeReview's bar, with a spinner and Open thread. "Codex left 2 comments" is a toast with Show diff (SecondOpinion.tsx), and then the bar reads "2 comments · Copy review · Send to Ada". The diff's header is just its file.
     - The card's second line is ReviewQueue's: the engine, the worktree's name once (its own workspace and its `tandem/` branch, shown as the name, D-1898) and how long ago it finished, `ago()`'s "4m": "Claude Code · checkout-fix · 4m". The hero's arriving card has the same line with "0m", since it arrives as the work finishes.
   - **The hero and the Dashboard follow the story's states:**
-    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Gemini CLI asks in its own terminal, "Allow running pnpm test search? (y/n)", and Bea's dot and rail row stay waiting. Arlo stays at work, and the repository's working count follows (3, 2, 1). (At 54a05e0d the ask was a banner with Allow once and Deny; see the design QA round below.)
+    - Bea (Gemini CLI, search-ui) asks to run `pnpm test search` and waits. Gemini CLI asks in its own terminal, "Allow running pnpm test search? (y/n)", and Bea's dot and rail row stay waiting. (D-3002: Gemini CLI's own words are "Allow execution of: '…'?", and Bea's card has no line.) Arlo stays at work, and the repository's working count follows (3, 2, 1). (At 54a05e0d the ask was a banner with Allow once and Deny; see the design QA round below.)
     - The Dashboard has the story's one repository, with each worktree's agent under its branch, as the app groups a repository's worktrees by project. Each card has the first name, with `cardMeta` under it: the engine and the worktree's name, once by the same rule ("Codex · coupon-rules"). The story gives no account, so none shows. Bea's card has the engine's question as its line, "Allow running pnpm test search?", with the waiting border and no buttons. The counts end at Waiting 1, Working 1 and Done 1, with Review · 1.
     - The api and docs projects are gone, and no engine's name is written into any scene file now.
     - The hero's caption counts three agents. It said four, counting the shell.
@@ -2378,6 +2378,29 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
     - A dot's swap may fade. An overlay with a z-index of its own covers what's under it.
     - Run on the build before the fix, it found 31 at 1440. That's the design lead's list, but for an empty step under "Land 1 approved…", which draws nothing, plus the dots inside `Changes` and the CI scene's Files panel under Open diff's. It counts an empty step too now, as the design lead's checker does.
     - On this build it finds none.
+  - **Bea asks in Gemini CLI's own words (M1).** The app shows an agent waiting only when a hook says so or its line matches the engine's `waitingPatterns`. Gemini CLI's are "Allow execution" and "Apply this change\?", so "Allow running pnpm test search? (y/n)", the demo's line, would have shown Bea working, then done.
+    - Bea's pane's last line at 2.2 s is now "Allow execution of: 'pnpm test search'?", with no option list, since that's another product's copy. Bea's dot and rail row turn waiting then. Each engine's question has its own shape in lib/scenes.ts (`ASKS`); the story's waiting engine is the only one needed, and a missing one fails the build.
+    - A waiting found by a pattern carries no preview: the heuristics report no tool and no preview, and the Dashboard's line is one or the other. So Bea's card has no line at all, before the ask too, and the text no longer says the card shows the question.
+    - The test reads the app, not the demo: the registry's patterns match Bea's line and not the old one, Gemini CLI has no hooks, a pane is watched with its engine's patterns (terminal.rs, status.rs), the heuristics' one StatusUpdate has no tool or preview, dashboard.rs's line is the preview or the tool, and AgentCard draws a line only for one. app-ui makes the demo match in its slice; backend.ts isn't touched.
+  - **Every Dashboard card says its state, as AgentCard does (M1's must).** The card is drawn as AgentCard's: its title row (its dot, its engine's tile, its first name, then its state with how long it has held it at the right), then its engine and worktree, then its line when it has one.
+    - "Working · 42m", then "Waiting for you · 0m" for Bea at the ask and "Done · 0m" for Ada when done, and Arlo's "Working · 42m" throughout. The demo starts every pane 42 minutes back and restarts the clock on a change of state (backend.ts), so the scene's minutes are the demo's.
+    - A test ties the words and the format to AgentCard's (STATUS_LABEL and `elapsed`), and the 42 to the demo's clock.
+  - **The agents segment is in the CI and Dashboard scenes' status bars (S3),** after the CI segment as StatusBar draws it: waiting first, at medium weight in waiting's text, then working, each after its 6 px dot.
+    - The CI scene reads "1 waiting · 1 working", "1 waiting · 2 working" while Ada fixes, then "1 waiting · 1 working". The Dashboard reads "3 working", then "1 waiting · 2 working" and "1 waiting · 1 working".
+    - Tests read the counts off each scene at every change: the CI scene's rail dots, and the Dashboard's cards and filters.
+    - The hero gets it with D-2702. Land, Review and Plan don't have it yet. By Land every agent is done, so the app's segment would draw nothing. Review's second opinion and the plan's runs are agents too, so what those count is the coordinator's call.
+  - **Who reads the checks is pinned (S1),** call by call, with what each call is in. The test parses the app's source (TypeScript's compiler) and lists every call to `loadChecks`, `openChecks`, `pollChecks`, `allowChecks` and `useChecksPolling`: eleven, from the store's three readers, the worktree menu, the dialog's Refresh and Allow, and the rail's polling. Only `loadChecks` writes `checks`, which the store starts empty, and the push (stores/git.ts) touches no checks. app-ui's D-2619 (319e8be9) reads them after a push; when it lands in `chain27`, this test fails by design and the CI scene changes.
+  - **The port's whitespace is the core's (S2).** Rust's `char::is_whitespace` and `str::trim` follow Unicode's White_Space property, which the port now names (`\p{White_Space}`). JS's `\s` and `trim()` differ from it on U+0085 and U+FEFF. The fixture has three new cases from the core: @s around U+3000, U+0085 and U+FEFF, a log of U+0085 and U+3000 that printed nothing, and a log of U+FEFF that did.
+  - **Nits:**
+    1. Running checks are read "every two minutes while its window has focus and its Code rail is open" (document.hasFocus() in useChecksPolling, and the rail's `!collapsed`).
+    2. `UPDATE_FIXTURES` takes only "1", is refused on CI, and fails once it has rewritten a fixture, so a rewrite never passes as a test (`tests/common`, for every fixture test).
+    3. sceneCss refuses a quoted string and url(), whose whitespace closing up could change, as well as "</". Its test compares the sheets rule by rule with each whitespace run one space, so `.a .b` against `.a.b` fails.
+    4. The fixture test is `f_wt_08_failure_prompts_are_the_fixtures`.
+    5. Every scene's status bar is in the app footer's fg-muted and its sans, tabular. It was subtle and mono.
+    6. The check row is text-sm, 12 px, read from the tokens, and its workflow text-xs. The badge's 1 px border is a border inside its box, as the app's is, where the inset shadow left it 2 px narrow.
+    7. Each Checks dialog is two boxes in one place: while it reads, with Refresh's spinner, and once it has, each its own size. So it shrinks as the app's does when Send and the spinner go.
+    8. sceneCss finds its folder from its own file, so it works from any directory (a test moves away and reads it). Under `next dev` a reload shows an edit to ci.css, since each render reads it; a hot reload on save would need it in the module graph, so that's not done.
+  - **Coming in `chain27`:** m16a's D-3025, D-3028 and D-3029 change the defang and its note, so the fixture's @ cases and the port change with them, and app-ui's 319e8be9 brings askLine and previewOf from story.ts and "1 with changes requested". Each is merged when it's in `chain27`.
 ### Website dark mode and motion log
 - Slice 1, dark mode (D-1870 to D-1873). Spec first: F-WB-01 gains the theme, motion and product-scene behaviour and acceptance criteria 4 to 9, and F-WB-06's script and storage lines allow the theme script and its key. Tests: `app/theme.test.ts` (new, jsdom: the script on a fresh page, a stored choice, an unknown value, storage that throws, the control, System forgetting, another tab, ES5 with no requests), `e2e-site/theme.spec.ts` (new: the first frame already in the stored theme, the control, reload and another page, arrow keys, the phone menu, no JavaScript, code blocks in a forced theme, axe on every page in a forced Light over a dark OS and a forced Dark over a light one), `site.test.ts` (the forced-Light block equals the OS one, and every OS-light block is guarded), `frame.test` (the layout's script, both controls, the portal). Updated to the new intent: the allowlist tests, `blog.spec`'s AC6 and `docs-nav.spec` now expect the theme script and nothing else.
   - Found on the way: the control's own CSS, unlayered, beat Tailwind's `ml-auto`, and the control and Download sat over the nav links (screenshots caught it); its rules now live in `@layer components`.
@@ -2576,6 +2599,25 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Checks: web lint, web vitest 177/177, `build:site` (58 pages), site Playwright 68/68. Frames of the CI scene at 8.69, 8.75 and 8.82 s show "1 check failed: test", then "Checks running" coming in alone.
   - The gate passed:
     - TypeScript: 1,927 tests (web 177, ui 475, desktop 969, api 235, remote 33, mobile 24, protocol 14).
+    - Rust: 2,588 passed, 9 ignored.
+    - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
+- The fix pass on 2966da74, part 2 (D-3002): the coordinator's M1, S1 to S3 and nits 1 to 8, with the design lead's specifics for M1 and S3. Tests first:
+  - scenes.test:
+    - M1: the waiting agent's line is the question in Gemini CLI's own words, which its waitingPatterns match and the old line doesn't. The app's side is read in registry.json, terminal.rs, status.rs, status_heuristics.rs, dashboard.rs and AgentCard. The agent's card has no line, and the text says nothing of a question.
+    - Each Dashboard card's title row ends on its state, in AgentCard's words and format, with the demo's 42 minutes. The status bar's agents are counted against the cards and the filters at every change.
+    - The CI scene's agents segment comes after its CI segment, in StatusBar's order and look, counted against the rail's dots at every change. The footer is in fg-muted, the app's sans, tabular.
+    - S1: every call to the checks' readers is listed by what it's in (TypeScript's parser), `checks` is written only by loadChecks, and the push touches none.
+    - S2: the fixture's three new cases, and the port's whitespace.
+    - Nits: the text's "while its window has focus and its Code rail is open", the check row's text-sm and the badge's border, each dialog's two boxes, and sceneCss's refusals, its rule-by-rule comparison and its folder from any working directory.
+    - Planted faults each fail a test: the demo's old line, a line on the waiting card, the minutes off the demo's, a push that reads the checks, the port's `\s`, a wrong count in the agents segment, a minifier that drops spaces, the subtle footer, the badge's ring as a shadow, and one dialog box.
+  - cargo: `tests/failure_prompts.rs` is `f_wt_08_failure_prompts_are_the_fixtures`, with eight cases. `UPDATE_FIXTURES=1` rewrote the fixture and failed, as it now must. "yes" and CI were refused, and a run with nothing to change passed.
+  - Checks: web lint, web vitest 180/180, `build:site` (58 pages), site Playwright 68/68, design-shots 24 ok with teal unchanged. Frames of the reopened Checks dialog before and after its read show it shrink.
+  - Lighthouse CI on nine URLs, every assertion passing in both themes:
+    - `/` 0.99 at 1.89 s light and 1.74 s dark (the old hero, as before).
+    - /changelog/0.9.0/ and /changelog/0.12.0/ 1.66 s in both.
+    - The rest 0.99–1.00, at 1.36–1.81 s. Accessibility 1.00 everywhere, blocking time 0 ms, CLS at most 0.001.
+  - The gate passed:
+    - TypeScript: 1,930 tests (web 180, ui 475, desktop 969, api 235, remote 33, mobile 24, protocol 14).
     - Rust: 2,588 passed, 9 ignored.
     - Also: the desktop build, clippy on Linux, Windows and both Macs, fmt, and no protocol drift.
 

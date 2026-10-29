@@ -102,7 +102,7 @@
 .sc-pane { position: relative; }
 .sc-sheen { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(105deg, transparent 35%, var(--tn-edge-hi) 50%, transparent 65%); translate: 100% 0; }
 
-.sc-statusbar { display: flex; align-items: center; gap: 1.2em; padding-inline: 0.875em; border-top: 1px solid var(--sc-line); font-family: var(--font-mono); font-size: 0.625em; color: var(--tn-text-subtle); background: var(--tn-surface-1); }
+.sc-statusbar { display: flex; align-items: center; gap: 1.2em; padding-inline: 0.875em; border-top: 1px solid var(--sc-line); font-size: 0.625em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); background: var(--tn-surface-1); }
 .sc-statusbar-right { margin-left: auto; display: inline-flex; gap: 1.5em; }
 
 /* The Dashboard. */
@@ -121,15 +121,21 @@
    groups them by project. */
 .sc-group-lanes { display: flex; flex-direction: column; gap: 0.5em; margin-left: 0.375em; padding-left: 0.625em; border-left: 1px solid var(--sc-line); }
 .sc-card-wrap { position: relative; display: block; border-radius: 0.625em; }
-.sc-card { display: grid; grid-template-columns: auto 14em 1fr auto; align-items: center; column-gap: 0.875em; row-gap: 0.5em; padding: 0.625em 0.875em; border-radius: 0.625em; background: var(--tn-surface-2); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--sc-line); }
+/* An agent's card as AgentCard draws it (D-3002): the title row (its dot,
+   its engine's tile, its first name, and at the right its state and how
+   long it has held it), then its engine and worktree, then its latest line
+   when it has one. */
+.sc-card { display: flex; flex-direction: column; gap: 0.25em; padding: 0.5em 0.75em; border-radius: 0.625em; background: var(--tn-surface-2); box-shadow: var(--tn-elev-1), inset 0 0 0 1px var(--sc-line); }
+.sc-card-head { display: flex; align-items: center; gap: 0.5em; min-width: 0; }
 .sc-card .sc-glyph { font-size: 0.8125em; }
 .sc-card-main { display: flex; flex-direction: column; min-width: 0; }
 .sc-card-title { font-size: 0.8125em; font-weight: 500; white-space: nowrap; }
+.sc-card-head .sc-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sc-card-state { flex: none; font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); white-space: nowrap; }
 .sc-card-meta { font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-subtle); white-space: nowrap; }
 /* A review card's line under its title is sans, as ReviewQueue's: engine, workspace and branch. */
 :is(.sc-item, .sc-toast, .sc-card) .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
-.sc-card-line { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-muted); white-space: nowrap; }
-.sc-card-status { display: inline-flex; }
+.sc-card-line { min-width: 0; overflow: hidden; font-size: 0.75em; color: var(--tn-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
 .sc-card-ask .sc-card { background: var(--tn-surface-3); }
 .sc-ring { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 1px var(--tn-status-waiting), 0 0 1.5em -0.25em var(--tn-status-waiting-soft); }
 
@@ -182,6 +188,12 @@
    no connection (D-816). */
 .sc-statusbar-branch { display: inline-flex; align-items: center; gap: 0.375em; }
 .sc-statusbar-icon { width: 1.1em; height: 1.1em; }
+/* The agents segment (StatusBar's AgentsSegment): waiting first, in its text
+   at medium weight, then working, each after its 6 px dot. */
+.sc-agents { display: inline-flex; align-items: center; gap: 1.2em; }
+.sc-agents > * { display: inline-flex; align-items: center; gap: 0.4em; white-space: nowrap; }
+.sc-agents .sc-dot svg { width: 0.6em; height: 0.6em; }
+.sc-agents-waiting { font-weight: 500; color: var(--tn-status-waiting-text); }
 .sc-btn-ghost { background: none; box-shadow: none; }
 
 /* Agent mode's Tasks page, with Plan with Lead's dialog over it (D-1888).
@@ -249,9 +261,6 @@
   .sc-toast { left: 1em; right: 1em; width: auto; }
   .sc-dash { padding: 1em; }
   .sc-dash-group, .sc-seg { display: none; }
-  .sc-card { grid-template-columns: auto 1fr auto; }
-  .sc-card-line { grid-column: 2 / -1; grid-row: 2; }
-  .sc-card-status { grid-column: 3; grid-row: 1; }
   .sc-rev { grid-template-columns: 1fr; }
   .sc-rev-list { display: none; }
   .sc-diff-no { display: none; }

@@ -1,8 +1,8 @@
 import { Check, GitBranch } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { SAMPLE, failurePrompt, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
-import { AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, visit, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, visit, type Agents, type DiffRow } from "./parts";
 
 /** When things happen, in seconds from the scene's start. */
 export const CI_T = {
@@ -34,8 +34,8 @@ export const CI_T = {
   reopen: 7.9,
   running: 8.7,
   closed: 9.3,
-  /** Running checks are read every two minutes with the window in front:
-   * a later read, passed. */
+  /** Running checks are read every two minutes while the window has focus
+   * and the Code rail is open: a later read, passed. */
   passed: 10.6,
   /** Open diff, then Import review comments from #42; once its toast has
    * gone, Send to the agent. */
@@ -97,6 +97,16 @@ const AGENT: ReadonlyArray<readonly [number, ReactNode]> = [
   [0, <Dot key="a" status="done" />],
   [T.sent, <Dot key="b" status="working" />],
   [T.done, <Dot key="c" status="done" />],
+];
+
+/** The agents waiting on you and at work, as the status bar counts them
+ * (AgentsSegment): the waiting worktree's agent waits and the working one
+ * works throughout, and the pull request's works from when the failure is
+ * sent until it's done again. */
+export const CI_AGENTS: ReadonlyArray<readonly [number, Agents]> = [
+  [0, { waiting: 1, working: 1 }],
+  [T.sent, { waiting: 1, working: 2 }],
+  [T.done, { waiting: 1, working: 1 }],
 ];
 
 /** The rail row's checks (ChecksBadge): failed, pressed to open the dialog
@@ -191,9 +201,9 @@ const BUCKET: Record<string, string> = { pass: "sc-badge-done", fail: "sc-badge-
 
 /** The dialog's checks: each with its workflow and badge, and a failed one
  * with Send failure to agent, pressed at `send` if given. */
-function CheckRows({ checks, send, ...props }: { checks: typeof pr.checks; send?: number; "data-fx-cut"?: string; "data-fx-show"?: string; style?: CSSProperties }) {
+function CheckRows({ checks, send }: { checks: typeof pr.checks; send?: number }) {
   return (
-    <span className="sc-ci-checks" {...props}>
+    <span className="sc-ci-checks">
       {checks.map((c) => (
         <span key={c.name} className="sc-ci-check">
           <span className="sc-ci-check-head">
@@ -219,36 +229,32 @@ const RUNNING = pr.checks.map((c) => ({ ...c, bucket: "pending" }));
  * until Close. Opening it reads the checks: Refresh (secondary) shows its
  * spinner until the read ends, at `read`. The first time, they're as the
  * row said, and sending the failure leaves it open; reopened after the
- * push, they're all running, so Send failure to agent goes. */
+ * push, they're all running, so Send failure to agent goes. The dialog
+ * while it reads and once it has, each its own size, swap at once when the
+ * read returns, so it shrinks as the app's does: Refresh loses its spinner,
+ * and the rows their Send (D-3002). */
 function ChecksDialog({ open, read, close, rerun = false }: { open: number; read: number; close: number; rerun?: boolean }) {
   const rise = open + 0.2;
+  const box = (reading: boolean) => (
+    <div className="sc-dialog sc-ci-dialog" {...fx(reading ? "cut" : "show", read)}>
+      <span className="sc-dash-title">{t("checks.title", { branch: pr.branch })}</span>
+      <span className="sc-toast-body">{t("checks.pr", { n: pr.number })}</span>
+      <CheckRows checks={rerun && !reading ? RUNNING : pr.checks} send={rerun || reading ? undefined : T.send} />
+      <span className="sc-dialog-foot sc-ci-foot">
+        <span className="sc-btn">
+          {reading && <span className="sc-spin" style={at(rise)} />}
+          {t("checks.refresh")}
+        </span>
+        <span className="sc-btn sc-btn-primary" {...(reading ? {} : fx("press", close))}>
+          {t("common.close")}
+        </span>
+      </span>
+    </div>
+  );
   return (
     <div className="sc-ci-layer" {...visit(rise, close + PRESSED - rise)}>
-      <div className="sc-dialog sc-ci-dialog">
-        <span className="sc-dash-title">{t("checks.title", { branch: pr.branch })}</span>
-        <span className="sc-toast-body">{t("checks.pr", { n: pr.number })}</span>
-        {rerun ? (
-          // The rows change at once when the read returns, as the app's do.
-          <span className="sc-ci-checks-swap">
-            <CheckRows checks={pr.checks} {...fx("cut", read)} />
-            <CheckRows checks={RUNNING} {...fx("show", read)} />
-          </span>
-        ) : (
-          <CheckRows checks={pr.checks} send={T.send} />
-        )}
-        <span className="sc-dialog-foot sc-ci-foot">
-          <span className="sc-btn sc-btn-swap">
-            <span {...fx("cut", read)}>
-              <span className="sc-spin" style={at(rise)} />
-              {t("checks.refresh")}
-            </span>
-            <span {...fx("show", read)}>{t("checks.refresh")}</span>
-          </span>
-          <span className="sc-btn sc-btn-primary" {...fx("press", close)}>
-            {t("common.close")}
-          </span>
-        </span>
-      </div>
+      {box(true)}
+      {box(false)}
     </div>
   );
 }
@@ -422,7 +428,16 @@ export function ChecksScene() {
         <Toast title={t("git.pushed", { branch: pr.branch })} at={T.pushed} />
         <Toast title={t("worktree.review.imported", { n: pr.comments.length })} at={T.imported} />
       </div>
-      <StatusBar branch={agent.branch} counts={<Changes steps={AHEAD} />} segments={<CiSegment />} />
+      <StatusBar
+        branch={agent.branch}
+        counts={<Changes steps={AHEAD} />}
+        segments={
+          <>
+            <CiSegment />
+            <AgentsSegment steps={CI_AGENTS} />
+          </>
+        }
+      />
       {/* Over the whole window, as the app's overlay is (fixed, inset 0):
           opened from the row, then again after the push. */}
       <ChecksDialog open={T.open} read={T.read} close={T.close} />
@@ -434,5 +449,5 @@ export function ChecksScene() {
 export const CI_CAPTION = "A failed check goes to the agent as data. Its fix is pushed and passes, and the reviewer's comment comes in too.";
 
 export function ciSceneText(): string {
-  return `${agent.branch}'s pull request #${pr.number} has a failed check, ${failed.map((c) => c.name).join(", ")}, on its rail row. Its Checks dialog lists ${pr.checks.map((c) => c.name).join(", ")}, and Send failure to agent types the check, its link and the end of its log into ${agent.name}, the worktree's agent in ${agent.engine}, marked as untrusted data, not instructions. ${agent.name} finds the cause, fixes ${pr.fix.file} and commits. Push, from the Files panel's branch chip, sends the fix up. A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running. While they run, Vibezeo reads them every two minutes with its window in front, and they pass. In Open diff, Import review comments from #${pr.number} brings in ${comment.author}'s comment on ${comment.file} line ${comment.line}, ready to send to ${agent.name}. Vibezeo asks once before it reads a repository's pull requests, with your own GitHub CLI.`;
+  return `${agent.branch}'s pull request #${pr.number} has a failed check, ${failed.map((c) => c.name).join(", ")}, on its rail row. Its Checks dialog lists ${pr.checks.map((c) => c.name).join(", ")}, and Send failure to agent types the check, its link and the end of its log into ${agent.name}, the worktree's agent in ${agent.engine}, marked as untrusted data, not instructions. ${agent.name} finds the cause, fixes ${pr.fix.file} and commits. Push, from the Files panel's branch chip, sends the fix up. A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running. While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass. In Open diff, Import review comments from #${pr.number} brings in ${comment.author}'s comment on ${comment.file} line ${comment.line}, ready to send to ${agent.name}. Vibezeo asks once before it reads a repository's pull requests, with your own GitHub CLI.`;
 }

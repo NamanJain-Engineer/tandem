@@ -63,27 +63,26 @@
 
 /* The Checks dialog, over the window. */
 .sc-ci-layer { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: var(--tn-overlay); }
+/* The dialog while it reads and once it has, in one place, each its own
+   size, so it shrinks when the read takes Send and the spinner away. */
+.sc-ci-layer > * { grid-area: 1 / 1; }
 .sc-ci-dialog { width: 34em; }
 .sc-ci-checks { display: flex; flex-direction: column; gap: 0.5em; }
 .sc-ci-check { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; padding: 0.5em 0.625em; border-radius: 0.375em; box-shadow: inset 0 0 0 1px var(--sc-line); }
-.sc-ci-check-head { display: flex; align-items: center; gap: 0.5em; align-self: stretch; font-size: 0.8125em; }
-.sc-ci-check-flow { font-size: 0.85em; color: var(--tn-text-subtle); }
-/* A check's result as the app's Badge draws it (Badge.tsx): a small box with
-   4 px corners, 18 px tall, its text 10 px in its tone's text colour, and a
-   border in its tone at 40 %, mixed as the app's `border-done/40` compiles;
-   no fill and no pill (DESIGN §4.5). Sized in its row's 13 px. */
-.sc-badge { margin-left: auto; display: inline-flex; align-items: center; height: 1.8em; padding-inline: 0.6em; border-radius: 0.4em; font-size: calc(10em / 13); font-weight: 500; line-height: 1; white-space: nowrap; }
-.sc-badge-done { color: var(--tn-status-done-text); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tn-status-done) 40%, transparent); }
-.sc-badge-error { color: var(--tn-status-error); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tn-status-error) 40%, transparent); }
-.sc-badge-outline { color: var(--tn-text-muted); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
+.sc-ci-check-head { display: flex; align-items: center; gap: 0.5em; align-self: stretch; font-size: 0.75em; }
+.sc-ci-check-flow { font-size: calc(11em / 12); color: var(--tn-text-subtle); }
+/* A check's result as the app's Badge draws it (Badge.tsx): a box 18 px tall
+   with 4 px corners, 6 px of padding and a 1 px border inside it, in its
+   tone at 40 %, mixed as the app's `border-done/40` compiles; its text 10 px
+   in its tone's text colour; no fill and no pill (DESIGN §4.5). Sized in
+   its row's 12 px (text-sm). */
+.sc-badge { margin-left: auto; display: inline-flex; align-items: center; height: 1.8em; padding-inline: 0.6em; border-radius: 0.4em; font-size: calc(10em / 12); font-weight: 500; line-height: 1; white-space: nowrap; }
+.sc-badge-done { color: var(--tn-status-done-text); border: 1px solid color-mix(in oklab, var(--tn-status-done) 40%, transparent); }
+.sc-badge-error { color: var(--tn-status-error); border: 1px solid color-mix(in oklab, var(--tn-status-error) 40%, transparent); }
+.sc-badge-outline { color: var(--tn-text-muted); border: 1px solid var(--tn-border-strong); }
 .sc-ci-foot { gap: 0.5em; }
-/* Refresh while the dialog reads: its spinner, then only its label, in one
-   cell (the app's loading Button). */
-.sc-btn-swap { display: inline-grid; justify-items: center; }
-.sc-btn-swap > * { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 0.5em; }
-/* The reopened dialog's rows: as they were, then the new run's, in one cell. */
-.sc-ci-checks-swap { display: grid; }
-.sc-ci-checks-swap > * { grid-area: 1 / 1; align-self: start; }
+/* Refresh reading: its spinner, then its label (the app's loading Button). */
+.sc-ci-foot .sc-btn { gap: 0.5em; }
 
 @container (max-width: 40rem) {
   .sc-ci-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }

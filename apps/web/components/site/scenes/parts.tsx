@@ -100,9 +100,9 @@ export function AppWindow({ children, className, mode = "code" }: { children: Re
 
 /** The app's status bar as the download draws it (D-2603): the branch with
  * its icon, and what there is to push and pull once it has an upstream;
- * then a scene's segments (its CI); the version at the end. The
- * early-access download has no hosted service, so it shows no connection
- * (D-816). */
+ * then a scene's segments (its CI, then its agents); the version at the
+ * end. The early-access download has no hosted service, so it shows no
+ * connection (D-816). */
 export function StatusBar({ branch, counts, segments }: { branch: string; counts?: ReactNode; segments?: ReactNode }) {
   return (
     <div className="sc-statusbar">
@@ -116,6 +116,38 @@ export function StatusBar({ branch, counts, segments }: { branch: string; counts
         <span>{t("status.version", { version: SCENE_BUILD })}</span>
       </span>
     </div>
+  );
+}
+
+/** How many agents wait on you and how many are working, across every
+ * agent, from a time on. */
+export type Agents = { waiting: number; working: number };
+
+/** The status bar's agents segment (StatusBar's AgentsSegment, after the
+ * CI's): how many agents wait on you, in waiting's text, then how many are
+ * working, each after its status dot; a count of none isn't drawn. `steps`
+ * are the counts from each time on, the last the final frame (D-3002). */
+export function AgentsSegment({ steps }: { steps: ReadonlyArray<readonly [number, Agents]> }) {
+  return (
+    <Changes
+      steps={steps.map(([seconds, n]) => [
+        seconds,
+        <span key={seconds} className="sc-agents">
+          {n.waiting > 0 && (
+            <span className="sc-agents-waiting">
+              <Dot status="waiting" />
+              {t("status.waiting", { n: n.waiting })}
+            </span>
+          )}
+          {n.working > 0 && (
+            <span className="sc-agents-working">
+              <Dot status="working" />
+              {t("status.working", { n: n.working })}
+            </span>
+          )}
+        </span>,
+      ])}
+    />
   );
 }
 

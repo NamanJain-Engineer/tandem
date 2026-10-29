@@ -3,7 +3,11 @@
 //! (apps/web/lib/scenes.ts), and its test checks that port against these
 //! cases, so the scene stays word for word what the app sends (D-3001).
 //! After a change to the prompt, `UPDATE_FIXTURES=1 cargo test -p
-//! tandem-desktop --test failure_prompts` rewrites them; then the port.
+//! tandem-desktop --test failure_prompts` rewrites them and fails, so a
+//! rewrite never passes: check the diff, run it again without the
+//! variable, then change the port.
+
+mod common;
 
 use serde::{Deserialize, Serialize};
 use tandem_app::services::pr_checks::{failure_prompt, CheckBucket, Log, PrCheck};
@@ -28,11 +32,11 @@ const FIXTURE: &str = concat!(
 );
 
 #[test]
-fn failure_prompts_are_the_fixtures() {
+fn f_wt_08_failure_prompts_are_the_fixtures() {
     let text = std::fs::read_to_string(FIXTURE).expect("the fixture");
     let mut cases: Vec<Case> = serde_json::from_str(&text).expect("the fixture's JSON");
     assert!(cases.len() >= 5, "{} cases", cases.len());
-    let update = std::env::var_os("UPDATE_FIXTURES").is_some();
+    let update = common::updating();
     for case in &mut cases {
         let check = PrCheck {
             name: case.name.clone(),
@@ -50,6 +54,6 @@ fn failure_prompts_are_the_fixtures() {
     }
     if update {
         let json = serde_json::to_string_pretty(&cases).expect("JSON");
-        std::fs::write(FIXTURE, json + "\n").expect("the fixture written");
+        common::rewrite(FIXTURE, &(json + "\n"));
     }
 }

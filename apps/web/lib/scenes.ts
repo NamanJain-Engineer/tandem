@@ -93,12 +93,18 @@ function fence(lang: string, text: string): string {
   return `${ticks}${lang}\n${text}\n${ticks}`;
 }
 
+/** Whitespace as the core counts it: Rust's `char::is_whitespace` and
+ * `str::trim` follow Unicode's White_Space property, which JS names
+ * exactly. JS's `\s` and `trim()` differ from it on U+0085 and U+FEFF. */
+const SPACE = /\p{White_Space}/u;
+const coreTrim = (text: string) => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+
 /** `text` with every `@` that could start a mention made a full-width `＠`
  * (`untrusted::defang_mentions`): an `@` before whitespace, another `@` or
  * the end stays. */
 function defangMentions(text: string): string {
   const chars = [...text];
-  return chars.map((c, i) => (c === "@" && chars[i + 1] !== undefined && !/\s|@/.test(chars[i + 1] ?? "") ? "\uFF20" : c)).join("");
+  return chars.map((c, i) => (c === "@" && chars[i + 1] !== undefined && !SPACE.test(chars[i + 1] ?? "") && chars[i + 1] !== "@" ? "\uFF20" : c)).join("");
 }
 
 /** The line after untrusted text that `defangMentions` changed
@@ -119,7 +125,7 @@ export function failurePrompt(pr: number, check: { name: string; workflow?: stri
   let ci = `Check: ${check.name}`;
   if (check.workflow) ci += `\nWorkflow: ${check.workflow}`;
   if (check.link) ci += `\nLink: ${check.link}`;
-  ci += log.join("\n").trim() ? `\n\nFailed steps' log (last lines):\n${log.join("\n")}` : "\n\n(The failed steps printed nothing.)";
+  ci += coreTrim(log.join("\n")) ? `\n\nFailed steps' log (last lines):\n${log.join("\n")}` : "\n\n(The failed steps printed nothing.)";
   return `A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\n${untrustedLabel("the CI check")}\n${fenceDefanged("text", ci)}`;
 }
 
@@ -161,6 +167,14 @@ function terminal(w: { task: string; steps: readonly Step[] }): string[] {
 const finished = worktree("done");
 const working = worktree("working");
 const waiting = worktree("waiting");
+/** How an engine asks in its terminal to run a command, in its own words,
+ * which its waitingPatterns match (a test checks): only the story's waiting
+ * engine's is needed. */
+const ASKS: Partial<Record<EngineId, (command: string) => string>> = {
+  gemini: (command) => `Allow execution of: '${command}'?`,
+};
+const asks = ASKS[waiting.engine as EngineId];
+if (!asks) throw new Error(`scenes: no question for ${waiting.engine}, the story's waiting engine`);
 const edits = finished.steps.filter((s): s is Edit => "edit" in s);
 const label = (engine: string) => {
   const e = story.engines[engine as EngineId];
@@ -200,12 +214,14 @@ export const SAMPLE = {
     waiting: terminal(waiting),
     shell: [`$ ${story.dev.command}`, `  ready on localhost:${story.dev.port}`, ...story.dev.requests.map((r) => `  ${r}`)],
   },
-  /** The command the waiting agent asks to run, and how its engine asks:
-   * in its own terminal, and as the Dashboard card's line, as the demo
-   * draws an engine's question (backend.ts). It's the engine's prompt, not
-   * a Vibezeo approval, so nothing in the app answers it in place (D-3001). */
+  /** The command the waiting agent asks to run, and how its engine asks: in
+   * its own terminal and its own words (`ASKS`), which its waitingPatterns
+   * match, so the app shows the agent waiting. It's the engine's prompt, not
+   * a Vibezeo approval, so nothing in the app answers it in place (D-3001).
+   * A waiting found by a pattern carries no preview, so the Dashboard card
+   * has no line (D-3002). */
   ask: waiting.ask ?? "",
-  question: { terminal: `Allow running ${waiting.ask ?? ""}? (y/n)`, preview: `Allow running ${waiting.ask ?? ""}?` },
+  question: { terminal: asks(waiting.ask ?? "") },
   /** The finished worktree's diff: the sum of its agent's edits, and the
    * files it edited, in order. */
   diff: { files: edits.length, adds: edits.reduce((n, e) => n + e.add, 0), dels: edits.reduce((n, e) => n + e.del, 0) },
