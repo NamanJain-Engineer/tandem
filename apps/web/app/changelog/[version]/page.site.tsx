@@ -52,7 +52,7 @@ export default async function VersionPage({ params }: Params) {
     .sort((a, b) => a.at - b.at);
   const scene = slots.length > 0;
   // A scene's own rules come only with it: in the head, after scenes.css.
-  const sheets = [...new Set(slots.flatMap((s) => (s.scene.css ? [s.scene.css] : [])))];
+  const sheets = [...new Set(slots.flatMap((s) => s.scene.css ?? []))];
   // The Added list's breaks: before each scene's card, and its end.
   const breaks = [...new Set([0, ...slots.map((s) => s.at), added.length])].sort((a, b) => a - b);
   const blocks: ReactNode[] = [];

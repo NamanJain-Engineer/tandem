@@ -383,9 +383,16 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    the same rule: they draw only what the download does, with the app's own
    words from `en.json`, and label the build from `lib/release.ts`. A scene
    or part of one that needs a newer release is gated on it (`LANDS` in
-   `lib/scenes.ts` switches on 0.9.0's landing queue and intent radar): after
+   `lib/scenes.ts` switches on 0.9.0's landing queue; `RADAR`, `RAIL_FOLDS`,
+   `PUSH_READS`, `DEFANGS` and `APPROVE_WAITS` on 0.13.0's): after
    bumping `release.ts`, look at each scene's final frame in both themes and
    check it against the release.
+   Bumping `release.ts` to a new version needs that release's scenes slice
+   first: the slice draws what the release changes and sets `SCENES_SLICE`
+   (`lib/release.ts`) to it, and `scenes.next.test.tsx` runs every scene test
+   at that version while the site still shows the one before. A version past
+   `SCENES_SLICE` fails the gate (the site's vitest) until its slice is in. Never
+   weaken, skip or delete those guards to get a release through.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)

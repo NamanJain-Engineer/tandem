@@ -44,6 +44,25 @@ export const RADAR = atLeast(SCENE_BUILD, "0.13.0");
  * the row turns to Checks running by itself. 0.12.0's push read nothing, so
  * the CI scene opens them again after it (D-128). */
 export const PUSH_READS = atLeast(SCENE_BUILD, "0.13.0");
+/** Whether a rail row is drawn as 0.13.0's (D-2611, D-2613, D-2700,
+ * D-2701): its menu covers its end only while it's hovered, so it keeps no
+ * room for it; its marks lead with their icons, say a short form whole, and
+ * are their icons alone beside its status; and while it's short of room it
+ * folds them, the radar's first. 0.12.0's row kept the menu's room and
+ * wrote its marks out (D-128). */
+export const RAIL_FOLDS = atLeast(SCENE_BUILD, "0.13.0");
+/** Whether the review queue's Approve waits until its place has held still
+ * (F-TL-12.12's steady box, D-2854): from 0.13.0 it's off, its label dimmed,
+ * for SETTLE_MS after its card arrives or its buttons move, so a click
+ * meant for something else can't land on it. */
+export const APPROVE_WAITS = atLeast(SCENE_BUILD, "0.13.0");
+/** How long, in seconds, a control that waits stays off once its place has
+ * held still: steadyBox.ts's SETTLE_MS (a test reads it). */
+export const SETTLE = 0.5;
+/** Whether Land's Undo landing is a secondary button (D-2616, from 0.13.0),
+ * so the landed state's one filled button is Close. 0.12.0's was a danger
+ * one (D-128). */
+export const UNDO_SECONDARY = atLeast(SCENE_BUILD, "0.13.0");
 
 /** One of the app's strings, with its `{name}` values and simple plurals
  * (`{n, plural, one {# file} other {# files}}`) filled in. Throws on a key
@@ -150,14 +169,14 @@ export function failurePrompt(pr: number, check: { name: string; workflow?: stri
   return `A CI check failed on this worktree's pull request #${pr}. Find the cause, fix it, commit, and say what you changed.\n\n${untrustedLabel("the CI check")}\n${fenced("text", ci, defang)}`;
 }
 
-/** What a worktree did to a symbol (tandem-git's SymbolChange), as the
- * radar's note says it. */
 /** A worktree's branch, as the core names it (`tandem/<slug>`), the demo's
  * branchOf. The scenes show the name for it (D-1898), but text the core
  * writes, such as the radar's note, names the branch whole (radar.rs passes
  * `lane_branch`). */
 export { branchOf };
 
+/** What a worktree did to a symbol (tandem-git's SymbolChange), as the
+ * radar's note says it. */
 const CHANGED = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" } as const;
 export type SymbolChange = keyof typeof CHANGED;
 

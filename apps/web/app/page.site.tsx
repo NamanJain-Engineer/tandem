@@ -25,9 +25,11 @@ export const metadata: Metadata = { alternates: { canonical: "/" } };
 export default function HomePage() {
   return (
     <SiteFrame current="/">
-      <style href="scenes/home.css" precedence="scenes">
-        {sceneCss("home.css")}
-      </style>
+      {["rail.css", "home.css"].map((f) => (
+        <style key={f} href={`scenes/${f}`} precedence="scenes">
+          {sceneCss(f)}
+        </style>
+      ))}
       <Hero />
       <DemoStage />
       <Features />

@@ -20,7 +20,7 @@ export function at(seconds: number, extra?: Record<string, string | number>): CS
 /** The effects a scene element can have (scenes.css). The element's own
  * styles are its final frame: that's what reduced motion, a page without
  * the scene script and a finished scene all show. */
-export type Fx = "in" | "line" | "enter" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show" | "close";
+export type Fx = "in" | "line" | "enter" | "pop" | "out" | "press" | "rise" | "slide" | "sweep" | "cut" | "show" | "close" | "wait" | "scroll";
 
 export function fx(kind: Fx, seconds: number, extra?: Record<string, string | number>) {
   return { [`data-fx-${kind}`]: "", style: at(seconds, extra) } as const;
@@ -434,7 +434,7 @@ export function Changes({ steps, className }: { steps: ReadonlyArray<readonly [n
  * Approve the primary, Open diff secondary, the rest ghosts, Run check
  * among them once the repository's check isn't running. Second opinion is
  * pressed at `opinion`, when it is. */
-function ReviewActions({ ranCheck, opinion }: { ranCheck: boolean; opinion?: number }) {
+function ReviewActions({ ranCheck, opinion, ready }: { ranCheck: boolean; opinion?: number; ready?: number }) {
   const ghost = (key: string, press?: number) => (
     <span className="sc-btn sc-btn-sm sc-btn-ghost" {...(press === undefined ? {} : fx("press", press))}>
       {t(key)}
@@ -442,7 +442,7 @@ function ReviewActions({ ranCheck, opinion }: { ranCheck: boolean; opinion?: num
   );
   return (
     <span className="sc-rq-actions">
-      <span className="sc-btn sc-btn-sm sc-btn-primary">{t("review.approve")}</span>
+      <span className="sc-btn sc-btn-sm sc-btn-primary">{ready === undefined ? t("review.approve") : <span {...fx("wait", ready)}>{t("review.approve")}</span>}</span>
       <span className="sc-btn sc-btn-sm">{t("review.openDiff")}</span>
       {ghost("review.sendBack")}
       {ghost("review.secondOpinion", opinion)}
@@ -460,9 +460,11 @@ function ReviewActions({ ranCheck, opinion }: { ranCheck: boolean; opinion?: num
  * name (its workspace and its branch, tandem/<name>, shown once: D-1898)
  * and how long ago it finished; the agent's closing words; the diff's size;
  * its risks, each an outlined Badge; the repository's check, running until
- * `passed` (passed throughout without it); then its buttons. The diff's
- * numbers count up from `count` when it's given, a scene's effect: the app
- * writes them at once. */
+ * `passed` (passed throughout without it); then its buttons, Approve off,
+ * its label dimmed, until `ready` when it's given (from 0.13.0 it waits
+ * until its place has held still: F-TL-12.12). The diff's numbers count up
+ * from `count` when it's given, a scene's effect: the app writes them at
+ * once. */
 export function ReviewCard({
   lane,
   minutes,
@@ -472,6 +474,7 @@ export function ReviewCard({
   passed,
   count,
   opinion,
+  ready,
 }: {
   lane: { name: string; engine: string; branch: string };
   minutes: number;
@@ -481,6 +484,7 @@ export function ReviewCard({
   passed?: number;
   count?: number;
   opinion?: number;
+  ready?: number;
 }) {
   const stat = { n: diff.files, adds: diff.adds, dels: diff.dels };
   return (
@@ -520,14 +524,14 @@ export function ReviewCard({
         )}
       </span>
       {passed === undefined ? (
-        <ReviewActions ranCheck opinion={opinion} />
+        <ReviewActions ranCheck opinion={opinion} ready={ready} />
       ) : (
         <span className="sc-rq-actions-swap">
           <span {...fx("cut", passed)}>
-            <ReviewActions ranCheck={false} opinion={opinion} />
+            <ReviewActions ranCheck={false} opinion={opinion} ready={ready} />
           </span>
           <span {...fx("show", passed)}>
-            <ReviewActions ranCheck opinion={opinion} />
+            <ReviewActions ranCheck opinion={opinion} ready={ready} />
           </span>
         </span>
       )}

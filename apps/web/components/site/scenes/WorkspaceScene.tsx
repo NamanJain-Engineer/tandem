@@ -1,8 +1,8 @@
-import { ChevronDown, ClipboardCheck, Cloud, Folder, GitBranch, LayoutDashboard, LayoutGrid, Maximize2, Pin, Plus, X } from "lucide-react";
+import { ClipboardCheck, LayoutDashboard, LayoutGrid, Maximize2, Pin, Plus, X } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
-import { cx } from "../../../lib/cx";
-import { RADAR, SAMPLE, SINCE_START, t, tabTitle } from "../../../lib/scenes";
-import { AgentsSegment, AppIcon, AppWindow, Badge, Changes, Dot, DotChange, Lines, Pane, ReviewCard, ReviewQueue, StatusBar, Toast, fx, pasted } from "./parts";
+import { APPROVE_WAITS, RADAR, SAMPLE, SETTLE, SINCE_START, t, tabTitle } from "../../../lib/scenes";
+import { AgentsSegment, AppIcon, AppWindow, Badge, Changes, DotChange, Lines, Pane, ReviewCard, ReviewQueue, StatusBar, Toast, fx, pasted } from "./parts";
+import { PaneCount, RadarMark, Rail, Working, WorktreeRow, panesIn } from "./rail";
 
 const { finished, working, waiting } = SAMPLE.worktrees;
 
@@ -28,11 +28,6 @@ const TYPED = CLICK + 0.1;
 const WARNED = TYPED + 0.08;
 const TOAST_STAY = 5;
 
-/** The panes open in each worktree, its rail row's count: its agent's, and
- * the shell beside the working one, as the demo opens them (backend.ts's
- * PANES). */
-const live = (branch: string) => (branch === working.branch ? 2 : 1);
-
 /** The agents at work and waiting across the repository, from each time
  * on: all of them, then the one that asks waits, then the finished one is
  * done. */
@@ -43,52 +38,15 @@ export const HERO_AGENTS = [
   [HERO_T.done, { waiting: 1, working: n - 2 }],
 ] as const;
 
-/** A worktree row's slot (WorkspaceSlot) while its agent works: a working
- * dot and how many work. */
-function Working() {
-  return (
-    <span className="sc-slot-working">
-      <Dot status="working" />
-      {t("rail.working", { n: 1 })}
-    </span>
-  );
-}
-
-/** What a worktree's row trails its name with, from each time on (the last
- * the final frame): its slot, the radar's mark, its count of panes. Each
- * set is laid out as it is and swapped in at once, as a re-render swaps it,
- * so the row's parts move over when the app's do. */
-function Trail({ steps }: { steps: ReadonlyArray<readonly [number, ReactNode]> }) {
-  return (
-    <span className="sc-wtrow-trail">
-      {steps.map(([at, parts], i) => {
-        const next = steps[i + 1]?.[0];
-        return (
-          <span key={at} className="sc-wtrow-step" {...(i === 0 ? {} : fx("show", at))}>
-            <span className="sc-wtrow-parts" {...(next === undefined ? {} : fx("cut", next))}>
-              {parts}
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-/** A worktree's row as WorktreeRow draws it: its branch icon, its name (the
- * site shows it for the branch, tandem/<name>: D-1898), then its slot
- * (WorkspaceSlot: its agent at work, "Needs you" in amber once it waits,
- * nothing once it's done), the radar's mark once the radar sees it share a
- * symbol (from 0.13.0, D-2704), its count of panes, and room for its menu,
- * which shows on hover but takes its room throughout (0.12.0's WorktreeRow).
- * The worktree in view is the selected one. */
-function WorktreeRow({ branch, mark }: { branch: string; mark?: number }) {
-  const count = <Badge>{live(branch)}</Badge>;
-  const radar = mark !== undefined && (
-    <span className="sc-wtrow-radar" {...fx("enter", mark)}>
-      <Badge variant="waiting">{t("radar.mark.one", { symbol: SAMPLE.symbol })}</Badge>
-    </span>
-  );
+/** A worktree's row in the hero (WorktreeRow), from each time on: its slot
+ * (its agent at work, "Needs you" in amber once it waits, nothing once it's
+ * done), the radar's mark once the radar sees it share a symbol (from
+ * 0.13.0: D-2704, D-3006), its count of panes. The mark is the radar alone
+ * beside the row's status, and the symbol too once the agent is done
+ * (RadarMark, D-2613). The worktree in view is the selected one. */
+function HeroRow({ branch, mark }: { branch: string; mark?: number }) {
+  const count = <PaneCount n={panesIn(branch)} />;
+  const radar = (compact: boolean) => mark !== undefined && <RadarMark compact={compact} {...fx("enter", mark)} />;
   const asks = (
     <span className="sc-wtrow-ask" {...fx("enter", HERO_T.ask)}>
       <Badge variant="waiting" quiet>
@@ -98,57 +56,10 @@ function WorktreeRow({ branch, mark }: { branch: string; mark?: number }) {
   );
   const steps: Array<readonly [number, ReactNode]> = [[0, [<Working key="slot" />, <Fragment key="n">{count}</Fragment>]]];
   if (branch === waiting.branch) steps.push([HERO_T.ask, [<Fragment key="slot">{asks}</Fragment>, <Fragment key="n">{count}</Fragment>]]);
-  if (radar) steps.push([mark ?? 0, [<Working key="slot" />, <Fragment key="mark">{radar}</Fragment>, <Fragment key="n">{count}</Fragment>]]);
-  if (branch === finished.branch) steps.push([HERO_T.done, [<Fragment key="mark">{radar}</Fragment>, <Fragment key="n">{count}</Fragment>]]);
+  if (mark !== undefined) steps.push([mark, [<Working key="slot" />, <Fragment key="mark">{radar(true)}</Fragment>, <Fragment key="n">{count}</Fragment>]]);
+  if (branch === finished.branch) steps.push([HERO_T.done, [<Fragment key="mark">{radar(false)}</Fragment>, <Fragment key="n">{count}</Fragment>]]);
   steps.sort(([a], [b]) => a - b);
-  return (
-    <span className={cx("sc-wtrow", branch === finished.branch && "sc-wtrow-on")}>
-      <AppIcon icon={GitBranch} className="sc-wtrow-icon" />
-      <span className="sc-wtrow-name">{branch}</span>
-      <Trail steps={steps} />
-      <span className="sc-wtrow-menu" />
-    </span>
-  );
-}
-
-/** The rail as CodeRail draws it (UI_SPEC §3.3): WORKSPACES and +, the
- * repository's row (its folder, its name and, with no agent of its own at
- * work, its branch), under it "No open panes", since it has none of its
- * own, then its worktrees' rows; Remote hosts at the foot. On a phone only
- * the worktrees' rows show, as a strip over the pane. */
-function Rail() {
-  return (
-    <nav className="sc-crail">
-      <span className="sc-crail-head">
-        <span className="sc-crail-title">{t("rail.workspacesHeader")}</span>
-        <AppIcon icon={Plus} className="sc-crail-add" />
-      </span>
-      <span className="sc-crail-list">
-        <span className="sc-wsrow">
-          <AppIcon icon={ChevronDown} className="sc-wsrow-chevron" />
-          <AppIcon icon={Folder} className="sc-wsrow-icon" />
-          <span className="sc-wsrow-name">{SAMPLE.workspace}</span>
-          <span className="sc-bchip">
-            <AppIcon icon={GitBranch} className="sc-bchip-icon" />
-            {SAMPLE.base}
-          </span>
-        </span>
-        <span className="sc-crail-group">
-          <span className="sc-crail-none">{t("rail.noSessions")}</span>
-          {SAMPLE.order.map((w) => {
-            const i = SAMPLE.radar.between.indexOf(w.branch);
-            return <WorktreeRow key={w.branch} branch={w.branch} mark={RADAR && i >= 0 ? HERO_T.mark + i * 0.1 : undefined} />;
-          })}
-        </span>
-      </span>
-      <span className="sc-crail-foot">
-        <span className="sc-btn sc-btn-ghost sc-crail-remote">
-          <AppIcon icon={Cloud} className="sc-crail-remote-icon" />
-          {t("rail.remoteHosts")}
-        </span>
-      </span>
-    </nav>
-  );
+  return <WorktreeRow branch={branch} on={branch === finished.branch} steps={steps} />;
 }
 
 /** The Dashboard tab's pill in the sidebar's header (Sidebar's Pill): its
@@ -220,7 +131,16 @@ function Sidebar() {
           </span>
           <ReviewQueue count={1} {...fx("show", HERO_T.done)}>
             <span {...fx("in", HERO_T.done)}>
-              <ReviewCard lane={finished} minutes={0} closing={finished.closing} diff={SAMPLE.diff} risks={[t("review.rule.auth")]} passed={HERO_T.passed} />
+              {/* From 0.13.0 its Approve waits until its place has held still (F-TL-12.12): it arrives at Done and holds still from then. */}
+              <ReviewCard
+                lane={finished}
+                minutes={0}
+                closing={finished.closing}
+                diff={SAMPLE.diff}
+                risks={[t("review.rule.auth")]}
+                passed={HERO_T.passed}
+                ready={APPROVE_WAITS ? HERO_T.done + SETTLE : undefined}
+              />
             </span>
           </ReviewQueue>
         </span>
@@ -248,7 +168,12 @@ export function WorkspaceScene() {
   return (
     <AppWindow className="sc-workspace" workspace={finished.branch}>
       <div className="sc-code">
-        <Rail />
+        <Rail>
+          {SAMPLE.order.map((w) => {
+            const i = SAMPLE.radar.between.indexOf(w.branch);
+            return <HeroRow key={w.branch} branch={w.branch} mark={RADAR && i >= 0 ? HERO_T.mark + i * 0.1 : undefined} />;
+          })}
+        </Rail>
         <div className="sc-code-main">
           <div className="sc-tabs">
             <span className="sc-tab">{tabTitle(finished.task)}</span>

@@ -27,7 +27,7 @@ export const cardTitle = (lane: typeof finished) => `${lane.name} · ${lane.titl
 
 /** An agent's card as AgentCard draws it (F-DB-01): the title row (its
  * status, its engine's tile, its title, at the right its state and how long
- * it has held it, then its menu's room, as the menu shows on hover), then
+ * it has held it, then the room of its ⋯ and ×, which show on hover), then
  * cardMeta: its engine and its worktree's name (a worktree's workspace is
  * its own, and its branch, tandem/<name>, is shown as the name, so once:
  * D-1898). Then its line, when it has one: dashboard.rs draws its status's
@@ -140,14 +140,16 @@ export function DashboardScene() {
   return (
     <AppWindow className="sc-dashboard">
       <div className="sc-dash">
+        {/* DashboardPanel's switch, Agents or Review, over the Dashboard,
+            whose header starts with its count. */}
+        <span className="sc-seg sc-dash-switch">
+          <span className="sc-mode sc-mode-on">{t("review.viewAgents", { n })}</span>
+          <span className="sc-mode">
+            <Changes steps={[[0, t("review.viewReview", { n: 0 })], [DASH_T.done, t("review.viewReview", { n: 1 })]]} />
+          </span>
+        </span>
         <div className="sc-dash-head">
           <span className="sc-dash-title">{t("dashboard.count", { n })}</span>
-          <span className="sc-seg">
-            <span className="sc-mode sc-mode-on">{t("review.viewAgents", { n })}</span>
-            <span className="sc-mode">
-              <Changes steps={[[0, t("review.viewReview", { n: 0 })], [DASH_T.done, t("review.viewReview", { n: 1 })]]} />
-            </span>
-          </span>
           <span className="sc-dash-group">
             {t("dashboard.groupBy")} <span className="sc-mode sc-mode-on">{t("dashboard.byProject")}</span>
           </span>

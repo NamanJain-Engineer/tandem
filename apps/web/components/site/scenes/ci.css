@@ -8,6 +8,9 @@
 /* The window's body: the rail with the repository and its worktrees, and
    the main area. */
 .sc-body { position: relative; display: grid; grid-template-columns: 14em 1fr; min-height: 0; }
+/* From 0.13.0 the rail is CodeRail's (rail.css) at the hero's 320 px, a
+   width its measured minimum (246) and RAIL_MAX (360) allow (D-3006). */
+.sc-body-crail { grid-template-columns: calc(320 * var(--sc-px)) minmax(0, 1fr); }
 .sc-rail { display: flex; flex-direction: column; gap: 0.25em; padding: 0.875em 0.625em; border-right: 1px solid var(--sc-line); background: var(--tn-surface-1); }
 .sc-rail-head { padding: 0 0.5em 0.375em; font-size: 0.625em; font-weight: 600; letter-spacing: 0.06em; color: var(--tn-text-subtle); }
 .sc-ws { display: flex; align-items: center; justify-content: space-between; padding: 0.375em 0.5em; border-radius: 0.375em; font-size: 0.8125em; font-weight: 600; background: var(--tn-surface-3); }
@@ -91,7 +94,7 @@
 
 @container (max-width: 40rem) {
   .sc-body { grid-template-columns: 1fr; }
-  .sc-rail { display: none; }
+  .sc-rail, .sc-ci-crail { display: none; }
   .sc-ci-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .sc-ci-strip { display: grid; padding-left: 0.75em; }
   .sc-ci-side { display: contents; }

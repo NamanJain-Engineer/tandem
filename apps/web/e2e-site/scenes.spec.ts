@@ -42,6 +42,29 @@ const shownIn = (scene: Locator, selector: string) =>
 /** `shownIn` for the scene `id` on the page. */
 const seen = (page: Page, id: string, selector: string) => shownIn(page.locator(`[data-scene="${id}"]`), selector);
 
+/** The release the built site's scenes show, from a scene's status bar ("v0.12.0"), and whether it's `min` or later:
+ * the same build is checked at the release the site shows and at the next slice's (D-3006, OPERATING §6). */
+const sceneBuild = (page: Page) =>
+  page.locator("[data-scene] .sc-statusbar").first().evaluate((e) => (/v(\d+)\.(\d+)\.(\d+)/.exec(e.textContent ?? "") ?? []).slice(1).map(Number));
+const atLeast = (version: number[], min: string) => {
+  const m = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((version[i] ?? 0) !== (m[i] ?? 0)) return (version[i] ?? 0) > (m[i] ?? 0);
+  return true;
+};
+
+/** The scene `id`'s own effects, paused at `seconds`. */
+const seek = (page: Page, id: string, seconds: number) =>
+  page.evaluate(
+    ([id, ms]) => {
+      const root = document.querySelector(`[data-scene="${id}"]`) as Element;
+      for (const a of root.getAnimations({ subtree: true }).filter((x) => String((x as CSSAnimation).animationName).startsWith("sc-") && x.timeline instanceof DocumentTimeline)) {
+        a.pause();
+        a.currentTime = ms;
+      }
+    },
+    [id, seconds * 1000] as const,
+  );
+
 for (const [w, h] of [[1440, 900], [1366, 768], [1280, 800]] as const) {
   test(`F-WB-01 AC9 the product is in the first viewport at ${w}×${h} (DESIGN §5.1)`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
@@ -240,9 +263,11 @@ test("F-WB-01 AC9 D-3003 every step of a value lays its contents out as the othe
   // and the rules for a step's contents styled the cut: no gap, no centring (the coordinator's S-1).
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.9.0/");
+  // From 0.13.0 the CI rail is CodeRail's, and its badge is ChecksBadge's: its icon (or spinner) beside its words.
+  const folds = atLeast(await sceneBuild(page), "0.13.0");
   const steps = await page.evaluate(() =>
     // What's drawn at this width (a part only a phone draws has no boxes here), each step of it.
-    [...document.querySelectorAll("[data-scene] .sc-step > *, [data-scene] .sc-checks > * > *")].filter((el) => el.getClientRects().length > 0).map((el) => {
+    [...document.querySelectorAll("[data-scene] .sc-step > *, [data-scene] .sc-checks > * > *, [data-scene] .sc-wtrow-checks")].filter((el) => el.getClientRects().length > 0).map((el) => {
       const s = getComputedStyle(el);
       // Its mark (a dot, the spinner, the tick) and its words, each directly inside it.
       const mark = el.querySelector(":scope > :is(.sc-dot, .sc-spin, svg)");
@@ -255,8 +280,9 @@ test("F-WB-01 AC9 D-3003 every step of a value lays its contents out as the othe
       return { text, display: s.display, gap: w.left - m.right - Number.parseFloat(s.columnGap), centre: (m.top + m.bottom) / 2 - (w.top + w.bottom) / 2 };
     }),
   );
-  // Land's five steps in each of its three lanes, and the rail badge's three checks.
-  expect(steps).toHaveLength(15 + 3);
+  // Land's five steps in each of its three lanes, and the rail badge's three checks; from 0.13.0 the badge in each of
+  // the row's five steps (its icon alone in one, beside the agent's status).
+  expect(steps).toHaveLength(15 + (folds ? 5 : 3));
   for (const step of steps) {
     // A flex row: inline-flex, or flex where the step is a grid's item (a swap's), which CSS makes block-level.
     expect(step.display, step.text).toMatch(/^(inline-)?flex$/);
@@ -264,8 +290,9 @@ test("F-WB-01 AC9 D-3003 every step of a value lays its contents out as the othe
     expect(Math.abs(step.gap), `${step.text}: gap`).toBeLessThan(0.6);
     expect(Math.abs(step.centre), `${step.text}: centre`).toBeLessThan(1.1);
   }
-  // Only the failed checks' words sit in a span of their own; every other step has its mark beside its words.
-  expect(new Set(steps.filter((s) => s.gap === null).map((s) => s.text))).toEqual(new Set(["1 check failed: test"]));
+  // Only the failed checks' words sit in a span of their own (from 0.13.0, only the badge that's its icon alone has no
+  // words); every other step has its mark beside its words.
+  expect(new Set(steps.filter((s) => s.gap === null).map((s) => s.text))).toEqual(new Set([folds ? "" : "1 check failed: test"]));
 });
 
 for (const width of [1440, 390] as const) {
@@ -350,7 +377,9 @@ test("F-WB-01 AC9 the CI scene ends with the checks passed, the agent's summary,
   await scene.scrollIntoViewIfNeeded();
   await expect.poll(() => states(page, "checks"), { timeout: 25_000 }).toEqual(["finished"]);
   const shown = (selector: string) => shownIn(scene, selector);
-  expect(await shown(".sc-rail .sc-checks > *")).toEqual(["Checks passed"]);
+  // From 0.13.0 the rail is CodeRail's, and the badge says the status bar's words.
+  const folds = atLeast(await sceneBuild(page), "0.13.0");
+  expect(await shown(folds ? ".sc-crail .sc-wtrow-checks" : ".sc-rail .sc-checks > *")).toEqual([folds ? "CI passed" : "Checks passed"]);
   expect(await shown(".sc-files-head .sc-branch-chip")).toEqual([]);
   // The agent's last line, what it changed, shows inside its pane.
   const last = await scene.locator(".sc-pane .sc-term .sc-line").last().evaluate((e) => {
@@ -381,10 +410,12 @@ test("F-WB-01 AC9 D-3001 the CI scene's rules load only on the page that plays i
   }
   await page.goto("/changelog/0.9.0/");
   expect((await ciRules()).length).toBeGreaterThan(20);
-  // One inline sheet in the head, after the shared ones, and the scene draws with it.
+  // One inline sheet in the head, after the shared ones, and the scene draws with it; from 0.13.0 the rail's rules
+  // first, in the same one (D-3006).
+  const sheets = atLeast(await sceneBuild(page), "0.13.0") ? "scenes/rail.css scenes/ci.css" : "scenes/ci.css";
   const order = await page.evaluate(() => [...document.head.querySelectorAll('link[rel="stylesheet"], style')].map((e) => (e.tagName === "STYLE" ? e.getAttribute("data-href") : "link")));
-  expect(order.at(-1)).toBe("scenes/ci.css");
-  expect(order.filter((x) => x === "scenes/ci.css")).toHaveLength(1);
+  expect(order.at(-1)).toBe(sheets);
+  expect(order.filter((x) => x === sheets)).toHaveLength(1);
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="checks"] .sc-ci-layer') as Element).position)).toBe("absolute");
 });
 
@@ -452,10 +483,22 @@ for (const [w, h] of [[1440, 900], [1280, 800], [1024, 768], [768, 1024]] as con
       .evaluateAll((els) => els.filter((e) => e.checkVisibility() && e.scrollWidth > e.clientWidth).map((e) => `${e.textContent}: ${e.scrollWidth} > ${e.clientWidth}`));
     expect(cut).toEqual([]);
     expect(await seen(page, "workspace", ".sc-wtrow-name")).toEqual(["checkout-fix", "coupon-rules", "search-ui"]);
-    // The 0.12.0 hero leaves the intent radar out, at a rail width CodeRail allows (D-2704).
-    expect(await scene.locator(".sc-wtrow-radar, .sc-tone-warning").count()).toBe(0);
+    // The 0.12.0 hero leaves the intent radar out, at a rail width CodeRail allows (D-2704). From 0.13.0 it ends with the
+    // radar's marks: checkout-fix's with the symbol, coupon-rules' the radar alone beside its status (D-3006).
+    const radar = atLeast(await sceneBuild(page), "0.13.0");
+    const marks = await scene.locator(".sc-crail .sc-wtrow-radar").evaluateAll((els) =>
+      els
+        .filter((e) => {
+          let o = 1;
+          for (let x: Element | null = e; x; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
+          return e.checkVisibility() && o > 0.5;
+        })
+        .map((e) => (e.textContent ?? "").trim()),
+    );
+    expect(marks).toEqual(radar ? ["applyCoupon", ""] : []);
+    expect(await scene.locator(".sc-tone-warning").count()).toBe(radar ? 1 : 0);
     const rail = await scene.locator(".sc-crail").evaluate((e) => e.getBoundingClientRect().width / Number.parseFloat(getComputedStyle(e).getPropertyValue("--sc-px")));
-    expect(Math.round(rail)).toBeGreaterThanOrEqual(180);
+    expect(Math.round(rail)).toBeGreaterThanOrEqual(radar ? 246 : 180);
     expect(Math.round(rail)).toBeLessThanOrEqual(360);
     expect(await seen(page, "workspace", ".sc-wtrow-ask")).toEqual(["Needs you"]);
     // The agent's card in the review queue, its check passed; nothing left to review gone, and the toasts too.
@@ -496,19 +539,181 @@ test("F-WB-01 AC9 D-2702 on a phone the hero's worktrees are a strip over the pa
 });
 
 test("F-WB-01 AC9 D-2702 the hero's rules load only on the home page, after the shared scene rules", async ({ page }) => {
-  const heroRules = () =>
-    page.evaluate(() =>
-      [...document.styleSheets].flatMap((s) => {
-        const walk = (rules: CSSRuleList): string[] =>
-          [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && /\.sc-(code|crail|wsrow|wtrow|tabs?|side|pills?|rq)(?![\w-])/.test(r.selectorText) ? [r.selectorText] : []));
-        return walk(s.cssRules);
-      }),
+  /** Every rule the page's stylesheets hold that draws the hero's window, or the rail. */
+  const rules = (re: RegExp) =>
+    page.evaluate(
+      (source) =>
+        [...document.styleSheets].flatMap((s) => {
+          const walk = (rules: CSSRuleList): string[] =>
+            [...rules].flatMap((r) => ("cssRules" in r && !(r instanceof CSSStyleRule) ? walk((r as CSSGroupingRule).cssRules) : r instanceof CSSStyleRule && new RegExp(source).test(r.selectorText) ? [r.selectorText] : []));
+          return walk(s.cssRules);
+        }),
+      re.source,
     );
+  const heroRules = () => rules(/\.sc-(code|tabs?|side|pills?|rq)(?![\w-])/);
+  const railRules = () => rules(/\.sc-(?:crail|wsrow|wtrow|bchip|slot-working)/);
+  // The rail's come too where the CI scene draws CodeRail's rail, from 0.13.0 (D-3006).
+  await page.goto("/changelog/0.9.0/");
+  const folds = atLeast(await sceneBuild(page), "0.13.0");
   for (const path of ["/changelog/0.9.0/", "/changelog/0.12.0/"]) {
     await page.goto(path);
     expect(await heroRules(), path).toEqual([]);
+    expect((await railRules()).length > 0, path).toBe(folds && path === "/changelog/0.9.0/");
   }
   await page.goto("/");
   expect((await heroRules()).length).toBeGreaterThan(10);
+  expect((await railRules()).length).toBeGreaterThan(10);
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="workspace"] .sc-code') as Element).display)).toBe("grid");
 });
+
+// The rail's rows as the app folds them, from 0.13.0 (D-2701, D-3006): at every change, a row holds its parts with its
+// name at WorktreeRow's floor (min(10ch, 100%)), and a mark is its icon alone only beside the row's status (D-2613) or
+// where its words wouldn't fit even so, the radar's first. The hero's rail and the CI scene's, and a phone's strips.
+for (const width of [1440, 390] as const) {
+  test(`F-WB-01 AC9 D-2701 D-3006 at ${width} px every rail row fits with its name at the app's floor, and folds a mark only when it must`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const checked: string[] = [];
+    for (const [path, id] of [
+      ["/", "workspace"],
+      ["/changelog/0.9.0/", "checks"],
+    ] as const) {
+      await page.goto(path);
+      await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+      if (!atLeast(await sceneBuild(page), "0.13.0")) continue;
+      await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
+      const times = await page.evaluate(
+        (id) => [...new Set([0, ...[...document.querySelectorAll(`[data-scene="${id}"] .sc-wtrow-step`)].map((e) => Number.parseFloat(getComputedStyle(e).getPropertyValue("--at")) || 0)])],
+        id,
+      );
+      for (const t of times) {
+        await seek(page, id, t + 0.05);
+        const rows = await page.evaluate((id) => {
+          // Shown within the scene: the page's reveal around it runs on the scroll, not the scene's clock.
+          const root = document.querySelector(`[data-scene="${id}"]`) as Element;
+          const opaque = (e: Element) => {
+            let o = 1;
+            for (let x: Element | null = e; x && x !== root.parentElement; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
+            return o > 0.5;
+          };
+          const symbol = document.querySelector(`[data-scene="${id}"] .sc-wtrow-symbol`)?.textContent ?? "";
+          return [...document.querySelectorAll(`[data-scene="${id}"] .sc-wtrow`)]
+            .filter((row) => row.checkVisibility())
+            .map((row) => {
+              const parts = [...row.querySelectorAll(".sc-wtrow-parts")].find(opaque) as HTMLElement;
+              const name = row.querySelector(".sc-wtrow-name") as HTMLElement;
+              const s = getComputedStyle(row);
+              const gap = Number.parseFloat(s.columnGap);
+              const room = row.clientWidth - Number.parseFloat(s.paddingLeft) - Number.parseFloat(s.paddingRight);
+              const probe = document.createElement("span");
+              probe.style.cssText = "position: absolute; visibility: hidden; width: 10ch";
+              name.appendChild(probe);
+              const floor = Math.min(probe.getBoundingClientRect().width, room);
+              probe.remove();
+              const icon = (row.querySelector(".sc-wtrow-icon") as Element).getBoundingClientRect().width;
+              const need = () => icon + gap + floor + gap + parts.getBoundingClientRect().width;
+              const status = parts.querySelector(".sc-slot-working, .sc-wtrow-ask") !== null;
+              // A folded radar's words, put back, measured, and taken out again.
+              const unfolded = [...parts.querySelectorAll(".sc-wtrow-radar.sc-wtrow-compact")].filter(() => !status).map((mark) => {
+                const words = document.createElement("span");
+                words.className = "sc-wtrow-symbol";
+                words.textContent = symbol;
+                (mark.firstElementChild as Element).appendChild(words);
+                const n = need();
+                words.remove();
+                return n;
+              });
+              return {
+                name: name.textContent ?? "",
+                need: need(),
+                room,
+                unfolded,
+                cut: name.scrollWidth > name.clientWidth + 0.5,
+                lone: parts.querySelectorAll(".sc-wtrow-checks.sc-wtrow-compact").length > 0 && !status,
+              };
+            });
+        }, id);
+        for (const r of rows) {
+          const at = `${path} ${t}s ${r.name}`;
+          expect(r.need, `${at}: past the rail`).toBeLessThanOrEqual(r.room + 0.5);
+          expect(r.cut, `${at}: its name cut`).toBe(false);
+          for (const n of r.unfolded) expect(n, `${at}: its radar is folded, though its words fit`).toBeGreaterThan(r.room + 0.5);
+          // The checks badge never needs folding here: it's its icon alone only beside a status.
+          expect(r.lone, `${at}: the checks badge folded`).toBe(false);
+          checked.push(`${at}${r.unfolded.length > 0 ? " (radar folded)" : ""}`);
+        }
+      }
+    }
+    // From 0.13.0: the hero's three rows and the CI scene's, at each of their five changes (its pull request's in the rail
+    // folds its radar after its agent is done, and in a phone's strip it has the room).
+    if (checked.length > 0) {
+      expect(checked.length).toBe(width === 1440 ? 30 : 20);
+      expect(checked.some((c) => c.endsWith("(radar folded)"))).toBe(width === 1440);
+    }
+  });
+}
+
+// The CI scene's pane, as a terminal: what it has printed shows whole, and when there's more than it holds its oldest
+// rows go off its top, whole (D-3006: from 0.13.0 the note after the log takes two lines' room).
+for (const width of [1440, 390] as const) {
+  test(`F-WB-01 AC9 D-3006 at ${width} px the CI scene's pane shows what its agent has printed whole, and scrolls whole rows off its top`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/changelog/0.9.0/");
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+    const times = await page.evaluate(() =>
+      [...new Set([...document.querySelectorAll('[data-scene="checks"] .sc-ci-main > .sc-pane .sc-term > *')].map((e) => Number.parseFloat(getComputedStyle(e).getPropertyValue("--at"))))]
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b),
+    );
+    expect(times.length).toBeGreaterThan(10);
+    for (const t of [...times.map((x) => x + 0.05), 20]) {
+      await seek(page, "checks", t);
+      const lines = await page.evaluate(() => {
+        const term = document.querySelector('[data-scene="checks"] .sc-ci-main > .sc-pane .sc-term') as Element;
+        const box = term.getBoundingClientRect();
+        return [...term.children]
+          .filter((l) => l.checkVisibility() && Number(getComputedStyle(l).opacity) > 0.05 && l.getBoundingClientRect().height > 0.5)
+          .map((l) => {
+            const r = l.getBoundingClientRect();
+            return { text: (l.textContent ?? "").slice(0, 40), top: r.top - box.top, bottom: box.bottom - r.bottom };
+          });
+      });
+      expect(lines.length).toBeGreaterThan(0);
+      for (const l of lines) {
+        expect(l.top, `${t}s "${l.text}": cut at the top`).toBeGreaterThanOrEqual(-0.5);
+        expect(l.bottom, `${t}s "${l.text}": cut at the bottom`).toBeGreaterThanOrEqual(-0.5);
+      }
+    }
+  });
+}
+
+// The hero's review card: Run check joins its buttons when its check passes without moving Approve, so Approve's
+// place holds from when the card arrives; from 0.13.0 Approve waits once, for SETTLE_MS from then (F-TL-12.12, D-3006).
+for (const width of [1440, 390] as const) {
+  test(`F-WB-01 AC9 D-3006 at ${width} px the hero's Approve holds its place when the check passes, and from 0.13.0 waits only as its card arrives`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+    const waits = atLeast(await sceneBuild(page), "0.13.0");
+    const at = async (t: number) => {
+      await seek(page, "workspace", t);
+      return page.evaluate(() => {
+        const sets = [...document.querySelectorAll('[data-scene="workspace"] .sc-rq-actions-swap > *')];
+        const shown = sets.find((e) => Number(getComputedStyle(e).opacity) > 0.5) as Element;
+        const approve = shown.querySelector(".sc-btn-primary") as Element;
+        const r = approve.getBoundingClientRect();
+        // In the card: the scene brings the card in with a rise, which the app doesn't, so its place on the page isn't
+        // what the app's steady box sees; its place in the card is.
+        const card = (shown.closest(".sc-rq-card") as Element).getBoundingClientRect();
+        const row = (shown.querySelector(".sc-rq-actions") as Element).getBoundingClientRect();
+        const label = approve.firstElementChild ?? approve;
+        return { place: [r.left - card.left, r.top - card.top, r.width, r.height, row.width, row.height].map((x) => Math.round(x * 10) / 10), label: Number(getComputedStyle(label).opacity) };
+      });
+    };
+    const [arrived, settled, before, after] = [await at(6.6), await at(7.0), await at(8.35), await at(8.45)];
+    // Within half a pixel: the scene's entering words are composited apart, which can move a box by a tenth.
+    const moved = (a: number[], b: number[]) => Math.max(...a.map((x, i) => Math.abs(x - (b[i] ?? NaN))));
+    expect(moved(after.place, before.place)).toBeLessThan(0.5);
+    expect(moved(settled.place, before.place)).toBeLessThan(0.5);
+    expect([arrived.label, settled.label, before.label, after.label]).toEqual(waits ? [0.4, 1, 1, 1] : [1, 1, 1, 1]);
+  });
+}
