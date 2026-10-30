@@ -1,0 +1,82 @@
+---
+title: What's new in 0.13.0
+description: Lead keeps a plan moving and brings you what matters, agents run commands that need secrets without seeing them, and each agent session keeps a record of what it did. Code intelligence in the editor, jj workspaces, and Codex on a model served from your own computer.
+date: 2026-10-30
+author: Naman Jain
+tags: [release, tasks, security, linux]
+---
+
+Vibezeo 0.13.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm` for Fedora. Vibezeo is free and needs no account, and like 0.12.0 it runs on your computer, with nothing sent to our servers.
+
+0.12.0 let a plan from Lead carry through, from its first run to the landing. This release keeps the plan moving between your visits: Lead answers its runs' routine questions and brings you the ones that need you.
+
+## Lead keeps a plan moving
+
+A run started by **Execute all** can stop and ask when its task and the repository don't settle something. Lead answers routine questions, each in a session of its own with every tool off, so it can't open a file or run a command. All it gets is the task as the plan wrote it, the question, and the repository's instructions files (such as `AGENTS.md` and `CLAUDE.md`) as committed when Execute all started, never a run's worktree.
+
+- The answer reaches the run labelled "Lead (automatic answer)" and goes on the task as Lead's comment, and each row counts them.
+- An answer has no more authority than the task: it can't approve anything, change access or start a tool.
+- Lead answers with Claude Code 2.1.310 or newer. With another engine as Lead, every question comes to you.
+- The option is on by default in Execute all's check and uses your engine and subscription. The plan can turn it off at once while its runs can ask.
+
+## What matters comes to you
+
+Lead never answers questions about approvals or permissions, access, the sandbox, secrets or credentials, network calls, deploys or publishing, pushing, deleting files or branches outside the worktree, or the plan's scope. It answers at most 3 questions per run and 10 per plan.
+
+Those questions show as **Needs you** in the plan with the reason, a notification tells you, and **Answer…** sends your answer to the run. A run waiting for an approval shows "Waiting for your approval", and a question Lead hadn't answered when Vibezeo closed comes to you after the restart.
+
+## Commands that need secrets
+
+An agent in an agent pane runs `vibezeo run -- pnpm deploy`. The pane shows the whole command and every secret it would get, and asks first: **Allow once**, **Allow for this agent** or **Deny**. The command runs outside the agent, and the agent sees its output with each secret's value hidden.
+
+- Settings › Secrets can let a command run without asking in a folder, and **Run with secrets** can tell agents about it in the folder's `AGENTS.md`.
+- You answer these on your computer: the phone and notifications only say a run is waiting.
+- Characters outside plain ASCII in the command are marked, so a look-alike letter can't pass.
+
+## Activity for each agent session
+
+**Activity…** in an agent pane's, a thread's or a Dashboard card's menu lists what that session did, in order: turns sent (never their words), files changed, commands, tools, approvals and `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer for 14 days.
+
+## Code intelligence in the editor and diffs
+
+With the language servers you already have (rust-analyzer, typescript-language-server, pyright, gopls), the Files editor goes to definitions (F12 or Mod+Click), finds references (Shift+F12), shows hover text and underlines problems. Worktree and review diffs jump from a changed name to its definition or callers.
+
+No server runs until you trust the repository (each worktree on its own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+
+## jj workspaces
+
+With jj installed on this computer, in a trusted repository co-located with jj, **New worktree…** makes a jj workspace instead of a git worktree, with a git worktree one click away and your choice remembered. Its diff and overlap check come from jj, agents in it are told to use jj, and **Discard** forgets the workspace while its commits stay.
+
+jj workspaces work in folders on this computer. Landing, pull requests, previews, setup, second opinion, the intent radar and the git panel aren't available for them yet.
+
+## Local models
+
+Settings › Engines › **Local models** finds Ollama, LM Studio and llama.cpp servers running on this computer and lists their models, with the size and parameter count each server reports. Vibezeo asks only 127.0.0.1, when you open the page or choose **Check again**.
+
+On an Ollama or LM Studio model, **Start in Codex** opens a Codex pane in your open folder that says "On this computer". It runs in a provider home of its own for that model, never on your Codex account and never through a proxy, and each start checks that the server still offers the model on this computer. It needs Codex 0.149.0 or newer, and your own Codex settings and accounts aren't touched.
+
+## Also in this release
+
+- **Text from elsewhere can't hand an agent a file or run a command.** What Vibezeo passes an agent from somewhere else, such as a pull request's review comments, a failed check's log or a teammate's mail, can't make Claude Code read a file on your computer. Any `@` there that could name a file is written ＠, and the message says so.
+- **A key split by a character nobody can see is still hidden,** and so is one such a character sets apart from the word before it, or both: in what Conductor reads and says, the review queue, plugins' replies, a teammate's brief and memory, what your phone shows, crash reports, usage statistics and Copy diagnostics.
+- **Allow can't move under your click.** A chat's Allow, held actions' Approve & run and the review queue's Approve wait until they've held still on screen for half a second, so a request sliding into place can't take a click meant for something else.
+- **A new agent no longer looks busy before its first prompt.** An engine that reported starting before Vibezeo read its banner could show "working" on the Dashboard, and to Auto, until you typed to it.
+- Claude Code threads count the files their edits changed, the rail's marks say it in a word and its rows fold rather than cut off, and a worktree's checks are read again right after you push.
+
+## Update or install
+
+On Debian or Ubuntu, check the download against its checksum, then install it:
+
+```bash
+sha256sum Vibezeo_0.13.0_amd64.deb
+sudo apt install ./Vibezeo_0.13.0_amd64.deb
+```
+
+On Fedora:
+
+```bash
+sha256sum Vibezeo-0.13.0-1.x86_64.rpm
+sudo dnf install ./Vibezeo-0.13.0-1.x86_64.rpm
+```
+
+Compare each checksum with the one on the [download page](/download/). The full notes are in the [changelog](/changelog/0.13.0/).
