@@ -25,6 +25,8 @@ use tokio_util::sync::CancellationToken;
 use crate::services::tasks_exec::{ExecuteInput, Isolation, RunBlock, Supervision};
 
 mod answer;
+mod landed;
+mod review;
 mod supervisor;
 pub use answer::AnswerFailed;
 pub use supervisor::{sensitive, PLAN_ANSWERS, RUN_QUESTIONS};
@@ -37,6 +39,11 @@ pub const DESCRIPTION_MAX: usize = 8_000;
 pub const WHY_MAX: usize = 300;
 /// A project's name is the goal's first line, cut here.
 pub const PROJECT_NAME_MAX: usize = 80;
+/// A run's engine is near its limit at this much of a usage window, or when
+/// its forecast runs out within [`NEAR_LIMIT_MS`] (F-TK-09).
+pub const NEAR_LIMIT_PCT: f64 = 90.0;
+pub const NEAR_LIMIT_MS: i64 = 30 * 60 * 1000;
+
 /// Lead's reply is read as a plan only up to this size (bytes).
 pub const REPLY_MAX: usize = 512 * 1024;
 /// Begin markers tried, from the last one back.
@@ -138,7 +145,68 @@ pub struct PlanView {
     /// Its runs' questions, oldest first (F-TK-08).
     #[serde(default)]
     pub questions: Vec<PlanQuestion>,
+    /// A run's Changes requested goes back to it, up to [`review::ROUNDS`]
+    /// rounds (F-TK-09). Off for a plan kept from before it.
+    #[serde(default)]
+    pub send_back: bool,
+    /// Its runs' reviews that asked for changes, oldest first (F-TK-09).
+    #[serde(default)]
+    pub reviews: Vec<PlanReview>,
+    /// Its tasks Land worktrees landed (F-TK-09).
+    #[serde(default)]
+    pub landed: Vec<PlanLanded>,
     pub created_at: i64,
+}
+
+/// A plan run's review that asked for changes (F-TK-09).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlanReview {
+    pub id: String,
+    pub issue_id: String,
+    pub attempt_id: AttemptId,
+    /// The run's Changes requested this is: 1 for its first.
+    pub round: u32,
+    /// The reviewer's reasons: a model's words about an agent's diff,
+    /// untrusted.
+    pub reasons: String,
+    pub state: ReviewState,
+    /// Why it came to you, or why it wasn't sent.
+    pub reason: Option<String>,
+    /// Your note, sent with it (Send back…).
+    pub note: Option<String>,
+    /// The diff it read, hashed: a turn that changed nothing since the
+    /// review that sent it back comes to you.
+    #[serde(default)]
+    #[ts(skip)]
+    pub diff: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, rename = "PlanReviewState")]
+pub enum ReviewState {
+    /// Sent back to the run.
+    Sent,
+    /// It came to you.
+    Escalated,
+    /// You sent it back.
+    SentByYou,
+    /// Its run was stopped, retried or removed since: not sent.
+    Dropped,
+}
+
+/// A plan task Land worktrees landed (F-TK-09).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlanLanded {
+    pub issue_id: String,
+    /// The commit it landed as.
+    pub commit: String,
+    pub at: i64,
 }
 
 /// A plan run's question (F-TK-08).
@@ -516,6 +584,22 @@ pub trait PlanHost: Send + Sync {
     /// Nobody will answer the run's question: it stops.
     fn unanswered(&self, attempt: &AttemptId);
     async fn notify(&self, title: String, body: String, issue_id: &str);
+    /// Why `engine`'s run on `account` should stop for now, if it should:
+    /// its usage is near the limit, read or forecast (F-AC-08), as the row
+    /// says it (F-TK-09).
+    async fn near_limit(&self, engine: &str, account: Option<&AccountId>) -> Option<String>;
+    /// The task's latest run is `attempt`, ended in review with Changes
+    /// requested: a review can still go back to it (F-TK-09).
+    async fn waits_for_review(&self, issue_id: &str, attempt: &AttemptId) -> bool;
+    /// `text` as the run's next message; it's reviewed again after that
+    /// turn (F-TK-04's Resume, F-TK-09).
+    async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError>;
+    /// The task and run whose worktree `lane_id` is: its latest run there
+    /// (F-TK-09).
+    async fn lane_run(&self, lane_id: &str) -> Option<(String, AttemptId)>;
+    /// Land worktrees landed the run's worktree: an ended run is Done.
+    /// False for one still going (F-TK-09).
+    async fn run_landed(&self, attempt: &AttemptId) -> bool;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -814,6 +898,9 @@ impl PlanService {
             supervise: false,
             base_commit: None,
             questions: Vec::new(),
+            send_back: true,
+            reviews: Vec::new(),
+            landed: Vec::new(),
             created_at: now,
         };
         self.lock().insert(
@@ -1097,8 +1184,15 @@ impl PlanService {
     /// that isn't To do or already has a run is left alone, and what was
     /// queued is kept: a start that fails partway goes back to Created, and
     /// the next one doesn't queue those again (F-TK-06 AC4). With
-    /// `supervise`, Lead answers the runs' routine questions (F-TK-08).
-    pub async fn execute(&self, id: &str, supervise: bool) -> Result<PlanView, IpcError> {
+    /// `supervise`, Lead answers the runs' routine questions (F-TK-08);
+    /// with `send_back`, a run's Changes requested goes back to it
+    /// (F-TK-09).
+    pub async fn execute(
+        &self,
+        id: &str,
+        supervise: bool,
+        send_back: bool,
+    ) -> Result<PlanView, IpcError> {
         let (view, runs, codes) = {
             let mut plans = self.lock();
             let e = plans.get_mut(id).ok_or_else(not_found)?;
@@ -1122,6 +1216,9 @@ impl PlanService {
         // the questions waiting for Lead to you and stops its session.
         if view.supervise != supervise {
             self.supervise(id, supervise).await?;
+        }
+        if view.send_back != send_back {
+            self.send_back(id, send_back)?;
         }
         // The first Execute all's commit is kept: Lead answers every run
         // from the files they started from.
@@ -1670,11 +1767,73 @@ impl PlanHost for AppHost {
             )
             .await;
     }
+
+    async fn near_limit(&self, engine: &str, account: Option<&AccountId>) -> Option<String> {
+        // The engine's own sign-in has no reading to go by.
+        let view = self.state().usage.get(account?.as_str())?;
+        let now = self.now();
+        let short = view.windows.iter().any(|w| w.used_pct >= NEAR_LIMIT_PCT)
+            || view.forecasts.iter().any(|f| {
+                f.runs_out_early() && f.runs_out_at.is_some_and(|at| at - now <= NEAR_LIMIT_MS)
+            });
+        if !short {
+            return None;
+        }
+        let label = self
+            .engines()
+            .await
+            .into_iter()
+            .find(|e| e.engine_id == engine)
+            .map_or_else(|| engine.to_string(), |e| e.label);
+        Some(format!("Paused: near {label}'s limit."))
+    }
+
+    async fn waits_for_review(&self, issue_id: &str, attempt: &AttemptId) -> bool {
+        use tandem_store::repo::task_attempts::{self, AttemptState};
+        let Ok(all) = task_attempts::list(&self.state().store).await else {
+            return false;
+        };
+        all.iter()
+            .filter(|a| a.issue_id == issue_id)
+            .max_by_key(|a| a.queued_at)
+            .is_some_and(|a| {
+                a.id == *attempt
+                    && a.state == AttemptState::InReview
+                    && a.review_verdict.as_deref() == Some("changes_requested")
+            })
+    }
+
+    async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError> {
+        self.state()
+            .task_exec
+            .resume(attempt, Some(text))
+            .await
+            .map(|_| ())
+    }
+
+    async fn lane_run(&self, lane_id: &str) -> Option<(String, AttemptId)> {
+        let all = tandem_store::repo::task_attempts::list(&self.state().store)
+            .await
+            .ok()?;
+        all.into_iter()
+            .filter(|a| {
+                a.lane_workspace_id
+                    .as_ref()
+                    .is_some_and(|l| l.as_str() == lane_id)
+            })
+            .max_by_key(|a| a.queued_at)
+            .map(|a| (a.issue_id, a.id))
+    }
+
+    async fn run_landed(&self, attempt: &AttemptId) -> bool {
+        self.state().task_exec.landed(attempt).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::tasks_exec::ChangesRequested;
     use std::collections::HashSet;
 
     #[derive(Default)]
@@ -1719,6 +1878,18 @@ mod tests {
         gone: Mutex<bool>,
         unanswered: Mutex<Vec<AttemptId>>,
         notified: Mutex<Vec<(String, String, String)>>,
+        /// Why the run's engine is near its limit (F-TK-09).
+        near: Mutex<Option<String>>,
+        /// The run was stopped, retried or removed since its review.
+        moved_on: Mutex<bool>,
+        /// Runs resumed with a review, and the text.
+        resumed: Mutex<Vec<(AttemptId, String)>>,
+        /// Worktrees and the task and run each is (F-TK-09).
+        lanes: Mutex<HashMap<String, (String, AttemptId)>>,
+        /// Runs marked Done because their worktree landed; the run in
+        /// `going` is still going.
+        landed: Mutex<Vec<AttemptId>>,
+        going: Mutex<Option<AttemptId>>,
     }
 
     /// An answer a run got: the run, its question, the text, and whether
@@ -1969,6 +2140,29 @@ mod tests {
                 .expect("l")
                 .push((title, body, issue_id.to_string()));
         }
+        async fn near_limit(&self, _: &str, _: Option<&AccountId>) -> Option<String> {
+            self.near.lock().expect("l").clone()
+        }
+        async fn waits_for_review(&self, _: &str, _: &AttemptId) -> bool {
+            !*self.moved_on.lock().expect("l")
+        }
+        async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError> {
+            self.resumed
+                .lock()
+                .expect("l")
+                .push((attempt.clone(), text));
+            Ok(())
+        }
+        async fn lane_run(&self, lane_id: &str) -> Option<(String, AttemptId)> {
+            self.lanes.lock().expect("l").get(lane_id).cloned()
+        }
+        async fn run_landed(&self, attempt: &AttemptId) -> bool {
+            if self.going.lock().expect("l").as_ref() == Some(attempt) {
+                return false;
+            }
+            self.landed.lock().expect("l").push(attempt.clone());
+            true
+        }
     }
 
     fn rig(off: bool) -> (tempfile::TempDir, Arc<Fake>, Arc<PlanService>, EventBus) {
@@ -2086,7 +2280,7 @@ mod tests {
         let starting = {
             let plans = plans.clone();
             let id = view.id.clone();
-            tokio::spawn(async move { plans.execute(&id, false).await })
+            tokio::spawn(async move { plans.execute(&id, false, false).await })
         };
         for _ in 0..100 {
             if !fake.executed.lock().expect("l").is_empty() {
@@ -2103,7 +2297,10 @@ mod tests {
         assert!(back.error.is_some());
         // Execute all again starts only what it hadn't queued.
         after.prepare(&view.id).await.expect("prepare");
-        let again = after.execute(&view.id, false).await.expect("execute");
+        let again = after
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
         assert_eq!(again.queued, vec!["TAN-1".to_string(), "TAN-2".to_string()]);
         let started: Vec<String> = fake2
             .executed
@@ -2416,7 +2613,10 @@ mod tests {
         let (dir, fake, plans, _bus) = rig(false);
         let view = created(&fake, &plans).await;
         plans.prepare(&view.id).await.expect("prepare");
-        plans.execute(&view.id, false).await.expect("execute");
+        plans
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
         let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
         let kept = after.get(&view.id).expect("kept");
         assert_eq!(kept.state, PlanState::Started);
@@ -2569,7 +2769,10 @@ mod tests {
         let (_d, fake, plans, _bus) = rig(false);
         let view = created(&fake, &plans).await;
         // Not without seeing the runs first.
-        let unchecked = plans.execute(&view.id, false).await.expect_err("unchecked");
+        let unchecked = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect_err("unchecked");
         assert_eq!(unchecked.code, ErrorCode::Invalid);
         assert!(fake.executed.lock().expect("l").is_empty());
         // Usage moved since Lead planned: the runs use what it reads now.
@@ -2609,7 +2812,10 @@ mod tests {
                 ("TAN-2", "Page", "Codex", Some("cx"), "Claude Code", None),
             ]
         );
-        let started = plans.execute(&view.id, false).await.expect("execute");
+        let started = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
         assert_eq!(started.state, PlanState::Started);
         assert_eq!(
             started.queued,
@@ -2638,7 +2844,7 @@ mod tests {
             assert_eq!(r.access, Access::Edits);
             assert!(r.review && !r.full_confirmed && r.teammate_id.is_none());
         }
-        assert!(plans.execute(&view.id, false).await.is_err(), "once");
+        assert!(plans.execute(&view.id, false, false).await.is_err(), "once");
         assert!(plans.prepare(&view.id).await.is_err(), "started");
     }
 
@@ -2658,8 +2864,8 @@ mod tests {
         );
         // Two clicks: one start.
         let (a, b) = tokio::join!(
-            plans.execute(&view.id, false),
-            plans.execute(&view.id, false)
+            plans.execute(&view.id, false, false),
+            plans.execute(&view.id, false, false)
         );
         assert!(a.is_ok() != b.is_ok(), "one start");
         let started = plans.get(&view.id).expect("plan");
@@ -2687,7 +2893,10 @@ mod tests {
         let view = created(&fake, &plans).await;
         fake.failing.lock().expect("l").insert("TAN-2".into());
         plans.prepare(&view.id).await.expect("prepare");
-        let err = plans.execute(&view.id, false).await.expect_err("partway");
+        let err = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect_err("partway");
         assert_eq!(err.message, "The disk is full");
         let back = plans.get(&view.id).expect("plan");
         assert_eq!(back.state, PlanState::Created);
@@ -2700,7 +2909,10 @@ mod tests {
             launch.runs.iter().map(|r| r.skip).collect::<Vec<_>>(),
             vec![Some(RunBlock::Running), None]
         );
-        let started = plans.execute(&view.id, false).await.expect("execute");
+        let started = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
         assert_eq!(started.state, PlanState::Started);
         assert_eq!(
             started.queued,
@@ -2726,7 +2938,10 @@ mod tests {
             launch.blocked.as_deref(),
             Some("Running tasks is turned off for this account. You can still track tasks.")
         );
-        let err = plans.execute(&view.id, false).await.expect_err("off");
+        let err = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect_err("off");
         assert_eq!(err.code, ErrorCode::ForbiddenPlan);
         assert!(fake.executed.lock().expect("l").is_empty());
         assert_eq!(plans.get(&view.id).expect("plan").state, PlanState::Created);
@@ -2800,7 +3015,7 @@ mod tests {
     async fn running(fake: &Arc<Fake>, plans: &Arc<PlanService>, on: bool) -> PlanView {
         let view = created(fake, plans).await;
         plans.prepare(&view.id).await.expect("prepare");
-        plans.execute(&view.id, on).await.expect("execute")
+        plans.execute(&view.id, on, false).await.expect("execute")
     }
 
     /// `run`'s question on `issue`, with an id of its own.
@@ -3043,7 +3258,7 @@ mod tests {
         let view = created(&fake, &plans).await;
         let launch = plans.prepare(&view.id).await.expect("prepare");
         assert!(!launch.lead_answers);
-        let view = plans.execute(&view.id, true).await.expect("execute");
+        let view = plans.execute(&view.id, true, false).await.expect("execute");
         plans
             .ask(asks(&view, "TAN-1", "at_1", "Tabs or spaces?"))
             .await;
@@ -3514,7 +3729,10 @@ mod tests {
         let view = created(&fake, &plans).await;
         fake.failing.lock().expect("l").insert("TAN-2".into());
         plans.prepare(&view.id).await.expect("prepare");
-        plans.execute(&view.id, true).await.expect_err("partway");
+        plans
+            .execute(&view.id, true, false)
+            .await
+            .expect_err("partway");
         let view = plans.get(&view.id).expect("plan");
         assert!(view.supervise);
         // TAN-1's run asks, and Lead is answering when Execute all runs
@@ -3528,7 +3746,10 @@ mod tests {
         until("Lead is asked", || prompts(&fake).len() == 1).await;
         fake.failing.lock().expect("l").clear();
         plans.prepare(&view.id).await.expect("prepare");
-        let done = plans.execute(&view.id, false).await.expect("execute");
+        let done = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
         assert_eq!((done.state, done.supervise), (PlanState::Started, false));
         let q = question(&plans, &view.id, 0);
         assert_eq!(
@@ -3553,7 +3774,10 @@ mod tests {
         let view = created(&fake, &plans).await;
         fake.failing.lock().expect("l").insert("TAN-2".into());
         plans.prepare(&view.id).await.expect("prepare");
-        plans.execute(&view.id, true).await.expect_err("partway");
+        plans
+            .execute(&view.id, true, false)
+            .await
+            .expect_err("partway");
         let back = plans.get(&view.id).expect("plan");
         assert_eq!(
             (back.state, back.base_commit.as_deref()),
@@ -3563,7 +3787,7 @@ mod tests {
         *fake.head.lock().expect("l") = Some("feedface".into());
         fake.failing.lock().expect("l").clear();
         plans.prepare(&view.id).await.expect("prepare");
-        let done = plans.execute(&view.id, true).await.expect("execute");
+        let done = plans.execute(&view.id, true, false).await.expect("execute");
         assert_eq!(
             (done.state, done.base_commit.as_deref()),
             (PlanState::Started, Some(BASE))
@@ -3856,5 +4080,268 @@ mod tests {
             *fake2.read.lock().expect("l"),
             vec![(WorkspaceId::from_db("ws_1".to_string()), BASE.to_string())]
         );
+    }
+
+    /// A plan whose runs started with reviews going back (F-TK-09).
+    async fn sending_back(fake: &Arc<Fake>, plans: &Arc<PlanService>) -> PlanView {
+        let view = created(fake, plans).await;
+        assert!(view.send_back, "on by default");
+        plans.prepare(&view.id).await.expect("prepare");
+        plans.execute(&view.id, false, true).await.expect("execute")
+    }
+
+    fn changes(view: &PlanView, attempt: &str, reasons: &str, diff: u64) -> ChangesRequested {
+        ChangesRequested {
+            plan_id: view.id.clone(),
+            attempt_id: AttemptId::from_db(attempt.to_string()),
+            issue_id: "TAN-1".into(),
+            reasons: reasons.into(),
+            diff: Some(diff),
+            engine_id: "claude".into(),
+            account_id: None,
+        }
+    }
+
+    fn reviews(plans: &PlanService, id: &str) -> Vec<PlanReview> {
+        plans.get(id).expect("plan").reviews
+    }
+
+    fn task_notes(fake: &Fake) -> Vec<String> {
+        let tracker = fake.tracker.clone().expect("tracker");
+        tracker
+            .comments("TAN-1")
+            .expect("comments")
+            .into_iter()
+            .map(|c| c.body)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_1_a_runs_review_goes_back_to_it_for_two_rounds_then_comes_to_you() {
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        let first = plans
+            .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
+            .await
+            .expect("sent back");
+        assert!(
+            first.starts_with(&format!("{}:\n", review::LABEL)),
+            "{first}"
+        );
+        assert!(first.contains("Handle the empty input."));
+        let second = plans
+            .on_changes_requested(changes(&view, "atm_1", "Add a test for it too.", 2))
+            .await;
+        assert!(second.is_some(), "round 2");
+        // The third comes to you, with why, and a notification.
+        let third = plans
+            .on_changes_requested(changes(&view, "atm_1", "Now rename the helper.", 3))
+            .await;
+        assert_eq!(third, None);
+        let all = reviews(&plans, &view.id);
+        assert_eq!(
+            all.iter().map(|r| (r.round, r.state)).collect::<Vec<_>>(),
+            vec![
+                (1, ReviewState::Sent),
+                (2, ReviewState::Sent),
+                (3, ReviewState::Escalated)
+            ]
+        );
+        assert_eq!(all[2].reason.as_deref(), Some(review::THIRD));
+        assert_eq!(
+            *fake.notified.lock().expect("l"),
+            vec![(
+                "TAN-1 needs you".to_string(),
+                review::THIRD.to_string(),
+                "TAN-1".to_string()
+            )]
+        );
+        // Each one is noted on its task, the reviewer's words defanged.
+        let notes = task_notes(&fake);
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(notes[0].starts_with(&format!("{}, round 1 of 2.", review::LABEL)));
+        assert!(notes[2].starts_with("Review came to you: "));
+        // Another run of the task, a Retry, counts its own rounds.
+        let retried = plans
+            .on_changes_requested(changes(&view, "atm_2", "Handle the empty input.", 4))
+            .await;
+        assert!(retried.is_some());
+        assert_eq!(reviews(&plans, &view.id)[3].round, 1);
+        // A plan that's gone sends nothing and keeps nothing.
+        plans.discard(&view.id).expect("remove");
+        let gone = plans
+            .on_changes_requested(changes(&view, "atm_2", "More.", 5))
+            .await;
+        assert_eq!(gone, None);
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_2_send_back_sends_one_that_came_to_you_with_your_note() {
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        // With the switch off, every review comes to you.
+        let off = plans.send_back(&view.id, false).expect("off");
+        assert!(!off.send_back);
+        assert_eq!(
+            plans
+                .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
+                .await,
+            None
+        );
+        let r = reviews(&plans, &view.id)[0].clone();
+        assert_eq!(
+            (r.state, r.reason.as_deref()),
+            (ReviewState::Escalated, Some(review::OFF))
+        );
+        let sent = plans
+            .send_review(&view.id, &r.id, Some("  Keep the old API too.  ".into()))
+            .await
+            .expect("send back");
+        assert_eq!(sent.reviews[0].state, ReviewState::SentByYou);
+        assert_eq!(
+            sent.reviews[0].note.as_deref(),
+            Some("Keep the old API too.")
+        );
+        let resumed = fake.resumed.lock().expect("l").clone();
+        assert_eq!(resumed.len(), 1);
+        assert_eq!(resumed[0].0, AttemptId::from_db("atm_1".to_string()));
+        assert_eq!(
+            resumed[0].1,
+            review::review_message("Handle the empty input.", Some("Keep the old API too."))
+        );
+        // Once.
+        let again = plans
+            .send_review(&view.id, &r.id, None)
+            .await
+            .expect_err("handled");
+        assert_eq!(again.code, ErrorCode::Conflict);
+        // A newer review of the run replaces one still waiting for you.
+        plans
+            .on_changes_requested(changes(&view, "atm_1", "Now the docs.", 2))
+            .await;
+        plans
+            .on_changes_requested(changes(&view, "atm_1", "Now the changelog.", 3))
+            .await;
+        let all = reviews(&plans, &view.id);
+        assert_eq!(
+            all.iter().map(|r| r.state).collect::<Vec<_>>(),
+            vec![
+                ReviewState::SentByYou,
+                ReviewState::Dropped,
+                ReviewState::Escalated
+            ]
+        );
+        // A run that has moved on since doesn't get it: dropped, and noted.
+        *fake.moved_on.lock().expect("l") = true;
+        let moved = plans
+            .send_review(&view.id, &all[2].id, None)
+            .await
+            .expect_err("moved on");
+        assert_eq!(moved.code, ErrorCode::Conflict);
+        let r = &reviews(&plans, &view.id)[2];
+        assert_eq!(
+            (r.state, r.reason.as_deref()),
+            (ReviewState::Dropped, Some(review::GONE))
+        );
+        assert_eq!(fake.resumed.lock().expect("l").len(), 1);
+        assert!(task_notes(&fake)
+            .last()
+            .expect("noted")
+            .starts_with("Review not sent: "));
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_3_a_review_while_the_engine_is_near_its_limit_comes_to_you() {
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        *fake.near.lock().expect("l") = Some("Paused: near Claude Code's limit.".into());
+        assert_eq!(
+            plans
+                .on_changes_requested(changes(&view, "atm_1", "Add a test.", 1))
+                .await,
+            None
+        );
+        assert_eq!(
+            reviews(&plans, &view.id)[0].reason.as_deref(),
+            Some("Paused: near Claude Code's limit.")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_4_the_switch_is_kept_with_the_plan() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = created(&fake, &plans).await;
+        plans.prepare(&view.id).await.expect("prepare");
+        let started = plans
+            .execute(&view.id, false, false)
+            .await
+            .expect("execute");
+        assert!(!started.send_back, "Execute all's check turned it off");
+        plans.send_back(&view.id, true).expect("on");
+        let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        assert!(after.get(&view.id).expect("kept").send_back);
+        // A plan kept from before reviews went back has them come to you.
+        let raw = std::fs::read_to_string(dir.path().join("plans.json")).expect("file");
+        let older = raw
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("\"sendBack\""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_ne!(older.len(), raw.len());
+        std::fs::write(dir.path().join("plans.json"), older).expect("older");
+        let (_fake3, again) = restarted(&dir, ThreadState::Done, String::new());
+        assert!(!again.get(&view.id).expect("kept").send_back);
+        assert!(plans.send_back("pl_missing", true).is_err());
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_5_landing_a_plan_tasks_worktree_marks_it_done() {
+        let (dir, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        let atm = |n: &str| AttemptId::from_db(n.to_string());
+        fake.lanes.lock().expect("l").extend([
+            ("wt_1".to_string(), ("TAN-1".to_string(), atm("atm_1"))),
+            ("wt_2".to_string(), ("TAN-2".to_string(), atm("atm_2"))),
+            ("wt_other".to_string(), ("TAN-9".to_string(), atm("atm_9"))),
+        ]);
+        *fake.going.lock().expect("l") = Some(atm("atm_2"));
+        plans.on_landed("wt_1", "0123456789abcdef0123").await;
+        // A worktree that isn't a plan task's, one no run made, and a run
+        // still going: nothing.
+        plans.on_landed("wt_other", "feedface").await;
+        plans.on_landed("wt_unknown", "feedface").await;
+        plans.on_landed("wt_2", "feedface").await;
+        assert_eq!(*fake.landed.lock().expect("l"), vec![atm("atm_1")]);
+        let kept = plans.get(&view.id).expect("plan");
+        assert_eq!(
+            kept.landed
+                .iter()
+                .map(|l| (l.issue_id.as_str(), l.commit.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("TAN-1", "0123456789abcdef0123")]
+        );
+        let tracker = fake.tracker.clone().expect("tracker");
+        let task = tracker.get("TAN-1").expect("TAN-1");
+        assert_eq!(task.status, IssueStatus::Done);
+        assert_eq!(
+            tracker
+                .comments("TAN-1")
+                .expect("comments")
+                .last()
+                .map(|c| c.body.as_str()),
+            Some("Landed by Land worktrees as 0123456789ab.")
+        );
+        assert_ne!(
+            tracker.get("TAN-2").expect("TAN-2").status,
+            IssueStatus::Done
+        );
+        // Landed again (Undo landing, then land): one record, the new commit.
+        plans.on_landed("wt_1", "aaaabbbbcccc").await;
+        let kept = plans.get(&view.id).expect("plan");
+        assert_eq!(kept.landed.len(), 1);
+        assert_eq!(kept.landed[0].commit, "aaaabbbbcccc");
+        // Kept across a restart.
+        let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
+        assert_eq!(after.get(&view.id).expect("kept").landed.len(), 1);
     }
 }

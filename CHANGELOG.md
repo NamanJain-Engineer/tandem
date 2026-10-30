@@ -21,9 +21,24 @@ release fails when its version has no section.
   overlap… claims the files where this worktree changed, renamed or removed
   what it shares, so agents in the other worktrees see the claim before they
   edit them. Everything stays on this computer.
+- [lin] **Lead closes the loop.** When the review of a run started by Execute
+  all asks for changes, the plan sends the reviewer's reasons back to that run
+  as its next message, in the same worktree, and its next turn is reviewed
+  again, for up to 2 rounds. The run reads them labelled "Review (sent back
+  automatically)", fenced as text from elsewhere, as another engine's view to
+  weigh rather than orders. A third request, a review about approvals, access,
+  secrets, deploys, pushing or the plan's scope, a turn that changed nothing,
+  the same changes asked again, and any review while the engine is near its
+  usage limit come to you instead, with why and **Send back…** for when you
+  agree. The option is on by default in Execute all's check, and the plan can
+  turn it off. When Land worktrees lands a plan task's worktree, the task is
+  marked Done with the commit in a comment, and its row says Landed.
 
 ### Fixed
 
+- [lin] **A token's expiry stays readable.** Text that names when a token or
+  secret expires or was made (`token_expires_at: 2025-10-30T18:00:00Z`,
+  `tokenExpiresAt`) is no longer hidden as if it were the token itself.
 - [lin] **One crafted text no longer slows every key check after it.**
   Vibezeo hides keys and tokens before text reaches a model, your phone or
   anything else off your computer. A long text built to wear out the fast way

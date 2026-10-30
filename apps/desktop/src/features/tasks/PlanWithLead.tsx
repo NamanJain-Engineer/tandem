@@ -4,7 +4,9 @@
 // run first, then runs them through F-TK-04's queue (D-2430). F-TK-07: the
 // plan then follows each task's latest run and lands the approved ones
 // through Land worktrees (F-WT-07). F-TK-08: Lead answers the runs' routine
-// questions; the rest come to you here, with Answer….
+// questions; the rest come to you here, with Answer…. F-TK-09: a run's
+// review that asks for changes goes back to it; the rest come to you here,
+// with Send back….
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type {
@@ -12,6 +14,7 @@ import type {
   PlanEngine,
   PlanLaunch,
   PlanQuestion,
+  PlanReview,
   PlanTask,
   PlanView,
   TaskRunBlock,
@@ -41,6 +44,8 @@ import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 
 export const GOAL_MAX = 4_000;
+/** Your note with Send back… (characters, as the core cuts it). */
+export const REVIEW_NOTE_MAX = 2_000;
 
 /** A plan's Lead chat runs in a folder on this computer. */
 const REMOTE = new Set(["ssh", "wsl"]);
@@ -138,8 +143,10 @@ export function runSummary(runs: Array<AttemptView | null>): string {
  * failed, waiting while one is in review or stopped, else done (F-TK-07). */
 export function startedStatus(plan: PlanView, attempts: AttemptView[]): Status {
   const runs = plan.issueIds.map((id) => latestRun(attempts, id));
-  // A run waiting on you, for an approval or an answer (F-TK-08), first.
-  if (runs.some((r) => r?.waiting || openQuestion(plan, r)?.state === "escalated")) return "waiting";
+  // A run waiting on you, for an approval, an answer (F-TK-08) or its
+  // review (F-TK-09), first.
+  if (runs.some((r) => r?.waiting || openQuestion(plan, r)?.state === "escalated" || openReview(plan, r)))
+    return "waiting";
   const kinds = runs.map(kindOf);
   if (kinds.some((k) => k === "queued" || k === "running")) return "working";
   if (kinds.includes("failed")) return "error";
@@ -164,6 +171,26 @@ export function openQuestion(plan: PlanView, run: AttemptView | null): PlanQuest
     (q) => q.attemptId === run.attempt.id && (q.state === "answering" || q.state === "escalated"),
   );
   return mine[mine.length - 1] ?? null;
+}
+
+/** A run's latest review that asked for changes, while it waits for you
+ * (F-TK-09). */
+export function openReview(plan: PlanView, run: AttemptView | null): PlanReview | null {
+  if (!run) return null;
+  const mine = plan.reviews.filter((r) => r.attemptId === run.attempt.id);
+  const last = mine[mine.length - 1];
+  return last?.state === "escalated" ? last : null;
+}
+
+/** "Review sent back · round 2 of 2": the run's reviews that went back to
+ * it, by Lead or by you (F-TK-09). Empty when none did. */
+export function roundsLabel(plan: PlanView, run: AttemptView | null): string {
+  if (!run) return "";
+  const n = plan.reviews.filter(
+    (r) => r.attemptId === run.attempt.id && (r.state === "sent" || r.state === "sent_by_you"),
+  ).length;
+  if (n === 0) return "";
+  return n > 2 ? t("plan.review.roundsMore", { n }) : t("plan.review.rounds", { n });
 }
 
 /** "Lead answered N": Lead's answers to a task's runs (F-TK-08). */
@@ -251,6 +278,83 @@ function QuestionRow({ plan, question }: { plan: PlanView; question: PlanQuestio
   );
 }
 
+/** A run's review that came to you: why, the reviewer's reasons, and Send
+ * back… with your note (F-TK-09). */
+function ReviewRow({ plan, review }: { plan: PlanView; review: PlanReview }) {
+  const { show: toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await usePlans.getState().sendReview(plan.id, review.id, note.trim() || null);
+    setBusy(false);
+    if (isIpcError(r)) setError(r.message);
+    else toast({ tone: "success", title: t("plan.review.sent") });
+  };
+  return (
+    <div
+      className="ml-6 flex flex-col gap-2 rounded-md border border-border bg-surface-1 p-2"
+      data-testid="plan-run-review"
+    >
+      <p className="flex items-center gap-2 text-sm font-medium text-fg">
+        <StatusDot status="waiting" label={t("plan.question.needsYou")} />
+        {t("plan.question.needsYou")}
+      </p>
+      {review.reason && (
+        <p className="text-sm text-fg-muted" data-testid="plan-review-why">
+          {review.reason}
+        </p>
+      )}
+      <p className="text-sm text-fg-muted">{t("plan.review.label")}</p>
+      <p className="whitespace-pre-wrap break-words text-sm text-fg" data-testid="plan-review-reasons">
+        {review.reasons}
+      </p>
+      {open ? (
+        <>
+          <Textarea
+            label={t("plan.review.noteLabel")}
+            hint={t("plan.review.noteHint")}
+            minRows={2}
+            maxRows={6}
+            maxLength={REVIEW_NOTE_MAX}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            data-testid="plan-review-note"
+          />
+          {error && (
+            <p className="text-sm text-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() => void send()}
+              data-testid="plan-review-send"
+            >
+              {t("plan.review.send")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div>
+          <Button variant="secondary" size="sm" onClick={() => setOpen(true)} data-testid="plan-review-open">
+            {t("plan.review.sendBack")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] }) {
   const status = useTasks((s) => s.attemptsStatus);
   const loadError = useTasks((s) => s.attemptsError);
@@ -311,6 +415,11 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
           const kind = kindOf(run);
           const question = openQuestion(plan, run);
           const answered = leadAnswered(plan, id);
+          const review = openReview(plan, run);
+          const rounds = roundsLabel(plan, run);
+          // Land worktrees landed it: Done (F-TK-09).
+          const landed = plan.landed.some((l) => l.issueId === id);
+          const label = landed ? t("plan.run.landed") : runLabel(run);
           return (
             <li
               key={id}
@@ -319,9 +428,11 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
               data-state={run?.attempt.state ?? "none"}
               data-verdict={run?.attempt.reviewVerdict ?? undefined}
               data-question={question?.state ?? undefined}
+              data-review={review ? "escalated" : undefined}
+              data-landed={landed || undefined}
             >
               <div className="flex items-center gap-2">
-                <StatusDot status={SHAPE[kind]} label={runLabel(run)} />
+                <StatusDot status={landed ? "done" : SHAPE[kind]} label={label} />
                 <button
                   type="button"
                   className="min-w-0 flex-1 truncate text-left text-sm text-fg hover:underline"
@@ -331,10 +442,10 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
                   <span className="font-mono text-fg-muted">{id}</span> {task?.title ?? ""}
                 </button>
                 <span className="shrink-0 text-sm text-fg-muted">
-                  {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {runLabel(run)}
+                  {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {label}
                 </span>
               </div>
-              {(run?.waiting || answered > 0) && (
+              {(run?.waiting || answered > 0 || rounds) && (
                 <p className="flex flex-wrap items-center gap-x-3 pl-6 text-sm text-fg-muted">
                   {run?.waiting && (
                     <span className="flex items-center gap-2" data-testid="plan-run-approval">
@@ -347,9 +458,11 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
                       {t("plan.question.answered", { n: answered })}
                     </span>
                   )}
+                  {rounds && <span data-testid="plan-run-rounds">{rounds}</span>}
                 </p>
               )}
               {question && <QuestionRow key={question.id} plan={plan} question={question} />}
+              {review && <ReviewRow key={review.id} plan={plan} review={review} />}
             </li>
           );
         })}
@@ -516,10 +629,14 @@ function LaunchList({
   launch,
   supervise,
   onSupervise,
+  sendBack,
+  onSendBack,
 }: {
   launch: PlanLaunch;
   supervise: boolean;
   onSupervise: (on: boolean) => void;
+  sendBack: boolean;
+  onSendBack: (on: boolean) => void;
 }) {
   const runnable = launch.runs.filter((r) => !r.skip).length;
   return (
@@ -582,6 +699,16 @@ function LaunchList({
             {t("plan.supervise.cantAnswer")}
           </p>
         ))}
+      {!launch.blocked && runnable > 0 && (
+        <div data-testid="plan-send-back-option">
+          <Checkbox
+            label={t("plan.sendBack.option")}
+            description={t("plan.sendBack.optionHint")}
+            checked={sendBack}
+            onCheckedChange={onSendBack}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -612,6 +739,32 @@ function SuperviseSwitch({ plan, onError }: { plan: PlanView; onError: (message:
   );
 }
 
+/** Reviews going back to the runs, on or off, shown with Lead's switch
+ * (F-TK-09). Off works from the next review on. */
+function SendBackSwitch({ plan, onError }: { plan: PlanView; onError: (message: string | null) => void }) {
+  const [pending, setPending] = useState(false);
+  const flip = async (on: boolean) => {
+    setPending(true);
+    onError(null);
+    const r = await usePlans.getState().sendBack(plan.id, on);
+    setPending(false);
+    if (isIpcError(r)) onError(r.message);
+  };
+  return (
+    <div className="flex flex-col gap-1" data-testid="plan-send-back" aria-busy={pending}>
+      <Switch
+        label={t("plan.sendBack.switch")}
+        checked={plan.sendBack}
+        disabled={pending}
+        onCheckedChange={(on) => void flip(on)}
+      />
+      <p className="text-sm text-fg-muted">
+        {pending ? t("plan.sendBack.switching") : t("plan.sendBack.switchHint")}
+      </p>
+    </div>
+  );
+}
+
 function PlanDialog({ plan }: { plan: PlanView }) {
   const { show: toast } = useToast();
   const [tasks, setTasks] = useState<PlanTask[]>(plan.tasks);
@@ -621,6 +774,8 @@ function PlanDialog({ plan }: { plan: PlanView }) {
   const [launch, setLaunch] = useState<PlanLaunch | null>(null);
   /** Lead answers the runs' routine questions: on unless you say (F-TK-08). */
   const [supervise, setSupervise] = useState(true);
+  /** Reviews go back to the runs: on unless you say (F-TK-09). */
+  const [sendBack, setSendBack] = useState(true);
   // A draft arriving replaces the (empty) rows; later edits are the user's.
   useEffect(() => {
     if (plan.state === "ready") setTasks((cur) => (cur.length === 0 ? plan.tasks : cur));
@@ -658,6 +813,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
     else {
       // Again after a start that stopped partway: the switch as you left it.
       setSupervise(plan.queued.length > 0 ? plan.supervise : true);
+      setSendBack(plan.queued.length > 0 ? plan.sendBack : true);
       setLaunch(r);
     }
   };
@@ -665,7 +821,9 @@ function PlanDialog({ plan }: { plan: PlanView }) {
     setBusy(true);
     setError(null);
     // An engine that can't answer with every tool off never answers.
-    const r = await usePlans.getState().execute(plan.id, supervise && (launch?.leadAnswers ?? false));
+    const r = await usePlans
+      .getState()
+      .execute(plan.id, supervise && (launch?.leadAnswers ?? false), sendBack);
     setBusy(false);
     setLaunch(null);
     if (isIpcError(r)) setError(r.message);
@@ -833,7 +991,13 @@ function PlanDialog({ plan }: { plan: PlanView }) {
           </>
         )}
         {plan.state === "created" && launch && (
-          <LaunchList launch={launch} supervise={supervise} onSupervise={setSupervise} />
+          <LaunchList
+            launch={launch}
+            supervise={supervise}
+            onSupervise={setSupervise}
+            sendBack={sendBack}
+            onSendBack={setSendBack}
+          />
         )}
         {plan.state === "created" && !launch && (
           <>
@@ -841,7 +1005,12 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               <StatusDot status="done" label={t("plan.createdLabel")} />
               {t("plan.created", { n: plan.issueIds.length, ids: plan.issueIds.join(", ") })}
             </p>
-            {plan.queued.length > 0 && <SuperviseSwitch plan={plan} onError={setError} />}
+            {plan.queued.length > 0 && (
+              <>
+                <SuperviseSwitch plan={plan} onError={setError} />
+                <SendBackSwitch plan={plan} onError={setError} />
+              </>
+            )}
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -852,6 +1021,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               {t("plan.starting")}
             </p>
             <SuperviseSwitch plan={plan} onError={setError} />
+            <SendBackSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}
@@ -869,6 +1039,7 @@ function PlanDialog({ plan }: { plan: PlanView }) {
               </p>
             )}
             <SuperviseSwitch plan={plan} onError={setError} />
+            <SendBackSwitch plan={plan} onError={setError} />
             <PlanRuns plan={plan} attempts={attempts} />
           </>
         )}

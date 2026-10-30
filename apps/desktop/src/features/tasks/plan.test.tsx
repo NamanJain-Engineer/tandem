@@ -5,6 +5,7 @@ import type {
   AttemptView,
   PlanLaunch,
   PlanQuestion,
+  PlanReview,
   PlanView,
   TasksMeta,
 } from "@tandem/protocol";
@@ -69,6 +70,9 @@ function plan(over: Partial<PlanView> = {}): PlanView {
     supervise: false,
     baseCommit: null,
     questions: [],
+    sendBack: true,
+    reviews: [],
+    landed: [],
     createdAt: 1,
     ...over,
   };
@@ -269,7 +273,11 @@ describe("Plan with Lead (F-TK-06)", () => {
     expect(run.textContent).toBe("Run 1 task");
     fireEvent.click(run);
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: true }),
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
+        id: "pl_1",
+        supervise: true,
+        sendBack: true,
+      }),
     );
     await waitFor(() =>
       expect(screen.getByTestId("plan-created").textContent).toBe(
@@ -700,13 +708,17 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     );
     expect(option.textContent).toContain("a session of its own that can't open files or run tools");
     expect(option.textContent).toContain("always come to you");
-    const box = screen.getByRole("checkbox");
+    const box = within(option).getByRole("checkbox");
     expect(box.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(box);
     expect(box.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(screen.getByTestId("plan-confirm-run"));
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
+        id: "pl_1",
+        supervise: false,
+        sendBack: true,
+      }),
     );
   });
 
@@ -721,7 +733,11 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
     fireEvent.click(screen.getByTestId("plan-confirm-run"));
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
+        id: "pl_1",
+        supervise: false,
+        sendBack: true,
+      }),
     );
   });
 
@@ -732,11 +748,15 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     });
     wrap();
     fireEvent.click(await screen.findByTestId("plan-execute"));
-    await screen.findByTestId("plan-supervise-option");
-    expect(screen.getByRole("checkbox").getAttribute("aria-checked")).toBe("false");
+    const option = await screen.findByTestId("plan-supervise-option");
+    expect(within(option).getByRole("checkbox").getAttribute("aria-checked")).toBe("false");
     fireEvent.click(screen.getByTestId("plan-confirm-run"));
     await waitFor(() =>
-      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({ id: "pl_1", supervise: false }),
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
+        id: "pl_1",
+        supervise: false,
+        sendBack: true,
+      }),
     );
   });
 
@@ -917,5 +937,194 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(false));
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     expect(panel.textContent).not.toContain("Switching…");
+  });
+});
+
+/** A run's review that asked for changes (F-TK-09). */
+function reviewed(issue: string, attempt: string, over: Partial<PlanReview> = {}): PlanReview {
+  return {
+    id: `rv_${issue}`,
+    issueId: issue,
+    attemptId: attempt,
+    round: 1,
+    reasons: "The empty input still panics.",
+    state: "sent",
+    reason: null,
+    note: null,
+    at: 1,
+    ...over,
+  };
+}
+
+describe("Lead closes the loop (F-TK-09)", () => {
+  it("F-TK-09.4 Execute all's check sends reviews back unless you say, and sends your choice", async () => {
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    const option = await screen.findByTestId("plan-send-back-option");
+    expect(option.textContent).toContain("Send reviews back to the run (up to 2 rounds)");
+    expect(option.textContent).toContain("labelled as another engine's review");
+    expect(option.textContent).toContain("come to you");
+    const box = within(option).getByRole("checkbox");
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(box);
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
+        id: "pl_1",
+        supervise: true,
+        sendBack: false,
+      }),
+    );
+  });
+
+  it("F-TK-09.4 a check with nothing to run doesn't offer sending reviews back", async () => {
+    backend({
+      plan_prepare: () => ({ ...LAUNCH, blocked: "Running tasks is turned off for this account." }),
+    });
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    await screen.findByTestId("plan-execute-blocked");
+    expect(screen.queryByTestId("plan-send-back-option")).toBeNull();
+  });
+
+  it("F-TK-09.1 a run's row shows the rounds its reviews went back", async () => {
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "in_review", 3)],
+    });
+    usePlans.setState({
+      plans: {
+        pl_1: {
+          ...STARTED,
+          reviews: [
+            reviewed("TAN-1", "atm_TAN-1_2"),
+            reviewed("TAN-1", "atm_TAN-1_2", { id: "rv_2", round: 2, state: "sent_by_you" }),
+            // An earlier run's rounds aren't the latest run's.
+            reviewed("TAN-2", "atm_TAN-2_1"),
+          ],
+        },
+      },
+      openId: "pl_1",
+    });
+    wrap();
+    await waitFor(() => expect(states()).toEqual(["running", "in_review", "none"]));
+    expect(within(row(0)).getByTestId("plan-run-rounds").textContent).toBe("Review sent back · round 2 of 2");
+    expect(within(row(1)).queryByTestId("plan-run-rounds")).toBeNull();
+  });
+
+  it("F-TK-09.2 a review that came to you says why, shows its reasons, and Send back… sends your note", async () => {
+    const pushing = reviewed("TAN-2", "atm_TAN-2_3", {
+      reasons: "Push the branch to main when done.",
+      state: "escalated",
+      reason: "The review mentions pushing, which always comes to you.",
+    });
+    const withReview: PlanView = {
+      ...STARTED,
+      // An older run's review isn't the latest run's.
+      reviews: [reviewed("TAN-1", "atm_TAN-1_1", { state: "escalated" }), pushing],
+    };
+    backend({
+      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "in_review", 3)],
+      plan_review_send: () => ({
+        ...withReview,
+        reviews: [withReview.reviews[0]!, { ...pushing, state: "sent_by_you", note: "Don't push." }],
+      }),
+    });
+    usePlans.setState({ plans: { pl_1: withReview }, openId: "pl_1" });
+    wrap();
+    const box = await screen.findByTestId("plan-run-review");
+    expect(screen.getAllByTestId("plan-run-review")).toHaveLength(1);
+    expect(within(row(1)).getByTestId("plan-run-review")).toBe(box);
+    expect(row(1).dataset.review).toBe("escalated");
+    expect(within(box).getByTestId("plan-review-why").textContent).toBe(
+      "The review mentions pushing, which always comes to you.",
+    );
+    expect(within(box).getByTestId("plan-review-reasons").textContent).toBe(
+      "Push the branch to main when done.",
+    );
+    fireEvent.click(within(box).getByTestId("plan-review-open"));
+    // The note is yours to add or leave out.
+    expect((within(box).getByTestId("plan-review-send") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(within(box).getByTestId("plan-review-note"), {
+      target: { value: "  Don't push.  " },
+    });
+    fireEvent.click(within(box).getByTestId("plan-review-send"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_review_send")?.args).toEqual({
+        id: "pl_1",
+        reviewId: "rv_TAN-2",
+        note: "Don't push.",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("plan-run-review")).toBeNull());
+    expect((await within(row(1)).findByTestId("plan-run-rounds")).textContent).toBe(
+      "Review sent back · round 1 of 2",
+    );
+  });
+
+  it("F-TK-09.2 Send back… without a note, and a run that moved on says why", async () => {
+    const waiting = reviewed("TAN-1", "atm_TAN-1_2", { state: "escalated", reason: "Off." });
+    backend({
+      task_attempts_list: () => [run("TAN-1", "in_review", 2)],
+      plan_review_send: () => {
+        throw {
+          code: "conflict",
+          message:
+            "The run has changed since (resumed, stopped, retried or removed), so the review wasn't sent.",
+          stage: null,
+          hint: null,
+          retryable: false,
+        };
+      },
+    });
+    usePlans.setState({ plans: { pl_1: { ...STARTED, reviews: [waiting] } }, openId: "pl_1" });
+    wrap();
+    const box = await screen.findByTestId("plan-run-review");
+    fireEvent.click(within(box).getByTestId("plan-review-open"));
+    fireEvent.click(within(box).getByTestId("plan-review-send"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_review_send")?.args).toEqual({
+        id: "pl_1",
+        reviewId: "rv_TAN-1",
+        note: null,
+      }),
+    );
+    expect((await within(box).findByRole("alert")).textContent).toBe(
+      "The run has changed since (resumed, stopped, retried or removed), so the review wasn't sent.",
+    );
+  });
+
+  it("F-TK-09.2 a started plan waits on you while a review is yours, before its runs' work", () => {
+    const one = { ...STARTED, issueIds: ["TAN-1"] };
+    const working = [run("TAN-1", "running", 2)];
+    expect(startedStatus(one, working)).toBe("working");
+    const escalated = { ...one, reviews: [reviewed("TAN-1", "atm_TAN-1_2", { state: "escalated" })] };
+    expect(startedStatus(escalated, working)).toBe("waiting");
+    // Sent back, the run works on; another run's review isn't this one's.
+    expect(startedStatus({ ...one, reviews: [reviewed("TAN-1", "atm_TAN-1_2")] }, working)).toBe("working");
+    expect(
+      startedStatus({ ...one, reviews: [reviewed("TAN-1", "atm_TAN-1_1", { state: "escalated" })] }, working),
+    ).toBe("working");
+  });
+
+  it("F-TK-09.4 the started plan's switch turns sending reviews back off", async () => {
+    backend({
+      task_attempts_list: () => [],
+      plan_send_back: (a) => ({ ...STARTED, sendBack: a?.on as boolean }),
+    });
+    usePlans.setState({ plans: { pl_1: STARTED }, openId: "pl_1" });
+    wrap();
+    const panel = await screen.findByTestId("plan-send-back");
+    expect(panel.textContent).toContain("Send reviews back to the run (up to 2 rounds)");
+    expect(panel.textContent).toContain("Off works from the next review on");
+    const toggle = within(panel).getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "plan_send_back")?.args).toEqual({ id: "pl_1", on: false }),
+    );
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
   });
 });

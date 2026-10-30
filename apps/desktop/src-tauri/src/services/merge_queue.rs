@@ -5,7 +5,8 @@
 //!
 //! The base's commit before a run, and the merges it landed, are kept in
 //! `$DATA/landing.json` with the last check command per repository, so
-//! Undo landing works after a relaunch.
+//! Undo landing works after a relaunch. Each worktree that lands is told to
+//! a [`LandedHook`]: a plan task's is Done (F-TK-09).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -398,6 +399,11 @@ async fn recover_left(data: &DataDir, git: &Git, key: &str) -> Result<Option<Str
     Ok(aborted)
 }
 
+/// Told each worktree that lands: its id and the commit the base has it
+/// as (F-TK-09). Never for one that failed, conflicted or was stopped.
+pub type LandedHook =
+    Arc<dyn Fn(String, String) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
+
 /// One worktree to land, resolved before the run starts.
 struct Lane {
     root: PathBuf,
@@ -415,6 +421,21 @@ pub async fn start(
     id: &WorkspaceId,
     lane_ids: &[WorkspaceId],
     check: Option<String>,
+) -> Result<LandingRun, IpcError> {
+    start_telling(store, data, git, env, id, lane_ids, check, None).await
+}
+
+/// [`start`], telling `landed` each worktree that lands.
+#[allow(clippy::too_many_arguments)]
+pub async fn start_telling(
+    store: &Store,
+    data: &DataDir,
+    git: &Git,
+    env: &BTreeMap<String, String>,
+    id: &WorkspaceId,
+    lane_ids: &[WorkspaceId],
+    check: Option<String>,
+    landed: Option<LandedHook>,
 ) -> Result<LandingRun, IpcError> {
     let repo = repo_of(store, id).await?;
     let key = repo.id.as_str().to_string();
@@ -537,16 +558,7 @@ pub async fn start(
             name: base,
             before,
         };
-        drive(
-            &git,
-            &data,
-            &key,
-            &base,
-            lanes.into_iter().map(|(_, l)| l).collect(),
-            check,
-            slot,
-        )
-        .await;
+        drive(&git, &data, &key, &base, lanes, check, slot, landed).await;
     });
     Ok(run)
 }
@@ -662,20 +674,27 @@ fn halt(key: &str, i: usize, state: LandingStepState, error: Option<String>) {
     stopped(key, error);
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn drive(
     git: &Git,
     data: &DataDir,
     key: &str,
     base: &Base,
-    lanes: Vec<Lane>,
+    lanes: Vec<(String, Lane)>,
     check: Option<String>,
     slot: GroupSlot,
+    landed_hook: Option<LandedHook>,
 ) {
     let stopping = || slot.cancelled();
     let mut expected = base.before.clone();
     let mut landed: Vec<String> = Vec::new();
     let moved = format!("{} moved during the landing, so it stopped", base.name);
-    for (i, lane) in lanes.iter().enumerate() {
+    let tell = |lane_id: &str, commit: String| {
+        if let Some(h) = &landed_hook {
+            tokio::spawn(h(lane_id.to_string(), commit));
+        }
+    };
+    for (i, (lane_id, lane)) in lanes.iter().enumerate() {
         if stopping() {
             stopped(key, None);
             return;
@@ -821,6 +840,7 @@ async fn drive(
             Ok(Merged::Done { head: merge }) if merge == expected => {
                 release_landed(&lane.root);
                 step(key, i, |s| s.state = LandingStepState::Landed);
+                tell(lane_id, merge);
             }
             Ok(Merged::Done { head: merge }) => {
                 release_landed(&lane.root);
@@ -839,8 +859,9 @@ async fn drive(
                 }
                 step(key, i, |s| {
                     s.state = LandingStepState::Landed;
-                    s.commit = Some(merge);
+                    s.commit = Some(merge.clone());
                 });
+                tell(lane_id, merge);
             }
             Ok(Merged::Conflicts { files }) => {
                 step(key, i, |s| s.conflicts = files);
@@ -1425,6 +1446,49 @@ mod tests {
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_5_each_worktree_that_lands_is_told_with_its_commit() {
+        let fx = fixture(&["alpha", "beta"]).await;
+        for name in ["alpha", "beta"] {
+            let wt = fx.main.join(".tandem/worktrees").join(name);
+            std::fs::write(wt.join("README.md"), format!("{name}\n")).expect("write");
+            commit_all(&wt, "readme");
+        }
+        let told: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let heard = told.clone();
+        let hook: LandedHook = Arc::new(move |lane, commit| {
+            heard.lock().expect("lock").push((lane, commit));
+            Box::pin(async {})
+        });
+        start_telling(
+            &fx.store,
+            &fx.data,
+            &fx.git,
+            &env(),
+            &fx.repo,
+            &fx.lanes,
+            None,
+            Some(hook),
+        )
+        .await
+        .expect("start");
+        let run = finished(&fx).await;
+        assert_eq!(
+            states(&run),
+            [LandingStepState::Landed, LandingStepState::Conflict]
+        );
+        // Only the one that landed, with the commit the base has it as.
+        let told = told.lock().expect("lock").clone();
+        assert_eq!(
+            told,
+            vec![(
+                run.steps[0].lane_id.clone(),
+                run.steps[0].commit.clone().expect("commit")
+            )]
+        );
+        assert_eq!(told[0].1, git(&fx.main, &["rev-parse", "HEAD"]));
     }
 
     #[tokio::test]

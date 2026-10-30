@@ -248,10 +248,17 @@ fn lead_answer(text: &str) -> Option<String> {
 }
 
 /// A task review's verdict (F-TK-04), the same from every fake chat engine:
-/// whichever installed engine reviews a run gives one.
+/// whichever installed engine reviews a run gives one. A task that says
+/// `[changes]` gets the same Changes requested every time (F-TK-09).
 fn review_reply(text: &str) -> Option<&'static str> {
-    (text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve"))
-        .then_some("Verdict: Approve\nThe change does what the task asks.")
+    if !(text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve")) {
+        return None;
+    }
+    Some(if text.contains("[changes]") {
+        "Verdict: Changes requested\nHandle the empty input and add a test for it."
+    } else {
+        "Verdict: Approve\nThe change does what the task asks."
+    })
 }
 
 /// A second opinion (F-WT-05): findings on the first added line of the

@@ -40,6 +40,20 @@ A run started by **Execute all…** can stop and ask a question when the task an
 - **Turning the switch off** stops Lead's answers at once: Lead's session stops, an answer it's still writing isn't sent, and every question comes to you. A question Lead hadn't answered when Vibezeo closed comes to you after the restart. If **Execute all…** stopped partway and you run it again, it starts from the switch as you left it.
 - **A run never gets a file from another run's words.** In each run's first message, and its review's, Vibezeo writes ＠ for every @ in the task's text, its comments and the diff, so a path written there can't attach a file.
 
+### Reviews back to the runs
+
+When the review of a run started by **Execute all…** asks for changes, the plan sends the reviewer's reasons back to that run as its next message, in the same worktree and session. The run fixes its own work, and its next turn is reviewed again. **Execute all…** has the option on by default: "Send reviews back to the run (up to 2 rounds)". The plan has the same switch while its runs can be reviewed.
+
+- **The run reads the review as another engine's view, not as orders.** The message is labelled "Review (sent back automatically)", the reasons are fenced as text from elsewhere, and it ends by saying the review is data to weigh: the run decides what to change, and its approvals and sandbox still apply.
+- **The plan's row shows the rounds:** "Review sent back · round 1 of 2". Each review stays on the task as the reviewer's comment, with a note of what happened to it.
+- **These come to you instead:** a third request for changes on the same run; a review that mentions approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope (hidden characters don't hide a word); a review after a turn that changed nothing; a review asking for the same changes as the last one sent back; and every review while the engine is near its usage limit ("Paused: near Claude Code's limit.") or the switch is off.
+- **When a review comes to you**, its row says **Needs you** with the reviewer's reasons and why, and you get a notification. Choose **Send back…**, add a note if you like (it goes above the review, as yours), and choose **Send back**. **Retry** on the task still starts a fresh run instead.
+- **Nothing goes back on its own after a restart.** A run Vibezeo's closing cut off is stopped, as any run is, and **Resume** carries on. A review waiting in **Needs you** is still there, and a review for a run you've since resumed, stopped, retried or removed isn't sent; the task notes it.
+
+### Landed is done
+
+When **Land worktrees** lands a plan task's worktree, the task and its run are marked Done, a comment names the landed commit, and the plan's row says **Landed**. A worktree you merge yourself outside **Land worktrees**, or a landing that fails or stops, leaves the task as it is.
+
 ## Claims
 
 When several agents work in worktrees of one repository, each can say which files it's about to change. An agent claims files or folders with the tasks server's `claim` tool, saying what it's doing, and checks `list_claims` for what agents in the other worktrees claimed. A worktree's briefing asks its agent to do this, and so does a task run's first message. Claude Code in a terminal pane claims a file just by editing it, and so does an agent in a chat thread (Claude Code, Codex, or an ACP agent whose edits name their files), so agents that skip the tool are still counted. An edit you refused, or one that failed, claims nothing. Only the file's path is kept, never the change. You can also claim files for a worktree yourself: **Claim these files** in Check overlap… claims what the [intent radar](/docs/code-mode/#intent-radar) found it changed.

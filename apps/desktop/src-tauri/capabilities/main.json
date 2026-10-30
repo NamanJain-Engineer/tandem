@@ -48,6 +48,8 @@
     "allow-plan-prepare",
     "allow-plan-execute",
     "allow-plan-supervise",
+    "allow-plan-send-back",
+    "allow-plan-review-send",
     "allow-plan-answer",
     "allow-plan-discard",
     "allow-task-attempts-list",

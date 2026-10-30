@@ -542,6 +542,10 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(created.questions).toEqual([]);
     expect(() => core?.handle("plan_supervise", { id: ready.id, on: false })).toThrow();
     expect(() => core?.handle("plan_answer", { id: ready.id, questionId: "pq_1", text: "Yes" })).toThrow();
+    // Reviews going back come with runs (F-TK-09): not in the demo either.
+    expect([created.sendBack, created.reviews, created.landed]).toEqual([true, [], []]);
+    expect(() => core?.handle("plan_send_back", { id: ready.id, on: false })).toThrow();
+    expect(() => core?.handle("plan_review_send", { id: ready.id, reviewId: "rv_1", note: null })).toThrow();
   });
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {

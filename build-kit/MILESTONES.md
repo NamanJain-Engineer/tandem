@@ -2292,7 +2292,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06, F-TK-07, F-TK-08 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TK-09 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
@@ -2303,11 +2303,12 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 5. **Plan with Lead (F-TK-06; bold bet B3's first slice).** `services::plan` (the planning prompt with the offered engines and their usage, the nonce-marked reply parser, the draft), `plan_*` commands, `Issue.suggested_engine`, Execute all through F-TK-04, and the Tasks page's plan sheet. Later: Lead answering agents, second-engine review and merging.
 6. **Follow a plan through (F-TK-07; bold bet B3's second slice).** `ThreadEvent::Tool.paths` from each chat adapter's edits and `ThreadService`'s edit sink, so chat threads claim what they edit; the claims line in F-TK-04's briefing; plans kept in `$DATA/plans.json` and read again after a restart; the plan's runs and verdicts per task; Land approved through F-WT-07's Land worktrees. Later: Lead answering agents (the supervisor loop).
 7. **Lead keeps a plan moving (F-TK-08; bold bet B3's third slice, the supervisor loop).** Plan runs end a turn with a `QUESTION-<code>` line when they need a decision; Lead answers routine ones in its plan thread from the instructions files at the plan's base commit in the main checkout, labelled "Lead (automatic answer)", or sends them to you; the topics that always come to you, a keyword check before Lead, 3 answers per run and 10 per plan; approvals never answered; the switch in Execute all's check and in the plan; `plan_supervise` and `plan_answer`.
+8. **Lead closes the loop (F-TK-09; bold bet B3's fourth slice, review to run and landed to done).** A plan run's Changes requested goes to its plan (`ReviewSink`), which sends the reviewer's reasons back to the run's own thread, labelled "Review (sent back automatically)", fenced and defanged, with F-TK-08's authority sentence, and the run is reviewed again after that turn; a third request, F-TK-08's topics (raw or defanged), a turn that changed nothing, the same reasons again, the switch off, and an engine near its limit come to you in Needs you, where Send back… sends one with your note; the switch in Execute all's check and on the plan; Land worktrees' landed worktrees mark their plan task's run and task Done with the commit (`LandedHook`); `plan_send_back` and `plan_review_send`.
 
 **Verification**
 ```bash
 cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
-cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06 && cargo test -p tandem-desktop --lib f_tk_07 && cargo test -p tandem-desktop --lib f_tk_08
+cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06 && cargo test -p tandem-desktop --lib f_tk_07 && cargo test -p tandem-desktop --lib f_tk_08 && cargo test -p tandem-desktop --lib f_tk_09
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
@@ -2327,7 +2328,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (65 P0, 67 P1, 62 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 28 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **195 features** (65 P0, 67 P1, 63 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 29 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TK-09, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2352,6 +2353,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (6
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
 | F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
 | F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | F-EN-11 | P2 | M18 |
+| F-TK-09 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |

@@ -20,10 +20,16 @@ type PlanState = {
   /** What Execute all starts, for you to confirm. */
   prepare: (id: string) => Promise<PlanLaunch | IpcError>;
   /** Starts what `prepare` showed; with `supervise`, Lead answers the
-   * runs' routine questions (F-TK-08). */
-  execute: (id: string, supervise: boolean) => Promise<PlanView | IpcError>;
+   * runs' routine questions (F-TK-08); with `sendBack`, a run's Changes
+   * requested goes back to it (F-TK-09). */
+  execute: (id: string, supervise: boolean, sendBack: boolean) => Promise<PlanView | IpcError>;
   /** Lead's answers on or off (F-TK-08). */
   supervise: (id: string, on: boolean) => Promise<PlanView | IpcError>;
+  /** Reviews go back to the runs, or come to you (F-TK-09). */
+  sendBack: (id: string, on: boolean) => Promise<PlanView | IpcError>;
+  /** Send back…: a review that came to you goes to its run, with your note
+   * (F-TK-09). */
+  sendReview: (id: string, reviewId: string, note: string | null) => Promise<PlanView | IpcError>;
   /** Your answer to a run's question that came to you (F-TK-08). */
   answer: (id: string, questionId: string, text: string) => Promise<PlanView | IpcError>;
   discard: (id: string) => Promise<void>;
@@ -61,13 +67,23 @@ export const usePlans = create<PlanState>((set, get) => ({
     return r;
   },
   prepare: (id) => call<PlanLaunch>("plan_prepare", { id }),
-  execute: async (id, supervise) => {
-    const r = await call<PlanView>("plan_execute", { id, supervise });
+  execute: async (id, supervise, sendBack) => {
+    const r = await call<PlanView>("plan_execute", { id, supervise, sendBack });
     if (!isIpcError(r)) get().apply(r);
     return r;
   },
   supervise: async (id, on) => {
     const r = await call<PlanView>("plan_supervise", { id, on });
+    if (!isIpcError(r)) get().apply(r);
+    return r;
+  },
+  sendBack: async (id, on) => {
+    const r = await call<PlanView>("plan_send_back", { id, on });
+    if (!isIpcError(r)) get().apply(r);
+    return r;
+  },
+  sendReview: async (id, reviewId, note) => {
+    const r = await call<PlanView>("plan_review_send", { id, reviewId, note });
     if (!isIpcError(r)) get().apply(r);
     return r;
   },

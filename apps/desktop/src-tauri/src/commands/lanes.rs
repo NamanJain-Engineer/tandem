@@ -408,7 +408,15 @@ pub async fn merge_queue_start(
     landing_review(&window)?;
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    merge_queue::start(
+    // F-TK-09: a plan task's worktree that lands is Done.
+    let landed = state.plan.get().cloned().map(|plans| {
+        let hook: merge_queue::LandedHook = std::sync::Arc::new(move |lane, commit| {
+            let plans = plans.clone();
+            Box::pin(async move { plans.on_landed(&lane, &commit).await })
+        });
+        hook
+    });
+    merge_queue::start_telling(
         &state.store,
         &state.data,
         &git,
@@ -416,6 +424,7 @@ pub async fn merge_queue_start(
         &workspace_id,
         &lane_ids,
         check,
+        landed,
     )
     .await
 }

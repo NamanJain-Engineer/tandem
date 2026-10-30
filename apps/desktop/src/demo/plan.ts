@@ -96,6 +96,9 @@ export class DemoPlans {
       supervise: false,
       baseCommit: null,
       questions: [],
+      sendBack: true,
+      reviews: [],
+      landed: [],
       createdAt: this.now(),
     };
     this.plans.set(v.id, v);

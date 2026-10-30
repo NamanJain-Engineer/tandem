@@ -317,18 +317,31 @@ fn starts_like_code(v: &str) -> bool {
 }
 
 /// Keys that describe a credential rather than hold one: `token_type`,
-/// `password_hint`, `secret_name`.
+/// `password_hint`, `secret_name`, and the times one carries:
+/// `token_expires_at`, `SESSION_TOKEN_EXPIRY`, `tokenExpiresAt`.
 fn descriptive_key(key: &str) -> bool {
-    const SUFFIXES: [&str; 22] = [
+    const SUFFIXES: [&str; 25] = [
         "type", "types", "name", "kind", "pattern", "url", "uri", "id", "field", "label", "file",
         "path", "count", "length", "len", "prefix", "header", "endpoint", "hint", "policy",
-        "format", "mode",
+        "format", "mode", "at", "expires", "expiry",
     ];
-    let lower = key.to_ascii_lowercase();
-    lower
-        .rsplit(['_', '-'])
-        .next()
-        .is_some_and(|last| lower.contains(['_', '-']) && SUFFIXES.contains(&last))
+    // The last word: after the last `_` or `-`, or camelCase's last one.
+    let last = match key.rfind(['_', '-']) {
+        Some(i) => &key[i + 1..],
+        None => {
+            let camel = key
+                .char_indices()
+                .skip(1)
+                .filter(|(_, c)| c.is_ascii_uppercase())
+                .last()
+                .filter(|_| key.starts_with(|c: char| c.is_ascii_lowercase()));
+            match camel {
+                Some((i, _)) => &key[i..],
+                None => return false,
+            }
+        }
+    };
+    SUFFIXES.contains(&last.to_ascii_lowercase().as_str())
 }
 
 fn assignment_value_ok(v: &str, quoted: bool) -> bool {
@@ -1025,6 +1038,35 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_key_that_describes_a_credential_or_its_time_holds_none() {
+        for key in [
+            "token_type",
+            "password-hint",
+            "token_expires_at",
+            "secret_rotated_at",
+            "SESSION_TOKEN_EXPIRY",
+            "refresh_token_expires",
+            "tokenExpiresAt",
+            "accessTokenExpiry",
+            "secretName",
+        ] {
+            assert!(descriptive_key(key), "{key}");
+        }
+        for key in [
+            "token",
+            "api_key",
+            "token_at_rest",
+            "API_TOKEN",
+            "TOKENAT",
+            "authToken",
+            "passwordHINT",
+            "tokenAt_x",
+        ] {
+            assert!(!descriptive_key(key), "{key}");
         }
     }
 

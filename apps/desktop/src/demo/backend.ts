@@ -2017,6 +2017,8 @@ export class DemoCore {
       case "plan_execute":
       case "plan_supervise":
       case "plan_answer":
+      case "plan_send_back":
+      case "plan_review_send":
         return this.plans.execute();
       case "plan_discard":
         return this.plans.discard(String(args?.id ?? ""));

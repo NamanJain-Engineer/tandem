@@ -621,7 +621,7 @@ impl PlanService {
 
     /// Held while an answer is taken and sent, and while the switch moves:
     /// an answer taken before Off goes, and none after it.
-    fn delivery(&self, plan_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    pub(super) fn delivery(&self, plan_id: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.deliveries
             .lock()
             .unwrap_or_else(|p| p.into_inner())
