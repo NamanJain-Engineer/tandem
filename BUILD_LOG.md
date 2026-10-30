@@ -4706,6 +4706,35 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - Either way "Needs you" clears, the status bar drops to "● 1 working", and only then does the Thread hint (3 of 4) come.
   - Claude Code's Edit result is its first sentence.
   - DESIGN §5.2 and §9.4 now list the four hints. §6's example of an engine's question is Gemini CLI 0.66.0's own line, where it had been the design lead's paraphrase.
+- Design QA of `site-motion` @ 825b4b54 (the scenes to 0.13.0, D-3006), built at release.ts 0.12.0 and at 0.13.0 on a real 2× screen: one must-fix, the rest approved.
+  - Must-fix: at 0.13.0 the hero's typed radar note read "Other worktree: tandem/coupon-rules". It was the only "tandem/" any scene drew at either release, and 0.12.0's hero drew the name bare (D-1898).
+  - Approved at 0.13.0:
+    - The hero's rail is CodeRail's at 320. The radar's icon sits alone beside "1 working", and checkout-fix's "applyCoupon" shows in words once Ada is done. The CI row shows "CI failed" in words, with its radar folded first (D-2701). At 390 the strips have room for both in words.
+    - The hero's radar is back: its marks at 3.4 and 3.5 s, then the warning toast, then "Warned both agents" as its own toast. Approve's label waits 0.5 s as the card arrives (F-TL-12.12), then "Check running…" turns to "Check passed".
+    - The CI scene:
+      - "Sent the failure to Ada";
+      - D-3022's note after the fenced log, folded at 390;
+      - the first task's lines scroll off whole as the closing words come;
+      - "Pushed checkout-fix" turns the row to "CI running" by itself, then "CI passed", with no second dialog (D-2619);
+      - the status bar's CI segment and the agents' counts follow throughout.
+  - Approved at 0.12.0: DashboardPanel's switch sits above "3 agents", and the cards keep their titles and 56 px of hover room.
+  - At both releases:
+    - exits cut: the branch menu and both toasts go from shown to gone in one 10 ms step;
+    - no text overlaps;
+    - 0.0 ms real-playback spread in all six scenes;
+    - design-shots 24 of 24.
+  - Calls:
+    - Land's red "Undo landing" stays on the live 0.12.0 page, because 0.12.0's LandWorktrees draws it `variant="danger"`. 0.13.0's secondary button (D-2616) comes with 0.13.0.
+    - No Vibezeo question goes into story.json only to draw F-TL-12.12's questions-first group. The story's agents ask their engines, which is true. If `vibezeo run` gets a scene, its question can bring the group.
+    - The CI scene's 320 px rail and its scrolling terminal are approved. Every line stays whole, and the prompt's start and its label stay in view until the closing words need the room.
+- Design QA of `site-motion` @ 1cb90565 (the must-fix on 825b4b54): the note's fix is approved, built at release.ts 0.12.0 and at 0.13.0.
+  - At 0.13.0 the hero's note reads "Other worktree: coupon-rules". It's the core's note, with the worktree's name where radar.rs writes the branch.
+  - No scene draws "tandem/" at either release. The check paused each scene every 100 ms over its whole run and read only visible text. No scene figure in either build holds "tandem" in any case.
+  - `site-motion`'s test reads each scene whole, attributes too, at both releases. With 825b4b54's note planted back, it fails at 0.13.0 only, on the line at 5.18 s.
+  - In all six scenes at both releases: no text overlaps, and 0.0 ms real-playback spread over three runs. design-shots passes 24 of 24 at both releases, and its teal counts at 0.12.0 are the ones `site-motion` reported.
+  - The plan scene's TAN-31 to TAN-33 stay. The app shows the tracker's IDs that way. Unlike a worktree, a task has no plain name to show instead. HUMAN_TODO's entry on the placeholder name already covers both.
+  - The code review found a defect that the design lead's QA of 825b4b54 missed (its nit 3). At 390, "Warned both agents" covers the hero's Approve from the card's arrival at 6.4 s to the scene's end at 9.9 s, yet the scene draws Approve ready from 6.9 s. The app keeps a covered Approve dimmed: ReviewQueue enables it only once its box has held still and uncovered for `SETTLE_MS` (`useSteadyBox`), and a cover restarts the wait. `site-motion`'s next SHA carries the code review's nits, and the note and the 390 frame are rechecked on it.
+- Correction: DESIGN §6 said "The site never shows the placeholder branch prefix (D-1898)". D-1898 and HUMAN_TODO's entry on the placeholder name scope that to the scenes. The demo is the app over a simulated core. So it shows Bea's branch as the app names it, "tandem/search-ui", in her pane header and the status bar, until the owner decides. DESIGN §6 now says so, and adds that task IDs keep the tracker's `TAN-` prefix.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
