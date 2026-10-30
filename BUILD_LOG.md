@@ -4735,6 +4735,26 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - The plan scene's TAN-31 to TAN-33 stay. The app shows the tracker's IDs that way. Unlike a worktree, a task has no plain name to show instead. HUMAN_TODO's entry on the placeholder name already covers both.
   - The code review found a defect that the design lead's QA of 825b4b54 missed (its nit 3). At 390, "Warned both agents" covers the hero's Approve from the card's arrival at 6.4 s to the scene's end at 9.9 s, yet the scene draws Approve ready from 6.9 s. The app keeps a covered Approve dimmed: ReviewQueue enables it only once its box has held still and uncovered for `SETTLE_MS` (`useSteadyBox`), and a cover restarts the wait. `site-motion`'s next SHA carries the code review's nits, and the note and the 390 frame are rechecked on it.
 - Correction: DESIGN §6 said "The site never shows the placeholder branch prefix (D-1898)". D-1898 and HUMAN_TODO's entry on the placeholder name scope that to the scenes. The demo is the app over a simulated core. So it shows Bea's branch as the app names it, "tandem/search-ui", in her pane header and the status bar, until the owner decides. DESIGN §6 now says so, and adds that task IDs keep the tracker's `TAN-` prefix.
+- Design QA of `site-motion` @ 400f7c55 (the coordinating session's code review of 825b4b54): approved, built at release.ts 0.12.0 and at 0.13.0 on a real 2× screen.
+  - Approve under the toast (the code review's nit 3):
+    - The check sampled Approve every 0.05 s from 6.3 to 11.5 s at eleven widths from 320 to 1440. A cover is whatever is drawn on top of Approve's middle.
+    - At 320, 390, 640 and 680 the toast covers it from its arrival until 9.93 s. Its label stays dimmed throughout and lights at 10.45 s, the first sample after 10.44 s.
+    - At 720 to 1440 nothing covers it, and it lights at 6.9 s.
+    - Cover and timing switch at one width: a 638 px container gets both the cover and the late wait, and a 642 px one gets neither. Every scene's container query is 40rem on `.scene-box`.
+    - The toast cuts at 9.94 s, from shown to gone in one 10 ms step. Under reduced motion, the still at 390 and at 1440 has no toast and a lit Approve.
+    - The app agrees:
+      - a toast stays 5 s (Toast.tsx);
+      - the sidebar floats below 1,100 px (Sidebar.tsx);
+      - the toast region (`--z-toast`, 400) sits over the floating sidebar (`--z-sidebar`, 40);
+      - a cover restarts the steady box's wait (steadyBox.ts).
+  - At 0.13.0 the hero's note still reads "Other worktree: coupon-rules", and no scene draws "tandem/" at either release.
+  - In all six scenes at both releases: no text overlaps, and 0.0 ms real-playback spread over three runs. design-shots passes 24 of 24 at both releases. Its teal counts match `site-motion`'s at 0.12.0 and 1cb90565's at 0.13.0.
+  - The code review's S1 (D-3007) found three of 0.13.0's changes in the 0.12.0 rendering, which the design lead's QAs of those scenes had missed:
+    - D-2627's live card line;
+    - no "Default" account (D-2620);
+    - "1 with changes requested", where 0.12.0's catalog says "{n} changes requested".
+  - Those QAs had read chain27's code, not 0.12.0's (5e01e92b). D-3007 keeps the three only because the 0.12.0 rendering is never deployed again, and a deploy before 0.13.0 would gate them first.
+  - DESIGN §6 gains two checks: a release's rendering is read against that release's code, and every width a frame's layout switches at is sampled.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
