@@ -4252,6 +4252,29 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - The scenes drew the modes as Code | Thread | Agent from slice 1, where 0.12.0's title bar reads Agent | Code | Thread. site-motion fixed it in cced2f8f.
   - The finish glow has been on the hero's pane since slice 1.
   - D-2702's brief said the rail could widen until nothing was cut, without checking CodeRail's 360 maximum.
+- Correction (the coordinating session's code review of cced2f8f, S1): the line above, "A scene's count matches the agents it draws", was wrong.
+  - AgentsSegment counts every status record, and the scenes share one world: in story.json, Bea waits and Arlo works throughout.
+  - So every status bar counts them too. Review reads 1 waiting · 1 working, then 1 · 2 while the second opinion runs. Plan reads 1 · 1, then 1 · 4, falling to 1 · 1.
+  - A zero segment renders nothing, with no gap.
+- Correction (the design lead's own): a Dashboard card's title is cardTitle's "{first name} · {work}" (model.ts), not the first name alone. The 39601718 record named only its first part, and the scenes drew "Ada". The review queue's card keeps the first name (review_queue.rs uses human_name).
+- Design QA of `app-ui` @ d13324ff (its frames page; READY to follow): approved in design.
+  - D-2703 in WebKitGTK at 1×: 249 px at the minimum, eased to 275 when a Preview answers, and it stays at 275 after the preview stops.
+  - D-2624: Bea's pane asks "Allow execution of: 'pnpm test search'?", which registry.json's waitingPatterns match.
+  - None of the opening frame's six cards has a line or an account.
+  - Ada's card reads Read, then Edit, then Bash through the CI fix, and nothing at Done.
+  - D-2627, found while taking these frames: a card's line followed only its last load. Now every status update draws it as dashboard.rs does.
+- Design QA of `site-motion` @ 23cf1fa0 (the round on cced2f8f, with both code reviews): approved.
+  - D-2704: the 0.12.0 hero has no radar, and its rail is 320 px with nothing cut.
+  - At Done, Ada's line goes at once, and the groups below ease up one line over `--dur-base` (transform only) to the app's end frame.
+  - No finish glow.
+  - Cards use cardTitle's titles, and the waiting card is AgentCard's surface-2 with its 1 px waiting border.
+  - Land's and the CI rail's dot gaps are back.
+  - Every status bar counts the story's world (S1), with no empty segment.
+  - Card lines follow dashboard.rs, and the CI scene is story.json's pr.
+  - No text overlaps. Real playback shows 0.0 ms spread, and design-shots passes 24 of 24.
+  - Calls:
+    - The CI pane keeps its ⋮ for what scrolled by, drawn as an elision in fg-subtle (polish), since the prompt's start and its untrusted label are what the scene is about.
+    - Scenes cut exits as the build does. DESIGN §4.7's "exit: fade" now says so.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions

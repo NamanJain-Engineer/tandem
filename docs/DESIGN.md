@@ -288,7 +288,7 @@ Motion explains change: where something came from, where it went, what it's doin
 
 Choreography:
 - **Stagger related items by 40–80 ms**, never more than five steps (a list of 20 doesn't cascade for a second).
-- **Enter: fade + 4–8 px rise or scale 0.97 → 1.** Exit: fade, 60–70 % of the entrance's time. Nothing slides more than 24 px in the app.
+- **Enter: fade + 4–8 px rise or scale 0.97 → 1.** Exit: at once. In the app, closing content never animates (`base.css`, F-SH-10: an exit animation kept a closed menu's outside-click layer up, so it swallowed the next click), and a toast is removed on dismiss. Scenes cut their exits the same way. Nothing slides more than 24 px in the app.
 - **Status changes animate colour over 180 ms**; "waiting" gets one 600 ms attention pulse, once (UI_SPEC §1.8). A working agent's breathing halo (a filled dot whose halo fades in and out over 1.6 s, D-2601) is the only perpetual motion in the app; under reduced motion the filled dot stays, still.
 - **Site:** reveals by scroll timeline (CSS only), the rings drawing in, the engines' slow orbit and the data-flow packets (D-1842); `site-motion`'s product scenes play once when they enter the viewport and rest on their final frame; they never loop faster than every 8 s and pause off screen.
 - **Transform and opacity only** (and a stroke dash); never animate layout, filters on large areas, or anything that delays the largest paint.
