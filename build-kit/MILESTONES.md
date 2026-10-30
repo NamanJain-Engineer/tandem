@@ -2275,6 +2275,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 1. **Store and references.** The `secrets` table (migration 0005; 0004 is `competitive-gaps`' lane_repos, merged first), `services::secrets` (names in SQLite, values in `NS.secrets`), `tandem_core::secrets` (names, `.env` parsing, references), and Delete local data… removing the keychain entries.
 2. **Run and masking.** `secrets_run` parks a pending run for a new pane; `env::run_wrapper`; `SpawnSpec.mask` and `tandem_pty::mask::LiteralMasker` in the reader, with the 50 ms flusher.
 3. **UI and docs.** Settings › Secrets, the pane's Run button and its dialog, E2E-M18-TL12, and Privacy › Agent-proof secrets in the docs.
+4. **The grant guard everywhere else (F-TL-12.13, ACs 16 to 21; 0.14.0).** Keep (memory suggestions, Conductor), Plan with Lead's Run, Edit & run's Run, the pull-request checks' Allow and the phone's Allow (web and app) wait like Allow; the guard counts a point where nothing is as covered, lets a menu open elsewhere be, and checks a rounded control inside its curve; a scroll to the pane question's end counts as its end seen.
 
 **Verification**
 ```bash

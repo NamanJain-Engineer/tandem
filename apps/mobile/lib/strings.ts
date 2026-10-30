@@ -69,6 +69,7 @@ export const EN = {
   "status.failed": "Error",
   "approvals.empty": "Nothing waiting for approval.",
   "approvals.allow": "Allow",
+  "approvals.allowWaiting": "Allow turns on once this has been still on screen for a moment.",
   "approvals.deny": "Deny",
   "approvals.deskOnly": "Answer on your computer",
   "approvals.queued": "Allowed here. Waiting for you to confirm on your computer.",

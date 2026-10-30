@@ -19,7 +19,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const { show } = useToast();
   const key = approval ? `${approval.id}\n${approval.detail}` : null;
   const settled = useSettled(key);
-  const [endRef, seenEnd] = useSeenEnd(key);
+  const [endRef, seenEnd, scrollRef] = useSeenEnd(key);
   // The banner scrolls: Allow waits until its own place has held still.
   const box = useSteadyBox(approval !== null, key);
   if (!approval) return null;
@@ -35,6 +35,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   return (
     <ApprovalBoundary key={approval.id} onDeny={() => void decide(false)}>
       <div
+        ref={scrollRef}
         data-testid="pane-approval"
         role="status"
         className="flex max-h-[60%] min-h-8 shrink-0 flex-col gap-2 overflow-y-auto border-b border-divider bg-waiting-soft px-2 py-1 text-sm text-fg"

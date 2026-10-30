@@ -28,10 +28,22 @@ export function useSettled(key: string | null): boolean {
 
 /** A ref for a marker after the run's line, and whether that marker has
  * been in view (not clipped by the pane or scrolled away) since `key`
- * changed: Allow waits for the person to have seen the line's end. */
-export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => void, boolean] {
+ * changed: Allow waits for the person to have seen the line's end.
+ *
+ * The third ref is for the scroller that holds the line and, below it, the
+ * buttons (the pane's banner). In a pane too short for both (120 px, with
+ * the buttons wrapped), the marker sits just above the view when the
+ * banner is scrolled to its end, and a wheel step can carry a 0 px marker
+ * across the view between two frames. So a scroll that reaches the
+ * scroller's end counts too: the line's end is behind it (F-TL-12 AC 20).
+ * Each request starts at the top, so a scroll left at the last one's end
+ * can't stand for this one's. */
+export function useSeenEnd(
+  key: string | null,
+): [(el: HTMLElement | null) => void, boolean, (el: HTMLElement | null) => void] {
   const change = useChange(key);
   const [el, setEl] = useState<HTMLElement | null>(null);
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const [seen, setSeen] = useState<object | null>(null);
   useEffect(() => {
     if (key === null || el === null) return;
@@ -46,7 +58,16 @@ export function useSeenEnd(key: string | null): [(el: HTMLElement | null) => voi
     io.observe(el);
     return () => io.disconnect();
   }, [key, el, change]);
-  return [setEl, key !== null && seen === change];
+  useEffect(() => {
+    if (key === null || scroller === null) return;
+    scroller.scrollTop = 0;
+    const scrolled = () => {
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) setSeen(change);
+    };
+    scroller.addEventListener("scroll", scrolled, { passive: true });
+    return () => scroller.removeEventListener("scroll", scrolled);
+  }, [key, scroller, change]);
+  return [setEl, key !== null && seen === change, setScroller];
 }
 
 /** Why Allow is waiting, for its title: the first reason that applies. */

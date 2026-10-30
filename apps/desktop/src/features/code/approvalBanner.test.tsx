@@ -312,6 +312,73 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(true);
   });
 
+  it("F-TL-12.20 in a 120 px pane whose buttons sit below the line's end, a scroll to the banner's end counts as seeing it, and each request starts at the top", async () => {
+    // The steady box is in view; the end marker never reports in view (at
+    // the banner's end it sits just above the view, or a wheel step carried
+    // it across between frames).
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private cb: (e: Array<{ isIntersecting: boolean; target: Element }>) => void) {}
+        observe(el: Element) {
+          const inView = (el as HTMLElement).dataset.testid !== "run-line-end";
+          queueMicrotask(() => this.cb([{ isIntersecting: inView, target: el }]));
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    fakeBackend({ approval_resolve: () => null });
+    const command = `pnpm deploy ${"--flag ".repeat(400)}`;
+    withApproval({ ...approval, detail: runDetail({ command, cwd: "/w", vars: [], envChanged: false }) });
+    render(
+      <UiProvider>
+        <div style={{ height: 120, overflow: "hidden" }}>
+          <ApprovalBanner paneId="pn_1" />
+        </div>
+      </UiProvider>,
+    );
+    // jsdom lays nothing out: the banner shows 72 px of its 400.
+    const banner = screen.getByTestId("pane-approval");
+    let top = 0;
+    Object.defineProperty(banner, "clientHeight", { configurable: true, get: () => 72 });
+    Object.defineProperty(banner, "scrollHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(banner, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+      },
+    });
+    const once = () => screen.getByTestId("pane-approval-once") as HTMLButtonElement;
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
+    // Partway down: still waiting.
+    top = 200;
+    fireEvent.scroll(banner);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(waiting(once())).toBe(true);
+    // At its end: the line's end is behind it.
+    top = 328;
+    fireEvent.scroll(banner);
+    await settled();
+    // The request changes in place: it starts at the top, and its own
+    // scroll to the end is what counts.
+    act(() =>
+      withApproval({
+        ...approval,
+        detail: runDetail({ command: `${command} --more`, cwd: "/w", vars: [], envChanged: false }),
+      }),
+    );
+    expect(top).toBe(0);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    top = 328;
+    fireEvent.scroll(banner);
+    await settled();
+  });
+
   it("F-TL-12.13 a look-alike letter in the folder shows the warning too", () => {
     fakeBackend();
     withApproval({

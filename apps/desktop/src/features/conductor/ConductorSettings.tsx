@@ -17,6 +17,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { listen } from "../../ipc/events";
 import { useSetting } from "../../stores/settings";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { SavedHint, useSave } from "../settings/controls";
 
 type Ids = { id: string; describedBy?: string };
@@ -112,6 +113,37 @@ function message(e: unknown): string {
 
 /** Memory (UI-67): view, edit and clear `memory.md`, and Keep / Discard
  * proposed memories. Off by default; with it off nothing is written. */
+/** A proposed memory. Keep puts it in what Conductor reads at every call,
+ * so it waits like Allow until its row has held still (F-TL-12 AC 16): each
+ * one resolved slides the next into its place. Discard never waits. */
+function ProposalRow({ p, onResolve }: { p: MemoryProposal; onResolve: (keep: boolean) => void }) {
+  const box = useSteadyBox(true, `${p.id}\n${p.text}`);
+  return (
+    <li
+      className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
+      data-testid="conductor-proposal"
+    >
+      <span className="text-base text-fg">{p.text}</span>
+      <span ref={box.ref} className="flex gap-1">
+        <Button
+          size="sm"
+          variant="secondary"
+          data-grant
+          data-testid="conductor-proposal-keep"
+          waiting={!box.steady}
+          title={box.steady ? undefined : t("approval.waitingKeep")}
+          onClick={() => box.check() && onResolve(true)}
+        >
+          {t("conductor.memory.keep")}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onResolve(false)}>
+          {t("conductor.memory.discard")}
+        </Button>
+      </span>
+    </li>
+  );
+}
+
 export function MemoryPanel() {
   const enabled = useSetting<boolean>("conductor_memory", false);
   const [load, setLoad] = useState<Load>({ state: "loading" });
@@ -181,13 +213,7 @@ export function MemoryPanel() {
       {m.proposals.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label={t("conductor.memory.proposals")}>
           {m.proposals.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2">
-              <span className="text-base text-fg">{p.text}</span>
-              <span className="flex gap-1">
-                <Button size="sm" variant="secondary" onClick={() => void resolve(p, true)}>{t("conductor.memory.keep")}</Button>
-                <Button size="sm" variant="ghost" onClick={() => void resolve(p, false)}>{t("conductor.memory.discard")}</Button>
-              </span>
-            </li>
+            <ProposalRow key={p.id} p={p} onResolve={(keep) => void resolve(p, keep)} />
           ))}
         </ul>
       )}

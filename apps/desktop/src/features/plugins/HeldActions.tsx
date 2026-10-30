@@ -255,6 +255,10 @@ function EditAndRun({
 }) {
   const [text, setText] = useState(() => JSON.stringify(draft.args, null, 2));
   const [problem, setProblem] = useState<string | null>(null);
+  // Run starts the tool with these arguments, so it waits like Allow until
+  // the dialog has held still (F-TL-12 AC 18): an error shown above moves
+  // it. Keyed by the draft, not the text, so typing doesn't restart it.
+  const box = useSteadyBox(true, draft.id);
   const submit = () => {
     let parsed: unknown;
     try {
@@ -274,14 +278,23 @@ function EditAndRun({
       title={t("held.editTitle", { id: `D-${draft.displayNo}` })}
       size="lg"
       footer={
-        <>
+        <span ref={box.ref} className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose}>
             {t("plugins.connect.cancel")}
           </Button>
-          <Button variant="primary" onClick={submit} data-testid="held-edit-run">
+          <Button
+            variant="primary"
+            data-grant
+            waiting={!box.steady}
+            title={box.steady ? undefined : t("approval.waitingRun")}
+            onClick={() => {
+              if (box.check()) submit();
+            }}
+            data-testid="held-edit-run"
+          >
             {t("held.runEdited")}
           </Button>
-        </>
+        </span>
       }
     >
       <div className="flex flex-col gap-2">

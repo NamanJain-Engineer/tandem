@@ -6,6 +6,7 @@ import { Banner, Button, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 
 /** Memory suggestion sets per chat, from `memory:suggestions` (F-AG-08). */
 export const useSuggestions = create<{
@@ -67,40 +68,61 @@ function AskCard({ s }: { s: MemorySuggestions }) {
       {s.rationale && <p className="text-sm text-fg-muted">{s.rationale}</p>}
       <ul className="flex flex-col gap-1">
         {s.items.map((item, i) => (
-          <li key={i} className="flex items-center gap-2 text-base text-fg" data-testid="memory-suggestion">
-            <span className="min-w-0 flex-1">
-              {item.kind === "add"
-                ? t("agent.learn.add", { text: item.text })
-                : t("agent.learn.remove", { text: item.text })}
-            </span>
-            {decided[i] === undefined ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  iconLeft={<Check size={14} />}
-                  onClick={() => void decide(i, true)}
-                >
-                  {t("agent.learn.keep")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  iconLeft={<X size={14} />}
-                  onClick={() => void decide(i, false)}
-                >
-                  {t("agent.learn.discard")}
-                </Button>
-              </>
-            ) : (
-              <span className="text-sm text-fg-muted">
-                {decided[i] ? t("agent.learn.keeping") : t("agent.learn.discarded")}
-              </span>
-            )}
-          </li>
+          <SuggestionRow key={i} s={s} i={i} decided={decided[i]} onDecide={(keep) => void decide(i, keep)} />
         ))}
       </ul>
     </section>
+  );
+}
+
+/** One suggestion. Keep writes it into the agent's memory, so it waits like
+ * Allow until its row has held still (F-TL-12 AC 16): a row decided above
+ * it, a set added below or the composer growing moves it. Discard never
+ * waits. */
+function SuggestionRow({
+  s,
+  i,
+  decided,
+  onDecide,
+}: {
+  s: MemorySuggestions;
+  i: number;
+  decided: boolean | undefined;
+  onDecide: (keep: boolean) => void;
+}) {
+  const item = s.items[i]!;
+  const box = useSteadyBox(decided === undefined, `${s.setId}\n${i}\n${item.kind}\n${item.text}`);
+  return (
+    <li className="flex items-center gap-2 text-base text-fg" data-testid="memory-suggestion">
+      <span className="min-w-0 flex-1">
+        {item.kind === "add"
+          ? t("agent.learn.add", { text: item.text })
+          : t("agent.learn.remove", { text: item.text })}
+      </span>
+      {decided === undefined ? (
+        <span ref={box.ref} className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            iconLeft={<Check size={14} />}
+            data-grant
+            data-testid="memory-suggestion-keep"
+            waiting={!box.steady}
+            title={box.steady ? undefined : t("approval.waitingKeep")}
+            onClick={() => box.check() && onDecide(true)}
+          >
+            {t("agent.learn.keep")}
+          </Button>
+          <Button size="sm" variant="ghost" iconLeft={<X size={14} />} onClick={() => onDecide(false)}>
+            {t("agent.learn.discard")}
+          </Button>
+        </span>
+      ) : (
+        <span className="text-sm text-fg-muted">
+          {decided ? t("agent.learn.keeping") : t("agent.learn.discarded")}
+        </span>
+      )}
+    </li>
   );
 }
 

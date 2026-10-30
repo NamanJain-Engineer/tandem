@@ -30,13 +30,26 @@ export function Small({ children }: { children: ReactNode }) {
 type ButtonProps = {
   label: string;
   onPress: () => void;
+  /** When the tap begins (Allow judges a tap by it, F-TL-12 AC 21). */
+  onPressIn?: () => void;
+  /** Why it's off, for screen readers. */
+  accessibilityHint?: string;
   variant?: "primary" | "secondary" | "danger";
   size?: "sm" | "md";
   disabled?: boolean;
   testID?: string;
 };
 
-export function Button({ label, onPress, variant = "secondary", size = "md", disabled, testID }: ButtonProps) {
+export function Button({
+  label,
+  onPress,
+  onPressIn,
+  accessibilityHint,
+  variant = "secondary",
+  size = "md",
+  disabled,
+  testID,
+}: ButtonProps) {
   const bg = variant === "primary" ? color.accent : variant === "danger" ? color.danger : color.surface4;
   const fg = variant === "primary" ? color.accentFg : variant === "danger" ? color.dangerFg : color.text;
   return (
@@ -44,8 +57,10 @@ export function Button({ label, onPress, variant = "secondary", size = "md", dis
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
+      accessibilityHint={accessibilityHint}
       testID={testID}
       onPress={onPress}
+      onPressIn={onPressIn}
       disabled={disabled}
       style={({ pressed }) => [
         s.button,

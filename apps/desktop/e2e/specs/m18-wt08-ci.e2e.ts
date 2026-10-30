@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   addFolder,
   checkAgain,
+  clickAllow,
   fakeLog,
   freshOffline,
   mod,
@@ -130,7 +131,8 @@ describe("E2E-M18-WT08-1 CI back to the agent", function () {
     const ask = $('[data-testid="checks-ask"]');
     await ask.waitForExist({ timeout: 10_000 });
     expect(ghCalls()).toEqual([]);
-    await $('[data-testid="checks-allow"]').click();
+    // Allow waits until the dialog has held still (F-TL-12.18).
+    await clickAllow('[data-testid="checks-allow"]');
     const rows = '[data-testid="check-row"]';
     await $(rows).waitForExist({ timeout: 20_000 });
     expect(ghCalls().some((c) => c.startsWith("pr view tandem/tidy"))).toBe(true);

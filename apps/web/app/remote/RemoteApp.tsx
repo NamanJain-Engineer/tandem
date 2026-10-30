@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, SegmentedControl, StatusDot, type Status } from "@tandem/ui";
+import { Badge, Button, SegmentedControl, StatusDot, useSteadyBox, type Status } from "@tandem/ui";
 import { Card, Notice } from "../../components/Panel";
 import { ReviewBody } from "./ReviewBody";
 import { PairingError, PhoneClient, type CommandResult, type ConnectionState } from "@tandem/remote/client";
@@ -368,36 +368,83 @@ function Approvals({
       {approvals.length === 0 && <Notice>Nothing is waiting for you.</Notice>}
       <ul className="flex flex-col gap-3" data-testid="remote-approvals">
         {approvals.map((a) => (
-          <li key={a.id} className="rounded-md border border-border bg-surface-2 p-4">
-            <p className="font-medium">{a.summary}</p>
-            <p className="mt-1 text-sm text-fg-muted">{a.source}</p>
-            {a.detail && (
-              <pre className="mt-2 whitespace-pre-wrap font-mono text-sm text-fg-muted">{a.detail}</pre>
-            )}
-            {a.queued ? (
-              <div className="mt-3">
-                <Badge variant="waiting">Waiting for you on your computer</Badge>
-              </div>
-            ) : (
-              grants.approvals && (
-                <div className="mt-3 flex gap-2">
-                  {a.deskOnly ? (
-                    <Badge variant="waiting">Answer on your computer</Badge>
-                  ) : (
-                    <Button size="sm" variant="primary" onClick={() => void decide(a.id, "allow")}>
-                      Allow
-                    </Button>
-                  )}
-                  <Button size="sm" variant="secondary" onClick={() => void decide(a.id, "deny")}>
-                    Deny
-                  </Button>
-                </div>
-              )
-            )}
-          </li>
+          <ApprovalRow key={a.id} a={a} canAnswer={grants.approvals} decide={decide} />
         ))}
       </ul>
     </div>
+  );
+}
+
+/** One approval on the phone. The list refreshes on its own and rows above
+ * come and go, so Allow waits like the computer's until its row has held
+ * still, and ignores a tap begun before that (F-TL-12 AC 21). Each answer
+ * goes once: both buttons are off while it's on its way. */
+export function ApprovalRow({
+  a,
+  canAnswer,
+  decide,
+}: {
+  a: PhoneApproval;
+  canAnswer: boolean;
+  decide: (approvalId: string, decision: "allow" | "deny") => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const allowed = canAnswer && !a.queued && !a.deskOnly;
+  const box = useSteadyBox(allowed, `${a.id}\n${a.summary}\n${a.detail ?? ""}`);
+  const answer = async (decision: "allow" | "deny") => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await decide(a.id, decision);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="rounded-md border border-border bg-surface-2 p-4" data-testid="remote-approval">
+      <p className="font-medium">{a.summary}</p>
+      <p className="mt-1 text-sm text-fg-muted">{a.source}</p>
+      {a.detail && <pre className="mt-2 whitespace-pre-wrap font-mono text-sm text-fg-muted">{a.detail}</pre>}
+      {a.queued ? (
+        <div className="mt-3">
+          <Badge variant="waiting">Waiting for you on your computer</Badge>
+        </div>
+      ) : (
+        canAnswer && (
+          <div ref={box.ref} className="mt-3 flex gap-2">
+            {a.deskOnly ? (
+              <Badge variant="waiting">Answer on your computer</Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy}
+                data-grant
+                waiting={!box.steady}
+                title={
+                  box.steady ? undefined : "Allow turns on once this has been still on screen for a moment."
+                }
+                onClick={() => {
+                  if (box.check()) void answer("allow");
+                }}
+                data-testid="remote-approval-allow"
+              >
+                Allow
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void answer("deny")}
+              data-testid="remote-approval-deny"
+            >
+              Deny
+            </Button>
+          </div>
+        )
+      )}
+    </li>
   );
 }
 

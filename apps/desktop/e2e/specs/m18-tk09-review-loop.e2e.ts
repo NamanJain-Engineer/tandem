@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, userHome, waitFor } from "../support/app";
+import { addFolder, clickAllow, freshOffline, home, invoke, mod, userHome, waitFor } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -137,7 +137,7 @@ describe("E2E-M18-TK-09 Lead closes the loop", function () {
     await option.waitForExist({ timeout: 10_000 });
     expect(await textOf(option)).toContain("Send reviews back to the run (up to 2 rounds)");
     expect(await option.$('[role="checkbox"]').getAttribute("aria-checked")).toBe("true");
-    await $('[data-testid="plan-confirm-run"]').click();
+    await clickAllow('[data-testid="plan-confirm-run"]');
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
     plan = (await invoke<Plan[]>("plan_list")).find((p) => p.state === "started")!;
     expect(plan.sendBack).toBe(true);

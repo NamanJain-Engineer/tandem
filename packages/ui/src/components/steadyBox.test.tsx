@@ -27,6 +27,8 @@ function Row({ n, onAllow }: { n: number; onAllow?: () => void }) {
 /** Buttons side by side, 100 apart and 90 wide; each row 40 high. */
 function layout() {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+    measured = this;
     const row = this.closest<HTMLElement>("[data-row]");
     const top = 40 * Number(row?.dataset.row ?? 0);
     const siblings = this.tagName === "BUTTON" ? Array.from(this.parentElement?.children ?? []) : [];
@@ -84,17 +86,27 @@ function rescroll() {
 let hits = 0;
 let covering: Element | null = null;
 let coverX: [number, number] | null = null;
+/** The control measured last: what's at its points when nothing covers it
+ * (the guard measures each control just before it hit-tests its points). */
+let measured: Element | null = null;
+/** What a point hits instead: nothing at all, or the page's root. */
+let instead: "nothing" | "root" | null = null;
 beforeEach(() => {
   hits = 0;
   covering = null;
   coverX = null;
+  measured = null;
+  instead = null;
   inView = Infinity;
   observers = [];
   layout();
   Object.defineProperty(document, "elementFromPoint", {
     value: (x: number) => {
       hits += 1;
-      return covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : null;
+      if (covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1]))) return covering;
+      if (instead === "nothing") return null;
+      if (instead === "root") return document.documentElement;
+      return measured;
     },
     configurable: true,
   });
@@ -103,6 +115,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   covering?.remove();
+  document.body.style.pointerEvents = "";
   Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
 });
 
@@ -250,6 +263,8 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     vi.stubGlobal("IntersectionObserver", PartIO);
     let grantTop = 100;
     vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+      measured = this;
       // The box runs from 400 px above the window to well below it.
       const r = this.tagName === "BUTTON" ? { left: 10, top: grantTop, width: 90, height: 30 } : { left: 0, top: -400, width: 300, height: 1_400 };
       return { ...r, right: r.left + r.width, bottom: r.top + r.height, x: r.left, y: r.top, toJSON: () => ({}) } as DOMRect;
@@ -270,5 +285,111 @@ describe("useSteadyBox (F-TL-12.12)", () => {
     await waitFor(() => expect(allow().disabled).toBe(false));
     fireEvent.click(allow());
     expect(onAllow).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("What counts as covered, and whose press a click is (F-TL-12.19)", () => {
+  const allow = () => screen.getByTestId("allow-0") as HTMLButtonElement;
+
+  it("N8: a point where nothing is counts as covered, as one past the window or clipped does", async () => {
+    const onAllow = vi.fn();
+    render(<Row n={0} onAllow={onAllow} />);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    instead = "nothing";
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    fireEvent.click(allow());
+    expect(onAllow).not.toHaveBeenCalled();
+  });
+
+  it("N7: a modal menu open elsewhere doesn't hold Allow off; the page's root counts as clear only while pointer events are off page-wide", async () => {
+    const onAllow = vi.fn();
+    render(<Row n={0} onAllow={onAllow} />);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // A modal menu turns pointer events off for everything but itself: at
+    // Allow's points nothing takes them, and the page's root is what's hit.
+    document.body.style.pointerEvents = "none";
+    instead = "root";
+    await wait(COVER_EVERY_MS * 3);
+    expect(allow().disabled).toBe(false);
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    // The root with pointer events on means Allow isn't what a click there
+    // reaches: it waits.
+    document.body.style.pointerEvents = "";
+    await waitFor(() => expect(allow().disabled).toBe(true));
+    fireEvent.click(allow());
+    expect(onAllow).toHaveBeenCalledTimes(1);
+  });
+
+  it("N9: a pill's corners are sampled inside its curve, where a click lands on it", async () => {
+    const round = "9999px";
+    function Pill() {
+      const box = useSteadyBox(true, "pill");
+      return (
+        <div ref={box.ref} data-row={0}>
+          <button
+            type="button"
+            data-grant
+            data-testid="allow-0"
+            disabled={!box.steady}
+            style={{
+              borderTopLeftRadius: round,
+              borderTopRightRadius: round,
+              borderBottomLeftRadius: round,
+              borderBottomRightRadius: "8px 4px",
+            }}
+          >
+            Allow
+          </button>
+        </div>
+      );
+    }
+    const points: [number, number][] = [];
+    Object.defineProperty(document, "elementFromPoint", {
+      value: (x: number, y: number) => {
+        points.push([x, y]);
+        return measured;
+      },
+      configurable: true,
+    });
+    render(<Pill />);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // The button is 90 × 30 at (0, 0): its three pill corners are a radius
+    // of 15, and the fourth is 8 across and 4 down.
+    const inPill = ([x, y]: [number, number]) =>
+      (x - Math.min(Math.max(x, 15), 75)) ** 2 + (y - 15) ** 2 <= 15 ** 2;
+    const [middle, tl, tr, bl, br] = points.slice(0, 5) as [number, number][];
+    for (const p of [middle, tl, tr, bl]) expect(inPill(p!), String(p)).toBe(true);
+    const [x, y] = br!;
+    expect(((x - 82) / 8) ** 2 + ((y - 26) / 4) ** 2 <= 1 || x <= 82 || y <= 26).toBe(true);
+    // The old 4 px corner of a pill is outside its curve.
+    expect(inPill([4, 4])).toBe(false);
+  });
+
+  it("nit: a pointer that doesn't say what it is has a press of its own, and can't restart a held mouse press", async () => {
+    function Swap({ k, onAllow }: { k: string; onAllow: () => void }) {
+      const box = useSteadyBox(true, k);
+      return (
+        <div ref={box.ref} data-row={0}>
+          <button type="button" data-grant data-testid="allow-0" onClick={() => box.check() && onAllow()}>
+            Allow
+          </button>
+        </div>
+      );
+    }
+    const onAllow = vi.fn();
+    const { rerender } = render(<Swap k="A" onAllow={onAllow} />);
+    await wait(SETTLE_MS + 100);
+    // The mouse goes down on A, and B takes its place while it's held.
+    fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+    rerender(<Swap k="B" onAllow={onAllow} />);
+    await wait(SETTLE_MS + 100);
+    // A synthetic pointer (no pointerType) goes down and up meanwhile.
+    fireEvent.pointerDown(document.body, { pointerId: 1, pointerType: "" });
+    fireEvent.pointerUp(document.body, { pointerId: 1, pointerType: "" });
+    // The mouse comes up over B: its press began on A, so nothing's allowed.
+    fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
+    fireEvent.click(allow());
+    expect(onAllow).not.toHaveBeenCalled();
   });
 });

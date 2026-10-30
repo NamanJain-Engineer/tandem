@@ -109,6 +109,9 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
   let covering: Element | null = null;
   let coverX: [number, number] | null = null;
   let shift = 0;
+  /** The control measured last: what's at its points when nothing covers
+   * it (the guard measures each one just before it hit-tests its points). */
+  let measured: Element | null = null;
   const rect = (left: number, top: number, width: number, height: number) =>
     ({
       left,
@@ -126,13 +129,15 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     coverX = null;
     shift = 0;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+      measured = this;
       if (this.tagName !== "BUTTON") return rect(0, shift, 400, 30);
       const row = Array.from(this.parentElement?.children ?? []);
       return rect(100 * row.indexOf(this), shift, 90, 30);
     });
     Object.defineProperty(document, "elementFromPoint", {
       value: (x: number) =>
-        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : null,
+        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : measured,
       configurable: true,
     });
   }

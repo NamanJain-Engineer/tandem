@@ -695,11 +695,16 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
   let covering: Element | null = null;
   // Where the cover sits across the row (null: everywhere).
   let coverX: [number, number] | null = null;
+  /** The control measured last: what's at its points when nothing covers
+   * it (the guard measures each one just before it hit-tests its points). */
+  let measured: Element | null = null;
   beforeEach(() => {
     resetStores();
     covering = null;
     coverX = null;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+      measured = this;
       const card = this.closest<HTMLElement>('[data-testid="agent-card"]');
       // Buttons sit side by side, 100 apart and 90 wide, so a cover can
       // sit over one and not another.
@@ -727,7 +732,8 @@ describe("Pinned questions hold still (F-TL-12.12)", () => {
       } as DOMRect;
     });
     Object.defineProperty(document, "elementFromPoint", {
-      value: (x: number) => (coverX === null || (x >= coverX[0] && x < coverX[1]) ? covering : null),
+      value: (x: number) =>
+        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : measured,
       configurable: true,
     });
   });

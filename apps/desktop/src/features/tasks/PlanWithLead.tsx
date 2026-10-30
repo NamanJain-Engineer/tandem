@@ -36,6 +36,7 @@ import {
   type Status,
 } from "@tandem/ui";
 import { t, type MessageKey } from "../../i18n";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { switchMode } from "../shell/actions";
 import { usePlans } from "../../stores/plan";
 import { isIpcError, useTasks } from "../../stores/tasks";
@@ -857,6 +858,13 @@ function PlanDialog({ plan }: { plan: PlanView }) {
     </Button>
   );
   const runnable = launch ? launch.runs.filter((r) => !r.skip).length : 0;
+  // Run takes Execute all's place, so the second click of a double-click (or
+  // an impatient one) would start every run before the check was read: it
+  // waits like Allow until the check has held still (F-TL-12 AC 17).
+  const runBox = useSteadyBox(
+    plan.state === "created" && launch !== null && !launch.blocked && runnable > 0,
+    launch ? `${plan.id}\n${JSON.stringify(launch)}` : null,
+  );
   const footer = (() => {
     switch (plan.state) {
       case "planning":
@@ -901,19 +909,26 @@ function PlanDialog({ plan }: { plan: PlanView }) {
         if (launch)
           return (
             <>
-              <Button variant="ghost" onClick={() => setLaunch(null)} data-testid="plan-confirm-back">
-                {t("plan.confirm.back")}
-              </Button>
-              {!launch.blocked && runnable > 0 && (
-                <Button
-                  variant="primary"
-                  disabled={busy}
-                  onClick={() => void run()}
-                  data-testid="plan-confirm-run"
-                >
-                  {t("plan.confirm.run", { n: runnable })}
+              <span ref={runBox.ref} className="flex items-center gap-2">
+                <Button variant="ghost" onClick={() => setLaunch(null)} data-testid="plan-confirm-back">
+                  {t("plan.confirm.back")}
                 </Button>
-              )}
+                {!launch.blocked && runnable > 0 && (
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    data-grant
+                    waiting={!runBox.steady}
+                    title={runBox.steady ? undefined : t("approval.waitingRun")}
+                    onClick={() => {
+                      if (runBox.check()) void run();
+                    }}
+                    data-testid="plan-confirm-run"
+                  >
+                    {t("plan.confirm.run", { n: runnable })}
+                  </Button>
+                )}
+              </span>
             </>
           );
         return (

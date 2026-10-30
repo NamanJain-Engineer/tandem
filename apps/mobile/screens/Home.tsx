@@ -1,6 +1,6 @@
 // Paired: agents, approvals, threads and teammate chats, routines and the
 // phone's settings, each with empty, loading, error and populated states.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -23,7 +23,7 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
-import { approvalActions } from "../lib/approvals";
+import { SETTLE_MS, allowTakesTap, approvalActions } from "../lib/approvals";
 import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
@@ -203,47 +203,100 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
     setBusy(null);
     setError(r.ok ? null : r.message);
   }
+  // A scroll moves every card under the finger: each Allow waits again.
+  const [scrolledAt, setScrolledAt] = useState(0);
   return (
-    <ScrollView contentContainerStyle={st.list}>
+    <ScrollView
+      contentContainerStyle={st.list}
+      scrollEventThrottle={100}
+      onScroll={() => setScrolledAt(Date.now())}
+    >
       <Small>{t("approvals.armedNote")}</Small>
       {!view.grants?.approvals && <Notice tone="warning">{t("approvals.needsGrant")}</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
       {approvals.length === 0 && <Empty label={t("approvals.empty")} />}
-      {approvals.map((a) => {
-        const can = approvalActions(a, !!view.grants?.approvals);
-        return (
-          <Card key={a.id}>
-            <Body>{a.summary}</Body>
-            <Small>{a.source}</Small>
-            {a.detail && a.detail !== a.summary ? <Text style={st.mono}>{a.detail}</Text> : null}
-            {a.queued ? (
-              <Notice tone="warning">{t("approvals.queued")}</Notice>
-            ) : (
-              <Row>
-                {can.deskOnly ? (
-                  <Notice tone="warning">{t("approvals.deskOnly")}</Notice>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    label={t("approvals.allow")}
-                    disabled={busy === a.id || !can.allow}
-                    onPress={() => void decide(a, "allow")}
-                  />
-                )}
-                <Button
-                  size="sm"
-                  variant="danger"
-                  label={t("approvals.deny")}
-                  disabled={busy === a.id || !can.deny}
-                  onPress={() => void decide(a, "deny")}
-                />
-              </Row>
-            )}
-          </Card>
-        );
-      })}
+      {approvals.map((a) => (
+        <ApprovalCard
+          key={a.id}
+          a={a}
+          granted={!!view.grants?.approvals}
+          busy={busy === a.id}
+          scrolledAt={scrolledAt}
+          decide={decide}
+        />
+      ))}
     </ScrollView>
+  );
+}
+
+/** One approval. The list refreshes on its own and cards above come and go,
+ * so Allow waits until this card has held still (its request, its place and
+ * the list's scroll) for SETTLE_MS, and a tap begun before that allows
+ * nothing (F-TL-12 AC 21). Deny never waits. */
+function ApprovalCard({
+  a,
+  granted,
+  busy,
+  scrolledAt,
+  decide,
+}: {
+  a: PhoneApproval;
+  granted: boolean;
+  busy: boolean;
+  scrolledAt: number;
+  decide: (a: PhoneApproval, d: "allow" | "deny") => Promise<void>;
+}) {
+  const can = approvalActions(a, granted);
+  const request = `${a.id}\n${a.summary}\n${a.detail}`;
+  const [top, setTop] = useState<number | null>(null);
+  const [changedAt, setChangedAt] = useState(() => Date.now());
+  useEffect(() => setChangedAt(Date.now()), [request, top]);
+  const since = Math.max(changedAt, scrolledAt);
+  const [steady, setSteady] = useState(false);
+  useEffect(() => {
+    setSteady(false);
+    const timer = setTimeout(() => setSteady(true), Math.max(0, since + SETTLE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [since]);
+  const pressedAt = useRef<number | null>(null);
+  return (
+    <View onLayout={(e) => setTop(e.nativeEvent.layout.y)}>
+      <Card>
+        <Body>{a.summary}</Body>
+        <Small>{a.source}</Small>
+        {a.detail && a.detail !== a.summary ? <Text style={st.mono}>{a.detail}</Text> : null}
+        {a.queued ? (
+          <Notice tone="warning">{t("approvals.queued")}</Notice>
+        ) : (
+          <Row>
+            {can.deskOnly ? (
+              <Notice tone="warning">{t("approvals.deskOnly")}</Notice>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                label={t("approvals.allow")}
+                disabled={busy || !can.allow || !steady}
+                accessibilityHint={steady ? undefined : t("approvals.allowWaiting")}
+                onPressIn={() => {
+                  pressedAt.current = Date.now();
+                }}
+                onPress={() => {
+                  if (allowTakesTap(since, pressedAt.current, Date.now())) void decide(a, "allow");
+                }}
+              />
+            )}
+            <Button
+              size="sm"
+              variant="danger"
+              label={t("approvals.deny")}
+              disabled={busy || !can.deny}
+              onPress={() => void decide(a, "deny")}
+            />
+          </Row>
+        )}
+      </Card>
+    </View>
   );
 }
 

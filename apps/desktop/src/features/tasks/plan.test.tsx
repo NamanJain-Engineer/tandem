@@ -18,6 +18,7 @@ import { resetTasks, useTasks } from "../../stores/tasks";
 import { useWorkspaces } from "../../stores/workspaces";
 import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { waiting } from "../../test/waiting";
 import { TasksPage } from "./TasksPanel";
 import { engineOption, startedStatus } from "./PlanWithLead";
 
@@ -271,7 +272,7 @@ describe("Plan with Lead (F-TK-06)", () => {
     fireEvent.click(screen.getByTestId("plan-execute"));
     const run = await screen.findByTestId("plan-confirm-run");
     expect(run.textContent).toBe("Run 1 task");
-    fireEvent.click(run);
+    await clickRun();
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
         id: "pl_1",
@@ -286,6 +287,23 @@ describe("Plan with Lead (F-TK-06)", () => {
     );
     expect(screen.getByTestId("plan-skipped").textContent).toBe("Left alone: TAN-2 (already running).");
     expect(document.body.textContent).not.toMatch(/\bPro\b|Upgrade/);
+  });
+
+  it("F-TL-12.17 a double-click on Execute all… doesn't start the runs: Run waits until the check has held still", async () => {
+    backend();
+    usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
+    wrap();
+    fireEvent.click(await screen.findByTestId("plan-execute"));
+    // Run comes up where Execute all… was: the second click lands on it.
+    const run = await screen.findByTestId("plan-confirm-run");
+    expect(run.getAttribute("data-grant")).not.toBeNull();
+    expect(waiting(run)).toBe(true);
+    expect(run.getAttribute("title")).toBe("Run turns on once this has been still on screen for a moment.");
+    fireEvent.click(run);
+    expect(calls.some((c) => c.cmd === "plan_execute")).toBe(false);
+    // Read, then Run.
+    await clickRun();
+    await waitFor(() => expect(calls.some((c) => c.cmd === "plan_execute")).toBe(true));
   });
 
   it("F-TK-06.4 when the limits turn runs off, the check says why where Run would be", async () => {
@@ -697,6 +715,13 @@ const STARTED = plan({
 
 const row = (i: number) => screen.getAllByTestId("plan-run")[i]!;
 
+/** Run, once the check has held still (F-TL-12 AC 17). */
+async function clickRun() {
+  const run = await screen.findByTestId("plan-confirm-run");
+  await waitFor(() => expect(waiting(run)).toBe(false));
+  fireEvent.click(run);
+}
+
 describe("Lead keeps a plan moving (F-TK-08)", () => {
   it("F-TK-08 Execute all's check has Lead's answers on, says whose engine they use, and sends your choice", async () => {
     usePlans.setState({ plans: { pl_1: CREATED }, openId: "pl_1" });
@@ -712,7 +737,7 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     expect(box.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(box);
     expect(box.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await clickRun();
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
         id: "pl_1",
@@ -731,7 +756,7 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
       "Lead's engine can't answer with every tool off (Claude Code 2.1.310 or newer can), so each run's questions come to you.",
     );
     expect(screen.queryByTestId("plan-supervise-option")).toBeNull();
-    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await clickRun();
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
         id: "pl_1",
@@ -750,7 +775,7 @@ describe("Lead keeps a plan moving (F-TK-08)", () => {
     fireEvent.click(await screen.findByTestId("plan-execute"));
     const option = await screen.findByTestId("plan-supervise-option");
     expect(within(option).getByRole("checkbox").getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await clickRun();
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
         id: "pl_1",
@@ -969,7 +994,7 @@ describe("Lead closes the loop (F-TK-09)", () => {
     expect(box.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(box);
     expect(box.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(screen.getByTestId("plan-confirm-run"));
+    await clickRun();
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "plan_execute")?.args).toEqual({
         id: "pl_1",

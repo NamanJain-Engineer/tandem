@@ -1313,6 +1313,8 @@
   "approval.waitingPick": "You can pick this once it has been still on screen for a moment.",
   "approval.waitingTrustRun": "Trust and run turns on once this has been still on screen for a moment.",
   "approval.waitingTrust": "Trust and connect turns on once this has been still on screen for a moment.",
+  "approval.waitingKeep": "Keep turns on once this has been still on screen for a moment.",
+  "approval.waitingRun": "Run turns on once this has been still on screen for a moment.",
   "approval.unreadable": "This approval couldn't be shown, so it can't be allowed here. Deny it, or open the pane.",
   "activity.title": "Activity: {name}",
   "activity.body": "What this session did, oldest first. Prompts show as turns, never their words; commands as command recall stored them.",

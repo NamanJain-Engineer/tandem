@@ -2,7 +2,17 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, relaunch, userHome, waitFor } from "../support/app";
+import {
+  addFolder,
+  clickAllow,
+  freshOffline,
+  home,
+  invoke,
+  mod,
+  relaunch,
+  userHome,
+  waitFor,
+} from "../support/app";
 import { newWorktree } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -107,7 +117,7 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
     await browser.waitUntil(async () => (await rows()).length === 2, { timeout: 10_000 });
     expect((await rows()).map((r) => r.state)).toEqual(["none", "none"]);
     await $('[data-testid="plan-execute"]').click();
-    await $('[data-testid="plan-confirm-run"]').waitForClickable({ timeout: 10_000 });
+    await $('[data-testid="plan-confirm-run"]').waitForExist({ timeout: 10_000 });
     // Claude Code reviews both runs, the one chat engine installed: a fake
     // engine another spec left installed would review them instead.
     const reviewers = await browser.execute(() =>
@@ -116,7 +126,7 @@ describe("E2E-M18-TK-07 follow a plan through", function () {
       ),
     );
     expect(reviewers).toEqual(["claude", "claude"]);
-    await $('[data-testid="plan-confirm-run"]').click();
+    await clickAllow('[data-testid="plan-confirm-run"]');
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
 
     // The plan follows each run to in review, approved by the review.

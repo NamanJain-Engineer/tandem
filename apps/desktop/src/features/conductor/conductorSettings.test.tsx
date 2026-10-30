@@ -5,6 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { emitLocal } from "../../ipc/events";
 import { FREE_VIEW, fakeBackend, resetStores } from "../../test/fakeBackend";
+import { waiting } from "../../test/waiting";
 import { useSession } from "../../stores/session";
 import { useSettings } from "../../stores/settings";
 import { SettingsView } from "../settings/SettingsView";
@@ -121,10 +122,39 @@ describe("Settings › Conductor (UI-67, F-CN-06, F-CN-07)", () => {
     });
     open({ conductor_memory: true });
     await screen.findByText("Prefers Rust");
-    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    const keep = screen.getByTestId("conductor-proposal-keep");
+    await waitFor(() => expect(waiting(keep)).toBe(false));
+    fireEvent.click(keep);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "conductor_memory_resolve")?.args).toEqual({ proposalIds: ["mem_1"], keep: true }),
     );
+  });
+
+  it("F-TL-12.16 Keep waits until its row has held still: the next proposal slides into the one resolved", async () => {
+    const two = [
+      { id: "mem_1", text: "Prefers Rust" },
+      { id: "mem_2", text: "Deploys on Fridays" },
+    ];
+    const calls = fakeBackend({
+      conductor_memory_get: () => memory({ enabled: true, proposals: two }),
+      conductor_memory_resolve: () => memory({ enabled: true, proposals: [two[1]!] }),
+      conductor_wake_status: () => listening,
+    });
+    open({ conductor_memory: true });
+    await screen.findByText("Prefers Rust");
+    expect(
+      screen.getAllByTestId("conductor-proposal-keep").every((b) => b.getAttribute("data-grant") !== null),
+    ).toBe(true);
+    // Discard the first: the second takes its place, and its Keep waits.
+    fireEvent.click(screen.getAllByRole("button", { name: "Discard" })[0]!);
+    await waitFor(() => expect(screen.getAllByTestId("conductor-proposal")).toHaveLength(1));
+    const keep = screen.getByTestId("conductor-proposal-keep");
+    expect(waiting(keep)).toBe(true);
+    expect(keep.getAttribute("title")).toBe("Keep turns on once this has been still on screen for a moment.");
+    // A double-click's second click lands on it: nothing is kept.
+    fireEvent.click(keep);
+    expect(calls.filter((c) => c.cmd === "conductor_memory_resolve")).toHaveLength(1);
+    await waitFor(() => expect(waiting(screen.getByTestId("conductor-proposal-keep"))).toBe(false));
   });
 
   it("F-CN-06 loading and error states", async () => {

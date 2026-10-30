@@ -76,9 +76,10 @@ function trackPresses() {
     }
   };
   // The mouse is one press whatever its pointerId; touches and pens each
-  // have their own.
+  // have their own, and so does a pointer that doesn't say what it is (a
+  // synthetic event), so it can't restart a held mouse press.
   const pointer = (e: PointerEvent) =>
-    e.pointerType === "mouse" || !e.pointerType ? "p:mouse" : `p:${e.pointerId ?? 0}`;
+    e.pointerType === "mouse" ? "p:mouse" : `p:${e.pointerType || "untyped"}:${e.pointerId ?? 0}`;
   const key = (e: KeyboardEvent) => `k:${e.code || e.key}`;
   document.addEventListener("pointerdown", (e) => begin(pointer(e), e), true);
   // After a release the page never saw (the window went away mid-press),
@@ -154,18 +155,53 @@ function hidden(el: HTMLElement): boolean {
   return typeof visible === "function" ? !visible.call(el) : false;
 }
 
-/** The points a click on `r` could land on: its middle and four corners,
- * each pulled a little inside. */
-function pointsOf(r: DOMRect): [number, number][] {
-  const dx = Math.min(4, r.width / 4);
-  const dy = Math.min(4, r.height / 4);
+/** A corner's radius in px across (`h`) and down (`v`), from its computed
+ * `border-*-radius` ("6px", "9999px", "50%", "8px 4px"), at most half the
+ * side it rounds. */
+function radius(value: string, width: number, height: number): [number, number] {
+  const [h = "0", v = h] = value.trim().split(/\s+/);
+  const px = (s: string, side: number) => {
+    const n = Number.parseFloat(s);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(s.endsWith("%") ? (n * side) / 100 : n, side / 2);
+  };
+  return [px(h, width), px(v, height)];
+}
+
+/** The points a click on `target` could land on: its middle and four
+ * corners, each pulled a little inside, and past a rounded corner's curve
+ * (a pill's corner is outside it, and WebView2 hit-tests the curve). */
+function pointsOf(target: HTMLElement, r: DOMRect): [number, number][] {
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(target) : null;
+  const curve = 1 - Math.SQRT1_2;
+  // How far in from a corner its point sits: 4 px (a quarter of a small
+  // side), or 1 px inside the curve on its 45° line, never past the middle.
+  // A radius larger than the one drawn only moves the point further in.
+  const inset = (corner: string): [number, number] => {
+    const [rx, ry] = radius(style?.getPropertyValue(`border-${corner}-radius`) ?? "", r.width, r.height);
+    return [
+      Math.min(r.width / 2, Math.max(Math.min(4, r.width / 4), rx > 0 ? rx * curve + 1 : 0)),
+      Math.min(r.height / 2, Math.max(Math.min(4, r.height / 4), ry > 0 ? ry * curve + 1 : 0)),
+    ];
+  };
+  const tl = inset("top-left");
+  const tr = inset("top-right");
+  const bl = inset("bottom-left");
+  const br = inset("bottom-right");
   return [
     [r.left + r.width / 2, r.top + r.height / 2],
-    [r.left + dx, r.top + dy],
-    [r.right - dx, r.top + dy],
-    [r.left + dx, r.bottom - dy],
-    [r.right - dx, r.bottom - dy],
+    [r.left + tl[0], r.top + tl[1]],
+    [r.right - tr[0], r.top + tr[1]],
+    [r.left + bl[0], r.bottom - bl[1]],
+    [r.right - br[0], r.bottom - br[1]],
   ];
+}
+
+/** Nothing on the page takes pointer events (a modal menu turns them off
+ * for everything but itself), so a click at a point the menu doesn't cover
+ * reaches nothing. */
+function pageInert(): boolean {
+  return typeof getComputedStyle === "function" && getComputedStyle(document.body).pointerEvents === "none";
 }
 
 /** Something else (a menu, a dialog, a toast) covers a control in the box
@@ -173,7 +209,12 @@ function pointsOf(r: DOMRect): [number, number][] {
  * cover over "Allow for this agent" alone counts as much as one over Allow
  * once. A toast over Deny doesn't hold Allow off. Without marked controls
  * the box itself is checked. A control with no size takes no clicks and is
- * skipped. */
+ * skipped.
+ *
+ * Only the control itself at a point is clear. No element there counts as
+ * covered, as a point past the window or clipped by a scroller does; the
+ * page's root counts as clear only while a modal menu has turned pointer
+ * events off page-wide, so the menu doesn't hold every Allow off. */
 function covered(el: HTMLElement): boolean {
   if (typeof document.elementFromPoint !== "function") return false;
   const marked = Array.from(el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`));
@@ -181,11 +222,13 @@ function covered(el: HTMLElement): boolean {
   return targets.some((target) => {
     const r = target.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
-    return pointsOf(r).some(([x, y]) => {
+    return pointsOf(target, r).some(([x, y]) => {
       // Past the window's edge nothing can be seen to be clicked.
       if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return true;
       const hit = document.elementFromPoint(x, y);
-      return hit !== null && !target.contains(hit);
+      if (hit === null) return true;
+      if (target.contains(hit)) return false;
+      return !(hit === document.documentElement && pageInert());
     });
   });
 }

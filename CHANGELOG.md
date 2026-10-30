@@ -36,6 +36,15 @@ release fails when its version has no section.
 
 ### Fixed
 
+- [lin] **Keep and Run can't move under your click either.** Memory
+  suggestions' and Conductor's Keep, Plan with Lead's Run (it appears where
+  Execute all… was), Edit & run's Run and the pull-request checks' Allow now
+  wait until they've held still on screen for half a second, like Allow. So a
+  double-click on Execute all… no longer starts every run, and the next
+  suggestion sliding into place can't be kept by a click meant for the one
+  before. On a phone, Allow waits the same way, on the web and in the app, and
+  each answer is sent once. A menu open elsewhere no longer dims Allow, and in
+  a very short pane, scrolling a question to its end turns Allow on.
 - [lin] **A token's expiry stays readable.** Text that names when a token or
   secret expires or was made (`token_expires_at: 2025-10-30T18:00:00Z`,
   `tokenExpiresAt`) is no longer hidden as if it were the token itself.

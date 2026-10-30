@@ -11,6 +11,7 @@ import {
   pollChecks,
   useWorktrees,
 } from "../../stores/worktrees";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { SendToAgent } from "./SendToAgent";
 
 /** F-WT-08: polls the worktrees' checks every 2 minutes while `active` and
@@ -120,6 +121,10 @@ export function AllowChecksDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Allow lets Vibezeo run gh in the repository's worktrees: it waits like
+  // any Allow until the dialog has held still (F-TL-12 AC 18). The dialog
+  // opens after a round trip, and an error shown above moves it.
+  const box = useSteadyBox(true, `${wt.id}\n${wt.parentId ?? ""}`);
   const allow = async () => {
     setBusy(true);
     setError(null);
@@ -138,14 +143,24 @@ export function AllowChecksDialog({
       title={t("checks.allowTitle")}
       closeLabel={t("common.close")}
       footer={
-        <>
+        <span ref={box.ref} className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose} data-testid="checks-not-now">
             {t("checks.notNow")}
           </Button>
-          <Button variant="primary" loading={busy} onClick={() => void allow()} data-testid="checks-allow">
+          <Button
+            variant="primary"
+            loading={busy}
+            data-grant
+            waiting={!box.steady}
+            title={box.steady ? undefined : t("approval.waiting")}
+            onClick={() => {
+              if (box.check()) void allow();
+            }}
+            data-testid="checks-allow"
+          >
             {t("checks.allow")}
           </Button>
-        </>
+        </span>
       }
     >
       <div data-testid="checks-ask" className="flex flex-col gap-3">

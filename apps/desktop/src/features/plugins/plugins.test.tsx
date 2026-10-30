@@ -395,6 +395,26 @@ describe("F-PL-08 held actions", () => {
     expect(within(row).getByText("Held · from routine rt_nightly")).toBeTruthy();
   });
 
+  it("F-TL-12.18 Edit & run's Run waits until the dialog has held still, and runs the edited arguments once", async () => {
+    ui(<HeldActions />);
+    const row = await screen.findByTestId("held-12");
+    fireEvent.click(within(row).getByRole("button", { name: "Edit & run" }));
+    const run = await screen.findByTestId("held-edit-run");
+    expect(run.getAttribute("data-grant")).not.toBeNull();
+    expect(waiting(run)).toBe(true);
+    expect(run.getAttribute("title")).toBe("Run turns on once this has been still on screen for a moment.");
+    // A click as it opens runs nothing.
+    fireEvent.click(run);
+    expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+    await waitFor(() => expect(waiting(screen.getByTestId("held-edit-run"))).toBe(false));
+    fireEvent.click(screen.getByTestId("held-edit-run"));
+    await waitFor(() => expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1));
+    expect(calls.find((c) => c.cmd === "held_draft_run")?.args).toEqual({
+      draftId: "hd_12",
+      editedArgs: { owner: "octo-shop", repo: "web", title: "Bump 12" },
+    });
+  });
+
   it("F-PL-08 Approve & run runs a draft once", async () => {
     ui(<HeldActions />);
     const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
@@ -479,13 +499,18 @@ describe("F-PL-08 held actions", () => {
     // buttons. One box for the whole row would hold both back.
     let pickTop = 40;
     let buttonsTop = window.innerHeight + 100;
+    // Nothing covers anything: what's at a control's points is the control
+    // measured last (the guard measures each one just before it hit-tests).
+    let measured: Element | null = null;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+      measured = this;
       if (this.tagName === "LI") return rect(-300, 1_600);
       if (this.closest('[data-testid^="held-run-"], [data-testid="held-run-selected"]') || this.querySelector?.('[data-testid^="held-run-"]'))
         return rect(buttonsTop, 30);
       return rect(pickTop, 20);
     });
-    Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+    Object.defineProperty(document, "elementFromPoint", { value: () => measured, configurable: true });
     try {
       ui(<HeldActions />);
       const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;

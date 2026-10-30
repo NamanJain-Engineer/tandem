@@ -2,7 +2,7 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod } from "../support/app";
+import { addFolder, clickAllow, freshOffline, home, invoke, mod } from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -154,9 +154,10 @@ describe("E2E-M18-TK-06 plan with Lead", function () {
     expect(await runsOf(page2.id)).toEqual([]);
 
     await $('[data-testid="plan-execute"]').click();
-    await $('[data-testid="plan-confirm-run"]').waitForClickable({ timeout: 10_000 });
+    await $('[data-testid="plan-confirm-run"]').waitForExist({ timeout: 10_000 });
     expect(await text('[data-testid="plan-confirm-run"]')).toBe("Run 1 task");
-    await $('[data-testid="plan-confirm-run"]').click();
+    // Run takes Execute all's place: it waits until the check has held still (F-TL-12.17).
+    await clickAllow('[data-testid="plan-confirm-run"]');
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
     expect(await text('[data-testid="plan-skipped"]')).toBe(`Left alone: ${routes.id} (already running).`);
 
