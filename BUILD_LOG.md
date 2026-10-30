@@ -2864,6 +2864,7 @@ The owner (20 October, through the coordinating session): "dark mode isn't there
   - Checks at 0.12.0: web lint, web vitest 263/263 (the scenes' 65 at each release among them), `build:site` (58 pages), site Playwright 83/83, design-shots 24 of 24 ok with teal unchanged (home 2; 0.12.0 3 at 1440 and 2 at 390; 0.9.0 0). Moving the rail into rail.tsx left every 0.12.0 scene's markup as it was, byte for byte. CSS: / inlines 110 B more gzipped (1,774 to 1,884), 0.9.0's page 28 B, and scenes.css grows 1.2 KB before compression.
   - Checks at 0.13.0 (release.ts set to it for the run, then back): the scenes' vitest 65/65, `build:site` (58 pages), site Playwright 83/83, design-shots 24 of 24 ok. The site's other release tests fail there until the release commit brings that release's content (OPERATING §6): its CHANGELOG section, its downloads, its post, the changelog index's top and /about/'s figures.
   - The gate passed: TypeScript 2,109 tests (web 263, ui 497, desktop 1,043, api 235, remote 33, mobile 24, protocol 14), Rust 2,717 passed and 9 ignored, and the rest.
+- chain27 5b222680 merged after it: the design lead's QA of d51649f7 and DESIGN §4.7's exits at once, which the scenes follow since aec8b9df; m16d's F-EN-11 fourth follow-up; and the docs' local-models line, which the import guard now reads compiled. Nothing a scene draws changes. The gate passed on the merge: TypeScript 2,109 tests, Rust 2,719 passed and 9 ignored (m16d's two new), and the rest.
 
 ## M16 · F-CN-06 persona and memory, F-CN-07 wake phrase
 Built on branch `m16a-persona-wake` (from `product-m0-m5`), alongside the Conductor-core session (`m16a-conductor`: F-CN-01…04, F-CN-08). Decisions are numbered from D-1200.
@@ -4387,6 +4388,15 @@ Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; 
     - 4 (D-3075): `.claude.json`'s three writers (onboarding at every start, `trust_workspace`, `set_stdio_server`) and `settings.json`'s hook are under the same lock; each writer takes it once, at its top.
     - Tests: crate 4 new (a non-table `mcp_servers` refused with the file kept and the lock not poisoned, an inline table taking the server; 24 Claude starts at once in 4 rounds, keeping every trusted folder, the tasks server and onboarding; a `..` path not owned; names that don't read as themselves never listed, a hidden cloud tag still remote) and the version test (a bidi override, isolates, zero-width characters and the BOM). Each fails with its fix reverted: the indexing back (a panic), `trust_workspace`, onboarding or `set_stdio_server` unlocked (3 of 3 runs each), `install_hooks` unlocked (the desktop 24-start test, 3 of 3 runs), `owns` by `starts_with`, names stripped instead of refused, `model` standing in for a refused name, the cloud check reading names strictly, and the version keeping non-ASCII.
     - Gate on this commit: the full gate passed (2,624 Rust tests, 9 ignored; 1,908 TypeScript; the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage 194; no protocol drift, 596 types). A first run was stopped by a worker restart partway through the Rust tests, none failed, and the gate ran again from a clean build. E2E m18-en11 6, m18-en10 5, m4-1 3 and m4-4 1 (provider homes), all passing, exit 0.
+  - Approved with one SHOULD-FIX and merged into chain27 (65c7b5d7). Fourth follow-up (D-3077):
+    - SF1: a saved launch whose home `owns` doesn't take (reached through `..`, outside the providers folder, an engine's folder) is refused with "Launch configuration unavailable" at stage `provider_home`, before anything is written; it used to start the engine there, its hooks' and tasks server's NotOwned only logged.
+    - Nit 4: `owns` takes exactly `<root>/<engine or _oneoff>/<home>` in plain names, as `remove` does, so neither the root, an engine's folder nor a folder inside a home counts.
+    - Nit 2: only a model Codex can be started with is listed (`model_ok`: ASCII letters, digits and `. - _ : / @`), so an accent, another script's letter, a space or a leading `-` keeps a name off the list rather than showing one Start would refuse. PRODUCT_SPEC and the docs say so instead of "no look-alike".
+    - Nit 1: any `name` that's there and not null counts, so a blank one, a space other than U+0020 or a number is refused and the entry dropped; `model` stands in only for a missing name.
+    - Nit 3: a non-table `mcp_servers` is `HomeError::Unexpected` ("config.toml's mcp_servers isn't a table; leaving it as it is"), not "isn't valid TOML".
+    - Nit 5: a library session's folder is placed by where it is on disk: the folder and each workspace's root are canonicalised before the containment check, so a folder spelled through `..` or a link isn't inside a workspace by its spelling, and the pane opens in the real folder.
+    - Tests: desktop 2 new (a saved launch's home through `..`, elsewhere and an engine's folder refused, its own home started; a session folder placed in its workspace, and one through `..` out of it in its own); the crate's dotdot test adds an engine's folder and a folder inside a home, the `mcp_servers` test checks the new error and its words, and the names test adds accents, a Cyrillic letter, spaces, a leading `-`, and blank, NBSP and numeric names with a `model`. The restore tests' fixture saved its panes' homes outside the providers folder, where no real launch has one; it now makes them where Vibezeo does (`providers/claude/acc-<n>`). Each fails with its fix reverted: relaunch taking any folder that's there, `owns` at any depth, `Parse` back, a blank name letting `model` stand in, look-alikes listed, and the library comparing spellings.
+    - Gate on this commit: the full gate passed (2,626 Rust tests, 9 ignored; 1,908 TypeScript; the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage 194; no protocol drift, 596 types). Its first run failed the two restore tests whose fixture saved homes outside the providers folder (above); a second run was stopped before its tests to free disk space, and the gate ran again from a clean build. E2E m18-en11 6, m18-en10 5, m18-th17 4, m4-1 3, m4-4 1, m5-1 2, m5-2 1 and m5-3 3, all passing; the run then exited 1 at the runner's temp-home cleanup (ENOTEMPTY), which app-ui's runner fix on chain27 addresses.
 
 ### M18 · Next features: engines decisions
 - D-2400: Each engine's instructions files and pointer are data in `registry.json`, checked against the vendors' own pages on 15 October 2026: Claude Code's memory page (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; `AGENTS.md` only when none exist; `@path` imports), Codex's AGENTS.md page (`AGENTS.override.md`, else `AGENTS.md`, one per folder), Gemini CLI's GEMINI.md page (`@file.md` imports; `context.fileName`), Copilot CLI's custom instructions page (`.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, combined) and Cursor's CLI page (`.cursor/rules`, `AGENTS.md`, `CLAUDE.md`). Every pointer is an `@AGENTS.md` import in the engine's own file: Gemini CLI takes one in `GEMINI.md`, so its settings file is never edited, and no engine needs a symbolic link. Engines without an entry (Grok, OpenCode, Droid, Amp, Aider, Kimi) are Unknown until their docs are checked.
@@ -4444,6 +4454,7 @@ Built from `origin/chain19` out of `docs/NEXT_FEATURES.md` (§1 #1, #9, #3, #5; 
 - D-3074: The Codex version Start's reason names ("this computer has Codex …") is shown without control characters, as server and model names are, and cut at 40 characters with "…".
 - D-3075 (F-EN-11, third follow-up, 29 October): The per-home lock (D-3073) covers every one of Vibezeo's writers of a home's settings, taken once at the top of each: Codex's `config.toml` (`write_config`, `install_hooks`, `set_stdio_server`) and Claude Code's `.claude.json` (onboarding, re-seeded by `create` at every start; `trust_workspace`; `set_stdio_server`) and `settings.json` (`install_hooks`). It's a leaf: none of them calls another while holding it, and none awaits. A home is spelled one way: `ProviderHomes::owns` takes only a path under the root through plain names, so a `..` is refused, and the lock's key, the path as given, can't be two spellings of one home (a symlink to a home would get a lock of its own). A Codex `mcp_servers` that isn't a table (`mcp_servers = 1` in a hand-edited home) is refused as unreadable and left as it is, rather than panicking with the lock held; an inline table takes the server.
 - D-3076: Text a server sends is never altered into another name. A model's name, or its parameter size, with a control character, a character that shows as nothing or reorders the text around it (`tandem_core::run_request::hidden`: bidi controls and isolates, zero-width characters, the BOM, spaces other than U+0020) or more than 200 characters (16 for a size) isn't listed or shown, and an entry's `model` doesn't stand in for a `name` refused this way. Only the cloud checks read names with those characters removed, so none can hide a cloud tag. The Codex version Start's reason shows keeps only its printable ASCII, so a bidi override can't make `0.941.0` read as 0.149.0.
+- D-3077 (F-EN-11, fourth follow-up, 29 October): A provider home is exactly `<root>/<engine or _oneoff>/<home>` in plain names (`ProviderHomes::owns`), and a saved launch whose home isn't one, or isn't there, is refused ("Launch configuration unavailable", stage `provider_home`) before anything is written, so an engine never starts in another folder without its hooks and tasks server. A server's model is listed only when its name is one Codex can be started with (`model_ok`), and a `name` that's there but refused isn't replaced by the entry's `model`. A Codex `mcp_servers` that isn't a table is `HomeError::Unexpected`. A library session's folder is placed by its canonical path, compared with each workspace's canonical root.
 
 ### M18 · Next features: engines log
 - F-EN-07: the vendor pages changed the draft: Gemini CLI's `GEMINI.md` takes an `@AGENTS.md` import, so no settings file is edited and no symbolic link is needed (D-2400). The UI's Undo toast sits under the open dialog's modal layer, so the test finds it with `hidden: true`. Building `chain19` filled this container's disk twice (test binaries are kept per build); removing all but the newest of each in `target/debug/deps` freed 8.5 GB and 6.7 GB.
@@ -4692,6 +4703,45 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - The scenes drew the modes as Code | Thread | Agent from slice 1, where 0.12.0's title bar reads Agent | Code | Thread. site-motion fixed it in cced2f8f.
   - The finish glow has been on the hero's pane since slice 1.
   - D-2702's brief said the rail could widen until nothing was cut, without checking CodeRail's 360 maximum.
+- Correction (the coordinating session's code review of cced2f8f, S1): the line above, "A scene's count matches the agents it draws", was wrong.
+  - AgentsSegment counts every status record, and the scenes share one world: in story.json, Bea waits and Arlo works throughout.
+  - So every status bar counts them too. Review reads 1 waiting · 1 working, then 1 · 2 while the second opinion runs. Plan reads 1 · 1, then 1 · 4, falling to 1 · 1.
+  - A zero segment renders nothing, with no gap.
+- Correction (the design lead's own): a Dashboard card's title is cardTitle's "{first name} · {work}" (model.ts), not the first name alone. The 39601718 record named only its first part, and the scenes drew "Ada". The review queue's card keeps the first name (review_queue.rs uses human_name).
+- Design QA of `app-ui` @ d13324ff (its frames page; READY to follow): approved in design.
+  - D-2703 in WebKitGTK at 1×: 249 px at the minimum, eased to 275 when a Preview answers, and it stays at 275 after the preview stops.
+  - D-2624: Bea's pane asks "Allow execution of: 'pnpm test search'?", which registry.json's waitingPatterns match.
+  - None of the opening frame's six cards has a line or an account.
+  - Ada's card reads Read, then Edit, then Bash through the CI fix, and nothing at Done.
+  - D-2627, found while taking these frames: a card's line followed only its last load. Now every status update draws it as dashboard.rs does.
+- Design QA of `site-motion` @ 23cf1fa0 (the round on cced2f8f, with both code reviews): approved.
+  - D-2704: the 0.12.0 hero has no radar, and its rail is 320 px with nothing cut.
+  - At Done, Ada's line goes at once, and the groups below ease up one line over `--dur-base` (transform only) to the app's end frame.
+  - No finish glow.
+  - Cards use cardTitle's titles, and the waiting card is AgentCard's surface-2 with its 1 px waiting border.
+  - Land's and the CI rail's dot gaps are back.
+  - Every status bar counts the story's world (S1), with no empty segment.
+  - Card lines follow dashboard.rs, and the CI scene is story.json's pr.
+  - No text overlaps. Real playback shows 0.0 ms spread, and design-shots passes 24 of 24.
+  - Calls:
+    - The CI pane keeps its ⋮ for what scrolled by, drawn as an elision in fg-subtle (polish), since the prompt's start and its untrusted label are what the scene is about.
+    - Scenes cut exits as the build does. DESIGN §4.7's "exit: fade" now says so.
+- Design QA of `site-motion` @ d51649f7 (on 23cf1fa0): approved.
+  - The CI pane's ⋮ is drawn as an elision: fg-subtle, unindented, on its own line between "Failed steps' log (last lines):" and the log's tail.
+  - Land's status bar holds "◆ 1 waiting ● 1 working" throughout.
+- `app-ui`'s 4e8def0f merged into chain27 (4a19b868) with its full E2E at 159 of 159. Its design approval is d13324ff's frames, above.
+- Design QA of `app-ui` @ 4fd28132 (the review of 4e8def0f, D-2629 to D-2632), walked in a demo built at 4fd28132.
+  - D-2632 drew Bea's ask as Gemini CLI 0.66.0's whole confirmation: the command in a rounded box, "Allow execution of [Shell]?", and three numbered choices.
+  - The design lead first approved that whole screen, as the engine's output attributed by the pane's "Gemini CLI · simulated in this demo" banner.
+  - The coordinating session then decided it the stricter way, the one the design lead had first advised: quote no more of another product's interface than the app needs.
+    - Bea's pane keeps the command and Gemini CLI's one question line, which registry.json's waitingPatterns match.
+    - The numbered choices go; the box may stay as drawing.
+    - Claude Code's edit result in the demo keeps only its first sentence.
+  - That decision supersedes the approval. The QA of `app-ui`'s final SHA follows.
+  - Already true at 4fd28132:
+    - Answering runs her tests and commits, "Needs you" clears, and the status bar drops to "● 1 working".
+    - At the rail's 246 minimum, no name is cut. D-2629's folding case rests on `app-ui`'s E2E step.
+  - Polish: the coach's second hint covers the start of Bea's pane header as soon as she's opened. It should wait until her ask is answered.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions

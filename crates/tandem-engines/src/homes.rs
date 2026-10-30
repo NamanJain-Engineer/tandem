@@ -35,6 +35,8 @@ pub enum HomeError {
     Io(#[from] io::Error),
     #[error("{file} isn't valid {kind}; leaving it as it is")]
     Parse { file: String, kind: &'static str },
+    #[error("{file}'s {key} isn't a table; leaving it as it is")]
+    Unexpected { file: String, key: &'static str },
     #[error("that folder isn't a Vibezeo provider home")]
     NotOwned,
 }
@@ -163,11 +165,13 @@ impl ProviderHomes {
     }
 
     /// True when `path` is one of this root's homes (never a user folder):
-    /// under the root and spelled with plain names only, so a `..` can't
-    /// lead out of it and a home has one spelling ([`config_lock`]).
+    /// exactly `<root>/<engine or _oneoff>/<home>`, plain names only, so a
+    /// `..` can't lead out of it, a home has one spelling ([`config_lock`])
+    /// and neither the root, an engine's folder nor a folder inside a home
+    /// counts (D-3077).
     pub fn owns(&self, path: &Path) -> bool {
         path.strip_prefix(&self.root).is_ok_and(|rel| {
-            rel.components().next().is_some()
+            rel.components().count() == 2
                 && rel
                     .components()
                     .all(|c| matches!(c, std::path::Component::Normal(_)))
@@ -266,14 +270,14 @@ impl ProviderHomes {
                             doc["mcp_servers"] = toml_edit::Item::Table(t);
                         }
                         // A hand-edited `mcp_servers = 1` is refused, the file
-                        // left as it is (D-3075).
+                        // left as it is (D-3075, D-3077).
                         let Some(servers) = doc
                             .get_mut("mcp_servers")
                             .and_then(toml_edit::Item::as_table_like_mut)
                         else {
-                            return Err(HomeError::Parse {
+                            return Err(HomeError::Unexpected {
                                 file: display_name(&file),
-                                kind: "TOML",
+                                key: "mcp_servers",
                             });
                         };
                         let mut t = toml_edit::Table::new();
@@ -922,7 +926,20 @@ mod tests {
             let err = homes
                 .set_stdio_server(codex, &home, "tandem_tasks", Some(&server))
                 .expect_err(odd);
-            assert!(matches!(err, HomeError::Parse { .. }), "{odd}: {err}");
+            assert!(
+                matches!(
+                    err,
+                    HomeError::Unexpected {
+                        key: "mcp_servers",
+                        ..
+                    }
+                ),
+                "{odd}: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "config.toml's mcp_servers isn't a table; leaving it as it is"
+            );
             assert_eq!(
                 std::fs::read_to_string(home.join("config.toml")).expect("read"),
                 odd
@@ -1036,7 +1053,11 @@ mod tests {
             .join("claude")
             .join("acc_1");
         let out = homes.root().join("claude").join("..").join("..");
-        for path in [around, out, homes.root().to_path_buf()] {
+        // Only a home itself: not an engine's folder, nor one inside a home.
+        let engine = homes.root().join("claude");
+        let inside = home.join("projects");
+        std::fs::create_dir_all(&inside).expect("inside");
+        for path in [around, out, homes.root().to_path_buf(), engine, inside] {
             assert!(!homes.owns(&path), "{}", path.display());
             assert!(matches!(
                 homes.install_hooks(claude, &path, Path::new("/x/tandem-hook")),
