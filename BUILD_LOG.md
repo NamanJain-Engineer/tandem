@@ -2203,18 +2203,19 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
 - D-877: The redactor holds its lazy DFAs' caches, so a crafted text slows only its own redaction. This is the should-fix from the review of e788fc6f (D-876). The coordinator made it on `chain28`, since messaging the sessions still fails.
   - **What the review found, confirmed:**
     - 32 KB of `AIza` followed by 0 to 33 random letters or digits, repeated, makes the prefilter's lazy DFA give up. The `regex` crate keeps that cache for later searches and never resets it, so every later redaction on that thread runs on the slow engine.
-    - It reaches the rules too. 64 KB of `key` runs left the high-entropy rule's later scans 25 times as slow: 7.3 ms to 185 ms in a release build, on 1.3 MB of `session_token = …` lines.
+    - It reaches the rules too. 64 KB of `key` runs left the high-entropy rule's later scans 25 to 77 times as slow: 7.3 ms to 185 ms in a release build, on 1.3 MB of `session_token = …` lines (the review of 9ad7fe54 measured 3.4 ms to 228-264 ms).
+    - The review of 9ad7fe54 timed more victims on the old code, release build: a 70-byte line and 1 MB of prose became about 130 times as slow, 1 MB outside ASCII 92 times, a 270 KB log 25 times, session lines 13 times.
     - A first test missed it. Its gap came from the last letter's seed, so a gap of 0 stalled the seed, and the text became plain `AIzaAIza…`, which a lazy DFA reads in a few states.
   - **Measured before choosing** (release build):
     - Fresh caches per call cost 72 µs on 70 bytes (0.18 µs warm), 2.4 ms on a 5 KB log (69 µs warm) and 50 ms on 1 MB (9.6 ms warm). One rule's fresh cache costs 48 to 121 µs.
     - Cloning only above a size doesn't stop short calls either: clears add up across calls on a pooled cache.
-    - Relaxing `{35}` and `{16}` to `+` in the prefilter made the warm megabyte take twice as long, since a set reports every match position. Inputs that mix many prefixes would still grow the states.
+    - Relaxing the counts to `+` in the prefilter made the warm megabyte take up to twice as long (0.9 to 2.2 times over runs), since a set reports every match position. Inputs that mix many prefixes would still grow the states.
   - **The change** (`redact/engine.rs`):
     - The prefilters run on `regex-automata`'s lazy DFA, and the rules on its lazy DFA regex. It is 0.4.18, already built for `regex`, now a direct dependency.
-    - Each search takes its cache from a pool. A search that cleared its cache resets it before it goes back, so every search starts with no clears but its own and keeps the states earlier ones built.
+    - Each call takes its cache from a pool. A call that cleared its cache resets it before it goes back, so every call starts with no clears but its own (the searches of one `find_iter` share one cache) and keeps the states earlier ones built.
     - A search whose lazy DFA gives up finishes on the `regex` crate's engines without one (one-pass, backtracker, PikeVM). So does a search that quits at a letter outside ASCII where a rule has Unicode's `\b`.
     - Groups are read on those engines over the match's own span, as `regex` reads them. Where the lazy DFA couldn't finish, the slow engine finds the match and its groups in one pass.
-    - The configuration is the `regex` crate's: 2 MB caches, the 10 MB NFA limit, the same literal prefilters, and giving up after 3 clears under 10 bytes a state.
+    - The configuration is the `regex` crate's: 2 MB caches, the 10 MB NFA limit, its literal prefix prefilters, and giving up after 3 clears under 10 bytes a state. The `regex` crate's other strategies aren't used: the URL-password rule, with no literal prefix, was searched backwards from each `@` there and is scanned forward here.
   - **Tests (F-TK-08.1):**
     - On the old code, a 270 KB log took 276 ms before 32 KB of `AIza` runs and 7.9 s after. 99 KB of session lines took 241 ms before 64 KB of `key` runs and 4.3 s after. On the new code both stay within the bound, each shape on a redactor and a thread of its own.
     - On a cache that keeps its clears, the prefilter and the high-entropy rule each give up on those texts. Through the engine, their caches go back with none.
@@ -2223,8 +2224,13 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - No rule matches empty text.
     - The two timing tests take one lock, since each is heavy enough to be the other's load.
   - **Speed:**
-    - In a release build, warm, the prefilter is as fast as before from 70 bytes to 1 MB. Rule matches and groups are within about 10%. Building one set and its rules takes 9 ms against 6.
+    - In a release build, warm, the prefilter is as fast as before from 70 bytes to 1 MB. Rule matches and groups are within about 10%, except the URL-password rule: on a megabyte with one such URL, about 2 ms more (1.3 to 1.8 times a whole pass; the review of 9ad7fe54). Building one set and its rules takes 9 ms against 6.
+    - A crafted text's own call warms its cache until the lazy DFA gives up: about twice the old steady state on 32 to 64 KB of runs (18 to 41 ms for `spans` on `AIza` runs), 1.15 times at 256 KB.
     - On D-3172's 13 adversarial megabytes (debug build), every call stays within that test's bounds, as before.
+  - **The review of 9ad7fe54: APPROVED**, with three should-fixes, made after it:
+    - The URL-password rule's cost, and the old bug's size in the CHANGELOG ("often 100 times as long or more"), are stated as measured (above).
+    - A test compares the high-entropy rule, plain and written, with the `regex` crate across a give-up midway: 20 matches before 64 KB of `key` runs and 20 after, groups and `captures_at` included, with the give-up proven on a cache that keeps its clears.
+    - Nits: a cache is reset in a drop guard, so even a panic can't send a cleared one back; the slow engine builds no full DFA (no pattern fits one); the engine's comments say what `token_re` runs on (a full DFA) and what a call shares.
   - **Checked since (with D-878):** the app's other patterns, run on terminal output through the `regex` crate, can't be made to give up this way. The registry's 25 waiting, ready and limit patterns are short literals (case-insensitive, some with `\b`), its title pattern is `^[…]\s*(.+)$`, and its version patterns read only `--version` output. The app's own (limits' `\|(\d{10})\b` and `(\d+)\s*([hms])`, Conductor's and the briefing's word lists, voice's markers) have no counted repetition of a class wide enough to fill a 2 MB cache. A quit on a letter outside ASCII ends only that search; it clears nothing.
 - D-878: The review of `competitive-gaps` 9a4e93ab (F-WT-10's second slice) required two fixes and asked for nine more; the coordinator made them and the nits worth their code on `chain28`, since messaging the sessions still fails. The merge kept 0.13.0's side of its conflicts (8d8f9d5b).
   - **Must-fix:**

@@ -8,21 +8,36 @@
 //! it to the prefilter, a megabyte then taking 33 times as long, and 64 KB
 //! of `key` runs to the high-entropy rule, 25 times.
 //!
-//! Here a search takes its cache from a pool and, if it cleared it, resets
-//! it before it goes back. So every search starts with no clears but its
-//! own, and keeps the states earlier ones built. A search whose lazy DFA
-//! gives up finishes on an engine with none, and so does one that meets a
-//! letter outside ASCII where a pattern has Unicode's `\b`.
+//! Here a call takes its cache from a pool and, if it cleared it, resets it
+//! before it goes back, however the call ends ([`Taken`]). So every call
+//! starts with no clears but its own (the searches of one `find_iter` share
+//! a cache), and keeps the states earlier ones built. A search whose lazy
+//! DFA gives up finishes on an engine with none, and so does one that meets
+//! a letter outside ASCII where a pattern has Unicode's `\b`.
 //!
 //! Each fresh cache costs 50 to 120 µs to warm (release build), against
 //! under 2 µs for a warm one on short text, so a cache is kept, not made
-//! per call. The redactor's other patterns, a token and one character,
-//! have too few states to fill a cache.
+//! per call. The redactor's other patterns can't be poisoned: the `regex`
+//! crate runs its token pattern on a full DFA, which has no cache, and the
+//! one-character `WORD` never clears one.
+//!
+//! What it costs: a crafted text's own call warms its cache until the lazy
+//! DFA gives up, about twice the old steady state on 32 to 64 KB of runs
+//! and less on longer text. The URL-password rule, which has no literal
+//! prefix, is scanned forward from the text's start, where the `regex`
+//! crate searched backwards from each `@`: about 2 ms more a megabyte, on
+//! text that has such a URL (the review of 9ad7fe54).
 
 use regex_automata::{
     hybrid, meta,
     nfa::thompson,
-    util::{captures::Captures, iter::Searcher, pool::Pool, prefilter::Prefilter, syntax},
+    util::{
+        captures::Captures,
+        iter::Searcher,
+        pool::{Pool, PoolGuard},
+        prefilter::Prefilter,
+        syntax,
+    },
     Anchored, Input, MatchErrorKind, MatchKind, PatternSet,
 };
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -92,6 +107,35 @@ fn slow_config(kind: MatchKind) -> meta::Config {
         .utf8_empty(true)
         .nfa_size_limit(Some(NFA_SIZE_LIMIT))
         .hybrid(false)
+        // No pattern fits a full DFA's state limit: building one only
+        // costs time and memory (the review of 9ad7fe54).
+        .dfa(false)
+}
+
+/// A cache from its pool, reset when its search cleared it before it goes
+/// back, however the search ends: a panic too.
+struct Taken<'a, C: Send, R: Fn(&mut C)> {
+    cache: PoolGuard<'a, C, Create<C>>,
+    reset: R,
+}
+
+impl<C: Send, R: Fn(&mut C)> Drop for Taken<'_, C, R> {
+    fn drop(&mut self) {
+        (self.reset)(&mut self.cache);
+    }
+}
+
+impl<C: Send, R: Fn(&mut C)> std::ops::Deref for Taken<'_, C, R> {
+    type Target = C;
+    fn deref(&self) -> &C {
+        &self.cache
+    }
+}
+
+impl<C: Send, R: Fn(&mut C)> std::ops::DerefMut for Taken<'_, C, R> {
+    fn deref_mut(&mut self) -> &mut C {
+        &mut self.cache
+    }
 }
 
 /// Patterns searched together, for which of them match.
@@ -126,7 +170,14 @@ impl Set {
     pub(crate) fn matches(&self, s: &str) -> Vec<usize> {
         let input = Input::new(s);
         let mut found = PatternSet::new(self.lazy.pattern_len());
-        let mut cache = self.caches.get();
+        let mut cache = Taken {
+            cache: self.caches.get(),
+            reset: |c: &mut hybrid::dfa::Cache| {
+                if c.clear_count() > 0 {
+                    c.reset(&self.lazy);
+                }
+            },
+        };
         if self
             .lazy
             .try_which_overlapping_matches(&mut cache, &input, &mut found)
@@ -134,9 +185,6 @@ impl Set {
         {
             found.clear();
             self.slow.which_overlapping_matches(&input, &mut found);
-        }
-        if cache.clear_count() > 0 {
-            cache.reset(&self.lazy);
         }
         found.iter().map(|id| id.as_usize()).collect()
     }
@@ -228,7 +276,14 @@ impl Pattern {
         grouped: bool,
     ) -> Vec<Caps<'h>> {
         let grouped = grouped && self.grouped;
-        let mut cache = self.caches.get();
+        let mut cache = Taken {
+            cache: self.caches.get(),
+            reset: |c: &mut hybrid::regex::Cache| {
+                if c.forward().clear_count() > 0 || c.reverse().clear_count() > 0 {
+                    c.reset(&self.lazy);
+                }
+            },
+        };
         let mut lazy = true;
         let mut searcher = Searcher::new(input);
         let mut found = Vec::new();
@@ -265,9 +320,6 @@ impl Pattern {
                 _ => None,
             };
             found.push(Caps { hit, caps });
-        }
-        if cache.forward().clear_count() > 0 || cache.reverse().clear_count() > 0 {
-            cache.reset(&self.lazy);
         }
         found
     }
@@ -432,6 +484,83 @@ mod tests {
     }
 
     #[test]
+    fn f_tk_08_1_a_rule_that_gives_up_midway_reads_as_the_regex_crate_does() {
+        // Matches on both sides of 64 KB of `key` runs, where the
+        // high-entropy rule's lazy DFA gives up midway: what the slow engine
+        // finds after it, its groups and `captures_at` too, is what the
+        // `regex` crate finds (the review of 9ad7fe54).
+        let lines = |seed: u64| -> String {
+            let mut seed = seed;
+            (0..20)
+                .map(|i| {
+                    let token = crate::redact::sample::alnum(&mut seed, 32);
+                    format!("{i}: session_token = {token} and auth ok\n")
+                })
+                .collect()
+        };
+        let (before, after) = (lines(7), lines(11));
+        let text = format!("{before}{}{after}", crafted("key", 19, 64 * 1024));
+        let plain = spec("signature");
+        let written = super::super::tolerant(&plain).unwrap_or_else(|| plain.clone());
+        for pattern in [plain, written] {
+            let rule = Pattern::new(&pattern).expect("the rule builds");
+            let mut kept = rule.lazy.create_cache();
+            let mut at = 0;
+            let gave_up = loop {
+                match rule
+                    .lazy
+                    .try_search(&mut kept, &Input::new(&text).range(at..))
+                {
+                    Ok(Some(m)) => at = m.end().max(at + 1),
+                    Ok(None) => break false,
+                    Err(_) => break true,
+                }
+            };
+            assert!(gave_up, "a cache that keeps its clears gives up: {pattern}");
+            let reference = regex::Regex::new(&pattern).expect("the regex crate builds it");
+            let groups = reference.captures_len();
+            let theirs: Vec<Vec<Option<(usize, usize)>>> = reference
+                .captures_iter(&text)
+                .map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect()
+                })
+                .collect();
+            let ours: Vec<Vec<Option<(usize, usize)>>> = rule
+                .captures_iter(&text)
+                .map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect()
+                })
+                .collect();
+            let starts: Vec<usize> = theirs.iter().filter_map(|c| c[0].map(|m| m.0)).collect();
+            assert!(
+                starts.iter().any(|&s| s < before.len())
+                    && starts.iter().any(|&s| s >= text.len() - after.len()),
+                "matches on both sides: {pattern}"
+            );
+            assert_eq!(ours, theirs, "{pattern}");
+            for at in starts {
+                let read = |c: Option<regex::Captures<'_>>| {
+                    c.map(|c| {
+                        (0..groups)
+                            .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                            .collect::<Vec<_>>()
+                    })
+                };
+                let mine = rule.captures_at(&text, at).map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect::<Vec<_>>()
+                });
+                assert_eq!(mine, read(reference.captures_at(&text, at)), "at {at}");
+            }
+        }
+    }
+
+    #[test]
     fn f_tk_08_1_a_quit_finishes_on_the_slow_engine() {
         // A letter outside ASCII stops a lazy DFA where the pattern has
         // Unicode's `\b`; that search goes to the slow engine and finds
@@ -459,8 +588,8 @@ mod tests {
 
     #[test]
     fn f_tk_08_1_no_rule_matches_empty_text() {
-        // So matches never meet an empty one, which `find_iter` would step
-        // over by a byte where the `regex` crate steps a character.
+        // So no match is ever empty: the guard against one stays a guard,
+        // not a path the engine takes.
         for pattern in specs() {
             let written = super::super::tolerant(&pattern).unwrap_or_else(|| pattern.clone());
             for p in [&pattern, &written] {
