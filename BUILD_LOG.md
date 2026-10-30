@@ -3509,6 +3509,28 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the desktop library's tests, 1,143 (2 ignored);
     - clippy across the workspace;
     - fmt.
+- [x] The review of 8e1d58af ("changes required", one must-fix) and its nits, on top of the D-3039 refinement (84e543df). chain27 isn't merged in.
+  - **Must-fix (D-3172).** The pass as written is back, for the rules with no validator. It reads the readable text with one byte where each removable character was: a space for whitespace, a mark for the rest. In the copy, a value with a mark in it is also read cut at its first mark. What 8e1d58af lost is hidden again: `Bearer` across a line separator, a high-entropy value that a removable ended, an assignment's value that a line separator ended, and decoys.
+  - **Nit 1.** A match in the copy counts only where its rule's opening and closing word boundaries have a mark or Unicode's boundary.
+  - **Nit 2.** A query's key looks back past marks for its `?`.
+  - **Nit 3 (D-3173).** The phone's routine names, and the review's file paths, branch and risky files, are redacted. A check's output is redacted whole, then cut.
+  - **Nit 4.** The every-rule test reads F-TL-02's corpus with a mark after every character. It found a gap: a word boundary inside a rule could fall before a mark that nothing else took. A mark may follow one now.
+  - **Nit 5.** D-3172 notes the glued decoy for 0.14.0, and that the timing bounds aren't a ceiling.
+  - **Against 7f61c86a,** over 455,936 generated inputs:
+    - none lost, and 80 gained: private keys with a line separator in the header;
+    - no new false positives, and 968 fixed.
+    - The `password=.<U+200B>…` class (33 of 48) and the camelCase prefix after `auth` (the same 96 of 1,888 as 7f61c86a) are noted in D-3172 and D-3170.
+  - **Tests**, each failing first on 8e1d58af:
+    - core `f_tk_08_1_what_the_text_as_written_kept_apart_stays_hidden`: (a) to (d), with (b) over 16 removable characters and four keys;
+    - core `f_tk_08_1_a_mark_in_a_word_outside_ascii_makes_no_token` (Nit 1) and `f_tk_08_1_a_mark_before_a_query_key_keeps_the_query` (Nit 2);
+    - core `f_tk_08_1_every_rule_steps_over_a_mark`, now semantic. On 8e1d58af it failed at the assignment rule;
+    - phone `f_tk_08_1_names_on_the_phone_hide_a_credential_behind_what_is_removable` and the review queue's `f_tk_08_1_check_output_hides_a_key_whose_first_line_falls_before_its_tail`, with their fixes taken out. The branch, risky files and paths came through whole, and the check's tail kept the key's base64.
+  - **Gate:** passed on the working tree, before the commit and on top of 84e543df, so it covers the D-3039 refinement too:
+    - 2,728 Rust tests (6 ignored) and 1,948 TypeScript;
+    - the rule-8 invariants, 15 of 15;
+    - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
+    - coverage 194, and protocol drift with 596 types (none added).
+  - **E2E** on the working tree, twice: m10-2-briefing-learning (4 tests), m10-3-memory-skills (4), m16-4-phone (5), m18-cn09-walk-and-review (3) and m18-tk08-lead-keeps-moving (1) passed every test in both runs. Both runs exited 1 from the runner's teardown, after every spec had passed: the `cleanHomes` ENOTEMPTY that chain27 fixes.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3874,41 +3896,51 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - as written, each span mapped across the removal;
     - by the token rules (`Redactor::cut_spans`): each one without its `\b`s, anchored at every real word boundary and every place the removal cut, and accepted where it ends at either, or with a cut inside it.
   - A word that only holds a prefix, with nothing cut before it (`disk-usage-…`), isn't a token. `holds_credential` is whether there are any spans.
-  - Amended by D-3172: `cut_spans` took time in the square of the text, and the pass as written, with every rule tolerant of where the removal cut, finds what it found. So there are two passes again.
+  - Amended by D-3172: `cut_spans` took time in the square of the text. Three forms, each one scan a rule, find what it found: as read, as written, and a copy where every rule steps over where the removal cut.
   - Over-redaction, noted by the review of 7f61c86a (Nit 4). Both happened only where something removable is, and both fail safe, but a memory, skill or learn save refused such text:
     - `passwd = <U+200B>fallback_getpass(...)`: as written, the value started with what's removable, so it didn't read as code. Gone with D-3172: validators read a value without its marks;
     - `di<U+200B>sk-usage-…` comes back `di[REDACTED]`, since `sk-` after what's removable starts a token. Left as it is.
+  - Accepted the other way (the review of 8e1d58af): `password=.<U+200B>hunter2hunter2` and the like aren't hidden any more. 7f61c86a hid them only because the removable made its validator read the value as other than code. Without it, `.hunter2hunter2` is code to the plain rules too.
   - Not found: full-width look-alikes (`ｇｈｐ＿…`), which NFKC turns into a token (the same review, Nit 5). F-TK-09's F-TL-02 work in 0.14.0 takes them, with the `*_at`, `expires` and `expiry` suffixes.
 - D-3171: The phone and the app's secret previews read text as a model and a save do (the review of a106fbf1, Nits 3 and 4).
   - `redact_text`, which Memory's and Skills' editors compare with what they sent, used the plain redactor, so a split credential passed the preview and the save refused it. It now returns `untrusted::redacted` when `holds_credential`, else the text unchanged. Amended by D-3174: a line at a time.
   - The phone's review diff and closing lines, approvals' summaries and details, push bodies and transcripts go through `untrusted::redacted`. An approval's summary had no redaction at all in the snapshot. Amended by D-3173: the rest of what the phone gets that an agent, a model, a page or a message wrote.
-- D-3172: `untrusted::redacted` takes time in line with the text (the review of 7f61c86a, the must-fix and Nit 2).
+- D-3172: `untrusted::redacted` takes time in line with the text (the review of 7f61c86a, the must-fix and Nit 2; the review of 8e1d58af, its must-fix and Nits 1, 2, 4 and 5).
   - D-3170's token pass (`Redactor::cut_spans`) tried each token rule from every real word boundary and every cut, and a rule's body could run on to the end of the text from each. A megabyte of `sk-` with one removable character in it, or one every three characters, ran for minutes (600 s for the first). An agent or a page can write such text, and `redacted` runs on pane output, CI logs, scrollback, plugin replies and the phone.
-  - Now there are two passes, each one scan a rule:
-    - as read, the plain rules on the readable text, as before;
-    - as written (`Redactor::read_and_written_spans`), on a copy of the readable text with one mark (U+0001, which is removable itself, so it's in no text as read) where the removal cut.
-  - In the copy, every rule runs as `tolerant` writes it:
-    - a mark may follow each character the rule matches;
-    - a word boundary is ASCII's, so it holds next to a mark;
-    - validators read a value without its marks.
-  - So a credential is found where it was written, whether the removal split it, set it apart from a letter, or both. That includes Bearer's value (Nit 2), and a joiner (U+200C, U+200D), which Unicode counts as a word character, sets one apart as a zero-width space does. A test pins that every rule has a tolerant form.
-  - A match in the copy counts only with a mark in it or next to it. Anywhere else the copy says what the text as read says, and the plain rules read it with Unicode's word boundary. So an emoji's joiners elsewhere don't make `Gdańsk-Oliwa-…` a token, though ASCII's boundary holds after its `ń`, and a value a mark sets apart still reads as code: the review's `passwd = <U+200B>fallback_getpass(...)` isn't a credential any more.
-  - Each pass stays one scan:
-    - The prefilters drop their word boundaries. A `RegexSet` with Unicode `\b` falls back from its DFA to a slow engine on any text that isn't ASCII: 1 s for 64 KB in a debug build, against 14 ms. That made the plain redactor slow on such text too, and now it isn't.
-    - One prefilter scan of the copy serves both passes, since a rule that matches the text as read matches the copy as `tolerant` writes it.
+  - Now it reads three forms of the text, each rule in one scan (`Redactor::untrusted_spans`):
+    - **as read:** every rule as it is, on the readable text;
+    - **as written:** the rules with no validator (the tokens and `Bearer`) as they are, on the readable text with one byte where each removable character was. The byte is a space for whitespace, and a mark (U+0001, removable itself, so it's in no text as read) for the rest. What the text as written kept apart is found apart: a token that a decoy runs into, `Bearer` and its value across a line separator, a private key with one in its header;
+    - **the copy:** every rule as `tolerant` writes it, on the readable text with one mark for each run of what's removable. A mark may follow each character a rule matches, and any word boundary but a rule's first. A word boundary is ASCII's, so it holds next to a mark. So a credential the removal split, set apart from a letter, or both, is found.
+  - In the copy, a match counts only:
+    - with a mark in it or next to it. Anywhere else, the text as read says the same;
+    - where its rule opens or closes on a word boundary, with a mark or Unicode's boundary at that edge. So `Gdańsk-Oliwa-Przy<U+00AD>morze-…` isn't a token, though ASCII's boundary holds after the `ń` (the review of 8e1d58af, Nit 1).
+  - Validators read a value without its marks. A value with a mark in it is also read cut at the first one, where the text as written ended it: a high-entropy value before a long plain tail, or an assignment's before what reads as code once joined. A query's key looks back past marks for its `?` (Nit 2).
+  - Each form stays one scan a rule:
+    - The prefilters have no word boundaries. A `RegexSet` with Unicode `\b` falls back from its DFA to a slow engine on any text that isn't ASCII: 1 s for 64 KB in a debug build, against 14 ms. That made the plain redactor slow on such text too, and now it isn't.
+    - One prefilter scan of the copy serves the text as read too, since a rule that matches the text as read matches the copy as `tolerant` writes it.
     - A whole-token rule takes its bounds from `find_iter`, without the capture engine. In the copy, a value rule runs its captures only on a match that counts.
-  - Measured in a debug build, on 1 MB:
-    - the review's two shapes: 0.42 s and 0.27 s for `redacted`, where `cut_spans` hadn't finished in 90 s;
-    - four more token shapes: 0.09 to 0.21 s;
-    - what's removable everywhere, a private key that never ends, a bearer value split all the way, and random text: 0.05 to 1.0 s;
-    - a candidate of every kind every 30 bytes: 1.8 s. The plain redactor takes 4 s on that text as written;
-    - text outside ASCII, where the plain rules' Unicode word boundary can't use the DFA: 0.85 to 0.92 s, as the plain redactor takes.
+  - 8e1d58af read only the text as read and the copy, and lost what the text as written kept apart. Over 522,871 generated inputs, the review found 213 credentials that 7f61c86a hid come back whole: `Bearer` across a line separator, a high-entropy value that a removable ended, an assignment's value that a line separator ended, and decoys. A test pins each kind.
+  - Its every-rule test only compiled each tolerant form. Read against the corpus (Nit 4), it found that a word boundary inside a rule could fall before a mark nothing else could take: a key, a mark, then its `=`. A mark may follow such a boundary now.
+  - Checked against 7f61c86a over 455,936 generated inputs (each corpus secret line with each of 16 removable characters at every position, in place of each space, before a tail and between two of it; each benign line with each at every third position):
+    - nothing 7f61c86a hid comes back;
+    - 80 credentials it showed are hidden: private keys with a line separator in their header;
+    - no new false positives, and 968 of 7f61c86a's are gone (`passwd = fa<U+200B>llback_getpass(...)` and the like).
+    - Two classes differ, and are left as they are:
+      - `password=.<U+200B>hunter2hunter2`: 7f61c86a hid 33 of 48 such inputs, only because the removable made its validator read the value as something other than code. Without it, `.hunter2hunter2` is code to the plain rules too. The review's call: accept (D-3170).
+      - `handleSocks5AuthenticationNoAu<U+200B>…` after `auth`: cut at the removable, the camelCase prefix passes `high_entropy`. 7f61c86a did the same, on the same 96 of 1,888 inputs for that line. A better `high_entropy` would change the plain redactor, so it waits for 0.14.0's F-TL-02 work.
+  - Measured in a debug build, on 1 MB, `redacted`:
+    - the review's two shapes: 0.75 s and 0.29 s, where `cut_spans` hadn't finished in 90 s;
+    - four more token shapes: 0.22 to 0.36 s;
+    - what's removable everywhere, a private key that never ends, a bearer value split all the way, and random text: 0.06 to 1.05 s;
+    - a candidate of every kind every 30 bytes: 2.0 s;
+    - text outside ASCII: 1.0 s, what the plain redactor takes.
     - Twice the text takes twice the time, for every shape.
-  - The test holds the first six shapes to 2 s each and the rest to 4 s, and all of them to the growth check.
+  - The test holds the first six shapes to 2 s each and the rest to 4 s, and all of them to the growth check. Neither is a ceiling for any text: the plain rules alone take about 23 s for 1 MB of `pass<U+200B>word` in a debug build (the review of 8e1d58af, Nit 5).
   - Left, for 0.14.0's F-TL-02 work with F-TK-09:
     - a registered secret that the removal both splits and sets apart. Its scan finds one that's split, or set apart, not both, as before;
     - the plain rules' Unicode word boundary on text outside ASCII. It holds no boundary between Chinese text and a token run into it, so `使用ghp_…推送` stays whole, and it costs the slow engine. ASCII's boundary would find that token and keep the DFA, but it would also hold inside words such as `Gdańsk-…`.
     - The coordinator's call: both wait for 0.14.0, with no change in 0.13.0. There, a boundary that knows CJK text is to be weighed against F-TL-02's corpus (`使用ghp_…推送` found, `Gdańsk-…` left alone) and the DFA's cost, rather than ASCII's boundary everywhere.
+    - A decoy glued to a token with nothing removable between them, and something removable elsewhere (`eyJaaaaaaaa.bbbbbbbb.<real JWT> and <U+200B>`). The plain redactor shows it too, and finding it needs overlapping matches (the review of 8e1d58af, Nit 5).
 - D-3173: What the phone gets that an agent, a model, a page or a message wrote is redacted as written and as read, before any cut (the review of 7f61c86a, Nit 1).
   - D-3171 left agents' latest lines in the snapshot with the plain redactor. Found on the way, with no redaction at all:
     - agents' titles (a hook's or the terminal's title), in the snapshot and in push titles ("… needs you");
@@ -3916,6 +3948,9 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the review's title;
     - Night Shift's push body, the runs' issue titles, which a tracker holds. It was cut first, so a cut could leave a token's start.
   - Each now goes through `untrusted::redacted`, then the cut. Notifications and the app's own lists stay as they are (D-3036).
+  - Amended by the review of 8e1d58af (Nit 3):
+    - routine names go through it too, since a teammate's model can name one through `tandem__schedule_create`. So do the review's file paths, its branch and its risky files' names;
+    - a check's output is redacted whole, then cut to its last lines. Cut first, a private key whose first line fell before them came through as bare base64.
 - D-3174: The secret preview reads a line at a time, as the save does (the review of 7f61c86a, Nit 3).
   - Memory's and skills' saves check each line (`memory::has_credentials`). `redact_text` read the whole text, so `Bearer` at the end of one line with a value on the next looked like a credential, and Save stayed off for text that saving accepts. The plain redactor before D-3171 did the same.
   - It now answers with the save's own check, line by line: each line that holds a credential comes back redacted, the others as sent, line ends and all.

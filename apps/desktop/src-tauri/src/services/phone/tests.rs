@@ -20,6 +20,8 @@ struct FakeHost {
     ran: StdMutex<Vec<String>>,
     /// The thread's title; "Fix login" when unset.
     thread_title: StdMutex<Option<String>>,
+    /// The routine's name; "Nightly triage" when unset.
+    routine_name: StdMutex<Option<String>>,
 }
 
 #[async_trait]
@@ -50,7 +52,12 @@ impl PhoneHost for FakeHost {
     async fn routines(&self) -> Vec<PhoneRoutine> {
         vec![PhoneRoutine {
             id: "rt_1".into(),
-            name: "Nightly triage".into(),
+            name: self
+                .routine_name
+                .lock()
+                .expect("lock")
+                .clone()
+                .unwrap_or_else(|| "Nightly triage".into()),
             paused: false,
             running: false,
         }]
@@ -686,6 +693,60 @@ async fn f_tk_08_1_agents_and_threads_on_the_phone_hide_a_credential_behind_what
         assert!(alerts[0].title.starts_with("deploy with"), "{alerts:?}");
         assert!(alerts[0].title.ends_with("needs you"), "{alerts:?}");
         assert!(!format!("{alerts:?}").contains("0123456789"), "{alerts:?}");
+    }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_names_on_the_phone_hide_a_credential_behind_what_is_removable() {
+    // A file's, a branch's and a routine's names are what an agent or a
+    // teammate's model chose, and the phone is off this machine (the
+    // review of 8e1d58af, Nit 3).
+    use crate::services::review_queue::{ReviewRisk, ReviewRiskRule};
+    for secret in hidden_tokens() {
+        let r = review_for_phone(PhoneReview {
+            item: Some(PhoneReviewItem {
+                key: "pane:pn_1".into(),
+                title: "Ada".into(),
+                engine: None,
+                workspace: "shop".into(),
+                branch: Some(format!("tandem/push-{secret}")),
+                finished_at: 1,
+                closing: None,
+                files: 1,
+                additions: 1,
+                deletions: 0,
+                risks: vec![ReviewRisk {
+                    rule: ReviewRiskRule::Auth,
+                    files: vec![format!("auth/{secret}.rs")],
+                }],
+                check: None,
+                changed: false,
+            }),
+            files: vec![PhoneDiffFile {
+                path: format!("keys/{secret}.txt"),
+                change: "added".into(),
+                additions: 1,
+                deletions: 0,
+                patch: "+ok\n".into(),
+                truncated: false,
+                withheld: false,
+            }],
+            position: 1,
+            total: 1,
+            omitted: 0,
+        });
+        let shown = serde_json::to_string(&r).expect("json");
+        for said in ["tandem/push-", "auth/", "keys/"] {
+            assert!(shown.contains(said), "{said}: {shown}");
+        }
+        assert!(!shown.contains("0123456789"), "{shown}");
+        let rg = rig();
+        let mut phone = paired(&rg).await;
+        *rg.host.routine_name.lock().expect("lock") = Some(format!("rotate {secret}"));
+        let snap = cmd(&rg, &mut phone, 1, "view.snapshot", json!({})).await;
+        let routines = snap["data"]["routines"].to_string();
+        assert!(routines.contains("rotate"), "{routines}");
+        assert!(!routines.contains("0123456789"), "{routines}");
     }
 }
 

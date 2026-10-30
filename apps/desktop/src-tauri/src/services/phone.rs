@@ -262,7 +262,10 @@ fn review_bytes(r: &PhoneReview) -> usize {
 pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
     use tandem_core::untrusted::redacted;
     for f in &mut r.files {
-        if crate::services::review_queue::is_env(&f.path) {
+        let env = crate::services::review_queue::is_env(&f.path);
+        // A file's name is what an agent chose (the review of 8e1d58af).
+        f.path = redacted(&f.path);
+        if env {
             f.patch.clear();
             f.withheld = true;
             continue;
@@ -276,8 +279,15 @@ pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
         }
     }
     if let Some(item) = &mut r.item {
-        // The work's title is the agent's own (D-3173).
+        // The work's title is the agent's own (D-3173), and so are its
+        // branch's and its risky files' names (the review of 8e1d58af).
         item.title = redacted(&item.title);
+        item.branch = item.branch.take().map(|b| redacted(&b));
+        for risk in &mut item.risks {
+            for file in &mut risk.files {
+                *file = redacted(file);
+            }
+        }
         item.closing = item
             .closing
             .take()
@@ -1821,8 +1831,10 @@ impl PhoneService {
         threads.truncate(MAX_THREADS);
         let mut routines = host.routines().await;
         routines.truncate(MAX_ROUTINES);
+        // A teammate's model can name a routine (`tandem__schedule_create`),
+        // and the phone is off this machine (the review of 8e1d58af).
         for r in &mut routines {
-            r.name = clip(&r.name, 120);
+            r.name = clip(&tandem_core::untrusted::redacted(&r.name), 120);
         }
         // An agent's title and latest line, and a thread's title, are what
         // an agent, a model or a person's message wrote, and the phone is off

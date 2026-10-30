@@ -37,12 +37,28 @@ enum Extract {
 struct Rule {
     re: Regex,
     extract: Extract,
+    /// Whether the rule opens and closes on a word boundary, which
+    /// [`tolerant`] writes as ASCII's (D-3172).
+    edges: (bool, bool),
 }
 
-/// Where the removal cut, in the copy of the readable text that
-/// [`Redactor::read_and_written_spans`] reads: one byte for a run of what's
-/// removable (`untrusted::removable`), which this is itself, so it's in no
-/// text as read (D-3172).
+/// Whether `pattern` opens and closes on `\b`, past a flag group.
+fn edges(pattern: &str) -> (bool, bool) {
+    let body = pattern.strip_prefix("(?i)").unwrap_or(pattern);
+    (body.starts_with(r"\b"), body.ends_with(r"\b"))
+}
+
+/// Whether `c` is a word character as Unicode's `\b` reads it.
+fn word(c: char) -> bool {
+    static WORD: OnceLock<Regex> = OnceLock::new();
+    WORD.get_or_init(|| Regex::new(r"\A\w\z").expect("word pattern compiles"))
+        .is_match(c.encode_utf8(&mut [0; 4]))
+}
+
+/// Where the removal cut, in the copies of the readable text that
+/// [`Redactor::untrusted_spans`] reads: one byte for what's removable
+/// (`untrusted::removable`), which this is itself, so it's in no text as
+/// read (D-3172).
 pub(crate) const MARK: char = '\u{1}';
 
 /// `s` without [`MARK`]s, as a validator reads a value.
@@ -83,6 +99,12 @@ fn tolerant(pattern: &str) -> Option<String> {
                     // Unicode's would, and next to a mark or a letter
                     // outside ASCII too.
                     out.push_str(&format!("(?-u:\\{next})"));
+                    // Inside a pattern, the boundary can fall before a mark
+                    // that nothing else may take: a key, then a mark, then
+                    // its `=`.
+                    if !matches!(out.as_str(), "(?-u:\\b)" | "(?i)(?-u:\\b)") {
+                        out.push_str("\\x01?");
+                    }
                 } else if matches!(next, 'A' | 'z') {
                     out.push('\\');
                     out.push(next);
@@ -251,8 +273,11 @@ fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usi
     let v = caps.name("vq").or_else(|| caps.name("vu"))?;
     let mut value = v.as_str();
     if !quoted {
-        // `?access_token=abc&page=2`: a query parameter ends at `&`.
-        let in_query = key.start() > 0 && matches!(text.as_bytes()[key.start() - 1], b'?' | b'&');
+        // `?access_token=abc&page=2`: a query parameter ends at `&`. A mark
+        // before the key is where the removal cut, not the query's.
+        let in_query = text[..key.start()]
+            .trim_end_matches(MARK)
+            .ends_with(['?', '&']);
         if in_query {
             if let Some(i) = value.find('&') {
                 value = &value[..i];
@@ -446,7 +471,7 @@ pub struct Redactor {
     prefilter: RegexSet,
     rules: Vec<Rule>,
     /// The rules as [`tolerant`] writes them, for
-    /// [`Redactor::read_and_written_spans`].
+    /// [`Redactor::untrusted_spans`].
     written_prefilter: RegexSet,
     written_rules: Vec<Rule>,
     token_re: Regex,
@@ -478,9 +503,11 @@ impl Redactor {
             .expect("written patterns compile");
         let written_rules = written_specs
             .into_iter()
-            .map(|(pattern, extract)| Rule {
+            .zip(&specs)
+            .map(|((pattern, extract), (plain, _))| Rule {
                 re: Regex::new(&pattern).expect("written pattern compiles"),
                 extract,
+                edges: edges(plain),
             })
             .collect();
         let rules = specs
@@ -488,6 +515,7 @@ impl Redactor {
             .map(|(pattern, extract)| Rule {
                 re: Regex::new(&pattern).expect("redaction pattern compiles"),
                 extract,
+                edges: edges(&pattern),
             })
             .collect();
         let token_re = Regex::new(r"[A-Za-z0-9+/_.~-]{8,}").expect("token pattern compiles");
@@ -530,24 +558,47 @@ impl Redactor {
         self.spans_by(s, &hits, &self.rules, false)
     }
 
-    /// The spans in `read`, and those in `marked`, the same text with a
-    /// [`MARK`] where the removal cut (`untrusted::redacted`, D-3172).
+    /// The spans `untrusted::redacted` hides, in each of three forms of the
+    /// text, and in that form's offsets (D-3172):
+    /// - `read`, the readable text: every rule as it is.
+    /// - `written`, the same with one byte where each removable character
+    ///   was, a space for whitespace and a [`MARK`] for the rest: the rules
+    ///   with no validator (the tokens and `Bearer`) as they are. So what
+    ///   the text as written kept apart is found apart: a token a decoy
+    ///   runs into, or `Bearer` and its value across a line separator.
+    /// - `marked`, `read` with one [`MARK`] for each run of what's
+    ///   removable: every rule as [`tolerant`] writes it, stepping over a
+    ///   mark and reading one as a word boundary. So a credential the
+    ///   removal split, set apart from a letter, or both, is found.
     ///
-    /// In `marked`, every rule steps over a mark ([`tolerant`]), and a mark
-    /// is a word boundary, so a credential is found whether the removal
-    /// split it, set it apart from a letter, or both. A match there counts
-    /// only with a mark in it or next to it: anywhere else, `read` says the
-    /// same, and the rules as they are read it. Validators read a value
-    /// without its marks.
+    /// In `marked`, a match counts only with a mark in it or next to it:
+    /// anywhere else, `read` says the same. Where its rule opens or closes
+    /// on a word boundary, that edge has a mark or Unicode's boundary there,
+    /// so ASCII's doesn't add a word that a letter outside ASCII runs into.
+    /// Validators read a value without its marks, and a value with a mark
+    /// in it is also read cut at that mark, where the text as written ended
+    /// it.
     ///
-    /// One prefilter scan serves both, since a rule that matches `read`
-    /// matches `marked` as `tolerant` writes it, and each rule is one scan.
-    pub(crate) fn read_and_written_spans(&self, read: &str, marked: &str) -> (Spans, Spans) {
+    /// Each rule is one scan of each form it reads. One prefilter scan of
+    /// `marked` serves `read` too, since a rule that matches `read` matches
+    /// `marked` as `tolerant` writes it.
+    pub(crate) fn untrusted_spans(&self, read: &str, written: &str, marked: &str) -> [Spans; 3] {
         let hits: Vec<usize> = self.written_prefilter.matches(marked).into_iter().collect();
-        (
+        let plain: Vec<usize> = self
+            .prefilter
+            .matches(written)
+            .into_iter()
+            .filter(|&idx| {
+                self.rules
+                    .get(idx)
+                    .is_some_and(|r| matches!(r.extract, Extract::Whole | Extract::Value(None)))
+            })
+            .collect();
+        [
             self.spans_by(read, &hits, &self.rules, false),
+            self.spans_by(written, &plain, &self.rules, false),
             self.spans_by(marked, &hits, &self.written_rules, true),
-        )
+        ]
     }
 
     fn spans_by(
@@ -558,13 +609,30 @@ impl Redactor {
         marked: bool,
     ) -> Vec<(usize, usize)> {
         let bytes = s.as_bytes();
-        let mark = MARK as u8;
+        let at_mark = |i: usize| bytes.get(i) == Some(&(MARK as u8));
         // Whether a match touches a mark, when the text has them.
-        let counts = |a: usize, b: usize| {
+        let touches = |a: usize, b: usize| {
             !marked
-                || bytes[a..b].contains(&mark)
-                || (a > 0 && bytes[a - 1] == mark)
-                || bytes.get(b) == Some(&mark)
+                || bytes[a..b].contains(&(MARK as u8))
+                || (a > 0 && at_mark(a - 1))
+                || at_mark(b)
+        };
+        // Whether a match's edges are word boundaries where its rule wants
+        // them, with a mark or as Unicode reads them.
+        let edged = |rule: &Rule, a: usize, b: usize| {
+            if !marked {
+                return true;
+            }
+            let opens = !rule.edges.0
+                || a == 0
+                || at_mark(a - 1)
+                || !s[..a].chars().next_back().is_some_and(word);
+            let closes = !rule.edges.1
+                || b == s.len()
+                || at_mark(b)
+                || (b > a && at_mark(b - 1))
+                || !s[b..].chars().next().is_some_and(word);
+            opens && closes
         };
         let mut spans = Vec::new();
         let mut push = |span: Option<(usize, usize)>| {
@@ -578,40 +646,56 @@ impl Redactor {
                 .map(|v| (v.start(), v.end()))
         };
         for rule in hits.iter().filter_map(|&idx| rules.get(idx)) {
+            let span = |s: &str, caps: &regex::Captures<'_>| match rule.extract {
+                Extract::Value(validator) => value(caps, validator),
+                Extract::Custom(extract) => extract(s, caps),
+                Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
+            };
             match rule.extract {
                 // A whole match needs no groups: its bounds come from the
                 // DFA, without the slower engine that captures run.
                 Extract::Whole => {
                     for m in rule.re.find_iter(s) {
-                        push(Some((m.start(), m.end())).filter(|&(a, b)| counts(a, b)));
+                        let (a, b) = (m.start(), m.end());
+                        push((touches(a, b) && edged(rule, a, b)).then_some((a, b)));
                     }
                 }
-                // As written, only a match that touches a mark runs the
-                // captures, over itself: a long one elsewhere costs a DFA
-                // scan, not the slower engine's.
+                // As written, only a match that counts runs the captures,
+                // over itself: a long one elsewhere costs a DFA scan, not
+                // the slower engine's.
                 Extract::Value(_) | Extract::Custom(_) if marked => {
                     for m in rule.re.find_iter(s) {
-                        if m.start() == m.end() || !counts(m.start(), m.end()) {
+                        let (a, b) = (m.start(), m.end());
+                        if a == b || !touches(a, b) || !edged(rule, a, b) {
                             continue;
                         }
-                        let Some(caps) = rule.re.captures_at(s, m.start()) else {
+                        let Some(caps) = rule.re.captures_at(s, a) else {
                             continue;
                         };
-                        push(match rule.extract {
-                            Extract::Value(validator) => value(&caps, validator),
-                            Extract::Custom(extract) => extract(s, &caps),
-                            Extract::Whole => None,
-                        });
+                        push(span(s, &caps));
+                        // Where the text as written ended the value: at its
+                        // first mark (the review of 8e1d58af).
+                        let cut = ["v", "vq", "vu"]
+                            .iter()
+                            .find_map(|g| caps.name(g))
+                            .and_then(|v| v.as_str().find(MARK).map(|at| v.start() + at));
+                        if let Some(cut) = cut {
+                            // The same match, cut: one that starts later
+                            // hasn't had its edges read.
+                            let head = &s[..cut];
+                            let same = rule
+                                .re
+                                .captures_at(head, a)
+                                .filter(|c| c.get(0).is_some_and(|m| m.start() == a));
+                            if let Some(caps) = same {
+                                push(span(head, &caps));
+                            }
+                        }
                     }
                 }
-                Extract::Value(validator) => {
+                _ => {
                     for caps in rule.re.captures_iter(s) {
-                        push(value(&caps, validator));
-                    }
-                }
-                Extract::Custom(extract) => {
-                    for caps in rule.re.captures_iter(s) {
-                        push(extract(s, &caps));
+                        push(span(s, &caps));
                     }
                 }
             }
@@ -621,7 +705,7 @@ impl Redactor {
             if !filter.exact.is_empty() {
                 let mut check = |start: usize, end: usize| {
                     let hash: [u8; 32] = Sha256::digest(&s.as_bytes()[start..end]).into();
-                    if counts(start, end) && filter.contains(&hash) {
+                    if touches(start, end) && filter.contains(&hash) {
                         spans.push((start, end));
                     }
                 };
@@ -772,16 +856,39 @@ mod tests {
 
     #[test]
     fn f_tk_08_1_every_rule_steps_over_a_mark() {
-        // A rule `tolerant` can't write keeps its own pattern in the pass
-        // as written, which then misses a credential the removal split. So
-        // a new rule's syntax has to be one it knows (D-3172).
-        for (pattern, _) in rule_specs() {
-            let written = tolerant(&pattern);
-            assert!(
-                written.as_deref().is_some_and(|t| Regex::new(t).is_ok()),
-                "{pattern}"
-            );
+        // Each rule, as `tolerant` writes it, finds in F-TL-02's corpus
+        // with a mark after every character what the rule finds there, at
+        // the same place once the marks go. A rule that misses would leave
+        // a credential the removal split. Every rule has a sample (D-3172;
+        // the review of 8e1d58af, Nit 4).
+        let r = Redactor::new();
+        let mut samples = vec![0; r.rules.len()];
+        for (prefix, secret, suffix) in corpus() {
+            let line = format!("{prefix}{secret}{suffix}");
+            let marked: String = line.chars().flat_map(|c| [c, MARK]).collect();
+            let marks: Vec<usize> = marked.match_indices(MARK).map(|(at, _)| at).collect();
+            let to_line = |b: usize| b - marks.partition_point(|&at| at < b);
+            for (i, (plain, written)) in r.rules.iter().zip(&r.written_rules).enumerate() {
+                let Some(m) = plain.re.find(&line) else {
+                    continue;
+                };
+                samples[i] += 1;
+                let covered = written
+                    .re
+                    .find_iter(&marked)
+                    .map(|w| (to_line(w.start()), to_line(w.end())))
+                    .any(|(a, b)| a <= m.start() && b >= m.end());
+                assert!(covered, "rule {i} {:?} in {line:?}", plain.re.as_str());
+            }
         }
+        let none: Vec<&str> = r
+            .rules
+            .iter()
+            .zip(&samples)
+            .filter(|(_, n)| **n == 0)
+            .map(|(rule, _)| rule.re.as_str())
+            .collect();
+        assert!(none.is_empty(), "rules with no sample: {none:#?}");
     }
 
     #[test]
