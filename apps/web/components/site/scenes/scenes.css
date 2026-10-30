@@ -346,10 +346,10 @@
 @keyframes sc-press { 0%, 100% { scale: 1; } 40% { scale: 0.92; } }
 @keyframes sc-rise  { from { opacity: 0; translate: 0 1em; } }
 @keyframes sc-slide { from { opacity: 0; translate: 2em 0; scale: 0.98; } }
-/* A visit comes in, stays and leaves, with fades of a fixed length at each
-   end, so a long stay doesn't fade for a tenth of it (D-1888). */
+/* A visit comes in, stays, and is gone at once: the app animates no
+   closing content (base.css, F-SH-10), and a toast it dismisses is removed
+   (D-3004). Its entry names where it ends, since the final frame hides it. */
 @keyframes sc-visit { from { opacity: 0; translate: 0 0.5em; } to { opacity: 1; translate: 0 0; } }
-@keyframes sc-leave { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sc-count { from { --sc-n: 0; } }
 @keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
 /* A cut is there until its time, then gone at once; a show is the other way
@@ -382,7 +382,7 @@
     & [data-fx-press] { animation: sc-press 260ms var(--ease-io-site) var(--at) both paused; }
     & [data-fx-rise]  { animation: sc-rise var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-slide] { animation: sc-slide var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
-    & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-leave var(--dur-pop) var(--ease-exit) calc(var(--at) + var(--stay) - var(--dur-pop)) forwards paused; }
+    & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear calc(var(--at) + var(--stay)) forwards paused; }
     & [data-fx-sweep] { animation: sc-sweep 1.6s var(--ease-io-site) var(--at) both paused; }
     & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
     & [data-fx-cut]   { animation: sc-gone 0s linear var(--at) both paused; }

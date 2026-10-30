@@ -20,12 +20,12 @@ export const HERO_DONE = HERO_T.done;
  * you from then on (D-3001). */
 export const HERO_ASK = HERO_T.ask;
 /** A press runs 260 ms, and the app acts on the click that ends it: the
- * note is typed then, and the toast it dismisses leaves over 180 ms, the
- * visit's fade. "Warned both agents" shows once that one has gone, for the
- * 5 s a toast stays: one toast at a time in the same place. */
+ * toast it dismisses is gone then, at once, and the note is typed. "Warned
+ * both agents" shows once both notes are, for the 5 s a toast stays: one
+ * toast at a time in the same place. */
 const CLICK = HERO_T.warn + 0.26;
 const TYPED = CLICK + 0.1;
-const WARNED = CLICK + 0.18;
+const WARNED = TYPED + 0.08;
 const TOAST_STAY = 5;
 
 /** The panes open in each worktree, its rail row's count: its agent's, and
@@ -291,7 +291,7 @@ export function WorkspaceScene() {
               body={t("radar.notice.body")}
               action={t("radar.notice.warn")}
               at={HERO_T.notice}
-              stay={WARNED - HERO_T.notice}
+              stay={CLICK - HERO_T.notice}
               press={HERO_T.warn}
             />
             <Toast tone="success" title={t("radar.notice.warned")} at={WARNED} stay={TOAST_STAY} />

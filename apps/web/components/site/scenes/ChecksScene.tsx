@@ -45,9 +45,9 @@ export const CI_T = {
   ready: 13.4,
 } as const;
 const T = CI_T;
-/** A press runs 260 ms (scenes.css's sc-press) and a visit leaves over
- * 180 ms (--dur-pop): a dialog closed by a press leaves once it's over. */
-const PRESSED = 0.26 + 0.18;
+/** A press runs 260 ms (scenes.css's sc-press), and the app acts on the
+ * click that ends it: what the press closes is gone then, at once. */
+const PRESS = 0.26;
 
 /** The commented file's hunk in Open diff: the finished worktree's change
  * to it, with its old and new line numbers, as DiffView shows them. It's a
@@ -274,7 +274,7 @@ function ChecksDialog({ open, read, close, rerun = false }: { open: number; read
     </div>
   );
   return (
-    <div className="sc-ci-layer" {...visit(rise, close + PRESSED - rise)}>
+    <div className="sc-ci-layer" {...visit(rise, close + PRESS - rise)}>
       {box(true)}
       {box(false)}
     </div>
@@ -317,7 +317,7 @@ function Files() {
           <span className="sc-branch-chip-name">{pr.branch}</span>
           <Changes steps={AHEAD} />
         </span>
-        <span className="sc-menu" {...visit(T.chip + 0.15, T.push + 0.25 - (T.chip + 0.15))}>
+        <span className="sc-menu" {...visit(T.chip + 0.15, T.push + PRESS - (T.chip + 0.15))}>
           <span className="sc-menu-item">{t("git.pull")}</span>
           <span className="sc-menu-item sc-menu-on" {...fx("press", T.push)}>
             {t("git.push")}

@@ -29,8 +29,9 @@ export function fx(kind: Fx, seconds: number, extra?: Record<string, string | nu
 /** An element's effect, as `fx` and `visit` give it, passed on to a part. */
 export type Motion = { style?: CSSProperties } & { [effect: `data-fx-${string}`]: string | undefined };
 
-/** Something that comes and goes: in at `seconds`, out `stay` seconds later.
- * Not in the final frame. */
+/** Something that comes and goes: in at `seconds`, then gone at once `stay`
+ * seconds later, when the app removes it, since it animates no closing
+ * content (D-3004). Not in the final frame. */
 export function visit(seconds: number, stay: number) {
   return { "data-fx-visit": "", style: at(seconds, { "--stay": secs(stay) }) } as const;
 }

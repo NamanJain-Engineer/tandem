@@ -1475,16 +1475,13 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(notice?.[6]).toBe(t("radar.notice.warn"));
     const [shown, stay, press] = [notice?.[1], notice?.[2], notice?.[5]].map(Number) as [number, number, number];
     expect([shown, press]).toEqual([HERO_T.notice, HERO_T.warn]);
-    // The press dismisses it: from the click that ends it (260 ms), it leaves over its fade (the site's --dur-pop), the
-    // visit's last stretch.
+    // The press dismisses it: it's gone at once at the click that ends it (260 ms), as the app removes it (D-3004).
     const pressMs = Number(/& \[data-fx-press\][^{]*\{ animation: sc-press (\d+)ms/.exec(css)?.[1]);
-    const popMs = Number(/--dur-pop:\s*(\d+)ms/.exec(app("packages/ui/src/styles/site.css"))?.[1]);
-    expect(css).toMatch(/& \[data-fx-visit\] \{ animation: sc-visit var\(--dur-pop\)[^,]*, sc-leave var\(--dur-pop\) var\(--ease-exit\) calc\(var\(--at\) \+ var\(--stay\) - var\(--dur-pop\)\)/);
-    expect(Math.round((shown + stay) * 100)).toBe(Math.round((press + pressMs / 1000 + popMs / 1000) * 100));
+    expect(Math.round((shown + stay) * 100)).toBe(Math.round((press + pressMs / 1000) * 100));
     const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">([^<]*)<\/span><\/span><svg[^>]*sc-note-toast-x/.exec(hero);
     expect(warned?.[3]).toBe(t("radar.notice.warned"));
-    // Once the notice has gone, for the 5 s a toast stays: one toast at a time in one place.
-    expect(Math.round(Number(warned?.[1]) * 100)).toBe(Math.round((shown + stay) * 100));
+    // Once the notice has gone and the notes are typed, for the 5 s a toast stays: one toast at a time in one place.
+    expect(Number(warned?.[1])).toBeGreaterThan(shown + stay);
     expect(Number(warned?.[2])).toBe(5);
     // Both are the window's own, over the sidebar, never inside a pane.
     expect(/<div class="sc-pane[ "][\s\S]*?<\/div><\/div>/.exec(hero)?.[0]).not.toContain("sc-note-toast");
@@ -1838,11 +1835,10 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const layer = /<div class="sc-ci-layer" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(h);
     const [rise, stay] = [Number(layer?.[1]), Number(layer?.[2])];
     expect(rise).toBeGreaterThan(CI_T.open);
-    // It's there until Close's press is over, then leaves: the press never plays on a fading dialog.
+    // It's there until Close's press is over, then gone at once, as the app's closing dialog is (D-3004).
     const press = Number(/& \[data-fx-press\] \{ animation: sc-press (\d+)ms/.exec(css)?.[1]) / 1000;
-    const leave = Number(/--dur-pop:\s*(\d+)ms;/.exec(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/styles/site.css"), "utf8"))?.[1]) / 1000;
-    expect([press, leave]).toEqual([0.26, 0.18]);
-    expect(rise + stay - leave).toBeCloseTo(CI_T.close + press, 5);
+    expect(press).toBe(0.26);
+    expect(rise + stay).toBeCloseTo(CI_T.close + press, 5);
     // The agent works from when it's sent until its commit.
     expect(h).toMatch(new RegExp(`<span data-fx-stint="" style="--at:${CI_T.sent}s;--until:${CI_T.done}s"><span class="sc-dot"><svg[^>]*data-status="working"`));
     // Its pane's header has how long it's been at it while it works: a new state, so its clock starts again ("now").
@@ -1943,12 +1939,12 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(t("checks.bucket.pending")).toBe("Running");
     expect(now.match(/<span class="sc-badge sc-badge-outline">Running<\/span>/g)?.length).toBe(pr.checks.length);
     expect(now).not.toContain(t("failure.send"));
-    // The row reads Checks running from the read; Close is pressed, and the dialog leaves once the press is over;
+    // The row reads Checks running from the read; Close is pressed, and the dialog is gone once the press is over;
     // passed comes on a later read, once the dialog has gone.
     expect(when(esc(t("checks.running")))).toBe(CI_T.running);
     expect(now).toContain(`<span class="sc-btn sc-btn-primary" data-fx-press="" style="--at:${CI_T.closed}s">${t("common.close")}</span>`);
     const [rise2 = NaN, stay2 = NaN] = layers[1] ?? [];
-    expect(rise2 + stay2).toBeCloseTo(CI_T.closed + 0.26 + 0.18, 5);
+    expect(rise2 + stay2).toBeCloseTo(CI_T.closed + 0.26, 5);
     expect(when(esc(t("checks.passed")))).toBe(CI_T.passed);
     expect(CI_T.passed).toBeGreaterThan(rise2 + stay2);
     // The first open reads too: Refresh spins until its read, and the rows are as the row said, Send pressed after it.
@@ -2191,17 +2187,23 @@ describe("F-WB-01 AC9 D-3002 a value's steps never show together, and words come
   it("F-WB-01 AC9 D-3002 D-3003 no scene fades one thing out as another comes in, and only marks pop", () => {
     // A fade away in place is left only in DotChange: a dot changing colour is §4.7's status change. A pop is left only
     // for that mark; AgentCard's waiting border comes at once (the coordinator's nit 6). Words, a button's included,
-    // enter. A visit leaves with a fade too, so each is listed (the coordinator's nit 4): only what closes over the
-    // scene, as UI_SPEC §1.8's exits fade (a toast, the Checks dialog, the branch chip's menu). The Review bar's states
-    // are cut, as the app re-renders them, and the pane's done flash is gone (0.12.0 has none).
+    // enter. Each visit is listed (the coordinator's nit 4): only what closes over the scene (a toast, the Checks dialog,
+    // the branch chip's menu), and each is gone at once, as the app animates no closing content (base.css, F-SH-10) and
+    // removes a toast it dismisses (the design lead's call on exits, D-3004). The Review bar's states are cut, as the app
+    // re-renders them, and the pane's done flash is gone (0.12.0 has none).
+    expect(css).toContain("& [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear calc(var(--at) + var(--stay)) forwards paused; }");
+    expect(css).not.toContain("sc-leave");
+    const ui = (f: string) => readFileSync(join(import.meta.dirname, "../../../packages/ui/src", f), "utf8");
+    expect(ui("styles/base.css")).toMatch(/\.tn-fade\[data-state="closed"\],\s*\.tn-pop\[data-state="closed"\],\s*\.tn-dialog\[data-state="closed"\],\s*\.tn-sheet\[data-state="closed"\] \{ animation: none; \}/);
+    expect(ui("components/Toast.tsx")).toContain("const dismiss = useCallback((id: number) => setItems((all) => all.filter((t) => t.id !== id)), []);");
     const dir = join(import.meta.dirname, "../components/site/scenes");
     const uses = readdirSync(dir)
       .filter((f) => f.endsWith(".tsx"))
       .sort()
       .flatMap((f) => [...readFileSync(join(dir, f), "utf8").matchAll(/^.*(?:fx\("(?:pop|out)"|visit\().*$/gm)].map((m) => `${f}: ${m[0].trim()}`));
     expect(uses).toEqual([
-      'ChecksScene.tsx: <div className="sc-ci-layer" {...visit(rise, close + PRESSED - rise)}>',
-      'ChecksScene.tsx: <span className="sc-menu" {...visit(T.chip + 0.15, T.push + 0.25 - (T.chip + 0.15))}>',
+      'ChecksScene.tsx: <div className="sc-ci-layer" {...visit(rise, close + PRESS - rise)}>',
+      'ChecksScene.tsx: <span className="sc-menu" {...visit(T.chip + 0.15, T.push + PRESS - (T.chip + 0.15))}>',
       'parts.tsx: export function visit(seconds: number, stay: number) {',
       'parts.tsx: <span {...fx("out", seconds)}>',
       'parts.tsx: <span {...fx("pop", seconds)}>',
