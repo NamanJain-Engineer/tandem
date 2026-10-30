@@ -54,7 +54,7 @@ workspaces and Codex on a model served from your own computer are new too.
   thread's or a Dashboard card's menu lists what that session did, in order:
   turns sent (never their words), files changed, commands, tools, approvals and
   `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
-  for 14 days.
+  for up to 14 days.
 - [lin] **Code intelligence in the editor and diffs.** With the language
   servers you already have (rust-analyzer, typescript-language-server, pyright,
   gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
@@ -62,20 +62,22 @@ workspaces and Codex on a model served from your own computer are new too.
   worktree and review diffs jump from a changed name to its definition or
   callers. No server runs until you trust the repository (each worktree on its
   own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+  Folders on this computer only.
 - [lin] **jj workspaces.** With jj installed on this computer, in a trusted
   repository co-located with jj, New worktree… makes a jj workspace
   (`jj workspace add`) instead of a git worktree, with a git worktree one click
   away and your choice remembered. Its diff and overlap check come from jj,
-  agents in it are told to use jj, and Discard forgets the workspace while its
-  commits stay (asking first, as for uncommitted changes, when jj didn't keep
-  everything in it). Folders on this computer only. Landing, pull requests,
-  previews, setup, second opinion, the intent radar and the git panel aren't
-  available for jj workspaces yet.
+  agents in it are told to use jj, and Discard worktree… forgets the workspace
+  while its commits stay (asking first, as for uncommitted changes, when jj
+  didn't keep everything in it). Folders on this computer only. Landing, pull
+  requests, previews, setup, second opinion, the intent radar and the git
+  panel aren't available for jj workspaces yet.
 - [lin] **Local models.** Settings › Engines › Local models finds Ollama,
   LM Studio and llama.cpp servers running on this computer and lists their
   models, with the size and parameter count each server reports. Vibezeo
-  asks only 127.0.0.1, when you open the page or choose Check again. Ollama's
-  cloud models aren't listed: they run on ollama.com.
+  asks only 127.0.0.1, and only when you open the page, choose Check again,
+  add or remove a port, or start Codex on one of its models. Ollama's cloud
+  models aren't listed: they run on ollama.com.
 - [lin] **Start Codex on a local model.** On an Ollama or LM Studio model,
   Start in Codex opens a Codex pane in your open folder that says "On this
   computer". It runs in a provider home of its own for that model, never on
@@ -92,19 +94,20 @@ workspaces and Codex on a model served from your own computer are new too.
 
 - [lin] **Claude Code threads summarise their edits too.** A finished Claude
   Code turn says which files its edits changed, a subagent's and a
-  notebook's included, with the lines added and removed, and each edit's
-  row shows its own counts. When an edit's lines aren't known, such as a
-  file an MCP server's tool wrote, the turn lists its files without line
-  counts rather than a partial total. An edit that was refused or failed
+  notebook's included, with the lines added and removed where the edit says
+  them, and each edit's row shows its own counts. When an edit's lines
+  aren't known, such as a notebook's, a file written over whole or a file an
+  MCP server's tool wrote, the turn lists its files without line counts
+  rather than a partial total. An edit that was refused or failed
   counts nothing, a subagent's edits count even when its task ends in an
   error, and files changed by shell commands aren't counted.
 - [lin] **The rail's marks say it in a word.** A worktree's pull request
-  checks read as the status bar has them, CI running, CI passed or CI
-  failed, and hovering says which checks failed. The overlap mark shows the
-  symbol two worktrees share, such as `applyCoupon`, and a screen reader
-  hears those words first. A row that's short of room shows a mark's icon
-  rather than cut its words, and a pane header's branch gives way before the
-  pane's title does.
+  checks read as the status bar has them, CI running, CI passed, CI failed
+  or CI cancelled, and hovering says which checks failed. The overlap mark
+  shows the symbol two worktrees share, such as `applyCoupon`, and a screen
+  reader hears those words first. A row that's short of room shows a mark's
+  icon rather than cut its words, and a pane header's branch gives way before
+  the pane's title does.
 - [lin] **The rail never cuts a row off.** A row too narrow for everything it
   shows folds it: a worktree's Preview to its globe, its marks to their icons,
   and last its agents' status to a dot that still says Needs you or 2 working
@@ -112,10 +115,10 @@ workspaces and Codex on a model served from your own computer are new too.
   250 px rather than 180, a little wider while a row shows a jj badge or a
   preview, and widens itself to fit one. A row's ⋯ shows in place of its
   agents' count, never over a mark.
-- [lin] **Checks follow a push.** After you push from a worktree, its pull
-  request's checks are read at once and every 2 minutes for the next 5, so
-  its row moves to CI running when GitHub starts the new run instead of up
-  to 15 minutes later.
+- [lin] **Checks follow a push.** After you push from a worktree's git panel,
+  its pull request's checks are read at once and every 2 minutes for the next
+  5, so its row moves to CI running when GitHub starts the new run instead of
+  up to 15 minutes later.
 - [lin] **An account is named when there's a choice.** A pane's header and
   its Dashboard card name the agent's account only when its engine has more
   than one, so a single account's "Default" no longer shows.

@@ -12,7 +12,7 @@ Vibezeo 0.13.0 is out for Linux, as a `.deb` for Debian and Ubuntu and an `.rpm`
 
 ## Lead keeps a plan moving
 
-A run started by **Execute all** can stop and ask when its task and the repository don't settle something. Lead answers routine questions, each in a session of its own with every tool off, so it can't open a file or run a command. All it gets is the task as the plan wrote it, the question, and the repository's instructions files (such as `AGENTS.md` and `CLAUDE.md`) as committed when Execute all started, never a run's worktree.
+A run started by Execute all can stop and ask when its task and the repository don't settle something. Lead answers routine questions, each in a session of its own with every tool off, so it can't open a file or run a command. All it gets is the task as the plan wrote it, the question, and the repository's instructions files (such as `AGENTS.md` and `CLAUDE.md`) as committed when Execute all started, never a run's worktree.
 
 - The answer reaches the run labelled "Lead (automatic answer)" and goes on the task as Lead's comment, and each row counts them.
 - An answer has no more authority than the task: it can't approve anything, change access or start a tool.
@@ -35,33 +35,33 @@ An agent in an agent pane runs `vibezeo run -- pnpm deploy`. The pane shows the 
 
 ## Activity for each agent session
 
-**Activity…** in an agent pane's, a thread's or a Dashboard card's menu lists what that session did, in order: turns sent (never their words), files changed, commands, tools, approvals and `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer for 14 days.
+**Activity…** in an agent pane's, a thread's or a Dashboard card's menu lists what that session did, in order: turns sent (never their words), files changed, commands, tools, approvals and `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer for up to 14 days.
 
 ## Code intelligence in the editor and diffs
 
 With the language servers you already have (rust-analyzer, typescript-language-server, pyright, gopls), the Files editor goes to definitions (F12 or Mod+Click), finds references (Shift+F12), shows hover text and underlines problems. Worktree and review diffs jump from a changed name to its definition or callers.
 
-No server runs until you trust the repository (each worktree on its own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+No server runs until you trust the repository (each worktree on its own when agents run sandboxed), nothing is installed or sent by Vibezeo, and it works in folders on this computer.
 
 ## jj workspaces
 
-With jj installed on this computer, in a trusted repository co-located with jj, **New worktree…** makes a jj workspace instead of a git worktree, with a git worktree one click away and your choice remembered. Its diff and overlap check come from jj, agents in it are told to use jj, and **Discard** forgets the workspace while its commits stay.
+With jj installed on this computer, in a trusted repository co-located with jj, **New worktree…** makes a jj workspace instead of a git worktree, with a git worktree one click away and your choice remembered. Its diff and overlap check come from jj, agents in it are told to use jj, and **Discard worktree…** forgets the workspace while its commits stay.
 
 jj workspaces work in folders on this computer. Landing, pull requests, previews, setup, second opinion, the intent radar and the git panel aren't available for them yet.
 
 ## Local models
 
-Settings › Engines › **Local models** finds Ollama, LM Studio and llama.cpp servers running on this computer and lists their models, with the size and parameter count each server reports. Vibezeo asks only 127.0.0.1, when you open the page or choose **Check again**.
+Settings › Engines › **Local models** finds Ollama, LM Studio and llama.cpp servers running on this computer and lists their models, with the size and parameter count each server reports. Vibezeo asks only 127.0.0.1, and only when you open the page, choose **Check again**, add or remove a port, or start Codex on one of its models.
 
 On an Ollama or LM Studio model, **Start in Codex** opens a Codex pane in your open folder that says "On this computer". It runs in a provider home of its own for that model, never on your Codex account and never through a proxy, and each start checks that the server still offers the model on this computer. It needs Codex 0.149.0 or newer, and your own Codex settings and accounts aren't touched.
 
 ## Also in this release
 
 - **Text from elsewhere can't hand an agent a file or run a command.** What Vibezeo passes an agent from somewhere else, such as a pull request's review comments, a failed check's log or a teammate's mail, can't make Claude Code read a file on your computer. Any `@` there that could name a file is written ＠, and the message says so.
-- **A key split by a character nobody can see is still hidden,** and so is one such a character sets apart from the word before it, or both: in what Conductor reads and says, the review queue, plugins' replies, a teammate's brief and memory, what your phone shows, crash reports, usage statistics and Copy diagnostics.
+- **A key split by a character nobody can see is still hidden,** and so is one that such a character sets apart from the word before it: in what Conductor reads and says, the review queue, plugins' replies, a teammate's brief and memory, what your phone shows, crash reports, usage statistics and Copy diagnostics.
 - **Allow can't move under your click.** A chat's Allow, held actions' Approve & run and the review queue's Approve wait until they've held still on screen for half a second, so a request sliding into place can't take a click meant for something else.
 - **A new agent no longer looks busy before its first prompt.** An engine that reported starting before Vibezeo read its banner could show "working" on the Dashboard, and to Auto, until you typed to it.
-- Claude Code threads count the files their edits changed, the rail's marks say it in a word and its rows fold rather than cut off, and a worktree's checks are read again right after you push.
+- Claude Code threads say which files their edits changed, the rail's marks say it in a word and its rows fold rather than cut off, and a worktree's checks are read again right after you push from its git panel.
 
 ## Update or install
 
