@@ -1,7 +1,7 @@
 # BUILD_LOG
 
 ## Current state
-- Developer-first UI (M18, branch `app-ui`, from 20 October 2026): the owner asked for a calmer, more developer-friendly app. Slices 1 to 3 are in: the `ink` palette and brand elevation (D-1894, D-2600), quiet status primitives (D-2601), tinted engine tiles (D-1895, D-2602), and the developer-first surfaces: status bar, rail, pane headers, names, launch grid, Agent mode's first run and threads (D-2603, D-2604). The demo opens in Code mode with a three-hint coach (D-2605). Slice 4 retook the site's captures from 0.12.0 (D-2606), and the demo's terminals are checked on a real 2× screen (D-2607). Released in 0.12.0 (D-875). For 0.13.0 (chain27): Claude Code threads summarise their edits from what the stream says (D-2608, with the review's fixes), and the demo and the site's scenes share one sample world (D-2609). The demo catches up with the releases (REMAINING §0.2, D-1899): its opening frame (D-2610, D-2611), Land worktrees (D-2612), the intent radar (D-2613) and CI results with review comments (D-2614) are in. The rail's marks say it in a word (D-2615), and a rail row never runs past the rail, whose minimum is a fully folded row (D-2618, the design lead's D-2701). Then a small slice: checks follow a push, an account is named only when its engine has more than one, the demo's edit rows are each engine's own, and the review's nits (D-2619 to D-2623); in its second round, the demo's waiting agent asks in Gemini CLI's words, the E2E runner's cleanup can't fail a run, and the rail's minimum is measured in the app's engine and grows with jj and Preview rows (D-2624 to D-2626, the design lead's D-2703); then an E2E run's home stays gone, a Dashboard card's line follows its agent live, and the demo defangs with the app's `defang` (D-2625's follow-up, D-2627, D-2628), with chain27 eae52965 and then 758c0ac2 merged. On chain27 65c7b5d7, which holds that round, the coordinator's review of it brought a workspace row's status folding when its end runs out over the name, the E2E cleanup warning per folder, a forge's file left out of a turn's edits, Bea asking in Gemini CLI's own question, and a rail minimum that counts only the rows it shows (D-2629 to D-2632). The demo now quotes another product only as far as the app needs (D-2633), and that round's review fixed the Dashboard's replay, the coach in Thread mode and the nits (D-2634). The site's demo test now counts messages as DemoCore does (D-2635). Claims and the governor are next, after 0.13.0's cut. See "M18 · Developer-first UI (`app-ui`)".
+- Developer-first UI (M18, branch `app-ui`, from 20 October 2026): the owner asked for a calmer, more developer-friendly app. Slices 1 to 3 are in: the `ink` palette and brand elevation (D-1894, D-2600), quiet status primitives (D-2601), tinted engine tiles (D-1895, D-2602), and the developer-first surfaces: status bar, rail, pane headers, names, launch grid, Agent mode's first run and threads (D-2603, D-2604). The demo opens in Code mode with a three-hint coach (D-2605). Slice 4 retook the site's captures from 0.12.0 (D-2606), and the demo's terminals are checked on a real 2× screen (D-2607). Released in 0.12.0 (D-875). Released in 0.13.0 (`chain27`, D-876): Claude Code threads summarise their edits from what the stream says (D-2608, with the review's fixes), and the demo and the site's scenes share one sample world (D-2609). The demo catches up with the releases (REMAINING §0.2, D-1899): its opening frame (D-2610, D-2611), Land worktrees (D-2612), the intent radar (D-2613) and CI results with review comments (D-2614) are in. The rail's marks say it in a word (D-2615), and a rail row never runs past the rail, whose minimum is a fully folded row (D-2618, the design lead's D-2701). Then a small slice: checks follow a push, an account is named only when its engine has more than one, the demo's edit rows are each engine's own, and the review's nits (D-2619 to D-2623); in its second round, the demo's waiting agent asks in Gemini CLI's words, the E2E runner's cleanup can't fail a run, and the rail's minimum is measured in the app's engine and grows with jj and Preview rows (D-2624 to D-2626, the design lead's D-2703); then an E2E run's home stays gone, a Dashboard card's line follows its agent live, and the demo defangs with the app's `defang` (D-2625's follow-up, D-2627, D-2628), with chain27 eae52965 and then 758c0ac2 merged. On chain27 65c7b5d7, which holds that round, the coordinator's review of it brought a workspace row's status folding when its end runs out over the name, the E2E cleanup warning per folder, a forge's file left out of a turn's edits, Bea asking in Gemini CLI's own question, and a rail minimum that counts only the rows it shows (D-2629 to D-2632). The demo now quotes another product only as far as the app needs (D-2633), and that round's review fixed the Dashboard's replay, the coach in Thread mode and the nits (D-2634). The site's demo test now counts messages as DemoCore does (D-2635). Claims and the governor are next, after 0.13.0's cut. See "M18 · Developer-first UI (`app-ui`)".
 - Free for everyone (M18, branch `free-for-everyone`, D-2900 to D-2919): the app matches D-869. With no account every local feature is free and unlimited (panes, workspaces, teammates, plugin connections, accounts per engine, six threads, every chat engine, routines, task runs, the Night Shift, session search), the hosted ones say "Comes with Vibezeo accounts", and nothing in the app, demo, docs or site offers a plan. Released in 0.10.0 (`CHANGELOG.md`'s `## 0.10.0`). See "M18 · Free for everyone".
 - Design direction (`design-lead`, D-1890 to D-1899, then D-2700 on): `docs/DESIGN.md` sets the look, feel and journey for the app and the site after the owner's 20 October ask for a premium feel; `app-ui` and `site-motion` build on it, and the design lead reviews their READYs. See "Design direction (`design-lead`)".
 - Agent sandbox (M18, F-TL-11, branch `product-research`): Settings › Engines › Sandbox agent panes runs the engine of a local agent pane under bubblewrap on Linux (writes only to its folder, git data, provider home, tasks folder and `/tmp`; `~/.ssh`, the other secrets and Vibezeo's own data hidden; `.git/hooks` read-only; engines without a provider home run unsandboxed and say why); macOS and Windows say "Not available on this system yet". See "M18 checklist (Next features: sandbox)".
@@ -35,24 +35,30 @@
     - the footer's "Built with Claude" links `/about/#claude`, which has its principles;
     - in a real browser at 1440, home is 7,985 px in both themes (7,986 at #100; 7,985 again on 0.12.0's look), on rgb(250, 250, 250) and rgb(9, 9, 11), with the effects on and the hero's scene live.
   Releases are built locally (`TANDEM_HOSTED=0 bash scripts/release-local.sh --dry-run`) and served from vibezeo.com/downloads with SHA256SUMS. The Release workflow (D-105 `early-access` channel, public `tandem-releases` repository, `RELEASES_TOKEN`) waits for Actions minutes, which reset about November 1; the owner chose not to pay for more. CI now runs `quick` on pull requests into `product-m0-m5`, a nightly `checks` on its head and the rest by hand, which should fit the free minutes; its three real failures from 7 October are fixed (D-1009 to D-1012, OPERATING §5a). Tags `m0`–`m7` are local only. The public site at vibezeo.com deploys from `main` (D-102, `docs/DEPLOY_SITE.md`).
-- Release: **0.12.0** (26 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on cf149e2d; D-875).
-  - **Files:** `Vibezeo_0.12.0_amd64.deb` (SHA-256 `8e5eab09…1be8a94b`) and `Vibezeo-0.12.0-1.x86_64.rpm` (SHA-256 `5ba7543a…6d1b67f3`), 54.9 MB each.
-  - **The new look** (`app-ui`, D-2600 to D-2604):
-    - neutral ink greys, softer shadows in the light theme, and a tinted tile for each engine;
-    - pane headers that say where you are, and a launch grid that takes the number keys;
-    - a status bar that shows agents working and waiting, a pull request's checks, usage and ports, only while there's something to show;
-    - threads that summarise their work.
-  - **F-TK-07 Follow a plan through:** a plan follows its runs to their review's verdict, lands the approved work in the plan's order and is kept; chat threads claim the files they edit.
-  - **Fixed:** Freeze without a systemd user scope (0.11.0's known issue).
+- Release: **0.13.0** (30 October; Linux, `TANDEM_HOSTED=0`, built with `bash scripts/release-local.sh --dry-run` on cddc87d2; D-876).
+  - **Files:** `Vibezeo_0.13.0_amd64.deb` (SHA-256 `d3418fbe…2b3d75c2`) and `Vibezeo-0.13.0-1.x86_64.rpm` (SHA-256 `f4d60019…0e014001`), 55.8 MB each.
+  - **F-TK-08 Lead keeps a plan moving** (`m16a-conductor`):
+    - Lead answers its runs' routine questions in a session with every tool off, and brings the rest to you.
+    - Text from elsewhere can't hand an agent a file or run a command.
+    - A key split by a character nobody can see stays hidden.
+  - **B5's second slice and F-EX-07** (`product-research`):
+    - `vibezeo run` gives a command its secrets outside the agent;
+    - every agent session keeps its Activity;
+    - Allow waits until it has held still.
+  - **F-CD-23 and F-CD-24** (`competitive-gaps`): code intelligence from the language servers you have, and jj workspaces.
+  - **F-EN-11** (`m16d-teammate-extras`): local models, and Codex on an Ollama or LM Studio model.
+  - **The app** (`app-ui`, D-2608 to D-2635):
+    - Claude Code turns say what they changed;
+    - the rail folds rather than cuts;
+    - checks follow a push;
+    - an account is named only when there's a choice.
   - **The site:**
-    - `site-motion`'s 0.12.0 look (D-1887);
-    - `app-ui`'s captures from 0.12.0 (D-2606) and the demo's three-hint coach (D-2605), its terminals checked on a real 2× screen (D-2607);
-    - "New in 0.12.0", the roadmap and the post "What's new in 0.12.0";
-    - 4,094 tests and 153 E2E spec files.
-  - **For 0.13.0 (`chain27`, D-875):** F-EN-11, F-CD-23 and F-CD-24, F-TK-08, and B5's second slice with F-EX-07, each in review.
-  - Verified: see "Release 0.12.0" in the log below.
-  - Previous release: 0.11.0 (25 and 26 October; D-873), deployed by #104 (d76688f2) on 26 October.
-  Deployed by #107 (fc2ca3a6) on 26 October, live at 23:05 UTC. `main` came back into `product-m0-m5` with this record.
+    - `site-motion`'s scenes for 0.13.0 (D-3006 to D-3008);
+    - "New in 0.13.0", the roadmap (F-SH-14 next) and the post "What's new in 0.13.0";
+    - 4,804 tests and 159 E2E spec files.
+  - **For 0.14.0 (D-876):** F-TK-09, the intent radar's second slice, F-TL-12.13 then F-SH-14, the relay, and the redaction should-fix.
+  - Verified: see "Release 0.13.0" in the log below.
+  - Previous release: 0.12.0 (26 October; D-875), deployed by #107 (fc2ca3a6) on 26 October.
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889, D-3000 to D-3019):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
@@ -60,7 +66,7 @@
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
   - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
-  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001). The hero is one worktree's window in Code mode, as 0.12.0 draws it (D-2702, D-3003), without the intent radar until 0.13.0 (D-2704, D-3004). The scenes to 0.13.0 are in, gated on that release, and every scene test runs at both (D-3006); the 0.12.0 rendering draws three of 0.13.0's changes and is never deployed again (D-3007). Next, 0.11.0's claims and the governor, once 0.13.0 ships; the 0.14.0 slice brings a record of what each CHANGELOG bullet draws (D-3006).
+  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001). The hero is one worktree's window in Code mode, as 0.12.0 draws it (D-2702, D-3003), without the intent radar until 0.13.0 (D-2704, D-3004). The scenes to 0.13.0 are in, gated on that release, and every scene test runs at both (D-3006); the 0.12.0 rendering draws three of 0.13.0's changes and is never deployed again (D-3007). 0.13.0 shipped them (D-876). Next, 0.11.0's claims and the governor, once 0.13.0 ships; the 0.14.0 slice brings a record of what each CHANGELOG bullet draws (D-3006).
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -1501,6 +1507,83 @@ Built by the session that coordinates the parallel milestone sessions, while the
     - Lighthouse CI on seven URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme, `/` and a blog post scored 0.99 for performance (LCP 1.89 s and 1.81 s) and the rest 1.00 (LCP 1.51 to 1.73 s), with 1.00 for accessibility, best practices and SEO, TBT 0 ms and CLS at most 0.001;
     - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings.
   - **Merged and deployed:** #106 into `product-m0-m5` (297d1238, after CI's `quick`), then #107 to `main` (fc2ca3a6). vibezeo.com served 0.12.0 three minutes later (23:05 UTC, 26 October), and the live checks passed (see Current state). `main` came back into `product-m0-m5` with this record.
+- Release 0.13.0 (`chain27`, 30 October; D-876): `product-m0-m5` at 64bb33cf (0.12.0's deploy record) with these added:
+  - **F-TK-08 Lead keeps a plan moving** (`m16a-conductor`):
+    - cdd8a8ca (7c6a4f1b, approved in its third round), with the coordinator's review fix 08027389;
+    - d3152d69 (07b33fc3, D-3020 to D-3022);
+    - 045341d5 (eea2125f, rule 8's rounds, D-3023 to D-3034);
+    - 390d0f0e (a106fbf1, D-3035 to D-3037);
+    - a075159d (d2b219f1, D-3038, D-3039, D-3170 to D-3174), with the coordinator's review fix e788fc6f (D-3172).
+  - **B5's second slice and F-EX-07** (`product-research`):
+    - 6d84cf71 (round 7);
+    - 5ef3e74e (rounds 8 to 10, D-3040 to D-3048);
+    - e530af50 (rounds 11 to 14 and F-TH-01.2, D-3080 to D-3089, D-3110);
+    - d37e4c37 (rounds 15 and 16, D-3111 to D-3116);
+    - a55191ca (round 16's nits, D-3117).
+  - **F-CD-23 and F-CD-24** (`competitive-gaps`):
+    - 2de26391 (F-CD-23, and F-CD-24's round 4, D-2666, D-2667);
+    - 00c93bd2 (round 5, D-2668 to D-2679);
+    - c104f89b (rounds 6 to 9, D-2680 to D-2699, D-3090 to D-3109);
+    - eae52965 (7388e16f's follow-up).
+  - **F-EN-11** (`m16d-teammate-extras`):
+    - d73adb8d (rounds 1 to 8, migration 0008);
+    - 1c97f9bf (D-3070 to D-3072);
+    - 758c0ac2 (D-3073, D-3074);
+    - 65c7b5d7 (D-3075, D-3076);
+    - a361cabb (D-3077).
+  - **`app-ui`:**
+    - f5b3272a (be355620, D-2608 to D-2617);
+    - 4a19b868 (4e8def0f, D-2618 to D-2628, D-2701, D-2703);
+    - 6b74c168 (134f7716, D-2629 to D-2634), with the coordinator's review fix 6d5b4d0d;
+    - e1a79d11 (a9607198, D-2635).
+  - **`site-motion`** (each merge approved by the design lead):
+    - 4dabf660 (07846890, the release scenes, D-1888, D-1898);
+    - 9ebc684d (23cf1fa0, D-3001 to D-3005, D-2702, D-2704);
+    - e75c37bb (400f7c55, the scenes for 0.13.0, D-3006, D-3007);
+    - f9851f1a (ee0362e7, D-3008).
+  - **`design-lead`:** the design QA records and DESIGN's rules D-1898, D-1899 and D-2700 to D-2704 (bbc12799 to 5b222680), and the M15 records 24790909, 517b8280, cac6476c and bb15e3ba.
+  - **Small:** 858ec7ce (F-TH-15's title test reads the local title first), 836a8a47 (the demo's note after a defanged @), and c90d9f65 and a09fe594 (HUMAN_TODO).
+  - **Version and notes:**
+    - the version (5dd460ed);
+    - `release.ts`, the "New in" tiles, the roadmap and the post (864ab94b);
+    - the CHANGELOG's `## 0.13.0` (b10141f5): eight Added, five Changed, ten Fixed and two Security. A read-only check of every claim against the code found five wrong and three loose. They were rewritten before the build (4861e8bf), along with the post and `code-mode.mdx`. The Dashboard's loading fix also names the new agent's card (cddc87d2);
+    - the site's figures (aa9fa1bd).
+  - **Found by the release gate and fixed:** the F-WB-01 test that opens every Settings page took 5.1 s under the gate's load (2.2 s alone), over vitest's 5 s. It gets 20 s, as the other walks do (5b1b0f3c).
+  - **The gate** passed on the release tree (aa9fa1bd's content), with `CARGO_PROFILE_DEV_DEBUG=0` to save disk:
+    - 2,744 Rust tests (9 ignored);
+    - 2,060 TypeScript tests: desktop 1,053, UI 501, API 235, web 200, remote 33, mobile 24, protocol 14;
+    - coverage, lint, the desktop build, clippy on Linux, Windows and both Mac architectures, fmt, and protocol drift.
+  - **The packages:**
+    - `TANDEM_HOSTED=0 scripts/release-local.sh --dry-run` on cddc87d2 built the .deb, .rpm and AppImage. The later commits change no app code: D-876 and REMAINING (b4980fa9), the downloads and the store manifests (c9a97441), and this record.
+    - `Vibezeo_0.13.0_amd64.deb` (SHA-256 `d3418fbe…2b3d75c2`) and `Vibezeo-0.13.0-1.x86_64.rpm` (`f4d60019…0e014001`) are 55.8 MB each.
+    - The .rpm installed, found every library and started on clean Fedora 42, 43 and 44. The welcome says "Free · no account · nothing sent to Vibezeo".
+    - The AppImage passed the offline smoke test: the welcome says the same, and Start opens setup with all 13 engines, each on its tinted tile.
+  - **The demo (D-128):** the demo is the app's own interface, built from this tree, so everything it shows is in the download.
+    - From `app-ui`'s catch-up (D-2610 to D-2615), this release's demo adds:
+      - the rail's marks in a word, and rows that fold;
+      - CI results with review comments;
+      - the intent radar and Land;
+      - the note after a defanged @.
+    - Settings › Engines › Local models says the demo can't reach your computer.
+    - Its plan has Lead's answers off.
+    - Not in it yet: Activity, `vibezeo run`, code intelligence and jj. The catch-up (D-1899) continues in `app-ui`'s queue after claims and the governor.
+  - **E2E:** the full desktop suite passed 159 of 159 spec files on the release tree (aa9fa1bd), in one 42-minute run.
+    - The runner exited 0: the cleanup that used to exit 1 after every spec had passed (`cleanHomes`' ENOTEMPTY) is fixed.
+    - E2E-M18-CD24's 6 tests skip without jj. So jj 0.34.0 was installed the way CI installs it (its release binary, checksum checked), and with `JJ_REQUIRED=1` they passed 6 of 6 on the same build. tandem-git's 167 tests and the app's 32 lanes tests passed with it.
+  - **The site**, from a fresh clone of c9a97441:
+    - `build:site` with `strip-runtime` and `check-routes`: 61 pages, no redirects;
+    - web vitest 200/200 and site Playwright 87/87;
+    - Lighthouse CI on nine URLs (median of 3), in the light and the dark theme, every assertion passing with no warnings. In the dark theme:
+      - `/`, a blog post and `/changelog/0.9.0/` scored 0.99 for performance (LCP 1.89 s, 1.82 s and 1.81 s), and the rest 1.00 (LCP 1.36 to 1.66 s);
+      - accessibility, best practices and SEO scored 1.00;
+      - TBT was 0 ms and CLS at most 0.001;
+    - the demo walkthrough: 13 steps, no console errors, only the headless GPU's WebGL performance warnings;
+    - the demo's terminals on a real 2× screen (D-2607): 10 of 10 WebGL runs and 6 of 6 without WebGL clean, with glyphs 0.96 to 1.04× the height of the 1× run;
+    - the home page's three scenes (the workspace, the Dashboard and the review) at their final frames, in the light and the dark theme, show what 0.13.0 does:
+      - the rail's marks in a word;
+      - the radar's note fenced as untrusted text;
+      - the review's settled Approve and its line comments;
+      - v0.13.0 in every status bar.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
