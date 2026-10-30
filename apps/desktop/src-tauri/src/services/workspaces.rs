@@ -279,6 +279,11 @@ pub async fn remove(
         }
     }
     workspaces::remove(store, id).await?;
+    // The radar's indexes and watchers go with them (the review of
+    // 9a4e93ab, S6).
+    for ws in &ids {
+        crate::services::radar::forget(ws.as_str());
+    }
     Ok(removed)
 }
 

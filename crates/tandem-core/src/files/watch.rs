@@ -315,7 +315,13 @@ impl Watching {
             if skipped(rel) || rel.as_os_str().is_empty() {
                 continue;
             }
-            if self.opts.strategy == Strategy::PerDir && maybe_new_dir && path.is_dir() {
+            // A link to a folder isn't followed in: the first walk doesn't
+            // follow one, and it can lead out of the folder (a link renamed
+            // in had every folder it led to watched; the review of 9a4e93ab).
+            if self.opts.strategy == Strategy::PerDir
+                && maybe_new_dir
+                && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+            {
                 self.adopt(path);
             }
             batch.push(slash_path(rel), self.opts.max_paths);
@@ -438,6 +444,31 @@ mod tests {
         until(&rx, |c| c.paths.contains(&"fresh".to_string()));
         fs::write(root.join("fresh/x.txt"), "x").expect("write");
         until(&rx, |c| c.paths.contains(&"fresh/x.txt".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn f_cd_19_a_link_to_a_folder_moved_in_isnt_followed() {
+        let (d, root) = setup();
+        let outside = d.path().join("outside");
+        fs::create_dir_all(outside.join("a/b")).expect("mkdir");
+        let (w, rx) = start(&root, None, opts(Strategy::PerDir));
+        let before = w.watched_dirs();
+        // Made elsewhere and renamed in, as an agent's `mv` would.
+        std::os::unix::fs::symlink(&outside, d.path().join("link")).expect("link");
+        fs::rename(d.path().join("link"), root.join("link")).expect("rename");
+        until(&rx, |c| c.paths.contains(&"link".to_string()));
+        assert_eq!(w.watched_dirs(), before, "nothing through the link");
+        // A change out there doesn't arrive (the inside one after it does).
+        fs::write(outside.join("a/x.txt"), "x").expect("write");
+        fs::write(root.join("src/after.rs"), "x").expect("write");
+        let seen = until(&rx, |c| c.paths.contains(&"src/after.rs".to_string()));
+        assert!(
+            seen.iter()
+                .flat_map(|c| &c.paths)
+                .all(|p| !p.starts_with("link/")),
+            "{seen:?}"
+        );
     }
 
     #[test]

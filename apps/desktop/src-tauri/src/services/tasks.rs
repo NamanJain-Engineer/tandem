@@ -443,9 +443,11 @@ impl TasksService {
                 "That folder isn't a git working tree",
             ));
         };
+        // As the claim commands map them: a lock or disk failure isn't the
+        // caller's mistake.
         tracker
             .claim_for_tree(&scope, paths, intent)
-            .map_err(|e| IpcError::new(ErrorCode::Invalid, e.to_string()))?;
+            .map_err(crate::commands::tasks::task_err)?;
         self.check_overlaps();
         Ok(())
     }

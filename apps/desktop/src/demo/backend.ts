@@ -624,7 +624,10 @@ export class DemoCore {
   private landed = new Set<string>();
   private mainLog: StoryCommit[] = [...STORY.history];
   /** main as each landing found it, by its commit, for Undo landing. */
-  private beforeLanding = new Map<string, { head: Map<string, string>; log: StoryCommit[]; landed: Set<string> }>();
+  private beforeLanding = new Map<
+    string,
+    { head: Map<string, string>; log: StoryCommit[]; landed: Set<string> }
+  >();
   /** The main each worktree last had merged into it, at a landing. */
   private mergedMain = new Map<string, Record<string, string>>();
   /** Land worktrees (F-WT-07), on this repository's checkouts. */
@@ -966,7 +969,11 @@ export class DemoCore {
     if (!w) throw { code: "not_found", message: "That worktree isn't in this repository" };
     const head = this.mainLog[0]?.sha ?? "";
     if (!this.beforeLanding.has(head))
-      this.beforeLanding.set(head, { head: this.files.head(WS), log: [...this.mainLog], landed: new Set(this.landed) });
+      this.beforeLanding.set(head, {
+        head: this.files.head(WS),
+        log: [...this.mainLog],
+        landed: new Set(this.landed),
+      });
     this.mergedMain.set(id, Object.fromEntries(this.files.head(WS)));
     const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
     this.files.setHead(id, merged);
@@ -1058,7 +1065,10 @@ export class DemoCore {
     const paneId = agentPane(w);
     const st = STYLE[w.engine] ?? { mark: "•", run: "Run" };
     if (!yes) {
-      this.say(pty, `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`);
+      this.say(
+        pty,
+        `\n${st.mark} Okay, I won't run ${w.ask ?? "them"}. The change is in place for you to try.\n`,
+      );
       this.setStatus(paneId, "done");
       return;
     }
@@ -1195,8 +1205,9 @@ export class DemoCore {
     ].join("\n");
   }
 
-  /** Claim these files (radar.rs `claim`): the TypeScript files this
-   * worktree changed, where its shared definitions live in the demo. */
+  /** Claim these files (radar.rs `claim`): the files where this worktree
+   * changed what it shares, which in the demo is the story's one file
+   * (D-128; the review of 9a4e93ab, S7). */
   private radarClaim(laneId: string, otherId: string): string[] {
     const a = this.slugOf(laneId);
     const b = this.slugOf(otherId);
@@ -1205,17 +1216,9 @@ export class DemoCore {
     const touched = this.shared(a, b).some(
       (s) => s.here === "changed" || s.here === "removed" || s.here === "renamed",
     );
-    const files = [
-      ...new Set([
-        ...Object.keys(this.files.committedChanges(wsOf(a))),
-        ...this.files.changes(wsOf(a)).map((f) => f.path),
-      ]),
-    ]
-      .filter((f) => f.endsWith(".ts"))
-      .sort();
-    if (!touched || files.length === 0)
+    if (!touched)
       throw { code: "not_found", message: "This worktree didn't change the symbols it shares any more" };
-    return files;
+    return [STORY.overlap.file];
   }
 
   /** A new turn in an agent pane takes a checkpoint (F-EX-01), after which

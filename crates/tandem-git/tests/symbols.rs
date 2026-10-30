@@ -74,3 +74,103 @@ async fn f_wt_10_a_refresh_parses_only_the_files_that_changed_since() {
     assert_eq!(fourth.parsed, 0);
     assert_eq!(names(&fourth), [("gamma".to_string(), SymbolChange::Added)]);
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn f_wt_10_a_link_to_a_pipe_or_out_of_the_worktree_is_not_read() {
+    // `metadata` followed a link to a FIFO, whose read then waited for good
+    // (the review of 9a4e93ab, M2). Only a regular file is read: a link is
+    // counted, not followed, so no pipe is waited on and no file out of the
+    // worktree is read.
+    let f = Fixture::new();
+    let (cli, repo) = (
+        f.git(),
+        Repo::discover(&f.repo).expect("discover").expect("repo"),
+    );
+    let lane = LaneManager::create(&cli, &repo, "radar", &HashSet::new())
+        .await
+        .expect("lane");
+    let base = git(&lane.path, &["rev-parse", "HEAD"]);
+    let outside = tempfile::tempdir().expect("dir");
+    let pipe = outside.path().join("pipe");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&pipe)
+        .status()
+        .expect("mkfifo");
+    assert!(made.success());
+    // Its writer stays open, so a read would wait for data that never comes.
+    let _writer = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&pipe)
+        .expect("open the pipe");
+    std::os::unix::fs::symlink(&pipe, lane.path.join("evil.ts")).expect("link");
+    let away = outside.path().join("secret.ts");
+    std::fs::write(&away, "export function hidden() {}\n").expect("write");
+    std::os::unix::fs::symlink(&away, lane.path.join("away.ts")).expect("link");
+    std::fs::write(lane.path.join("ok.ts"), "export function fine() {}\n").expect("write");
+    let mut cache = ParseCache::default();
+
+    let done = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        index_cached(&cli, &lane.path, &base, &mut cache),
+    )
+    .await
+    .expect("the index doesn't wait on the pipe")
+    .expect("index");
+    let names: Vec<&str> = done
+        .index
+        .symbols
+        .iter()
+        .map(|s| s.qualified.as_str())
+        .collect();
+    assert_eq!(names, ["fine"]);
+    assert_eq!(
+        done.index.unparsed, 2,
+        "the two links are counted, not read"
+    );
+}
+
+#[tokio::test]
+async fn f_wt_10_a_big_base_file_and_text_that_isnt_utf8_are_unparsed() {
+    let f = Fixture::new();
+    // In the base: TypeScript past the 512 KiB limit, and a small file.
+    let big: String = (0..30_000)
+        .map(|i| format!("export const v{i} = {i};\n"))
+        .collect();
+    assert!(big.len() > 512 * 1024);
+    std::fs::write(f.repo.join("big.ts"), &big).expect("write");
+    std::fs::write(f.repo.join("small.ts"), "export function keep() {}\n").expect("write");
+    git(&f.repo, &["add", "-A"]);
+    git(&f.repo, &["commit", "-qm", "base files"]);
+    let (cli, repo) = (
+        f.git(),
+        Repo::discover(&f.repo).expect("discover").expect("repo"),
+    );
+    let lane = LaneManager::create(&cli, &repo, "radar-big", &HashSet::new())
+        .await
+        .expect("lane");
+    let base = git(&lane.path, &["rev-parse", "HEAD"]);
+    // Deleted here: the base's copy is too big to read, so its definitions
+    // aren't listed as removed.
+    std::fs::remove_file(lane.path.join("big.ts")).expect("rm");
+    // Not UTF-8: unparsed, not every definition in it removed.
+    std::fs::write(
+        lane.path.join("small.ts"),
+        b"export function keep() {}\n\xff\n",
+    )
+    .expect("write");
+    // Added: parsed with no base to read.
+    std::fs::write(lane.path.join("fresh.ts"), "export function fresh() {}\n").expect("write");
+    let got = index_cached(&cli, &lane.path, &base, &mut ParseCache::default())
+        .await
+        .expect("index");
+    assert_eq!(got.index.unparsed, 2, "{:?}", got.index);
+    let names: Vec<(&str, SymbolChange)> = got
+        .index
+        .symbols
+        .iter()
+        .map(|s| (s.qualified.as_str(), s.change))
+        .collect();
+    assert_eq!(names, [("fresh", SymbolChange::Added)]);
+}

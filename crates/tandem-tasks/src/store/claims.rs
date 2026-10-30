@@ -55,6 +55,16 @@ fn seen_path(folder: &str, raw: &str) -> Result<String, TaskError> {
     resolve(folder, "", screened(raw)?)
 }
 
+/// 1 to [`CLAIM_PATHS_MAX`] paths a call.
+fn claim_count(n: usize) -> Result<(), TaskError> {
+    if n == 0 || n > CLAIM_PATHS_MAX {
+        return Err(TaskError::invalid(format!(
+            "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
+        )));
+    }
+    Ok(())
+}
+
 /// A [`screened`] `raw` from a session in `prefix` of the working tree at
 /// `folder`.
 fn resolve(folder: &str, prefix: &str, raw: String) -> Result<String, TaskError> {
@@ -363,16 +373,15 @@ impl TaskStore {
                 "The intent is at most {CLAIM_INTENT_MAX} characters."
             )));
         }
+        claim_count(paths.len())?;
+        // Real files from the top, so `*` and `?` in a name are kept: the
+        // agents' check refused `src/what?.ts` as a pattern (the review of
+        // 9a4e93ab).
         let paths = paths
             .iter()
             .map(|p| normalize_relative_claim_path(p))
             .collect::<Result<Vec<_>, _>>()?;
-        // From the top: the paths already are.
-        let top = ClaimScope {
-            prefix: String::new(),
-            ..scope.clone()
-        };
-        self.put(&top, None, &paths, intent.trim(), false)
+        self.store_claims(scope, None, paths, intent.trim(), false)
     }
 
     fn put(
@@ -383,13 +392,9 @@ impl TaskStore {
         intent: &str,
         inferred: bool,
     ) -> Result<Vec<ClaimOverlap>, TaskError> {
-        if paths.is_empty() || paths.len() > CLAIM_PATHS_MAX {
-            return Err(TaskError::invalid(format!(
-                "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
-            )));
-        }
+        claim_count(paths.len())?;
         // An agent's paths start at its folder and can't be patterns; the
-        // app's are real files, from the top.
+        // files the app saw edited are real ones.
         let paths = paths
             .iter()
             .map(|p| {
@@ -400,6 +405,19 @@ impl TaskStore {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        self.store_claims(scope, connection, paths, intent, inferred)
+    }
+
+    /// Keeps checked `paths` (from the working tree's top) as `scope`'s
+    /// claims, and returns the overlaps it's in.
+    fn store_claims(
+        &self,
+        scope: &ClaimScope,
+        connection: Option<&str>,
+        paths: Vec<String>,
+        intent: &str,
+        inferred: bool,
+    ) -> Result<Vec<ClaimOverlap>, TaskError> {
         let now = self.now();
         self.edit_claims(|claims| {
             // This working tree's claims, by how their paths compare.
@@ -417,6 +435,10 @@ impl TaskStore {
                         c.at = now;
                         c.main = scope.main;
                     }
+                    // Nor does a claim the app makes for the working tree
+                    // (F-WT-10's Claim these files): the agent's own intent
+                    // and connection stay.
+                    Some(c) if connection.is_none() && c.connection.is_some() && !c.inferred => {}
                     Some(c) => {
                         c.intent = intent.to_string();
                         c.inferred = false;

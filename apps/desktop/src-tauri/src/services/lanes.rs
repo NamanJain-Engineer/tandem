@@ -711,10 +711,10 @@ pub async fn remove_with_teardown(
     teardown: Option<(&DataDir, &LoginEnv)>,
 ) -> Result<RemoveReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
-    // F-WT-10: the radar neither parses nor watches a worktree being
-    // discarded (its index and watcher go now; a refused discard is parsed
-    // again from its next checkpoint).
-    let _radar = crate::services::radar::hold(lane.id.as_str());
+    // F-WT-10 holds the radar off a worktree only once nothing can refuse
+    // the discard any more, just before its panes stop: a refused discard
+    // kept its index and watcher (the review of 9a4e93ab). A host's lane
+    // isn't on the radar.
     if let Some((remote, host)) = remote_for(&parent)? {
         use tandem_host::protocol::method;
         // Dirty refuses before anything stops, as locally.
@@ -773,6 +773,9 @@ pub async fn remove_with_teardown(
             }
         }
     }
+    // F-WT-10: neither parsed nor watched from here (its index and watcher
+    // go now).
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop, and its own trust goes, before
     // the folder does (open
@@ -826,6 +829,7 @@ async fn remove_jj(
     // halfway.
     jj_lanes::gate(Path::new(&parent.root))?;
     jj_lanes::preflight(lane, parent, force.is_some()).await?;
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     let _closing =
         crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
@@ -880,6 +884,7 @@ async fn remove_multi(
             return Err(dirty());
         }
     }
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop, and its own trust goes, before
     // the folder does (open

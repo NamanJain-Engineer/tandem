@@ -334,6 +334,34 @@ describe("overlap check (F-WT-03)", () => {
     await waitFor(() => expect(loads).toBe(before + 1));
   });
 
+  it("F-WT-10.3 an older reload that answers last never replaces a newer report", async () => {
+    // Two watched changes in a row: the first reload's reply came last and
+    // the dialog showed the older report (the review of 9a4e93ab, S3).
+    const replies: Array<(r: OverlapReport) => void> = [];
+    const on = (branch: string) =>
+      report({ siblings: [{ laneId: "wt_2", branch, files: ["src/a.ts"], symbols: [] }] });
+    backend({
+      lane_overlap: () =>
+        replies.length === 0 && named("lane_overlap").length === 1
+          ? on("tandem/first")
+          : new Promise<OverlapReport>((resolve) => replies.push(resolve)),
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
+    expect(await branch()).toBe("tandem/first");
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await waitFor(() => expect(replies).toHaveLength(2));
+    const [older, newer] = replies;
+    await act(async () => newer?.(on("tandem/newer")));
+    await waitFor(async () => expect(await branch()).toBe("tandem/newer"));
+    await act(async () => older?.(on("tandem/older")));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(await branch()).toBe("tandem/newer");
+  });
+
   it("F-WT-10.8 a worktree that only uses what it shares has nothing to claim", async () => {
     backend({
       lane_overlap: () =>

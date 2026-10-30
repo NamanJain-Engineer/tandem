@@ -602,3 +602,40 @@ fn f_wt_10_8_a_claim_made_for_a_working_tree_is_its_own_with_the_intent() {
         .claim_for_tree(&scope(tree), &paths(&["a.ts"]), &long)
         .is_err());
 }
+
+#[test]
+fn f_wt_10_8_a_tree_claim_keeps_real_names_and_an_agents_own_claim() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/renamer";
+    // Real files with `*` or `?` in their names: the agents' check refused
+    // them as patterns.
+    s.claim_for_tree(
+        &scope(tree),
+        &paths(&["src/what?.ts", "src/a*b.ts"]),
+        "Intent radar: changed what",
+    )
+    .expect("claim");
+    let mut names: Vec<String> = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .map(|c| c.path)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["src/a*b.ts", "src/what?.ts"]);
+    // An agent's own claim on a file stays as it said it.
+    let me = session(&s, tree);
+    s.claim(&me, &paths(&["src/own.ts"]), "my own words")
+        .expect("own");
+    s.claim_for_tree(&scope(tree), &paths(&["src/own.ts"]), "Intent radar: y")
+        .expect("claim");
+    let own = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .find(|c| c.path == "src/own.ts")
+        .expect("own");
+    assert_eq!(own.intent, "my own words");
+    assert_eq!(own.connection.as_deref(), Some(me.as_str()));
+    assert!(!own.inferred);
+}

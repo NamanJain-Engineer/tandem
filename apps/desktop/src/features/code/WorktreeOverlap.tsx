@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check } from "lucide-react";
 import type { OverlapReport, SharedSymbol, SymbolChange, WorkspaceSummary } from "@tandem/protocol";
 import { Banner, Button, Dialog, Skeleton, useToast } from "@tandem/ui";
@@ -12,13 +12,16 @@ type Load = { at: "loading" } | { at: "error"; message: string } | { at: "ready"
 /** Loads `lane_overlap` for a worktree (F-WT-03). */
 export function useOverlap(laneId: string): { load: Load; retry: () => void } {
   const [load, setLoad] = useState<Load>({ at: "loading" });
+  // The last fetch asked: an older reply that lands later is dropped, as
+  // is any reply once the dialog closes (the review of 9a4e93ab, S3).
+  const latest = useRef(0);
   // `quiet`: a refetch keeps showing the last report until the new one.
   const fetch = useCallback(
     (quiet = false) => {
-      let live = true;
+      const asked = ++latest.current;
       if (!quiet) setLoad({ at: "loading" });
       void worktreeOverlap(laneId).then((out) => {
-        if (!live) return;
+        if (asked !== latest.current) return;
         setLoad(out.ok ? { at: "ready", report: out.value } : { at: "error", message: out.error.message });
         // F-WT-10: the check parsed this worktree and its siblings again.
         if (out.ok) {
@@ -29,13 +32,15 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
           void loadRadar(ids);
         }
       });
-      return () => {
-        live = false;
-      };
     },
     [laneId],
   );
-  useEffect(() => fetch(), [fetch]);
+  useEffect(() => {
+    fetch();
+    return () => {
+      latest.current += 1;
+    };
+  }, [fetch]);
   // F-WT-10: a watched change updated the symbols of this worktree or one of
   // its siblings; read them again.
   useEffect(() => {
