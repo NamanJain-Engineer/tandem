@@ -12,7 +12,7 @@ export const RELEASE = {
  * AC9, D-128): their tests run at `RELEASE.version` and at this one, and
  * `RELEASE.version` may not pass it until that release's scenes slice is
  * in (OPERATING §6). */
-export const SCENES_SLICE: string = "0.13.0";
+export const SCENES_SLICE: string = "0.14.0";
 
 export type Os = "macos" | "windows" | "linux";
 

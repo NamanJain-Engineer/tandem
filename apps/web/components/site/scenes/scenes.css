@@ -235,6 +235,9 @@
 .sc-run-id { color: var(--tn-text-muted); }
 .sc-run-label { white-space: nowrap; color: var(--tn-text-muted); }
 .sc-run-label .sc-swap { justify-items: end; }
+/* PlanWithLead's line under a row ("Review sent back · round 1 of 2"): below
+   the title, as its pl-6 puts it past the dot. */
+.sc-run-note { grid-column: 2 / -1; color: var(--tn-text-muted); }
 .sc-plan-foot { gap: 0.5em; }
 
 /* Spinner (UI_SPEC §2.18): a faint ring and its arc in the text's colour. */

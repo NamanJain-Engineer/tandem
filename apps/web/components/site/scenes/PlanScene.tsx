@@ -1,6 +1,6 @@
 import type { Status } from "@tandem/ui/components/StatusDot";
 import type { ReactNode } from "react";
-import { SAMPLE, t } from "../../../lib/scenes";
+import { SAMPLE, SENDS_BACK, t } from "../../../lib/scenes";
 import { AgentsSegment, AppWindow, Changes, Dot, StatusBar, fx, type Agents } from "./parts";
 
 /** A task run's states, as the plan's list shows them (F-TK-07). */
@@ -29,17 +29,42 @@ function run(running: number, reviewing: number, ready: number) {
   ] as const satisfies ReadonlyArray<{ at: number; state: RunState }>;
 }
 
+/** A run whose review asks for changes at `back`, which goes back to it as
+ * its next message (F-TK-09): it runs again, is reviewed again at `again`,
+ * and is ready to review at `ready`. The row has no Ready to review in
+ * between: the review goes back as the run's state settles. */
+function sentBack(running: number, reviewing: number, back: number, again: number, ready: number) {
+  return [
+    { at: 0, state: "queued" },
+    { at: running, state: "running" },
+    { at: reviewing, state: "reviewing" },
+    { at: back, state: "running" },
+    { at: again, state: "reviewing" },
+    { at: ready, state: "in_review" },
+  ] as const satisfies ReadonlyArray<{ at: number; state: RunState }>;
+}
+
 const [balances, redeem, cart] = SAMPLE.plan.tasks;
 if (!balances || !redeem || !cart || SAMPLE.plan.tasks.length !== 3) throw new Error("scenes: the plan scene runs story.json's plan, which needs three tasks");
 
 /** The plan's three runs, in seconds from the scene's start. Execute all
  * queued them together (at most four run at a time); each is reviewed by
- * another engine, which approves two and sends one back. */
-export const PLAN_RUNS = [
-  { task: balances, verdict: "approve", steps: run(0.9, 3.3, 4.5) },
-  { task: redeem, verdict: "approve", steps: run(0.9, 6.1, 7.3) },
-  { task: cart, verdict: "changes_requested", steps: run(0.9, 4.8, 5.9) },
-] as const satisfies ReadonlyArray<{ task: { id: string; title: string; engine: string }; verdict: Verdict; steps: unknown }>;
+ * another engine, which approves two and asks for changes on the third.
+ * From 0.14.0 that review goes back to its run (`sentBack`, when its row
+ * says so), and the run's next turn is approved; before it, it waited for
+ * you at Changes requested. */
+export const PLAN_RUNS: ReadonlyArray<{
+  task: { id: string; title: string; engine: string };
+  verdict: Verdict;
+  steps: ReadonlyArray<{ at: number; state: RunState }>;
+  sentBack: number | null;
+}> = [
+  { task: balances, verdict: "approve", steps: run(0.9, 3.3, 4.5), sentBack: null },
+  { task: redeem, verdict: "approve", steps: run(0.9, 6.1, 7.3), sentBack: null },
+  SENDS_BACK
+    ? { task: cart, verdict: "approve", steps: sentBack(0.9, 4.8, 5.9, 6.9, 7.9), sentBack: 5.9 }
+    : { task: cart, verdict: "changes_requested", steps: run(0.9, 4.8, 5.9), sentBack: null },
+];
 
 type Run = (typeof PLAN_RUNS)[number];
 
@@ -108,9 +133,10 @@ const dots = (steps: Array<readonly [number, Status]>) =>
 /** "Follow a plan through" (D-1888, 0.12.0's F-TK-07): Plan with Lead's
  * dialog on the Tasks page after Execute all. The three runs go from
  * queued to running, through their independent review, to Approved or
- * Changes requested; the count line follows them, and "Land 2 approved…"
- * ends ready to land the approved work in the plan's order. About 8 s,
- * played once. */
+ * Changes requested (from 0.14.0, a Changes requested goes back to its run,
+ * which is reviewed again and approved); the count line follows them, and
+ * "Land N approved…" ends ready to land the approved work in the plan's
+ * order. About 8 s, played once. */
 export function PlanScene() {
   const { goal, tasks } = SAMPLE.plan;
   const lands = over((at) => planAt(at).approved);
@@ -168,6 +194,17 @@ export function PlanScene() {
                 <span className="sc-run-label">
                   <Changes steps={r.steps.map((s) => [s.at, `${r.task.engine} · ${runLabel(s.state, r.verdict)}`] as const)} />
                 </span>
+                {r.sentBack !== null && (
+                  // PlanWithLead's rounds line, under the row (plan-run-rounds).
+                  <span className="sc-run-note">
+                    <Changes
+                      steps={[
+                        [0, ""],
+                        [r.sentBack, t("plan.review.rounds", { n: 1 })],
+                      ]}
+                    />
+                  </span>
+                )}
               </span>
             ))}
           </span>
@@ -187,10 +224,15 @@ export function PlanScene() {
   );
 }
 
-export const PLAN_CAPTION = "A plan's tasks run in their own worktrees, each reviewed by another engine, and the approved two are ready to land.";
+export const PLAN_CAPTION = SENDS_BACK
+  ? "A plan's tasks run in their own worktrees, each reviewed by another engine; a review that asks for changes goes back to its run, and all three are ready to land."
+  : "A plan's tasks run in their own worktrees, each reviewed by another engine, and the approved two are ready to land.";
 
 export function planSceneText(): string {
   const { goal, tasks } = SAMPLE.plan;
   const [a, b, c] = tasks;
-  return `Plan with Lead follows the plan "${goal}" through. Its three tasks run at once, each in its own worktree: ${a.engine} adds gift card balances, ${b.engine} redeems them at checkout and ${c.engine} shows them in the cart. Another engine reviews each run: two come back Approved and one Changes requested, the plan's line reads 2 approved and 1 with changes requested, and "Land 2 approved…" is ready to land the approved two in the plan's order.`;
+  const intro = `Plan with Lead follows the plan "${goal}" through. Its three tasks run at once, each in its own worktree: ${a.engine} adds gift card balances, ${b.engine} redeems them at checkout and ${c.engine} shows them in the cart.`;
+  if (SENDS_BACK)
+    return `${intro} Another engine reviews each run: two come back Approved, and the review of ${c.engine}'s run asks for changes, so it goes back to that run as its next message and its row says "${t("plan.review.rounds", { n: 1 })}". The run fixes its work and is reviewed again: Approved. The plan's line reads 3 approved, and "${t("plan.land", { n: 3 })}" is ready to land all three in the plan's order.`;
+  return `${intro} Another engine reviews each run: two come back Approved and one Changes requested, the plan's line reads 2 approved and 1 with changes requested, and "Land 2 approved…" is ready to land the approved two in the plan's order.`;
 }

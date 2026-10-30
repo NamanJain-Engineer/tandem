@@ -18,7 +18,7 @@ import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/release
 import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE, SCENES_SLICE } from "../lib/release";
-import { APPROVE_WAITS, DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, RAIL_FOLDS, SAMPLE, SCENE_BUILD, SETTLE, UNDO_SECONDARY, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
+import { APPROVE_WAITS, DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, RAIL_FOLDS, SAMPLE, SCENE_BUILD, SENDS_BACK, SETTLE, UNDO_SECONDARY, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
@@ -429,7 +429,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     }
   });
 
-  it("F-WB-01 AC9 the 0.12.0 scene follows a plan through: each run reviewed, two approved, one sent back, Land 2 approved… (D-1888)", () => {
+  it("F-WB-01 AC9 the 0.12.0 scene follows a plan through: each run reviewed, two approved, one with changes requested (from 0.14.0 sent back to its run and approved), Land N approved… (D-1888)", () => {
     const h = renderToStaticMarkup(<PlanScene />);
     const { goal, tasks } = SAMPLE.plan;
     // In the shop world, not the goal field's own example (design lead).
@@ -446,22 +446,41 @@ describe("F-WB-01 AC9 product scenes", () => {
       t("plan.removePlan"),
       t("common.close"),
       `${t("tasks.runs.state.in_review")} · ${t("plan.verdict.approve")}`,
-      `${t("tasks.runs.state.in_review")} · ${t("plan.verdict.changes")}`,
       t("tasks.runs.state.running"),
       t("tasks.runs.state.reviewing"),
     ])
       expect(h, s).toContain(esc(s));
     for (const task of tasks) expect(h).toContain(`<span class="sc-mono sc-run-id">${task.id}</span>`);
-    // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
-    expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => ["queued", "running", "reviewing", "in_review"]));
-    expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
-    // It ends on 2 approved · 1 with changes requested, with Land 2 approved…
+    const reviewed = ["queued", "running", "reviewing", "in_review"];
+    if (SENDS_BACK) {
+      // From 0.14.0 the third review goes back to its run (F-TK-09): it
+      // runs and is reviewed again, never Ready to review in between, its
+      // row says so under it, and its second turn is approved.
+      expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual([reviewed, reviewed, ["queued", "running", "reviewing", "running", "reviewing", "in_review"]]);
+      expect(PLAN_RUNS.map((r) => r.verdict)).toEqual(["approve", "approve", "approve"]);
+      expect(h).not.toContain(esc(t("plan.verdict.changes")));
+      const back = PLAN_RUNS[2]!;
+      expect(back.sentBack).toBe(back.steps[3]!.at);
+      expect(h).toMatch(new RegExp(`<span class="sc-run-note"><span class="sc-swap"><span data-fx-cut=""[^>]*></span><span data-fx-enter=""[^>]*>${esc(t("plan.review.rounds", { n: 1 }))}</span></span></span>`));
+      expect(PLAN_RUNS.slice(0, 2).every((r) => r.sentBack === null)).toBe(true);
+    } else {
+      // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
+      expect(h).toContain(esc(`${t("tasks.runs.state.in_review")} · ${t("plan.verdict.changes")}`));
+      expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => reviewed));
+      expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
+      expect(h).not.toContain("sc-run-note");
+    }
+    // It ends with every approved run ready to land: Land N approved…
     // primary and Close ghost (PlanWithLead's started footer).
     const end = planAt(Infinity);
-    expect(end.summary).toBe(`${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`);
+    const landing = SENDS_BACK ? 3 : 2;
+    expect(end.summary).toBe(
+      SENDS_BACK ? t("plan.count.approved", { n: 3 }) : `${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`,
+    );
     expect(end.chip).toBe("waiting");
-    expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 2 })}</span></span>`));
-    expect(h).toMatch(new RegExp(`<span data-fx-stint=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: 1 })}</span></span>`));
+    expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: landing })}</span></span>`));
+    for (let n = 1; n < landing; n++)
+      expect(h).toMatch(new RegExp(`<span data-fx-stint=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n })}</span></span>`));
     expect(h).toMatch(new RegExp(`<span data-fx-cut=""[^>]*><span class="sc-btn sc-btn-primary">${t("common.close")}</span></span>`));
     expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-ghost">${t("common.close")}</span></span>`));
     // The count line and the button agree at every moment: both come from the runs.

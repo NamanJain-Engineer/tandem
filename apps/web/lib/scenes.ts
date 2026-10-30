@@ -63,6 +63,12 @@ export const SETTLE = 0.5;
  * so the landed state's one filled button is Close. 0.12.0's was a danger
  * one (D-128). */
 export const UNDO_SECONDARY = atLeast(SCENE_BUILD, "0.13.0");
+/** Whether a plan run's Changes requested goes back to the run (F-TK-09,
+ * from 0.14.0): Send reviews back is on by default, so the plan scene's
+ * third review goes back, its row says "Review sent back · round 1 of 2",
+ * and the run's next turn is reviewed again and approved. 0.13.0's review
+ * waited for you at Changes requested (D-128). */
+export const SENDS_BACK = atLeast(SCENE_BUILD, "0.14.0");
 
 /** One of the app's strings, with its `{name}` values and simple plurals
  * (`{n, plural, one {# file} other {# files}}`) filled in. Throws on a key
