@@ -231,11 +231,23 @@ impl Git {
                 GitError::Io(e)
             }
         })?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input).await?;
-            stdin.shutdown().await?;
+        // Written while the output is read: written first, `cat-file
+        // --batch-check` filled both 64 KiB pipes on 300 long new paths and
+        // neither side moved again (the review of 30d5bcad, M-2).
+        let stdin = child.stdin.take();
+        let write = async move {
+            if let Some(mut stdin) = stdin {
+                stdin.write_all(input).await?;
+                stdin.shutdown().await?;
+            }
+            Ok::<(), std::io::Error>(())
+        };
+        let (written, out) = tokio::join!(write, child.wait_with_output());
+        let out = out?;
+        // A git that stopped early closed its input: its own error says why.
+        if out.status.success() {
+            written?;
         }
-        let out = child.wait_with_output().await?;
         checked_output(
             Output {
                 stdout: out.stdout,

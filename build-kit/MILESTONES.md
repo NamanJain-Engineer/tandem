@@ -2037,7 +2037,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 2. **Radar.** `services::radar`: per-worktree indexes refreshed on `checkpoint:created` and by `lane_overlap`; shared symbols between siblings; `radar:overlap` for newly shared pairs; `lane_radar` and `lane_radar_note`.
 3. **UI.** Shared symbols in UI-153, the rail's radar mark, the notice with Warn both agents.
 4. **Slice 2: languages and renames.** Go and Java grammars (pinned, MIT); `renamed` with `renamedTo`, only for a unique same-kind, same-scope pair whose bodies match once their own names are set aside.
-5. **Slice 2: live.** A parsed worktree is watched (`tandem_core::files::watch`, 2 s settle, ≤5,000 folders), parsed again for changed files only, once at a time, never while it's being discarded; `radar:changed`.
+5. **Slice 2: live.** A parsed worktree is watched (`tandem_core::files::watch`, 2 s settle, its share of the user's inotify watches, 64 to 5,000 folders; at most 8 worktrees, each after a refresh of its own, giving its place only after 5 minutes idle), parsed again for changed files only, once at a time, never while it's being discarded; `radar:changed`.
 6. **Slice 2: claim.** `lane_radar_claim` and **Claim these files** in UI-153, through F-TK-05's claims (`TaskStore::claim_for_tree`).
 
 **Verification**

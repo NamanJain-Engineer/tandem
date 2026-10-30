@@ -11,9 +11,10 @@ release fails when its version has no section.
 
 ### Added
 
-- [lin] **The intent radar, live.** Once a worktree has been read, the
-  radar reads it again about two seconds after a change, and every two
-  seconds while changes go on, so a clash shows up while the agents are
+- [lin] **The intent radar, live.** Once a worktree has been read after its
+  agent's turn or its overlap check, the radar reads it again about two
+  seconds after a change, and every two seconds while changes go on, for up
+  to eight worktrees at a time, so a clash shows up while the agents are
   still working, not after their turn. It now reads Go and Java too, and says
   when a definition was renamed (`parse → parseLine`) rather than removed,
   only when nothing else could explain it. **Claim these files** in Check

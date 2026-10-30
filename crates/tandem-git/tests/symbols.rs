@@ -174,3 +174,112 @@ async fn f_wt_10_a_big_base_file_and_text_that_isnt_utf8_are_unparsed() {
         .collect();
     assert_eq!(names, [("fresh", SymbolChange::Added)]);
 }
+
+#[tokio::test]
+async fn f_wt_10_many_long_new_paths_dont_stall_the_base_check() {
+    // 300 new files with paths of about 470 characters: `cat-file
+    // --batch-check` names each missing one back, and with its input
+    // written before its output was read, both pipes filled and the
+    // refresh never returned (the review of 30d5bcad, M-2).
+    let f = Fixture::new();
+    let (cli, repo) = (
+        f.git(),
+        Repo::discover(&f.repo).expect("discover").expect("repo"),
+    );
+    let lane = LaneManager::create(&cli, &repo, "radar-long", &HashSet::new())
+        .await
+        .expect("lane");
+    let base = git(&lane.path, &["rev-parse", "HEAD"]);
+    let folder = lane.path.join("a".repeat(200)).join("b".repeat(200));
+    std::fs::create_dir_all(&folder).expect("mkdir");
+    for n in 0..300 {
+        std::fs::write(
+            folder.join(format!("{}_{n:03}.ts", "c".repeat(60))),
+            format!("export function made{n}() {{}}\n"),
+        )
+        .expect("write");
+    }
+    let got = tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        index_cached(&cli, &lane.path, &base, &mut ParseCache::default()),
+    )
+    .await
+    .expect("the refresh returns")
+    .expect("index");
+    assert_eq!(got.parsed, 300);
+    assert_eq!(got.index.symbols.len(), 300);
+    assert!(got
+        .index
+        .symbols
+        .iter()
+        .all(|s| s.change == SymbolChange::Added));
+}
+
+#[tokio::test]
+async fn f_wt_10_a_base_path_with_a_line_break_is_read_from_the_base() {
+    // Left out of the batch, it read as a new file: every definition in it
+    // added rather than the one changed (the review of 30d5bcad).
+    let f = Fixture::new();
+    let odd = f.repo.join("we\nird");
+    std::fs::create_dir_all(&odd).expect("mkdir");
+    std::fs::write(
+        odd.join("a.ts"),
+        "export function alpha() { return 1; }\nexport function beta() { return 2; }\n",
+    )
+    .expect("write");
+    git(&f.repo, &["add", "-A"]);
+    git(&f.repo, &["commit", "-qm", "odd path"]);
+    let (cli, repo) = (
+        f.git(),
+        Repo::discover(&f.repo).expect("discover").expect("repo"),
+    );
+    let lane = LaneManager::create(&cli, &repo, "radar-odd", &HashSet::new())
+        .await
+        .expect("lane");
+    let base = git(&lane.path, &["rev-parse", "HEAD"]);
+    std::fs::write(
+        lane.path.join("we\nird").join("a.ts"),
+        "export function alpha() { return 10; }\nexport function beta() { return 2; }\n",
+    )
+    .expect("write");
+    let got = index_cached(&cli, &lane.path, &base, &mut ParseCache::default())
+        .await
+        .expect("index");
+    let names: Vec<(&str, SymbolChange)> = got
+        .index
+        .symbols
+        .iter()
+        .map(|s| (s.qualified.as_str(), s.change))
+        .collect();
+    assert_eq!(names, [("alpha", SymbolChange::Changed)]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn f_wt_10_a_file_that_cant_be_read_is_unparsed_not_deleted() {
+    // A link loop, a permission or a full file table read as a deleted
+    // file: every definition in the base's copy removed (the review of
+    // 30d5bcad). Here its folder became a link to itself, so looking the
+    // file up fails with ELOOP.
+    let f = Fixture::new();
+    std::fs::create_dir_all(f.repo.join("dir")).expect("mkdir");
+    std::fs::write(f.repo.join("dir/keep.ts"), "export function keep() {}\n").expect("write");
+    git(&f.repo, &["add", "-A"]);
+    git(&f.repo, &["commit", "-qm", "base file"]);
+    let (cli, repo) = (
+        f.git(),
+        Repo::discover(&f.repo).expect("discover").expect("repo"),
+    );
+    let lane = LaneManager::create(&cli, &repo, "radar-unreadable", &HashSet::new())
+        .await
+        .expect("lane");
+    let base = git(&lane.path, &["rev-parse", "HEAD"]);
+    std::fs::remove_dir_all(lane.path.join("dir")).expect("rm");
+    std::os::unix::fs::symlink("dir", lane.path.join("dir")).expect("link");
+    let got = index_cached(&cli, &lane.path, &base, &mut ParseCache::default())
+        .await
+        .expect("index");
+    assert!(got.index.symbols.is_empty(), "{:?}", got.index.symbols);
+    // The link itself, and the file under it.
+    assert_eq!(got.index.unparsed, 2, "{:?}", got.index);
+}

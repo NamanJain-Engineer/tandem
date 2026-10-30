@@ -376,11 +376,20 @@ impl TaskStore {
         claim_count(paths.len())?;
         // Real files from the top, so `*` and `?` in a name are kept: the
         // agents' check refused `src/what?.ts` as a pattern (the review of
-        // 9a4e93ab).
-        let paths = paths
+        // 9a4e93ab). A name the checks would refuse or change (spaces at an
+        // end, a `\`, a control character, too long) is left out and the
+        // rest are claimed: one such file failed the whole claim, or another
+        // name was claimed for it (the review of 30d5bcad).
+        let paths: Vec<String> = paths
             .iter()
-            .map(|p| normalize_relative_claim_path(p))
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter(|p| p.trim() == p.as_str() && !p.contains('\\'))
+            .filter_map(|p| normalize_relative_claim_path(p).ok())
+            .collect();
+        if paths.is_empty() {
+            return Err(TaskError::invalid(
+                "None of these files can be claimed by their names.",
+            ));
+        }
         self.store_claims(scope, None, paths, intent.trim(), false)
     }
 

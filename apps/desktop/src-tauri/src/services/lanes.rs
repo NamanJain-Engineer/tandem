@@ -2161,7 +2161,7 @@ pub async fn overlap(
             changed_files(git, other_repo.root(), &other_base).await?
         };
         let files = shared(&mine, &theirs);
-        let symbols = match crate::services::radar::refresh(git, &other).await {
+        let symbols = match crate::services::radar::refresh_sibling(git, &other).await {
             Ok(their_symbols) => crate::services::radar::shared(&my_symbols, &their_symbols),
             Err(_) => Vec::new(),
         };

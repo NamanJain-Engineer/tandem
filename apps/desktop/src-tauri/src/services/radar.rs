@@ -1,19 +1,20 @@
 //! Intent radar (F-WT-10): each local worktree's changed symbols, kept from
 //! its last parse, refreshed after each checkpoint in its folder, when its
 //! overlap is checked, and (once parsed) when its files change on disk: a
-//! watcher for each of the [`MAX_WATCHED_WORKTREES`] worktrees parsed most
-//! recently, debounced, re-parses only what changed, one parse at a time,
-//! never while the worktree is being discarded ([`hold`]).
-//! A pair of sibling worktrees that newly share a symbol raises
-//! `radar:overlap` once; a watched update raises `radar:changed`. Warn both
-//! agents types `lane_radar_note`'s text, and Claim these files claims
-//! through F-TK-05, each only on a click.
+//! watcher for each of up to [`MAX_WATCHED_WORKTREES`] worktrees with a
+//! checkpoint or Check overlap… of their own, debounced, re-parses only
+//! what changed, one parse at a time, never while the worktree is being
+//! discarded ([`hold`]). A pair of sibling worktrees that newly share a
+//! symbol raises `radar:overlap` once, and any refresh that changes what
+//! worktrees share raises `radar:changed`. Warn both agents types
+//! `lane_radar_note`'s text, and Claim these files claims through F-TK-05,
+//! each only on a click.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -44,8 +45,13 @@ struct Entry {
 static INDEXES: LazyLock<Mutex<HashMap<String, Entry>>> = LazyLock::new(Mutex::default);
 /// Numbers each parse as it starts, for [`keep`].
 static STARTED: AtomicU64 = AtomicU64::new(0);
-/// A watcher per parsed worktree (F-WT-10 slice 2), for the
-/// [`MAX_WATCHED_WORKTREES`] parsed most recently, until it's forgotten.
+/// The parse number given out when each worktree was last forgotten: a
+/// parse that started before isn't kept after. One that began before a
+/// discard or Remove repository and finished after brought the gone
+/// worktree's index back for good (the review of 30d5bcad).
+static FORGOTTEN: LazyLock<Mutex<HashMap<String, u64>>> = LazyLock::new(Mutex::default);
+/// A watcher per parsed worktree (F-WT-10 slice 2), for up to
+/// [`MAX_WATCHED_WORKTREES`] of them, until it's forgotten.
 static WATCHERS: LazyLock<Mutex<HashMap<String, Watched>>> = LazyLock::new(Mutex::default);
 /// Worktrees being discarded, with how many discards hold each: not parsed
 /// or watched again meanwhile.
@@ -90,19 +96,23 @@ pub const SETTLE: Duration = Duration::from_secs(2);
 /// a per-user budget, shared with the Files tab), and fewer when the user's
 /// budget is small ([`dirs_each`]).
 pub const MAX_WATCHED_DIRS: usize = 5_000;
-/// At most this many worktrees are watched, those parsed most recently: on
-/// Linux each watch is an inotify instance and two threads, and idle
-/// worktrees kept theirs until discarded (the review of 9a4e93ab, S8).
-/// One that isn't watched is still read at each checkpoint and Check
-/// overlap…, as before slice 2.
+/// At most this many worktrees are watched: on Linux each watch is an
+/// inotify instance and two threads, and idle worktrees kept theirs until
+/// discarded (the review of 9a4e93ab, S8). One that isn't watched is still
+/// read at each checkpoint and Check overlap…, as before slice 2.
 pub const MAX_WATCHED_WORKTREES: usize = 8;
+/// A watched worktree gives its place to another only once it has gone
+/// this long without a parse of its own. Giving it to whichever was parsed
+/// last made nine worktrees read in turn rebuild every watcher each round
+/// (the review of 30d5bcad, S-3).
+pub const WATCH_IDLE: Duration = Duration::from_secs(5 * 60);
 /// A watched worktree's share never drops below this many folders.
 const MIN_WATCHED_DIRS: usize = 64;
 
-/// A worktree's watcher, and the number ([`STARTED`]) of its latest parse.
+/// A worktree's watcher, and when it was last parsed for itself.
 struct Watched {
     _watcher: DirWatcher,
-    used: u64,
+    at: Instant,
 }
 /// Pairs and symbols already announced, so a notice isn't repeated.
 static WARNED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
@@ -133,8 +143,30 @@ fn covered(ws: &Workspace) -> bool {
         && !tandem_git::jj::jj_without_git(Path::new(&ws.root))
 }
 
-/// Parses the worktree again and keeps the result.
+/// Parses the worktree again and keeps the result: for its own checkpoint
+/// or Check overlap…, so it's watched from then on.
 pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+    refresh_on(git, lane, true, None).await
+}
+
+/// [`refresh`] for a sibling read to compare with: it isn't watched for
+/// it, so Check overlap… in one of nine worktrees doesn't take the others'
+/// watchers in turn (the review of 30d5bcad, S-3).
+pub async fn refresh_sibling(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+    refresh_on(git, lane, false, None).await
+}
+
+/// Parses `lane` again and keeps the result, watching it when `watch`.
+/// When that changes what its repository's worktrees share, `radar:changed`
+/// goes out on `bus` (the app's when `None`), whichever refresh it was: a
+/// change a checkpoint read first, before a watched parse that then found
+/// nothing new, never reached the rail (the review of 30d5bcad, S-2).
+async fn refresh_on(
+    git: &Git,
+    lane: &Workspace,
+    watch: bool,
+    bus: Option<&EventBus>,
+) -> Result<SymbolIndex, IpcError> {
     let (Some(parent), Some(base)) = (&lane.parent_id, &lane.lane_base) else {
         return Ok(SymbolIndex::default());
     };
@@ -152,6 +184,7 @@ pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcErro
         parsed = done.parsed,
         "radar index refreshed"
     );
+    let before = shares_in(parent.as_str());
     let Some(index) = keep(
         lane.id.as_str(),
         parent.as_str(),
@@ -161,8 +194,46 @@ pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcErro
     ) else {
         return Ok(SymbolIndex::default());
     };
-    ensure_watched(lane, started).await;
+    if shares_in(parent.as_str()) != before {
+        tell_changed(bus, lane.id.as_str());
+    }
+    if watch {
+        ensure_watched(lane).await;
+    }
     Ok(index)
+}
+
+/// What each pair of a repository's kept worktrees shares: what the rail's
+/// marks and Check overlap… show.
+fn shares_in(parent: &str) -> BTreeMap<(String, String), Vec<SharedSymbol>> {
+    let kept: Vec<(String, SymbolIndex)> = lock(&INDEXES)
+        .iter()
+        .filter(|(_, e)| e.parent == parent)
+        .map(|(id, e)| (id.clone(), e.index.clone()))
+        .collect();
+    let mut out = BTreeMap::new();
+    for (a, here) in &kept {
+        for (b, there) in &kept {
+            if a < b {
+                let found = shared(here, there);
+                if !found.is_empty() {
+                    out.insert((a.clone(), b.clone()), found);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `radar:changed` for `lane_id`, on `bus` or the app's.
+fn tell_changed(bus: Option<&EventBus>, lane_id: &str) {
+    if let Some(bus) = bus.or_else(|| CONTEXT.get().map(|c| &c.bus)) {
+        bus.publish(BusEvent::new(
+            Topic::App,
+            "radar:changed",
+            serde_json::json!({ "laneIds": [lane_id] }),
+        ));
+    }
 }
 
 /// Keeps a worktree's parse, unless one that started later was kept first:
@@ -183,6 +254,14 @@ fn keep(
     // this keeps.
     let mut indexes = lock(&INDEXES);
     if is_held(lane_id) {
+        return None;
+    }
+    // Begun before the worktree was forgotten (a discard, Remove
+    // repository): it's gone.
+    if lock(&FORGOTTEN)
+        .get(lane_id)
+        .is_some_and(|at| started <= *at)
+    {
         return None;
     }
     if let Some(newer) = indexes.get(lane_id).filter(|e| e.started > started) {
@@ -237,13 +316,23 @@ pub fn hold(lane_id: &str) -> Hold {
 /// is one recursive watch, and the share isn't used.
 fn dirs_each() -> usize {
     static EACH: OnceLock<usize> = OnceLock::new();
-    *EACH.get_or_init(|| {
-        let user = cfg!(target_os = "linux")
-            .then(|| std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches").ok())
-            .flatten()
-            .and_then(|s| s.trim().parse().ok());
-        share_of(user)
-    })
+    *EACH.get_or_init(|| share_of(user_watches()))
+}
+
+/// The user's inotify watches.
+#[cfg(target_os = "linux")]
+fn user_watches() -> Option<usize> {
+    std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Not Linux: a worktree is one recursive watch.
+#[cfg(not(target_os = "linux"))]
+fn user_watches() -> Option<usize> {
+    None
 }
 
 fn share_of(user_watches: Option<usize>) -> usize {
@@ -252,79 +341,94 @@ fn share_of(user_watches: Option<usize>) -> usize {
     })
 }
 
-/// Notes a parse of `id` numbered `used`; false when it isn't watched.
-fn seen(watchers: &mut HashMap<String, Watched>, id: &str, used: u64) -> bool {
+/// Notes a parse of `id` for itself at `now`; false when it isn't watched.
+fn seen(watchers: &mut HashMap<String, Watched>, id: &str, now: Instant) -> bool {
     match watchers.get_mut(id) {
         Some(w) => {
-            w.used = w.used.max(used);
+            w.at = w.at.max(now);
             true
         }
         None => false,
     }
 }
 
-/// Keeps `watcher` for `id`, whose latest parse is numbered `used`. Past
-/// `max`, the worktree parsed least recently stops being watched, unless
-/// that's `id` itself.
+/// Whether another worktree can be watched at `now`: fewer than `max` are,
+/// or one has gone [`WATCH_IDLE`] without a parse.
+fn room(watchers: &HashMap<String, Watched>, max: usize, now: Instant) -> bool {
+    watchers.len() < max
+        || watchers
+            .values()
+            .any(|w| now.saturating_duration_since(w.at) >= WATCH_IDLE)
+}
+
+/// Keeps `watcher` for `id`, parsed at `now`. Past `max`, the worktree idle
+/// longest stops being watched if it has been idle [`WATCH_IDLE`];
+/// otherwise `id` isn't watched.
 fn admit(
     watchers: &mut HashMap<String, Watched>,
     id: String,
     watcher: DirWatcher,
-    used: u64,
     max: usize,
+    now: Instant,
 ) {
     if watchers.len() >= max {
-        let Some((oldest, at)) = watchers
+        let Some((idlest, at)) = watchers
             .iter()
-            .map(|(k, w)| (k.clone(), w.used))
+            .map(|(k, w)| (k.clone(), w.at))
             .min_by_key(|(_, at)| *at)
         else {
             return;
         };
-        if at > used {
+        if now.saturating_duration_since(at) < WATCH_IDLE {
             return;
         }
-        watchers.remove(&oldest);
+        watchers.remove(&idlest);
         tracing::debug!(
             code = "radar.watch_dropped",
-            "the worktree parsed least recently isn't watched any more"
+            "the worktree idle longest isn't watched any more"
         );
     }
     watchers.insert(
         id,
         Watched {
             _watcher: watcher,
-            used,
+            at: now,
         },
     );
 }
 
 /// Whether a watched change can move what the radar read: a file in a
 /// parsed language, or a folder renamed or removed, which moves every file
-/// in it (`mv src lib` went unseen; the review of 9a4e93ab). A path that's
-/// gone and has no extension may have been a folder.
+/// in it (`mv src lib` went unseen; the review of 9a4e93ab). Any path
+/// that's gone may have been a folder, whatever its name (`mv gen.d ..`;
+/// the review of 30d5bcad): parsing again reads only what changed.
 fn moves_code(root: &Path, rel: &str) -> bool {
     symbols::Lang::of(rel).is_some()
-        || match std::fs::symlink_metadata(root.join(rel)) {
-            Ok(m) => m.is_dir(),
-            Err(_) => Path::new(rel).extension().is_none(),
-        }
+        || std::fs::symlink_metadata(root.join(rel)).map_or(true, |m| m.is_dir())
 }
 
 /// Starts watching a parsed worktree's folder, once, with the app's
-/// context ([`run`] sets it). `used` numbers the parse.
-async fn ensure_watched(lane: &Workspace, used: u64) {
+/// context ([`run`] sets it).
+async fn ensure_watched(lane: &Workspace) {
     if let Some(ctx) = CONTEXT.get().cloned() {
-        watch_with(lane, ctx, used).await;
+        watch_with(lane, ctx).await;
     }
 }
 
-/// Watches `lane`'s folder, once: a change to a file in a parsed language
-/// parses it again after [`SETTLE`]. `used` numbers the parse that asked.
-pub(crate) async fn watch_with(lane: &Workspace, ctx: Context, used: u64) {
+/// Watches `lane`'s folder, once, when there's room for it ([`room`]): a
+/// change to a file in a parsed language parses it again after [`SETTLE`].
+pub(crate) async fn watch_with(lane: &Workspace, ctx: Context) {
     let id = lane.id.as_str().to_string();
-    if is_held(&id) || seen(&mut lock(&WATCHERS), &id, used) {
-        return;
+    {
+        let mut watchers = lock(&WATCHERS);
+        let now = Instant::now();
+        // No room: no folder walk for a watcher that wouldn't be kept.
+        if is_held(&id)
+            || seen(&mut watchers, &id, now)
+            || !room(&watchers, MAX_WATCHED_WORKTREES, now)
+        {
+            return;
+        }
     }
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         return;
@@ -358,8 +462,9 @@ pub(crate) async fn watch_with(lane: &Workspace, ctx: Context, used: u64) {
             // A discard or another watcher may have come first (the hold is
             // checked under the lock, as in [`refresh`]).
             let mut watchers = lock(&WATCHERS);
-            if !is_held(&id) && !seen(&mut watchers, &id, used) {
-                admit(&mut watchers, id, w, used, MAX_WATCHED_WORKTREES);
+            let now = Instant::now();
+            if !is_held(&id) && !seen(&mut watchers, &id, now) {
+                admit(&mut watchers, id, w, MAX_WATCHED_WORKTREES, now);
             }
         }
         Ok(Err(e)) => {
@@ -416,27 +521,27 @@ async fn rescan(lane_id: &str, ctx: &Context) {
     let Some(git) = ctx.git().await else {
         return;
     };
-    let before = lock(&INDEXES).get(lane_id).map(|e| e.index.clone());
-    // Only when what the radar knows changed: each event reloads an open
-    // Check overlap…, which parses every sibling again (the review of
-    // 9a4e93ab, S3).
-    if announce(&ctx.store, &git, &ctx.bus, lane, &all).await
-        && lock(&INDEXES).get(lane_id).map(|e| &e.index) != before.as_ref()
-    {
-        ctx.bus.publish(BusEvent::new(
-            Topic::App,
-            "radar:changed",
-            serde_json::json!({ "laneIds": [lane_id] }),
-        ));
-    }
+    // `radar:changed` comes from the refresh, only when what's shared
+    // changed: each event reloads an open Check overlap…, which parses
+    // every sibling again (the review of 9a4e93ab, S3).
+    announce(&ctx.store, &git, &ctx.bus, lane, &all).await;
 }
 
-/// The last index, parsing it first when there's none.
+/// The last index, parsing it first (not watching it) when there's none.
 pub async fn index_of(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+    index_on(git, lane, None).await
+}
+
+/// [`index_of`], telling a change on `bus`.
+async fn index_on(
+    git: &Git,
+    lane: &Workspace,
+    bus: Option<&EventBus>,
+) -> Result<SymbolIndex, IpcError> {
     if let Some(e) = lock(&INDEXES).get(lane.id.as_str()) {
         return Ok(e.index.clone());
     }
-    refresh(git, lane).await
+    refresh_on(git, lane, false, bus).await
 }
 
 /// What `here` shares with `there` (F-WT-10).
@@ -477,8 +582,14 @@ pub fn marks(lane_ids: &[String]) -> Vec<RadarMark> {
 }
 
 /// Forgets a worktree's index and stops watching it (it was discarded).
+/// A parse already under way isn't kept when it ends ([`FORGOTTEN`]).
 pub fn forget(lane_id: &str) {
-    lock(&INDEXES).remove(lane_id);
+    {
+        // Under the lock [`keep`] checks the fence in.
+        let mut indexes = lock(&INDEXES);
+        lock(&FORGOTTEN).insert(lane_id.to_string(), STARTED.load(Ordering::Relaxed));
+        indexes.remove(lane_id);
+    }
     lock(&WATCHERS).remove(lane_id);
 }
 
@@ -519,7 +630,7 @@ async fn announce(
     {
         return false;
     }
-    let Ok(mine) = refresh(git, lane).await else {
+    let Ok(mine) = refresh_on(git, lane, true, Some(bus)).await else {
         tracing::warn!(code = "radar.parse_failed", "radar index skipped");
         return false;
     };
@@ -531,7 +642,7 @@ async fn announce(
         if is_held(sib.id.as_str()) {
             continue;
         }
-        let Ok(theirs) = index_of(git, sib).await else {
+        let Ok(theirs) = index_on(git, sib, Some(bus)).await else {
             continue;
         };
         let found = shared(&mine, &theirs);
@@ -725,6 +836,12 @@ pub fn claim_of(
             continue;
         }
         paths.insert(s.path.clone());
+        // A member renamed with its type is said by the type's rename
+        // (`renamed Session.Session → UserSession.UserSession` was listed
+        // too; the review of 30d5bcad).
+        if s.change == SymbolChange::Renamed && symbols::moved_with_its_type(&mine.symbols, s) {
+            continue;
+        }
         let words = match (&s.change, &s.renamed_to) {
             (SymbolChange::Renamed, Some(to)) => format!("renamed {} → {to}", s.qualified),
             (SymbolChange::Changed, _) => format!("changed {}", s.qualified),
@@ -756,6 +873,11 @@ pub fn claim_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The overlap notice among what was published, the rest dropped.
+    fn overlap_in(rx: &mut tokio::sync::broadcast::Receiver<BusEvent>) -> Option<BusEvent> {
+        std::iter::from_fn(|| rx.try_recv().ok()).find(|e| e.name == "radar:overlap")
+    }
 
     fn git(dir: &Path, args: &[&str]) -> String {
         let out = std::process::Command::new("git")
@@ -900,8 +1022,7 @@ mod tests {
         let bus = EventBus::new();
         let mut rx = bus.subscribe(Topic::App);
         on_checkpoint(&fx.store, &fx.git, &bus, &b.root).await;
-        let ev = rx.try_recv().expect("an overlap notice");
-        assert_eq!(ev.name, "radar:overlap");
+        let ev = overlap_in(&mut rx).expect("an overlap notice");
         assert_eq!(ev.payload["a"]["branch"], "tandem/caller");
         assert_eq!(ev.payload["b"]["branch"], "tandem/rename");
         assert_eq!(
@@ -1015,7 +1136,7 @@ mod tests {
         let bus = EventBus::new();
         let mut rx = bus.subscribe(Topic::App);
         on_checkpoint(&fx.store, &fx.git, &bus, &a.root).await;
-        let ev = rx.try_recv().expect("an overlap notice");
+        let ev = overlap_in(&mut rx).expect("an overlap notice");
         assert_eq!(
             ev.payload["symbols"],
             serde_json::json!(["parse → parseLine"])
@@ -1057,7 +1178,7 @@ mod tests {
             git: GitSource::Fixed(fx.git.clone()),
         };
         for lane in [a, b] {
-            watch_with(lane, ctx.clone(), 0).await;
+            watch_with(lane, ctx.clone()).await;
             assert!(lock(&WATCHERS).contains_key(lane.id.as_str()));
         }
         // An edit in another language parses nothing.
@@ -1153,13 +1274,22 @@ mod tests {
             }
             n
         };
+        // What the rail and Check overlap… show is what's shared: a
+        // sibling uses `parse`.
+        std::fs::write(
+            Path::new(&fx.lanes[1].root).join("src/main.ts"),
+            "import { parse } from './parse';\nexport const out = parse(' X ');\n",
+        )
+        .expect("write");
         std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
         rescan(a.id.as_str(), &ctx).await;
         assert_eq!(changed(), 1);
         std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
         rescan(a.id.as_str(), &ctx).await;
         assert_eq!(changed(), 0, "the same bytes changed nothing");
-        forget(a.id.as_str());
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
     }
 
     #[tokio::test]
@@ -1185,7 +1315,7 @@ mod tests {
             bus: EventBus::new(),
             git: GitSource::Fixed(fx.git.clone()),
         };
-        watch_with(a, ctx, 0).await;
+        watch_with(a, ctx).await;
         assert!(
             !lock(&WATCHERS).contains_key(a.id.as_str()),
             "not watched while held"
@@ -1240,34 +1370,176 @@ mod tests {
             intent(&[pair("parse", Used), pair("format", Removed)]),
             "Intent radar: changed parse, changed format, which tandem/b uses or changes too"
         );
+        // A renamed class's constructor moved with it: said once, by the
+        // class (the review of 30d5bcad).
+        let renamed = |qualified: &str, to: &str| tandem_git::symbols::ChangedSymbol {
+            name: qualified.rsplit('.').next().unwrap_or(qualified).into(),
+            qualified: qualified.into(),
+            kind: "class".into(),
+            path: "src/Session.java".into(),
+            line: 1,
+            change: Renamed,
+            renamed_to: Some(to.into()),
+        };
+        let mine = SymbolIndex {
+            symbols: vec![
+                renamed("Session", "UserSession"),
+                renamed("Session.Session", "UserSession.UserSession"),
+            ],
+            ..SymbolIndex::default()
+        };
+        let (paths, intent) = claim_of(
+            &mine,
+            &[SharedSymbol {
+                name: "Session".into(),
+                qualified: "Session".into(),
+                here: Renamed,
+                there: Used,
+                renamed_to: Some("UserSession".into()),
+            }],
+            "tandem/b",
+        );
+        assert_eq!(paths, ["src/Session.java"]);
+        assert_eq!(
+            intent,
+            "Intent radar: renamed Session → UserSession, which tandem/b uses"
+        );
     }
 
     #[test]
-    fn f_wt_10_7_only_the_worktrees_parsed_most_recently_stay_watched() {
+    fn f_wt_10_7_a_watched_worktree_gives_its_place_only_once_idle() {
         // Each watch is an inotify instance and two threads, and idle
-        // worktrees kept theirs until discarded (the review of 9a4e93ab, S8).
+        // worktrees kept theirs until discarded (the review of 9a4e93ab,
+        // S8). The one parsed least recently gave its place at once, so
+        // nine worktrees read in turn rebuilt every watcher each round (the
+        // review of 30d5bcad, S-3).
+        let n = MAX_WATCHED_WORKTREES + 1;
         let dirs: Vec<tempfile::TempDir> =
-            (0..4).map(|_| tempfile::tempdir().expect("tmp")).collect();
+            (0..n).map(|_| tempfile::tempdir().expect("tmp")).collect();
         let watcher = |i: usize| {
             let root = std::fs::canonicalize(dirs[i].path()).expect("canon");
             watch::watch(&root, None, WatchOptions::default(), Box::new(|_| {})).expect("watch")
         };
+        let id = |i: usize| format!("wt{i}");
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
         let mut watchers = HashMap::new();
-        let ids = |w: &HashMap<String, Watched>| {
-            let mut k: Vec<String> = w.keys().cloned().collect();
-            k.sort();
-            k
+        let mut built = 0;
+        for round in 0..3u64 {
+            for i in 0..n {
+                let now = at(round * 20 + i as u64);
+                if seen(&mut watchers, &id(i), now) || !room(&watchers, MAX_WATCHED_WORKTREES, now)
+                {
+                    continue;
+                }
+                built += 1;
+                admit(&mut watchers, id(i), watcher(i), MAX_WATCHED_WORKTREES, now);
+            }
+        }
+        assert_eq!(
+            built, MAX_WATCHED_WORKTREES,
+            "none built twice, the ninth never"
+        );
+        assert!(!watchers.contains_key(&id(n - 1)));
+        // Once one has gone WATCH_IDLE without a parse, the ninth takes its
+        // place, and only that one's.
+        let later = at(60) + WATCH_IDLE;
+        for i in 1..MAX_WATCHED_WORKTREES {
+            assert!(seen(&mut watchers, &id(i), later));
+        }
+        assert!(room(&watchers, MAX_WATCHED_WORKTREES, later));
+        admit(
+            &mut watchers,
+            id(n - 1),
+            watcher(n - 1),
+            MAX_WATCHED_WORKTREES,
+            later,
+        );
+        assert!(watchers.contains_key(&id(n - 1)) && !watchers.contains_key(&id(0)));
+        assert_eq!(watchers.len(), MAX_WATCHED_WORKTREES);
+        assert!(!room(&watchers, MAX_WATCHED_WORKTREES, later));
+    }
+
+    #[test]
+    fn f_wt_10_9_a_parse_begun_before_a_discard_isnt_kept_after_it() {
+        // Kept, it brought the gone worktree's index back for good, and on
+        // Linux a watcher on the missing folder (the review of 30d5bcad).
+        let id = "radar-parse-outlives-discard";
+        let started = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        drop(hold(id));
+        let kept = keep(
+            id,
+            "repo",
+            started,
+            SymbolIndex::default(),
+            Default::default(),
+        );
+        let back = lock(&INDEXES).contains_key(id);
+        // One begun after it is kept.
+        let later = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        let kept_later = keep(
+            id,
+            "repo",
+            later,
+            SymbolIndex::default(),
+            Default::default(),
+        );
+        forget(id);
+        assert!(
+            kept.is_none() && !back,
+            "begun before the discard, kept after it"
+        );
+        assert!(kept_later.is_some());
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_7_a_change_a_checkpoint_read_first_still_reaches_the_rail() {
+        // Only a watched parse raised `radar:changed`, and only when it
+        // changed the index itself: a checkpoint that read the change first
+        // left the rail's marks standing (the review of 30d5bcad, S-2).
+        let fx = parse_fixture().await;
+        let (a, b) = (&fx.lanes[0], &fx.lanes[1]);
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe(Topic::App);
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: bus.clone(),
+            git: GitSource::Fixed(fx.git.clone()),
         };
-        admit(&mut watchers, "a".into(), watcher(0), 1, 2);
-        admit(&mut watchers, "b".into(), watcher(1), 2, 2);
-        // a is parsed again: b is now the one parsed least recently.
-        assert!(seen(&mut watchers, "a", 3));
-        assert!(!seen(&mut watchers, "c", 3), "c isn't watched yet");
-        admit(&mut watchers, "c".into(), watcher(2), 4, 2);
-        assert_eq!(ids(&watchers), ["a", "c"]);
-        // A parse older than every watched one isn't watched.
-        admit(&mut watchers, "d".into(), watcher(3), 2, 2);
-        assert_eq!(ids(&watchers), ["a", "c"]);
+        std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE_LINE).expect("write");
+        std::fs::write(
+            Path::new(&b.root).join("src/main.ts"),
+            "import { parse } from './parse';\nexport const out = parse(' X ');\n",
+        )
+        .expect("write");
+        on_checkpoint(&fx.store, &fx.git, &bus, &a.root).await;
+        let ids: Vec<String> = fx.lanes.iter().map(|l| l.id.as_str().to_string()).collect();
+        let marked = marks(&ids).len();
+        let told = |rx: &mut tokio::sync::broadcast::Receiver<BusEvent>| {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .filter(|e| e.name == "radar:changed")
+                .count()
+        };
+        let first = told(&mut rx);
+        // `parse` put back; the next turn's checkpoint reads it before the
+        // watched parse, which then finds nothing new.
+        std::fs::write(Path::new(&a.root).join("src/parse.ts"), PARSE).expect("write");
+        on_checkpoint(&fx.store, &fx.git, &bus, &a.root).await;
+        let gone = marks(&ids).is_empty();
+        let second = told(&mut rx);
+        rescan(a.id.as_str(), &ctx).await;
+        let after_rescan = told(&mut rx);
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+        assert_eq!(marked, 2, "both marked");
+        assert!(first >= 1, "the first share is told");
+        assert!(gone, "nothing is shared any more");
+        assert_eq!(
+            second, 1,
+            "the checkpoint tells the rail its marks are gone"
+        );
+        assert_eq!(after_rescan, 0, "and the watched parse adds nothing");
     }
 
     #[test]
@@ -1293,7 +1565,10 @@ mod tests {
         assert!(moves_code(root, "src"), "a folder moved away, or removed");
         assert!(moves_code(root, "src/parse.ts"), "a parsed file");
         assert!(!moves_code(root, "README"), "a file in no parsed language");
-        assert!(!moves_code(root, "notes.md"), "one removed");
+        // Gone, whatever its name: it may have been a folder (`mv gen.d ..`
+        // went unseen; the review of 30d5bcad).
+        assert!(moves_code(root, "gen.d"), "a dotted folder moved away");
+        assert!(moves_code(root, "notes.md"), "a file removed");
     }
 
     #[tokio::test]
@@ -1333,26 +1608,26 @@ mod tests {
             bus: bus.clone(),
             git: GitSource::Fixed(fx.git.clone()),
         };
-        watch_with(a, ctx, 0).await;
+        watch_with(a, ctx).await;
         assert!(lock(&WATCHERS).contains_key(a.id.as_str()));
         std::fs::rename(
             Path::new(&a.root).join("src"),
             Path::new(&a.root).join("lib"),
         )
         .expect("mv src lib");
-        let changed = tokio::time::timeout(Duration::from_secs(20), async {
+        // Nothing is shared, so nothing is told: the index shows it.
+        let read = tokio::time::timeout(Duration::from_secs(20), async {
             loop {
-                if let Ok(ev) = rx.recv().await {
-                    if ev.name == "radar:changed" {
-                        return;
-                    }
+                let index = lock(&INDEXES).get(a.id.as_str()).map(|e| e.index.clone());
+                if index.is_some_and(|i| !i.symbols.is_empty()) {
+                    return;
                 }
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
         .await;
-        assert!(changed.is_ok(), "the renamed folder wasn't read again");
-        let index = lock(&INDEXES).get(a.id.as_str()).map(|e| e.index.clone());
-        assert!(index.is_some_and(|i| !i.symbols.is_empty()));
+        assert!(read.is_ok(), "the renamed folder wasn't read again");
+        assert!(rx.try_recv().is_err(), "nothing shared, nothing told");
         for l in &fx.lanes {
             forget(l.id.as_str());
         }

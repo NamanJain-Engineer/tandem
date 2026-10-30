@@ -6,7 +6,7 @@
 //! found only when nothing else could explain the pair ([`compare`]).
 //! Reads only.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -144,7 +144,8 @@ pub struct SymbolIndex {
     pub symbols: Vec<ChangedSymbol>,
     /// Names the worktree's new or changed lines use.
     pub uses: BTreeSet<String>,
-    /// Changed files not parsed: other languages, too big, or past the cap.
+    /// Changed files not parsed: other languages, too big, past the cap,
+    /// not regular files, not UTF-8, unreadable, or given up on.
     pub unparsed: u32,
 }
 
@@ -180,10 +181,23 @@ fn hash(bytes: &[u8]) -> u64 {
     h.finish()
 }
 
-/// How long one parse may take: past it the file counts as unparsed. A
+/// How long reading one side of a file may take, its parse and the walk
+/// over its definitions together: past it the file counts as unparsed. A
 /// 512 KiB file of noise took 5 to 7 s in a debug build, and a refresh
 /// parses up to [`MAX_FILES`] files (the review of 9a4e93ab).
 const PARSE_LIMIT: Duration = Duration::from_secs(3);
+/// Definitions nested deeper than this aren't read, nor anything inside
+/// them: real code nests a handful. Each level's name joined its whole
+/// scope and its text was copied and hashed, so a file built to nest
+/// thousands took minutes and gigabytes (the review of 30d5bcad, M-1).
+const MAX_DEPTH: usize = 32;
+/// A refresh parses for at most this long in all. The files past it count
+/// as unparsed this time and are read at the next refresh, which reuses
+/// what this one parsed (the review of 30d5bcad).
+const REFRESH_BUDGET: Duration = Duration::from_secs(20);
+/// A file given up on is parsed again after this long, even unchanged, so
+/// a parse cut short by a busy machine isn't kept as unparsed for good.
+const RETRY_GIVEN_UP: Duration = Duration::from_secs(5 * 60);
 
 fn parse(lang: Lang, source: &str) -> Option<tree_sitter::Tree> {
     parse_within(lang, source, PARSE_LIMIT)
@@ -191,10 +205,14 @@ fn parse(lang: Lang, source: &str) -> Option<tree_sitter::Tree> {
 
 /// [`parse`], given up (`None`) after `limit`.
 fn parse_within(lang: Lang, source: &str, limit: Duration) -> Option<tree_sitter::Tree> {
+    parse_until(lang, source, Instant::now() + limit)
+}
+
+/// [`parse`], given up (`None`) at `deadline`.
+fn parse_until(lang: Lang, source: &str, deadline: Instant) -> Option<tree_sitter::Tree> {
     let mut parser = Parser::new();
     parser.set_language(&lang.language()).ok()?;
-    let started = Instant::now();
-    let mut late = |_: &ParseState| started.elapsed() > limit;
+    let mut late = |_: &ParseState| Instant::now() > deadline;
     let bytes = source.as_bytes();
     parser.parse_with_options(
         &mut |at, _| bytes.get(at..).unwrap_or_default(),
@@ -345,32 +363,63 @@ pub fn definitions(lang: Lang, source: &str) -> Vec<Definition> {
     parsed_definitions(lang, source).unwrap_or_default()
 }
 
-/// [`definitions`], or `None` when the parse was given up.
+/// [`definitions`], or `None` when the parse or the walk took past
+/// [`PARSE_LIMIT`].
 fn parsed_definitions(lang: Lang, source: &str) -> Option<Vec<Definition>> {
-    let tree = parse(lang, source)?;
+    definitions_until(lang, source, Instant::now() + PARSE_LIMIT)
+}
+
+/// [`definitions`], or `None` past `deadline`.
+fn definitions_until(lang: Lang, source: &str, deadline: Instant) -> Option<Vec<Definition>> {
+    let tree = parse_until(lang, source, deadline)?;
+    definitions_of(lang, &tree, source, deadline)
+}
+
+/// The definitions in `tree`, or `None` past `deadline`.
+fn definitions_of(
+    lang: Lang,
+    tree: &tree_sitter::Tree,
+    source: &str,
+    deadline: Instant,
+) -> Option<Vec<Definition>> {
     let mut out = Vec::new();
     let mut scope: Vec<String> = Vec::new();
-    walk_definitions(lang, tree.root_node(), source, &mut scope, &mut out);
+    walk_definitions(
+        lang,
+        tree.root_node(),
+        source,
+        &mut scope,
+        &mut out,
+        deadline,
+    )?;
     Some(out)
 }
 
 /// Walks the tree in order with a stack of its own: deeply nested source
 /// (2,000 `+` terms, or 20,000 parentheses) ran a recursive walk out of a
 /// 2 MiB thread's stack, which aborts the app (the review of 9a4e93ab, M1).
+/// Definitions past [`MAX_DEPTH`] aren't read, and the walk gives up
+/// (`None`) at `deadline`.
 fn walk_definitions(
     lang: Lang,
     root: Node<'_>,
     source: &str,
     scope: &mut Vec<String>,
     out: &mut Vec<Definition>,
-) {
+    deadline: Instant,
+) -> Option<()> {
     enum Step<'t> {
         Enter(Node<'t>),
         /// Leaving a node that pushed a name onto the scope.
         Leave,
     }
     let mut stack = vec![Step::Enter(root)];
+    let mut steps: u32 = 0;
     while let Some(step) = stack.pop() {
+        steps = steps.wrapping_add(1);
+        if steps.is_multiple_of(1024) && Instant::now() > deadline {
+            return None;
+        }
         let node = match step {
             Step::Leave => {
                 scope.pop();
@@ -379,6 +428,11 @@ fn walk_definitions(
             Step::Enter(node) => node,
         };
         let mut pushed = false;
+        let opens_scope =
+            definition(lang, node).is_some() || (lang == Lang::Rust && node.kind() == "impl_item");
+        if opens_scope && scope.len() >= MAX_DEPTH {
+            continue;
+        }
         if let Some((kind, name_node)) = definition(lang, node) {
             let name = text(name_node, source).to_string();
             if !name.is_empty() {
@@ -424,6 +478,7 @@ fn walk_definitions(
         let children: Vec<Node<'_>> = node.named_children(&mut cursor).collect();
         stack.extend(children.into_iter().rev().map(Step::Enter));
     }
+    Some(())
 }
 
 /// Identifier-like node kinds whose text is a name in use.
@@ -449,10 +504,19 @@ fn is_name(lang: Lang, kind: &str) -> bool {
 
 /// The names used on `lines` (1-based) of `source`; every line when `None`.
 pub fn uses(lang: Lang, source: &str, lines: Option<&BTreeSet<u32>>) -> BTreeSet<String> {
+    parse(lang, source)
+        .map(|tree| uses_of(lang, &tree, source, lines))
+        .unwrap_or_default()
+}
+
+/// [`uses`] in a tree already parsed.
+fn uses_of(
+    lang: Lang,
+    tree: &tree_sitter::Tree,
+    source: &str,
+    lines: Option<&BTreeSet<u32>>,
+) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    let Some(tree) = parse(lang, source) else {
-        return out;
-    };
     let mut stack = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
         let row = u32::try_from(node.start_position().row + 1).unwrap_or(u32::MAX);
@@ -490,38 +554,70 @@ fn scope_of<'a>(qualified: &'a str, sep: &str) -> &'a str {
 /// `Session.refresh` → `UserSession.refresh` is renamed with `Session`.
 /// Anything less certain (a rename with an edit, two that could pair either
 /// way) isn't a rename: a false one is worse than none.
-fn renames(lang: Lang, removed: &[&Definition], added: &[&Definition]) -> Vec<(String, String)> {
+fn renames(
+    lang: Lang,
+    removed: &[&Definition],
+    added: &[&Definition],
+    deadline: Instant,
+) -> Vec<(String, String)> {
     let sep = lang.separator();
+    let depth = |d: &Definition| d.qualified.matches(sep).count();
     let mut by_depth: Vec<&Definition> = removed.to_vec();
-    by_depth.sort_by_key(|d| (d.qualified.matches(sep).count(), d.qualified.clone()));
-    let mut found: BTreeMap<String, String> = BTreeMap::new();
-    let mut taken: BTreeSet<String> = BTreeSet::new();
-    let mapped = |scope: &str, found: &BTreeMap<String, String>| -> String {
-        found
-            .get(scope)
-            .cloned()
-            .unwrap_or_else(|| scope.to_string())
-    };
-    // How many removed definitions each added one could pair with.
-    let matches = |r: &Definition, a: &Definition, found: &BTreeMap<String, String>| {
-        r.kind == a.kind
-            && r.shape == a.shape
-            && mapped(scope_of(&r.qualified, sep), found) == scope_of(&a.qualified, sep)
-    };
+    by_depth.sort_by(|a, b| (depth(a), &a.qualified).cmp(&(depth(b), &b.qualified)));
+    // Each side by what a pair shares, so a removed definition is checked
+    // only against its likely matches: every removed one against every
+    // added one, with a scope copied for each, took 17 s for 8,000
+    // functions (the review of 30d5bcad, S-4). An added one's scope is
+    // fixed; a removed one's is read through the renames found so far, and
+    // a rival is as deep as it, since a scope's rename keeps its depth.
+    let mut added_by: HashMap<(&str, u64), HashMap<&str, Vec<&Definition>>> = HashMap::new();
+    for a in added {
+        added_by
+            .entry((a.kind, a.shape))
+            .or_default()
+            .entry(scope_of(&a.qualified, sep))
+            .or_default()
+            .push(a);
+    }
+    let mut removed_by: HashMap<(&str, u64, usize), Vec<&Definition>> = HashMap::new();
     for r in &by_depth {
-        let candidates: Vec<&&Definition> = added
+        removed_by
+            .entry((r.kind, r.shape, depth(r)))
+            .or_default()
+            .push(r);
+    }
+    let mut found: BTreeMap<String, String> = BTreeMap::new();
+    let mut taken: HashSet<&str> = HashSet::new();
+    for (n, r) in by_depth.iter().enumerate() {
+        // A rename is a bonus: past the deadline, the rest read as removed
+        // and added.
+        if n % 256 == 255 && Instant::now() > deadline {
+            break;
+        }
+        let scope = mapped(scope_of(&r.qualified, sep), &found);
+        let Some(bucket) = added_by
+            .get(&(r.kind, r.shape))
+            .and_then(|by_scope| by_scope.get(scope))
+        else {
+            continue;
+        };
+        let mut free = bucket
             .iter()
-            .filter(|a| !taken.contains(&a.qualified) && matches(r, a, &found))
-            .collect();
-        let [a] = candidates.as_slice() else {
+            .filter(|a| !taken.contains(a.qualified.as_str()));
+        let (Some(a), None) = (free.next(), free.next()) else {
             continue;
         };
         // And `r` is the only removed one that `a` could pair with.
-        let rivals = by_depth
-            .iter()
-            .filter(|o| !found.contains_key(&o.qualified) && matches(o, a, &found))
-            .count();
-        if rivals != 1 {
+        let a_scope = scope_of(&a.qualified, sep);
+        let mut rivals = removed_by
+            .get(&(r.kind, r.shape, depth(r)))
+            .into_iter()
+            .flatten()
+            .filter(|o| {
+                !found.contains_key(&o.qualified)
+                    && mapped(scope_of(&o.qualified, sep), &found) == a_scope
+            });
+        if !(rivals.next().is_some() && rivals.next().is_none()) {
             continue;
         }
         // A member that moved with its renamed type keeps its name and its
@@ -541,15 +637,44 @@ fn renames(lang: Lang, removed: &[&Definition], added: &[&Definition]) -> Vec<(S
             continue;
         }
         if r.qualified != a.qualified {
-            taken.insert(a.qualified.clone());
+            taken.insert(a.qualified.as_str());
             found.insert(r.qualified.clone(), a.qualified.clone());
         }
     }
     found.into_iter().collect()
 }
 
+/// `scope` once the renames found so far are applied to it.
+fn mapped<'a>(scope: &'a str, found: &'a BTreeMap<String, String>) -> &'a str {
+    found.get(scope).map_or(scope, String::as_str)
+}
+
+/// A name's definitions as one, for [`renames`]: itself, or its overloads
+/// together (their texts as a set); `None` when they're of different kinds.
+fn as_one(defs: &[Definition]) -> Option<Definition> {
+    let first = defs.first()?;
+    if defs.len() == 1 {
+        return Some(first.clone());
+    }
+    if defs.iter().any(|d| d.kind != first.kind) {
+        return None;
+    }
+    let joined = |of: fn(&Definition) -> u64| {
+        let mut all: Vec<u64> = defs.iter().map(of).collect();
+        all.sort_unstable();
+        let bytes: Vec<u8> = all.iter().flat_map(|h| h.to_le_bytes()).collect();
+        hash(&bytes)
+    };
+    Some(Definition {
+        text: joined(|d| d.text),
+        shape: joined(|d| d.shape),
+        size: defs.iter().map(|d| d.size).sum(),
+        ..first.clone()
+    })
+}
+
 /// What changed between a file's base and worktree versions; `None` when
-/// either side's parse was given up ([`PARSE_LIMIT`]), since a side read as
+/// either side's read was given up ([`PARSE_LIMIT`]), since a side read as
 /// empty would have every definition added or removed.
 pub fn compare(
     lang: Lang,
@@ -557,18 +682,54 @@ pub fn compare(
     base: Option<&str>,
     now: Option<&str>,
 ) -> Option<Vec<ChangedSymbol>> {
-    let index = |source: Option<&str>| {
+    read_change(lang, path, base, now, None).map(|(symbols, _)| symbols)
+}
+
+/// [`compare`], and the names `now` uses on `lines` ([`uses`]) from the
+/// same parse of it: each file was parsed a third time for its uses.
+fn read_change(
+    lang: Lang,
+    path: &str,
+    base: Option<&str>,
+    now: Option<&str>,
+    lines: Option<&BTreeSet<u32>>,
+) -> Option<(Vec<ChangedSymbol>, BTreeSet<String>)> {
+    let before = match base {
+        Some(s) => definitions_until(lang, s, Instant::now() + PARSE_LIMIT)?,
+        None => Vec::new(),
+    };
+    let deadline = Instant::now() + PARSE_LIMIT;
+    let (after, used) = match now {
+        Some(s) => {
+            let tree = parse_until(lang, s, deadline)?;
+            let defs = definitions_of(lang, &tree, s, deadline)?;
+            (defs, uses_of(lang, &tree, s, lines))
+        }
+        None => (Vec::new(), BTreeSet::new()),
+    };
+    Some((
+        changed_between(lang, path, before, after, deadline + PARSE_LIMIT),
+        used,
+    ))
+}
+
+/// What changed from `before`'s definitions to `after`'s; renames are
+/// looked for until `deadline`.
+fn changed_between(
+    lang: Lang,
+    path: &str,
+    before: Vec<Definition>,
+    after: Vec<Definition>,
+    deadline: Instant,
+) -> Vec<ChangedSymbol> {
+    let index = |defs: Vec<Definition>| {
         let mut by: BTreeMap<String, Vec<Definition>> = BTreeMap::new();
-        let defs = match source {
-            Some(s) => parsed_definitions(lang, s)?,
-            None => Vec::new(),
-        };
         for d in defs {
             by.entry(d.qualified.clone()).or_default().push(d);
         }
-        Some(by)
+        by
     };
-    let (before, after) = (index(base)?, index(now)?);
+    let (before, after) = (index(before), index(after));
     let mut out = Vec::new();
     let symbol = |d: &Definition, change, renamed_to: Option<String>| ChangedSymbol {
         name: d.name.clone(),
@@ -579,19 +740,28 @@ pub fn compare(
         change,
         renamed_to,
     };
-    // Renames pair one definition removed with one added (a name that's
-    // defined more than once on either side never pairs).
-    let removed: Vec<&Definition> = before
+    // Renames pair what a name defines on one side with what another
+    // defines on the other: one definition, or a name's overloads together.
+    // Overloads never paired, so a renamed class's overloaded constructors
+    // read as removed (the review of 30d5bcad, S-1).
+    let removed: Vec<Definition> = before
         .iter()
-        .filter(|(q, v)| !after.contains_key(*q) && v.len() == 1)
-        .map(|(_, v)| &v[0])
+        .filter(|(q, _)| !after.contains_key(*q))
+        .filter_map(|(_, v)| as_one(v))
         .collect();
-    let added: Vec<&Definition> = after
+    let added: Vec<Definition> = after
         .iter()
-        .filter(|(q, v)| !before.contains_key(*q) && v.len() == 1)
-        .map(|(_, v)| &v[0])
+        .filter(|(q, _)| !before.contains_key(*q))
+        .filter_map(|(_, v)| as_one(v))
         .collect();
-    let renamed: BTreeMap<String, String> = renames(lang, &removed, &added).into_iter().collect();
+    let renamed: BTreeMap<String, String> = renames(
+        lang,
+        &removed.iter().collect::<Vec<_>>(),
+        &added.iter().collect::<Vec<_>>(),
+        deadline,
+    )
+    .into_iter()
+    .collect();
     for (q, now_defs) in &after {
         match before.get(q) {
             None => out.extend(
@@ -625,7 +795,22 @@ pub fn compare(
             }));
         }
     }
-    Some(out)
+    out
+}
+
+/// Whether `s` was renamed only as a member of its renamed type
+/// (`Session.refresh` → `UserSession.refresh`, or its constructor): the
+/// type's own rename says it.
+pub fn moved_with_its_type(all: &[ChangedSymbol], s: &ChangedSymbol) -> bool {
+    let (Some(to), Some(lang)) = (s.renamed_to.as_deref(), Lang::of(&s.path)) else {
+        return false;
+    };
+    let sep = lang.separator();
+    let (from, onto) = (scope_of(&s.qualified, sep), scope_of(to, sep));
+    !from.is_empty()
+        && all
+            .iter()
+            .any(|t| t.qualified == from && t.renamed_to.as_deref() == Some(onto))
 }
 
 /// The new side's line numbers in a `git diff -U0` of one file.
@@ -654,37 +839,68 @@ async fn base_sizes(
     base: &str,
     paths: &[&str],
 ) -> Result<HashMap<String, u64>, GitError> {
-    // An object a line: a path with a line break in it can't be asked for.
-    let asked: Vec<&str> = paths
+    // An object a line: a path with a line break in it can't be asked for
+    // in the batch, nor one ending in a carriage return, which git strips.
+    // Those are asked one at a time; left out, they read as new files, every
+    // definition added (the review of 30d5bcad).
+    let (odd, asked): (Vec<&str>, Vec<&str>) = paths
         .iter()
         .copied()
-        .filter(|p| !p.contains('\n'))
-        .collect();
-    if asked.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let input: String = asked.iter().map(|p| format!("{base}:{p}\n")).collect();
-    let out = git
-        .ok_with_input(
-            Mode::Read,
-            root,
-            &[
-                OsStr::new("cat-file"),
-                OsStr::new("--batch-check=%(objecttype) %(objectsize)"),
-            ],
-            input.as_bytes(),
-        )
-        .await?;
-    // One line an object, in order: "blob 1234", or "<name> missing".
-    let text = out.text();
-    Ok(asked
-        .iter()
-        .zip(text.lines())
-        .filter_map(|(path, line)| {
+        .partition(|p| p.contains('\n') || p.ends_with('\r'));
+    let mut sizes = HashMap::new();
+    if !asked.is_empty() {
+        let input: String = asked.iter().map(|p| format!("{base}:{p}\n")).collect();
+        let out = git
+            .ok_with_input(
+                Mode::Read,
+                root,
+                &[
+                    OsStr::new("cat-file"),
+                    OsStr::new("--batch-check=%(objecttype) %(objectsize)"),
+                ],
+                input.as_bytes(),
+            )
+            .await?;
+        // One line an object, in order: "blob 1234", or "<name> missing".
+        let text = out.text();
+        sizes.extend(asked.iter().zip(text.lines()).filter_map(|(path, line)| {
             let size = line.strip_prefix("blob ")?.parse().ok()?;
             Some((path.to_string(), size))
-        })
-        .collect())
+        }));
+    }
+    for path in odd {
+        if let Some(size) = blob_size(git, root, base, path).await? {
+            sizes.insert(path.to_string(), size);
+        }
+    }
+    Ok(sizes)
+}
+
+/// The size of the base's blob at `path`, asked on its own; `None` when the
+/// base has no file there.
+async fn blob_size(
+    git: &Git,
+    root: &Path,
+    base: &str,
+    path: &str,
+) -> Result<Option<u64>, GitError> {
+    let spec = format!("{base}:{path}");
+    let ask = |what: &'static str| {
+        [
+            OsStr::new("cat-file"),
+            OsStr::new(what),
+            OsStr::new(spec.as_str()),
+        ]
+    };
+    let kind = git.run(Mode::Read, root, &ask("-t")).await?;
+    if !kind.success() || kind.text().trim() != "blob" {
+        return Ok(None);
+    }
+    let size = git.run(Mode::Read, root, &ask("-s")).await?;
+    Ok(size
+        .success()
+        .then(|| size.text().trim().parse().ok())
+        .flatten())
 }
 
 async fn show(git: &Git, root: &Path, base: &str, path: &str) -> Result<Option<String>, GitError> {
@@ -723,6 +939,9 @@ struct Parsed {
     symbols: Vec<ChangedSymbol>,
     uses: BTreeSet<String>,
     unparsed: bool,
+    /// When its read was given up: it's tried again after
+    /// [`RETRY_GIVEN_UP`].
+    given_up: Option<Instant>,
 }
 
 /// A worktree's parses by path, for one base. A refresh parses only the
@@ -742,21 +961,28 @@ pub struct Refreshed {
     pub parsed: u32,
 }
 
-/// The worktree file's text, or `None` when it's missing (`Err(())`: too
-/// big, not a regular file, or not UTF-8, so it isn't parsed). A link isn't
-/// followed and a pipe isn't waited on: `metadata` followed a link to a
-/// FIFO, whose read then blocked for good, or to `/dev/zero`, read until
-/// memory ran out (the review of 9a4e93ab, M2). The read stops past the
-/// limit should the file grow meanwhile.
+/// The worktree file's text, or `None` when it's gone (`Err(())`: too big,
+/// not a regular file, not UTF-8, or unreadable, so it isn't parsed). Only
+/// a file that isn't there is missing: a link loop, a permission or a full
+/// file table read as deleted, every definition removed (the review of
+/// 30d5bcad). A link isn't followed and a pipe isn't waited on:
+/// `metadata` followed a link to a FIFO, whose read then blocked for good,
+/// or to `/dev/zero`, read until memory ran out (the review of 9a4e93ab,
+/// M2). The read stops past the limit should the file grow meanwhile.
 fn read_file(path: &Path) -> Result<Option<String>, ()> {
-    use std::io::Read;
+    use std::io::{ErrorKind, Read};
+    let gone =
+        |e: &std::io::Error| matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory);
     match std::fs::symlink_metadata(path) {
-        Err(_) => return Ok(None),
+        Err(e) if gone(&e) => return Ok(None),
+        Err(_) => return Err(()),
         Ok(m) if !m.is_file() || m.len() > MAX_FILE_BYTES as u64 => return Err(()),
         Ok(_) => {}
     }
-    let Ok(file) = open_file(path) else {
-        return Ok(None);
+    let file = match open_file(path) {
+        Ok(file) => file,
+        Err(e) if gone(&e) => return Ok(None),
+        Err(_) => return Err(()),
     };
     // Swapped for something else since: still only a regular file.
     if !file.metadata().is_ok_and(|m| m.is_file()) {
@@ -768,7 +994,7 @@ fn read_file(path: &Path) -> Result<Option<String>, ()> {
         .read_to_end(&mut bytes)
         .is_err()
     {
-        return Ok(None);
+        return Err(());
     }
     if bytes.len() > MAX_FILE_BYTES {
         return Err(());
@@ -787,7 +1013,19 @@ fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-#[cfg(not(unix))]
+/// Opens `path` for reading, not through a link: a link swapped in after
+/// the check opens as itself, which isn't a regular file.
+#[cfg(windows)]
+fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
@@ -811,6 +1049,7 @@ pub async fn index_cached(
     let files = changed_files(git, root, base).await?;
     let mut out = Refreshed::default();
     let mut kept = BTreeMap::new();
+    let started = Instant::now();
     // The base's sizes, asked at the first file parsed for those after it.
     let mut sizes: Option<HashMap<String, u64>> = None;
     for (n, path) in files.iter().enumerate() {
@@ -831,8 +1070,16 @@ pub async fn index_cached(
             continue;
         };
         let content = now.as_ref().map(|t| hash(t.as_bytes()));
+        let fresh = |p: &Parsed| {
+            p.content == content && p.given_up.is_none_or(|at| at.elapsed() < RETRY_GIVEN_UP)
+        };
         let parsed = match cache.files.get(path) {
-            Some(p) if p.content == content => p.clone(),
+            Some(p) if fresh(p) => p.clone(),
+            // Past the budget: read at the next refresh, not kept now.
+            _ if started.elapsed() > REFRESH_BUDGET => {
+                out.index.unparsed += 1;
+                continue;
+            }
             _ => {
                 out.parsed += 1;
                 if sizes.is_none() {
@@ -852,6 +1099,7 @@ pub async fn index_cached(
                         symbols: Vec::new(),
                         uses: BTreeSet::new(),
                         unparsed: true,
+                        given_up: None,
                     }
                 } else {
                     // No blob in the base (an added file): nothing to read.
@@ -867,12 +1115,13 @@ pub async fn index_cached(
                     };
                     let path_owned = path.clone();
                     let done = tokio::task::spawn_blocking(move || {
-                        let symbols = compare(lang, &path_owned, was.as_deref(), now.as_deref())?;
-                        let used = now
-                            .as_deref()
-                            .map(|n| uses(lang, n, lines.as_ref()))
-                            .unwrap_or_default();
-                        Some((symbols, used))
+                        read_change(
+                            lang,
+                            &path_owned,
+                            was.as_deref(),
+                            now.as_deref(),
+                            lines.as_ref(),
+                        )
                     })
                     .await
                     .ok()
@@ -883,6 +1132,7 @@ pub async fn index_cached(
                             symbols,
                             uses: used,
                             unparsed: false,
+                            given_up: None,
                         },
                         // Given up: unparsed, not every definition removed.
                         None => Parsed {
@@ -890,6 +1140,7 @@ pub async fn index_cached(
                             symbols: Vec::new(),
                             uses: BTreeSet::new(),
                             unparsed: true,
+                            given_up: Some(Instant::now()),
                         },
                     }
                 }
@@ -1059,7 +1310,11 @@ mod tests {
             .spawn(move || {
                 for (lang, source) in cases {
                     assert!(source.len() <= MAX_FILE_BYTES, "{lang:?}");
-                    let _ = definitions(lang, &source);
+                    // Read, not given up: a parse past its time would
+                    // never reach the walk (the review of 30d5bcad).
+                    let read =
+                        definitions_until(lang, &source, Instant::now() + Duration::from_secs(120));
+                    assert!(read.is_some(), "{lang:?}");
                 }
             })
             .expect("a thread")
@@ -1122,6 +1377,84 @@ mod tests {
             ("Session", Renamed, Used)
         );
         assert_eq!(session.renamed_to.as_deref(), Some("UserSession"));
+    }
+
+    #[test]
+    fn f_wt_10_6_overloaded_constructors_move_with_their_renamed_class() {
+        use SymbolChange::*;
+        // A name defined more than once never paired, so a class with two
+        // constructors read as `Session.Session` removed (the review of
+        // 30d5bcad, S-1); overloads pair as a whole.
+        let base = "class Session {\n  Session() { this.n = 0; }\n  Session(int n) { this.n = n; }\n  void at(int i) { use(i); }\n  void at(String s) { use(s); }\n}\n";
+        let now = "class UserSession {\n  UserSession() { this.n = 0; }\n  UserSession(int n) { this.n = n; }\n  void at(int i) { use(i); }\n  void at(String s) { use(s); }\n}\n";
+        let got = changes(Lang::Java, base, now);
+        for (from, to) in [
+            ("Session", "UserSession"),
+            ("Session.Session", "UserSession.UserSession"),
+            ("Session.at", "UserSession.at"),
+        ] {
+            assert!(
+                got.contains(&(from.to_string(), Renamed, Some(to.to_string()))),
+                "{from}: {got:?}"
+            );
+        }
+        assert!(got.iter().all(|(_, c, _)| *c != Removed), "{got:?}");
+        // One overload edited as well: not a rename.
+        let edited = now.replace("this.n = n;", "this.n = n + 1;");
+        let got = changes(Lang::Java, base, &edited);
+        assert!(
+            got.contains(&("Session.Session".to_string(), Removed, None)),
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn f_wt_10_2_definitions_nested_thousands_deep_are_read_to_a_limit() {
+        // 16,000 nested definitions took 64 to 142 s and 384 MB of names in
+        // a debug build: each level joined its whole scope and copied and
+        // hashed all the text inside it (the review of 30d5bcad, M-1).
+        let deep =
+            |open: &str, close: &str| format!("{}{}", open.repeat(16_000), close.repeat(16_000));
+        let cases = [
+            (Lang::Rust, deep("mod a{", "}")),
+            (Lang::TypeScript, deep("namespace a{", "}")),
+            (Lang::TypeScript, deep("function a(){", "}")),
+            (Lang::Java, deep("class a{", "}")),
+        ];
+        for (lang, source) in cases {
+            assert!(source.len() <= MAX_FILE_BYTES, "{lang:?}");
+            let started = Instant::now();
+            let defs =
+                definitions_until(lang, &source, started + Duration::from_secs(120)).expect("read");
+            assert_eq!(defs.len(), MAX_DEPTH, "{lang:?}");
+            let renamed = source.replacen(" a", " b", 1).replacen("a{", "b{", 1);
+            let read = read_change(lang, "deep", Some(&source), Some(&renamed), None);
+            let elapsed = started.elapsed();
+            assert!(read.is_some(), "{lang:?}");
+            assert!(elapsed < Duration::from_secs(30), "{lang:?}: {elapsed:?}");
+        }
+    }
+
+    #[test]
+    fn f_wt_10_6_thousands_of_look_alike_renames_are_read_quickly() {
+        use SymbolChange::*;
+        // Every function renamed, all with one shape: every removed one was
+        // compared with every added one, a scope copied each time, 17 s for
+        // 8,000 in a debug build (the review of 30d5bcad, S-4). None pairs:
+        // each could be any of the others.
+        let n = 8_000;
+        let file = |prefix: &str| -> String {
+            (0..n)
+                .map(|i| format!("function {prefix}{i}(a) {{ return a + 1; }}\n"))
+                .collect()
+        };
+        let (base, now) = (file("f"), file("g"));
+        let started = Instant::now();
+        let got = compare(Lang::TypeScript, "many.ts", Some(&base), Some(&now)).expect("read");
+        let elapsed = started.elapsed();
+        assert_eq!(got.len(), 2 * n);
+        assert!(got.iter().all(|s| matches!(s.change, Added | Removed)));
+        assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
     }
 
     #[test]

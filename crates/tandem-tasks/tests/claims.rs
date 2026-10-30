@@ -638,4 +638,32 @@ fn f_wt_10_8_a_tree_claim_keeps_real_names_and_an_agents_own_claim() {
     assert_eq!(own.intent, "my own words");
     assert_eq!(own.connection.as_deref(), Some(me.as_str()));
     assert!(!own.inferred);
+    // A name the checks would refuse or change is left out, and the rest
+    // are claimed: one failed the whole claim, or claimed another name (the
+    // review of 30d5bcad).
+    let tree2 = "/r/app/.tandem/worktrees/odd";
+    let long = format!("src/{}.ts", "x".repeat(600));
+    s.claim_for_tree(
+        &scope(tree2),
+        &paths(&[
+            "src/ok.ts",
+            " src/space.ts",
+            "src\\back.ts",
+            "src/c\u{7}.ts",
+            long.as_str(),
+        ]),
+        "Intent radar: z",
+    )
+    .expect("the rest");
+    let theirs: Vec<String> = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .filter(|c| c.agent == "odd")
+        .map(|c| c.path)
+        .collect();
+    assert_eq!(theirs, ["src/ok.ts"]);
+    assert!(s
+        .claim_for_tree(&scope(tree2), &paths(&[" src/space.ts"]), "x")
+        .is_err());
 }
