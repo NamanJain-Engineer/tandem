@@ -331,6 +331,43 @@ describe("Dashboard (F-DB-01)", () => {
     expect(useDashboard.getState().items[card.key]?.status).toBe("done");
   });
 
+  it("F-DB-01 an older snapshot that lands after a newer one doesn't drop the card the newer one holds", async () => {
+    vi.useFakeTimers();
+    try {
+      const one = item("working", "build");
+      const two = item("waiting", "deploy");
+      // Every snapshot asked for waits until it's let go, in any order.
+      const pending: Array<(items: DashboardItem[]) => void> = [];
+      fakeBackend({ status_snapshot: () => new Promise<DashboardItem[]>((done) => pending.push(done)) });
+      followDashboard();
+      const first = useDashboard.getState().load();
+      await vi.advanceTimersByTimeAsync(10);
+      // A new agent's first report: its card is unknown, so it asks for the
+      // cards again.
+      act(() =>
+        emitLocal("status:changed", {
+          records: [{ key: two.key, status: "waiting", reason: null, since: 3, ts: 3, tool: null, title: "deploy", preview: null }],
+          removed: [],
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      expect(pending).toHaveLength(2);
+      // The newer read, which holds the new card, lands first; the older one
+      // last (the review of 134f7716).
+      await act(async () => {
+        pending[1]?.([one, two]);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        pending[0]?.([one]);
+        await first;
+      });
+      expect(Object.keys(useDashboard.getState().items).sort()).toEqual([one.key, two.key].sort());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("F-DB-01 a slow snapshot and a removal read meanwhile ask for the cards a bounded number of times", async () => {
     vi.useFakeTimers();
     try {

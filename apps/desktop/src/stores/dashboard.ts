@@ -53,6 +53,11 @@ export const useDashboard = create<DashboardState>((set, get) => ({
   filter: "all",
   ...loadPrefs(),
   load: async () => {
+    // Each read is numbered as it starts. One that lands after a newer one
+    // was applied is older than what's shown, and goes: what came during it
+    // came during the newer one too, which replays it, or before that one
+    // was asked for, which its snapshot holds (the review of 134f7716).
+    const mine = ++started;
     // Updates that come while the snapshot is read are newer than it: kept,
     // to apply over it.
     const meanwhile: StatusChange[] = [];
@@ -64,6 +69,8 @@ export const useDashboard = create<DashboardState>((set, get) => ({
       set({ loaded: true });
       return;
     }
+    if (mine < landed) return;
+    landed = mine;
     set({ items: Object.fromEntries(list.map((i) => [i.key, i])), loaded: true });
     for (const change of meanwhile) applyStatus(change.records, change.removed, false);
   },
@@ -97,6 +104,9 @@ function refetchSoon(): void {
 type StatusChange = { records: StatusRecord[]; removed: string[] };
 /** For each snapshot being read, the updates that came meanwhile. */
 const reading = new Set<StatusChange[]>();
+/** The reads started, and the newest one applied. */
+let started = 0;
+let landed = 0;
 
 /** A card's line as dashboard.rs draws it: the record's preview, else its
  * tool, and none when that's blank. The store keeps a preview and replaces

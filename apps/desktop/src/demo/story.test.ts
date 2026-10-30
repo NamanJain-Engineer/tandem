@@ -4,7 +4,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -139,12 +138,14 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     // Gemini CLI's choices under its question, and what Claude Code's Edit
     // result says after its first sentence: the app reads nothing from them.
     const theirs = [/for this session/i, /suggest changes/i, /`cat -n`/, /snippet of the edited file/i];
-    // Every file under the demo's folder and the scenes' (the sample shop's
-    // too), tests aside.
+    // Every file git tracks under the demo's folder and the scenes' (the
+    // sample shop's too), tests aside: an editor's swap file or a log left
+    // there isn't the demo's (the review of 134f7716).
     const under = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-        e.isDirectory() ? under(join(dir, e.name)) : /\.test\.tsx?$/.test(e.name) ? [] : [join(dir, e.name)],
-      );
+      execFileSync("git", ["ls-files", "-z", "--", "."], { cwd: dir, encoding: "utf8" })
+        .split("\0")
+        .filter((f) => f !== "" && !/\.test\.tsx?$/.test(f))
+        .map((f) => join(dir, f));
     const files = [__dirname, join(__dirname, "../../../web/components/site/scenes")].flatMap(under);
     expect(files.some((f) => f.endsWith("/scenes/DashboardScene.tsx"))).toBe(true);
     expect(files.some((f) => f.endsWith("/demo/story.ts"))).toBe(true);
