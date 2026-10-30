@@ -191,13 +191,33 @@ const PARSE_LIMIT: Duration = Duration::from_secs(3);
 /// scope and its text was copied and hashed, so a file built to nest
 /// thousands took minutes and gigabytes (the review of 30d5bcad, M-1).
 const MAX_DEPTH: usize = 32;
-/// A refresh parses for at most this long in all. The files past it count
-/// as unparsed this time and are read at the next refresh, which reuses
-/// what this one parsed (the review of 30d5bcad).
+/// A refresh starts no file's parse after this long (the review of
+/// 30d5bcad). The one under way still has its own limits ([`PARSE_LIMIT`]
+/// for each side, and as long again for its renames), so a refresh can run
+/// about 10 s past it (the review of d06b9e3d, N-2). The files past it
+/// count as unparsed this time and are read by the next refresh
+/// ([`Refreshed::more`]), which reuses what this one parsed.
 const REFRESH_BUDGET: Duration = Duration::from_secs(20);
 /// A file given up on is parsed again after this long, even unchanged, so
 /// a parse cut short by a busy machine isn't kept as unparsed for good.
 const RETRY_GIVEN_UP: Duration = Duration::from_secs(5 * 60);
+/// One side of a file (the base's or the worktree's) holds at most this
+/// many bytes of definitions: each one's qualified name, its name and
+/// `each` more ([`definitions_of`]); past it the file counts as unparsed.
+/// [`MAX_DEPTH`] bounds how deep scopes go, not what they hold: a changed
+/// file of 500 KB, one module named with 200,000 letters around 50,000
+/// children, gave each child a qualified name of 200 KB, about 10 GB in a
+/// second or two (the review of d06b9e3d, MF-1).
+const MAX_SIDE_BYTES: usize = 8 * 1024 * 1024;
+/// What a definition holds besides its names, for [`MAX_SIDE_BYTES`] and
+/// [`MAX_INDEX_BYTES`].
+const DEFINITION_BYTES: usize = 64;
+/// A worktree's index holds at most this many bytes of symbols (each with
+/// its names and path) and names in use. A file whose parse would take it
+/// past counts as unparsed, and is parsed again after [`RETRY_GIVEN_UP`]:
+/// each file is bounded on its own, and [`MAX_FILES`] of them could still
+/// hold gigabytes.
+const MAX_INDEX_BYTES: usize = 32 * 1024 * 1024;
 
 fn parse(lang: Lang, source: &str) -> Option<tree_sitter::Tree> {
     parse_within(lang, source, PARSE_LIMIT)
@@ -358,29 +378,34 @@ fn impl_owner(node: Node<'_>, source: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// The definitions in `source`, with qualified names.
-pub fn definitions(lang: Lang, source: &str) -> Vec<Definition> {
-    parsed_definitions(lang, source).unwrap_or_default()
-}
-
-/// [`definitions`], or `None` when the parse or the walk took past
+/// The definitions in `source`, with qualified names: none when there are
+/// more than [`MAX_SIDE_BYTES`] of them or reading them takes past
 /// [`PARSE_LIMIT`].
-fn parsed_definitions(lang: Lang, source: &str) -> Option<Vec<Definition>> {
-    definitions_until(lang, source, Instant::now() + PARSE_LIMIT)
+pub fn definitions(lang: Lang, source: &str) -> Vec<Definition> {
+    definitions_until(lang, source, Instant::now() + PARSE_LIMIT, DEFINITION_BYTES)
+        .unwrap_or_default()
 }
 
-/// [`definitions`], or `None` past `deadline`.
-fn definitions_until(lang: Lang, source: &str, deadline: Instant) -> Option<Vec<Definition>> {
+/// [`definitions`], or `None` past `deadline` or [`MAX_SIDE_BYTES`].
+fn definitions_until(
+    lang: Lang,
+    source: &str,
+    deadline: Instant,
+    each: usize,
+) -> Option<Vec<Definition>> {
     let tree = parse_until(lang, source, deadline)?;
-    definitions_of(lang, &tree, source, deadline)
+    definitions_of(lang, &tree, source, deadline, each)
 }
 
-/// The definitions in `tree`, or `None` past `deadline`.
+/// The definitions in `tree`, or `None` past `deadline`, or once they hold
+/// more than [`MAX_SIDE_BYTES`], each counting its qualified name, its name
+/// and `each` bytes (what a symbol made of it keeps besides: its path).
 fn definitions_of(
     lang: Lang,
     tree: &tree_sitter::Tree,
     source: &str,
     deadline: Instant,
+    each: usize,
 ) -> Option<Vec<Definition>> {
     let mut out = Vec::new();
     let mut scope: Vec<String> = Vec::new();
@@ -390,23 +415,37 @@ fn definitions_of(
         source,
         &mut scope,
         &mut out,
-        deadline,
+        Limits {
+            deadline,
+            each,
+            bytes: MAX_SIDE_BYTES,
+        },
     )?;
     Some(out)
+}
+
+/// When [`walk_definitions`] gives up.
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    deadline: Instant,
+    /// What each definition costs besides its names.
+    each: usize,
+    /// What the definitions may cost in all.
+    bytes: usize,
 }
 
 /// Walks the tree in order with a stack of its own: deeply nested source
 /// (2,000 `+` terms, or 20,000 parentheses) ran a recursive walk out of a
 /// 2 MiB thread's stack, which aborts the app (the review of 9a4e93ab, M1).
 /// Definitions past [`MAX_DEPTH`] aren't read, and the walk gives up
-/// (`None`) at `deadline`.
+/// (`None`) at the deadline or past the bytes `limits` allow.
 fn walk_definitions(
     lang: Lang,
     root: Node<'_>,
     source: &str,
     scope: &mut Vec<String>,
     out: &mut Vec<Definition>,
-    deadline: Instant,
+    limits: Limits,
 ) -> Option<()> {
     enum Step<'t> {
         Enter(Node<'t>),
@@ -415,9 +454,10 @@ fn walk_definitions(
     }
     let mut stack = vec![Step::Enter(root)];
     let mut steps: u32 = 0;
+    let mut spent: usize = 0;
     while let Some(step) = stack.pop() {
         steps = steps.wrapping_add(1);
-        if steps.is_multiple_of(1024) && Instant::now() > deadline {
+        if steps.is_multiple_of(1024) && Instant::now() > limits.deadline {
             return None;
         }
         let node = match step {
@@ -446,6 +486,14 @@ fn walk_definitions(
                     if let Some(owner) = go_receiver(node, source) {
                         qualified = format!("{owner}.{name}");
                     }
+                }
+                // Names are pieces of the source, but each qualified name
+                // repeats its whole scope.
+                spent = spent
+                    .saturating_add(qualified.len() + name.len())
+                    .saturating_add(limits.each);
+                if spent > limits.bytes {
+                    return None;
                 }
                 let whole = text(node, source);
                 let unnamed = without_name(whole, &name);
@@ -545,6 +593,13 @@ fn scope_of<'a>(qualified: &'a str, sep: &str) -> &'a str {
     qualified.rsplit_once(sep).map(|(s, _)| s).unwrap_or("")
 }
 
+/// The last part of a qualified name (`refresh` for `Session.refresh`).
+fn last_of<'a>(qualified: &'a str, sep: &str) -> &'a str {
+    qualified
+        .rsplit_once(sep)
+        .map_or(qualified, |(_, last)| last)
+}
+
 /// Renames among the definitions `removed` from a file and those `added`
 /// to it, as (removed qualified, added qualified). A pair is a rename only
 /// when nothing else could explain it: the same kind, the same scope (once
@@ -561,15 +616,19 @@ fn renames(
     deadline: Instant,
 ) -> Vec<(String, String)> {
     let sep = lang.separator();
-    let depth = |d: &Definition| d.qualified.matches(sep).count();
-    let mut by_depth: Vec<&Definition> = removed.to_vec();
-    by_depth.sort_by(|a, b| (depth(a), &a.qualified).cmp(&(depth(b), &b.qualified)));
+    // Each one's depth, counted once: the sort counted both sides' again at
+    // every comparison, a whole 200 KB name each time (the review of
+    // d06b9e3d, MF-1).
+    let mut by_depth: Vec<(usize, &Definition)> = removed
+        .iter()
+        .map(|d| (d.qualified.matches(sep).count(), *d))
+        .collect();
+    by_depth.sort_by(|(da, a), (db, b)| (da, &a.qualified).cmp(&(db, &b.qualified)));
     // Each side by what a pair shares, so a removed definition is checked
     // only against its likely matches: every removed one against every
     // added one, with a scope copied for each, took 17 s for 8,000
     // functions (the review of 30d5bcad, S-4). An added one's scope is
-    // fixed; a removed one's is read through the renames found so far, and
-    // a rival is as deep as it, since a scope's rename keeps its depth.
+    // fixed; a removed one's is read through the renames found so far.
     let mut added_by: HashMap<(&str, u64), HashMap<&str, Vec<&Definition>>> = HashMap::new();
     for a in added {
         added_by
@@ -579,20 +638,31 @@ fn renames(
             .or_default()
             .push(a);
     }
-    let mut removed_by: HashMap<(&str, u64, usize), Vec<&Definition>> = HashMap::new();
-    for r in &by_depth {
-        removed_by
-            .entry((r.kind, r.shape, depth(r)))
-            .or_default()
-            .push(r);
-    }
     let mut found: BTreeMap<String, String> = BTreeMap::new();
     let mut taken: HashSet<&str> = HashSet::new();
-    for (n, r) in by_depth.iter().enumerate() {
+    // The removed definitions of the depth being read still unpaired, by
+    // kind, shape and scope (read through the renames found so far): a
+    // rival is as deep as the one it rivals, since a scope's rename keeps
+    // its depth. Counted as each depth begins, when the shallower names its
+    // scopes are made of are settled. Each removed one was checked against
+    // every other of its kind, shape and depth, quadratic for 4,000 classes
+    // each with a method of one shape renamed (the review of d06b9e3d,
+    // N-10).
+    let mut rivals: HashMap<(&str, u64, String), usize> = HashMap::new();
+    let mut level = None;
+    for (n, (depth, r)) in by_depth.iter().enumerate() {
         // A rename is a bonus: past the deadline, the rest read as removed
         // and added.
         if n % 256 == 255 && Instant::now() > deadline {
             break;
+        }
+        if level != Some(*depth) {
+            level = Some(*depth);
+            rivals.clear();
+            for (_, o) in by_depth[n..].iter().take_while(|(d, _)| d == depth) {
+                let scope = mapped(scope_of(&o.qualified, sep), &found).to_string();
+                *rivals.entry((o.kind, o.shape, scope)).or_default() += 1;
+            }
         }
         let scope = mapped(scope_of(&r.qualified, sep), &found);
         let Some(bucket) = added_by
@@ -607,17 +677,10 @@ fn renames(
         let (Some(a), None) = (free.next(), free.next()) else {
             continue;
         };
-        // And `r` is the only removed one that `a` could pair with.
-        let a_scope = scope_of(&a.qualified, sep);
-        let mut rivals = removed_by
-            .get(&(r.kind, r.shape, depth(r)))
-            .into_iter()
-            .flatten()
-            .filter(|o| {
-                !found.contains_key(&o.qualified)
-                    && mapped(scope_of(&o.qualified, sep), &found) == a_scope
-            });
-        if !(rivals.next().is_some() && rivals.next().is_none()) {
+        // And `r` is the only removed one that `a` could pair with: the
+        // only one unpaired under `a`'s scope (the bucket's).
+        let key = (r.kind, r.shape, scope.to_string());
+        if rivals.get(&key) != Some(&1) {
             continue;
         }
         // A member that moved with its renamed type keeps its name and its
@@ -639,6 +702,9 @@ fn renames(
         if r.qualified != a.qualified {
             taken.insert(a.qualified.as_str());
             found.insert(r.qualified.clone(), a.qualified.clone());
+            if let Some(left) = rivals.get_mut(&key) {
+                *left -= 1;
+            }
         }
     }
     found.into_iter().collect()
@@ -694,15 +760,17 @@ fn read_change(
     now: Option<&str>,
     lines: Option<&BTreeSet<u32>>,
 ) -> Option<(Vec<ChangedSymbol>, BTreeSet<String>)> {
+    // Each symbol made of a definition keeps a copy of the path.
+    let each = path.len() + DEFINITION_BYTES;
     let before = match base {
-        Some(s) => definitions_until(lang, s, Instant::now() + PARSE_LIMIT)?,
+        Some(s) => definitions_until(lang, s, Instant::now() + PARSE_LIMIT, each)?,
         None => Vec::new(),
     };
     let deadline = Instant::now() + PARSE_LIMIT;
     let (after, used) = match now {
         Some(s) => {
             let tree = parse_until(lang, s, deadline)?;
-            let defs = definitions_of(lang, &tree, s, deadline)?;
+            let defs = definitions_of(lang, &tree, s, deadline, each)?;
             (defs, uses_of(lang, &tree, s, lines))
         }
         None => (Vec::new(), BTreeSet::new()),
@@ -798,19 +866,32 @@ fn changed_between(
     out
 }
 
-/// Whether `s` was renamed only as a member of its renamed type
-/// (`Session.refresh` → `UserSession.refresh`, or its constructor): the
-/// type's own rename says it.
-pub fn moved_with_its_type(all: &[ChangedSymbol], s: &ChangedSymbol) -> bool {
-    let (Some(to), Some(lang)) = (s.renamed_to.as_deref(), Lang::of(&s.path)) else {
-        return false;
-    };
-    let sep = lang.separator();
+/// The type `s` was renamed with, when `s` is a member that moved only
+/// because its type was renamed: it kept its own name (`Session.refresh` →
+/// `UserSession.refresh`), or it's a constructor named after its type that
+/// took the type's new name. A member renamed on its own as well
+/// (`Session.refresh` → `UserSession.reload`) has a rename of its own to
+/// tell (the review of d06b9e3d, SF-2).
+pub fn renamed_with_its_type<'a>(
+    all: &'a [ChangedSymbol],
+    s: &ChangedSymbol,
+) -> Option<&'a ChangedSymbol> {
+    let to = s.renamed_to.as_deref()?;
+    let sep = Lang::of(&s.path)?.separator();
     let (from, onto) = (scope_of(&s.qualified, sep), scope_of(to, sep));
-    !from.is_empty()
-        && all
-            .iter()
-            .any(|t| t.qualified == from && t.renamed_to.as_deref() == Some(onto))
+    if from.is_empty() {
+        return None;
+    }
+    let name = last_of(&s.qualified, sep);
+    let kept = name == last_of(to, sep);
+    let constructor = s.kind == "constructor"
+        && name == last_of(from, sep)
+        && last_of(to, sep) == last_of(onto, sep);
+    if !kept && !constructor {
+        return None;
+    }
+    all.iter()
+        .find(|t| t.qualified == from && t.renamed_to.as_deref() == Some(onto))
 }
 
 /// The new side's line numbers in a `git diff -U0` of one file.
@@ -840,13 +921,12 @@ async fn base_sizes(
     paths: &[&str],
 ) -> Result<HashMap<String, u64>, GitError> {
     // An object a line: a path with a line break in it can't be asked for
-    // in the batch, nor one ending in a carriage return, which git strips.
-    // Those are asked one at a time; left out, they read as new files, every
-    // definition added (the review of 30d5bcad).
-    let (odd, asked): (Vec<&str>, Vec<&str>) = paths
-        .iter()
-        .copied()
-        .partition(|p| p.contains('\n') || p.ends_with('\r'));
+    // in the batch. Those are asked one at a time; left out, they read as
+    // new files, every definition added (the review of 30d5bcad). One
+    // ending in a carriage return, which git would strip, never gets here:
+    // its extension ends in one too, so it isn't parsed.
+    let (odd, asked): (Vec<&str>, Vec<&str>) =
+        paths.iter().copied().partition(|p| p.contains('\n'));
     let mut sizes = HashMap::new();
     if !asked.is_empty() {
         let input: String = asked.iter().map(|p| format!("{base}:{p}\n")).collect();
@@ -944,6 +1024,34 @@ struct Parsed {
     given_up: Option<Instant>,
 }
 
+impl Parsed {
+    /// Read and nothing kept: unparsed, and tried again after
+    /// [`RETRY_GIVEN_UP`].
+    fn given_up(content: Option<u64>) -> Self {
+        Self {
+            content,
+            symbols: Vec::new(),
+            uses: BTreeSet::new(),
+            unparsed: true,
+            given_up: Some(Instant::now()),
+        }
+    }
+
+    /// What it adds to an index, for [`MAX_INDEX_BYTES`].
+    fn bytes(&self) -> usize {
+        let symbols = self.symbols.iter().map(|s| {
+            s.name.len()
+                + s.qualified.len()
+                + s.kind.len()
+                + s.path.len()
+                + s.renamed_to.as_ref().map_or(0, String::len)
+                + DEFINITION_BYTES
+        });
+        let uses = self.uses.iter().map(|u| u.len() + DEFINITION_BYTES);
+        symbols.chain(uses).sum()
+    }
+}
+
 /// A worktree's parses by path, for one base. A refresh parses only the
 /// files whose content changed since (in practice, those the last turn
 /// touched); the rest are reused.
@@ -959,6 +1067,10 @@ pub struct Refreshed {
     pub index: SymbolIndex,
     /// Files parsed this time (the others came from the cache).
     pub parsed: u32,
+    /// Files were left for the next refresh: this one ran out of time
+    /// ([`REFRESH_BUDGET`]). Nothing else would read them while the
+    /// worktree stays as it is (the review of d06b9e3d, N-2).
+    pub more: bool,
 }
 
 /// The worktree file's text, or `None` when it's gone (`Err(())`: too big,
@@ -1014,15 +1126,26 @@ fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 /// Opens `path` for reading, not through a link: a link swapped in after
-/// the check opens as itself, which isn't a regular file.
+/// the check opens as itself, which isn't a regular file. Any other
+/// reparse point is the file itself (a OneDrive placeholder, a
+/// deduplicated file), and opened as itself it reads as its stub, every
+/// definition removed: that one is opened again, normally (the review of
+/// d06b9e3d, N-7).
 #[cfg(windows)]
 fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
-    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-    std::fs::OpenOptions::new()
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)
+        .open(path)?;
+    let meta = file.metadata()?;
+    // A link is a name surrogate, which `is_symlink` reads from the tag.
+    if meta.file_type().is_symlink() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return Ok(file);
+    }
+    std::fs::OpenOptions::new().read(true).open(path)
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -1040,6 +1163,19 @@ pub async fn index_cached(
     base: &str,
     cache: &mut ParseCache,
 ) -> Result<Refreshed, GitError> {
+    index_within(git, root, base, cache, REFRESH_BUDGET, MAX_INDEX_BYTES).await
+}
+
+/// [`index_cached`], starting no file past `budget` but the first (so each
+/// refresh gets further), with an index of at most `bytes`.
+async fn index_within(
+    git: &Git,
+    root: &Path,
+    base: &str,
+    cache: &mut ParseCache,
+    budget: Duration,
+    bytes: usize,
+) -> Result<Refreshed, GitError> {
     if cache.base != base {
         *cache = ParseCache {
             base: base.to_string(),
@@ -1050,6 +1186,8 @@ pub async fn index_cached(
     let mut out = Refreshed::default();
     let mut kept = BTreeMap::new();
     let started = Instant::now();
+    // What the index holds so far, for `bytes`.
+    let mut held: usize = 0;
     // The base's sizes, asked at the first file parsed for those after it.
     let mut sizes: Option<HashMap<String, u64>> = None;
     for (n, path) in files.iter().enumerate() {
@@ -1062,9 +1200,12 @@ pub async fn index_cached(
             continue;
         }
         let full = root.join(path);
+        // A read that panicked or was cancelled is unreadable, not a
+        // deleted file with every definition removed (the review of
+        // d06b9e3d, N-4).
         let read = tokio::task::spawn_blocking(move || read_file(&full))
             .await
-            .unwrap_or(Ok(None));
+            .unwrap_or(Err(()));
         let Ok(now) = read else {
             out.index.unparsed += 1;
             continue;
@@ -1076,8 +1217,9 @@ pub async fn index_cached(
         let parsed = match cache.files.get(path) {
             Some(p) if fresh(p) => p.clone(),
             // Past the budget: read at the next refresh, not kept now.
-            _ if started.elapsed() > REFRESH_BUDGET => {
+            _ if out.parsed > 0 && started.elapsed() > budget => {
                 out.index.unparsed += 1;
+                out.more = true;
                 continue;
             }
             _ => {
@@ -1135,16 +1277,18 @@ pub async fn index_cached(
                             given_up: None,
                         },
                         // Given up: unparsed, not every definition removed.
-                        None => Parsed {
-                            content,
-                            symbols: Vec::new(),
-                            uses: BTreeSet::new(),
-                            unparsed: true,
-                            given_up: Some(Instant::now()),
-                        },
+                        None => Parsed::given_up(content),
                     }
                 }
             }
+        };
+        // Past what an index holds: unparsed, and read again later.
+        let size = parsed.bytes();
+        let parsed = if held.saturating_add(size) > bytes {
+            Parsed::given_up(content)
+        } else {
+            held += size;
+            parsed
         };
         if parsed.unparsed {
             out.index.unparsed += 1;
@@ -1165,13 +1309,23 @@ pub async fn index(git: &Git, root: &Path, base: &str) -> Result<SymbolIndex, Gi
         .index)
 }
 
-/// What `of` did to `name`, its strongest change: the symbol. Of two as
-/// strong, the outer one: a type rather than its constructor.
-fn change_of<'a>(of: &'a SymbolIndex, name: &str) -> Option<&'a ChangedSymbol> {
-    of.symbols
-        .iter()
-        .filter(|s| s.name == name)
-        .max_by_key(|s| (s.change.weight(), std::cmp::Reverse(s.qualified.len())))
+/// What `of` did to each name, its strongest change: the symbol. Of two as
+/// strong, the outer one (a type rather than its constructor), and of two
+/// alike the last. In one pass: each name was looked up through every
+/// symbol, 256 million comparisons a pair for 16,000 changed symbols (the
+/// review of d06b9e3d, SF-1).
+fn changes_by_name(of: &SymbolIndex) -> HashMap<&str, &ChangedSymbol> {
+    let rank = |s: &ChangedSymbol| (s.change.weight(), std::cmp::Reverse(s.qualified.len()));
+    let mut out: HashMap<&str, &ChangedSymbol> = HashMap::new();
+    for s in &of.symbols {
+        match out.get(s.name.as_str()) {
+            Some(best) if rank(best) > rank(s) => {}
+            _ => {
+                out.insert(s.name.as_str(), s);
+            }
+        }
+    }
+    out
 }
 
 fn touches(c: SymbolChange) -> bool {
@@ -1185,17 +1339,17 @@ fn touches(c: SymbolChange) -> bool {
 /// definition of the name, or one changed or removed it and the other's
 /// new lines use it.
 pub fn shared_symbols(here: &SymbolIndex, there: &SymbolIndex) -> Vec<SharedSymbol> {
-    let names: BTreeSet<&str> = here
-        .symbols
-        .iter()
-        .chain(there.symbols.iter())
-        .map(|s| s.name.as_str())
+    let (mine_by, theirs_by) = (changes_by_name(here), changes_by_name(there));
+    let names: BTreeSet<&str> = mine_by
+        .keys()
+        .chain(theirs_by.keys())
+        .copied()
         .filter(|n| n.chars().count() >= MIN_NAME)
         .collect();
     let mut out = Vec::new();
     for name in names {
-        let mine = change_of(here, name);
-        let theirs = change_of(there, name);
+        let mine = mine_by.get(name).copied();
+        let theirs = theirs_by.get(name).copied();
         let pair = match (mine, theirs) {
             (Some(m), Some(t)) if touches(m.change) && touches(t.change) => {
                 // Renamed differently on each side: neither name is both's
@@ -1312,8 +1466,12 @@ mod tests {
                     assert!(source.len() <= MAX_FILE_BYTES, "{lang:?}");
                     // Read, not given up: a parse past its time would
                     // never reach the walk (the review of 30d5bcad).
-                    let read =
-                        definitions_until(lang, &source, Instant::now() + Duration::from_secs(120));
+                    let read = definitions_until(
+                        lang,
+                        &source,
+                        Instant::now() + Duration::from_secs(120),
+                        DEFINITION_BYTES,
+                    );
                     assert!(read.is_some(), "{lang:?}");
                 }
             })
@@ -1424,8 +1582,13 @@ mod tests {
         for (lang, source) in cases {
             assert!(source.len() <= MAX_FILE_BYTES, "{lang:?}");
             let started = Instant::now();
-            let defs =
-                definitions_until(lang, &source, started + Duration::from_secs(120)).expect("read");
+            let defs = definitions_until(
+                lang,
+                &source,
+                started + Duration::from_secs(120),
+                DEFINITION_BYTES,
+            )
+            .expect("read");
             assert_eq!(defs.len(), MAX_DEPTH, "{lang:?}");
             let renamed = source.replacen(" a", " b", 1).replacen("a{", "b{", 1);
             let read = read_change(lang, "deep", Some(&source), Some(&renamed), None);
@@ -1748,5 +1911,286 @@ mod tests {
         // The same new name on both sides is kept.
         let got = shared_symbols(&renamed("parseLine"), &renamed("parseLine"));
         assert_eq!(got[0].display(), "parse → parseLine");
+    }
+
+    /// A definition for [`renames`], with a text of its own `shape`.
+    fn def(qualified: &str, kind: &'static str, shape: u64) -> Definition {
+        Definition {
+            name: last_of(qualified, ".").to_string(),
+            qualified: qualified.to_string(),
+            kind,
+            line: 1,
+            text: shape,
+            shape,
+            size: MIN_RENAME_TEXT,
+        }
+    }
+
+    fn pair_up(removed: &[Definition], added: &[Definition], deadline: Instant) -> usize {
+        renames(
+            Lang::TypeScript,
+            &removed.iter().collect::<Vec<_>>(),
+            &added.iter().collect::<Vec<_>>(),
+            deadline,
+        )
+        .len()
+    }
+
+    #[test]
+    fn f_wt_10_2_a_long_scope_name_with_many_children_is_given_up() {
+        // Each child's qualified name repeated a scope of 200,000 letters:
+        // about 10 GB from a changed file of 500 KB, two levels deep (the
+        // review of d06b9e3d, MF-1). Past what one side may hold, the file
+        // counts as unparsed.
+        let long = "a".repeat(200_000);
+        let cases = [
+            (
+                Lang::Rust,
+                format!("mod {long} {{{}}}\n", "mod b;".repeat(50_000)),
+            ),
+            (
+                Lang::TypeScript,
+                format!("namespace {long} {{{}}}\n", "type b=1;".repeat(34_000)),
+            ),
+            (
+                Lang::Python,
+                format!("class {long}:\n{}", "  def b():0\n".repeat(26_000)),
+            ),
+        ];
+        for (lang, source) in cases {
+            assert!(source.len() <= MAX_FILE_BYTES, "{lang:?}");
+            let deadline = Instant::now() + Duration::from_secs(120);
+            assert!(
+                definitions_until(lang, &source, deadline, DEFINITION_BYTES).is_none(),
+                "{lang:?}"
+            );
+            assert!(
+                compare(lang, "evil", None, Some(&source)).is_none(),
+                "{lang:?}"
+            );
+        }
+        // A long name with a few children is read.
+        let fine = format!("mod {} {{{}}}\n", "a".repeat(300), "mod b;".repeat(1_000));
+        assert_eq!(definitions(Lang::Rust, &fine).len(), 1_001);
+    }
+
+    #[test]
+    fn f_wt_10_6_renames_pair_by_index_not_by_comparing_every_pair() {
+        // 100,000 functions renamed, each with a text of its own. Compared
+        // every removed one with every added one, that's 10 billion
+        // comparisons: past the deadline however fast the machine, where
+        // the test above only times 8,000 (the review of d06b9e3d, N-9).
+        let n = 100_000;
+        let removed: Vec<Definition> = (0..n)
+            .map(|i| def(&format!("f{i}"), "function", i))
+            .collect();
+        let added: Vec<Definition> = (0..n)
+            .map(|i| def(&format!("g{i}"), "function", i))
+            .collect();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        assert_eq!(pair_up(&removed, &added, deadline), 100_000);
+    }
+
+    #[test]
+    fn f_wt_10_6_look_alike_methods_in_many_classes_pair_in_one_pass() {
+        // 20,000 classes each renamed a method, every method of one shape.
+        // Each removed one was checked against every other of its shape
+        // and depth for a rival, 400 million times (the review of
+        // d06b9e3d, N-10). Each pairs in its own class.
+        let n = 20_000;
+        let removed: Vec<Definition> = (0..n)
+            .map(|i| def(&format!("C{i}.old"), "method", 7))
+            .collect();
+        let added: Vec<Definition> = (0..n)
+            .map(|i| def(&format!("C{i}.new"), "method", 7))
+            .collect();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        assert_eq!(pair_up(&removed, &added, deadline), 20_000);
+        // Two in one class could each be the one renamed: neither pairs.
+        let removed = [def("C.a1", "method", 7), def("C.a2", "method", 7)];
+        let added = [def("C.b1", "method", 7)];
+        assert_eq!(pair_up(&removed, &added, deadline), 0);
+    }
+
+    #[test]
+    fn f_wt_10_2_the_walk_and_the_renames_stop_at_their_deadlines() {
+        let source: String = (0..2_000)
+            .map(|i| format!("function f{i}() {{}}\n"))
+            .collect();
+        let tree = parse(Lang::TypeScript, &source).expect("parses");
+        let later = Instant::now() + Duration::from_secs(60);
+        let read =
+            |deadline| definitions_of(Lang::TypeScript, &tree, &source, deadline, DEFINITION_BYTES);
+        assert_eq!(read(later).map(|d| d.len()), Some(2_000));
+        // Checked every 1,024 nodes: given up at the first check.
+        assert!(read(Instant::now()).is_none());
+        // Renames are checked every 256: the first 255 are kept.
+        let removed: Vec<Definition> = (0..1_000)
+            .map(|i| def(&format!("f{i}"), "function", i))
+            .collect();
+        let added: Vec<Definition> = (0..1_000)
+            .map(|i| def(&format!("g{i}"), "function", i))
+            .collect();
+        assert_eq!(pair_up(&removed, &added, later), 1_000);
+        assert_eq!(pair_up(&removed, &added, Instant::now()), 255);
+    }
+
+    #[test]
+    fn f_wt_10_1_what_big_indexes_share_is_read_in_one_pass() {
+        use SymbolChange::*;
+        // 50,000 changed symbols a side: each name was looked up through
+        // every symbol, 10 billion comparisons (the review of d06b9e3d,
+        // SF-1).
+        let names: Vec<String> = (0..50_000).map(|i| format!("name{i}")).collect();
+        let side: Vec<(&str, SymbolChange)> = names.iter().map(|n| (n.as_str(), Changed)).collect();
+        let (here, there) = (idx(&side, &[]), idx(&side, &[]));
+        let started = Instant::now();
+        assert_eq!(shared_symbols(&here, &there).len(), 50_000);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        // Of two changes as strong and as long, the last is the one.
+        let mut two = idx(&[("parse", Changed), ("parse", Changed)], &[]);
+        two.symbols[0].qualified = "a.parse".into();
+        two.symbols[1].qualified = "b.parse".into();
+        let got = shared_symbols(&two, &idx(&[("parse", Changed)], &[]));
+        assert_eq!(got[0].qualified, "b.parse");
+    }
+
+    #[test]
+    fn f_wt_10_8_a_member_renamed_with_its_type_says_so_only_when_it_kept_its_name() {
+        use SymbolChange::*;
+        let renamed = |from: &str, to: &str, kind: &str| ChangedSymbol {
+            name: last_of(from, ".").to_string(),
+            qualified: from.to_string(),
+            kind: kind.to_string(),
+            path: "Session.java".into(),
+            line: 1,
+            change: Renamed,
+            renamed_to: Some(to.to_string()),
+        };
+        let all = vec![
+            renamed("Session", "UserSession", "class"),
+            renamed("Session.refresh", "UserSession.refresh", "method"),
+            renamed("Session.Session", "UserSession.UserSession", "constructor"),
+            renamed("Session.close", "UserSession.shut", "method"),
+        ];
+        let with = |s: &ChangedSymbol| renamed_with_its_type(&all, s).map(|t| t.qualified.as_str());
+        assert_eq!(with(&all[0]), None);
+        assert_eq!(with(&all[1]), Some("Session"));
+        assert_eq!(with(&all[2]), Some("Session"));
+        // Renamed on its own as well: its own rename is told (the review of
+        // d06b9e3d, SF-2).
+        assert_eq!(with(&all[3]), None);
+    }
+
+    /// Runs git in `dir`, outside the hardened runner, for a fixture.
+    fn git_in(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", dir.join(".no-global-config"))
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A repository with one commit, its base, and git to read it.
+    fn repo() -> (tempfile::TempDir, std::path::PathBuf, String, Git) {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let root = tmp.path().join("repo");
+        std::fs::create_dir_all(&root).expect("mkdir");
+        git_in(&root, &["init", "-q", "-b", "main"]);
+        std::fs::write(root.join("README"), "base\n").expect("write");
+        git_in(&root, &["add", "-A"]);
+        git_in(&root, &["commit", "-qm", "base"]);
+        let base = git_in(&root, &["rev-parse", "HEAD"]);
+        let git = Git::locate(None, tmp.path().join("empty-hooks")).expect("git");
+        (tmp, root, base, git)
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_2_a_refresh_out_of_time_leaves_the_rest_for_the_next() {
+        let (_tmp, root, base, git) = repo();
+        for name in ["a", "b", "c"] {
+            std::fs::write(
+                root.join(format!("{name}.ts")),
+                format!("export function {name}{name}{name}() {{}}\n"),
+            )
+            .expect("write");
+        }
+        let mut cache = ParseCache::default();
+        let mut refresh = async || {
+            index_within(
+                &git,
+                &root,
+                &base,
+                &mut cache,
+                Duration::ZERO,
+                MAX_INDEX_BYTES,
+            )
+            .await
+            .expect("index")
+        };
+        // Out of time from the start: one file a refresh, each further.
+        for n in 1..=3 {
+            let got = refresh().await;
+            assert_eq!(got.parsed, 1, "refresh {n}");
+            assert_eq!(got.index.symbols.len(), n, "refresh {n}");
+            assert_eq!(got.index.unparsed as usize, 3 - n, "refresh {n}");
+            assert_eq!(got.more, n < 3, "refresh {n}");
+        }
+        let got = refresh().await;
+        assert_eq!((got.parsed, got.more), (0, false));
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_2_an_index_past_its_size_reads_the_rest_later() {
+        let (_tmp, root, base, git) = repo();
+        std::fs::write(root.join("a.ts"), "export function alpha() {}\n").expect("write");
+        std::fs::write(root.join("b.ts"), "export function beta() {}\n").expect("write");
+        let mut cache = ParseCache::default();
+        let budget = Duration::from_secs(60);
+        // Nothing fits: both unparsed, and not parsed again at once.
+        for _ in 0..2 {
+            let got = index_within(&git, &root, &base, &mut cache, budget, 1)
+                .await
+                .expect("index");
+            assert!(got.index.symbols.is_empty());
+            assert_eq!(got.index.unparsed, 2);
+        }
+        let got = index_within(&git, &root, &base, &mut cache, budget, MAX_INDEX_BYTES)
+            .await
+            .expect("index");
+        assert_eq!(
+            (got.parsed, got.index.unparsed),
+            (0, 2),
+            "kept until the retry"
+        );
+        // Given up long enough ago: parsed again.
+        let Some(long_ago) = Instant::now().checked_sub(RETRY_GIVEN_UP + Duration::from_secs(1))
+        else {
+            return;
+        };
+        for p in cache.files.values_mut() {
+            p.given_up = Some(long_ago);
+        }
+        let got = index_within(&git, &root, &base, &mut cache, budget, MAX_INDEX_BYTES)
+            .await
+            .expect("index");
+        assert_eq!((got.parsed, got.index.unparsed), (2, 0));
+        assert_eq!(got.index.symbols.len(), 2);
     }
 }

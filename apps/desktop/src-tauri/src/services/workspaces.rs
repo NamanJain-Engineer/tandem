@@ -280,9 +280,9 @@ pub async fn remove(
     }
     workspaces::remove(store, id).await?;
     // The radar's indexes and watchers go with them (the review of
-    // 9a4e93ab, S6).
+    // 9a4e93ab, S6), and no parse of them is kept again (d06b9e3d, N-1).
     for ws in &ids {
-        crate::services::radar::forget(ws.as_str());
+        crate::services::radar::forget_for_good(ws.as_str());
     }
     Ok(removed)
 }

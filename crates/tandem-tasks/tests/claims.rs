@@ -569,7 +569,8 @@ fn f_wt_10_8_a_claim_made_for_a_working_tree_is_its_own_with_the_intent() {
             "Intent radar: renamed parse → parseLine, which tandem/user uses",
         )
         .expect("claim");
-    assert!(first.is_empty());
+    assert!(first.overlaps.is_empty());
+    assert_eq!(first.paths, ["src/parse.ts"]);
     let claims = s.claims().expect("claims");
     assert_eq!(claims.len(), 1);
     let c = &claims[0];
@@ -643,18 +644,21 @@ fn f_wt_10_8_a_tree_claim_keeps_real_names_and_an_agents_own_claim() {
     // review of 30d5bcad).
     let tree2 = "/r/app/.tandem/worktrees/odd";
     let long = format!("src/{}.ts", "x".repeat(600));
-    s.claim_for_tree(
-        &scope(tree2),
-        &paths(&[
-            "src/ok.ts",
-            " src/space.ts",
-            "src\\back.ts",
-            "src/c\u{7}.ts",
-            long.as_str(),
-        ]),
-        "Intent radar: z",
-    )
-    .expect("the rest");
+    let kept = s
+        .claim_for_tree(
+            &scope(tree2),
+            &paths(&[
+                "src/ok.ts",
+                " src/space.ts",
+                "src\\back.ts",
+                "src/c\u{7}.ts",
+                long.as_str(),
+            ]),
+            "Intent radar: z",
+        )
+        .expect("the rest");
+    // Only what was claimed is said to be (the review of d06b9e3d, N-5).
+    assert_eq!(kept.paths, ["src/ok.ts"]);
     let theirs: Vec<String> = s
         .claims()
         .expect("claims")

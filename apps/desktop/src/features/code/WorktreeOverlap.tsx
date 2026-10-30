@@ -15,26 +15,44 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
   // The last fetch asked: an older reply that lands later is dropped, as
   // is any reply once the dialog closes (the review of 9a4e93ab, S3).
   const latest = useRef(0);
+  // A check is on its way, and whether changes were told meanwhile: they
+  // bring one more check after it, not one each. The check parses the
+  // siblings, each parse that changes what's shared tells a change, and
+  // each change started a whole check again (the review of d06b9e3d, SF-3).
+  const running = useRef(false);
+  const again = useRef(false);
   // `quiet`: a refetch keeps showing the last report until the new one.
   const fetch = useCallback(
     (quiet = false) => {
-      const asked = ++latest.current;
-      if (!quiet) setLoad({ at: "loading" });
-      void worktreeOverlap(laneId).then((out) => {
-        if (asked !== latest.current) return;
-        setLoad(out.ok ? { at: "ready", report: out.value } : { at: "error", message: out.error.message });
-        // F-WT-10: the check parsed this worktree and its siblings again.
-        if (out.ok) {
-          const ids = useWorkspaces
-            .getState()
-            .list.filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local")
-            .map((w) => w.id);
-          void loadRadar(ids);
-        }
-      });
+      const run = (quietly: boolean) => {
+        const asked = ++latest.current;
+        running.current = true;
+        again.current = false;
+        if (!quietly) setLoad({ at: "loading" });
+        void worktreeOverlap(laneId).then((out) => {
+          if (asked !== latest.current) return;
+          running.current = false;
+          setLoad(out.ok ? { at: "ready", report: out.value } : { at: "error", message: out.error.message });
+          // F-WT-10: the check parsed this worktree and its siblings again.
+          if (out.ok) {
+            const ids = useWorkspaces
+              .getState()
+              .list.filter((w) => w.parentId !== null && w.laneBranch !== null && w.kind === "local")
+              .map((w) => w.id);
+            void loadRadar(ids);
+          }
+          if (again.current) run(true);
+        });
+      };
+      run(quiet);
     },
     [laneId],
   );
+  /** A change told: read again, or once more after the check on its way. */
+  const changed = useCallback(() => {
+    if (running.current) again.current = true;
+    else fetch(true);
+  }, [fetch]);
   useEffect(() => {
     fetch();
     return () => {
@@ -52,7 +70,7 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
       const parent = list.find((w) => w.id === laneId)?.parentId ?? null;
       const ours = (id: string) =>
         id === laneId || (parent !== null && list.some((w) => w.id === id && w.parentId === parent));
-      if (e.laneIds.some(ours)) fetch(true);
+      if (e.laneIds.some(ours)) changed();
     }).then((u) => {
       if (live) off = u;
       else u();
@@ -61,7 +79,7 @@ export function useOverlap(laneId: string): { load: Load; retry: () => void } {
       live = false;
       off?.();
     };
-  }, [fetch, laneId]);
+  }, [changed, laneId]);
   return { load, retry: () => fetch() };
 }
 

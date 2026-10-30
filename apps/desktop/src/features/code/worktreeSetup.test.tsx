@@ -335,31 +335,64 @@ describe("overlap check (F-WT-03)", () => {
   });
 
   it("F-WT-10.3 an older reload that answers last never replaces a newer report", async () => {
-    // Two watched changes in a row: the first reload's reply came last and
-    // the dialog showed the older report (the review of 9a4e93ab, S3).
+    // A watched change's reload on its way when the person asks again: the
+    // first reload's reply came last and the dialog showed the older report
+    // (the review of 9a4e93ab, S3).
     const replies: Array<(r: OverlapReport) => void> = [];
     const on = (branch: string) =>
       report({ siblings: [{ laneId: "wt_2", branch, files: ["src/a.ts"], symbols: [] }] });
     backend({
-      lane_overlap: () =>
-        replies.length === 0 && named("lane_overlap").length === 1
-          ? on("tandem/first")
-          : new Promise<OverlapReport>((resolve) => replies.push(resolve)),
+      lane_overlap: () => {
+        if (named("lane_overlap").length === 1) {
+          throw { code: "io", message: "disk busy", stage: null, hint: null, retryable: true };
+        }
+        return new Promise<OverlapReport>((resolve) => replies.push(resolve));
+      },
       lane_radar: () => [],
     });
     useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
     dialogs();
-    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
-    expect(await branch()).toBe("tandem/first");
+    expect(await screen.findByText("Couldn't check overlap: disk busy")).toBeTruthy();
     act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
-    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await waitFor(() => expect(replies).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(replies).toHaveLength(2));
+    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
     const [older, newer] = replies;
     await act(async () => newer?.(on("tandem/newer")));
     await waitFor(async () => expect(await branch()).toBe("tandem/newer"));
     await act(async () => older?.(on("tandem/older")));
     await act(() => new Promise((r) => setTimeout(r, 50)));
     expect(await branch()).toBe("tandem/newer");
+  });
+
+  it("F-WT-10.3 changes told while a check runs bring one more, not one each", async () => {
+    // The check parses the siblings, each parse that changes what's shared
+    // tells a change, and each change started a whole check again (the
+    // review of d06b9e3d, SF-3).
+    const replies: Array<(r: OverlapReport) => void> = [];
+    const on = (branch: string) =>
+      report({ siblings: [{ laneId: "wt_2", branch, files: ["src/a.ts"], symbols: [] }] });
+    backend({
+      lane_overlap: () => new Promise<OverlapReport>((resolve) => replies.push(resolve)),
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    await waitFor(() => expect(replies).toHaveLength(1));
+    for (let n = 0; n < 3; n++) act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(named("lane_overlap")).toHaveLength(1);
+    await act(async () => replies[0]?.(on("tandem/first")));
+    await waitFor(() => expect(named("lane_overlap")).toHaveLength(2));
+    await act(async () => replies[1]?.(on("tandem/second")));
+    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
+    await waitFor(async () => expect(await branch()).toBe("tandem/second"));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(named("lane_overlap")).toHaveLength(2);
+    // Nothing on its way: a change reads again at once.
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await waitFor(() => expect(named("lane_overlap")).toHaveLength(3));
   });
 
   it("F-WT-10.8 a worktree that only uses what it shares has nothing to claim", async () => {

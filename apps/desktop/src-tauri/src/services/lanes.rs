@@ -805,6 +805,9 @@ pub async fn remove_with_teardown(
     LaneManager::remove(git, &repo, lane_path, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
+    // F-WT-10: gone, so no parse of it is kept again (a sibling's check may
+    // still hold it from a list read before).
+    crate::services::radar::forget_for_good(lane.id.as_str());
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
     Ok(report)
@@ -839,7 +842,7 @@ async fn remove_jj(
     jj_lanes::forget(lane, parent, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
-    crate::services::radar::forget(lane.id.as_str());
+    crate::services::radar::forget_for_good(lane.id.as_str());
     tracing::info!(code = "lane.removed_jj", "jj workspace removed");
     Ok(RemoveReport::default())
 }

@@ -37,7 +37,9 @@ struct Entry {
     parent: String,
     /// When its parse started: a later one's index is kept over it.
     started: u64,
-    index: SymbolIndex,
+    /// Shared, not copied: what worktrees share is read again at each
+    /// refresh and rail reload (the review of d06b9e3d, SF-1).
+    index: Arc<SymbolIndex>,
     /// Parses by file: a refresh parses only what changed since.
     cache: symbols::ParseCache,
 }
@@ -48,7 +50,10 @@ static STARTED: AtomicU64 = AtomicU64::new(0);
 /// The parse number given out when each worktree was last forgotten: a
 /// parse that started before isn't kept after. One that began before a
 /// discard or Remove repository and finished after brought the gone
-/// worktree's index back for good (the review of 30d5bcad).
+/// worktree's index back for good (the review of 30d5bcad). A worktree
+/// gone for good keeps `u64::MAX` ([`forget_for_good`]) for as long as
+/// the app runs, a few bytes each; any other fence goes once a newer parse
+/// is kept, which wins over older ones anyway.
 static FORGOTTEN: LazyLock<Mutex<HashMap<String, u64>>> = LazyLock::new(Mutex::default);
 /// A watcher per parsed worktree (F-WT-10 slice 2), for up to
 /// [`MAX_WATCHED_WORKTREES`] of them, until it's forgotten.
@@ -145,14 +150,14 @@ fn covered(ws: &Workspace) -> bool {
 
 /// Parses the worktree again and keeps the result: for its own checkpoint
 /// or Check overlap…, so it's watched from then on.
-pub async fn refresh(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+pub async fn refresh(git: &Git, lane: &Workspace) -> Result<Arc<SymbolIndex>, IpcError> {
     refresh_on(git, lane, true, None).await
 }
 
 /// [`refresh`] for a sibling read to compare with: it isn't watched for
 /// it, so Check overlap… in one of nine worktrees doesn't take the others'
 /// watchers in turn (the review of 30d5bcad, S-3).
-pub async fn refresh_sibling(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+pub async fn refresh_sibling(git: &Git, lane: &Workspace) -> Result<Arc<SymbolIndex>, IpcError> {
     refresh_on(git, lane, false, None).await
 }
 
@@ -160,20 +165,24 @@ pub async fn refresh_sibling(git: &Git, lane: &Workspace) -> Result<SymbolIndex,
 /// When that changes what its repository's worktrees share, `radar:changed`
 /// goes out on `bus` (the app's when `None`), whichever refresh it was: a
 /// change a checkpoint read first, before a watched parse that then found
-/// nothing new, never reached the rail (the review of 30d5bcad, S-2).
+/// nothing new, never reached the rail (the review of 30d5bcad, S-2). A
+/// refresh that ran out of time is followed by another ([`follow_up`]).
 async fn refresh_on(
     git: &Git,
     lane: &Workspace,
     watch: bool,
     bus: Option<&EventBus>,
-) -> Result<SymbolIndex, IpcError> {
+) -> Result<Arc<SymbolIndex>, IpcError> {
     let (Some(parent), Some(base)) = (&lane.parent_id, &lane.lane_base) else {
-        return Ok(SymbolIndex::default());
+        return Ok(Arc::default());
     };
-    if !covered(lane) || is_held(lane.id.as_str()) {
-        return Ok(SymbolIndex::default());
-    }
+    // Numbered before the hold is checked: a discard that holds and
+    // forgets the worktree after this check fences this parse out, and one
+    // that ended before it is seen here (the review of d06b9e3d, N-1).
     let started = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+    if !covered(lane) || is_held(lane.id.as_str()) {
+        return Ok(Arc::default());
+    }
     let mut cache = lock(&INDEXES)
         .get(lane.id.as_str())
         .map(|e| e.cache.clone())
@@ -182,47 +191,79 @@ async fn refresh_on(
     tracing::debug!(
         code = "radar.refreshed",
         parsed = done.parsed,
+        more = done.more,
         "radar index refreshed"
     );
-    let before = shares_in(parent.as_str());
-    let Some(index) = keep(
-        lane.id.as_str(),
-        parent.as_str(),
-        started,
-        done.index,
-        cache,
-    ) else {
-        return Ok(SymbolIndex::default());
+    let id = lane.id.as_str();
+    let before = shares_of(parent.as_str(), id);
+    let Some(index) = keep(id, parent.as_str(), started, done.index, cache) else {
+        return Ok(Arc::default());
     };
-    if shares_in(parent.as_str()) != before {
-        tell_changed(bus, lane.id.as_str());
+    if shares_of(parent.as_str(), id) != before {
+        tell_changed(bus, id);
     }
     if watch {
         ensure_watched(lane).await;
     }
+    if done.more {
+        follow_up(lane.clone(), watch);
+    }
     Ok(index)
 }
 
-/// What each pair of a repository's kept worktrees shares: what the rail's
-/// marks and Check overlap… show.
-fn shares_in(parent: &str) -> BTreeMap<(String, String), Vec<SharedSymbol>> {
-    let kept: Vec<(String, SymbolIndex)> = lock(&INDEXES)
-        .iter()
-        .filter(|(_, e)| e.parent == parent)
-        .map(|(id, e)| (id.clone(), e.index.clone()))
-        .collect();
-    let mut out = BTreeMap::new();
-    for (a, here) in &kept {
-        for (b, there) in &kept {
-            if a < b {
-                let found = shared(here, there);
-                if !found.is_empty() {
-                    out.insert((a.clone(), b.clone()), found);
-                }
-            }
+/// What `lane_id` shares with each of its repository's other kept
+/// worktrees. Only its own pairs: its refresh changes nothing else, and
+/// every pair of the repository was compared, each index copied, at every
+/// refresh (the review of d06b9e3d, SF-1).
+fn shares_of(parent: &str, lane_id: &str) -> BTreeMap<String, Vec<SharedSymbol>> {
+    let (mine, others) = {
+        let indexes = lock(&INDEXES);
+        let Some(mine) = indexes.get(lane_id).map(|e| e.index.clone()) else {
+            return BTreeMap::new();
+        };
+        let others: Vec<(String, Arc<SymbolIndex>)> = indexes
+            .iter()
+            .filter(|(id, e)| e.parent == parent && id.as_str() != lane_id)
+            .map(|(id, e)| (id.clone(), e.index.clone()))
+            .collect();
+        (mine, others)
+    };
+    others
+        .into_iter()
+        .filter_map(|(id, theirs)| {
+            let found = shared(&mine, &theirs);
+            (!found.is_empty()).then_some((id, found))
+        })
+        .collect()
+}
+
+/// A refresh that ran out of time left files for the next one: that one
+/// comes after [`SETTLE`], since nothing else would read them while the
+/// worktree stays as it is (the review of d06b9e3d, N-2). Each refresh
+/// parses at least one more file, so the rounds end.
+fn follow_up(lane: Workspace, watch: bool) {
+    let (Some(ctx), Ok(handle)) = (
+        CONTEXT.get().cloned(),
+        tokio::runtime::Handle::try_current(),
+    ) else {
+        return;
+    };
+    handle.spawn(refresh_later(lane, watch, ctx));
+}
+
+/// [`refresh_on`] after [`SETTLE`], as a boxed `Send` future: it can follow
+/// itself up, and the box ends that cycle.
+fn refresh_later(
+    lane: Workspace,
+    watch: bool,
+    ctx: Context,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        tokio::time::sleep(SETTLE).await;
+        if let Some(git) = ctx.git().await {
+            let _ = refresh_on(&git, &lane, watch, Some(&ctx.bus)).await;
         }
-    }
-    out
+    })
 }
 
 /// `radar:changed` for `lane_id`, on `bus` or the app's.
@@ -247,7 +288,7 @@ fn keep(
     started: u64,
     index: SymbolIndex,
     cache: symbols::ParseCache,
-) -> Option<SymbolIndex> {
+) -> Option<Arc<SymbolIndex>> {
     // A discard that started meanwhile wins: nothing is kept or watched.
     // Checked under the lock [`hold`]'s `forget` takes after marking the
     // worktree held, so either this sees the hold or `forget` removes what
@@ -257,16 +298,18 @@ fn keep(
         return None;
     }
     // Begun before the worktree was forgotten (a discard, Remove
-    // repository): it's gone.
-    if lock(&FORGOTTEN)
-        .get(lane_id)
-        .is_some_and(|at| started <= *at)
-    {
+    // repository), or it's gone for good.
+    let mut forgotten = lock(&FORGOTTEN);
+    if forgotten.get(lane_id).is_some_and(|at| started <= *at) {
         return None;
     }
     if let Some(newer) = indexes.get(lane_id).filter(|e| e.started > started) {
         return Some(newer.index.clone());
     }
+    // This parse began after the fence, and wins over any that began
+    // before: the fence has done its work.
+    forgotten.remove(lane_id);
+    let index = Arc::new(index);
     indexes.insert(
         lane_id.to_string(),
         Entry {
@@ -402,9 +445,25 @@ fn admit(
 /// in it (`mv src lib` went unseen; the review of 9a4e93ab). Any path
 /// that's gone may have been a folder, whatever its name (`mv gen.d ..`;
 /// the review of 30d5bcad): parsing again reads only what changed.
-fn moves_code(root: &Path, rel: &str) -> bool {
-    symbols::Lang::of(rel).is_some()
-        || std::fs::symlink_metadata(root.join(rel)).map_or(true, |m| m.is_dir())
+///
+/// Only in a folder `.gitignore` keeps: the radar reads git's changes,
+/// which never list an ignored file, and a build's files coming and going
+/// in `target/` or `.next/` parsed a worktree every 2 s on macOS and
+/// Windows, whose watches report ignored folders too (the review of
+/// d06b9e3d, N-6). `kept` holds each folder's answer for one batch.
+fn moves_code(root: &Path, rel: &str, kept: &mut HashMap<PathBuf, bool>) -> bool {
+    let code = symbols::Lang::of(rel).is_some()
+        || std::fs::symlink_metadata(root.join(rel)).map_or(true, |m| m.is_dir());
+    if !code {
+        return false;
+    }
+    let folder = Path::new(rel)
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
+    *kept
+        .entry(folder)
+        .or_insert_with_key(|f| tandem_core::files::folder_kept(root, f))
 }
 
 /// Starts watching a parsed worktree's folder, once, with the app's
@@ -449,7 +508,9 @@ pub(crate) async fn watch_with(lane: &Workspace, ctx: Context) {
             None,
             opts,
             Box::new(move |change| {
-                let parsed = change.overflow || change.paths.iter().any(|p| moves_code(&base, p));
+                let mut kept = HashMap::new();
+                let parsed =
+                    change.overflow || change.paths.iter().any(|p| moves_code(&base, p, &mut kept));
                 if parsed {
                     handle.spawn(watched(lane_id.clone(), ctx.clone()));
                 }
@@ -528,7 +589,7 @@ async fn rescan(lane_id: &str, ctx: &Context) {
 }
 
 /// The last index, parsing it first (not watching it) when there's none.
-pub async fn index_of(git: &Git, lane: &Workspace) -> Result<SymbolIndex, IpcError> {
+pub async fn index_of(git: &Git, lane: &Workspace) -> Result<Arc<SymbolIndex>, IpcError> {
     index_on(git, lane, None).await
 }
 
@@ -537,7 +598,7 @@ async fn index_on(
     git: &Git,
     lane: &Workspace,
     bus: Option<&EventBus>,
-) -> Result<SymbolIndex, IpcError> {
+) -> Result<Arc<SymbolIndex>, IpcError> {
     if let Some(e) = lock(&INDEXES).get(lane.id.as_str()) {
         return Ok(e.index.clone());
     }
@@ -555,7 +616,7 @@ pub fn marks(lane_ids: &[String]) -> Vec<RadarMark> {
     let wanted: HashSet<&String> = lane_ids.iter().collect();
     // Parents and indexes only: the parse caches hold every changed file's
     // definitions, and the rail reads marks again after each watched parse.
-    let all: HashMap<String, (String, SymbolIndex)> = lock(&INDEXES)
+    let all: HashMap<String, (String, Arc<SymbolIndex>)> = lock(&INDEXES)
         .iter()
         .filter(|(id, _)| wanted.contains(id))
         .map(|(id, e)| (id.clone(), (e.parent.clone(), e.index.clone())))
@@ -581,13 +642,27 @@ pub fn marks(lane_ids: &[String]) -> Vec<RadarMark> {
     out
 }
 
-/// Forgets a worktree's index and stops watching it (it was discarded).
-/// A parse already under way isn't kept when it ends ([`FORGOTTEN`]).
+/// Forgets a worktree's index and stops watching it (it's being
+/// discarded, or isn't covered any more). A parse already under way isn't
+/// kept when it ends ([`FORGOTTEN`]).
 pub fn forget(lane_id: &str) {
+    fence(lane_id, STARTED.load(Ordering::Relaxed));
+}
+
+/// [`forget`] for a worktree that's gone (discarded, or its repository
+/// removed): no parse of it is kept again, even one that starts later from
+/// a list read before it went (Check overlap… walking its siblings, or a
+/// watched rescan), which kept its index and could watch it again (the
+/// review of d06b9e3d, N-1).
+pub fn forget_for_good(lane_id: &str) {
+    fence(lane_id, u64::MAX);
+}
+
+fn fence(lane_id: &str, at: u64) {
     {
         // Under the lock [`keep`] checks the fence in.
         let mut indexes = lock(&INDEXES);
-        lock(&FORGOTTEN).insert(lane_id.to_string(), STARTED.load(Ordering::Relaxed));
+        lock(&FORGOTTEN).insert(lane_id.to_string(), at);
         indexes.remove(lane_id);
     }
     lock(&WATCHERS).remove(lane_id);
@@ -748,7 +823,10 @@ pub async fn note(
             "Those aren't two worktrees of one repository",
         ));
     }
-    let found = shared(&index_of(git, &lane).await?, &index_of(git, &other).await?);
+    let found = shared(
+        &*index_of(git, &lane).await?,
+        &*index_of(git, &other).await?,
+    );
     if found.is_empty() {
         return Err(IpcError::new(
             ErrorCode::NotFound,
@@ -781,7 +859,7 @@ pub async fn claim(
         ));
     }
     let mine = index_of(git, &lane).await?;
-    let found = shared(&mine, &index_of(git, &other).await?);
+    let found = shared(&mine, &*index_of(git, &other).await?);
     let (paths, intent) = claim_of(
         &mine,
         &found,
@@ -794,11 +872,9 @@ pub async fn claim(
         ));
     }
     let folder = PathBuf::from(&lane.root);
-    let claimed = paths.clone();
     tokio::task::spawn_blocking(move || tasks.claim_for_tree(&folder, &paths, &intent))
         .await
-        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))??;
-    Ok(claimed)
+        .map_err(|e| IpcError::new(ErrorCode::Internal, e.to_string()))?
 }
 
 /// The files `mine` changed the `found` definitions in (sorted, at most
@@ -838,8 +914,14 @@ pub fn claim_of(
         paths.insert(s.path.clone());
         // A member renamed with its type is said by the type's rename
         // (`renamed Session.Session → UserSession.UserSession` was listed
-        // too; the review of 30d5bcad).
-        if s.change == SymbolChange::Renamed && symbols::moved_with_its_type(&mine.symbols, s) {
+        // too; the review of 30d5bcad), when the type is listed: when it
+        // isn't shared, the member's rename is the one to say (the intent
+        // read "Intent radar: , which tandem/b uses"; the review of
+        // d06b9e3d, SF-2).
+        if s.change == SymbolChange::Renamed
+            && symbols::renamed_with_its_type(&mine.symbols, s)
+                .is_some_and(|t| names.contains(t.name.as_str()))
+        {
             continue;
         }
         let words = match (&s.change, &s.renamed_to) {
@@ -1240,8 +1322,9 @@ mod tests {
             unparsed: 1,
             ..SymbolIndex::default()
         };
+        let newer = Arc::new(newer);
         assert_eq!(
-            keep(id, "repo", 2, newer.clone(), Default::default()),
+            keep(id, "repo", 2, (*newer).clone(), Default::default()),
             Some(newer.clone())
         );
         assert_eq!(
@@ -1384,7 +1467,10 @@ mod tests {
         let mine = SymbolIndex {
             symbols: vec![
                 renamed("Session", "UserSession"),
-                renamed("Session.Session", "UserSession.UserSession"),
+                tandem_git::symbols::ChangedSymbol {
+                    kind: "constructor".into(),
+                    ..renamed("Session.Session", "UserSession.UserSession")
+                },
             ],
             ..SymbolIndex::default()
         };
@@ -1404,6 +1490,103 @@ mod tests {
             intent,
             "Intent radar: renamed Session → UserSession, which tandem/b uses"
         );
+        // Only the member is shared (the sibling calls `s.refresh()` and
+        // never names `Session`): its rename is the one said. The intent
+        // read "Intent radar: , which tandem/b uses" (the review of
+        // d06b9e3d, SF-2).
+        let shared = |name: &str, qualified: &str, to: &str| SharedSymbol {
+            name: name.into(),
+            qualified: qualified.into(),
+            here: Renamed,
+            there: Used,
+            renamed_to: Some(to.into()),
+        };
+        let mine = SymbolIndex {
+            symbols: vec![
+                renamed("Session", "UserSession"),
+                renamed("Session.refresh", "UserSession.refresh"),
+            ],
+            ..SymbolIndex::default()
+        };
+        let refresh = shared("refresh", "Session.refresh", "UserSession.refresh");
+        assert_eq!(
+            claim_of(&mine, &[refresh], "tandem/b").1,
+            "Intent radar: renamed Session.refresh → UserSession.refresh, which tandem/b uses"
+        );
+        // Renamed on its own as well: said beside its type's rename.
+        let mine = SymbolIndex {
+            symbols: vec![
+                renamed("Session", "UserSession"),
+                renamed("Session.refresh", "UserSession.reload"),
+            ],
+            ..SymbolIndex::default()
+        };
+        let found = [
+            shared("Session", "Session", "UserSession"),
+            shared("refresh", "Session.refresh", "UserSession.reload"),
+        ];
+        assert_eq!(
+            claim_of(&mine, &found, "tandem/b").1,
+            "Intent radar: renamed Session → UserSession, renamed Session.refresh → \
+             UserSession.reload, which tandem/b uses"
+        );
+    }
+
+    #[test]
+    fn f_wt_10_9_a_worktree_gone_for_good_is_never_kept_again() {
+        // A parse that started after the worktree went, from a list read
+        // before (Check overlap… walking its siblings), kept its index and
+        // could watch it again (the review of d06b9e3d, N-1).
+        let empty = || (SymbolIndex::default(), symbols::ParseCache::default());
+        let gone = "radar-gone-for-good";
+        forget_for_good(gone);
+        let later = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        let (index, cache) = empty();
+        assert!(keep(gone, "repo", later, index, cache).is_none());
+        assert!(!lock(&INDEXES).contains_key(gone));
+        // Any other fence goes once a newer parse is kept, which wins over
+        // the older ones anyway.
+        let id = "radar-fence-goes";
+        forget(id);
+        let newer = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        let (index, cache) = empty();
+        assert!(keep(id, "repo", newer, index, cache).is_some());
+        assert!(!lock(&FORGOTTEN).contains_key(id));
+        let (index, cache) = empty();
+        assert!(keep(id, "repo", newer - 1, index, cache).is_some());
+        let kept = lock(&INDEXES).get(id).map(|e| e.started);
+        forget(id);
+        assert_eq!(kept, Some(newer), "an older parse doesn't replace it");
+    }
+
+    #[test]
+    fn f_wt_10_7_a_refresh_compares_only_its_own_pairs() {
+        // Every pair of the repository was compared, each index copied, at
+        // every refresh (the review of d06b9e3d, SF-1).
+        let parent = "radar-own-pairs";
+        let index = || SymbolIndex {
+            symbols: vec![tandem_git::symbols::ChangedSymbol {
+                name: "parse".into(),
+                qualified: "parse".into(),
+                kind: "function".into(),
+                path: "src/parse.ts".into(),
+                line: 1,
+                change: SymbolChange::Changed,
+                renamed_to: None,
+            }],
+            ..SymbolIndex::default()
+        };
+        let ids = ["radar-own-a", "radar-own-b", "radar-own-c"];
+        for id in ids {
+            let n = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+            keep(id, parent, n, index(), Default::default());
+        }
+        let got = shares_of(parent, ids[0]);
+        for id in ids {
+            forget(id);
+        }
+        assert_eq!(got.keys().collect::<Vec<_>>(), [ids[1], ids[2]]);
+        assert!(got.values().all(|found| found.len() == 1));
     }
 
     #[test]
@@ -1560,15 +1743,50 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmp");
         let root = tmp.path();
         std::fs::create_dir(root.join("lib")).expect("mkdir");
+        std::fs::create_dir(root.join("src")).expect("mkdir");
         std::fs::write(root.join("README"), "words").expect("write");
-        assert!(moves_code(root, "lib"), "a folder moved in");
-        assert!(moves_code(root, "src"), "a folder moved away, or removed");
-        assert!(moves_code(root, "src/parse.ts"), "a parsed file");
-        assert!(!moves_code(root, "README"), "a file in no parsed language");
+        let mut kept = HashMap::new();
+        let mut moves = |rel: &str| moves_code(root, rel, &mut kept);
+        assert!(moves("lib"), "a folder moved in");
+        assert!(moves("gone"), "a folder moved away, or removed");
+        assert!(moves("src/parse.ts"), "a parsed file");
+        assert!(!moves("README"), "a file in no parsed language");
         // Gone, whatever its name: it may have been a folder (`mv gen.d ..`
         // went unseen; the review of 30d5bcad).
-        assert!(moves_code(root, "gen.d"), "a dotted folder moved away");
-        assert!(moves_code(root, "notes.md"), "a file removed");
+        assert!(moves("gen.d"), "a dotted folder moved away");
+        assert!(moves("notes.md"), "a file removed");
+    }
+
+    #[test]
+    fn f_wt_10_7_changes_in_ignored_folders_move_no_code() {
+        // A build's files came and went in `target/` every 2 s, and on macOS
+        // and Windows each one parsed the worktree again (the review of
+        // d06b9e3d, N-6).
+        let tmp = tempfile::tempdir().expect("tmp");
+        let root = tmp.path();
+        std::fs::write(
+            root.join(".gitignore"),
+            "target/
+.next/
+",
+        )
+        .expect("write");
+        std::fs::create_dir_all(root.join("target/debug/build/out")).expect("mkdir");
+        std::fs::create_dir_all(root.join(".next/types")).expect("mkdir");
+        std::fs::create_dir(root.join("src")).expect("mkdir");
+        let mut kept = HashMap::new();
+        let mut moves = |rel: &str| moves_code(root, rel, &mut kept);
+        assert!(!moves("target/debug/build/x.tmp"), "a temporary file gone");
+        assert!(!moves("target/debug/build/out"), "a folder made");
+        assert!(
+            !moves("target/debug/build/out/bindings.rs"),
+            "generated code"
+        );
+        assert!(!moves(".next/types/page.ts"), "generated types");
+        // The ignored folder itself, made or removed, at a kept place.
+        assert!(moves("target"));
+        assert!(moves("src/gone"), "a folder gone from a kept one");
+        assert!(moves("src/parse.ts"));
     }
 
     #[tokio::test]

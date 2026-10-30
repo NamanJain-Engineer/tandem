@@ -424,13 +424,14 @@ impl TasksService {
 
     /// Claims `paths` (relative to its top folder) for the working tree at
     /// `folder`, with `intent`, on a person's click (F-WT-10), then tells the
-    /// sink about overlaps as any claim would. Blocking file IO.
+    /// sink about overlaps as any claim would. Returns the paths claimed: a
+    /// name the claims can't hold is left out. Blocking file IO.
     pub fn claim_for_tree(
         &self,
         folder: &Path,
         paths: &[String],
         intent: &str,
-    ) -> Result<(), IpcError> {
+    ) -> Result<Vec<String>, IpcError> {
         let Some(tracker) = &self.tracker else {
             return Err(IpcError::new(
                 ErrorCode::Unavailable,
@@ -445,11 +446,11 @@ impl TasksService {
         };
         // As the claim commands map them: a lock or disk failure isn't the
         // caller's mistake.
-        tracker
+        let claimed = tracker
             .claim_for_tree(&scope, paths, intent)
             .map_err(crate::commands::tasks::task_err)?;
         self.check_overlaps();
-        Ok(())
+        Ok(claimed.paths)
     }
 
     /// A workspace or worktree at `root` left the app (F-TK-05 AC3): the

@@ -1,10 +1,11 @@
 mod support;
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 
 use support::{git, Fixture};
 use tandem_git::symbols::{index_cached, ParseCache, SymbolChange};
-use tandem_git::{LaneManager, Repo};
+use tandem_git::{LaneManager, Mode, Repo};
 
 #[tokio::test]
 async fn f_wt_10_a_refresh_parses_only_the_files_that_changed_since() {
@@ -175,6 +176,11 @@ async fn f_wt_10_a_big_base_file_and_text_that_isnt_utf8_are_unparsed() {
     assert_eq!(names, [("fresh", SymbolChange::Added)]);
 }
 
+// Git for Windows lists no path past 260 characters without
+// `core.longpaths`, which the fixture's empty config leaves off: the test
+// below makes the same pipes fill on every system (the review of d06b9e3d,
+// SF-4).
+#[cfg(unix)]
 #[tokio::test]
 async fn f_wt_10_many_long_new_paths_dont_stall_the_base_check() {
     // 300 new files with paths of about 470 characters: `cat-file
@@ -215,6 +221,41 @@ async fn f_wt_10_many_long_new_paths_dont_stall_the_base_check() {
         .all(|s| s.change == SymbolChange::Added));
 }
 
+#[tokio::test]
+async fn f_wt_10_git_reads_a_megabyte_while_it_answers_one() {
+    // 1 MiB of `cat-file --batch-check` questions, each answered on a line
+    // of its own: with the input written before the output was read, both
+    // pipes filled and neither side moved again (the review of 30d5bcad,
+    // M-2). No files, so it runs wherever git does.
+    let f = Fixture::new();
+    let cli = f.git();
+    let input: String = (0..16_000)
+        .map(|n| format!("HEAD:{}{n:05}.ts\n", "q".repeat(50)))
+        .collect();
+    assert!(input.len() > 900 * 1024);
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        cli.ok_with_input(
+            Mode::Read,
+            &f.repo,
+            &[
+                OsStr::new("cat-file"),
+                OsStr::new("--batch-check=%(objecttype) %(objectsize)"),
+            ],
+            input.as_bytes(),
+        ),
+    )
+    .await
+    .expect("git returns")
+    .expect("git runs");
+    let text = out.text();
+    assert_eq!(text.lines().count(), 16_000);
+    assert!(text.lines().all(|l| l.ends_with(" missing")));
+}
+
+// Windows refuses a line break in a file name (the review of d06b9e3d,
+// SF-4).
+#[cfg(unix)]
 #[tokio::test]
 async fn f_wt_10_a_base_path_with_a_line_break_is_read_from_the_base() {
     // Left out of the batch, it read as a new file: every definition in it

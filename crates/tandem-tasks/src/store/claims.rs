@@ -361,13 +361,15 @@ impl TaskStore {
     /// Claims a person asked for on a working tree's behalf (F-WT-10's
     /// Claim these files): real files relative to its top folder, with an
     /// intent, kept as the agent's own claim would be (not inferred), so its
-    /// agent and the other working trees' agents see them.
+    /// agent and the other working trees' agents see them. Says which paths
+    /// were claimed: the toast counted the ones left out too (the review of
+    /// d06b9e3d, N-5).
     pub fn claim_for_tree(
         &self,
         scope: &ClaimScope,
         paths: &[String],
         intent: &str,
-    ) -> Result<Vec<ClaimOverlap>, TaskError> {
+    ) -> Result<TreeClaim, TaskError> {
         if intent.chars().count() > CLAIM_INTENT_MAX {
             return Err(TaskError::invalid(format!(
                 "The intent is at most {CLAIM_INTENT_MAX} characters."
@@ -390,7 +392,8 @@ impl TaskStore {
                 "None of these files can be claimed by their names.",
             ));
         }
-        self.store_claims(scope, None, paths, intent.trim(), false)
+        let overlaps = self.store_claims(scope, None, paths.clone(), intent.trim(), false)?;
+        Ok(TreeClaim { paths, overlaps })
     }
 
     fn put(
