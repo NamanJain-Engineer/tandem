@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import { refreshSession, signIn } from "./session";
+
+const request = (sid: string | null) =>
+  ({ url: "/", headers: new Headers(sid ? { cookie: `sid=${sid}` } : {}) }) as Request;
+
+describe("refreshSession", () => {
+  it("finds the session a cookie names", async () => {
+    expect(await refreshSession(request(signIn("ana")))).toMatchObject({ customer: "ana" });
+  });
+
+  it("keeps the coupon the customer applied", async () => {
+    expect((await refreshSession(request(signIn("ana", "SPRING10"))))?.coupon).toBe("SPRING10");
+  });
+
+  it("has none without a cookie", async () => {
+    expect(await refreshSession(request(null))).toBeNull();
+  });
+
+  it("has none for a cookie it doesn't know", async () => {
+    expect(await refreshSession(request("nope"))).toBeNull();
+  });
+
+  it("renews a session that expired a moment ago", async () => {
+    expect(await refreshSession(request(signIn("ana", null, -60_000)))).toMatchObject({ customer: "ana" });
+  });
+
+  it("drops a session that expired over 15 minutes ago", async () => {
+    expect(await refreshSession(request(signIn("ana", null, -16 * 60_000)))).toBeNull();
+  });
+});

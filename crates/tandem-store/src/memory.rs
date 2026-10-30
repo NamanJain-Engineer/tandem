@@ -101,10 +101,11 @@ pub fn cap_for(file: MemoryFile, notes_cap: u32) -> u32 {
 }
 
 /// Whether a text holds something credential-shaped (the log redactor's
-/// rules: vendor tokens, key=value secrets, private keys, …).
+/// rules: vendor tokens, key=value secrets, private keys, …), a line at a
+/// time, as written or as a briefing reads it, past what's removable
+/// (D-3031, D-3036).
 pub fn has_credentials(text: &str) -> bool {
-    text.lines()
-        .any(|line| tandem_core::redact::Redactor::global().redact(line) != line)
+    text.lines().any(tandem_core::untrusted::holds_credential)
 }
 
 /// The pre-write check (`tandem__memory_write`, `memory_write`).
@@ -192,6 +193,25 @@ mod tests {
         assert!(!has_credentials(
             "- Release branch is cut on Thursdays.\n- Prefers pnpm."
         ));
+    }
+
+    #[test]
+    fn f_tk_08_1_a_credential_what_is_removable_splits_or_sets_apart_is_refused() {
+        // A briefing reads memory past what's removable (D-3031), so a
+        // write is checked that way too, and as written: NOTES.md never
+        // keeps one (D-3036).
+        let h = home();
+        for note in [
+            "- pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345\n",
+            "- pushed with ghp_0123456789\u{2028}abcdefghijABCDEFGHIJ012345\n",
+            "- pushed with ghp_0123456789\u{fff9}abcdefghijABCDEFGHIJ012345\n",
+            "- pushed with abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345\n",
+        ] {
+            assert!(has_credentials(note), "{note:?}");
+            let err = write(h.path(), MemoryFile::Notes, note, 4096, "c1").expect_err("secret");
+            assert_eq!(err.to_string(), "Memory can't store credentials");
+        }
+        assert_eq!(read(h.path(), 4096).notes, "");
     }
 
     #[test]

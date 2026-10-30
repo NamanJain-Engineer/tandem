@@ -9,6 +9,7 @@ import type {
   QueuedPhoneAction,
 } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Button,
   Callout,
@@ -24,6 +25,7 @@ import {
   useToast,
 } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import { copyText } from "../../ipc/clipboard";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
@@ -169,17 +171,12 @@ export function RemotePage() {
       {queue.length > 0 && (
         <SettingsGroup label={t("remote.queue")}>
           {queue.map((item) => (
-            <div key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="remote-queue-item">
-              <span className="min-w-0 flex-1 text-base text-fg">
-                {t("remote.queue.item", { device: item.deviceName, summary: item.summary })}
-              </span>
-              <Button size="sm" variant="primary" onClick={() => void decide(item, true)}>
-                {t("remote.queue.allow")}
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => void decide(item, false)}>
-                {t("remote.queue.drop")}
-              </Button>
-            </div>
+            <QueueRow
+              key={item.id}
+              item={item}
+              onAllow={() => void decide(item, true)}
+              onDrop={() => void decide(item, false)}
+            />
           ))}
         </SettingsGroup>
       )}
@@ -466,5 +463,47 @@ function PairDialog({ via, onClose }: { via: PairVia; onClose: () => void }) {
         )}
       </div>
     </Dialog>
+  );
+}
+
+/** One phone action waiting for this computer. Its Allow resolves the
+ * agent's approval, and the list reloads after each answer and on every
+ * phone event, so the next item can land under the pointer: Allow waits
+ * until its row has held still (F-TL-12.12). */
+function QueueRow({
+  item,
+  onAllow,
+  onDrop,
+}: {
+  item: QueuedPhoneAction;
+  onAllow: () => void;
+  onDrop: () => void;
+}) {
+  const box = useSteadyBox(true, item.id);
+  return (
+    <div
+      ref={box.ref}
+      style={offscreenRow(56)}
+      className="flex items-center gap-3 px-4 py-3"
+      data-testid="remote-queue-item"
+    >
+      <span className="min-w-0 flex-1 text-base text-fg">
+        {t("remote.queue.item", { device: item.deviceName, summary: item.summary })}
+      </span>
+      <Button
+        size="sm"
+        variant="primary"
+        data-grant
+        data-testid="remote-queue-allow"
+        waiting={!box.steady}
+        title={box.steady ? undefined : t("approval.waiting")}
+        onClick={() => box.check() && onAllow()}
+      >
+        {t("remote.queue.allow")}
+      </Button>
+      <Button size="sm" variant="secondary" onClick={onDrop}>
+        {t("remote.queue.drop")}
+      </Button>
+    </div>
   );
 }

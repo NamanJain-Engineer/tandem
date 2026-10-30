@@ -13,7 +13,14 @@ import { useSession } from "../../stores/session";
 import { useTeammates } from "../../stores/teammates";
 import { FREE, FREE_VIEW, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RoutinesPage } from "./RoutinesPage";
-import { clockChange, describe as words, time12h } from "./schedule";
+import {
+  OFFSET_FORMATS_MAX,
+  cachedOffsetFormats,
+  clockChange,
+  describe as words,
+  offsetAt,
+  time12h,
+} from "./schedule";
 
 const LEAD: Teammate = {
   id: "tm_lead",
@@ -144,6 +151,19 @@ describe("routines in words (F-RT-01 AC3)", () => {
     expect(change).not.toBeNull();
     expect(new Date(change!).getUTCDate()).toBe(25);
     expect(clockChange("UTC", from)).toBeNull();
+  });
+
+  it("F-RT-01.2 a zone the runtime doesn't know has no offset or clock change, and the cache stays bounded", () => {
+    const from = Date.UTC(2026, 9, 10, 12);
+    expect(offsetAt("Mars/Olympus_Mons", from)).toBeNull();
+    expect(clockChange("Mars/Olympus_Mons", from)).toBeNull();
+    // Asked again, from the cache: still none.
+    expect(offsetAt("Mars/Olympus_Mons", from)).toBeNull();
+    for (let i = 0; i < OFFSET_FORMATS_MAX + 44; i++) offsetAt(`Nowhere/Zone_${i}`, from);
+    expect(cachedOffsetFormats()).toBeLessThanOrEqual(OFFSET_FORMATS_MAX);
+    // A known zone still answers once the cache starts again.
+    expect(offsetAt("Asia/Kolkata", from)).toBe(330);
+    expect(offsetAt("America/New_York", from)).toBe(-240);
   });
 });
 

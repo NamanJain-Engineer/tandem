@@ -26,6 +26,7 @@ fn as_json(p: &Parsed) -> Value {
             tool_name,
             input,
         } => json!({"permission": request_id, "tool": tool_name, "input": input}),
+        Parsed::ToolStart { id, name } => json!({"tool_start": id, "name": name}),
     }
 }
 
@@ -108,6 +109,7 @@ fn start(access: Access, mode: ThreadMode, attended: bool) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
 }
 
@@ -115,6 +117,184 @@ fn flag<'a>(args: &'a [OsString], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|w| w[0] == name)
         .and_then(|w| w[1].to_str())
+}
+
+#[test]
+fn f_tk_08_1_an_answer_session_has_every_tool_off_and_no_mcp_server() {
+    // Even a request that carries a gateway config, the tasks server, a
+    // briefing and a session to resume gets none of them with tools off.
+    let mut req = start(Access::Full, ThreadMode::Act, true);
+    req.tools_off = true;
+    req.mcp_config = Some("/data/mcp/s.json".into());
+    req.stdio_servers = vec![crate::chat::StdioServer {
+        name: "tandem_tasks".into(),
+        command: "/bin/tasks".into(),
+        args: Vec::new(),
+        env_vars: Vec::new(),
+    }];
+    req.briefing = Some("/data/briefings/t.md".into());
+    req.resume_session = Some("sess-1".into());
+    req.model = Some("opus".into());
+    let a = args(&req);
+    // No built-in tool at all, and nobody to ask for one.
+    assert_eq!(flag(&a, "--tools"), Some(""));
+    assert_eq!(flag(&a, "--permission-mode"), Some("dontAsk"));
+    assert_eq!(flag(&a, "--permission-prompts"), Some("none"));
+    for on in [
+        "--safe-mode",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+    ] {
+        assert!(a.iter().any(|x| x == on), "{on}");
+    }
+    // Every tool is denied too, 2.1.310's newer ones among them.
+    let off: Vec<&str> = flag(&a, "--disallowedTools")
+        .expect("disallowed")
+        .split(',')
+        .collect();
+    for tool in [
+        "Read",
+        "Glob",
+        "Grep",
+        "LS",
+        "WebFetch",
+        "WebSearch",
+        "Bash",
+        "PowerShell",
+        "Monitor",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "ScheduleWakeup",
+        "RemoteTrigger",
+        "ToolSearch",
+        "SendMessage",
+        "ListAgents",
+        "TeamCreate",
+        "Workflow",
+        "REPL",
+        "Config",
+        "EnterWorktree",
+        "ExitWorktree",
+        "TaskCreate",
+        "TaskStop",
+        "Edit",
+        "Write",
+        "MultiEdit",
+        "NotebookEdit",
+        "Task",
+        "Agent",
+        "TodoWrite",
+        "Skill",
+        "SlashCommand",
+    ] {
+        assert!(off.contains(&tool), "{tool}");
+    }
+    assert_eq!(flag(&a, "--setting-sources"), Some("user"));
+    for gone in [
+        "--mcp-config",
+        "--permission-prompt-tool",
+        "--append-system-prompt-file",
+        "--resume",
+    ] {
+        assert!(!a.iter().any(|x| x == gone), "{gone}");
+    }
+    assert_eq!(flag(&a, "--model"), Some("opus"));
+    let claude = ClaudeAdapter::new(Vec::new());
+    assert!(claude.answers_without_tools(Some("2.1.310")));
+    assert!(claude.answers_without_tools(Some("2.2.0 (Claude Code)")));
+    for old in [None, Some("2.1.309"), Some("1.9.999"), Some("garbled")] {
+        assert!(!claude.answers_without_tools(old), "{old:?}");
+    }
+}
+
+#[test]
+fn f_tk_08_1_a_pre_release_of_2_1_310_cant_answer_with_every_tool_off() {
+    let claude = ClaudeAdapter::new(Vec::new());
+    for early in [
+        "2.1.310-rc.1",
+        "2.1.310-rc.1 (Claude Code)",
+        "claude 2.1.310-beta",
+        // A run that isn't a version before it doesn't hide the suffix.
+        "v.9.9.9 2.1.310-rc.1",
+    ] {
+        assert!(!claude.answers_without_tools(Some(early)), "{early}");
+    }
+    for ok in [
+        "2.1.310 (Claude Code)",
+        "2.1.310+build.5",
+        "2.1.311-rc.1",
+        "claude 2.1.310",
+    ] {
+        assert!(claude.answers_without_tools(Some(ok)), "{ok}");
+    }
+}
+
+#[test]
+fn f_tk_08_1_the_tools_off_check_reads_the_version_parse_version_reads() {
+    for version in [
+        "2.1.310",
+        "v.9.9.9 2.1.310-rc.1",
+        "1.2 3.4.5-beta",
+        "claude 2.1.310 (Claude Code) 9.9.9-rc",
+        "2.1.310.4-rc",
+        "garbled",
+        "",
+        "—2.1.310—",
+    ] {
+        assert_eq!(
+            claude_version(version).map(|(v, _)| v),
+            crate::chat::codex::protocol::parse_version(version),
+            "{version}"
+        );
+    }
+    assert_eq!(claude_version("1.2 3.4.5-beta"), Some(((3, 4, 5), true)));
+    assert_eq!(claude_version("—2.1.310—"), Some(((2, 1, 310), false)));
+}
+
+#[tokio::test]
+async fn f_tk_08_1_a_claude_too_old_for_every_tool_off_is_refused_before_it_starts() {
+    let mut req = start(Access::Read, ThreadMode::Plan, false);
+    req.tools_off = true;
+    for version in [None, Some("2.1.309"), Some("2.1.310-rc.1")] {
+        req.engine_version = version.map(str::to_string);
+        let (tx, _rx) = mpsc::channel(4);
+        // `/bin/claude` isn't run: a spawn would fail with another error.
+        match ClaudeAdapter::new(Vec::new()).start(req.clone(), tx).await {
+            Err(AdapterError::Unsupported(why)) => {
+                assert!(why.contains("2.1.310 or newer"), "{why}")
+            }
+            Err(e) => panic!("{version:?}: {e}"),
+            Ok(_) => panic!("{version:?} started"),
+        }
+    }
+}
+
+#[test]
+fn f_tk_08_1_a_tool_block_starting_is_reported_at_once_with_every_tool_off() {
+    let start_of = |kind: &str| {
+        json!({"type": "stream_event", "parent_tool_use_id": null, "event": {
+            "type": "content_block_start", "index": 1,
+            "content_block": {"type": kind, "id": "toolu_1", "name": "CronCreate", "input": {}}
+        }})
+        .to_string()
+    };
+    let mut off = ClaudeParser::new("/w".into(), &[], false).tools_off();
+    assert_eq!(
+        off.line(&start_of("tool_use"), now()),
+        vec![Parsed::ToolStart {
+            id: "toolu_1".into(),
+            name: "CronCreate".into()
+        }]
+    );
+    assert_eq!(off.line(&start_of("server_tool_use"), now()).len(), 1);
+    for prose in ["text", "thinking", "redacted_thinking"] {
+        assert!(off.line(&start_of(prose), now()).is_empty(), "{prose}");
+    }
+    // A thread with tools reports its tools as before, when complete.
+    let mut on = ClaudeParser::new("/w".into(), &[], false);
+    assert!(on.line(&start_of("tool_use"), now()).is_empty());
 }
 
 // F-TL-06 rule 1 is tests/invariants/tests/rule_1.rs.
@@ -194,6 +374,14 @@ fn sh(script: &str) -> ChatStart {
 
 /// Starts a stand-in engine: `sh -c script` with claude's flags as `$@`.
 async fn session(script: &str) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterEvent>) {
+    session_with(script, false).await
+}
+
+/// [`session`], with every tool off when `tools_off`.
+async fn session_with(
+    script: &str,
+    tools_off: bool,
+) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterEvent>) {
     struct Sh(String);
     #[async_trait]
     impl ChatAdapter for Sh {
@@ -217,18 +405,71 @@ async fn session(script: &str) -> (Box<dyn ChatSession>, mpsc::Receiver<AdapterE
                 acked: Arc::new(Notify::new()),
                 asks: Arc::new(Mutex::new(HashMap::new())),
                 cwd: req.cwd.clone(),
+                tools_off: req.tools_off,
             };
             let parser = ClaudeParser::new(req.cwd.clone(), &[], false);
+            let parser = if req.tools_off {
+                parser.tools_off()
+            } else {
+                parser
+            };
             tokio::spawn(session.clone().read(parser, lines, events));
             Ok(Box::new(session))
         }
     }
     let (tx, rx) = mpsc::channel(64);
-    let s = Sh(script.to_string())
-        .start(sh(script), tx)
-        .await
-        .expect("start");
+    let mut req = sh(script);
+    req.tools_off = tools_off;
+    let s = Sh(script.to_string()).start(req, tx).await.expect("start");
     (s, rx)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn f_tk_08_1_with_every_tool_off_a_tool_starting_kills_the_engine_before_the_tool_runs() {
+    // The stand-in starts a tool block, then "runs" it a second later: the
+    // session kills it first, so the mark is never written.
+    let mark = tempfile::tempdir().expect("dir");
+    let file = mark.path().join("ran");
+    let script = format!(
+        r#"read line
+echo '{{"type":"system","subtype":"init","session_id":"s-1","model":"m"}}'
+echo '{{"type":"stream_event","parent_tool_use_id":null,"event":{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_1","name":"CronCreate","input":{{}}}}}}}}'
+sleep 1
+touch '{}'
+read more"#,
+        file.display()
+    );
+    let (s, mut rx) = session_with(&script, true).await;
+    let turn = TurnId::new();
+    s.send_turn(TurnInput {
+        turn_id: turn.clone(),
+        text: "hi".into(),
+        images: Vec::new(),
+        files: Vec::new(),
+    })
+    .await
+    .expect("send");
+    let tool = loop {
+        match next(&mut rx).await {
+            AdapterEvent::Event {
+                event: ThreadEvent::Tool { arg_summary, .. },
+                ..
+            } => break arg_summary,
+            AdapterEvent::Exited { .. } => panic!("exited before the tool row"),
+            _ => {}
+        }
+    };
+    assert_eq!(tool, "CronCreate");
+    // The engine is gone: it reports its exit, and never ran the tool.
+    loop {
+        if let AdapterEvent::Exited { .. } = next(&mut rx).await {
+            break;
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(!file.exists(), "the tool ran");
+    s.shutdown().await.expect("shutdown");
 }
 
 async fn next(rx: &mut mpsc::Receiver<AdapterEvent>) -> AdapterEvent {
@@ -610,6 +851,15 @@ fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
         tool_paths(p.line(&result, now())),
         vec![one("/work/shop/src/a.ts")]
     );
+    // So does MultiEdit's: the row a claim is made from (D-2836).
+    let multi_done = json!({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t3", "content": "Applied 2 edits"}
+    ]}})
+    .to_string();
+    assert_eq!(
+        tool_paths(p.line(&multi_done, now())),
+        vec![one("/work/shop/b.ts")]
+    );
     // Rows without files serialize as before.
     let row = serde_json::to_value(ThreadEvent::tool(
         "t7",
@@ -619,4 +869,401 @@ fn f_tk_07_1_an_edit_names_its_files_absolute_and_its_result_keeps_them() {
     ))
     .expect("json");
     assert!(row.get("paths").is_none(), "{row}");
+}
+
+/// Every finished tool row in `parsed`: its id, status, lines and files.
+type Finished = (String, ToolStatus, Option<LineCounts>, Option<Vec<String>>);
+
+fn finished(parsed: Vec<Parsed>) -> Vec<Finished> {
+    parsed
+        .into_iter()
+        .filter_map(|p| match p {
+            Parsed::Event(ThreadEvent::Tool {
+                id,
+                status,
+                lines,
+                paths,
+                ..
+            }) if status != ToolStatus::Running => Some((id, status, lines, paths)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn edits_fixture() -> Vec<Parsed> {
+    let text = std::fs::read_to_string(fixtures().join("edits.jsonl")).expect("fixture");
+    let mut p = ClaudeParser::new(PathBuf::from("/work/shop"), &[], false);
+    text.lines().flat_map(|l| p.line(l, now())).collect()
+}
+
+const fn lines(added: u32, removed: u32) -> Option<LineCounts> {
+    Some(LineCounts { added, removed })
+}
+
+#[test]
+fn f_th_12_4_claude_codes_edits_count_the_lines_their_inputs_describe() {
+    let parsed = edits_fixture();
+    // A call that's still running claims no lines yet.
+    for p in &parsed {
+        if let Parsed::Event(ThreadEvent::Tool {
+            status: ToolStatus::Running,
+            lines,
+            ..
+        }) = p
+        {
+            assert_eq!(*lines, None);
+        }
+    }
+    let rows = finished(parsed);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Two changed lines with an unchanged one between them: 2 and 2, not
+    // the 3 and 3 of the span from the first change to the last.
+    assert_eq!(at("toolu_e1").2, lines(2, 2));
+    // A MultiEdit counts each of its edits.
+    assert_eq!(at("toolu_e2").2, lines(2, 2));
+    // A new file: every line of it is added.
+    assert_eq!(at("toolu_e3").2, lines(3, 0));
+    // A Write over a file that existed: what it replaced isn't in the
+    // event, so it names its file and counts no lines.
+    assert_eq!(at("toolu_e4").2, None);
+    assert_eq!(at("toolu_e4").3, Some(vec!["/work/shop/README.md".into()]));
+    // replace_all without the result's patch: how many places it changed
+    // isn't said, so it names its file and counts no lines.
+    assert_eq!(at("toolu_e7").2, None);
+    assert_eq!(
+        at("toolu_e7").3,
+        Some(vec!["/work/shop/src/checkout/next.ts".into()])
+    );
+}
+
+#[test]
+fn f_th_12_4_the_results_patch_counts_a_replace_all_and_a_rewrite_exactly() {
+    let rows = finished(edits_fixture());
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // `tool_use_result.structuredPatch`: three occurrences replaced.
+    assert_eq!(at("toolu_e8").2, lines(3, 3));
+    // A rewrite whose result carries its patch.
+    assert_eq!(at("toolu_e9").2, lines(2, 1));
+}
+
+#[test]
+fn f_th_12_4_a_notebook_edit_names_its_file_without_lines() {
+    let rows = finished(edits_fixture());
+    let nb = rows.iter().find(|r| r.0 == "toolu_e10").expect("notebook");
+    assert_eq!(nb.1, ToolStatus::Ok);
+    assert_eq!(nb.2, None);
+    assert_eq!(nb.3, Some(vec!["/work/shop/notebooks/prices.ipynb".into()]));
+}
+
+#[test]
+fn f_th_12_4_a_subagents_edits_count_on_its_task() {
+    let rows = finished(edits_fixture());
+    let task = rows.iter().find(|r| r.0 == "toolu_e11").expect("task");
+    assert_eq!(
+        task.3,
+        Some(vec![
+            "/work/shop/docs/checkout.md".into(),
+            "/work/shop/docs/faq.md".into()
+        ])
+    );
+    // An Edit's (1, 1) and a new file's three lines.
+    assert_eq!(task.2, lines(4, 1));
+    // The subagent's own rows stay inside the Task's.
+    assert!(rows
+        .iter()
+        .all(|r| r.0 != "toolu_e12" && r.0 != "toolu_e13"));
+}
+
+/// Parses `lines` (stream-json values) as one session in /work/shop.
+fn parse(lines: &[Value]) -> Vec<Finished> {
+    let mut p = ClaudeParser::new(PathBuf::from("/work/shop"), &[], false);
+    finished(
+        lines
+            .iter()
+            .flat_map(|l| p.line(&l.to_string(), now()))
+            .collect(),
+    )
+}
+
+fn tool_use(id: &str, name: &str, input: Value, task: Option<&str>) -> Value {
+    json!({"type": "assistant", "parent_tool_use_id": task, "message": {"role": "assistant",
+        "content": [{"type": "tool_use", "id": id, "name": name, "input": input}]}})
+}
+
+fn tool_result(id: &str, text: &str, error: bool, task: Option<&str>) -> Value {
+    json!({"type": "user", "parent_tool_use_id": task, "message": {"role": "user",
+        "content": [{"type": "tool_result", "tool_use_id": id, "content": text, "is_error": error}]}})
+}
+
+#[test]
+fn f_th_12_4_a_task_names_its_subagents_files_without_lines_when_one_edit_cant_say() {
+    let edit = |file: &str, all: bool| json!({"file_path": file, "old_string": "a", "new_string": "b", "replace_all": all});
+    let rows = parse(&[
+        tool_use("t1", "Task", json!({"description": "Rename"}), None),
+        tool_use("s1", "Edit", edit("src/a.ts", false), Some("t1")),
+        tool_result(
+            "s1",
+            "The file src/a.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // replace_all with no patch: its lines aren't known.
+        tool_use("s2", "Edit", edit("src/b.ts", true), Some("t1")),
+        tool_result(
+            "s2",
+            "The file src/b.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // A refused edit adds nothing.
+        tool_use("s3", "Edit", edit("src/c.ts", false), Some("t1")),
+        tool_result("s3", "Denied by the user", true, Some("t1")),
+        tool_result("t1", "Renamed.", false, None),
+        // A Task whose subagent edited nothing names no files.
+        tool_use("t2", "Task", json!({"description": "Look"}), None),
+        tool_result("t2", "Nothing to change.", false, None),
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    assert_eq!(
+        at("t1").3,
+        Some(vec![
+            "/work/shop/src/a.ts".into(),
+            "/work/shop/src/b.ts".into()
+        ])
+    );
+    assert_eq!(at("t1").2, None);
+    assert_eq!(at("t2").3, None);
+    assert_eq!(at("t2").2, None);
+}
+
+#[test]
+fn f_th_12_6_a_task_that_ends_in_error_still_names_what_its_subagent_edited() {
+    let edit = |file: &str| json!({"file_path": file, "old_string": "a", "new_string": "b"});
+    let rows = parse(&[
+        tool_use("t1", "Task", json!({"description": "Rename"}), None),
+        tool_use("s1", "Edit", edit("src/a.ts"), Some("t1")),
+        tool_result(
+            "s1",
+            "The file src/a.ts has been updated.",
+            false,
+            Some("t1"),
+        ),
+        // The subagent's edit happened; then the Task itself failed.
+        tool_result("t1", "Agent stopped: it ran out of turns.", true, None),
+    ]);
+    let task = rows.iter().find(|r| r.0 == "t1").expect("task");
+    assert_eq!(task.1, ToolStatus::Error);
+    assert_eq!(task.3, Some(vec!["/work/shop/src/a.ts".into()]));
+    assert_eq!(task.2, lines(1, 1));
+}
+
+#[test]
+fn f_th_12_6_an_unknown_tool_that_writes_a_file_names_it_and_counts_no_lines() {
+    let rows = parse(&[
+        // A local MCP server's write: an absolute path and what goes in it.
+        tool_use(
+            "m1",
+            "mcp__fs__write_file",
+            json!({"path": "/work/shop/src/new.ts", "content": "export {};\n"}),
+            None,
+        ),
+        tool_result("m1", "Wrote /work/shop/src/new.ts", false, None),
+        // A forge's: a path in a repository somewhere else, so no local file.
+        tool_use(
+            "m4",
+            "mcp__github__create_or_update_file",
+            json!({"owner": "acme", "repo": "shop", "path": "src/a.ts", "content": "x", "message": "Update a.ts", "branch": "main"}),
+            None,
+        ),
+        tool_result("m4", "Updated src/a.ts on main", false, None),
+        tool_use(
+            "m5",
+            "mcp__gitlab__create_or_update_file",
+            json!({"project_id": "acme/shop", "file_path": "src/a.ts", "content": "x", "commit_message": "Update a.ts", "branch": "main"}),
+            None,
+        ),
+        tool_result("m5", "Updated src/a.ts on main", false, None),
+        // A tool that names a file but writes nothing, and one that names none.
+        tool_use(
+            "m2",
+            "mcp__fs__read_file",
+            json!({"path": "src/a.ts"}),
+            None,
+        ),
+        tool_result("m2", "export {};", false, None),
+        tool_use(
+            "m3",
+            "TodoWrite",
+            json!({"todos": [{"content": "x", "status": "pending"}]}),
+            None,
+        ),
+        tool_result("m3", "Todos updated", false, None),
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Named, so the turn says it changed the file; uncounted, so the turn's
+    // total says no lines rather than a partial one (D-2622).
+    assert_eq!(at("m1").3, Some(vec!["/work/shop/src/new.ts".into()]));
+    assert_eq!(at("m1").2, None);
+    // A relative path from a tool this list doesn't know names nothing: a
+    // forge's write changed no file here (D-2622).
+    assert_eq!(at("m4").3, None);
+    assert_eq!(at("m5").3, None);
+    assert_eq!(at("m2").3, None);
+    assert_eq!(at("m3").3, None);
+}
+
+#[test]
+fn f_th_12_6_a_path_is_absolute_in_either_form_whatever_this_computer_is() {
+    use crate::events::is_absolute;
+    assert!(is_absolute("/work/shop/src/a.ts"));
+    assert!(is_absolute(r"C:\work\a.ts"));
+    assert!(is_absolute("c:/work/a.ts"));
+    assert!(is_absolute(r"\\server\share\a.ts"));
+    assert!(!is_absolute("src/a.ts"));
+    assert!(!is_absolute("./a.ts"));
+    assert!(!is_absolute("C:a.ts"));
+    assert!(!is_absolute(""));
+}
+
+#[test]
+fn f_th_12_6_a_windows_path_names_one_file_whatever_its_case_and_slashes() {
+    // How a Task's subagent edits count once (claude.rs) and a turn's files
+    // too (rows.ts fileKey).
+    assert!(crate::events::same_file(
+        r"C:\work\shop\src\A.ts",
+        "c:/Work/Shop/src/a.ts"
+    ));
+    assert!(crate::events::same_file(
+        r"\\server\share\A.ts",
+        r"\\SERVER\share\a.ts"
+    ));
+    assert!(!crate::events::same_file(r"C:\work\a.ts", r"C:\work\b.ts"));
+    // Elsewhere the text is the file: Linux's names are case-sensitive, and
+    // a Mac's can be.
+    assert!(!crate::events::same_file(
+        "/work/shop/src/A.ts",
+        "/work/shop/src/a.ts"
+    ));
+    assert!(crate::events::same_file(
+        "/work/shop/src/a.ts",
+        "/work/shop/src/a.ts"
+    ));
+}
+
+#[test]
+fn f_th_12_4_a_patch_counts_only_when_its_message_answers_one_tool() {
+    let edit = |file: &str| json!({"file_path": file, "old_string": "a", "new_string": "b"});
+    let patch = json!({"structuredPatch": [{"oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 3,
+        "lines": ["-a", "+b", "+c", " d"]}]});
+    let mut two = json!({"type": "user", "parent_tool_use_id": null, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "e1", "content": "The file has been updated."},
+        {"type": "tool_result", "tool_use_id": "e2", "content": "The file has been updated."}]}});
+    two["tool_use_result"] = patch.clone();
+    let mut one = tool_result("e3", "The file has been updated.", false, None);
+    one["tool_use_result"] = patch;
+    let rows = parse(&[
+        tool_use("e1", "Edit", edit("a.ts"), None),
+        tool_use("e2", "Edit", edit("b.ts"), None),
+        two,
+        tool_use("e3", "Edit", edit("c.ts"), None),
+        one,
+    ]);
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    // Two answers share the message's patch, so each keeps its input's count.
+    assert_eq!(at("e1").2, lines(1, 1));
+    assert_eq!(at("e2").2, lines(1, 1));
+    assert_eq!(at("e3").2, lines(2, 1));
+}
+
+#[test]
+fn f_tk_07_an_edits_path_is_named_one_way() {
+    let cwd = Path::new("/work/shop");
+    let named = |p: &str| edited_paths("Edit", &json!({"file_path": p}), cwd);
+    let one = Some(vec!["/work/shop/src/a.ts".to_string()]);
+    assert_eq!(named("src/a.ts"), one);
+    assert_eq!(named("./src/../src/a.ts"), one);
+    assert_eq!(named("/work/shop/./src/a.ts"), one);
+    assert_eq!(named("/work/x/../shop/src/a.ts"), one);
+    // Never above the root.
+    assert_eq!(named("/../a.ts"), Some(vec!["/a.ts".to_string()]));
+}
+
+#[test]
+fn f_th_12_5_a_refused_or_failed_edit_counts_no_lines() {
+    let rows = finished(edits_fixture());
+    let at = |id: &str| rows.iter().find(|r| r.0 == id).expect(id).clone();
+    assert_eq!(at("toolu_e5").1, ToolStatus::Denied);
+    assert_eq!(at("toolu_e5").2, None);
+    assert_eq!(at("toolu_e6").1, ToolStatus::Error);
+    assert_eq!(at("toolu_e6").2, None);
+}
+
+#[test]
+fn f_th_12_4_lines_come_from_a_line_diff_not_the_changed_span() {
+    let c = |old: &str, new: &str| {
+        let l = LineCounts::edit(old, new).expect("within the budget");
+        (l.added, l.removed)
+    };
+    assert_eq!(c("a\nb\nc", "a\nB\nc"), (1, 1));
+    assert_eq!(c("a\nX\nb\nY", "a\nX2\nb\nY2"), (2, 2));
+    // An insertion between context lines.
+    assert_eq!(c("fn a() {\n}", "fn a() {\n    b();\n}"), (1, 0));
+    // A deletion.
+    assert_eq!(c("a\nb\nc", "a\nc"), (0, 1));
+    // Uneven sides, either way round: one line kept between the changes.
+    assert_eq!(c("a\nX\nb\nY\nc", "a\nZ\nb\nc"), (1, 2));
+    assert_eq!(c("a\nZ\nb\nc", "a\nX\nb\nY\nc"), (2, 1));
+    // A change inside one line changes that line.
+    assert_eq!(c("foo(1)", "bar(1)"), (1, 1));
+    assert_eq!(c("a\nb", "a\nb"), (0, 0));
+    // Two lines taken out without their newline leave one line, empty.
+    assert_eq!(c("a\nb", ""), (1, 2));
+    // An empty old string writes a new file's content.
+    assert_eq!(c("", "a\nb\n"), (2, 0));
+}
+
+#[test]
+fn f_th_12_4_a_snippets_edges_count_as_git_does() {
+    // Each against `git diff --numstat`, the snippet a whole line or lines.
+    let c = |old: &str, new: &str| {
+        let l = LineCounts::edit(old, new).expect("within the budget");
+        (l.added, l.removed)
+    };
+    // The line is left empty.
+    assert_eq!(c("foo();", ""), (1, 1));
+    // A new line after it.
+    assert_eq!(c("foo();", "foo();\n"), (1, 0));
+    // The line and its newline go.
+    assert_eq!(c("foo();\n", ""), (0, 1));
+    // A line join: "foo();" and the line after become one.
+    assert_eq!(c("foo();\n", "foo();"), (1, 2));
+    assert_eq!(c("a\nb\n", "a\nb"), (1, 2));
+    // Whole lines with their newlines, in and out.
+    assert_eq!(c("a\n", "a\nb\n"), (1, 0));
+    assert_eq!(c("a\nb\nc\n", "c\n"), (0, 2));
+}
+
+#[test]
+fn f_th_12_4_a_huge_edit_counts_no_lines_rather_than_a_guess() {
+    let c = |old: &str, new: &str| LineCounts::edit(old, new).map(|l| (l.added, l.removed));
+    // 2,000 lines a side, the first and last changed: exact, within the
+    // comparison budget.
+    let mid = |n: usize| -> String { (0..n).map(|i| format!("m{i}\n")).collect() };
+    assert_eq!(
+        c(&format!("x\n{}y", mid(1998)), &format!("X\n{}Y", mid(1998))),
+        Some((2, 2))
+    );
+    // Past it, no count (the changed span would say 2,102 and 2,102 where
+    // git says 2 and 2).
+    assert_eq!(
+        c(&format!("x\n{}y", mid(2100)), &format!("X\n{}Y", mid(2100))),
+        None
+    );
+    let old: String = (0..5000).map(|i| format!("a{i}\n")).collect();
+    let new: String = (0..5000).map(|i| format!("b{i}\n")).collect();
+    assert_eq!(c(&old, &new), None);
+    // A MultiEdit with one such edit counts none.
+    let input = json!({"edits": [{"old_string": "a", "new_string": "b"},
+        {"old_string": old, "new_string": new}]});
+    assert_eq!(input_lines("MultiEdit", &input), None);
 }

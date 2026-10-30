@@ -27,6 +27,7 @@ import { useEngines } from "../../stores/engines";
 import { localTabId, useWorkspaces } from "../../stores/workspaces";
 import { useInstall } from "../code/InstallSheet";
 import { AcpAgents } from "./AcpAgents";
+import { LocalModels } from "./LocalModels";
 
 /** Splits a shell-word list: spaces separate, single and double quotes group.
  * `null` when a quote is left open. */
@@ -398,6 +399,7 @@ export function EnginesPage() {
         </ul>
       )}
       <AcpAgents />
+      <LocalModels />
       <section className="flex flex-col gap-1.5" data-testid="engines-background">
         <h3 className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
           {t("engines.background")}

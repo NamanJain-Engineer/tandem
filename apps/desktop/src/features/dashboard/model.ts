@@ -12,9 +12,16 @@ export function cardTitle(item: DashboardItem, titlePatterns: string[] = []): st
   return name || work || item.engineLabel || item.engineId || "Agent";
 }
 
-/** "Claude Code · shop · tandem/fix-auth · Work", leaving out what's unknown. */
-export function cardMeta(item: DashboardItem): string {
-  return [item.engineLabel ?? item.engineId, item.workspace, item.branch, item.accountLabel]
+/** "Claude Code · shop · tandem/fix-auth · Work", leaving out what's
+ * unknown. The account shows only beside another of the same engine's
+ * (`accounts` is how many it has): alone, "Default" says nothing (D-2620). */
+export function cardMeta(item: DashboardItem, accounts: number): string {
+  return [
+    item.engineLabel ?? item.engineId,
+    item.workspace,
+    item.branch,
+    accounts > 1 ? item.accountLabel : null,
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -69,6 +76,8 @@ export type Group = {
   label: string;
   items: DashboardItem[];
   status?: AgentStatus;
+  /** The cards with a question open, pinned first (F-TL-12.12). */
+  asking?: true;
   /** Project grouping: the repository's worktrees, each with its branch. */
   children?: Group[];
 };
@@ -76,9 +85,47 @@ export type Group = {
 /** Worktrees by workspace id: the repository they belong to and their branch. */
 export type Lanes = Record<string, { parentId: string; parentName: string; branch: string }>;
 
+/** {@link askingGroup} then {@link groupRest}, as one list: the order the
+ * Dashboard shows, which renders the two apart (the questions above its
+ * header). Used by the tests. A question's card moves only when one asked
+ * before it is answered or withdrawn, or an earlier question's card changes
+ * size; no other agent's report (status, `since`) moves it. */
+export function group(
+  items: DashboardItem[],
+  by: GroupBy,
+  workspaceOrder: string[],
+  noFolder: string,
+  lanes: Lanes = {},
+): Group[] {
+  const asking = askingGroup(items);
+  const rest = groupRest(
+    items.filter((i) => !i.pendingApproval),
+    by,
+    workspaceOrder,
+    noFolder,
+    lanes,
+  );
+  return asking ? [asking, ...rest] : rest;
+}
+
+/** The cards with a question open, in the order the questions were asked;
+ * `null` when there are none. Built from every card, whatever the filter or
+ * search: those follow what agents report, and a question dropping in and
+ * out would move every one after it (F-TL-12.12). */
+export function askingGroup(items: DashboardItem[]): Group | null {
+  const asking = items
+    .filter((i) => i.pendingApproval)
+    .sort(
+      (a, b) =>
+        (a.pendingApproval?.createdAt ?? 0) - (b.pendingApproval?.createdAt ?? 0) ||
+        (a.pendingApproval?.id ?? "").localeCompare(b.pendingApproval?.id ?? ""),
+    );
+  return asking.length > 0 ? { id: "asking", label: "asking", items: asking, asking: true } : null;
+}
+
 /** Status groups in a fixed order, or workspaces in rail order with "No
  * folder" last. Empty groups are left out. Newest first within a group. */
-export function group(
+export function groupRest(
   items: DashboardItem[],
   by: GroupBy,
   workspaceOrder: string[],

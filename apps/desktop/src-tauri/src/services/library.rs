@@ -235,23 +235,32 @@ async fn home_for(
     state: &AppState,
     found: &Found,
 ) -> Result<(repo::Workspace, TabId, String), IpcError> {
-    let folder = found
+    // As the disk has it: a folder spelled through `..` or a link is inside
+    // only the workspace it really is in (D-3077).
+    let real = found
         .folder
-        .clone()
-        .filter(|f| Path::new(f).is_dir())
+        .as_deref()
+        .and_then(|f| dunce::canonicalize(f).ok())
+        .filter(|f| f.is_dir())
         .ok_or_else(|| {
             IpcError::new(
                 ErrorCode::NotFound,
                 "This session's folder isn't on this computer any more",
             )
         })?;
+    let folder = real.to_string_lossy().into_owned();
     let open = repo::list(&state.store)
         .await?
         .into_iter()
-        .filter(|w| w.kind == "local" && Path::new(&folder).starts_with(&w.root))
-        .max_by_key(|w| w.root.len());
+        .filter(|w| w.kind == "local")
+        .filter_map(|w| {
+            let root = dunce::canonicalize(&w.root).ok()?;
+            real.starts_with(&root)
+                .then_some((root.components().count(), w))
+        })
+        .max_by_key(|(depth, _)| *depth);
     let ws = match open {
-        Some(ws) => ws,
+        Some((_, ws)) => ws,
         None => {
             let root = library::repository(&folder, |p| p.exists());
             workspaces::add(&state.store, &root, state.entitlements.limits().workspaces)
@@ -295,6 +304,7 @@ pub async fn resume(state: &AppState, key: &str) -> Result<LibraryOpened, IpcErr
         extra_args: Vec::new(),
         home: (!own_home).then(|| found.home.to_string_lossy().into_owned()),
         own_home,
+        local: None,
     };
     sessions::start_with_config(
         &state.store,
@@ -322,10 +332,10 @@ pub async fn resume(state: &AppState, key: &str) -> Result<LibraryOpened, IpcErr
 /// `library_brief`: the handoff fallback brief from the transcript.
 pub async fn brief(state: &AppState, key: &str) -> Result<handoff::HandoffBrief, IpcError> {
     let items = transcript(state, key).await?;
-    Ok(handoff::HandoffBrief {
-        text: handoff::fallback_brief(&library::as_text(&items)),
-        source: handoff::BriefSource::Fallback,
-    })
+    Ok(handoff::offered(
+        handoff::fallback_brief(&library::as_text(&items)),
+        handoff::BriefSource::Fallback,
+    ))
 }
 
 /// `library_continue`: the target engine in the session's folder with the
@@ -536,6 +546,59 @@ pub fn search_index(db: &Path, query: &str) -> rusqlite::Result<Vec<String>> {
 mod tests {
     use super::*;
     use tandem_engines::library::FsEntry;
+
+    /// F-TH-17 follow-up (D-3077): a session's folder is placed where it
+    /// is on disk. Inside a workspace, it opens there; spelled through `..`
+    /// out of one, it isn't inside it however it starts, and opens in its
+    /// own folder, as the disk has it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_th_17_2_a_session_folder_is_placed_where_it_really_is() {
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = tandem_store::Store::open(&data).expect("store");
+        let state = AppState::for_tests(data, store);
+        let app = dir.path().join("app");
+        let other = dir.path().join("other");
+        for d in [app.join("src"), other.clone()] {
+            std::fs::create_dir_all(d).expect("mkdir");
+        }
+        let added = workspaces::add(&state.store, app.to_str().expect("utf8"), None)
+            .await
+            .expect("workspace")
+            .workspace;
+        let found = |folder: PathBuf| Found {
+            engine: LibraryEngine::Claude,
+            account_id: None,
+            account_label: None,
+            home: dir.path().join("home"),
+            file: dir.path().join("s.jsonl"),
+            session_id: "s".into(),
+            folder: Some(folder.to_string_lossy().into_owned()),
+            title: None,
+            size: 0,
+            modified_ms: 0,
+        };
+        let (ws, _, folder) = home_for(&state, &found(app.join("src")))
+            .await
+            .expect("inside");
+        assert_eq!(ws.id, added.id);
+        assert_eq!(
+            Path::new(&folder),
+            dunce::canonicalize(app.join("src")).expect("real")
+        );
+        let (ws, _, folder) = home_for(&state, &found(app.join("..").join("other")))
+            .await
+            .expect("outside");
+        assert_ne!(ws.id, added.id);
+        assert_eq!(
+            Path::new(&folder),
+            dunce::canonicalize(&other).expect("real")
+        );
+        assert_eq!(
+            dunce::canonicalize(&ws.root).expect("root"),
+            dunce::canonicalize(&other).expect("real")
+        );
+    }
 
     /// One Claude Code session file on the real disk.
     fn claude_home(dir: &Path, name: &str, session: &str, cwd: &str, prompt: &str) -> PathBuf {

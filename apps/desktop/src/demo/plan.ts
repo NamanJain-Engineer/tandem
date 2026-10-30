@@ -93,6 +93,9 @@ export class DemoPlans {
       issueIds: [],
       queued: [],
       skipped: [],
+      supervise: false,
+      baseCommit: null,
+      questions: [],
       createdAt: this.now(),
     };
     this.plans.set(v.id, v);
@@ -143,6 +146,8 @@ export class DemoPlans {
           skip: null,
         };
       }),
+      // The demo has no engine to answer with.
+      leadAnswers: false,
     };
   }
 

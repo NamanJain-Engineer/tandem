@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshUser, invoke, mod } from "../support/app";
+import { freshUser, invoke, mod, waitFor } from "../support/app";
 import { chatSpawns, lead, makeTeammate } from "../support/agents";
 import { expectNoSeriousA11yViolations } from "../support/axe";
 
@@ -48,15 +48,15 @@ async function clear(): Promise<void> {
 }
 
 async function untilStatus(id: string, status: string, timeout = 30_000): Promise<Routine> {
-  let last: Routine | null = null;
-  await browser.waitUntil(
-    async () => {
-      last = await routine(id);
-      return last.lastStatus === status;
+  return waitFor(
+    () => routine(id),
+    (r) => r.lastStatus === status,
+    `routine never reached ${status}`,
+    {
+      timeout,
+      interval: 250,
     },
-    { timeout, interval: 250, timeoutMsg: `routine never reached ${status}: ${JSON.stringify(last)}` },
   );
-  return last!;
 }
 
 async function textOf(selector: string): Promise<string> {

@@ -7,6 +7,7 @@ import { Keys } from "../../components/site/Keys";
 import { VideoSection } from "../../components/site/home/VideoSection";
 import { PageHero } from "../../components/site/PageHero";
 import { ProductShot } from "../../components/site/ProductShot";
+import { LAUNCH_ALT } from "../../lib/demoStill";
 import { SCREENS } from "../../lib/media";
 import { SiteFrame } from "../../components/site/SiteFrame";
 import { SITE } from "../../lib/site";
@@ -85,7 +86,7 @@ export default function DemoPage() {
                 height={800}
                 fetchPriority="high"
                 decoding="async"
-                alt="Launch the demo: Vibezeo's Code mode with Claude Code done, Codex at work, a shell, and Gemini CLI waiting on you in another workspace."
+                alt={LAUNCH_ALT}
                 className="block h-auto w-full transition-opacity duration-(--dur-base) group-hover:opacity-90"
               />
             </picture>

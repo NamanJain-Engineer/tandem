@@ -962,10 +962,19 @@ pub fn spoken(step: &WalkStep, now: i64) -> String {
 }
 
 /// The prompt a spoken review sends back to the agent (F-CN-09). English,
-/// like F-WT-02's.
+/// like F-WT-02's. A workspace that isn't a worktree is on whatever branch
+/// its checkout has, named by whoever pushed it, so the branch goes through
+/// `untrusted::defang`, and the note ends the prompt when that wrote `＠`
+/// (D-3027).
 pub fn send_back_prompt(branch: &str, comment: &str) -> String {
+    let (branch, wrote) = tandem_core::untrusted::defang_marked(branch);
+    let note = if wrote {
+        format!("\n{}", tandem_core::untrusted::DEFANGED)
+    } else {
+        String::new()
+    };
     format!(
-        "Review of your changes on {branch}:\n\n{}\n\nAddress it, then say what you changed.",
+        "Review of your changes on {branch}:\n\n{}\n\nAddress it, then say what you changed.{note}",
         comment.trim()
     )
 }
@@ -1200,7 +1209,6 @@ impl QueueHost for AppHost {
     }
 
     async fn closing(&self, key: &str, _s: &Session) -> Option<String> {
-        use tandem_core::redact::Redactor;
         let state = self.state();
         let text = if let Some(id) = key.strip_prefix("thread:") {
             crate::services::second_opinion::last_reply(
@@ -1218,8 +1226,7 @@ impl QueueHost for AppHost {
                 .collect();
             lines[lines.len().saturating_sub(3)..].join("\n")
         };
-        let text = Redactor::global().redact(&text).into_owned();
-        (!text.trim().is_empty()).then_some(text)
+        closing_text(&text)
     }
 
     async fn turn_checkpoint(&self, key: &str, s: &Session) -> Option<String> {
@@ -1253,15 +1260,28 @@ impl QueueHost for AppHost {
         // F-EX-06: with "one check at a time" on, it waits for its turn.
         let _turn = crate::services::check_queue::turn().await;
         let (exit, out) = bestof::run_check(command, cwd, &env, CHECK_LIMIT, None).await;
-        let out = tandem_core::redact::Redactor::global()
-            .redact(&bestof::tail(&out, bestof::TAIL_LINES))
-            .into_owned();
-        (exit, out)
+        (exit, check_output(&out))
     }
 
     fn now(&self) -> i64 {
         self.state().clock.now_ms()
     }
+}
+
+/// A review item's closing lines, as Conductor and the phone read them out,
+/// redacted as written and past what's removable, as Conductor's model
+/// reads them (D-3036): `None` when nothing is left.
+fn closing_text(text: &str) -> Option<String> {
+    let text = tandem_core::untrusted::redacted(text);
+    (!text.trim().is_empty()).then_some(text)
+}
+
+/// A check's output as a review item keeps it: redacted the same way
+/// (D-3036), then its last lines, so a key whose first line falls before
+/// them is still found whole (the review of 8e1d58af).
+fn check_output(out: &str) -> String {
+    use crate::services::bestof;
+    bestof::tail(&tandem_core::untrusted::redacted(out), bestof::TAIL_LINES)
 }
 
 /// Builds the queue, seeds it from the status bus and follows it.
@@ -1770,6 +1790,58 @@ mod tests {
             send_back_prompt("tandem/x", " handle expired tokens too "),
             "Review of your changes on tandem/x:\n\nhandle expired tokens too\n\nAddress it, then say what you changed."
         );
+    }
+
+    #[test]
+    fn f_cn_09_2_a_branch_named_like_a_path_names_no_file() {
+        // A workspace that isn't a worktree is on whatever branch its
+        // checkout has, and git takes `@/etc/passwd` from whoever pushed it
+        // (D-3027).
+        assert_eq!(
+            send_back_prompt("@/etc/passwd", " check it "),
+            format!(
+                "Review of your changes on \u{FF20}/etc/passwd:\n\ncheck it\n\nAddress it, then say what you changed.\n{}",
+                tandem_core::untrusted::DEFANGED
+            )
+        );
+    }
+
+    #[test]
+    fn f_tk_08_1_closing_lines_and_check_output_hide_a_credential_behind_what_is_removable() {
+        // Both are read out to Conductor's model, which reads past what's
+        // removable: redacted as written and as it reads them (D-3036).
+        for secret in [
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let text = format!("pushed with {secret}\nok");
+            for out in [closing_text(&text).expect("closing"), check_output(&text)] {
+                assert!(out.contains("pushed with") && out.contains("ok"), "{out}");
+                assert!(
+                    !out.contains("0123456789") && !out.contains("ABCDEFGHIJ012345"),
+                    "{out}"
+                );
+            }
+        }
+        // Nothing but what's removable is nothing to read out.
+        assert_eq!(closing_text("\u{200b}\u{2028} "), None);
+    }
+
+    #[test]
+    fn f_tk_08_1_check_output_hides_a_key_whose_first_line_falls_before_its_tail() {
+        // The output is redacted whole, then cut to its last lines, so a
+        // private key's body there isn't left bare when its BEGIN line is
+        // earlier (the review of 8e1d58af, Nit 3).
+        let body: Vec<String> = (0..250)
+            .map(|i| format!("MIIEvQIBADANBgkqhkiG9w0BAQEFAASC{i:04}"))
+            .collect();
+        let out = format!(
+            "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\ndone",
+            body.join("\n")
+        );
+        let kept = check_output(&out);
+        assert!(kept.ends_with("done"), "{kept}");
+        assert!(!kept.contains("MIIEvQIBADANBgkq"), "{kept}");
     }
 
     #[tokio::test]

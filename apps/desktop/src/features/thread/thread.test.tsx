@@ -21,6 +21,7 @@ import { engineOptionsFor, restoreAfterFailure } from "./ThreadComposer";
 import { age, groupThreads } from "./groups";
 import { ThreadMain } from "./ThreadMain";
 import { ThreadRail } from "./ThreadRail";
+import { waiting } from "../../test/waiting";
 
 let n = 0;
 function thread(extra: Partial<Thread> = {}): Thread {
@@ -201,7 +202,13 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(await screen.findByText("The loop comes from the guard.")).toBeTruthy();
     expect(screen.getByTestId("thread-working")).toBeTruthy();
     const pinned = await screen.findByTestId("thread-pending");
-    fireEvent.click(within(pinned).getByRole("button", { name: "Allow for this thread" }));
+    const allowThread = within(pinned).getByRole("button", {
+      name: "Allow for this thread",
+    }) as HTMLButtonElement;
+    // S4: Allow waits for the card to have held still a moment.
+    expect(waiting(allowThread)).toBe(true);
+    await waitFor(() => expect(waiting(allowThread)).toBe(false));
+    fireEvent.click(allowThread);
     await waitFor(() => expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(true));
     expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
       approvalId: "apr_1",
@@ -223,6 +230,71 @@ describe("Thread mode (F-TH-01, F-TH-02, F-TH-07, F-TH-11, F-TH-12)", () => {
     expect(await screen.findByText("Stopped by you")).toBeTruthy();
     expect(screen.getByText("Allowed for this thread")).toBeTruthy();
     expect(screen.queryByTestId("thread-pending")).toBeNull();
+  });
+
+  it("F-TH-12.4 a finished Claude Code turn says what its edits changed; a rewrite alone names its file without +0 −0", async () => {
+    const th = thread({ title: "Fix redirect", engineId: "claude", cwd: "/work/shop" });
+    const turn = (id: string, k: number) => ({
+      id,
+      threadId: th.id,
+      n: k,
+      engineId: "claude",
+      accountId: null,
+      state: "completed" as const,
+      blockedActions: 0,
+      startedAt: 1_000,
+      endedAt: 2_000,
+    });
+    const edit = (id: string, verb: ToolEvent["verb"], path: string, lines?: { added: number; removed: number }) =>
+      ({
+        type: "tool",
+        id,
+        verb,
+        argSummary: path,
+        status: "ok",
+        output: "The file has been updated.",
+        outputTruncated: false,
+        outputFile: null,
+        diff: null,
+        detail: null,
+        paths: [`/work/shop/${path}`],
+        ...(lines ? { lines } : {}),
+      }) as ThreadEvent;
+    fakeBackend({
+      thread_list: () => [th],
+      thread_get: () => detail(th, { turns: [turn("turn_1", 1), turn("turn_2", 2)] }),
+      thread_events: () => ({
+        items: [
+          env(th.id, "turn_1", 0, { type: "user", text: "fix the loop", attachments: [] }),
+          env(th.id, "turn_1", 1, edit("e1", "edit", "src/redirect.ts", { added: 2, removed: 2 })),
+          env(th.id, "turn_1", 2, edit("e2", "multiedit", "src/next.ts", { added: 2, removed: 2 })),
+          env(th.id, "turn_1", 3, edit("e3", "write", "src/redirect.test.ts", { added: 3, removed: 0 })),
+          env(th.id, "turn_1", 4, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+          env(th.id, "turn_2", 0, { type: "user", text: "update the readme", attachments: [] }),
+          env(th.id, "turn_2", 1, edit("e4", "write", "README.md")),
+          env(th.id, "turn_2", 2, { type: "turn_end", reason: "completed", blockedActions: 0 }),
+        ],
+        nextBeforeId: null,
+      }),
+      thread_subscribe: () => null,
+      models_list: () => [],
+    });
+    await act(async () => {
+      await useThreads.getState().refresh();
+      useThreads.getState().select(th.id);
+    });
+    mount(<ThreadMain />);
+    const summaries = await screen.findAllByTestId("turn-summary");
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]?.textContent).toContain("Changed 3 files +7 −4");
+    // Read out as words: the signs are hidden, a label says them.
+    expect(summaries[0]?.querySelector(".sr-only:last-child")?.textContent).toBe("7 lines added, 4 removed");
+    expect(summaries[0]?.querySelectorAll('[aria-hidden="true"].tabular-nums')).toHaveLength(2);
+    // The rewrite's lines aren't in the event: its file counts, and no +0 −0.
+    expect(summaries[1]?.textContent).toContain("Changed 1 file");
+    expect(summaries[1]?.textContent).not.toMatch(/[+−]\d/);
+    // The latest edit's own row shows its counts.
+    expect(screen.getByText("+3 −0")).toBeTruthy();
   });
 
   it("F-TH-01.6 a thread a crash interrupted says Interrupted — Resume? and Resume sends its turn again", async () => {

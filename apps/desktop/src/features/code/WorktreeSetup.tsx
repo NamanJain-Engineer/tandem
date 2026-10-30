@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SetupState, WorkspaceSummary } from "@tandem/protocol";
 import { Banner, Button, CodeBlock, Dialog, Input, Skeleton, Textarea, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 import {
   formatEnv,
   getWorktreeSetup,
@@ -220,6 +221,11 @@ export function ReviewSetupDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const config = state.config;
+  // It opens on its own after Launch, Retry or New worktree, maybe while
+  // the person is clicking in the new panes, and one click trusts the
+  // repository's setup for later worktrees too: Trust and run waits until
+  // the dialog has held still, uncovered (F-TL-12.12).
+  const box = useSteadyBox(!!state.digest, state.digest ? `${state.digest}\n${worktreeIds.join(",")}` : null);
   const trust = async () => {
     if (!state.digest) return;
     setBusy(true);
@@ -237,7 +243,7 @@ export function ReviewSetupDialog({
       description={t("worktree.setup.reviewBody", { n: worktreeIds.length })}
       closeLabel={t("common.close")}
       footer={
-        <>
+        <span ref={box.ref} className="flex gap-2">
           <Button variant="secondary" onClick={onClose} data-testid="worktree-review-later">
             {t("worktree.setup.notNow")}
           </Button>
@@ -245,12 +251,15 @@ export function ReviewSetupDialog({
             variant="primary"
             loading={busy}
             disabled={!state.digest}
-            onClick={() => void trust()}
+            waiting={!box.steady}
+            title={box.steady ? undefined : t("approval.waitingTrustRun")}
+            onClick={() => box.check() && void trust()}
+            data-grant
             data-testid="worktree-review-trust"
           >
             {t("worktree.setup.trustRun")}
           </Button>
-        </>
+        </span>
       }
     >
       <div data-testid="worktree-review" className="flex flex-col gap-3">

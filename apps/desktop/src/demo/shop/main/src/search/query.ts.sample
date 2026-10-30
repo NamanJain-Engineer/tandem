@@ -1,0 +1,14 @@
+import { db } from "../db";
+import type { Product } from "../catalog/product";
+
+/** Products whose name starts with `text`, A to Z, at most `limit` of
+ * them. The database filters on its index on `name`; search used to load
+ * every product and filter them here. */
+export async function searchProducts(text: string, limit = 20): Promise<Product[]> {
+  const prefix = text.trim();
+  if (!prefix) return [];
+  return db.all<Product>("SELECT id, name, price FROM products WHERE name LIKE ? ORDER BY name LIMIT ?", [
+    `${prefix}%`,
+    limit,
+  ]);
+}

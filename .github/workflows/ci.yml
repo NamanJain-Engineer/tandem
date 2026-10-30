@@ -120,7 +120,16 @@ jobs:
       - run: pnpm -r test
       - name: Build UI assets for the Tauri crate
         run: pnpm --filter desktop build
+      # F-CD-24: jj 0.34 (its release binary, checked), so the real-jj
+      # tests run here; JJ_REQUIRED fails them rather than skip without it.
+      - name: jj 0.34 for the real-jj tests
+        run: |
+          curl -sSLf -o /tmp/jj.tgz https://github.com/jj-vcs/jj/releases/download/v0.34.0/jj-v0.34.0-x86_64-unknown-linux-musl.tar.gz
+          echo "1e8e1ede656fecba91ceb8248a76402a110017ad677d0ecfd1f2040f5543cfa3  /tmp/jj.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/jj.tgz -C /usr/local/bin ./jj
+          jj --version
       - run: cargo test --workspace
+        env: { JJ_REQUIRED: "1" }
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --all --check
       - name: Protocol drift (changed, new or deleted generated files)
@@ -281,7 +290,15 @@ jobs:
       - run: pnpm infra:up && pnpm db:migrate && pnpm db:seed && pnpm keys:dev
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: bash scripts/smoke-dev.sh
+      # F-CD-24: the same checked jj as `checks`, so E2E-M18-CD24-1 runs.
+      - name: jj 0.34 for E2E-M18-CD24-1
+        run: |
+          curl -sSLf -o /tmp/jj.tgz https://github.com/jj-vcs/jj/releases/download/v0.34.0/jj-v0.34.0-x86_64-unknown-linux-musl.tar.gz
+          echo "1e8e1ede656fecba91ceb8248a76402a110017ad677d0ecfd1f2040f5543cfa3  /tmp/jj.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/jj.tgz -C /usr/local/bin ./jj
+          jj --version
       - run: dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
+        env: { JJ_REQUIRED: "1" }
 
   # The desktop E2E on Windows (D-1714): tauri-driver drives WebView2
   # through msedgedriver, which must match the runner's WebView2. Offline

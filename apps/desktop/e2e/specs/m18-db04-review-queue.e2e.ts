@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addFolder,
+  clickAllow,
   freshOffline,
   invoke,
   mod,
@@ -182,7 +183,7 @@ describe("E2E-M18-DB-04 review queue", function () {
     const card = $(`[data-testid="review-item"][data-key="pane:${agent1}"]`);
     await card.waitForExist({ timeout: 10_000 });
     expect(await card.$('[data-testid="review-risk"][data-rule="migrations"]').isExisting()).toBe(true);
-    await card.$('[data-testid="review-approve"]').click();
+    await clickAllow(`[data-testid="review-item"][data-key="pane:${agent1}"] [data-testid="review-approve"]`);
     await browser.waitUntil(async () => (await card.getAttribute("data-state")) === "approved", {
       timeout: 5_000,
     });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import type {
   FileDiff,
@@ -9,6 +9,7 @@ import type {
   TaskClaimOverlap,
 } from "@tandem/protocol";
 import {
+  offscreenRow,
   Badge,
   Button,
   Callout,
@@ -27,9 +28,11 @@ import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { useEngines } from "../../stores/engines";
 import { focusSource } from "../../stores/focus";
+import { diffNames } from "../../stores/intel";
 import { sortItems, toReview, useReview } from "../../stores/review";
 import { useSidebar } from "../../stores/sidebar";
 import { useWorktrees } from "../../stores/worktrees";
+import { useSettled, useSteadyBox } from "../secrets/ApprovalGuard";
 import { Dashboard } from "./Dashboard";
 
 const RULE: Record<ReviewRiskRule, () => string> = {
@@ -91,7 +94,11 @@ function ItemDiff({
         ) : files === null ? (
           <Skeleton height={96} />
         ) : (
-          <DiffView files={files} labels={{ empty: t("worktree.diffEmpty") }} />
+          <DiffView
+            files={files}
+            labels={{ empty: t("worktree.diffEmpty") }}
+            names={diffNames({ type: "workspace", workspaceId: item.laneId ?? item.workspaceId }, onClose)}
+          />
         )}
       </div>
     </Dialog>
@@ -198,11 +205,35 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
   const open = useWorktrees.getState().open;
   const lane = item.laneId;
   const approved = item.state === "approved";
+  // Approve waits for its place to hold still: the queue re-sorts as agents
+  // finish, so another item's Approve could slide under the pointer.
+  // The queue updates an item in place: a changed diff (same size, same
+  // place) starts the wait over too, so Approve never sends a hash for a
+  // diff that was on screen for less than a moment.
+  const settled = useSettled(approved ? null : item.diffHash);
+  // "This diff just changed" from a change of diff until its wait is over;
+  // a card that just arrived, or one approved and unapproved, waits with
+  // the plain reason.
+  const prevHash = useRef(item.diffHash);
+  const [changed, setChanged] = useState(false);
+  useEffect(() => {
+    if (item.diffHash !== prevHash.current) {
+      prevHash.current = item.diffHash;
+      setChanged(true);
+    }
+  }, [item.diffHash]);
+  useEffect(() => {
+    if (settled) setChanged(false);
+  }, [settled]);
+  const box = useSteadyBox(!approved, item.diffHash);
+  const canApprove = approved || (settled && box.steady);
   return (
     <article
       data-testid="review-item"
       data-key={item.key}
       data-state={item.state}
+      // Off screen, a card skips layout, paint and hit tests.
+      style={offscreenRow(272)}
       className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2">
@@ -252,11 +283,20 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
           )}
         </details>
       )}
-      <div className="flex flex-wrap gap-1.5">
+      <div ref={box.ref} className="flex flex-wrap gap-1.5">
         <Button
           size="sm"
           variant={approved ? "ghost" : "primary"}
+          waiting={!canApprove}
+          title={
+            canApprove
+              ? undefined
+              : !settled && changed
+                ? t("approval.waitingDiff")
+                : t("approval.waitingApprove")
+          }
           onClick={() =>
+            (approved || (settled && box.check())) &&
             act(
               approved
                 ? invoke("review_unapprove", { key: item.key })
@@ -264,6 +304,7 @@ function ReviewCard({ item, now }: { item: ReviewItem; now: number }) {
               show,
             )
           }
+          data-grant
           data-testid="review-approve"
         >
           {approved ? t("review.unapprove") : t("review.approve")}
@@ -371,7 +412,11 @@ const OVERLAP_PATHS = 5;
 function Overlaps({ overlaps }: { overlaps: TaskClaimOverlap[] }) {
   if (overlaps.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2" aria-label={t("review.overlap.section")} data-testid="review-overlaps">
+    <section
+      className="flex flex-col gap-2"
+      aria-label={t("review.overlap.section")}
+      data-testid="review-overlaps"
+    >
       {overlaps.map((o) => {
         const more = o.paths.length - OVERLAP_PATHS;
         return (

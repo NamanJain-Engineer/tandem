@@ -224,7 +224,75 @@ pub fn commands_registry() -> Vec<CommandSpec> {
     registry::registry().to_vec()
 }
 
+/// `text` as a save's check reads it, a line at a time
+/// (`memory::has_credentials`): each line that holds a credential comes back
+/// redacted as written and past what's removable, the rest as sent, so a
+/// caller that compares the two learns exactly what the save refuses
+/// (D-3171, D-3174).
 #[tauri::command]
 pub fn redact_text(text: String) -> String {
-    Redactor::global().redact(&text).into_owned()
+    use tandem_core::untrusted::{holds_credential, redacted};
+    if !tandem_store::memory::has_credentials(&text) {
+        return text;
+    }
+    text.split_inclusive('\n')
+        .map(|chunk| {
+            // The line as `str::lines` gives it to the save, without its end.
+            let line = chunk
+                .strip_suffix('\n')
+                .map_or(chunk, |l| l.strip_suffix('\r').unwrap_or(l));
+            if holds_credential(line) {
+                redacted(line) + &chunk[line.len()..]
+            } else {
+                chunk.to_string()
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_tk_08_1_the_preview_finds_what_the_save_refuses() {
+        // MemoryTab and SkillsTab compare redact_text's answer with what
+        // they sent: it changes exactly the text a save would refuse, a
+        // credential as written or past what's removable (D-3171).
+        let z = '\u{200b}';
+        for secret in [
+            format!("ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+            format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+        ] {
+            let text = format!("- pushed with {secret}");
+            assert!(tandem_core::untrusted::holds_credential(&text));
+            let shown = redact_text(text.clone());
+            assert_ne!(shown, text);
+            assert!(!shown.contains("0123456789"), "{shown:?}");
+        }
+        // No credential, an emoji joiner kept: unchanged, as the save keeps it.
+        let fine = "- Ships on Thursdays \u{1F468}\u{200D}\u{1F469}".to_string();
+        assert_eq!(redact_text(fine.clone()), fine);
+    }
+
+    #[test]
+    fn f_tk_08_1_the_preview_reads_a_line_at_a_time_as_the_save_does() {
+        // The save checks each line (`memory::has_credentials`), so a value
+        // on the line after `Bearer` isn't a credential there, and the
+        // preview leaves it too. A line that holds one is redacted, and the
+        // rest come back as sent, line ends and all (the review of 7f61c86a,
+        // Nit 3; D-3174).
+        let apart = "Bearer\nabcdefghijklmnopqrstuvwxyz0123".to_string();
+        assert!(!tandem_store::memory::has_credentials(&apart));
+        assert_eq!(redact_text(apart.clone()), apart);
+        let z = '\u{200b}';
+        let text = format!(
+            "- first\r\n- pushed with ghp_0123456789{z}abcdefghijABCDEFGHIJ012345\r\n- last\n"
+        );
+        assert!(tandem_store::memory::has_credentials(&text));
+        let shown = redact_text(text);
+        assert!(shown.starts_with("- first\r\n- pushed with "), "{shown:?}");
+        assert!(shown.ends_with("\r\n- last\n"), "{shown:?}");
+        assert!(!shown.contains("0123456789"), "{shown:?}");
+    }
 }

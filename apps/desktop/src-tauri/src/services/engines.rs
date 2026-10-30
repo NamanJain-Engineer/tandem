@@ -356,6 +356,44 @@ impl EngineService {
         account: Option<&AccountId>,
         relaunch: Option<Relaunch<'_>>,
     ) -> Result<AgentLaunch, IpcError> {
+        self.launch(
+            engine,
+            program,
+            workspace_root,
+            status,
+            account,
+            relaunch,
+            true,
+        )
+        .await
+    }
+
+    /// [`agent_launch`](Self::agent_launch) in a folder that's no workspace
+    /// (Lead's answer sessions, F-TK-08): the account's provider home and
+    /// its env, but the folder is never marked trusted, whatever "Trust
+    /// workspaces I add" says.
+    pub async fn agent_launch_untrusted(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        folder: &Path,
+        account: Option<&AccountId>,
+    ) -> Result<AgentLaunch, IpcError> {
+        self.launch(engine, program, folder, None, account, None, false)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn launch(
+        &self,
+        engine: &EngineSpec,
+        program: PathBuf,
+        workspace_root: &Path,
+        status: Option<StatusEnv>,
+        account: Option<&AccountId>,
+        relaunch: Option<Relaunch<'_>>,
+        trust_folder: bool,
+    ) -> Result<AgentLaunch, IpcError> {
         self.check_allowed(engine)?;
         if let Some(r) = relaunch {
             return self.relaunch(engine, program, status, account, r).await;
@@ -401,11 +439,12 @@ impl EngineService {
                     tracing::warn!(code = "engines.hooks_failed", error = %err, "couldn't install status hooks");
                 }
             }
-            let trust = settings::get(&self.store, SettingKey::TrustWorkspacesIAdd)
-                .await
-                .ok()
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let trust = trust_folder
+                && settings::get(&self.store, SettingKey::TrustWorkspacesIAdd)
+                    .await
+                    .ok()
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
             if trust {
                 let _ = self.homes.trust_workspace(engine, &home, workspace_root);
             }
@@ -418,6 +457,7 @@ impl EngineService {
             extra_args: extra_args.clone(),
             home: home.as_ref().map(|h| h.to_string_lossy().into_owned()),
             own_home: false,
+            local: None,
         };
         let req = TerminalLaunchRequest {
             engine,
@@ -460,7 +500,10 @@ impl EngineService {
         let home = match &r.config.home {
             Some(h) => {
                 let home = PathBuf::from(h);
-                if !home.is_dir() {
+                // Only one of Vibezeo's homes, spelled as it made it: a saved
+                // row naming another folder would start the engine there,
+                // with no hooks or tasks server (D-3077).
+                if !home.is_dir() || !self.homes.owns(&home) {
                     return Err(unavailable().with_stage("provider_home"));
                 }
                 if let Some(hook) = &self.hook_bin {
@@ -743,6 +786,7 @@ mod tests {
             extra_args: Vec::new(),
             home: None,
             own_home: true,
+            local: None,
         };
         let launch = svc
             .agent_launch_with(
@@ -779,6 +823,68 @@ mod tests {
             )
             .await
             .is_err());
+    }
+
+    /// F-EN-11 follow-up (D-3077): a saved launch whose home isn't one of
+    /// Vibezeo's as it spells them (reached through `..`, outside the
+    /// providers folder, an engine's folder) is refused, never started there
+    /// with no hooks or tasks server; the home itself starts as before.
+    #[tokio::test]
+    async fn f_ac_01_a_saved_launch_whose_home_isnt_one_of_vibezeos_is_refused() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let providers = dir.path().join("providers");
+        let svc = EngineService::new(store, EventBus::new(), providers.clone());
+        let claude = EngineRegistry::bundled()
+            .get("claude")
+            .expect("claude")
+            .clone();
+        let home = providers.join("claude").join("acc_1");
+        let elsewhere = dir.path().join("elsewhere");
+        for d in [&home, &elsewhere] {
+            std::fs::create_dir_all(d).expect("dir");
+        }
+        let start = |h: &Path| {
+            let config = LaunchConfig {
+                extra_args: Vec::new(),
+                home: Some(h.display().to_string()),
+                own_home: false,
+                local: None,
+            };
+            let (svc, claude, dir) = (&svc, &claude, dir.path().to_path_buf());
+            async move {
+                svc.agent_launch_with(
+                    claude,
+                    PathBuf::from("/usr/local/bin/claude"),
+                    &dir,
+                    None,
+                    None,
+                    Some(Relaunch {
+                        resume: Some("aaaa-1111"),
+                        config: &config,
+                    }),
+                )
+                .await
+            }
+        };
+        for refused in [
+            providers
+                .join("claude")
+                .join("..")
+                .join("claude")
+                .join("acc_1"),
+            elsewhere.clone(),
+            providers.join("claude"),
+        ] {
+            let err = start(&refused).await.err().expect("refused");
+            assert_eq!(err.code, ErrorCode::Unavailable, "{}", refused.display());
+            assert_eq!(err.message, LAUNCH_CONFIG_UNAVAILABLE);
+            assert_eq!(err.stage.as_deref(), Some("provider_home"));
+        }
+        assert_eq!(std::fs::read_dir(&elsewhere).expect("dir").count(), 0);
+        let launch = start(&home).await.expect("its own home");
+        assert_eq!(launch.home.as_deref(), Some(home.as_path()));
     }
 
     /// F-EN-10: an added agent joins the registry as a Thread engine through

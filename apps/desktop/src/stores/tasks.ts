@@ -90,6 +90,12 @@ let unlisten: (() => void) | null = null;
 let listening: Promise<void> | null = null;
 let unlistenAttempts: (() => void) | null = null;
 let listeningAttempts: Promise<void> | null = null;
+/** The latest `task_attempts_list` read: only it writes the runs (F-TK-07). */
+let attemptsRead = 0;
+/** The latest tracker read: only it writes the tracker and its status (F-TK-01). */
+let trackerRead = 0;
+/** Runs `tasks:attempt` moved since that read began: newer than its list. */
+let movedMeanwhile = new Map<string, AttemptView>();
 
 function upsertAttempt(list: AttemptView[], v: AttemptView): AttemptView[] {
   const at = list.findIndex((a) => a.attempt.id === v.attempt.id);
@@ -113,20 +119,43 @@ export const useTasks = create<TasksState>((set, get) => ({
   attemptsStatus: "idle",
   attemptsError: null,
   loadAttempts: async () => {
-    listeningAttempts ??= listen<AttemptView>("tasks:attempt", (v) => {
-      set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
-    }).then((u) => {
-      unlistenAttempts = u;
-    });
+    if (!listeningAttempts) {
+      const pending: Promise<void> = listen<AttemptView>("tasks:attempt", (v) => {
+        movedMeanwhile.set(v.attempt.id, v);
+        set((s) => ({ attempts: upsertAttempt(s.attempts, v) }));
+      }).then(
+        (u) => {
+          unlistenAttempts = u;
+        },
+        (e: unknown) => {
+          // A retry listens again.
+          if (listeningAttempts === pending) listeningAttempts = null;
+          throw e;
+        },
+      );
+      listeningAttempts = pending;
+    }
+    // Several views read the runs; only the latest read writes them, so an
+    // earlier one settling last can't bring back an error or an old list.
+    const read = ++attemptsRead;
+    movedMeanwhile = new Map();
     // A refresh keeps what's shown; a first read or a retry shows loading.
     set((s) => ({
       attemptsStatus: s.attemptsStatus === "ready" ? "ready" : "loading",
       attemptsError: null,
     }));
     try {
-      const attempts = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
+      // The read goes out once the listener is up: a run that moved in
+      // between would be missed, and no event comes after a run's last state.
+      await listeningAttempts;
+      const listed = (await invoke<AttemptView[] | null>("task_attempts_list")) ?? [];
+      if (read !== attemptsRead) return;
+      // A run that moved while the list was read keeps its newer state.
+      let attempts = listed;
+      for (const v of movedMeanwhile.values()) attempts = upsertAttempt(attempts, v);
       set({ attempts, attemptsStatus: "ready" });
     } catch (e) {
+      if (read !== attemptsRead) return;
       // Runs stay as they were; the tracker itself still works.
       set({ attemptsStatus: "error", attemptsError: asError(e).message });
     }
@@ -150,21 +179,40 @@ export const useTasks = create<TasksState>((set, get) => ({
     }
   },
   load: async () => {
-    listening ??= listen<{ ids: string[] }>("tasks:changed", (e) => {
-      void get().load();
-      const sel = get().selectedId;
-      if (sel && (e.ids.length === 0 || e.ids.includes(sel))) void get().refreshDetail();
-    }).then((u) => {
-      unlisten = u;
-    });
+    if (!listening) {
+      const pending: Promise<void> = listen<{ ids: string[] }>("tasks:changed", (e) => {
+        void get().load();
+        const sel = get().selectedId;
+        if (sel && (e.ids.length === 0 || e.ids.includes(sel))) void get().refreshDetail();
+      }).then(
+        (u) => {
+          unlisten = u;
+        },
+        (e: unknown) => {
+          // A retry listens again.
+          if (listening === pending) listening = null;
+          throw e;
+        },
+      );
+      listening = pending;
+    }
+    // Views and every tasks:changed read the tracker; only the latest read
+    // writes it, so an earlier one settling last can't bring back an old
+    // list or an error.
+    const read = ++trackerRead;
     if (get().status !== "ready") set({ status: "loading" });
     try {
+      // The read goes out once the listener is up: a change in between
+      // would otherwise show only with the next one.
+      await listening;
       const [meta, issues] = await Promise.all([
         invoke<TasksMeta>("tasks_meta"),
         allIssues(get().showArchived),
       ]);
+      if (read !== trackerRead) return;
       set((s) => ({ meta, issues, status: "ready", error: null, version: s.version + 1 }));
     } catch (e) {
+      if (read !== trackerRead) return;
       set({ status: "error", error: asError(e).message });
     }
   },
@@ -256,6 +304,10 @@ export function resetTasks(): void {
   unlistenAttempts?.();
   unlistenAttempts = null;
   listeningAttempts = null;
+  // A read still in flight from before goes stale and never writes.
+  attemptsRead++;
+  trackerRead++;
+  movedMeanwhile = new Map();
   useTasks.setState({
     meta: null,
     issues: [],

@@ -18,6 +18,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+dunce = "1"
 tandem-core = { workspace = true, features = ["os-keychain"] }
 tandem-engines.workspace = true
 tandem-gateway.workspace = true
@@ -50,6 +51,7 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+unicode-normalization = "0.1.25"
 tracing.workspace = true
 ts-rs.workspace = true
 url.workspace = true
@@ -85,6 +87,8 @@ webkit2gtk = { version = "=2.0", features = ["v2_40"] }
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
+# The fake language server, in-process, for F-CD-23's client tests.
+tandem-engines = { workspace = true, features = ["fixtures"] }
 # Parses Info.plist and Entitlements.plist in the macOS bundle test (D-2101);
 # already in the tree through tauri.
 plist = "1"

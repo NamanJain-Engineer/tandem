@@ -194,7 +194,12 @@ describe("E2E-M6-3 partial failure and saved presets", () => {
     // lands after setValue returns.
     await $('[data-testid="preset-save"]').waitForClickable({ timeout: 10_000 });
     await $('[data-testid="preset-save"]').click();
-    await $('[data-testid="preset-name"]').waitForExist({ reverse: true, timeout: 10_000 });
+    // The name field goes as the dialog closes, and WebKit's driver can
+    // answer a find made while it goes with a stale element: read the DOM.
+    await browser.waitUntil(
+      () => browser.execute(() => !document.querySelector('[data-testid="preset-name"]')) as Promise<boolean>,
+      { timeout: 10_000, timeoutMsg: "the preset name field stayed after Save" },
+    );
     await browser.keys("Escape");
     await relaunch();
     await waitForApp();

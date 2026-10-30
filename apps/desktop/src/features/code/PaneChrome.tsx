@@ -29,7 +29,10 @@ export type PaneChromeProps = {
   name?: string | null;
   /** Location: cwd relative to the workspace. */
   meta?: string | null;
-  /** After the location: the worktree branch chip (UI_SPEC §4.3). */
+  /** After the location: the worktree branch chip (UI_SPEC §4.3). It gives
+   * way first, down to its icon, so the title keeps its 10 characters (D-2611). */
+  chip?: ReactNode;
+  /** After the chip: the pane's other chips (account, sandbox, resources). */
   location?: ReactNode;
   /** Renames the pane; resolves to an error message, or null when done. */
   onRename?: (name: string) => Promise<string | null>;
@@ -123,6 +126,34 @@ function PaneName({
   );
 }
 
+/** The pane's title, its full text in the tooltip. Beside a branch chip it
+ * keeps its length, but for the chip's icon and gaps (`room`, a `max-w-*`). */
+function PaneTitle({ title, name, room }: { title: string; name?: string | null; room?: string }) {
+  return (
+    <Tooltip label={title}>
+      <span
+        data-testid="pane-title"
+        className={cx(
+          "truncate text-sm",
+          room ? `${room} shrink-0` : "min-w-[min(10ch,100%)]",
+          name ? "text-fg-muted" : "text-fg",
+        )}
+      >
+        {title}
+      </span>
+    </Tooltip>
+  );
+}
+
+/** The pane's cwd relative to its workspace. */
+function PaneMeta({ meta }: { meta: string }) {
+  return (
+    <span data-testid="pane-meta" className="min-w-0 truncate text-sm text-fg-subtle">
+      · {meta}
+    </span>
+  );
+}
+
 /** "4m" since `since`, ticking every 30 s while its pane is shown. */
 function Elapsed({ since, status, visible }: { since: number; status: Status; visible: boolean }) {
   const now = useNow(30_000, visible);
@@ -164,6 +195,7 @@ export function PaneChrome({
   badges,
   name,
   meta,
+  chip,
   location,
   onRename,
   renaming = false,
@@ -203,19 +235,27 @@ export function PaneChrome({
           setEditing={(on) => onRenamingChange?.(on)}
         />
       )}
-      {/* Never narrower than 12 characters; the full title is in the tooltip. */}
-      <Tooltip label={title}>
+      {/* The title is never cut to fewer than 10 characters, as a worktree
+          row's name isn't (D-2611), and its full text is in the tooltip. Beside
+          a branch chip it doesn't shrink while the chip and the cwd can: they
+          give way first, the chip down to its icon: 26 px and a 6 px gap
+          (32 px; 38 with the cwd's gap). */}
+      {chip ? (
         <span
-          data-testid="pane-title"
-          className={cx("min-w-[12ch] truncate text-sm", name ? "text-fg-muted" : "text-fg")}
+          className={cx(
+            "flex items-center gap-1.5 text-sm",
+            meta ? "min-w-[calc(min(10ch,100%)+38px)]" : "min-w-[calc(min(10ch,100%)+32px)]",
+          )}
         >
-          {title}
+          <PaneTitle title={title} name={name} room={meta ? "max-w-[calc(100%-38px)]" : "max-w-[calc(100%-32px)]"} />
+          {meta && <PaneMeta meta={meta} />}
+          {chip}
         </span>
-      </Tooltip>
-      {meta && (
-        <span data-testid="pane-meta" className="min-w-0 truncate text-sm text-fg-subtle">
-          · {meta}
-        </span>
+      ) : (
+        <>
+          <PaneTitle title={title} name={name} />
+          {meta && <PaneMeta meta={meta} />}
+        </>
       )}
       {location}
       <span className="flex-1" />

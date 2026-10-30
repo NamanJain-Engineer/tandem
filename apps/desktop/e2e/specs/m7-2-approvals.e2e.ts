@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { addFolder, freshOffline, invoke, paneIds } from "../support/app";
+import { addFolder, clickAllow, freshOffline, invoke, paneIds } from "../support/app";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 
 type Item = { key: string; status: string; pendingApproval: { summary: string } | null };
@@ -65,7 +65,7 @@ describe("E2E-M7-2 approvals", () => {
 
   it("F-TH-11.2 Allow for this thread covers npm test with arguments, not npm install", async function () {
     this.timeout(60_000);
-    await $(`${pinned} [data-testid="approval-allow-thread"]`).click();
+    await clickAllow(`${pinned} [data-testid="approval-allow-thread"]`);
     await waitForAssistant("Ran npm test.");
     await $(pinned).waitForExist({ reverse: true, timeout: 5_000 });
 
@@ -98,7 +98,7 @@ describe("E2E-M7-2 approvals", () => {
     await openDashboard();
     const card = `[data-testid="agent-card"][data-key="thread:${threadId}"]`;
     await $(card).waitForExist({ timeout: 5_000 });
-    await $(`${card} [data-testid="card-allow"]`).click();
+    await clickAllow(`${card} [data-testid="card-allow"]`);
     await waitForAssistant("Ran npm ci.");
     expect(await pendingCount()).toBe(0);
   });

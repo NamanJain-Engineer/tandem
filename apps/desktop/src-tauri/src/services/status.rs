@@ -73,7 +73,12 @@ pub type ScreenSource = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 pub type TurnSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// `(pane_id, tool_name)` for every tool report (the runaway guard, F-AC-09).
-pub type ToolSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+/// A tool start: the pane, the tool's name and the report's time.
+pub type ToolSink = Arc<dyn Fn(&str, &str, i64) + Send + Sync>;
+
+/// A prompt the engine's hooks reported (UserPromptSubmit): the pane and
+/// the report's time.
+pub type PromptSink = Arc<dyn Fn(&str, i64) + Send + Sync>;
 /// `(pane_id, paths)`: the files an agent's edit tool is about to change
 /// (F-TK-05 inferred claims).
 pub type EditSink = Arc<dyn Fn(&str, &[String]) + Send + Sync>;
@@ -105,6 +110,7 @@ pub struct StatusService {
     screen: std::sync::OnceLock<ScreenSource>,
     on_turn: std::sync::OnceLock<TurnSink>,
     on_tool: std::sync::OnceLock<ToolSink>,
+    on_prompt: std::sync::OnceLock<PromptSink>,
     on_edit: std::sync::OnceLock<EditSink>,
 }
 
@@ -129,6 +135,7 @@ impl StatusService {
             screen: std::sync::OnceLock::new(),
             on_turn: std::sync::OnceLock::new(),
             on_tool: std::sync::OnceLock::new(),
+            on_prompt: std::sync::OnceLock::new(),
             on_edit: std::sync::OnceLock::new(),
             bus,
             clock,
@@ -183,6 +190,16 @@ impl StatusService {
                 }
             },
         ));
+    }
+
+    /// Where reported prompts go (set once, at startup).
+    pub fn set_prompt_sink(&self, sink: PromptSink) {
+        let _ = self.on_prompt.set(sink);
+    }
+
+    /// The app's clock, for subsystems built on the status service.
+    pub fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
     }
 
     /// The app's bus, for subsystems built on the status service.
@@ -461,12 +478,23 @@ impl StatusService {
             // The engine's first report is its session starting: it waits
             // for input. Without this a hooked agent had no status (missing
             // from the Dashboard) or kept "working" from its startup banner,
-            // depending on which arrived first.
+            // depending on which arrived first. The engine can report before
+            // it prints the banner and the app read the banner first, so
+            // over a "working" read from the screen the report counts at the
+            // later of the two times. Anything else keeps the usual order: a
+            // question on the screen, such as a trust prompt, that came after
+            // the report still stands (D-3039).
             ReportEvent::Session if first => {
+                let ts = match self.store.get(&SessionKey::pane(&pane)) {
+                    Some(cur) if cur.status == tandem_core::status::AgentStatus::Working => {
+                        report.ts.max(cur.ts)
+                    }
+                    _ => report.ts,
+                };
                 let update = StatusUpdate {
                     status: tandem_core::status::AgentStatus::Idle,
                     reason: None,
-                    ts: report.ts,
+                    ts,
                     tool: None,
                     title: None,
                     preview: None,
@@ -478,7 +506,12 @@ impl StatusService {
                 if let (ReportEvent::Working, Some(tool), Some(sink)) =
                     (report.event, &report.payload.tool, self.on_tool.get())
                 {
-                    sink(&pane, tool);
+                    sink(&pane, tool, report.ts);
+                }
+                if let (ReportEvent::Working, true, Some(sink)) =
+                    (report.event, report.payload.prompt, self.on_prompt.get())
+                {
+                    sink(&pane, report.ts);
                 }
                 if let (ReportEvent::Working, false, Some(sink)) = (
                     report.event,
@@ -827,6 +860,58 @@ mod tests {
         s.on_report(working);
         s.on_report(session(clock.now_ms() + 10));
         assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+    }
+
+    #[test]
+    fn f_en_05_a_session_report_made_before_the_banner_still_makes_the_agent_idle() {
+        // The engine reports its session starting, then prints its banner,
+        // and the app reads the banner first: the report's time is older
+        // than the "working" the banner made, and it still wins (D-3039).
+        let (s, clock) = service();
+        s.watch("pn_1", &[], &[], None);
+        let made = clock.now_ms();
+        clock.advance(Duration::from_millis(5));
+        s.output("pn_1", || Some("Claude Code".into()));
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Working));
+        s.on_report(StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts: made,
+            payload: ReportPayload {
+                session_id: Some("ses-1".into()),
+                ..ReportPayload::default()
+            },
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn f_en_05_a_question_on_screen_stands_against_an_older_session_report() {
+        // The same order, with a trust prompt on the screen: the question
+        // is for you, so a session report made before it doesn't hide it.
+        // Only a "working" read from the screen gives way whatever the
+        // times (D-3039).
+        let (s, clock) = service();
+        let trust = "Do you trust the files in this folder\\?".to_string();
+        s.watch("pn_1", &[trust], &[], None);
+        let made = clock.now_ms();
+        clock.advance(Duration::from_millis(5));
+        s.output("pn_1", || {
+            Some("Do you trust the files in this folder?".into())
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Waiting));
+        s.on_report(StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts: made,
+            payload: ReportPayload {
+                session_id: Some("ses-1".into()),
+                ..ReportPayload::default()
+            },
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Waiting));
     }
 
     #[test]

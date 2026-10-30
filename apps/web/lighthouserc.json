@@ -7,6 +7,8 @@
         "http://localhost/about/",
         "http://localhost/download/",
         "http://localhost/changelog/",
+        "http://localhost/changelog/0.9.0/",
+        "http://localhost/changelog/0.12.0/",
         "http://localhost/docs/",
         "http://localhost/blog/",
         "http://localhost/blog/introducing-vibezeo/"

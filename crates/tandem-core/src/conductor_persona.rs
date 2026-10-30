@@ -215,11 +215,14 @@ impl From<std::io::Error> for MemoryError {
 }
 
 /// True when `text` looks like it holds a credential: anything the secret
-/// redactor would hide, or "my password/token/key is …" with a value.
+/// redactor would hide, or "my password/token/key is …" with a value. It
+/// reads the text as written and as Conductor's model would, past what's
+/// removable, which can split a credential or a word (D-3036).
 pub fn looks_like_credential(text: &str) -> bool {
-    if crate::redact::Redactor::global().redact(text) != text {
+    if crate::untrusted::holds_credential(text) {
         return true;
     }
+    let read = crate::untrusted::readable(text);
     static SAID: std::sync::OnceLock<Option<Regex>> = std::sync::OnceLock::new();
     SAID.get_or_init(|| {
         Regex::new(
@@ -228,7 +231,7 @@ pub fn looks_like_credential(text: &str) -> bool {
         .ok()
     })
     .as_ref()
-    .is_some_and(|re| re.is_match(text))
+    .is_some_and(|re| re.is_match(text) || re.is_match(&read))
 }
 
 /// Proposed memories from post-call reflection, waiting for Keep / Discard.
@@ -622,6 +625,28 @@ mod tests {
             store.facts().expect("test"),
             vec!["Rotates API tokens every Friday"]
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_a_credential_split_by_what_defang_drops_is_refused() {
+        // What Conductor remembers goes to its model on every call, and a
+        // model reads past what defang drops: so does the check (D-3036).
+        let split = "pushed with ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345";
+        assert_eq!(crate::redact::redact(split), split, "the redactor alone");
+        assert!(looks_like_credential(split));
+        assert!(looks_like_credential("my pass\u{2060}word is hunter2"));
+        // Set apart from a letter only by what's removable: found as written.
+        assert!(looks_like_credential(
+            "abc\u{200b}ghp_0123456789abcdefghijABCDEFGHIJ012345"
+        ));
+        let dir = tempfile::tempdir().expect("test");
+        let store = MemoryStore::new(dir.path());
+        assert_eq!(store.remember(true, split), Err(MemoryError::Credential));
+        assert_eq!(
+            store.save_text(true, &format!("- {split}\n")),
+            Err(MemoryError::Credential)
+        );
+        assert!(!store.path().exists());
     }
 
     #[test]

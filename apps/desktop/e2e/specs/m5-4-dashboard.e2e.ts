@@ -1,6 +1,7 @@
 import { $, $$, browser } from "@wdio/globals";
 import {
   addFolder,
+  clickAllow,
   freshOffline,
   invoke,
   paneIds,
@@ -25,6 +26,31 @@ const cardKeys = () =>
     ),
   );
 
+/** The cards outside the pinned "Asking you" group (F-TL-12.12). */
+const restKeys = () =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-testid="agent-card"]'))
+      .filter((el) => !el.closest('[data-testid="group-asking"]'))
+      .map((el) => el.dataset.key ?? ""),
+  );
+/** The cards in the pinned group. */
+const askingKeys = () =>
+  browser.execute(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="group-asking"] [data-testid="agent-card"]'),
+    ).map((el) => el.dataset.key ?? ""),
+  );
+
+/** Clears a search an earlier test left (Esc in the search), so one
+ * failure doesn't fail the tests after it. */
+async function clearSearch(): Promise<void> {
+  const search = $('[data-testid="dashboard-search"]');
+  if (!(await search.isExisting()) || (await search.getValue()) === "") return;
+  await search.click();
+  await browser.keys("Escape");
+  await browser.waitUntil(async () => (await search.getValue()) === "", { timeout: 5_000 });
+}
+
 async function openDashboard(): Promise<void> {
   if (
     !(await $('[data-testid="sidebar"]')
@@ -43,6 +69,7 @@ describe("E2E-M5-4 Dashboard", () => {
     await addFolder(`/tmp/tandem-e2e-m5-4-${Date.now()}`);
     await browser.waitUntil(async () => (await paneIds()).length === 1, { timeout: 20_000 });
   });
+  beforeEach(clearSearch);
 
   it("F-DB-01.1 3 working, 1 waiting and 2 idle read 6 agents with matching counts", async () => {
     await fixture({ id: "w1", title: "api refactor", status: "working" });
@@ -63,13 +90,20 @@ describe("E2E-M5-4 Dashboard", () => {
 
   it("F-DB-01.2 Close idle with the search 'api' closes only the matching idle agent", async () => {
     await $('[data-testid="dashboard-search"]').setValue("api");
-    await browser.waitUntil(async () => (await cardKeys()).length === 2, {
-      timeout: 5_000,
-      timeoutMsg: `cards: ${await cardKeys()}`,
-    });
+    // The two that match, below the questions; the waiting card's question
+    // stays pinned above whatever the search (F-TL-12.12).
+    await browser.waitUntil(
+      async () => {
+        const rest = await restKeys();
+        return rest.length === 2 && rest.includes("fixture:w1") && rest.includes("fixture:i1");
+      },
+      { timeout: 5_000, timeoutMsg: `cards: ${await cardKeys()}` },
+    );
+    expect(await askingKeys()).toEqual(["fixture:q1"]);
     await $('[data-testid="close-idle"]').click();
     await $("button=Close 1 agent").click();
     await browser.waitUntil(async () => !(await cardKeys()).includes("fixture:i1"), { timeout: 5_000 });
+    expect(await askingKeys()).toEqual(["fixture:q1"]);
     // Esc in the search clears it.
     await $('[data-testid="dashboard-search"]').click();
     await browser.keys("Escape");
@@ -81,7 +115,7 @@ describe("E2E-M5-4 Dashboard", () => {
   });
 
   it("F-DB-01.3 Allow once on the waiting card resolves the approval and the agent proceeds", async () => {
-    await $(`${card("fixture:q1")} [data-testid="card-allow"]`).click();
+    await clickAllow(`${card("fixture:q1")} [data-testid="card-allow"]`);
     await browser.waitUntil(
       async () => (await $(card("fixture:q1")).getAttribute("data-status")) === "working",
       { timeout: 5_000 },

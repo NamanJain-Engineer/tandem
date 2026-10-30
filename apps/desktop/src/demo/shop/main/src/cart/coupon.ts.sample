@@ -1,0 +1,18 @@
+import type { Cart } from "./cart";
+import { subtotal } from "./cart";
+
+export type Coupon = { code: string; percent: number; minimum: number };
+
+const COUPONS: Record<string, Coupon> = {
+  SPRING10: { code: "SPRING10", percent: 10, minimum: 0 },
+  BULK15: { code: "BULK15", percent: 15, minimum: 10_000 },
+};
+
+/** The cart's total in cents after its coupon. An unknown coupon, or one
+ * whose minimum the cart doesn't reach, takes nothing off. */
+export function applyCoupon(cart: Cart, code: string | null): number {
+  const total = subtotal(cart);
+  const coupon = code ? COUPONS[code] : undefined;
+  if (!coupon || total < coupon.minimum) return total;
+  return Math.round(total * (1 - coupon.percent / 100));
+}

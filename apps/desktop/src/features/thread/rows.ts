@@ -1,6 +1,6 @@
 import type { ApprovalDecisionView, ThreadEvent, TurnEndReason } from "@tandem/protocol";
 import type { ThreadView } from "./reducer";
-import { diffCounts, testResult, type TestResult } from "./tool";
+import { editCounts, testResult, type TestResult } from "./tool";
 
 type Ev<T extends ThreadEvent["type"]> = Extract<ThreadEvent, { type: T }>;
 export type ToolEvent = Ev<"tool">;
@@ -28,13 +28,15 @@ export type Row =
   | { kind: "plan"; key: string; version: number }
   | { kind: "end"; key: string; reason: TurnEndReason; blocked: number }
   /** A finished turn's closing line (D-2604): files it edited with their
-   * diff stats, and its last test run. Only from events the engine sent. */
+   * lines added and removed, and its last test run. Only from events the
+   * engine sent; `add` and `del` are null when an edit didn't say its
+   * lines, rather than a partial total (D-2608). */
   | {
       kind: "summary";
       key: string;
       files: number;
-      add: number;
-      del: number;
+      add: number | null;
+      del: number | null;
       tests: { passed: number; failed: number } | null;
     }
   | { kind: "working"; key: string; turnId: string };
@@ -50,12 +52,27 @@ export function diffPaths(diff: string): string[] {
     .filter((p) => p !== "/dev/null");
 }
 
+/** A drive letter or a `\\` share: a Windows path. */
+const windowsPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("\\\\");
+
+/** A file's key in a turn's summary: its absolute path, so one file counts
+ * once however its edits name it, a diff's header (relative to the
+ * thread's folder) or an event's path. A Windows path's case and slashes
+ * don't count, as they don't on Windows; elsewhere they do (D-2622). */
+export function fileKey(path: string, cwd: string | null): string {
+  const relative = !path.startsWith("/") && !windowsPath(path);
+  const sep = cwd && windowsPath(cwd) ? "\\" : "/";
+  const full = relative && cwd ? `${cwd.replace(/[\\/]+$/, "")}${sep}${path.replace(/^\.[\\/]/, "")}` : path;
+  return windowsPath(full) ? full.replace(/\//g, "\\").toLowerCase() : full;
+}
+
 /** Consecutive tool calls fold from this many (UI-21). */
 export const FOLD_AT = 3;
 
 /** The transcript rows of a thread view: approvals carry their decision,
- * 3+ consecutive tools fold, and the running turn ends with a "Working" row. */
-export function toRows(view: ThreadView): Row[] {
+ * 3+ consecutive tools fold, and the running turn ends with a "Working" row.
+ * `cwd` is the thread's folder, which a diff's paths are relative to. */
+export function toRows(view: ThreadView, cwd: string | null = null): Row[] {
   const rows: Row[] = [];
   const lastTurn = view.turns[view.turns.length - 1];
   for (const turn of view.turns) {
@@ -66,17 +83,29 @@ export function toRows(view: ThreadView): Row[] {
     const edited = new Set<string>();
     let add = 0;
     let del = 0;
+    let uncounted = false;
     let tests: TestResult | null = null;
     for (const item of turn.items) {
       const e = item.event;
       if (e.type !== "tool") continue;
       // Only edits that happened: a declined or failed patch keeps its diff.
-      if (e.status === "ok" && e.diff && (e.verb === "edit" || e.verb === "write" || e.verb === "multiedit")) {
-        const paths = diffPaths(e.diff);
-        for (const path of paths.length > 0 ? paths : [e.argSummary]) edited.add(path);
-        const c = diffCounts(e.diff);
-        add += c.add;
-        del += c.del;
+      // Any tool that names the files it edited counts them, a notebook
+      // edit's and a subagent's Task's too (D-2608). A file is keyed by the
+      // absolute path the event names, then by its diff's header, so it
+      // counts once however its edits were reported.
+      const named = e.paths ?? [];
+      const edit = e.verb === "edit" || e.verb === "write" || e.verb === "multiedit";
+      // A Task's files are its subagent's edits that happened: they count
+      // however the Task itself ended (D-2622).
+      const task = e.verb === "task" && named.length > 0;
+      if ((e.status === "ok" && (edit || named.length > 0)) || task) {
+        const paths = named.length > 0 ? named : e.diff ? diffPaths(e.diff) : [];
+        for (const path of paths.length > 0 ? paths : [e.argSummary]) edited.add(fileKey(path, cwd));
+        const c = editCounts(e);
+        if (c) {
+          add += c.add;
+          del += c.del;
+        } else uncounted = true;
       }
       if (e.verb === "bash") tests = testResult(e.output) ?? tests;
     }
@@ -163,7 +192,14 @@ export function toRows(view: ThreadView): Row[] {
             rows.push({ kind: "end", key, reason: e.reason, blocked: e.blockedActions });
           }
           if (e.reason !== "cancelled" && (edited.size > 0 || tests))
-            rows.push({ kind: "summary", key: `${key}:summary`, files: edited.size, add, del, tests });
+            rows.push({
+              kind: "summary",
+              key: `${key}:summary`,
+              files: edited.size,
+              add: uncounted ? null : add,
+              del: uncounted ? null : del,
+              tests,
+            });
           break;
         default:
           break;

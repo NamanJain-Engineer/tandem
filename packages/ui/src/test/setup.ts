@@ -34,3 +34,18 @@ const noRects = () => Object.assign([], { item: () => null }) as unknown as DOMR
 const noRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect;
 Range.prototype.getClientRects ??= noRects;
 Range.prototype.getBoundingClientRect ??= noRect;
+
+// jsdom has no PointerEvent: a minimal one, so tests can tell pointers apart
+// by `pointerId` (the steady box tracks presses per pointer).
+if (typeof window.PointerEvent === "undefined") {
+  class PointerEventShim extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 1;
+      this.pointerType = init.pointerType ?? "mouse";
+    }
+  }
+  window.PointerEvent = PointerEventShim as unknown as typeof PointerEvent;
+}

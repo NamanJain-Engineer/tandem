@@ -4,7 +4,7 @@ import { Kbd } from "./Kbd";
 import { Spinner } from "./Spinner";
 
 export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "link";
-export type ButtonSize = "sm" | "md" | "lg" | "xl";
+export type ButtonSize = "sm" | "md" | "lg" | "xl" | "mark";
 
 export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   variant?: ButtonVariant;
@@ -17,6 +17,10 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "childre
   fullWidth?: boolean;
   /** Explains why the button is disabled (tooltip). */
   disabledReason?: string;
+  /** Off for now but still focusable (`aria-disabled`): clicks and keys do
+   * nothing until it's on, and Tab still reaches it. For a control that
+   * waits (Allow until it has held still), so keyboard users can get to it. */
+  waiting?: boolean;
   children?: ReactNode;
 };
 
@@ -36,6 +40,8 @@ const SIZES: Record<ButtonSize, string> = {
   lg: "h-10 px-4 text-md gap-2",
   /** 44 px: calls to action on the public site. */
   xl: "h-11 px-5 text-lg gap-2",
+  /** A mark at a rail row's end (D-2701): its 12 px icon alone is 20 px wide. */
+  mark: "h-7 px-1 text-sm gap-1",
 };
 
 /** The button's classes, for links that look like buttons (the public site's
@@ -62,6 +68,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     fullWidth = false,
     disabledReason,
     disabled,
+    waiting = false,
     className,
     children,
     onClick,
@@ -70,7 +77,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  const inert = disabled || loading;
+  const inert = disabled || loading || waiting;
   return (
     <button
       ref={ref}
@@ -80,6 +87,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         buttonClass(variant, size),
         fullWidth && "w-full",
         disabled && "pointer-events-auto cursor-not-allowed opacity-40 hover:bg-[inherit]",
+        // Waiting stays focusable: its content dims, its focus ring doesn't.
+        waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40",
         loading && "cursor-progress",
         className,
       )}

@@ -117,24 +117,8 @@ export const CLAUDE = [
 /** What comes next, in order. Each item says what's built and what it waits for. */
 export const ROADMAP = [
   {
-    title: "Code intelligence in the editor and diffs",
-    body: "Go to definition, find references, hover and errors in the Files editor, and the same jumps from a diff, using the language servers you already have, once you trust the repository. Built and in review now.",
-  },
-  {
-    title: "Lead keeps a plan moving",
-    body: "Once a plan's runs start, Lead can answer their routine questions for you and pass the rest on to you. Built and in review now.",
-  },
-  {
-    title: "Secrets for agents' commands",
-    body: "An agent runs a command that needs your secrets with vibezeo run, after you approve it, and the output comes back to it with the values masked. Built and in review now.",
-  },
-  {
-    title: "Local models as engines",
-    body: "Agents that run on a model served from your own computer. Built and in review now.",
-  },
-  {
-    title: "Activity ledger",
-    body: "What an agent session did, in order: the turns it was given, the commands it ran, the files it changed, and the approvals it asked for and who answered. Built and in review now.",
+    title: "Keep agents running when the window closes",
+    body: "Quit with agents working and they keep running in the background, shown in the tray; open Vibezeo again and every pane comes back with its scrollback. Planned next.",
   },
   {
     title: "Your phone, from anywhere",
@@ -345,6 +329,14 @@ export const RELEASE_TILE_MAP: Record<string, { icon: string; docs: string }> = 
   "Land approved work in the plan's order": { icon: "merge", docs: docsPath("tasks") },
   "Plans are kept": { icon: "history", docs: docsPath("tasks") },
   "Chat threads claim the files they edit": { icon: "compare", docs: docsPath("tasks") },
+  "Lead keeps a plan moving": { icon: "tasks", docs: docsPath("tasks") },
+  "What matters comes to you": { icon: "bell", docs: docsPath("tasks") },
+  "Agents can run commands that need secrets": { icon: "key", docs: docsPath("privacy") },
+  "Activity for each agent session": { icon: "history", docs: docsPath("workflow-tools") },
+  "Code intelligence in the editor and diffs": { icon: "search", docs: docsPath("code-mode") },
+  "jj workspaces": { icon: "branch", docs: docsPath("code-mode") },
+  "Local models": { icon: "server", docs: docsPath("engines") },
+  "Start Codex on a local model": { icon: "terminal", docs: docsPath("engines") },
 };
 
 export type ReleaseTile = { title: string; body: string; text: string; platforms: string[]; icon: string; docs: string };

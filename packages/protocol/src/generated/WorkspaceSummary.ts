@@ -18,7 +18,15 @@ repos?: Array<string>,
 /**
  * F-CD-22: why a folder of repositories isn't multi-repo (too many).
  */
-reposNote?: string, id: WorkspaceId, 
+reposNote?: string, 
+/**
+ * F-CD-24: `jj` for a jj workspace; absent for a git worktree.
+ */
+laneVcs?: string, 
+/**
+ * F-CD-24: a repository with `.jj` and no `.git` (no jj workspaces).
+ */
+jjOnly?: boolean, id: WorkspaceId, 
 /**
  * `local` | `ssh` | `wsl`
  */

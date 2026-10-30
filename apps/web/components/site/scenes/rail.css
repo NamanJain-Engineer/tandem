@@ -1,0 +1,63 @@
+/* The Code rail's own rules (CodeRail, rail.tsx): the hero's rail, and from
+   0.13.0 the CI scene's (D-2702, D-3006). Only the pages that play those
+   scenes inline them; they build on scenes.css, which comes first, and a
+   scene's own sheet places the rail. Each part is sized in the app's own
+   pixels (--sc-px), as its component draws it. */
+
+/* The rail (CodeRail): WORKSPACES and + on a 36 px row, then the list 6 px
+   in from each side, Remote hosts at the foot over a divider. */
+.sc-crail { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--tn-border); background: var(--tn-surface-1); }
+.sc-crail-head { display: flex; flex: none; align-items: center; gap: calc(4 * var(--sc-px)); height: calc(36 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); }
+.sc-crail-title { flex: 1; padding-inline: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tn-text-subtle); }
+.sc-crail-add { box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(7 * var(--sc-px)); color: var(--tn-text-muted); }
+/* The list starts with the pinned band's 4 px, empty with nothing pinned. */
+.sc-crail-list { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: calc(4 * var(--sc-px)) calc(6 * var(--sc-px)) calc(8 * var(--sc-px)); }
+/* The repository's row (RailList): 30 px, 13 px; its chevron, its folder,
+   its name and, with nothing to say about its own agents, its branch. */
+.sc-wsrow { display: flex; flex: none; align-items: center; gap: calc(6 * var(--sc-px)); height: calc(30 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(13 * var(--sc-px)); color: var(--tn-text); }
+.sc-wsrow-chevron { flex: none; box-sizing: content-box; width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); margin-left: calc(-4 * var(--sc-px)); padding: calc(2 * var(--sc-px)); color: var(--tn-text-subtle); }
+.sc-wsrow-icon { flex: none; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-wsrow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-bchip { display: inline-flex; flex: none; align-items: center; gap: calc(2 * var(--sc-px)); font-size: calc(11 * var(--sc-px)); color: var(--tn-text-subtle); }
+.sc-bchip-icon { width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); }
+/* Under it, 24 px in: its panes, here none, then its worktrees. */
+.sc-crail-group { display: flex; flex-direction: column; padding: 0 0 calc(4 * var(--sc-px)) calc(24 * var(--sc-px)); }
+.sc-crail-none { padding: calc(4 * var(--sc-px)) calc(8 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); color: var(--tn-text-subtle); }
+/* A worktree's row (WorktreeRow): 28 px, 12 px, muted unless it's the one
+   in view; its trailing parts 6 px apart. 0.12.0's keeps room at the end
+   for its menu, which shows on hover; from 0.13.0 the menu covers the
+   row's end while it's hovered, and there's no room kept (D-2611). */
+.sc-wtrow { display: flex; flex: none; align-items: center; gap: calc(6 * var(--sc-px)); height: calc(28 * var(--sc-px)); padding-inline: calc(8 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); color: var(--tn-text-muted); }
+.sc-wtrow-on { color: var(--tn-text); background: var(--tn-surface-4); }
+.sc-wtrow-icon { flex: none; width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); }
+.sc-wtrow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What trails its name, as it is from each time on, in one cell at the
+   row's end: the set shown is laid out as the app lays it out then. */
+.sc-wtrow-trail { display: inline-grid; flex: none; justify-items: end; }
+.sc-wtrow-step { grid-area: 1 / 1; display: inline-flex; }
+.sc-wtrow-parts { display: inline-flex; align-items: center; gap: calc(6 * var(--sc-px)); }
+.sc-wtrow-ask { display: inline-flex; }
+/* Its slot (WorkspaceSlot): a working dot and its count in 11 px, or
+   "Needs you" as a quiet badge. */
+.sc-slot-working { display: inline-flex; align-items: center; gap: calc(4 * var(--sc-px)); font-size: calc(11 * var(--sc-px)); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--tn-text-muted); }
+.sc-slot-working .sc-dot svg { width: calc(6 * var(--sc-px)); height: calc(6 * var(--sc-px)); }
+.sc-wtrow-menu { flex: none; width: calc(28 * var(--sc-px)); }
+/* From 0.13.0 a mark leads with its icon and says a short form whole, or
+   is its icon alone (D-2613, D-2700). The radar's (RadarMark) is a waiting
+   Badge: the radar, 10 px, then the symbol in code type, cut at 16 of its
+   characters. */
+.sc-wtrow-radar { display: inline-flex; flex: none; }
+.sc-wtrow-radar-icon { flex: none; width: calc(10 * var(--sc-px)); height: calc(10 * var(--sc-px)); }
+.sc-wtrow-symbol { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+/* The checks badge (ChecksBadge): 28 px with 4 px each side, 12 px
+   medium; its icon, 12 px (the spinner 10), then its words, in its state's
+   colour. */
+.sc-wtrow-checks { display: inline-flex; flex: none; align-items: center; gap: calc(4 * var(--sc-px)); height: calc(28 * var(--sc-px)); padding-inline: calc(4 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); font-weight: 500; white-space: nowrap; }
+.sc-wtrow-checks-icon { flex: none; width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); }
+.sc-wtrow-checks .sc-spin { width: calc(10 * var(--sc-px)); height: calc(10 * var(--sc-px)); }
+.sc-wtrow-checks-failed { color: var(--tn-danger); }
+.sc-wtrow-checks-running { color: var(--tn-text-subtle); }
+.sc-wtrow-checks-passed { color: var(--tn-success); }
+.sc-crail-foot { flex: none; padding: calc(6 * var(--sc-px)) calc(6 * var(--sc-px)) 0; border-top: 1px solid var(--tn-divider); }
+.sc-crail-remote { justify-content: center; gap: calc(6 * var(--sc-px)); width: 100%; height: calc(28 * var(--sc-px)); padding-inline: calc(10 * var(--sc-px)); border-radius: calc(6 * var(--sc-px)); font-size: calc(12 * var(--sc-px)); }
+.sc-crail-remote-icon { width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); }

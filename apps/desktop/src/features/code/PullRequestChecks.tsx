@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Ban, Check, XCircle } from "lucide-react";
 import type { LaneChecks, PrCheck, WorkspaceSummary } from "@tandem/protocol";
-import { Badge, Banner, Button, Dialog, Skeleton, Spinner } from "@tandem/ui";
+import { Badge, Banner, Button, Dialog, Skeleton, Spinner, cx } from "@tandem/ui";
 import { t } from "../../i18n";
 import {
   CHECKS_POLL_MS,
@@ -42,41 +42,69 @@ export function checksState(checks: PrCheck[]): "failed" | "running" | "cancelle
   return "passed";
 }
 
-/** The rail row's summary: failed, running, cancelled or passed; nothing otherwise. */
-export function ChecksBadge({ wt }: { wt: WorkspaceSummary }) {
+/** The badge's words: the status bar's, without its count (D-2700). */
+const BADGE_WORDS = {
+  failed: "checks.badge.failed",
+  running: "status.ciRunning",
+  cancelled: "status.ciCancelled",
+  passed: "status.ciPassed",
+} as const;
+
+/** The rail row's summary: failed, running, cancelled or passed; nothing
+ * otherwise. Its icon leads, and its words are the status bar's ("CI
+ * failed"), whole or not at all (D-2700). Beside the row's status ("● 1
+ * working", "Needs you", "Failed"), or when the row folds it, it's the icon
+ * alone (D-2613, D-2614). Its name starts with its words and says which
+ * checks failed (WCAG 2.5.3); its title is the checks' summary. */
+export function ChecksBadge({
+  wt,
+  beside,
+  fold = false,
+}: {
+  wt: WorkspaceSummary;
+  beside: boolean;
+  fold?: boolean;
+}) {
   const checks = useWorktrees((s) => s.checks[wt.id]);
   if (checks?.state !== "ready" || !checks.pr || checks.checks.length === 0) return null;
   const failed = failedOf(checks);
   const open = () => useWorktrees.getState().open({ kind: "checks", worktreeId: wt.id });
   const state = checksState(checks.checks);
+  const compact = fold || beside;
+  const words = t(BADGE_WORDS[state]);
+  const summary =
+    state === "failed"
+      ? t("checks.failed", { n: failed.length, names: failed.map((c) => c.name).join(", ") })
+      : t(state === "running" ? "checks.running" : state === "cancelled" ? "checks.cancelled" : "checks.passed");
   return (
-    <Button
-      size="sm"
-      variant="ghost"
+    <button
+      type="button"
       data-testid="worktree-checks"
       data-state={state}
+      data-compact={compact ? "" : undefined}
+      aria-label={state === "failed" ? t("checks.badge.name", { words, summary }) : words}
+      title={summary}
       onClick={(e) => {
         e.stopPropagation();
         open();
       }}
-      className="max-w-[180px] shrink-0 truncate"
+      onKeyDown={(e) => e.stopPropagation()}
+      className={cx(
+        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1 text-sm font-medium hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none",
+        state === "failed" ? "text-danger" : state === "running" ? "text-fg-subtle" : state === "cancelled" ? "text-fg-muted" : "text-success",
+      )}
     >
       {state === "failed" ? (
-        <span className="truncate text-danger">
-          {t("checks.failed", { n: failed.length, names: failed.map((c) => c.name).join(", ") })}
-        </span>
+        <XCircle size={12} aria-hidden="true" className="shrink-0" />
       ) : state === "running" ? (
-        <span className="inline-flex items-center gap-1 text-fg-subtle">
-          <Spinner size={10} /> {t("checks.running")}
-        </span>
+        <Spinner size={10} className="shrink-0" />
       ) : state === "cancelled" ? (
-        <span className="text-fg-muted">{t("checks.cancelled")}</span>
+        <Ban size={12} aria-hidden="true" className="shrink-0" />
       ) : (
-        <span className="inline-flex items-center gap-1 text-success">
-          <Check size={12} aria-hidden="true" /> {t("checks.passed")}
-        </span>
+        <Check size={12} aria-hidden="true" className="shrink-0" />
       )}
-    </Button>
+      {!compact && <span data-words="">{words}</span>}
+    </button>
   );
 }
 

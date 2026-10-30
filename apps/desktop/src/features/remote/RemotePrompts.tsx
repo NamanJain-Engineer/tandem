@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Dialog, KeyValue, SecretInput } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useRemote } from "../../stores/remote";
+import { useSteadyBox } from "../secrets/ApprovalGuard";
 
 /** ssh's questions, wherever a connection started: an unknown host's key
  * (F-RM-01 "unknown hosts show the fingerprint for approval") and the
@@ -11,6 +12,13 @@ export function RemotePrompts() {
   const [secret, setSecret] = useState("");
   useEffect(() => setSecret(""), [ask?.opId]);
   const prompt = ask?.prompt;
+  // The dialog can open on its own whenever a connection starts: Trust and
+  // connect waits until it has held still, uncovered, so a click aimed at
+  // what was there can't trust a key (F-TL-12.12).
+  const box = useSteadyBox(
+    prompt?.kind === "hostkey",
+    ask && prompt?.kind === "hostkey" ? `${ask.opId}\n${prompt.host}\n${prompt.fingerprint}` : null,
+  );
   if (prompt?.kind === "hostkey") {
     return (
       <Dialog
@@ -20,7 +28,7 @@ export function RemotePrompts() {
         title={t("remote.hostkey.title", { host: prompt.host })}
         description={t("remote.hostkey.body")}
         footer={
-          <>
+          <span ref={box.ref} className="flex gap-2">
             <Button
               variant="ghost"
               data-testid="remote-hostkey-reject"
@@ -30,12 +38,15 @@ export function RemotePrompts() {
             </Button>
             <Button
               variant="primary"
+              data-grant
               data-testid="remote-hostkey-accept"
-              onClick={() => useRemote.getState().answerHostKey(true)}
+              waiting={!box.steady}
+              title={box.steady ? undefined : t("approval.waitingTrust")}
+              onClick={() => box.check() && useRemote.getState().answerHostKey(true)}
             >
               {t("remote.hostkey.accept")}
             </Button>
-          </>
+          </span>
         }
       >
         <div data-testid="remote-hostkey" className="flex flex-col gap-3">

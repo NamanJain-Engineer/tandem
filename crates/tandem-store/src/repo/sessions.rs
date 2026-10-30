@@ -39,6 +39,20 @@ pub struct LaunchConfig {
     /// hooks installed, as the user runs it in a terminal.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub own_home: bool,
+    /// A pane on a local model (F-EN-11): its server and model, so every
+    /// start writes the home's provider settings again before Codex runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<LocalLaunch>,
+}
+
+/// The model server a local pane runs on (F-EN-11, D-2519).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLaunch {
+    /// As the IPC names it: `ollama`, `lm_studio`.
+    pub kind: String,
+    pub port: u16,
+    pub model: String,
 }
 
 /// The newest session that ran in a pane (restore).
@@ -83,6 +97,7 @@ pub async fn start_in_pane(
         extra_args: Vec::new(),
         home: home.clone(),
         own_home: false,
+        local: None,
     };
     start_with_config(store, pane, workspace, engine_id, account, &config).await
 }

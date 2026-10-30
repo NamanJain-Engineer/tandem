@@ -1,6 +1,6 @@
 import { browser } from "@wdio/globals";
 import { writeFileSync } from "node:fs";
-import { freshOffline, invoke, pickTile, waitForPaneText } from "../support/app";
+import { clickAllow, freshOffline, invoke, pickTile, waitForPaneText } from "../support/app";
 import { sendMessage, threadMode, waitForAssistant } from "../support/thread";
 import {
   PROJECT,
@@ -128,7 +128,7 @@ describe("E2E-M14-5 remote engines", () => {
     const card = '[data-testid="thread-pending"]';
     await $(card).waitForExist({ timeout: 30_000, timeoutMsg: "no approval card for the remote thread" });
     expect(await $(card).getText()).toContain("echo remote-approved");
-    await $(`${card} [data-testid="approval-allow"]`).click();
+    await clickAllow(`${card} [data-testid="approval-allow"]`);
     await waitForAssistant("Ran echo remote-approved.", 60_000);
     // Nothing of this machine's engine homes reached the host.
     expect(inContainer("grep -rl 'tandem/providers' /home/tandem/project 2>/dev/null || true").trim()).toBe(

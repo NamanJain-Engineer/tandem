@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectProgress, HeldDraft, PluginApprovalDetail, PluginCard } from "@tandem/protocol";
 import { ApprovalCard, UiProvider } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
@@ -10,6 +10,7 @@ import { PluginApprovalFields } from "./PluginApproval";
 import { PluginsPage } from "./PluginsPage";
 import { ThreadPlugins } from "./ThreadPlugins";
 import { filterCards, parseApproval, splitCards } from "./model";
+import { waiting } from "../../test/waiting";
 
 function card(id: string, label: string, extra: Partial<PluginCard> = {}): PluginCard {
   return {
@@ -396,7 +397,9 @@ describe("F-PL-08 held actions", () => {
 
   it("F-PL-08 Approve & run runs a draft once", async () => {
     ui(<HeldActions />);
-    fireEvent.click(await screen.findByTestId("held-run-12"));
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    await waitFor(() => expect(waiting(run)).toBe(false));
+    fireEvent.click(run);
     await waitFor(() => expect(screen.queryByTestId("held-12")).toBeNull());
     expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1);
     expect(calls.find((c) => c.cmd === "held_draft_run")?.args).toMatchObject({
@@ -408,12 +411,146 @@ describe("F-PL-08 held actions", () => {
   it("F-PL-08 discards in bulk", async () => {
     ui(<HeldActions />);
     await screen.findByTestId("held-12");
+    // N3: a pick waits for its row to hold still, like Approve & run.
+    const pick = (id: string) => screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
+    await waitFor(() => expect(waiting(pick("D-12")) || waiting(pick("D-13"))).toBe(false));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-12" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select D-13" }));
     fireEvent.click(screen.getByTestId("held-discard-selected"));
     await waitFor(() => expect(screen.getByText("Nothing held")).toBeTruthy());
     expect(calls.find((c) => c.cmd === "held_drafts_discard")?.args).toEqual({
       draftIds: ["hd_12", "hd_13"],
+    });
+  });
+
+  it("F-PL-08 S4: Approve & run and Approve & run {n} take no click until their row has held still", async () => {
+    ui(<HeldActions />);
+    const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+    // Just shown: a click meant for what was there before does nothing.
+    expect(waiting(run)).toBe(true);
+    expect(run.title).toBe("Approve turns on once this has been still on screen for a moment.");
+    // S4: Approve & run, the pick and Approve & run {n} are marked as controls that grant.
+    expect(run.hasAttribute("data-grant")).toBe(true);
+    expect(screen.getByTestId("held-run-selected").hasAttribute("data-grant")).toBe(true);
+    fireEvent.click(run);
+    const pick13 = screen.getByRole("checkbox", { name: "Select D-13" }) as HTMLButtonElement;
+    // N3: the pick waits too.
+    expect(waiting(pick13)).toBe(true);
+    expect(pick13.closest("[data-grant]")).not.toBeNull();
+    // Its reason is its accessible description, not just a hover title.
+    const reason = pick13.getAttribute("aria-describedby");
+    expect(reason && document.getElementById(reason)?.textContent).toBe(
+      "You can pick this once it has been still on screen for a moment.",
+    );
+    fireEvent.click(pick13);
+    expect(pick13.getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(waiting(pick13)).toBe(false));
+    fireEvent.click(pick13);
+    const selected = screen.getByTestId("held-run-selected") as HTMLButtonElement;
+    expect(waiting(selected)).toBe(true);
+    fireEvent.click(selected);
+    expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+    await waitFor(() => expect(waiting(selected)).toBe(false));
+    fireEvent.click(selected);
+    await waitFor(() => expect(screen.queryByTestId("held-13")).toBeNull());
+    expect(calls.filter((c) => c.cmd === "held_draft_run").map((c) => c.args?.draftId)).toEqual(["hd_13"]);
+  });
+
+  it("M1: a draft taller than the list can be picked and run once its pick, then its buttons, are in view", async () => {
+    // The observer says each box is partly in view; the row is far taller
+    // than the window, its pick near the top and its buttons near the bottom.
+    class PartIO {
+      constructor(private cb: IntersectionObserverCallback) {}
+      observe(el: Element) {
+        queueMicrotask(() =>
+          this.cb([{ isIntersecting: true, intersectionRatio: 0.57, target: el } as IntersectionObserverEntry], {} as never),
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", PartIO);
+    const rect = (top: number, height: number) =>
+      ({ left: 0, top, width: 200, height, right: 200, bottom: top + height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    // Step by step: first only the pick is inside the window, then only the
+    // buttons. One box for the whole row would hold both back.
+    let pickTop = 40;
+    let buttonsTop = window.innerHeight + 100;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "LI") return rect(-300, 1_600);
+      if (this.closest('[data-testid^="held-run-"], [data-testid="held-run-selected"]') || this.querySelector?.('[data-testid^="held-run-"]'))
+        return rect(buttonsTop, 30);
+      return rect(pickTop, 20);
+    });
+    Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+    try {
+      ui(<HeldActions />);
+      const run = (await screen.findByTestId("held-run-12")) as HTMLButtonElement;
+      const pick = screen.getByRole("checkbox", { name: "Select D-12" }) as HTMLButtonElement;
+      // 1: the pick is in view, the buttons are below the window.
+      await waitFor(() => expect(waiting(pick)).toBe(false));
+      expect(waiting(run)).toBe(true);
+      fireEvent.click(pick);
+      expect(pick.getAttribute("aria-checked")).toBe("true");
+      // 2: scrolled on: the pick is above the window, the buttons in view.
+      pickTop = -100;
+      buttonsTop = 300;
+      await waitFor(() => expect(waiting(run)).toBe(false));
+      fireEvent.click(run);
+      await waitFor(() => expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(true));
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      Object.defineProperty(document, "elementFromPoint", { value: undefined, configurable: true });
+    }
+  });
+
+  describe("N3: a draft arriving on top", () => {
+    // Rows laid out top to bottom, 200 apart, in list order.
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        const li = this.closest("li");
+        const rows = li?.parentElement ? Array.from(li.parentElement.children) : [];
+        const top = li ? 200 * rows.indexOf(li) : 0;
+        return {
+          left: 0,
+          top,
+          width: 300,
+          height: 30,
+          right: 300,
+          bottom: top + 30,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("moves the rows below it: their pick and Approve & run wait again, so a pick can't land on the new draft's neighbour", async () => {
+      ui(<HeldActions />);
+      const pick = (id: string) =>
+        screen.getByRole("checkbox", { name: `Select ${id}` }) as HTMLButtonElement;
+      const run = (n: number) => screen.getByTestId(`held-run-${n}`) as HTMLButtonElement;
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(false));
+      // An unattended run holds a new draft: it's listed first.
+      drafts = [draft(14), ...drafts];
+      act(() => emitLocal("held:changed", null));
+      await screen.findByTestId("held-14");
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(true));
+      expect(waiting(run(12))).toBe(true);
+      fireEvent.click(pick("D-12"));
+      fireEvent.click(pick("D-14"));
+      expect(pick("D-12").getAttribute("aria-checked")).toBe("false");
+      expect(pick("D-14").getAttribute("aria-checked")).toBe("false");
+      expect(waiting(screen.getByTestId("held-run-selected") as HTMLButtonElement)).toBe(true);
+      expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
+      await waitFor(() => expect(waiting(pick("D-12"))).toBe(false));
     });
   });
 });
@@ -466,7 +603,10 @@ describe("F-PL-03 a build without plugins (the browser demo)", () => {
     resetStores();
     fakeBackend({
       plugins_catalog: () => {
-        throw { code: "unavailable", message: "Plugins sign in to your own accounts, so they don't connect inside this demo." };
+        throw {
+          code: "unavailable",
+          message: "Plugins sign in to your own accounts, so they don't connect inside this demo.",
+        };
       },
       held_drafts_list: () => [],
     });

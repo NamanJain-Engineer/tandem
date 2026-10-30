@@ -42,6 +42,7 @@ import { useLayout, type Box, type TabPanes } from "../../stores/layout";
 import { DropZones, moveToNewTab, type PaneDrag } from "./dnd";
 import { useDropTarget } from "./drops";
 import { GUTTER, leaves, minExtent, type LayoutNode } from "./layout/tree";
+import { LocalModelChip } from "./LocalModelChip";
 import { PaneChrome } from "./PaneChrome";
 import { BrowserPane } from "./BrowserPane";
 import { SimulatorPane } from "../simulator/SimulatorPane";
@@ -67,6 +68,8 @@ import { LimitBanner } from "./LimitCard";
 import { GuardBanner } from "./GuardCard";
 import { SandboxChip } from "./SandboxChip";
 import { ResourceChip } from "./ResourceChip";
+import { ApprovalBanner } from "./ApprovalBanner";
+import { useActivity } from "../../stores/activity";
 import { RunDialog } from "../secrets/RunDialog";
 import { setFrozen, useResources } from "../../stores/resources";
 import { useContexts } from "../../stores/contexts";
@@ -332,6 +335,15 @@ const PaneView = memo(function PaneView({
     { id: "new-tab", label: t("pane.moveToNewTab"), onSelect: () => void moveToNewTab(tabId, pane.id) },
     { id: "restart", label: t("pane.restart"), onSelect: () => terminalHandles.get(pane.id)?.restart() },
     ...(runnable ? [{ id: "run", label: t("run.menu"), onSelect: () => setRunning(true) }] : []),
+    ...(pane.kind === "agent"
+      ? [
+          {
+            id: "activity",
+            label: t("activity.menu"),
+            onSelect: () => useActivity.getState().show({ source: "pane", id: pane.id, title }),
+          },
+        ]
+      : []),
     ...(freezable
       ? [
           {
@@ -415,10 +427,11 @@ const PaneView = memo(function PaneView({
         glyph={pane.kind === "agent" && glyph ? <EngineGlyph letters={glyph} engine={pane.engineId ?? undefined} size={14} active={focused} /> : undefined}
         name={pane.humanName}
         meta={meta}
+        chip={wt && <WorktreeChip wt={wt} />}
         location={
           <>
-            {wt && <WorktreeChip wt={wt} />}
             <AccountChip pane={pane} />
+            {pane.localModel && <LocalModelChip label={pane.localModel} />}
             {pane.kind === "agent" && <SandboxChip paneId={pane.id} />}
             <ResourceChip paneId={pane.id} />
           </>
@@ -465,8 +478,7 @@ const PaneView = memo(function PaneView({
         dragProps={{ ...attributes, ...listeners, tabIndex: -1, role: "toolbar" }}
       />
       {runnable && <RunDialog paneId={pane.id} tabId={tabId} open={running} onOpenChange={setRunning} />}
-      <LimitBanner pane={pane} />
-      <GuardBanner paneId={pane.id} />
+      <PaneBanners pane={pane} />
       {note && (
         // F-CD-16: where the work went, until dismissed.
         <div
@@ -803,5 +815,18 @@ export function PaneGrid({
         );
       })}
     </div>
+  );
+}
+
+/** The banners under a pane's chrome. F-TL-12: the approval comes first, so
+ * banners the agent's own output or reports can raise (limits, the runaway
+ * guard) never push its Allow down. */
+export function PaneBanners({ pane }: { pane: PaneRecord }) {
+  return (
+    <>
+      {pane.kind === "agent" && <ApprovalBanner paneId={pane.id} />}
+      <LimitBanner pane={pane} />
+      <GuardBanner paneId={pane.id} />
+    </>
   );
 }

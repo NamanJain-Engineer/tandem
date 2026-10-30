@@ -4,6 +4,7 @@
 pub mod account;
 pub mod accounts;
 pub mod acp_agents;
+pub mod activity;
 pub mod app;
 pub mod auto;
 pub mod bestof;
@@ -25,6 +26,8 @@ pub mod lanes;
 pub mod launch;
 pub mod library;
 pub mod limits;
+pub mod local_models;
+pub mod lsp;
 pub mod night_shift;
 pub mod onboarding;
 pub mod phone;

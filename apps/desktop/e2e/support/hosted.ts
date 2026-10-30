@@ -1,5 +1,5 @@
 import { browser } from "@wdio/globals";
-import { API, invoke } from "./app";
+import { API, invoke, waitFor } from "./app";
 
 /** Calls an API test route (`/__test/*`, M13 helpers). */
 export async function testRoute<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -26,10 +26,7 @@ export async function entitlement(): Promise<Entitlement> {
 
 /** Waits until the desktop's plan (from the SSE stream) matches. */
 export async function waitForEntitlement(ok: (e: Entitlement) => boolean, what: string, timeout = 10_000): Promise<void> {
-  await browser.waitUntil(async () => ok(await entitlement()), {
-    timeout,
-    timeoutMsg: `${what}: ${JSON.stringify(await entitlement())}`,
-  });
+  await waitFor(entitlement, ok, what, { timeout });
 }
 
 /** The ◈ display in the title bar: its number and level. */

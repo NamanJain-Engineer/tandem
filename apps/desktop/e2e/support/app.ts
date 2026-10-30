@@ -197,6 +197,27 @@ export async function waitSignedIn(timeout = 20_000): Promise<void> {
   });
 }
 
+/** Waits until `ok` holds for what `read` gives, and returns that. A timeout
+ * says what `read` last gave: a `timeoutMsg` is built before the wait starts,
+ * so one that reads the state shows it as it was then. */
+export async function waitFor<T>(
+  read: () => T | Promise<T>,
+  ok: (value: T) => boolean,
+  what: string,
+  options: { timeout: number; interval?: number },
+): Promise<T> {
+  let last: T | undefined;
+  try {
+    await browser.waitUntil(async () => {
+      last = await read();
+      return ok(last);
+    }, options);
+  } catch (e) {
+    throw new Error(`${what}: ${JSON.stringify(last)} (${String(e)})`);
+  }
+  return last as T;
+}
+
 /** Adds a folder through the rail "+" and the fake picker. */
 export async function addFolder(path: string, { added = true }: { added?: boolean } = {}): Promise<void> {
   pickFolder(path);
@@ -205,10 +226,7 @@ export async function addFolder(path: string, { added = true }: { added?: boolea
   if (!added) return;
   // The fake picker reads its file asynchronously: wait for this folder
   // before another call can rewrite it.
-  await browser.waitUntil(async () => (await workspaceRoots()).includes(path), {
-    timeout: 15_000,
-    timeoutMsg: `${path} wasn't added: ${JSON.stringify(await workspaceRoots())}`,
-  });
+  await waitFor(workspaceRoots, (roots) => roots.includes(path), `${path} wasn't added`, { timeout: 15_000 });
 }
 
 /** Rail rows' roots, read in the page (rows re-render while a list refreshes). */
@@ -267,6 +285,28 @@ export function mod(): string {
   return process.platform === "darwin" ? "Meta" : "Control";
 }
 
+/** Stops the runs still going and archives every task (F-TK-04, F-TK-06):
+ * tasks one spec made never show on the next one's board. */
+async function clearTasks(): Promise<void> {
+  const going = new Set(["queued", "setup", "running", "reviewing"]);
+  for (const a of await invoke<Array<{ attempt: { id: string; state: string } }>>("task_attempts_list")) {
+    if (going.has(a.attempt.state))
+      await invoke("task_attempt_stop", { attemptId: a.attempt.id }).catch(() => undefined);
+  }
+  // A page at a time, until none is left. A task that changed since it
+  // was listed is archived on the next pass, at its new revision.
+  for (let page = 0; page < 40; page++) {
+    const { items } = await invoke<{ items: Array<{ id: string; revision: number }> }>("tasks_list", {
+      filter: {},
+      cursor: null,
+    });
+    if (items.length === 0) return;
+    for (const i of items)
+      await invoke("task_archive", { id: i.id, expectedRevision: i.revision }).catch(() => undefined);
+  }
+  throw new Error("resetState: tasks were still there after 40 passes of archiving");
+}
+
 /** Clears the shared TANDEM_HOME's account and workspaces, whichever screen
  * is showing. The E2E keychain lives in memory, so a relaunch always comes
  * back signed out; specs that relaunch use offline mode instead. */
@@ -290,6 +330,10 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   // the tracker's, which specs share.
   for (const p of await invoke<Array<{ id: string }>>("plan_list"))
     await invoke("plan_discard", { id: p.id });
+  // So is the tracker: a run left going stops, and every task is archived,
+  // so a spec starts with no tasks in sight (archived ones keep their
+  // numbers). Every spec that uses tasks resets once, before its own.
+  await clearTasks();
   // Routines outlive specs too (M11): they go, with the background runner
   // and the global pause.
   for (const v of await invoke<Array<{ routine: { id: string } }>>("routines_list")) {
@@ -351,6 +395,8 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   await invoke("settings_set", { key: "thread_defaults", value: {} });
   // Every spec starts with the default shortcuts (F-SH-09 rebinding).
   await invoke("settings_set", { key: "shortcut_overrides", value: {} });
+  // And with the rail at its default width (F-SH-03; E2E-M18-WT08-1 narrows it).
+  await invoke("settings_set", { key: "rail_width", value: 248 });
   await invoke("sidebar_save", {
     sidebar: {
       open: false,
@@ -361,6 +407,9 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
       pinned: false,
     },
   });
+  // And with the Dashboard grouped by status, no group folded: the webview
+  // keeps that view, and E2E-M6-4 groups it by project (F-DB-01).
+  await browser.execute(() => localStorage.removeItem("tandem.dashboard"));
   // The removals bypassed the UI's stores (the launch already showed the last
   // spec's workspace): reload so the UI starts from what the backend has.
   await browser.refresh();
@@ -467,9 +516,8 @@ export async function waitForPaneText(
     const t = await paneText(paneId);
     return opts.commandLine ? t.replace(/\n/g, "") : t;
   };
-  await browser.waitUntil(async () => (await text()).includes(needle), {
+  await waitFor(text, (t) => t.includes(needle), `pane ${paneId} never showed ${JSON.stringify(needle)}`, {
     timeout,
-    timeoutMsg: `pane ${paneId} never showed ${JSON.stringify(needle)}: ${await paneText(paneId)}`,
   });
 }
 
@@ -803,11 +851,15 @@ export async function paneStatus(paneId: string): Promise<string> {
 
 /** Waits for a pane's header status. */
 export async function waitForStatus(paneId: string, status: string, timeout = 15_000): Promise<void> {
-  await browser.waitUntil(async () => (await paneStatus(paneId)) === status, {
-    timeout,
-    interval: 100,
-    timeoutMsg: `pane ${paneId} never showed status ${status} (now ${await paneStatus(paneId)})`,
-  });
+  await waitFor(
+    () => paneStatus(paneId),
+    (now) => now === status,
+    `pane ${paneId} never showed status ${status}`,
+    {
+      timeout,
+      interval: 100,
+    },
+  );
 }
 
 /** Lines of the fake engines' log (TANDEM_FAKE_ENGINE_LOG), and of tandem-hook's posts. */
@@ -860,19 +912,14 @@ export async function pausedCards(): Promise<Array<{ paneId: string; state: stri
 /** Waits until `n` new SessionStart hooks ran after `from` log lines, then
  * a moment for their session ids to be stored. */
 export async function waitForSessionStarts(from: number, n: number): Promise<void> {
-  await browser.waitUntil(
-    async () =>
+  await waitFor(
+    () =>
       fakeLog()
         .slice(from)
-        .filter((l) => l === "hook: SessionStart").length >= n,
-    {
-      timeout: 20_000,
-      timeoutMsg: `only ${
-        fakeLog()
-          .slice(from)
-          .filter((l) => l === "hook: SessionStart").length
-      } of ${n} agents reported a session`,
-    },
+        .filter((l) => l === "hook: SessionStart").length,
+    (started) => started >= n,
+    `agents that reported a session, of ${n}`,
+    { timeout: 20_000 },
   );
   await browser.pause(800);
 }
@@ -893,4 +940,20 @@ export async function closeAllPanes(): Promise<void> {
 /** Leftover processes from the crash are stopped without the dialog. */
 export async function stopOrphansAutomatically(on: boolean): Promise<void> {
   await invoke("settings_set", { key: "orphan_policy", value: on ? "always" : "ask" });
+}
+
+/** Clicks an approval's Allow (F-TL-12.12). Allow ignores a click until its
+ * place on screen has held still for half a second, and WebDriver scrolls a
+ * button into view before clicking, which moves it: so scroll first, give it
+ * the half second, then click once it's enabled. */
+export async function clickAllow(selector: string): Promise<void> {
+  const button = $(selector);
+  await button.scrollIntoView({ block: "center" });
+  await browser.pause(700);
+  await button.waitForEnabled();
+  // A control that waits stays focusable and says so with aria-disabled.
+  await browser.waitUntil(async () => (await button.getAttribute("aria-disabled")) !== "true", {
+    timeoutMsg: `${selector} kept waiting`,
+  });
+  await button.click();
 }

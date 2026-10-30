@@ -405,6 +405,15 @@ impl RunawayService {
         Ok(())
     }
 
+    /// Whether `tool` starts a subagent for the pane's engine, once the
+    /// guard knows the engine.
+    pub fn subagent_tool(&self, state: &AppState, pane: &str, tool: &str) -> bool {
+        let engine = self.guardian.lock().ok().and_then(|g| g.engine(pane));
+        engine
+            .and_then(|e| state.terminals.engines.get(&e))
+            .is_some_and(|spec| spec.subagent_tools.iter().any(|t| t == tool))
+    }
+
     /// A tool report (the status bus's sink).
     pub async fn on_tool(
         &self,
@@ -441,14 +450,22 @@ impl RunawayService {
         app.state::<AppState>()
             .terminals
             .status
-            .set_tool_sink(Arc::new(move |pane: &str, tool: &str| {
+            .set_tool_sink(Arc::new(move |pane: &str, tool: &str, at: i64| {
                 let me = sink_me.clone();
                 let app = sink_state.clone();
                 let (pane, tool) = (pane.to_string(), tool.to_string());
                 tauri::async_runtime::spawn(async move {
                     let state = app.state::<AppState>();
                     let (limits, action) = settings(&state).await;
-                    if let Some(t) = me.on_tool(&state, &pane, &tool, &limits).await {
+                    let tripped = me.on_tool(&state, &pane, &tool, &limits).await;
+                    // F-EX-07: the tool's name in the pane's ledger.
+                    let subagent = me.subagent_tool(&state, &pane, &tool);
+                    state
+                        .terminals
+                        .activity
+                        .tool(&pane, &tool, subagent, at)
+                        .await;
+                    if let Some(t) = tripped {
                         me.tripped(&state, t, action).await;
                     }
                 });

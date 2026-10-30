@@ -7,6 +7,7 @@ import { useRemote, followRemote } from "../../stores/remote";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { RemoteHosts } from "./RemoteHosts";
 import { RemotePrompts } from "./RemotePrompts";
+import { waiting } from "../../test/waiting";
 
 const HOST: HostView = {
   id: "host_01",
@@ -168,12 +169,47 @@ describe("Settings › Remote (UI-14, UI-111)", () => {
       });
     });
     expect(await screen.findByText("SHA256:abc")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
+    // It can open on its own while connecting: Trust and connect waits a
+    // moment first, so a click aimed at what was there trusts nothing.
+    const trust = screen.getByRole("button", { name: "Trust and connect" }) as HTMLButtonElement;
+    expect(trust.hasAttribute("data-grant")).toBe(true);
+    expect(waiting(trust)).toBe(true);
+    expect(trust.title).toBe("Trust and connect turns on once this has been still on screen for a moment.");
+    fireEvent.click(trust);
+    expect(named("ssh_hostkey_decide")).toEqual([]);
+    await waitFor(() => expect(waiting(trust)).toBe(false));
+    fireEvent.click(trust);
     await waitFor(() =>
       expect(named("ssh_hostkey_decide")).toEqual([
         { cmd: "ssh_hostkey_decide", args: { opId: "op_7", accept: true } },
       ]),
     );
+  });
+
+  it("nit: a second host key in the same attempt (a jump host's, then the target's) waits again", async () => {
+    setup([HOST]);
+    followRemote();
+    const ask = (host: string, fingerprint: string) =>
+      act(() => {
+        emitLocal("remote:ssh", {
+          opId: "op_9",
+          hostId: "host_01",
+          stage: "hostkey",
+          prompt: { kind: "hostkey", host, fingerprint, keyType: "ssh-ed25519" },
+          error: null,
+        });
+      });
+    ask("tandem@jump:22", "SHA256:jump");
+    expect(await screen.findByText("SHA256:jump")).toBeTruthy();
+    const trust = () => screen.getByRole("button", { name: "Trust and connect" }) as HTMLButtonElement;
+    await waitFor(() => expect(waiting(trust())).toBe(false));
+    // The same attempt asks about the next host in the same dialog.
+    ask("tandem@10.0.0.5:2222", "SHA256:target");
+    expect(await screen.findByText("SHA256:target")).toBeTruthy();
+    expect(waiting(trust())).toBe(true);
+    fireEvent.click(trust());
+    expect(named("ssh_hostkey_decide")).toEqual([]);
+    await waitFor(() => expect(waiting(trust())).toBe(false));
   });
 
   it("F-RM-01 the password prompt sends the secret to ssh_askpass_reply only", async () => {

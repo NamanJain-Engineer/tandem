@@ -221,6 +221,29 @@ describe("accounts (F-AC-02, F-AC-03, UI-35)", () => {
     );
   });
 
+  it("F-AC-03 D-2620 with one account for its engine a pane shows no account chip; a second account brings it", async () => {
+    // Every engine's first account is "Default": alone, it tells nothing apart.
+    const only = { ...WORK, label: "Default" };
+    setup({}, [only, STUDIO]);
+    useAccounts.setState({ list: [only, STUDIO], overrides: [], loaded: true, failed: false, signIn: {} });
+    const pane = {
+      id: "pn_1",
+      tabId: "tb",
+      workspaceId: "ws_shop",
+      kind: "agent",
+      engineId: "claude",
+      accountId: "acc_work",
+    } as PaneRecord;
+    render(
+      <UiProvider>
+        <AccountChip pane={pane} />
+      </UiProvider>,
+    );
+    expect(screen.queryByTestId("account-chip")).toBeNull();
+    act(() => useAccounts.setState({ list: [only, PERSONAL, STUDIO] }));
+    expect((await screen.findByTestId("account-chip")).textContent).toBe("Default");
+  });
+
   it("F-AC-03 the chip reloads once for an account created after the list loaded", async () => {
     setup();
     useAccounts.setState({ list: [STUDIO], overrides: [], loaded: true, failed: false, signIn: {} });

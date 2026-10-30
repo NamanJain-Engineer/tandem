@@ -86,7 +86,7 @@ pnpm tsx scripts/trace-tests.ts --milestone M0   # acceptance criteria without a
 pnpm ci:local                               # the CI jobs, locally
 ```
 
-Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`. The desktop E2E runner starts the API (test routes, mock billing) and the web app if they aren't up, drives sign-in and checkout through a scripted headless Chromium (`e2e/helpers/browser-signin.ts`, wired as `TANDEM_OPEN_URL_CMD`), starts openbox for window-manager behaviour, and fails the run if the logs contain secret patterns or the network log shows analytics or crash hosts. It prints `E2E_LAST_HOME` (also saved in `test-results/e2e-last-home`). API tests and the web E2E use the compose Postgres and Redis, so run `pnpm infra:up` first (API tests create their own `tandem_test` database).
+Tests set `TANDEM_HOME` to a temp directory and `TANDEM_FAKE_KEYCHAIN=1`. The desktop E2E runner starts the API (test routes, mock billing) and the web app if they aren't up, drives sign-in and checkout through a scripted headless Chromium (`e2e/helpers/browser-signin.ts`, wired as `TANDEM_OPEN_URL_CMD`), starts openbox for window-manager behaviour, and fails the run if the logs contain secret patterns or the network log shows analytics or crash hosts. It prints `E2E_LAST_HOME` (also saved in `test-results/e2e-last-home`), which it deletes when the run passes and keeps for the last 3 failed runs (`docs/OPERATING.md`, E2E lessons). API tests and the web E2E use the compose Postgres and Redis, so run `pnpm infra:up` first (API tests create their own `tandem_test` database).
 
 ```bash
 pnpm --filter web test:e2e      # Playwright; set PLAYWRIGHT_CHROMIUM to a Chromium binary if Playwright's own isn't installed

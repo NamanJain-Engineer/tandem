@@ -1,7 +1,7 @@
 import { $, browser } from "@wdio/globals";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { fakeEngine, freshOffline, home, invoke, mod, relaunch } from "../support/app";
+import { checkAgain, fakeEngine, freshOffline, home, invoke, mod, relaunch } from "../support/app";
 
 type Summary = { teammate: { id: string; name: string; isLead: boolean; pinned: boolean; engineId: string } };
 
@@ -33,8 +33,11 @@ describe("E2E-M10-1 teammates", () => {
     await freshOffline();
   });
 
-  after(() => {
+  // Later specs run without this Codex.
+  after(async () => {
     rmSync(join(home(), "fakebin", "codex"), { force: true });
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-AG-01.3 a fresh profile has Lead, pinned as the hero", async function () {

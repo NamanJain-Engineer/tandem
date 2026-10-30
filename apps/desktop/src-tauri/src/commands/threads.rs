@@ -301,6 +301,15 @@ pub async fn thread_get(
     state.threads.get(&thread_id).await
 }
 
+/// F-TH-01 AC2: the thread is on screen, so it's read.
+#[tauri::command]
+pub async fn thread_mark_read(
+    state: State<'_, AppState>,
+    thread_id: ThreadId,
+) -> Result<(), IpcError> {
+    state.threads.mark_read(&thread_id).await
+}
+
 #[tauri::command]
 pub async fn thread_events(
     state: State<'_, AppState>,

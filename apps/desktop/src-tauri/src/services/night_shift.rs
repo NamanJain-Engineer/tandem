@@ -199,6 +199,17 @@ pub fn summary(runs: &[NightRun], since: i64) -> Option<(usize, usize, Vec<Strin
     ))
 }
 
+/// A summary's body as the phone gets it. The runs' titles name issues a
+/// tracker holds and the phone is off this machine, so they're redacted as
+/// written and past what's removable, before the cut (D-3173). The
+/// notification here keeps them as written (D-3036).
+fn phone_body(body: &str) -> String {
+    tandem_core::untrusted::redacted(body)
+        .chars()
+        .take(160)
+        .collect()
+}
+
 /// "Night Shift: 1 done, 1 needs you".
 pub fn summary_title(done: usize, needs: usize) -> String {
     let needs = match needs {
@@ -445,6 +456,7 @@ impl NightShiftService {
                         full_confirmed: run.full_confirmed,
                         review: run.review,
                         note: None,
+                        supervision: None,
                     };
                     let out = state.task_exec.execute(input).await;
                     let ended = state.clock.now_ms();
@@ -540,7 +552,7 @@ impl NightShiftService {
                 kind: "night_shift".into(),
                 id: format!("night:{today}"),
                 title,
-                body: body.chars().take(160).collect(),
+                body: phone_body(&body),
                 at: sent_at,
             });
         }
@@ -806,6 +818,27 @@ mod tests {
         assert_eq!(
             on_disk[0].attempt_id.as_ref().map(|a| a.as_str()),
             Some("att_1")
+        );
+    }
+
+    #[test]
+    fn f_tk_08_1_night_shifts_phone_alert_hides_a_credential_behind_what_is_removable() {
+        // The runs' titles name issues a tracker holds, and the phone is off
+        // this machine: redacted as written and as read, then cut, so a cut
+        // can't leave a token's start that no rule knows (D-3173).
+        let z = '\u{200b}';
+        let token = format!("ghp_0123456789{z}abcdefghijABCDEFGHIJ012345");
+        for body in [
+            format!("Rotate abc{z}{token}, Write tests for billing"),
+            format!("{} {token}", "x".repeat(140)),
+        ] {
+            let shown = phone_body(&body);
+            assert!(!shown.contains("0123456"), "{shown:?}");
+            assert!(shown.chars().count() <= 160, "{shown:?}");
+        }
+        assert_eq!(
+            phone_body("Write tests for billing"),
+            "Write tests for billing"
         );
     }
 

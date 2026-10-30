@@ -57,6 +57,10 @@ bash scripts/bootstrap-linux.sh                  # WebKitGTK, webkit2gtk-driver,
                                                  # openssh-client (ssh, ssh-keygen, ssh-keyscan), musl-tools, bubblewrap, …
 apt-get install -y zsh fish                      # the shell-integration E2E specs need them
 apt-get install -y bubblewrap                    # E2E-M18-TL11 and the real-sandbox Rust tests need bwrap (F-TL-11)
+curl -sSL https://github.com/jj-vcs/jj/releases/download/v0.34.0/jj-v0.34.0-x86_64-unknown-linux-musl.tar.gz \
+  | tar -xz -C /usr/local/bin ./jj               # jj for F-CD-24's real-jj tests and E2E-M18-CD24 (without it they say so and
+                                                 # return; JJ_REQUIRED=1 makes that a failure; CI's checks job
+                                                 # installs the same binary, sha256-checked, with JJ_REQUIRED=1)
 rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl  # tandem-host (M14)
 pip install ziglang==0.13.0 && cargo install cargo-zigbuild --locked     # release-local.sh: the aarch64 helper
 cargo install cargo-audit --locked
@@ -139,6 +143,14 @@ pnpm --filter desktop exec vitest run src/features/thread   # one area's TS test
 cargo test -p tandem-desktop --lib f_th_16                  # Rust tests by name
 pnpm gen:protocol                                           # regenerate TS types + shortcuts.json + settings.json
 pnpm gen:docs                                               # just the docs' generated sources (shortcuts, settings)
+node scripts/agent/claude-code-strip.mjs /path/to/claude    # what Claude Code's prompt drops before it reads a message, read
+                                                            # from that binary into crates/tandem-core/tests/fixtures/
+                                                            # claude-code-strip.json with its SHA-256 (D-3030). Without
+                                                            # a path it reads the first `claude` on PATH (no shell); give
+                                                            # the path to be sure which. Run it again when the Claude
+                                                            # Code version the app supports moves past the one the
+                                                            # fixture names; the defang tests then name what
+                                                            # `untrusted::removable` must add
 
 # Desktop E2E (real Tauri binary via tauri-driver; builds first, ~10 min for all 60 files)
 sh scripts/agent/with-infra.sh dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e
@@ -157,11 +169,21 @@ pnpm db:migrate && pnpm db:seed                             # inside with-infra,
 # order: a spec that leaves panes open closes them in an `after` hook, or the next
 # launch shows the "still running" dialog (closeAllPanes, stopLeftovers).
 
+# The E2E runner starts openbox under Xvfb (maximize, placement and window focus
+# need a window manager). With TANDEM_E2E_NO_WM=1 the window may never get focus,
+# so chats are never marked read (D-3116): no spec reads a chat's unread dot today.
+
 # Remote (M14): the sshd fixture, the bundled tandem-host, the SSH integration test
 bash scripts/gen-ssh-fixture.sh && docker compose -f infra/docker-compose.yml --profile remote up -d --wait sshd
 sh scripts/agent/build-sshd-image.sh                        # agent containers (HTTPS proxy only): build the sshd image first
 sh scripts/build-tandem-host.sh                             # musl binary + manifest into src-tauri/resources/tandem-host
 cargo test -p tandem-host --features e2e-ssh -- --include-ignored f_rm_01
+# In a fresh agent container the m14 specs need, in order: the musl target
+# (rustup target add x86_64-unknown-linux-musl), the fixture (pull ubuntu:24.04
+# through mirror.gcr.io on a 429, then build-sshd-image.sh and compose up),
+# tandem-host, then the app's build (no TANDEM_E2E_SKIP_BUILD): an app built
+# before tandem-host has no helper to upload, and connecting stops at
+# install_failed ("Connecting…" in the specs).
 
 pnpm --filter desktop perf -- --suite threads               # perf suites (threads, terminals, startup); TANDEM_PERF_BUILD=debug
 pnpm --filter desktop build:demo                            # the browser demo → apps/web/public/demo/app/
@@ -190,7 +212,18 @@ E2E lessons (each cost a debugging round):
   shares the label).
 - The fake engine (`crates/tandem-engines/src/bin/fake-engine`) plays Claude
   stream-json, Codex app-server and ACP. It echoes "You said: <input>" and supports
-  `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`.
+  `run <cmd>`, `write <path>=<text>;…`, `/slow N`, `/hang`, `/crash`. All three
+  answer a task review with a verdict (`review_reply`), since a review runs on
+  whichever other chat engine is installed.
+- A spec that puts a fake engine in `$TANDEM_HOME/fakebin` removes it in `after`,
+  calls `checkAgain()` and checks it's gone (no `.catch`), or later specs run with
+  it installed: a leftover Cursor Agent reviewed E2E-M18-TK-07's runs in a full
+  run, though it passed alone. The same goes for `fake-version.txt` and
+  `fake-models.txt`.
+- `waitUntil`'s `timeoutMsg` is built with its options, before the wait, so
+  `` `…${JSON.stringify(await rows())}` `` shows the state at the start, and a
+  variable the condition sets shows as `null`. Wait with `waitFor(read, ok, what,
+  { timeout })` (`e2e/support/app.ts`): its timeout says what `read` last gave.
 - A test that hard-codes a date breaks the next day: pin the clock
   (`vi.useFakeTimers({ toFake: ["Date"] })`).
 - When an E2E fails, take a screenshot (`browser.saveScreenshot`) before guessing.
@@ -200,9 +233,36 @@ E2E lessons (each cost a debugging round):
 - Sign-up or `/__test/*` answering 500 or "No user owner@tandem.test" in many
   unrelated specs means the dev database is behind: `cd apps/api && pnpm db:migrate
   && pnpm db:seed` (with the infra up) after merging a branch that adds migrations.
+- The desktop app's activity-ledger migration (`0006_activity.sql` on
+  `product-research`, F-EX-07) changed in place before any release: round 4 added
+  the `kept` column and the `note` kind (D-2847), round 5 the `activity_kept` index
+  (D-2851). A dev database that ran an older copy needs resetting: delete
+  `~/.tandem` (or your `TANDEM_HOME`) and start the app again. Symptoms: before
+  round 4, every ledger insert logs `activity.store_failed`; a round-4 copy works but
+  silently lacks `activity_kept`. The chain27 merges kept it as #6 (D-872), made
+  F-CD-24's `lane_vcs` #7 and F-EN-11's `local_model` column #8
+  (`0008_local_models.sql`): a dev database that ran `m16d-teammate-extras`' earlier
+  `0006_local_models.sql` or `0007_local_models.sql` skips a migration and then fails
+  at #8 (a duplicate column), so reset that one too. Released databases never had
+  any of them.
 - Only one E2E run at a time: a killed run's `run.ts` can outlive `pkill` and
   share tauri-driver's :4444, so specs drive the other run's app. Check
   `pgrep -af "e2e/run.ts|tauri-driver|WebKitWebDriver"` before starting.
+- A run's temp `TANDEM_HOME` (`/tmp/tandem-e2e-XXXXXX`, up to 810 MB with the
+  voice models) is deleted when the run passes. A failing run keeps it for its
+  logs, marked `e2e-failed` (the runner prints the path, and
+  `test-results/e2e-last-home` names it), and only the last 3 failed homes stay
+  (`e2e/support/homes.ts`). `TANDEM_E2E_KEEP_HOME=1` keeps a passing run's home,
+  for a grep after the run. A removal that fails with ENOTEMPTY, EBUSY or EPERM
+  runs again, up to 3 times; one that still fails is a warning naming the
+  folder, and the run keeps its exit code (D-2625). The web app's dev server
+  runs with your real HOME and `NEXT_TELEMETRY_DISABLED=1`: as `next dev` exits,
+  a detached process makes Next.js's config folder in HOME, which would bring a
+  removed home back.
+  Homes from before this rule carry no mark and are
+  never pruned: clearing them is the owner's call. The specs' own
+  `/tmp/tandem-e2e-<spec>-<time>` folders still stay behind (about 77 MB after
+  a thousand of them).
 - Conductor specs (`m16-1-*`) talk to `scripts/mock-realtime.ts` on :8794 (the runner
   starts it and starts the API with `REALTIME_MOCK_URL=ws://127.0.0.1:8794/realtime`;
   an API already running from elsewhere lacks it, so stop it first). The mock's
@@ -323,9 +383,26 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    the same rule: they draw only what the download does, with the app's own
    words from `en.json`, and label the build from `lib/release.ts`. A scene
    or part of one that needs a newer release is gated on it (`LANDS` in
-   `lib/scenes.ts` switches on 0.9.0's landing queue and intent radar): after
+   `lib/scenes.ts` switches on 0.9.0's landing queue; `RADAR`, `RAIL_FOLDS`,
+   `PUSH_READS`, `DEFANGS`, `APPROVE_WAITS` and `UNDO_SECONDARY` on 0.13.0's): after
    bumping `release.ts`, look at each scene's final frame in both themes and
    check it against the release.
+   Bumping `release.ts` to a new version needs that release's scenes slice
+   first: the slice draws what the release changes and sets `SCENES_SLICE`
+   (`lib/release.ts`) to it, and `scenes.next.test.tsx` runs every scene test
+   at that version while the site still shows the one before. A version past
+   `SCENES_SLICE` fails the gate (the site's vitest) until its slice is in. Never
+   weaken, skip or delete those guards to get a release through.
+   The gate runs no browser (`test:site` is in neither it nor CI, §7), and a
+   slice's browser checks (the rails' rows folding, the CI pane's scroll,
+   Approve's place and what covers it) only run on a site built at the slice's
+   release. So a slice also sets `release.ts` to `SCENES_SLICE`, runs
+   `pnpm --filter web build:site` and
+   `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
+   sets it back, and runs both again at the version the site shows. At
+   `SCENES_SLICE` the site's other release tests fail until the release commit
+   brings that release's content: its CHANGELOG section, downloads and post,
+   /about/'s figures and the changelog's "New in" tiles.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)
@@ -439,12 +516,19 @@ MSIX_IDENTITY_NAME=… MSIX_PUBLISHER='CN=…' MSIX_PUBLISHER_DISPLAY_NAME=… \
   `node scripts/agent/demo-walkthrough.mjs /tmp/demo-shots` (screenshots plus any
   console errors). A clean-clone build with Vercel's exact install command is the
   strongest check before touching `main`.
+- **`test:site` is in neither the gate nor CI.** The gate runs the site's vitest
+  (`scenes.test.tsx` among it), not its Playwright. The scenes' browser checks
+  are only there: no swap showing two values at once (every scene stepped every
+  25 ms at 1440 and 390 px, D-3002), one clock in real playback (D-3001), every
+  step laid out alike (D-3003) and the final frames. Run it on any scene change
+  before READY; the release checks run it too.
 - **Deployment limit (D-829):** Vercel's plan caps deployments per day, and every push to a branch Vercel deploys counts. Only `main` deploys (`git.deploymentEnabled`). Batch: merge features into `product-m0-m5` as they're ready, and move `main` only for a release that bundles them all. One release is one deployment. Never merge into `main` for a single small change unless it's a hotfix the live site needs. If Vercel answers "Deployment rate limited", wait it out (the limit is a rolling day) or use **Redeploy** on the latest `main` deployment once it clears.
 - `build:site` ends with `scripts/strip-runtime.mjs` (D-1813): it removes Next's
   unused client runtime from the marketing pages and the docs (not the demo app;
   D-1843)
   and fails the build if any page then has a script beyond `/demo/embed.js` on `/`
-  and `/changelog/0.9.0/` (the Land scene, D-1885), `/download/detect.js` on
+  and the release pages with scenes (`SCENE_PAGES`: 0.9.0 and 0.12.0, D-1885,
+  D-1888), `/download/detect.js` on
   `/download/` and a blog post's two (`scripts/script-allowlist.mjs`). Site components stay server-only.
   Then `scripts/check-routes.mjs` (D-1815) checks every page answers at its
   trailing-slash URL with no redirect: Next's own trailing-slash redirects are

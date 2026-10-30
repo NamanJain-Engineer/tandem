@@ -172,7 +172,20 @@ fn start(script_args: bool) -> ChatStart {
         relocate: None,
         briefing: None,
         stdio_servers: Vec::new(),
+        tools_off: false,
     }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_codex_refuses_a_session_with_every_tool_off() {
+    // Its read-only sandbox still runs commands that read the disk.
+    let adapter = CodexAdapter::new(Vec::new());
+    assert!(!adapter.answers_without_tools(Some("99.0.0")));
+    let mut req = start(false);
+    req.tools_off = true;
+    let (tx, _rx) = mpsc::channel(4);
+    let refused = adapter.start(req, tx).await.err().expect("refused");
+    assert!(matches!(refused, AdapterError::Unsupported(_)), "{refused}");
 }
 
 #[test]
@@ -528,6 +541,27 @@ fn f_tk_07_1_a_file_change_names_its_files_absolute() {
             .collect();
         assert_eq!(paths, vec![want.clone()], "{method}");
     }
+    // A result that doesn't list the changes again keeps the files the
+    // change started with: it's the row a claim is made from (D-2836).
+    let started = json!({"jsonrpc": "2.0", "method": "item/started", "params": {"item": {
+        "type": "fileChange", "id": "fc_10", "status": "inProgress",
+        "changes": [{"path": "src/lone.ts", "kind": {"type": "update"}, "diff": ""}]
+    }}});
+    let bare = json!({"jsonrpc": "2.0", "method": "item/completed", "params": {"item": {
+        "type": "fileChange", "id": "fc_10", "status": "completed"
+    }}});
+    let lone = Some(vec!["/work/shop/src/lone.ts".to_string()]);
+    for msg in [started, bare] {
+        let paths: Vec<Option<Vec<String>>> = parser
+            .message(&msg, now())
+            .into_iter()
+            .filter_map(|c| match c {
+                Codex::Event(ThreadEvent::Tool { paths, .. }) => Some(paths),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths, vec![lone.clone()]);
+    }
     // A command names no file.
     let cmd = json!({"jsonrpc": "2.0", "method": "item/started", "params": {"item": {
         "type": "commandExecution", "id": "call_9", "command": "touch x"
@@ -541,4 +575,20 @@ fn f_tk_07_1_a_file_change_names_its_files_absolute() {
         })
         .collect();
     assert_eq!(paths, vec![None]);
+}
+
+/// A file change that never completes keeps nothing past its turn.
+#[test]
+fn f_tk_07_1_a_file_change_that_never_completes_is_dropped_at_the_turns_end() {
+    let mut parser = CodexParser::new(PathBuf::from("/work/shop"), &patterns());
+    let started = json!({"jsonrpc": "2.0", "method": "item/started", "params": {"item": {
+        "type": "fileChange", "id": "fc_11", "status": "inProgress",
+        "changes": [{"path": "src/left.ts", "kind": {"type": "update"}, "diff": ""}]
+    }}});
+    parser.message(&started, now());
+    assert_eq!(parser.edits.len(), 1);
+    let ended = json!({"jsonrpc": "2.0", "method": "turn/completed",
+        "params": {"turn": {"id": "t1", "status": "interrupted"}}});
+    parser.message(&ended, now());
+    assert!(parser.edits.is_empty());
 }

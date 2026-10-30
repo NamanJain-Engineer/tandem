@@ -353,7 +353,7 @@ This is Tandem's own design. It covers the same jobs as other agent workspaces, 
 
   /* layout constants */
   --titlebar-h: 40px;
-  --rail-w: 248px;        --rail-min: 180px; --rail-max: 360px; --rail-collapsed: 52px;
+  --rail-w: 248px;        --rail-min: 246px; --rail-max: 360px; --rail-collapsed: 52px;
   --sidebar-w: 470px;     --sidebar-min: 320px; --sidebar-max: 900px;
   --pane-header-h: 30px;
   --statusbar-h: 22px;
@@ -480,11 +480,12 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 | Prop | Type | Default |
 |---|---|---|
 | `variant` | `"primary" \| "secondary" \| "ghost" \| "danger" \| "link"` | `"secondary"` |
-| `size` | `"sm" \| "md" \| "lg"` (28/32/40px) | `"md"` |
+| `size` | `"sm" \| "md" \| "lg"` (28/32/40px); `"xl"` (44px) for the public site's calls to action; `"mark"` (28px, 4px sides) for a mark at a rail row's end, whose icon alone is 20px wide (D-2701) | `"md"` |
 | `iconLeft`, `iconRight` | ReactNode | — |
 | `loading` | boolean | false |
 | `kbd` | string (e.g. `"⌘↩"`), rendered as a trailing `Kbd` | — |
 | `fullWidth` | boolean | false |
+| `waiting` | boolean: off for now but still focusable (a control that waits until it has held still, F-TL-12.12) | false |
 
 **Visuals:**
 - *primary:* bg accent, fg accent-fg; hover accent-hover; pressed accent-press.
@@ -495,6 +496,7 @@ Setting "Terminal theme: Follow app / Night / Day / High contrast" (high contras
 
 **Loading:** replaces `iconLeft` with a 14px spinner, keeps the label, sets `aria-busy`, and blocks clicks.
 **Disabled:** 40% opacity, `cursor: not-allowed`, no hover change; the tooltip explains why if `disabledReason` is passed.
+**Waiting:** `aria-disabled`, not `disabled`: Tab still reaches it, and clicks, Enter and Space do nothing. Its content dims to 40% and its focus ring stays at full strength; `title` says why it's waiting. Every control that grants something (Allow, Approve, Trust) uses it while it waits, and carries `data-grant`.
 
 ### 2.2 IconButton
 Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**required**; used for the `aria-label` and the tooltip). Optional `badge` (number or dot) at top-right, and `pressed` (toggle state → `aria-pressed`, bg accent-soft, icon accent).
@@ -512,7 +514,7 @@ Square 28/32px, `variant` ghost|secondary|primary. Takes `icon` and `label` (**r
 - Combobox adds type-to-filter and an "Add {query}…" creatable row when `onCreate` is given.
 
 ### 2.5 Checkbox, Radio, Switch
-- Checkbox: 16px, radius xs, accent when checked, supports indeterminate.
+- Checkbox: 16px, radius xs, accent when checked, supports indeterminate. `waiting` (with `waitingReason`) works as Button's: `aria-disabled`, still focusable; the box turns fainter (border `border`, background surface-2, also when unchecked), its mark and label dim, its focus ring stays full strength, and the reason is the box's accessible description and title.
 - Switch: 28×16 track, accent when on, with a label to the left in settings rows.
 - **All have visible labels; clicking the label toggles.**
 
@@ -709,6 +711,7 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 
 ### 2.29 AccountChip
 - A 20px pill: the provider glyph plus the account nickname ("Personal", "Work", "Client A").
+- Shown only when its engine has more than one account (D-2620): with one, the pane header and the Dashboard card name none, since there's nothing to tell apart and its name is usually "Default".
 - Clicking opens a popover listing all accounts for that engine with usage meters and a "Switch to…" action, and a footer "Manage accounts…".
 
 ### 2.30 WaveformRing (Conductor and Dictate visual)
@@ -791,7 +794,11 @@ Appears inline in a transcript and is mirrored in the Dashboard and Notification
 
 ### 3.3 Left rail · SH
 > **D-2603:** a workspace row's status is quiet: amber "Needs you", or a working dot with "n working", or "Failed" in rose, never a boxed chip. The name keeps at least 10 characters; the branch gives way to a status, and live panes are a `Count` pill. Teammate rows (UI-70) are two lines: name with Failed > Needs you > n working > age, then the latest activity.
-- **Width:** default 248px, drag-resizable between 180 and 360px (F-SH-03); the width persists per mode.
+
+> **D-2611:** a worktree's row (F-CD-15) is named as its workspace is, `coupon-rules` rather than `tandem/coupon-rules`: a worktree's branch is always `tandem/` and that name, so the prefix said nothing and took the room. The branch is in the row's tooltip, before the path, and in the pane header's chip and the status bar. Beside a status the name keeps at least 10 characters, as a workspace row's does, and ⋯ takes no room: it covers the row's end while the row is hovered or holds focus. It covers whole parts, never the end of a mark (D-2700, D-2623): the row ends with its agents' count, which ⋯ takes the place of, or with a blank as wide as a one-digit count when there's none. A click on what ⋯ covers is the row's.
+
+> **D-2701:** a row never runs past the rail. While a worktree row's contents are wider than the row, it folds them, in order: the Preview button's word, the radar mark's symbol, the checks badge's words, then its status words to their dot (the `StatusDot` of the state, with the words as its accessible name and tooltip; the unread dot sits on it, as on a pane row's dot). A workspace row folds its status words the same way. The name keeps its 10 characters, so the rail's minimum is a fully folded worktree row at the deepest indent: the name's 10 characters, the status dot, the checks and radar icons and a two-digit count.
+- **Width:** default 248px, drag-resizable between a fully folded worktree row's width and 360px (F-SH-03); the width persists per mode. The minimum is that row at the deepest indent, its text parts measured in the app's own engine: 246px in Chromium, and more in WebKitGTK, which draws a name's 10 characters 80px wide where Chromium draws 75.7 (D-2701, D-2626). While a row the rail shows has a jj badge or a running Preview, the minimum adds the widest such row's; a rail narrower than its minimum widens to it over --dur-base with --ease-standard, never mid-drag, and keeps that width when they go (D-2703). Where scrollbars take room (Windows), the minimum adds a scrollbar's width.
 - **Collapse** with Mod+\ (§5), or by dragging below 160px. Collapsed it is a 52px icon rail showing avatars/glyphs with tooltips.
 - **Background** surface-1, with a 1px right border.
 - **Structure (all modes):** a header row (section title plus a "+" action), a scrollable list, and a footer row (mode-specific quick actions).
@@ -978,7 +985,7 @@ Tandem runs the agents you already use. Nothing is bundled, and your AI accounts
 - **Pane title defaults:** "{Engine} · {n}". The first user prompt (truncated to 40 chars) auto-renames the pane unless the user renamed it manually.
 - **Command bar** (optional per pane; toggle in the ⋯ menu, default on for agent panes): a single-line composer below the terminal that sends text plus Enter into the PTY. It supports Dictate (🎙), history (↑/↓), and multi-line entry via Shift+Enter (sent as bracketed paste).
 - **Pane ⋯ menu:** Rename · Duplicate · Split right (Mod+D) · Split down (Mod+Shift+D) · Move to new tab · Hand off to… ▸ (engine/account list) · Auto ▸ (Off / Finish / Stress-test / Review / Explore / Custom…) · Show command bar ✓ · Open in Thread · Copy session ID · Reveal worktree · Restart · ─ · Stop agent (danger) · Close pane (danger).
-- **Worktree badge:** if the pane runs in a worktree, the header shows the branch chip "⎇ tandem/{slug}". Hovering shows the path. The ⋯ menu adds "Merge into {base}…", "Open diff", and "Discard worktree…" (danger; requires typing the branch name).
+- **Worktree badge:** if the pane runs in a worktree, the header shows the branch chip "⎇ tandem/{slug}". Hovering shows the path. When the header is short of room the chip gives way first, down to its icon, and the title keeps its length; the title is never cut to fewer than 10 characters, as a worktree row's name isn't (D-2611). The ⋯ menu adds "Merge into {base}…", "Open diff", and "Discard worktree…" (danger; requires typing the branch name).
 - **Auto badge:** when Auto is on, the header shows an "Auto: Stress-test · 3/15" Badge (turn / F-AU-01 ceiling) in accent-outline. Clicking opens a popover with the mode, turn count, credits used and "Stop Auto".
 - **Arrange:** a toolbar button at the top-right of the main area ("Arrange") rebalances into the nearest preset for the number of panes. Mod+Shift+T (§5).
 - **Maximize** (⤢ or Mod+Shift+Enter on a focused pane, §5): the pane fills the main area; the others stay alive. Esc or ⤢ restores.
@@ -1071,13 +1078,17 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
 - **UI-153 Overlap** (dialog; "Check overlap…" in a worktree's ⋯ menu; F-WT-03, F-WT-10). Title "Overlap: {branch}". Body: "{n} files changed since this worktree started", then **Other worktrees**: each sibling with shared files or symbols, "{branch} also changed {n} files" and the files (monospace), then "Shared symbols" with each symbol (monospace) and what each side did: "changed here and there", "renamed or removed here, used there", "used here, renamed or removed there". "No overlap with other worktrees" when none. Then **Merging into {base}**: the forecast verdict. A line under the symbols says what wasn't parsed: "{n} files weren't checked for symbols (other languages or too large)". Loading: "Checking for conflicts…". Error: an error `Banner` with Retry.
 
+- **Code intelligence** (the Files editor and worktree diffs; F-CD-23). In the editor: F12 or Mod+click goes to the definition; Shift+F12 opens **References** (a panel under the editor: "{n} references to {name}", one row per reference with its path, line and text in monospace; Enter or click opens it; Escape closes; "No references found" when empty; a `Spinner` while asked); hovering a name shows a tooltip with the server's text (monospace, at most 12 lines, scrolls); diagnostics are wavy underlines in the error or warning tone with the message on hover. The editor's status line (right of the tabs) shows "{server}", "Starting the language server…" (with a `Spinner`, before the first answer), "2 errors, 1 warning", "{server} is off until you trust this repository" (with a ghost **Trust repository…**, which asks with the native confirm "Trust {repo} for language servers?"), or for a worktree of sandboxed agents "{server} is off until you trust this worktree" (with **Trust worktree…**; the confirm says "The agent's code will run outside its sandbox."), a file outside the folder "Outside this folder: read only, without code intelligence", "No language server for {language}" (its tooltip "Install {server} to get definitions and references"), or "{server} stopped: {reason}". In a diff (the worktree diff and the review queue's), clicking a name on a new-side line opens a small menu: **Go to definition** / **Find references**; the diff closes and the Files editor shows the result (references in the panel under the clicked line's file). Go to definition with no answer says "No definition found for {name}" in the status line.
+
 - **Multi-repo rows** (F-CD-22). A multi-repo folder's rail row shows "{n} repositories" where a repository's shows its branch; its worktrees list the same. Disabled menu entries on a multi-repo worktree say "Not available for multi-repo worktrees yet". A folder with more than 12 repositories isn't multi-repo; its row's tooltip says "This folder holds {n} repositories, more than 12, so its worktrees aren't made across them. Add the repositories you work in on their own."
+
+- **jj workspaces** (the New worktree dialog and the rail; F-CD-24). In a repository co-located with jj, the New worktree dialog adds a `SegmentedControl` "Make" with **jj workspace** (preselected, described "jj {version}") and **git worktree**; the choice is remembered for the repository. A repository with `.jj` and no `.git` shows an info `Banner` "This repository uses jj without git. Vibezeo works with jj in repositories co-located with git." and makes no jj workspace; an SSH or WSL folder shows nothing about jj. A jj workspace's rail row carries an outline `Badge` "jj" beside its name. What isn't available for jj workspaces yet is disabled with "Not available for jj workspaces yet", as F-CD-22's entries are.
 
 - **Multi-repo diff** (the worktree diff dialog; F-CD-22). A line per repository above the files, "{repo} · {n} files" (or "{repo} · No changes"); the files follow grouped by repository, each path starting with its name, all in one review bar. Second opinion isn't offered.
 
 - **UI-158 Create pull requests** (dialog; "Create pull requests" in a multi-repo worktree's ⋯ menu, after the native confirm; F-CD-22). Title "Pull requests for {branch}". One row per repository: its name and step ("Pushing…", "Opening the pull request…", "Linking…", "Opened" with the link, "Skipped: no new commits", "Skipped: GitLab isn't supported yet", "Failed: {reason}"). "Open" (ghost) opens a pull request in the system browser. Footer: Close. Loading: the rows in their waiting state with a `Spinner`. Error: an error `Banner` "Couldn't read the pull requests' progress: {reason}"; spinners stop. No run (the app restarted): "This run isn't running any more. Create pull requests again to finish it; open pull requests are kept."
 
-- **Radar mark** (a worktree's rail row; F-WT-10). A `Badge` (`waiting`, amber) "Shares {symbol}" (or "Shares {n} symbols") while the worktree shares symbols with a sibling; it opens UI-153.
+- **Radar mark** (a worktree's rail row; F-WT-10). A `Badge` (`waiting`, amber) while the worktree shares symbols with a sibling; it opens UI-153. It leads with the radar icon, then the symbol in code type (`applyCoupon`), or "{n} symbols" for several (D-2700); a long symbol is cut at its end, the count never. Its accessible name, and its title, begin with its words (D-2701, WCAG 2.5.3): "{symbol}, shared with another worktree", or "{n} symbols shared with another worktree: {symbols}" with every symbol. Beside the row's status ("● 1 working", "Needs you", "Failed") it's the icon alone, so the row's name keeps its room (D-2613, as D-2603 hides the branch). A rail row's marks show their words whole or not at all: while the row's contents are wider than the row, its marks fold to their icons, the Preview button first, then the radar mark, then the checks badge, and last the row's status words fold to their dot (D-2700, D-2701).
 
 - **Radar notice** (a toast; F-WT-10). Title "{branchA} and {branchB} both touch {symbols}". Body: "Their rail rows show it; Check overlap… has the details." Action: **Warn both agents** (types the note into each worktree's agent, then "Warned both agents"; when a worktree has no agent, "No agent is running in {branch}"). Warning tone.
 - **UI-160 Instructions** (dialog, `lg`; "Instructions…" in a local folder's rail menu; F-EN-07). Title "Instructions"; description "Which instructions file each engine reads in {folder}, and how they differ from AGENTS.md."
@@ -1100,13 +1111,13 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 
 - **UI-155 Land worktrees** (dialog; "Land worktrees…" in a repository's rail menu and every local worktree's ⋯ menu; F-WT-07). Description: "Merges each ticked worktree into {base}, one at a time, after merging {base} into it and running the check. Nothing is pushed." Body: a `Checkbox` per candidate (its branch, "{n} commits", and the forecast: "No conflicts expected", "Conflicts in {n} files" or "No forecast"), in landing order; one with uncommitted changes is disabled with "Commit or stash its changes first". Then **Check command** (`Input`, monospace, the last one used here), with "Without a check, worktrees land untested." when empty. Loading: `Skeleton` rows. Empty: "No worktrees have commits that {base} doesn't." Errors: an error `Banner` (a dirty or detached base says so and disables Land). Footer: Cancel / **Land** (primary, "Land {n}").
 
-  While landing, the rows become steps: waiting, "Merging {base} in…", "Checking…", "Landing…", Landed (with the commit), Failed (exit code), Conflict (the files). A failed step shows its output's tail in a `CodeBlock` with **Send failure to agent** (an agent `Select` when several run there) or **Copy** when none does. Footer: **Stop** while running; Close after. **Undo landing** (secondary, danger) shows whenever the last run landed something; it asks with the native confirm "Undo landing? Moves {base} back to where it was before the landing. The worktrees keep their commits, and each keeps what landed before it, since {base} was merged into it." A landing interrupted by quitting shows a warning `Banner` the next time: "The last landing was interrupted. Vibezeo aborted its unfinished merge in {folder}."
+  While landing, the rows become steps: waiting, "Merging {base} in…", "Checking…", "Landing…", Landed (with the commit), Failed (exit code), Conflict (the files). A failed step shows its output's tail in a `CodeBlock` with **Send failure to agent** (an agent `Select` when several run there) or **Copy** when none does. Footer: **Stop** while running; Close after. **Undo landing** (secondary, so Close is the landed state's one filled button) shows whenever the last run landed something; it asks with the native confirm "Undo landing? Moves {base} back to where it was before the landing. The worktrees keep their commits, and each keeps what landed before it, since {base} was merged into it." A landing interrupted by quitting shows a warning `Banner` the next time: "The last landing was interrupted. Vibezeo aborted its unfinished merge in {folder}."
 
 - **UI-156 Check pull requests?** (dialog; "Check pull request" in a local worktree's ⋯ menu while its repository isn't allowed; F-WT-08). Title "Check pull requests for this repository?". Body: "Vibezeo will run your GitHub CLI (gh) in {folder}'s worktrees to read their pull requests, checks and review comments. gh signs itself in; Vibezeo never sees its token." Footer: **Not now** / **Allow** (primary).
 
 - **UI-157 Pull request checks** (dialog; the checks badge on a worktree's rail row; F-WT-08). Title "Checks for {branch}", description the pull request's number as a link. One row per check: its name, workflow and state ("Passed", "Failed", "Running", "Skipped", "Cancelled"). A failed one has **Send failure to agent** (an agent `Select` when several run in the worktree) or **Copy failure** when none does. Loading: `Skeleton` rows. Empty: "No checks have reported yet." Error: an error `Banner` with Retry. Footer: **Refresh** / Close.
 
-  The rail badge: a `Spinner` with "Checks running", "{n} checks failed: {names}" in the error tone, or a check mark "Checks passed". Nothing shows without a pull request, before the repository is allowed, or on GitLab.
+  The rail badge leads with its icon: a `Spinner` while checks run, a crossed circle in the error tone when one failed, a check mark when they passed, a no-entry sign when they were cancelled. Its words are the status bar's, whole: "CI running", "CI failed", "CI passed", "CI cancelled" (D-2700). Its title is the checks' summary ("{n} checks failed: {names}", "Checks running", "Checks passed", "Checks cancelled"); its accessible name starts with its words and, for a failure, says which ("CI failed: 1 check failed: test"). Beside the row's status it's the icon alone, as the radar mark is (D-2613, D-2614), and it folds to its icon after the radar mark when the row's contents don't fit (D-2700). Nothing shows without a pull request, before the repository is allowed, or on GitLab.
 
 - **UI-154 Compare previews** (dialog; "Compare previews…" in every local worktree's ⋯ menu, with the worktree ticked, and "Side by side…" in Best of N's Compare, with both lanes ticked when there are two; F-WT-09). Description: "Choose two worktrees. Their previews open side by side in a new tab." Body: a `Checkbox` per worktree of the repository whose preview exists, labelled with its branch, described "Preview running" or "Its preview starts when you open them"; ticking a third unticks the oldest. Loading: two `Skeleton` rows while the previews are read. Empty: "Side by side needs two worktrees whose repository has a preview." Footer: Cancel / **Open side by side** (enabled with two ticked; "Waiting for the previews…" while it waits). A failure shows an error `Banner`; an untrusted preview opens UI-151 instead. The result is a new tab in the repository, named "<branch> | <branch>", with two browser panes side by side, each named after its branch.
 - **UI-163 ACP agents** (a section of Settings › Engines, under the engine list; F-EN-10). Heading "ACP agents" with **Add an ACP agent…** (secondary, `Plus`).
@@ -1116,10 +1127,18 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
     - "Fill in:" then **Goose** (ghost).
     - Fields: Name, Command (hint "A command on your PATH, or its full path"), Arguments (the extra-arguments parser; an open quote is an error), and Environment variables: rows of name and value with a remove button, **Add a variable**, and the hint "Settings the agent reads, not keys: keep keys in the agent's own sign-in."
     - Footer: Cancel, **Test** (secondary), **Add** (primary). Both are disabled until Name and Command are filled and the arguments parse.
-  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
-  - The launch sheet never lists added agents: they run in threads only (D-2513).
     - A passed test shows a success `Banner`: "{name} answered, version {version}." plus "It signs in with: {methods}." A failure or a refused value shows an error `Banner` with the core's message ("Not an ACP agent: …"). Any change clears both.
   - In the Thread engine picker, an added agent reads "{label} · via ACP".
+  - In a thread on an added agent, **Sign in** on a sign-in error doesn't open an account's login: an info toast says "Sign in to {label} with its own command in a terminal, then try again. Vibezeo never holds its sign-in." (D-2514). The error itself names the methods the agent offers.
+  - The launch sheet never lists added agents: they run in threads only (D-2513).
+- **UI-164 Local models** (a section of Settings › Engines, under ACP agents; F-EN-11). Heading "Local models" with **Add a port…** (ghost, `Plus`) and **Check again** (secondary, `RefreshCw`; a `Spinner` while asking).
+  - Body line: "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only, when you open this page or check again."
+  - Rows, one per server that's running or added: the kind ("Ollama", "LM Studio", "llama.cpp"), `127.0.0.1:{port}` in `font-mono` `fg-muted`, the state ("Running · {n} models" or "Not running") and, for an added port, **Remove** (ghost). Under a running server, its models: "{name} · {size} · {parameters}" in `font-mono` `fg-muted` (only what the server reports) and **Start in Codex** (secondary).
+  - Start in Codex is disabled with its reason as the tooltip: "Codex can't use {kind} servers yet." (llama.cpp), "Install Codex to use a local model.", "Open a local folder first." or, with a Codex older than 0.149.0 or a pre-release of it, "Local models need Codex 0.149.0 or newer, and this computer has Codex {version}. Update Codex, then try again." (when its version can't be read, "…and Vibezeo couldn't tell which Codex version this computer has. Update Codex, then try again."). The version is read again each time the list loads, so Check again shows the Codex installed now. A start shows a success toast "Started {model} in Codex." and switches to Code mode.
+  - States: loading (`Spinner`), error (`Banner` with Try again), empty ("No model servers are running on this computer. Start Ollama or LM Studio, then check again.").
+  - **Add a port** (dialog, `sm`): description "Another port on this computer to ask for models." Fields: Kind (`Select`), Host (`Input`, `127.0.0.1`; only `127.0.0.1` and `localhost` are accepted), Port (`Input`, numeric; "Ports run from 1 to 65535"). Footer: Cancel, **Add** (primary). A refused host shows the error in a `Banner`.
+  - A pane started from a local model shows the chip "On this computer" (`Cpu` icon, `surface-3`) in its header where an account chip would be; its tooltip is "{model} · {kind}".
+  - Settings › Privacy, under "What leaves this machine": "Local models: a local model's prompts, and the code they carry, go only to its model server at 127.0.0.1. What that server does with them (it could be a gateway or a port-forward), and settings an administrator manages for Codex, are outside Vibezeo's control. A local pane uses none of the repository's own Codex settings: its .codex/config.toml, hooks and MCP servers."
 
 **ID allocation for this part.** Thread UI-20–25, Engines & accounts UI-33–37, Routines UI-50–53 (UI-50 is already referenced by `CronInput`), Agent mode UI-70–76, Tasks UI-80–84, Plugins UI-90–94. UI-40–49 (Dashboard, Notifications) and UI-60–69 (Dictate, Conductor) are reserved for later parts.
 
@@ -1159,7 +1178,7 @@ Opened from the Code rail footer "Remote hosts". It's a page in the main area wi
 - **Keyboard:** Mod+N new thread · Mod+L focus composer · Mod+D split · Mod+[ / Mod+] cycle grid panes · Mod+Alt+C toggle Changes · Mod+F find in thread · Alt+↑ / Alt+↓ previous/next message · Mod+Shift+H hand off · F2 rename · Mod+Backspace archive (asks first).
 
 #### UI-21 · Thread view: transcript items · TH
-> **D-2604 (scannable turns):** three or more consecutive tool calls fold to "+n previous tool calls" with the latest call still shown beneath. A command whose output ends in a test summary (vitest, jest, cargo, pytest) shows "18 passed · 0 failed" as its meta. A finished turn that edited files or ran tests closes with one line: "Changed 2 files +14 −6 · 18 passed · 0 failed". All of it comes from the tool events the engines send; nothing is inferred beyond their diffs and output.
+> **D-2604 (scannable turns):** three or more consecutive tool calls fold to "+n previous tool calls" with the latest call still shown beneath. A command whose output ends in a test summary (vitest, jest, cargo, pytest) shows "18 passed · 0 failed" as its meta. A finished turn that edited files or ran tests closes with one line: "Changed 2 files +14 −6 · 18 passed · 0 failed". All of it comes from the tool events the engines send; nothing is inferred beyond their diffs and output. Claude Code sends no diffs, so its edits count the lines its result's patch says, or else what its Edit, MultiEdit and Write inputs describe (D-2608). A file whose lines can't be told (without the patch, a Write over an existing file or a `replace_all`) counts as changed, and then the turn says only "Changed 2 files", never a partial total. "+n −m" reads out as "n lines added, m removed".
 | Item | Rendering | Labels |
 |---|---|---|
 | User message | Right-aligned block, surface-3, radius md, max 72% width, attachment chips above text | Hover: "Edit and resend", "Copy" |
@@ -1715,8 +1734,8 @@ One live wall of every agent in every mode: Code panes, Threads and Teammate cha
 - **Controls:** a search Input "Search agents…", a SegmentedControl "Status | Project", and filter Chips with counts ("All", "Waiting", "Working", "Done", "Idle", "Failed"). One chip is active at a time.
 - **Agent card** (`AgentCard`, surface-2, radius md, 1px border; waiting cards use a 1px `status-waiting` border):
   - Line 1: StatusDot, EngineGlyph or Avatar (teammate chats), title (truncate), then right-aligned "{Status} · {elapsed}" in tabular-nums, the ⋯ menu and × (hover or focus only).
-  - Line 2 (fg-muted, text-sm): "{Engine} · {workspace or teammate} · ⎇ {branch} · {account}". Omit missing parts.
-  - Lines 3–4 (optional, fg-subtle, up to 2 lines, passed through the shared secret redactor): the latest activity: the pending request ("Wants to run: {cmd}", "Asks: {question}"), the last ToolCallBlock summary, or the start of the last message. The setting "Show status previews on Dashboard cards" (on) controls it.
+  - Line 2 (fg-muted, text-sm): "{Engine} · {workspace or teammate} · ⎇ {branch} · {account}". Omit missing parts; the account only when its engine has more than one (D-2620).
+  - Lines 3–4 (optional, fg-subtle, up to 2 lines, passed through the shared secret redactor as the cards load; a status update draws the record's line without it, since today that is only a hook's tool name and no status source sets a preview, so a source that ever does must be redacted on that path too, D-2627; a blank line shows none): the latest activity: the pending request ("Wants to run: {cmd}", "Asks: {question}"), the last ToolCallBlock summary, or the start of the last message. The setting "Show status previews on Dashboard cards" (on) controls it.
   - Waiting cards show compact ApprovalCard actions for kinds `command`, `file_write` and `question` ("Allow once" / "Deny" / "Open"; questions show only "Answer…", which jumps). High-risk requests show only "Open", so the full card is reviewed in context.
   - Badges: "Auto" (accent-outline) and "Remote · {host}". The "Lite" badge is pane-only and never appears on cards.
 - **Grouping:** by Status (group order Waiting, Working, Done, Failed, Idle), or by Project (workspaces in rail order, "Teammates" and "No folder" last, each group header showing its own mini counts). Group headers are collapsible 2xs caps rows; collapse state persists.
@@ -2182,7 +2201,7 @@ Conductor operates Tandem by voice through a closed tool catalog that mirrors th
   - Voice or screen: closing panes, executing tasks, creating a teammate, other plugin writes.
   - If the target changes first, the row expires: "Expired — {pane} changed."
 - **Errors:** "Couldn't connect to Conductor. [Try again]" · "You're offline. Conductor needs a connection." · "Your microphone isn't delivering audio. [Switch mic]" · "This call reached its 30-minute limit. [Start a new call]" · "Out of credits." (UI-122; nothing to buy, no action, D-2914) · "Sign in to use Conductor. [Sign in]". Startup errors always show; nothing pops up after hang-up.
-- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search.
+- **Find work:** "Where's the agent doing the login tests?" navigates and flashes the match (UI-42 flash) and says what it was last doing. Two close matches become two chips: "Did you mean: [auth tests] [login page]". The palette's "Find work…" runs the same search. Its results' heading is "Find work · ranked by Vibezeo's AI" when the hosted ranking ordered them, and "Find work · ranked by Vibezeo's AI and on this computer" when local model panes, which it's never sent, were ranked here among its answer (F-EN-11).
 - **Ending:** hang-up, sign-out, an unrecoverable mic, the 30-minute cap or 0 credits. Audio stops at once, pending deliveries are cancelled and queued actions never run. A 3s receipt replaces the HUD: "Call ended · 4:12 · 520 credits · 6 actions [Call log]".
 - **Acceptance:** a voice "yes" never confirms a shell command; hang-up during a pending prompt delivers nothing; a waiting pane never receives Conductor input; after 5 actions the HUD shows 3 chips and "+2"; a hidden window stops the ring's animation loop.
 
@@ -2724,6 +2743,7 @@ ID ranges: UI-01–19 shell, onboarding and Code mode (ui_part2) · UI-20–37 T
 | UI-161 | Engine versions | §4.4 | EN |
 | UI-162 | Session library | §4.3 | TH |
 | UI-163 | ACP agents | §4.4 | EN |
+| UI-164 | Local models | §4.4 | EN |
 
 ### 8.1 Cross-document conflicts found while writing this part
 All items below were fixed at the source during the consistency pass (see CONSISTENCY_REPORT.md); they are kept as a record.
@@ -2734,4 +2754,4 @@ All items below were fixed at the source during the consistency pass (see CONSIS
 5. **Title-bar credits** (a hosted build, signed in) open Settings › Account (UI-114); there is no "Billing" page.
 6. **Onboarding model size.** Resolved: UI-04 shows the manifest size (670 MB, F-DI-04 and ARCHITECTURE §12.4 `approx_mb`).
 7. **Light accent contrast.** Resolved: §1.2 now uses teal-700 (#0f766e) as the light-theme accent, `#7d8ba0` for dark `text-subtle`, and adds `status-*-text` tokens (§7.3). DECISIONS "Visual identity" records the light accent.
-8. **Sidebar and rail sizes.** Resolved to PRODUCT_SPEC: sidebar 470px (320–900, or full-window), rail 180–360px (§1.2 layout constants, §3.3, §3.5).
+8. **Sidebar and rail sizes.** Resolved to PRODUCT_SPEC: sidebar 470px (320–900, or full-window), rail from a fully folded row's width (246px in Chromium) to 360px (§1.2 layout constants, §3.3, §3.5; the minimum was 180px until D-2701, and grows while jj or Preview rows show, D-2703).
