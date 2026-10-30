@@ -50,6 +50,9 @@ export type RailListProps<T extends RailItem> = {
   onRemove?: (item: T) => void;
   expanded?: Record<string, boolean>;
   onExpand?: (item: T, open: boolean) => void;
+  /** The Pinned band's fold, when the rail keeps it; else the list's own. */
+  pinnedOpen?: boolean;
+  onPinnedOpen?: (open: boolean) => void;
 };
 
 /** Where a row lands after a reorder: its band and the row before it there. */
@@ -220,9 +223,13 @@ export function RailList<T extends RailItem>({
   onRemove,
   expanded = {},
   onExpand,
+  pinnedOpen: keptOpen,
+  onPinnedOpen,
 }: RailListProps<T>) {
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [pinnedOpen, setPinnedOpen] = useState(true);
+  const [ownOpen, setOwnOpen] = useState(true);
+  const pinnedOpen = keptOpen ?? ownOpen;
+  const setPinnedOpen = onPinnedOpen ?? setOwnOpen;
   const [dragging, setDragging] = useState(false);
   const refs = useRef(new Map<string, HTMLDivElement | null>());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -349,7 +356,7 @@ export function RailList<T extends RailItem>({
             <button
               type="button"
               aria-expanded={pinnedOpen}
-              onClick={() => setPinnedOpen((o) => !o)}
+              onClick={() => setPinnedOpen(!pinnedOpen)}
               className="flex h-6 w-full items-center gap-1 rounded-xs px-1 text-2xs font-semibold uppercase tracking-caps text-fg-subtle hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
             >
               {pinnedOpen ? (

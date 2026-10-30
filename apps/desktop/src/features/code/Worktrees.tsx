@@ -254,8 +254,9 @@ function singleRepoMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEnt
 function PreviewMark({ url, branch, fold }: { url: string; branch: string; fold: boolean }) {
   const name = t("worktree.preview.openLabel", { branch });
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="mark"
       data-testid="worktree-preview"
       data-compact={fold ? "" : undefined}
       aria-label={name}
@@ -265,11 +266,11 @@ function PreviewMark({ url, branch, fold }: { url: string; branch: string; fold:
         openPreview(url);
       }}
       onKeyDown={(e) => e.stopPropagation()}
-      className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1 text-sm font-medium text-fg hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
+      className="shrink-0"
+      iconLeft={<Globe size={12} aria-hidden="true" className="shrink-0" />}
     >
-      <Globe size={12} aria-hidden="true" className="shrink-0" />
-      {!fold && <span data-words="">{t("worktree.preview.open")}</span>}
-    </button>
+      {fold ? undefined : <span data-words="">{t("worktree.preview.open")}</span>}
+    </Button>
   );
 }
 

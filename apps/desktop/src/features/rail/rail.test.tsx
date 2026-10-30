@@ -289,6 +289,39 @@ describe("rail (F-SH-03)", () => {
     expect(edge.getAttribute("aria-valuemin")).toBe("272");
   });
 
+  it("F-SH-03 D-2703 a folded Pinned band's rows aren't shown, and their marks count for nothing", () => {
+    const repo = ws("a", { pinned: true, collapsed: false, branch: "main" });
+    const jj = ws("wt_jj", { parentId: "a", laneBranch: "tandem/jj", laneVcs: "jj" });
+    setup([repo, jj, ws("b")]);
+    const edge = screen.getByRole("separator", { name: "Resize the rail" });
+    expect(screen.getByTestId("worktree-jj")).toBeTruthy();
+    expect(edge.getAttribute("aria-valuemin")).toBe("271");
+    const band = screen.getByRole("button", { name: "Pinned" });
+    fireEvent.click(band);
+    expect(band.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("worktree-row")).toBeNull();
+    expect(edge.getAttribute("aria-valuemin")).toBe(String(RAIL_MIN));
+    fireEvent.click(band);
+    expect(edge.getAttribute("aria-valuemin")).toBe("271");
+  });
+
+  it("F-SH-03 D-2703 the minimum isn't saved over a width the settings couldn't read", async () => {
+    const repo = ws("a", { collapsed: false, branch: "main" });
+    const jj = ws("wt_jj", { parentId: "a", laneBranch: "tandem/jj", laneVcs: "jj" });
+    // settings_get_all failed at start: the person's width is unknown.
+    useSettings.setState({ values: {}, loaded: false });
+    setup([repo, jj]);
+    const nav = screen.getByRole("navigation", { name: "Workspaces" });
+    expect(nav.style.width).toBe("271px");
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(named("settings_set").filter((c) => c.args?.key === "rail_width")).toEqual([]);
+    // Once they're read, a width under the minimum is saved as it.
+    act(() => useSettings.setState({ values: {}, loaded: true }));
+    await waitFor(() =>
+      expect(named("settings_set").at(-1)?.args).toEqual({ key: "rail_width", value: 271 }),
+    );
+  });
+
   it("F-SH-03 D-2703 never while the edge is dragged: the drag ends at the new minimum or wider", async () => {
     const repo = ws("a", { collapsed: false, branch: "main" });
     const jj = ws("wt_jj", { parentId: "a", laneBranch: "tandem/jj", laneVcs: "jj" });
@@ -407,6 +440,62 @@ describe("rail (F-SH-03)", () => {
     }
   });
 
+  it("F-SH-03 D-2618 a workspace row folds its status when its end spills out at the start, which no scrollWidth counts", () => {
+    // A real engine: the row's end is right-aligned, so what it can't hold
+    // runs out at its start, over the name, and scrollWidth stays put.
+    const at = (left: number, right: number) =>
+      ({ left, right, width: right - left, top: 0, bottom: 28, height: 28, x: left, y: 0 }) as DOMRect;
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const end = this.parentElement;
+      if (this instanceof HTMLElement && this.dataset.testid === "workspace-trailing") return at(150, 240);
+      if (end?.dataset.testid === "workspace-trailing") {
+        // Its first part starts 10 px early while the status shows its words.
+        const words =
+          this.closest('[data-testid="workspace-row"]')?.querySelectorAll("[data-words]").length ?? 0;
+        return this === end.firstElementChild ? at(words > 0 ? 140 : 160, 200) : at(200, 240);
+      }
+      return at(0, 0);
+    });
+    try {
+      setup([ws("a", { liveCount: 2 })]);
+      act(() => {
+        useLayout.setState({
+          tabs: {
+            tb_a: {
+              tree: null,
+              active: null,
+              maximized: null,
+              panes: { p1: {} as never, p2: {} as never },
+              keepEmpty: false,
+            },
+          },
+        });
+        useStatus.setState({
+          records: {
+            "pane:p1": {
+              key: "pane:p1",
+              status: "working",
+              reason: null,
+              since: 1,
+              ts: 1,
+              tool: null,
+              title: null,
+              preview: null,
+            },
+          },
+          unread: {},
+        });
+      });
+      const slot = within(rows()[0] as HTMLElement).getByTestId("workspace-status");
+      expect(slot.hasAttribute("data-folded")).toBe(true);
+      expect(slot.title).toBe("1 working");
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
   it("F-SH-03 expanding a workspace lists its open panes", async () => {
     setup([ws("a")]);
     act(() =>
@@ -484,6 +573,14 @@ describe("rail (F-SH-03)", () => {
     expect(screen.getByText("No open panes")).toBeTruthy();
     // F-CD-03: agents that handed back are listed as Saved sessions.
     expect((await screen.findByTestId("saved-sessions")).textContent).toBe("Saved sessions (2)");
+    // An unread dot, on the workspace and on its pane's row, is an image
+    // its label names.
+    act(() => useStatus.setState({ unread: { "pane:pn_1": true } }));
+    expect(
+      screen
+        .getAllByRole("img", { name: "Finished while you were away" })
+        .map((e) => e.getAttribute("data-testid")),
+    ).toEqual(["workspace-unread", "unread-dot"]);
     const results = await axe(container, { rules: { region: { enabled: false } } });
     expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
   });

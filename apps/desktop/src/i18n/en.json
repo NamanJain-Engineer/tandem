@@ -1473,6 +1473,7 @@
   "demo.reset": "Reset the demo",
   "demo.coach.label": "Tip",
   "demo.coach.waiting": "{name} is waiting on you. Open it to see why.",
+  "demo.coach.answer": "Press Enter to let {name} run it, or Esc to say no.",
   "demo.coach.toThread": "Your first task is ready in Thread mode.",
   "demo.coach.send": "Press Enter to send this task. The agent is simulated and runs in your browser.",
   "demo.coach.changes": "Open Changes to see what it edited.",

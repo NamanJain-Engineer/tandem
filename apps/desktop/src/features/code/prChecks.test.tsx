@@ -23,7 +23,7 @@ import {
   pollChecks,
   useWorktrees,
 } from "../../stores/worktrees";
-import { useGit } from "../../stores/git";
+import { gitKey, useGit } from "../../stores/git";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
 import { checksState } from "./PullRequestChecks";
@@ -392,6 +392,21 @@ describe("CI results and review comments (F-WT-08)", () => {
     await act(() => new Promise((r) => setTimeout(r, 20)));
     expect(named("lane_checks")).toHaveLength(before);
     expect(named("git_push")).toHaveLength(2);
+  });
+
+  it("F-WT-08.5 D-2619 a push while another git action runs pushes nothing and reads no checks", async () => {
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    await act(() => loadChecks(["wt_1"]));
+    const key = gitKey(context);
+    act(() =>
+      useGit.setState((s) => ({
+        byKey: { ...s.byKey, [key]: { ...(s.byKey[key] ?? ({} as never)), context, busy: "pull" } },
+      })),
+    );
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("git_push")).toHaveLength(0);
+    expect(named("lane_checks")).toHaveLength(1);
   });
 
   it("F-WT-08 the dialog says when there's no pull request, no gh, or GitLab", async () => {

@@ -39,16 +39,28 @@ function removeHome(path: string, remove: Remove): void {
 /** A passing run's home goes, unless `keep`; a failing run's is marked and
  * kept, and of the marked homes beside it only the newest `keepFailed`
  * stay. Only homes a run marked as failed are pruned, so another run's home
- * in progress, or one left before this rule, is never touched. */
+ * in progress, or one left before this rule, is never touched. A removal
+ * that still fails is a warning naming its own folder, and the homes after
+ * it still go. */
 export function cleanHomes(
   home: string,
   failed: boolean,
   keep = false,
   keepFailed = KEEP_FAILED_HOMES,
   remove: Remove = rmSync,
+  warn: (message: string) => void = console.warn,
 ): void {
+  const drop = (path: string) => {
+    try {
+      removeHome(path, remove);
+    } catch (e) {
+      warn(
+        `E2E: couldn't remove ${path} (${e instanceof Error ? e.message : String(e)}); delete it by hand.`,
+      );
+    }
+  };
   if (!failed) {
-    if (!keep) removeHome(home, remove);
+    if (!keep) drop(home);
     return;
   }
   writeFileSync(join(home, FAILED_MARK), new Date().toISOString());
@@ -59,13 +71,12 @@ export function cleanHomes(
     .filter((mark) => existsSync(mark))
     .map((mark) => ({ home: dirname(mark), at: statSync(mark).mtimeMs }))
     .sort((a, b) => b.at - a.at);
-  for (const old of marked.slice(keepFailed)) removeHome(old.home, remove);
+  for (const old of marked.slice(keepFailed)) drop(old.home);
 }
 
 /** run.ts's last step: the home is cleaned up as `cleanHomes` says, and the
- * run's exit code returned. A cleanup that still fails is a warning naming
- * the folder, never the run's result: a run whose specs all passed keeps
- * its passing code. */
+ * run's exit code returned. A cleanup that still fails is a warning, never
+ * the run's result: a run whose specs all passed keeps its passing code. */
 export function endRun(
   home: string,
   code: number,
@@ -75,9 +86,10 @@ export function endRun(
   remove: Remove = rmSync,
 ): number {
   try {
-    cleanHomes(home, failed, keep, KEEP_FAILED_HOMES, remove);
+    cleanHomes(home, failed, keep, KEEP_FAILED_HOMES, remove, warn);
   } catch (e) {
-    warn(`E2E: couldn't remove ${home} (${e instanceof Error ? e.message : String(e)}); delete it by hand.`);
+    // Marking or listing the failed homes, not a removal.
+    warn(`E2E: couldn't clean up after ${home} (${e instanceof Error ? e.message : String(e)}).`);
   }
   return failed ? 1 : code;
 }

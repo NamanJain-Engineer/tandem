@@ -62,7 +62,7 @@ import { DemoTasks } from "./tasks";
 import { DemoShell, agentScreen, wrapWords, type ShellPlace } from "./shell";
 import {
   STORY,
-  askLine,
+  askScreen,
   branchOf,
   engineLabel,
   previewOf,
@@ -490,7 +490,7 @@ function screenOf(w: StoryWorktree): string {
   }
   lines.push("");
   if (w.state === "done") lines.push(w.closing ?? "Done.");
-  else if (w.state === "waiting") lines.push(askLine(w));
+  else if (w.state === "waiting") lines.push(...askScreen(w));
   else lines.push("Working…");
   return agentScreen(engineLabel(w.engine), w.task, lines);
 }
@@ -512,7 +512,6 @@ type Pty = {
   seq: number;
   screen: string;
   shell: DemoShell | null;
-  typed?: string;
   /** Its terminal's width, once the pane has said (pty_resize). */
   cols?: number;
   /** An agent's text before it's wrapped, which its terminal UI draws again
@@ -1013,6 +1012,8 @@ export class DemoCore {
       this.setStatus(paneId, "done");
       return;
     }
+    // It runs the command: working until it's done.
+    this.setStatus(paneId, "working");
     const id = wsOf(w.slug);
     const filter = (w.ask ?? "").replace(/^pnpm test ?/, "");
     const run = testRun(this.filesOf(id), filter);
@@ -1135,26 +1136,13 @@ export class DemoCore {
     return true;
   }
 
-  /** Keys typed at the waiting agent's question: y or n, then Enter. */
+  /** Keys at the waiting agent's question: Enter allows and Esc alone says
+   * no, as the coach says (D-2633). Any other key does nothing here, an
+   * escape sequence among them (an arrow, Alt and a key). */
   private answer(pty: Pty, data: string): void {
-    for (const ch of data) {
-      if (ch === "\r") {
-        const said = (pty.typed ?? "").trim().toLowerCase();
-        pty.typed = "";
-        if (said === "y" || said === "yes") this.answerWaiting(pty, true);
-        else if (said === "n" || said === "no") this.answerWaiting(pty, false);
-        else this.say(pty, "\nType y or n, then Enter.\n");
-      } else if (ch === "\x7f" || ch === "\b") {
-        if (pty.typed) {
-          pty.typed = pty.typed.slice(0, -1);
-          if (pty.logical !== undefined) pty.logical = pty.logical.slice(0, -1);
-          this.frame(pty, "\b \b");
-        }
-      } else if (ch >= " " && ch !== "\x1b") {
-        pty.typed = (pty.typed ?? "") + ch;
-        this.say(pty, ch);
-      }
-    }
+    if (data === "\x1b") return this.answerWaiting(pty, false);
+    if (data.startsWith("\x1b")) return;
+    if (data.includes("\r")) this.answerWaiting(pty, true);
   }
 
   /** The thread's fix lands in its workspace's folder: `shop/thread/`'s

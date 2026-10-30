@@ -238,6 +238,8 @@ describe("browser demo (vibezeo.com/demo)", () => {
       const before = MAIN[path] ?? "";
       expect(before.split(input.old_string)).toHaveLength(2);
       expect(before.replace(input.old_string, input.new_string)).toBe(thread[path]);
+      // Claude Code's result, its first sentence only: no more of another
+      // product's output than the row needs (D-2633).
       expect(e.output).toBe(`The file /home/you/shop/${path} has been updated.`);
     }
     // Each edit's first row, while it runs, names its file and input too.
@@ -864,13 +866,27 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
     await until(() => screen.includes(askLine(w)));
     const status: Array<{ key: string; status: string }> = [];
     const stop = await listen<{ records: Array<{ key: string; status: string }> }>("status:changed", (e) => void status.push(...e.records));
-    core.handle("pty_write", { paneId, data: "maybe\r" });
-    expect(screen).toContain("Type y or n, then Enter.");
-    core.handle("pty_write", { paneId, data: "y\r" });
+    // Its pane shows the question and none of Gemini CLI's choices
+    // (D-2633), so it takes the two keys the coach names: Enter allows,
+    // Esc alone says no. Any other key does nothing: a number, an arrow,
+    // Alt and a key, Esc and Enter together.
+    expect(screen).not.toMatch(/Allow once|for this session|suggest changes/);
+    for (const data of ["x", "1", "3", "y", "\x1b[B", "\x1bx", "\x1b\r"])
+      core.handle("pty_write", { paneId, data });
+    expect(status.filter((s) => s.key === `pane:${paneId}`)).toEqual([]);
+    core.handle("pty_write", { paneId, data: "\r" });
+    // Answered: the next key isn't a second answer.
+    core.handle("pty_write", { paneId, data: "\x1b" });
     await until(() => screen.includes(w.closing ?? "?"));
     for (const c of w.commits) expect(screen).toContain(`[${branchOf(w.slug)} ${c.sha}] ${c.subject}`);
     expect(screen).toContain(`✓ ${testRun({ ...MAIN, ...changedIn(w.slug) }, "search").at(-1)?.match(/(\d+) passed/)?.[1]} tests passed`);
     expect(status.at(-1)).toMatchObject({ key: `pane:${paneId}`, status: "done" });
+    // Working while it runs the command, then done, once.
+    expect(status.filter((s) => s.key === `pane:${paneId}`).map((s) => s.status)).toEqual([
+      "working",
+      "done",
+    ]);
+    expect(screen.split(w.closing ?? "?").length - 1).toBe(1);
     expect((core.handle("git_status", ws(idOf(w.slug))) as GitPanel).status.unstaged).toEqual([]);
     expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug), branchOf(w.slug)]);
     stop();
@@ -884,7 +900,8 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
       channel: { onmessage: (f: Uint8Array) => (screen += new TextDecoder().decode(decodeFrame(f).payload)) },
     });
     await until(() => screen.includes(askLine(waiting())));
-    core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "n\r" });
+    // Esc says no.
+    core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "\x1b" });
     expect(screen).toContain("won't run");
     expect(plan().candidates.map((c) => c.branch)).toEqual([branchOf(done().slug)]);
   });
@@ -1157,12 +1174,23 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
       expect([...seen].sort()).toEqual(["Bash", "Edit", "Read"]);
       // Finished, it names none.
       expect(line(claude)).toBeNull();
-      // Bea answers in her terminal; her Gemini CLI never names a tool.
+      // Bea is answered in her terminal (Enter, D-2633) and runs her tests:
+      // her Gemini CLI never names a tool, working or done.
+      const state = (paneId: string) =>
+        (core?.handle("status_snapshot", {}) as DashboardItem[]).find((d) => d.key === `pane:${paneId}`)
+          ?.status;
       core.handle("pty_spawn", { paneId: DEMO_WAITING.paneId, channel: { onmessage: () => undefined } });
       vi.advanceTimersByTime(100);
-      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "y\r" });
-      vi.advanceTimersByTime(5_000);
-      expect(line(DEMO_WAITING.paneId)).toBeNull();
+      expect(state(DEMO_WAITING.paneId)).toBe("waiting");
+      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "\r" });
+      const went: string[] = [];
+      for (let t = 0; t < 20_000; t += 100) {
+        const now = String(state(DEMO_WAITING.paneId));
+        if (went.at(-1) !== now) went.push(now);
+        expect(line(DEMO_WAITING.paneId), now).toBeNull();
+        vi.advanceTimersByTime(100);
+      }
+      expect(went).toEqual(["working", "done"]);
     } finally {
       vi.useRealTimers();
     }

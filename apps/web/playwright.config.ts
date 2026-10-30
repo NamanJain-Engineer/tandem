@@ -38,7 +38,8 @@ export default defineConfig({
       url: "http://localhost:3000/api/health",
       reuseExistingServer: true,
       cwd: "../..",
-      env: { API_INTERNAL_URL: "http://127.0.0.1:8787" },
+      // No telemetry from a test run (D-2625).
+      env: { API_INTERNAL_URL: "http://127.0.0.1:8787", NEXT_TELEMETRY_DISABLED: "1" },
       timeout: 120_000,
     },
   ],

@@ -1060,14 +1060,29 @@ fn f_th_12_6_a_task_that_ends_in_error_still_names_what_its_subagent_edited() {
 #[test]
 fn f_th_12_6_an_unknown_tool_that_writes_a_file_names_it_and_counts_no_lines() {
     let rows = parse(&[
-        // An MCP server's write: a file and what goes in it.
+        // A local MCP server's write: an absolute path and what goes in it.
         tool_use(
             "m1",
             "mcp__fs__write_file",
-            json!({"path": "src/new.ts", "content": "export {};\n"}),
+            json!({"path": "/work/shop/src/new.ts", "content": "export {};\n"}),
             None,
         ),
-        tool_result("m1", "Wrote src/new.ts", false, None),
+        tool_result("m1", "Wrote /work/shop/src/new.ts", false, None),
+        // A forge's: a path in a repository somewhere else, so no local file.
+        tool_use(
+            "m4",
+            "mcp__github__create_or_update_file",
+            json!({"owner": "acme", "repo": "shop", "path": "src/a.ts", "content": "x", "message": "Update a.ts", "branch": "main"}),
+            None,
+        ),
+        tool_result("m4", "Updated src/a.ts on main", false, None),
+        tool_use(
+            "m5",
+            "mcp__gitlab__create_or_update_file",
+            json!({"project_id": "acme/shop", "file_path": "src/a.ts", "content": "x", "commit_message": "Update a.ts", "branch": "main"}),
+            None,
+        ),
+        tool_result("m5", "Updated src/a.ts on main", false, None),
         // A tool that names a file but writes nothing, and one that names none.
         tool_use(
             "m2",
@@ -1089,8 +1104,25 @@ fn f_th_12_6_an_unknown_tool_that_writes_a_file_names_it_and_counts_no_lines() {
     // total says no lines rather than a partial one (D-2622).
     assert_eq!(at("m1").3, Some(vec!["/work/shop/src/new.ts".into()]));
     assert_eq!(at("m1").2, None);
+    // A relative path from a tool this list doesn't know names nothing: a
+    // forge's write changed no file here (D-2622).
+    assert_eq!(at("m4").3, None);
+    assert_eq!(at("m5").3, None);
     assert_eq!(at("m2").3, None);
     assert_eq!(at("m3").3, None);
+}
+
+#[test]
+fn f_th_12_6_a_path_is_absolute_in_either_form_whatever_this_computer_is() {
+    use crate::events::is_absolute;
+    assert!(is_absolute("/work/shop/src/a.ts"));
+    assert!(is_absolute(r"C:\work\a.ts"));
+    assert!(is_absolute("c:/work/a.ts"));
+    assert!(is_absolute(r"\\server\share\a.ts"));
+    assert!(!is_absolute("src/a.ts"));
+    assert!(!is_absolute("./a.ts"));
+    assert!(!is_absolute("C:a.ts"));
+    assert!(!is_absolute(""));
 }
 
 #[test]

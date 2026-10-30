@@ -53,12 +53,19 @@ export const useDashboard = create<DashboardState>((set, get) => ({
   filter: "all",
   ...loadPrefs(),
   load: async () => {
-    const list = await invoke<DashboardItem[]>("status_snapshot").catch(() => null);
+    // Updates that come while the snapshot is read are newer than it: kept,
+    // to apply over it.
+    const meanwhile: StatusChange[] = [];
+    reading.add(meanwhile);
+    const list = await invoke<DashboardItem[]>("status_snapshot")
+      .catch(() => null)
+      .finally(() => reading.delete(meanwhile));
     if (!list) {
       set({ loaded: true });
       return;
     }
     set({ items: Object.fromEntries(list.map((i) => [i.key, i])), loaded: true });
+    for (const change of meanwhile) applyStatus(change.records, change.removed, false);
   },
   setQuery: (query) => set({ query }),
   setFilter: (filter) => set({ filter }),
@@ -87,9 +94,26 @@ function refetchSoon(): void {
   refetch = setTimeout(() => void useDashboard.getState().load(), 80);
 }
 
+type StatusChange = { records: StatusRecord[]; removed: string[] };
+/** For each snapshot being read, the updates that came meanwhile. */
+const reading = new Set<StatusChange[]>();
+
+/** A card's line as dashboard.rs draws it: the record's preview, else its
+ * tool, and none when that's blank. The store keeps a preview and replaces
+ * the tool with each report, so a tool's name goes when its agent stops
+ * (D-2627). */
+function lineOf(r: StatusRecord): string | null {
+  const line = r.preview ?? r.tool;
+  return line?.trim() ? line : null;
+}
+
 /** Applies status changes in place, so a card moves within one event
- * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. */
-export function applyStatus(records: StatusRecord[], removed: string[]): void {
+ * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. A change
+ * replayed over a snapshot (not `live`) was kept for the other reads and
+ * asked for its snapshot when it came, so it does neither again: two reads
+ * could otherwise hand it to each other for good. */
+export function applyStatus(records: StatusRecord[], removed: string[], live = true): void {
+  if (live) for (const meanwhile of reading) meanwhile.push({ records, removed });
   const items = { ...useDashboard.getState().items };
   let unknown = removed.length > 0;
   for (const k of removed) delete items[k];
@@ -105,14 +129,11 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
       reason: r.reason,
       since: r.since,
       title: r.title ?? cur.title,
-      // dashboard.rs's line: the record's preview, else its tool. The store
-      // keeps a preview and replaces the tool with each report, so a tool's
-      // name goes when its agent stops (D-2627).
-      preview: r.preview ?? r.tool ?? null,
+      preview: lineOf(r),
     };
   }
   useDashboard.setState({ items });
-  if (unknown) refetchSoon();
+  if (unknown && live) refetchSoon();
 }
 
 function applyApprovals(upserted: ApprovalView[], resolved: string[]): void {

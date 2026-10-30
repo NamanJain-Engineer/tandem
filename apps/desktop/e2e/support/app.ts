@@ -407,6 +407,9 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
       pinned: false,
     },
   });
+  // And with the Dashboard grouped by status, no group folded: the webview
+  // keeps that view, and E2E-M6-4 groups it by project (F-DB-01).
+  await browser.execute(() => localStorage.removeItem("tandem.dashboard"));
   // The removals bypassed the UI's stores (the launch already showed the last
   // spec's workspace): reload so the UI starts from what the backend has.
   await browser.refresh();

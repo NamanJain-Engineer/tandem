@@ -1,12 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import NAMES from "../data/names.json";
 import GIT_HUNKS from "./fixtures/git-hunks.json";
 import { MAIN, changedIn, diffsOf, lineCount, testRun, testsIn } from "./repo";
-import { STORY, askLine, editsOf, previewOf, totalsOf, worktree, worktreeIn } from "./story";
+import { STORY, askLine, askScreen, editsOf, previewOf, totalsOf, worktree, worktreeIn } from "./story";
 import { unifiedDiff } from "./udiff";
 
 describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (D-1899)", () => {
@@ -113,14 +121,39 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
   it("F-WB-01 D-2609 the waiting agent asks in its own words, one string for the demo and the site's scenes", () => {
     const w = worktreeIn("waiting");
     // The engine's own question in its terminal: 0.12.0 raises no approval
-    // for an engine's question, only for `vibezeo run` (D-1899).
-    expect(askLine(w)).toBe(`Allow execution of: '${w.ask}'?`);
+    // for an engine's question, only for `vibezeo run` (D-1899). Gemini CLI
+    // 0.66.0's question line, which registry.json's waitingPatterns match,
+    // under the command in a box: no more of its screen than that (D-2633).
+    expect(askLine(w)).toBe("Allow execution of [Shell]?");
+    const rule = "─".repeat((w.ask ?? "").length + 2);
+    expect(askScreen(w)).toEqual([`╭${rule}╮`, `│ ${w.ask} │`, `╰${rule}╯`, "Allow execution of [Shell]?"]);
     // Its card waits with no line: Gemini CLI has no hooks (D-2624).
     expect(previewOf(w)).toBeNull();
     // Nor do the others': Ada has finished, and Arlo's Codex names no
     // tools (drift.test.ts holds the rule to the app's sources).
     expect(previewOf(worktreeIn("done"))).toBeNull();
     expect(previewOf(worktreeIn("working"))).toBeNull();
+  });
+
+  it("F-WB-01 D-2633 the demo and the site's scenes quote another product only as far as the app needs", () => {
+    // Gemini CLI's choices under its question, and what Claude Code's Edit
+    // result says after its first sentence: the app reads nothing from them.
+    const theirs = [/for this session/i, /suggest changes/i, /`cat -n`/, /snippet of the edited file/i];
+    // Every file under the demo's folder and the scenes' (the sample shop's
+    // too), tests aside.
+    const under = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? under(join(dir, e.name)) : /\.test\.tsx?$/.test(e.name) ? [] : [join(dir, e.name)],
+      );
+    const files = [__dirname, join(__dirname, "../../../web/components/site/scenes")].flatMap(under);
+    expect(files.some((f) => f.endsWith("/scenes/DashboardScene.tsx"))).toBe(true);
+    expect(files.some((f) => f.endsWith("/demo/story.ts"))).toBe(true);
+    expect(files.some((f) => f.includes("/demo/shop/") && f.endsWith(".sample"))).toBe(true);
+    expect(files.some((f) => f.includes("/demo/fixtures/"))).toBe(true);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const words of theirs) expect(text, `${file} has ${words}`).not.toMatch(words);
+    }
   });
 
   it("F-WB-01 D-2609 the pull request's checks are lint, test and build, with test failing", () => {
@@ -339,6 +372,38 @@ describe("F-WB-01 D-2609 the demo's diffs", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  // A fake git is a shell script: POSIX's. CI runs these tests on Linux.
+  it.skipIf(process.platform === "win32")(
+    "F-WB-01 D-2609 git reads no system attributes, and a diff it prints without a hunk stops the script rather than writing a wrong fixture",
+    () => {
+      const script = join(__dirname, "../../../../scripts/agent/demo-git-hunks.mjs");
+      const tmp = mkdtempSync(join(tmpdir(), "demo-hunks-test-"));
+      try {
+        // As git does for a file a system gitattributes calls `-diff`.
+        const bin = join(tmp, "bin");
+        mkdirSync(bin);
+        writeFileSync(
+          join(bin, "git"),
+          `#!/bin/sh\nenv > "${join(tmp, "git-env")}"\necho "Binary files a and b differ"\nexit 1\n`,
+          { mode: 0o755 },
+        );
+        const out = join(tmp, "hunks.json");
+        expect(() =>
+          execFileSync(process.execPath, [script, out], {
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+            stdio: "pipe",
+          }),
+        ).toThrow(/no hunk/);
+        expect(existsSync(out)).toBe(false);
+        const env = readFileSync(join(tmp, "git-env"), "utf8").split("\n");
+        expect(env).toContain("GIT_ATTR_NOSYSTEM=1");
+        expect(env).toContain("GIT_CONFIG_NOSYSTEM=1");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("F-WB-01 D-2609 every sample edit's diff is git's own, hunk for hunk (fixtures/git-hunks.json)", () => {
     const want = GIT_HUNKS as Record<string, string[]>;

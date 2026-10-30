@@ -64,6 +64,7 @@ function claudeEdit(path: string, root: string): { running: Partial<ToolEvent>; 
     running,
     done: {
       ...running,
+      // Claude Code's result, its first sentence only (D-2633).
       output: `The file ${file} has been updated.`,
       lines: { added: counts?.additions ?? 0, removed: counts?.deletions ?? 0 },
     },

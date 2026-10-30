@@ -5,8 +5,8 @@
 // sample changes:
 //   node scripts/agent/demo-git-hunks.mjs [out.json]
 // git runs in a folder of its own with PATH and an empty HOME and nothing
-// else: no repository around it, no global or system config, and no GIT_*
-// variable, so nothing in the developer's setup (a repository's
+// else: no repository around it, no global or system config or attributes,
+// and no GIT_* variable, so nothing in the developer's setup (a repository's
 // diff.interHunkContext, GIT_DIFF_OPTS) changes the hunks.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -45,6 +45,8 @@ function hunks(before, after) {
       LC_ALL: "C",
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
+      // A system gitattributes' `* -diff` makes every file binary to git.
+      GIT_ATTR_NOSYSTEM: "1",
       // No repository above the folder is found, wherever tmp is.
       GIT_CEILING_DIRECTORIES: dirname(dir),
     };
@@ -72,7 +74,12 @@ function hunks(before, after) {
     }
     const lines = text.split("\n");
     if (lines.at(-1) === "") lines.pop();
-    return lines.slice(lines.findIndex((l) => l.startsWith("@@")));
+    // The same file: git printed nothing.
+    if (lines.length === 0) return [];
+    const first = lines.findIndex((l) => l.startsWith("@@"));
+    // A diff without a hunk ("Binary files a and b differ") is no fixture.
+    if (first < 0) throw new Error(`git printed no hunk: ${lines.at(-1)}`);
+    return lines.slice(first);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

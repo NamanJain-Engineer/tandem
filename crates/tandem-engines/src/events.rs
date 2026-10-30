@@ -310,9 +310,14 @@ fn common_lines<T: PartialEq>(a: &[T], b: &[T]) -> usize {
 /// `path` as an absolute path: as given, or under `cwd` (F-TK-07), with
 /// `.` and `..` worked out, so one file named two ways counts once. Only
 /// the text: symbolic links aren't followed, since nothing reads the disk.
+/// An absolute path in the other system's form (a Windows one here, a Unix
+/// one on Windows) is kept as given: this computer can't join or walk it.
 pub fn absolute(cwd: &std::path::Path, path: &str) -> String {
     use std::path::{Component, PathBuf};
     let p = std::path::Path::new(path);
+    if is_absolute(path) && !p.is_absolute() {
+        return path.to_string();
+    }
     let joined = if p.is_absolute() {
         p.to_path_buf()
     } else {
@@ -344,6 +349,12 @@ pub fn same_file(a: &str, b: &str) -> bool {
     } else {
         a == b
     }
+}
+
+/// Whether `p` is absolute, in Unix's form or Windows', whatever this
+/// computer is: an engine's events can come from another one.
+pub fn is_absolute(p: &str) -> bool {
+    p.starts_with('/') || windows_path(p)
 }
 
 /// A drive letter and a slash, or a `\\` share.
@@ -473,6 +484,22 @@ pub enum TurnEndReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_th_12_6_an_absolute_path_in_the_other_systems_form_is_kept_as_given() {
+        let cwd = std::path::Path::new("/work/shop");
+        // A Windows path read on Unix (and a Unix one read on Windows) isn't
+        // joined under the folder: this computer can't walk it, so it's kept.
+        assert_eq!(absolute(cwd, r"C:\work\a.ts"), r"C:\work\a.ts");
+        assert_eq!(
+            absolute(cwd, r"\\server\share\a.ts"),
+            r"\\server\share\a.ts"
+        );
+        #[cfg(not(windows))]
+        assert_eq!(absolute(cwd, "src/../a.ts"), "/work/shop/a.ts");
+        #[cfg(windows)]
+        assert_eq!(absolute(cwd, "/work/a.ts"), "/work/a.ts");
+    }
 
     #[test]
     fn f_th_03_events_serialize_with_snake_tags_and_camel_fields() {

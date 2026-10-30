@@ -1136,7 +1136,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     const repo = (f: string) => readFileSync(join(import.meta.dirname, "../../..", f), "utf8");
     const asker = story.worktrees.find((w) => w.state === "waiting");
     expect(SAMPLE.ask).toBe(asker?.ask);
-    expect(SAMPLE.question).toEqual({ terminal: `Allow execution of: '${SAMPLE.ask}'?` });
+    // Gemini CLI 0.66.0's own line for its shell tool (D-2632, D-2633): the command shows in its box above it.
+    expect(SAMPLE.question).toEqual({ terminal: "Allow execution of [Shell]?" });
     type Engine = { id: string; hooksSupport: string; waitingPatterns: string[] };
     const engine = (JSON.parse(repo("crates/tandem-engines/registry.json")) as Engine[]).find((e) => e.id === asker?.engine);
     const matches = (line: string) => (engine?.waitingPatterns ?? []).some((p) => new RegExp(p).test(line));
