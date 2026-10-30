@@ -4699,6 +4699,13 @@ The owner (20 October): the product and the site should feel premium, "not somet
     - Answering runs her tests and commits, "Needs you" clears, and the status bar drops to "● 1 working".
     - At the rail's 246 minimum, no name is cut. D-2629's folding case rests on `app-ui`'s E2E step.
   - Polish: the coach's second hint covers the start of Bea's pane header as soon as she's opened. It should wait until her ask is answered.
+- Design QA of `app-ui` @ 6d864fa1 (the coordinating session's D-2633): approved, walked in a demo built at 6d864fa1, answering once with Enter and once with Esc.
+  - Bea's pane quotes only her boxed command and Gemini CLI's "Allow execution of [Shell]?". story.test.ts fails on Gemini's choices or Claude Code's `cat -n` sentence anywhere in the demo or the scenes.
+  - The coach's new second hint, in the demo's own words at the foot of her pane while she asks, is approved as written: "Press Enter to let {name} run it, or Esc to say no."
+  - A stray key does nothing. Esc prints "Okay, I won't run pnpm test search. The change is in place for you to try.", and Enter runs her tests and commits.
+  - Either way "Needs you" clears, the status bar drops to "● 1 working", and only then does the Thread hint (3 of 4) come.
+  - Claude Code's Edit result is its first sentence.
+  - DESIGN §5.2 and §9.4 now list the four hints. §6's example of an engine's question is Gemini CLI 0.66.0's own line, where it had been the design lead's paraphrase.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
