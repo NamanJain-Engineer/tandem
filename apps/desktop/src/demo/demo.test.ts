@@ -391,11 +391,20 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     const c = core;
     const id = (c.handle("thread_create", { args: { workspaceId: null } }) as Thread).id;
     expect(() => send(c, id, "x".repeat(501))).toThrow(/500 characters/);
-    for (let i = 1; i <= DEMO_MESSAGE_LIMIT; i++) {
+    // A message sent while the agent works is refused and doesn't count, so
+    // the site's test sends each once the last turn has ended (D-2635).
+    send(c, id, "message 1");
+    expect(() => send(c, id, "too soon")).toThrow(expect.objectContaining({ code: "conflict" }));
+    expect(c.messagesLeft()).toBe(DEMO_MESSAGE_LIMIT - 1);
+    c.handle("thread_stop", { threadId: id });
+    for (let i = 2; i <= DEMO_MESSAGE_LIMIT; i++) {
+      expect(c.limitReached()).toBe(false);
       send(c, id, `message ${i}`);
       c.handle("thread_stop", { threadId: id });
     }
     expect(DEMO_MESSAGE_LIMIT).toBe(12);
+    // The 12th message used the last one: the bar says so from then on.
+    expect(c.limitReached()).toBe(true);
     let error: { message?: string } = {};
     try {
       send(c, id, "one more");
