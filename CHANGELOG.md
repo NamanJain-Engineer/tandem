@@ -7,7 +7,16 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
-## Unreleased
+## 0.13.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. Lead now keeps a plan
+moving: it answers its runs' routine questions and brings you the ones that
+need you. Agents can run commands that need your secrets without seeing
+them, each agent session keeps a record of what it did, and the Files editor
+goes to definitions with the language servers you already have. jj
+workspaces and Codex on a model served from your own computer are new too.
 
 ### Added
 
