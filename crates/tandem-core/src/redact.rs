@@ -317,31 +317,80 @@ fn starts_like_code(v: &str) -> bool {
 }
 
 /// Keys that describe a credential rather than hold one: `token_type`,
-/// `password_hint`, `secret_name`, and the times one carries:
-/// `token_expires_at`, `SESSION_TOKEN_EXPIRY`, `tokenExpiresAt`.
+/// `password_hint`, `secret_name`. A credential's times (`token_expires_at`,
+/// `tokenExpiresAt`) are read by their values instead ([`time_like`]): as
+/// key suffixes, `at` and `expiry` let any value through, and a camelCase
+/// key's last word let `secretId: "<a UUID>"` through, a Vault SecretID
+/// (the review of 0e20d5b7, SF-2).
 fn descriptive_key(key: &str) -> bool {
-    const SUFFIXES: [&str; 25] = [
+    const SUFFIXES: [&str; 22] = [
         "type", "types", "name", "kind", "pattern", "url", "uri", "id", "field", "label", "file",
         "path", "count", "length", "len", "prefix", "header", "endpoint", "hint", "policy",
-        "format", "mode", "at", "expires", "expiry",
+        "format", "mode",
     ];
-    // The last word: after the last `_` or `-`, or camelCase's last one.
-    let last = match key.rfind(['_', '-']) {
-        Some(i) => &key[i + 1..],
-        None => {
-            let camel = key
-                .char_indices()
-                .skip(1)
-                .filter(|(_, c)| c.is_ascii_uppercase())
-                .last()
-                .filter(|_| key.starts_with(|c: char| c.is_ascii_lowercase()));
-            match camel {
-                Some((i, _)) => &key[i..],
-                None => return false,
-            }
+    let lower = key.to_ascii_lowercase();
+    lower
+        .rsplit(['_', '-'])
+        .next()
+        .is_some_and(|last| lower.contains(['_', '-']) && SUFFIXES.contains(&last))
+}
+
+/// A date or a time as RFC 3339 and ISO 8601 write them (`2025-10-30`,
+/// `2025-10-30T18:00:00.000Z`, `2025-10-30 18:00+05:30`), or a number with
+/// a fraction (`1730311200.5`): what a credential's time holds, never the
+/// credential (D-3168).
+fn time_like(v: &str) -> bool {
+    // Read as bytes: a cut into `str` inside a character would panic.
+    let digits = |s: &[u8]| !s.is_empty() && s.iter().all(u8::is_ascii_digit);
+    if let Some((whole, fraction)) = v.split_once('.') {
+        if digits(whole.as_bytes()) && digits(fraction.as_bytes()) {
+            return true;
         }
+    }
+    let b = v.as_bytes();
+    let date = b.len() >= 10
+        && digits(&b[..4])
+        && b[4] == b'-'
+        && digits(&b[5..7])
+        && b[7] == b'-'
+        && digits(&b[8..10]);
+    if !date {
+        return false;
+    }
+    let Some((&sep, t)) = b[10..].split_first() else {
+        return true;
     };
-    SUFFIXES.contains(&last.to_ascii_lowercase().as_str())
+    if !matches!(sep, b'T' | b't' | b' ')
+        || t.len() < 5
+        || !digits(&t[..2])
+        || t[2] != b':'
+        || !digits(&t[3..5])
+    {
+        return false;
+    }
+    let mut rest = &t[5..];
+    if let Some((b':', seconds)) = rest.split_first() {
+        if seconds.len() < 2 || !digits(&seconds[..2]) {
+            return false;
+        }
+        rest = &seconds[2..];
+        if let Some((b'.', fraction)) = rest.split_first() {
+            let n = fraction.iter().take_while(|c| c.is_ascii_digit()).count();
+            if n == 0 {
+                return false;
+            }
+            rest = &fraction[n..];
+        }
+    }
+    match rest {
+        [] | [b'Z' | b'z'] => true,
+        [b'+' | b'-', zone @ ..] => match zone.len() {
+            2 | 4 => digits(zone),
+            5 => digits(&zone[..2]) && zone[2] == b':' && digits(&zone[3..]),
+            _ => false,
+        },
+        _ => false,
+    }
 }
 
 fn assignment_value_ok(v: &str, quoted: bool) -> bool {
@@ -363,7 +412,7 @@ fn assignment_value_ok(v: &str, quoted: bool) -> bool {
     if v.starts_with('$') || v.starts_with('{') || v.starts_with('<') || v.starts_with('%') {
         return false;
     }
-    if v.chars().all(|c| c.is_ascii_digit()) {
+    if v.chars().all(|c| c.is_ascii_digit()) || time_like(v) {
         return false;
     }
     let has_digit_or_symbol = v.chars().any(|c| !c.is_ascii_alphabetic());
@@ -1042,31 +1091,48 @@ mod tests {
     }
 
     #[test]
-    fn f_tl_02_1_a_key_that_describes_a_credential_or_its_time_holds_none() {
-        for key in [
-            "token_type",
-            "password-hint",
-            "token_expires_at",
-            "secret_rotated_at",
-            "SESSION_TOKEN_EXPIRY",
-            "refresh_token_expires",
-            "tokenExpiresAt",
-            "accessTokenExpiry",
-            "secretName",
-        ] {
+    fn f_tl_02_1_a_credentials_time_is_read_by_its_value_not_its_key() {
+        // As key suffixes, `at` and `expiry` let any value through, and a
+        // camelCase key's last word let a Vault SecretID through (the
+        // review of 0e20d5b7, SF-2).
+        for key in ["token_type", "password-hint", "secret_name"] {
             assert!(descriptive_key(key), "{key}");
         }
         for key in [
-            "token",
-            "api_key",
-            "token_at_rest",
-            "API_TOKEN",
-            "TOKENAT",
+            "token_expires_at",
+            "SESSION_TOKEN_EXPIRY",
+            "tokenExpiresAt",
+            "secretId",
             "authToken",
-            "passwordHINT",
-            "tokenAt_x",
+            "token_at_rest",
         ] {
             assert!(!descriptive_key(key), "{key}");
+        }
+        for v in [
+            "2025-10-30",
+            "2025-10-30T18:00:00Z",
+            "2025-10-30T18:00:00.000Z",
+            "2025-10-30t18:00z",
+            "2025-10-30 18:00:00+05:30",
+            "2025-10-30T18:00:00-0800",
+            "2025-10-30T18:00+01",
+            "1730311200.5",
+        ] {
+            assert!(time_like(v), "{v}");
+        }
+        for v in [
+            "2025-10-30T",
+            "2025-10-30Tab:cd",
+            "2025-10-30T18:00:00.Z",
+            "2025-10-30T18:00:00+1",
+            "2025-10-30x",
+            "2025-1O-30",
+            "Zx81kQ02pLm4wR",
+            "6a174c20-f6de-4c0e-9d3a-6c2b8f1e0a42",
+            "1.2.3",
+            "é025-10-30",
+        ] {
+            assert!(!time_like(v), "{v}");
         }
     }
 

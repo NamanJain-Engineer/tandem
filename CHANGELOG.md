@@ -25,14 +25,17 @@ release fails when its version has no section.
   all asks for changes, the plan sends the reviewer's reasons back to that run
   as its next message, in the same worktree, and its next turn is reviewed
   again, for up to 2 rounds. The run reads them labelled "Review (sent back
-  automatically)", fenced as text from elsewhere, as another engine's view to
-  weigh rather than orders. A third request, a review about approvals, access,
-  secrets, deploys, pushing or the plan's scope, a turn that changed nothing,
-  the same changes asked again, and any review while the engine is near its
-  usage limit come to you instead, with why and **Send back…** for when you
-  agree. The option is on by default in Execute all's check, and the plan can
-  turn it off. When Land worktrees lands a plan task's worktree, the task is
-  marked Done with the commit in a comment, and its row says Landed.
+  automatically)", marked as another engine's review and fenced as text from
+  elsewhere, as a view to weigh rather than orders. A third request, a review
+  about approvals, access, secrets, deploys, pushing or the plan's scope, one
+  that doesn't say what to change, a turn that changed nothing, the same
+  changes asked again, and any review while the engine is near its usage limit
+  come to you instead, with why and **Send back…** for when you agree. A
+  review waiting for you is dropped, with why, once you resume, stop or retry
+  its run. The option is on by default in Execute all's check, and the plan
+  can turn it off. When Land worktrees lands a plan task's worktree, the task
+  is marked Done with the commit in a comment, and its row says Landed; Undo
+  landing puts it back in review.
 
 ### Fixed
 

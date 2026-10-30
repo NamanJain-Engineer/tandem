@@ -218,7 +218,9 @@ pub struct AttemptPatch {
     pub thread_id: Option<ThreadId>,
     pub started_at: Option<i64>,
     pub ended_at: Option<i64>,
-    pub review_verdict: Option<String>,
+    /// `Some(None)` clears it: a verdict left from an earlier turn read as
+    /// this one's (the review of 0e20d5b7, SF-6).
+    pub review_verdict: Option<Option<String>>,
     pub error: Option<Option<String>>,
 }
 
@@ -230,6 +232,10 @@ pub async fn update(store: &Store, id: &AttemptId, p: AttemptPatch) -> Result<At
                 Some(e) => (1, e),
                 None => (0, None),
             };
+            let (set_verdict, verdict) = match p.review_verdict {
+                Some(v) => (1, v),
+                None => (0, None),
+            };
             tx.execute(
                 "UPDATE task_attempts SET
                    state = COALESCE(?2, state),
@@ -237,7 +243,7 @@ pub async fn update(store: &Store, id: &AttemptId, p: AttemptPatch) -> Result<At
                    thread_id = COALESCE(?4, thread_id),
                    started_at = COALESCE(?5, started_at),
                    ended_at = COALESCE(?6, ended_at),
-                   review_verdict = COALESCE(?7, review_verdict),
+                   review_verdict = CASE WHEN ?7 = 1 THEN ?10 ELSE review_verdict END,
                    error = CASE WHEN ?8 = 1 THEN ?9 ELSE error END
                  WHERE id = ?1",
                 params![
@@ -247,9 +253,10 @@ pub async fn update(store: &Store, id: &AttemptId, p: AttemptPatch) -> Result<At
                     p.thread_id.as_ref().map(|t| t.as_str().to_string()),
                     p.started_at,
                     p.ended_at,
-                    p.review_verdict,
+                    set_verdict,
                     set_error,
                     error,
+                    verdict,
                 ],
             )?;
             Ok(())

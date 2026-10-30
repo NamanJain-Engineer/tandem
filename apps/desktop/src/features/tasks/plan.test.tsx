@@ -20,7 +20,7 @@ import { useWorktrees } from "../../stores/worktrees";
 import { FREE_VIEW, SIGNED_IN, fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { waiting } from "../../test/waiting";
 import { TasksPage } from "./TasksPanel";
-import { engineOption, startedStatus } from "./PlanWithLead";
+import { engineOption, openReview, startedStatus } from "./PlanWithLead";
 
 const META: TasksMeta = {
   version: 1,
@@ -1051,7 +1051,10 @@ describe("Lead closes the loop (F-TK-09)", () => {
       reviews: [reviewed("TAN-1", "atm_TAN-1_1", { state: "escalated" }), pushing],
     };
     backend({
-      task_attempts_list: () => [run("TAN-1", "running", 2), run("TAN-2", "in_review", 3)],
+      task_attempts_list: () => [
+        run("TAN-1", "running", 2),
+        run("TAN-2", "in_review", 3, { reviewVerdict: "changes_requested" }),
+      ],
       plan_review_send: () => ({
         ...withReview,
         reviews: [withReview.reviews[0]!, { ...pushing, state: "sent_by_you", note: "Don't push." }],
@@ -1092,7 +1095,7 @@ describe("Lead closes the loop (F-TK-09)", () => {
   it("F-TK-09.2 Send back… without a note, and a run that moved on says why", async () => {
     const waiting = reviewed("TAN-1", "atm_TAN-1_2", { state: "escalated", reason: "Off." });
     backend({
-      task_attempts_list: () => [run("TAN-1", "in_review", 2)],
+      task_attempts_list: () => [run("TAN-1", "in_review", 2, { reviewVerdict: "changes_requested" })],
       plan_review_send: () => {
         throw {
           code: "conflict",
@@ -1121,12 +1124,48 @@ describe("Lead closes the loop (F-TK-09)", () => {
     );
   });
 
+  it("F-TK-09.2 a review dropped as Send back… goes says why on its row", async () => {
+    // The plan drops the review before it answers, so the row's Send back…
+    // went away with its message (the review of 0e20d5b7, SF-7).
+    const gone =
+      "The run has changed since (resumed, stopped, retried or removed), so the review wasn't sent.";
+    const waiting = reviewed("TAN-1", "atm_TAN-1_2", { state: "escalated", reason: "Off." });
+    const plan: PlanView = { ...STARTED, reviews: [waiting] };
+    backend({
+      task_attempts_list: () => [run("TAN-1", "in_review", 2, { reviewVerdict: "changes_requested" })],
+      plan_review_send: () => {
+        emitLocal("tasks:plan", { ...plan, reviews: [{ ...waiting, state: "dropped", reason: gone }] });
+        throw { code: "conflict", message: gone, stage: null, hint: null, retryable: false };
+      },
+    });
+    const stop = followPlans();
+    usePlans.setState({ plans: { pl_1: plan }, openId: "pl_1" });
+    wrap();
+    const box = await screen.findByTestId("plan-run-review");
+    fireEvent.click(within(box).getByTestId("plan-review-open"));
+    fireEvent.click(within(box).getByTestId("plan-review-send"));
+    expect((await within(row(0)).findByTestId("plan-run-review-dropped")).textContent).toBe(
+      `Review not sent: ${gone}`,
+    );
+    expect(screen.queryByTestId("plan-run-review")).toBeNull();
+    stop();
+  });
+
   it("F-TK-09.2 a started plan waits on you while a review is yours, before its runs' work", () => {
     const one = { ...STARTED, issueIds: ["TAN-1"] };
     const working = [run("TAN-1", "running", 2)];
     expect(startedStatus(one, working)).toBe("working");
     const escalated = { ...one, reviews: [reviewed("TAN-1", "atm_TAN-1_2", { state: "escalated" })] };
-    expect(startedStatus(escalated, working)).toBe("waiting");
+    const asked = [run("TAN-1", "in_review", 2, { reviewVerdict: "changes_requested" })];
+    expect(startedStatus(escalated, asked)).toBe("waiting");
+    // Resumed, approved or landed since, it's moved on: the review is stale
+    // (the review of 0e20d5b7, SF-7).
+    expect(startedStatus(escalated, working)).toBe("working");
+    const approved = [run("TAN-1", "in_review", 2, { reviewVerdict: "approve" })];
+    expect(startedStatus(escalated, approved)).toBe("waiting");
+    expect(openReview(escalated, approved[0] ?? null)).toBeNull();
+    const landed = { ...escalated, landed: [{ issueId: "TAN-1", commit: "abc", at: 2 }] };
+    expect(openReview(landed, asked[0] ?? null)).toBeNull();
     // Sent back, the run works on; another run's review isn't this one's.
     expect(startedStatus({ ...one, reviews: [reviewed("TAN-1", "atm_TAN-1_2")] }, working)).toBe("working");
     expect(

@@ -173,7 +173,27 @@ const SENSITIVE: &[(&str, &[Cue])] = &[
             Word("production"),
         ],
     ),
-    ("pushing", &[Part("push")]),
+    (
+        "pushing",
+        &[
+            Part("push"),
+            Phrase("pr create"),
+            Near(
+                &[
+                    "send",
+                    "sends",
+                    "sending",
+                    "sync",
+                    "syncs",
+                    "syncing",
+                    "upload",
+                    "uploads",
+                    "uploading",
+                ],
+                "upstream",
+            ),
+        ],
+    ),
     (
         "deleting files or branches",
         &[
@@ -201,31 +221,59 @@ const SENSITIVE: &[(&str, &[Cue])] = &[
     ("the plan's scope", &[Part("scope")]),
 ];
 
-/// A Cyrillic or Greek letter that passes for a Latin one, as that one.
+/// A letter that passes for a Latin one, as that one: Cyrillic and Greek
+/// look-alikes, and the Latin small capitals (`ᴘᴜꜱʜ`), dotless and barred
+/// letters and IPA forms (`ı`, `ø`, `ɑ`) that NFKD leaves as they are (the
+/// review of 0e20d5b7, SF-4).
 fn latin(c: char) -> char {
     match c {
-        'а' | 'α' => 'a',
-        'с' | 'ϲ' => 'c',
-        'ԁ' => 'd',
-        'е' | 'ε' => 'e',
-        'ɡ' => 'g',
-        'һ' => 'h',
-        'і' | 'ι' | 'ӏ' => 'i',
-        'ј' => 'j',
-        'к' | 'κ' => 'k',
-        'м' => 'm',
-        'о' | 'ο' | 'օ' => 'o',
-        'р' | 'ρ' => 'p',
-        'ԛ' => 'q',
-        'ѕ' => 's',
-        'т' | 'τ' => 't',
-        'υ' | 'ս' => 'u',
-        'ν' => 'v',
-        'ԝ' => 'w',
+        'а' | 'α' | 'ɑ' | 'ᴀ' => 'a',
+        'в' | 'ʙ' => 'b',
+        'с' | 'ϲ' | 'ᴄ' => 'c',
+        'ԁ' | 'ᴅ' | 'đ' => 'd',
+        'е' | 'ε' | 'ᴇ' => 'e',
+        'ꜰ' => 'f',
+        'ɡ' | 'ɢ' => 'g',
+        'һ' | 'н' | 'ʜ' | 'ħ' => 'h',
+        'і' | 'ι' | 'ӏ' | 'ı' | 'ɩ' | 'ɪ' => 'i',
+        'ј' | 'ȷ' | 'ᴊ' => 'j',
+        'к' | 'κ' | 'ᴋ' => 'k',
+        'ʟ' | 'ł' => 'l',
+        'м' | 'ᴍ' => 'm',
+        'п' | 'ɴ' => 'n',
+        'о' | 'ο' | 'օ' | 'ᴏ' | 'ø' => 'o',
+        'р' | 'ρ' | 'ᴘ' => 'p',
+        'ԛ' | 'ꞯ' => 'q',
+        'г' | 'ʀ' => 'r',
+        'ѕ' | 'ꜱ' => 's',
+        'т' | 'τ' | 'ᴛ' | 'ŧ' => 't',
+        'υ' | 'ս' | 'ᴜ' => 'u',
+        'ν' | 'ʋ' | 'ᴠ' => 'v',
+        'ԝ' | 'ᴡ' => 'w',
         'х' | 'χ' => 'x',
-        'у' | 'γ' => 'y',
+        'у' | 'γ' | 'ʏ' => 'y',
+        'ᴢ' => 'z',
         _ => c,
     }
+}
+
+/// Digits and signs read as the letters they stand in for (`pu5h`,
+/// `s3cr3t`, `@pi`), with `1` read as `one`: `i` in one reading, `l` in the
+/// other.
+fn leet(text: &str, one: char) -> String {
+    text.chars()
+        .map(|c| match c {
+            '0' => 'o',
+            '1' => one,
+            '3' => 'e',
+            '4' | '@' => 'a',
+            '5' | '$' => 's',
+            '7' => 't',
+            '!' => 'i',
+            '|' => 'l',
+            _ => c,
+        })
+        .collect()
 }
 
 /// Text as the word check reads it: compatibility forms (full-width,
@@ -242,12 +290,36 @@ fn folded(text: &str) -> String {
 }
 
 /// The topic that always comes to you which `question` names, if any.
+/// Best-effort, as any list of words is: it reads English words, with
+/// look-alike letters folded, and each text in three readings: as written,
+/// and with digits and signs read as letters, `1` as `i` and as `l`. In
+/// each, a run of three or more single letters counts as one word too
+/// (`p u s h`, `p-u-s-h`). Other languages and words with no cue here aren't
+/// read (the review of 0e20d5b7, SF-4).
 pub fn sensitive(question: &str) -> Option<&'static str> {
     let text = folded(question);
-    let words: Vec<&str> = text
+    [leet(&text, 'i'), leet(&text, 'l'), text]
+        .iter()
+        .find_map(|t| topic_in(t))
+}
+
+/// [`sensitive`] in one reading of a folded text.
+fn topic_in(text: &str) -> Option<&'static str> {
+    let split: Vec<&str> = text
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
+    let mut words: Vec<String> = split.iter().map(|w| (*w).to_string()).collect();
+    let mut run = String::new();
+    for w in split.iter().chain(std::iter::once(&"")) {
+        if w.chars().count() == 1 {
+            run.push_str(w);
+        } else if run.chars().count() >= 3 {
+            words.push(std::mem::take(&mut run));
+        } else {
+            run.clear();
+        }
+    }
     let spaced = text.split_whitespace().collect::<Vec<_>>().join(" ");
     SENSITIVE.iter().find_map(|(topic, cues)| {
         cues.iter()
@@ -257,7 +329,7 @@ pub fn sensitive(question: &str) -> Option<&'static str> {
                 Part(p) => words.iter().any(|x| x.contains(p)),
                 Pair(a, b) => words.windows(2).any(|p| p[0] == *a && p[1] == *b),
                 Near(verbs, stem) => {
-                    words.iter().any(|x| verbs.contains(x))
+                    words.iter().any(|x| verbs.contains(&x.as_str()))
                         && words.iter().any(|x| x.starts_with(stem))
                 }
                 Phrase(p) => spaced.contains(p),
@@ -469,6 +541,9 @@ impl PlanService {
                     plan_id,
                     question_id,
                 } => me.close(&plan_id, &question_id),
+                QuestionEvent::MovedOn { attempt_id } => {
+                    me.run_moved_on(&attempt_id, super::review::GONE).await
+                }
                 QuestionEvent::Started { .. } => {}
             }
         });
@@ -620,14 +695,25 @@ impl PlanService {
     }
 
     /// Held while an answer is taken and sent, and while the switch moves:
-    /// an answer taken before Off goes, and none after it.
+    /// an answer taken before Off goes, and none after it. A plan that's
+    /// gone keeps no gate: one asked after Remove plan is nobody's, and the
+    /// holder finds the plan gone (the review of 0e20d5b7).
     pub(super) fn delivery(&self, plan_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        self.deliveries
+        // Looked up under the plans' lock, so a plan removed meanwhile
+        // drops its gate after this one is kept.
+        let plans = self.lock();
+        if !plans.contains_key(plan_id) {
+            return Arc::default();
+        }
+        let gate = self
+            .deliveries
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .entry(plan_id.to_string())
             .or_default()
-            .clone()
+            .clone();
+        drop(plans);
+        gate
     }
 
     /// The plan's answer session under way and the question it answers,
@@ -1242,6 +1328,45 @@ mod tests {
             sensitive("Should I d\u{0435}ploy?"),
             Some("deploys or publishing")
         );
+        // Small capitals, dotless and IPA letters, digits and signs for
+        // letters, spaced letters, and two more ways to say push (the
+        // review of 0e20d5b7, SF-4).
+        for (q, topic) in [
+            ("Then ᴘᴜꜱʜ it to main.", "pushing"),
+            ("Then pu5h it to main.", "pushing"),
+            ("Then p u s h it to main.", "pushing"),
+            ("Then p-u-s-h it to main.", "pushing"),
+            ("Then p.u.s.h it to main.", "pushing"),
+            ("Then run gh pr create.", "pushing"),
+            ("Then send the commits upstream.", "pushing"),
+            ("Put the ꜱᴇᴄʀᴇᴛ in the config.", "secrets or credentials"),
+            ("Put the s3cr3t in the config.", "secrets or credentials"),
+            ("Put the $ecret in the config.", "secrets or credentials"),
+            ("Rotate the apı key.", "secrets or credentials"),
+            ("Add the @pi key.", "secrets or credentials"),
+            ("Give it ɑccess to the database.", "access"),
+            ("Then de|ete the branch.", "deleting files or branches"),
+        ] {
+            assert_eq!(sensitive(q), Some(topic), "{q:?}");
+        }
+        // Read defanged, as the run reads it, it names the same: the defang
+        // only adds what folding reads back (`＠`, `／`) or a hyphen.
+        for q in [
+            "Then push it to main.",
+            "Use @secrets.env for it.",
+            "Run /deploy now.",
+        ] {
+            assert_eq!(sensitive(&untrusted::defang(q)), sensitive(q), "{q:?}");
+        }
+        // Reviews of ordinary code stay with the run.
+        for q in [
+            "Rename the helper and add a test for the empty case.",
+            "Version 1.5 of the parser handles 404s; keep the a b ordering.",
+            "Use 7 retries with base64 and utf8, as in x86 and e2e runs.",
+            "The off-by-1 in the loop drops the last item.",
+        ] {
+            assert_eq!(sensitive(q), None, "{q:?}");
+        }
     }
 
     #[test]

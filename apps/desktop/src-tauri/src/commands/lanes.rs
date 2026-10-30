@@ -477,7 +477,12 @@ pub async fn merge_queue_undo(
     {
         return Err(IpcError::new(ErrorCode::Cancelled, "Kept the landing"));
     }
-    merge_queue::undo(&state.store, &state.data, &git, &workspace_id).await
+    let undone = merge_queue::undo(&state.store, &state.data, &git, &workspace_id).await?;
+    // F-TK-09: a plan task that landed as one of them is in review again.
+    if let Some(plans) = state.plan.get().cloned() {
+        plans.on_unlanded(&undone).await;
+    }
+    Ok(())
 }
 
 fn landing_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {

@@ -103,7 +103,7 @@ async function row(
 // E2E-M18-TK-09 Lead closes the loop (F-TK-09): with reviews going back on
 // (the default), a plan run whose review asks for changes gets the reasons
 // as its next message in its own thread, labelled, and is reviewed again;
-// the same changes asked again come to you with why, and Send back… sends
+// a turn that changed nothing comes to you with why, and Send back… sends
 // them with your note. Land worktrees landing a plan task's worktree marks
 // the task Done with the commit. No account (D-869).
 describe("E2E-M18-TK-09 Lead closes the loop", function () {
@@ -143,8 +143,8 @@ describe("E2E-M18-TK-09 Lead closes the loop", function () {
     expect(plan.sendBack).toBe(true);
     const [changed, approved] = plan.issueIds as [string, string];
 
-    // Round 1 goes back to the run; the same reasons after its turn come to
-    // you instead of going round again.
+    // Round 1 goes back to the run; after a turn that changed nothing the
+    // review comes to you instead of going round again.
     const after = await waitFor(
       () => planNow(plan.id),
       (p) => reviewsOf(p, changed).length === 2,
@@ -154,7 +154,9 @@ describe("E2E-M18-TK-09 Lead closes the loop", function () {
     const [first, second] = reviewsOf(after, changed) as [Review, Review];
     expect([first.round, first.state, first.reasons]).toEqual([1, "sent", REASONS]);
     expect([second.round, second.state]).toEqual([2, "escalated"]);
-    expect(second.reason).toBe("The review asks for the same changes as the last one.");
+    // The fake run changes nothing, so its second turn's diff is the
+    // first's (an empty diff counts; the review of 0e20d5b7).
+    expect(second.reason).toBe("The run's last turn changed nothing since the review that sent it back.");
     const run = await runOf(changed);
     const back = (await sent(run.attempt.threadId!)).filter((t) => t.startsWith(LABEL));
     expect(back).toHaveLength(1);
@@ -189,7 +191,7 @@ describe("E2E-M18-TK-09 Lead closes the loop", function () {
     expect((await row(changed)).rounds).toBe("Review sent back · round 1 of 2");
     const box = $('[data-testid="plan-run-review"]');
     expect(await textOf(box.$('[data-testid="plan-review-why"]'))).toBe(
-      "The review asks for the same changes as the last one.",
+      "The run's last turn changed nothing since the review that sent it back.",
     );
     expect(await textOf(box.$('[data-testid="plan-review-reasons"]'))).toBe(REASONS);
 

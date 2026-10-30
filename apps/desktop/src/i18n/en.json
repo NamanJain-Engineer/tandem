@@ -2822,6 +2822,7 @@
   "plan.review.noteHint": "Goes above the review, as yours.",
   "plan.review.send": "Send back",
   "plan.review.sent": "Review sent back; the run goes on",
+  "plan.review.notSent": "Review not sent: {reason}",
   "tasks.savedMeanwhile": "This task changed while you were saving. Check it and save again.",
   "tasks.conflict.body": "Someone else changed the {field} while you were editing.",
   "tasks.conflict.keepMine": "Keep mine",

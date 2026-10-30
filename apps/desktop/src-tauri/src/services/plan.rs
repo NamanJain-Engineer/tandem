@@ -27,6 +27,9 @@ use crate::services::tasks_exec::{ExecuteInput, Isolation, RunBlock, Supervision
 mod answer;
 mod landed;
 mod review;
+
+/// How many times a run's Changes requested goes back to it (F-TK-09).
+pub use review::ROUNDS as REVIEW_ROUNDS;
 mod supervisor;
 pub use answer::AnswerFailed;
 pub use supervisor::{sensitive, PLAN_ANSWERS, RUN_QUESTIONS};
@@ -43,6 +46,22 @@ pub const PROJECT_NAME_MAX: usize = 80;
 /// its forecast runs out within [`NEAR_LIMIT_MS`] (F-TK-09).
 pub const NEAR_LIMIT_PCT: f64 = 90.0;
 pub const NEAR_LIMIT_MS: i64 = 30 * 60 * 1000;
+
+/// A usage reading says the account is near its limit now: a window at
+/// [`NEAR_LIMIT_PCT`] that hasn't reset since, or a forecast running out
+/// within [`NEAR_LIMIT_MS`] from now. A window past its reset and a
+/// forecast whose time has gone by are an older reading's (the review of
+/// 0e20d5b7).
+pub fn runs_short(view: &crate::services::usage::UsageView, now: i64) -> bool {
+    view.windows
+        .iter()
+        .any(|w| w.used_pct >= NEAR_LIMIT_PCT && w.resets_at.is_none_or(|at| at > now))
+        || view.forecasts.iter().any(|f| {
+            f.runs_out_early()
+                && f.runs_out_at
+                    .is_some_and(|at| at > now && at - now <= NEAR_LIMIT_MS)
+        })
+}
 
 /// Lead's reply is read as a plan only up to this size (bytes).
 pub const REPLY_MAX: usize = 512 * 1024;
@@ -515,6 +534,20 @@ pub fn project_name(goal: &str) -> String {
     }
 }
 
+/// Where a run stands for a review of it that came to you (F-TK-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewWait {
+    /// Ended in review with Changes requested: Send back… can go.
+    Waiting,
+    /// Its review is still being written down (the plan heard of it a
+    /// moment before the run's state did): Send back… tries again. Read as
+    /// moved on, the review was dropped for good (the review of 0e20d5b7,
+    /// SF-5).
+    Settling,
+    /// It moved on since: resumed, stopped, retried, landed or removed.
+    Gone,
+}
+
 #[async_trait::async_trait]
 pub trait PlanHost: Send + Sync {
     /// Lead's id and engine.
@@ -588,9 +621,9 @@ pub trait PlanHost: Send + Sync {
     /// its usage is near the limit, read or forecast (F-AC-08), as the row
     /// says it (F-TK-09).
     async fn near_limit(&self, engine: &str, account: Option<&AccountId>) -> Option<String>;
-    /// The task's latest run is `attempt`, ended in review with Changes
-    /// requested: a review can still go back to it (F-TK-09).
-    async fn waits_for_review(&self, issue_id: &str, attempt: &AttemptId) -> bool;
+    /// Whether the task's latest run is `attempt`, ended in review with
+    /// Changes requested, so a review can still go back to it (F-TK-09).
+    async fn review_wait(&self, issue_id: &str, attempt: &AttemptId) -> ReviewWait;
     /// `text` as the run's next message; it's reviewed again after that
     /// turn (F-TK-04's Resume, F-TK-09).
     async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError>;
@@ -600,6 +633,9 @@ pub trait PlanHost: Send + Sync {
     /// Land worktrees landed the run's worktree: an ended run is Done.
     /// False for one still going (F-TK-09).
     async fn run_landed(&self, attempt: &AttemptId) -> bool;
+    /// Undo landing took the task's landed merge off the base: its run that
+    /// landed is in review again (F-TK-09).
+    async fn run_unlanded(&self, issue_id: &str);
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1771,12 +1807,7 @@ impl PlanHost for AppHost {
     async fn near_limit(&self, engine: &str, account: Option<&AccountId>) -> Option<String> {
         // The engine's own sign-in has no reading to go by.
         let view = self.state().usage.get(account?.as_str())?;
-        let now = self.now();
-        let short = view.windows.iter().any(|w| w.used_pct >= NEAR_LIMIT_PCT)
-            || view.forecasts.iter().any(|f| {
-                f.runs_out_early() && f.runs_out_at.is_some_and(|at| at - now <= NEAR_LIMIT_MS)
-            });
-        if !short {
+        if !runs_short(&view, self.now()) {
             return None;
         }
         let label = self
@@ -1788,19 +1819,28 @@ impl PlanHost for AppHost {
         Some(format!("Paused: near {label}'s limit."))
     }
 
-    async fn waits_for_review(&self, issue_id: &str, attempt: &AttemptId) -> bool {
+    async fn review_wait(&self, issue_id: &str, attempt: &AttemptId) -> ReviewWait {
         use tandem_store::repo::task_attempts::{self, AttemptState};
+        // Unread, it may still wait: dropped, the review was gone for good.
         let Ok(all) = task_attempts::list(&self.state().store).await else {
-            return false;
+            return ReviewWait::Settling;
         };
-        all.iter()
+        let latest = all
+            .iter()
             .filter(|a| a.issue_id == issue_id)
-            .max_by_key(|a| a.queued_at)
-            .is_some_and(|a| {
-                a.id == *attempt
-                    && a.state == AttemptState::InReview
-                    && a.review_verdict.as_deref() == Some("changes_requested")
-            })
+            .max_by_key(|a| a.queued_at);
+        match latest {
+            Some(a)
+                if a.id == *attempt && a.review_verdict.as_deref() == Some("changes_requested") =>
+            {
+                match a.state {
+                    AttemptState::InReview => ReviewWait::Waiting,
+                    AttemptState::Reviewing => ReviewWait::Settling,
+                    _ => ReviewWait::Gone,
+                }
+            }
+            _ => ReviewWait::Gone,
+        }
     }
 
     async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError> {
@@ -1827,6 +1867,10 @@ impl PlanHost for AppHost {
 
     async fn run_landed(&self, attempt: &AttemptId) -> bool {
         self.state().task_exec.landed(attempt).await
+    }
+
+    async fn run_unlanded(&self, issue_id: &str) {
+        self.state().task_exec.unlanded(issue_id).await;
     }
 }
 
@@ -1882,6 +1926,10 @@ mod tests {
         near: Mutex<Option<String>>,
         /// The run was stopped, retried or removed since its review.
         moved_on: Mutex<bool>,
+        /// The run's review is still being written down.
+        settling: Mutex<bool>,
+        /// The tasks whose landing was undone.
+        unlanded: Mutex<Vec<String>>,
         /// Runs resumed with a review, and the text.
         resumed: Mutex<Vec<(AttemptId, String)>>,
         /// Worktrees and the task and run each is (F-TK-09).
@@ -2143,8 +2191,14 @@ mod tests {
         async fn near_limit(&self, _: &str, _: Option<&AccountId>) -> Option<String> {
             self.near.lock().expect("l").clone()
         }
-        async fn waits_for_review(&self, _: &str, _: &AttemptId) -> bool {
-            !*self.moved_on.lock().expect("l")
+        async fn review_wait(&self, _: &str, _: &AttemptId) -> ReviewWait {
+            if *self.moved_on.lock().expect("l") {
+                ReviewWait::Gone
+            } else if *self.settling.lock().expect("l") {
+                ReviewWait::Settling
+            } else {
+                ReviewWait::Waiting
+            }
         }
         async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError> {
             self.resumed
@@ -2162,6 +2216,9 @@ mod tests {
             }
             self.landed.lock().expect("l").push(attempt.clone());
             true
+        }
+        async fn run_unlanded(&self, issue_id: &str) {
+            self.unlanded.lock().expect("l").push(issue_id.to_string());
         }
     }
 
@@ -4207,7 +4264,11 @@ mod tests {
         assert_eq!(resumed[0].0, AttemptId::from_db("atm_1".to_string()));
         assert_eq!(
             resumed[0].1,
-            review::review_message("Handle the empty input.", Some("Keep the old API too."))
+            review::review_message(
+                "Handle the empty input.",
+                Some("Keep the old API too."),
+                true
+            )
         );
         // Once.
         let again = plans
@@ -4265,6 +4326,75 @@ mod tests {
             reviews(&plans, &view.id)[0].reason.as_deref(),
             Some("Paused: near Claude Code's limit.")
         );
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_1_a_review_after_remove_plan_goes_nowhere_and_keeps_no_gate() {
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        plans.discard(&view.id).expect("discard");
+        assert_eq!(
+            plans
+                .on_changes_requested(changes(&view, "atm_1", "Add a test.", 1))
+                .await,
+            None
+        );
+        assert!(plans.send_review(&view.id, "rvw_1", None).await.is_err());
+        assert!(
+            plans
+                .deliveries
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_empty(),
+            "a removed plan keeps no gate"
+        );
+        assert!(fake.resumed.lock().expect("l").is_empty());
+    }
+
+    #[test]
+    fn f_tk_09_3_near_its_limit_goes_by_a_reading_still_current() {
+        use crate::services::usage::{UsageSource, UsageView};
+        use tandem_engines::forecast::{ForecastState, WindowForecast};
+        use tandem_engines::usage::UsageWindow;
+        const NOW: i64 = 1_000_000_000;
+        const MIN: i64 = 60_000;
+        let reading = |used: f64, resets: Option<i64>, out: Option<i64>| UsageView {
+            account_id: AccountId::from_db("acc_1".into()),
+            engine_id: "claude-code".into(),
+            windows: vec![UsageWindow {
+                kind: "5h".into(),
+                used_pct: used,
+                resets_at: resets,
+            }],
+            source: UsageSource::CodexAppServer,
+            estimated: false,
+            reason: None,
+            fetched_at: NOW - MIN,
+            forecasts: vec![WindowForecast {
+                kind: "5h".into(),
+                state: if out.is_some() {
+                    ForecastState::RunsOut
+                } else {
+                    ForecastState::OnTrack
+                },
+                runs_out_at: out,
+                before_reset_ms: None,
+                rate_per_hour: Some(10.0),
+                basis_minutes: 30,
+            }],
+        };
+        // A window at 90% that hasn't reset, or with no reset known.
+        assert!(runs_short(&reading(90.0, Some(NOW + 60 * MIN), None), NOW));
+        assert!(runs_short(&reading(95.0, None, None), NOW));
+        assert!(!runs_short(&reading(89.9, Some(NOW + 60 * MIN), None), NOW));
+        // That window reset since: the reading is from before it.
+        assert!(!runs_short(&reading(97.0, Some(NOW - MIN), None), NOW));
+        assert!(!runs_short(&reading(97.0, Some(NOW), None), NOW));
+        // A forecast running out within 30 minutes, not later.
+        assert!(runs_short(&reading(50.0, None, Some(NOW + 30 * MIN)), NOW));
+        assert!(!runs_short(&reading(50.0, None, Some(NOW + 31 * MIN)), NOW));
+        // A forecast whose time has gone by is an older reading's.
+        assert!(!runs_short(&reading(50.0, None, Some(NOW - MIN)), NOW));
     }
 
     #[tokio::test]
@@ -4343,5 +4473,27 @@ mod tests {
         // Kept across a restart.
         let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
         assert_eq!(after.get(&view.id).expect("kept").landed.len(), 1);
+        // Undo landing took its merge off: in review again, with its run,
+        // and no longer Landed (the review of 0e20d5b7, SF-8). A merge no
+        // plan task landed as changes nothing.
+        plans.on_unlanded(&["feedface".to_string()]).await;
+        assert_eq!(plans.get(&view.id).expect("plan").landed.len(), 1);
+        plans
+            .on_unlanded(&["aaaabbbbcccc".to_string(), "feedface".to_string()])
+            .await;
+        assert!(plans.get(&view.id).expect("plan").landed.is_empty());
+        assert_eq!(*fake.unlanded.lock().expect("l"), vec!["TAN-1".to_string()]);
+        assert_eq!(
+            tracker.get("TAN-1").expect("TAN-1").status,
+            IssueStatus::InReview
+        );
+        assert_eq!(
+            tracker
+                .comments("TAN-1")
+                .expect("comments")
+                .last()
+                .map(|c| c.body.as_str()),
+            Some(landed::UNLANDED)
+        );
     }
 }

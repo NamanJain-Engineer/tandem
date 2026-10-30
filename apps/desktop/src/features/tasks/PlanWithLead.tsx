@@ -175,12 +175,26 @@ export function openQuestion(plan: PlanView, run: AttemptView | null): PlanQuest
 }
 
 /** A run's latest review that asked for changes, while it waits for you
- * (F-TK-09). */
+ * (F-TK-09): only while the run itself is in review with Changes requested.
+ * A run you resumed, approved or landed since had moved on, and its row
+ * still offered Send back… (the review of 0e20d5b7, SF-7). */
 export function openReview(plan: PlanView, run: AttemptView | null): PlanReview | null {
   if (!run) return null;
-  const mine = plan.reviews.filter((r) => r.attemptId === run.attempt.id);
+  const a = run.attempt;
+  if (a.state !== "in_review" || a.reviewVerdict !== "changes_requested") return null;
+  if (plan.landed.some((l) => l.issueId === a.issueId)) return null;
+  const mine = plan.reviews.filter((r) => r.attemptId === a.id);
   const last = mine[mine.length - 1];
   return last?.state === "escalated" ? last : null;
+}
+
+/** A run's latest review when it wasn't sent, and why: Send back… drops one
+ * whose run moved on, and the row went quiet (F-TK-09). */
+export function droppedReview(plan: PlanView, run: AttemptView | null): PlanReview | null {
+  if (!run || run.attempt.reviewVerdict === "approve") return null;
+  const mine = plan.reviews.filter((r) => r.attemptId === run.attempt.id);
+  const last = mine[mine.length - 1];
+  return last?.state === "dropped" ? last : null;
 }
 
 /** "Review sent back · round 2 of 2": the run's reviews that went back to
@@ -420,6 +434,7 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
           const rounds = roundsLabel(plan, run);
           // Land worktrees landed it: Done (F-TK-09).
           const landed = plan.landed.some((l) => l.issueId === id);
+          const dropped = landed ? null : droppedReview(plan, run);
           const label = landed ? t("plan.run.landed") : runLabel(run);
           return (
             <li
@@ -446,7 +461,7 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
                   {engine(run?.attempt.engineId ?? task?.engineId ?? "")} · {label}
                 </span>
               </div>
-              {(run?.waiting || answered > 0 || rounds) && (
+              {(run?.waiting || answered > 0 || rounds || dropped) && (
                 <p className="flex flex-wrap items-center gap-x-3 pl-6 text-sm text-fg-muted">
                   {run?.waiting && (
                     <span className="flex items-center gap-2" data-testid="plan-run-approval">
@@ -460,6 +475,11 @@ function PlanRuns({ plan, attempts }: { plan: PlanView; attempts: AttemptView[] 
                     </span>
                   )}
                   {rounds && <span data-testid="plan-run-rounds">{rounds}</span>}
+                  {dropped && (
+                    <span data-testid="plan-run-review-dropped">
+                      {t("plan.review.notSent", { reason: dropped.reason ?? "" })}
+                    </span>
+                  )}
                 </p>
               )}
               {question && <QuestionRow key={question.id} plan={plan} question={question} />}

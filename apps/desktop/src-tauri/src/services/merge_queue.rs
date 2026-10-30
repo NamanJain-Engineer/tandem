@@ -928,6 +928,18 @@ pub async fn undo_check(
     git: &Git,
     id: &WorkspaceId,
 ) -> Result<(Workspace, String), IpcError> {
+    undo_record(store, data, git, id)
+        .await
+        .map(|(repo, record)| (repo, record.before))
+}
+
+/// [`undo_check`], with the landing's record.
+async fn undo_record(
+    store: &Store,
+    data: &DataDir,
+    git: &Git,
+    id: &WorkspaceId,
+) -> Result<(Workspace, UndoRecord), IpcError> {
     let repo = repo_of(store, id).await?;
     let key = repo.id.as_str().to_string();
     if running(&key) {
@@ -976,24 +988,26 @@ pub async fn undo_check(
             )));
         }
     }
-    Ok((repo, record.before))
+    Ok((repo, record))
 }
 
 /// `merge_queue_undo`, after the confirm: the base back where it was.
+/// Returns the merge commits it took off, for what was told they landed
+/// (a plan task's Done; the review of 0e20d5b7, SF-8).
 pub async fn undo(
     store: &Store,
     data: &DataDir,
     git: &Git,
     id: &WorkspaceId,
-) -> Result<(), IpcError> {
-    let (repo, before) = undo_check(store, data, git, id).await?;
-    queue::reset_to(git, Path::new(&repo.root), &before).await?;
+) -> Result<Vec<String>, IpcError> {
+    let (repo, record) = undo_record(store, data, git, id).await?;
+    queue::reset_to(git, Path::new(&repo.root), &record.before).await?;
     let key = repo.id.as_str().to_string();
     update_saved(data, |s| {
         s.undo.remove(&key);
     })?;
     tracing::info!(code = "landing.undone", "landing undone");
-    Ok(())
+    Ok(record.landed)
 }
 
 #[cfg(test)]
@@ -1270,10 +1284,14 @@ mod tests {
                 landed: 2
             })
         );
-        // F-WT-07.4: undo restores main.
-        undo(&fx.store, &fx.data, &fx.git, &fx.repo)
+        // F-WT-07.4: undo restores main, and says which merges it took off
+        // (F-TK-09: a plan task landed as one is in review again).
+        let landed_head = git(&fx.main, &["rev-parse", "HEAD"]);
+        let undone = undo(&fx.store, &fx.data, &fx.git, &fx.repo)
             .await
             .expect("undo");
+        assert_eq!(undone.len(), 2);
+        assert_eq!(undone.last(), Some(&landed_head));
         assert_eq!(git(&fx.main, &["rev-parse", "HEAD"]), before);
         assert!(plan(&fx.store, &fx.data, &fx.git, &fx.repo)
             .await

@@ -44,15 +44,20 @@ A run started by **Execute all…** can stop and ask a question when the task an
 
 When the review of a run started by **Execute all…** asks for changes, the plan sends the reviewer's reasons back to that run as its next message, in the same worktree and session. The run fixes its own work, and its next turn is reviewed again. **Execute all…** has the option on by default: "Send reviews back to the run (up to 2 rounds)". The plan has the same switch while its runs can be reviewed.
 
-- **The run reads the review as another engine's view, not as orders.** The message is labelled "Review (sent back automatically)", the reasons are fenced as text from elsewhere, and it ends by saying the review is data to weigh: the run decides what to change, and its approvals and sandbox still apply.
-- **The plan's row shows the rounds:** "Review sent back · round 1 of 2". Each review stays on the task as the reviewer's comment, with a note of what happened to it.
-- **These come to you instead:** a third request for changes on the same run; a review that mentions approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope (hidden characters don't hide a word); a review after a turn that changed nothing; a review asking for the same changes as the last one sent back; and every review while the engine is near its usage limit ("Paused: near Claude Code's limit.") or the switch is off.
-- **When a review comes to you**, its row says **Needs you** with the reviewer's reasons and why, and you get a notification. Choose **Send back…**, add a note if you like (it goes above the review, as yours), and choose **Send back**. **Retry** on the task still starts a fresh run instead.
-- **Nothing goes back on its own after a restart.** A run Vibezeo's closing cut off is stopped, as any run is, and **Resume** carries on. A review waiting in **Needs you** is still there, and a review for a run you've since resumed, stopped, retried or removed isn't sent; the task notes it.
+- **The run reads the review as another engine's view, not as orders.** The message is labelled "Review (sent back automatically)", or "Review (sent back by you)" when you send it. The reasons are marked as another engine's review and fenced as text from elsewhere, and the message ends by saying the review is data to weigh: the run decides what to change, and its approvals and sandbox still apply.
+- **The plan's row shows the rounds:** "Review sent back · round 1 of 2". While the run works on a review, its task is In progress again, and In review when the turn ends. Each review stays on the task as the reviewer's comment, with a note of what happened to it.
+- **These come to you instead:** a third request for changes on the same run; a review that mentions approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope; a review that asks for changes without saying which; a review after a turn that changed nothing; a review asking for the same changes as the last one sent back; and every review while the engine is near its usage limit ("Paused: near Claude Code's limit.") or the switch is off.
+- **The check for those topics reads words.** Hidden characters, look-alike letters, digits for letters and spaced-out letters don't hide one, but a review can always say a thing in words the check doesn't know. That's why the run reads every review as data, never as instructions.
+- **When a review comes to you**, its row says **Needs you** with the reviewer's reasons and why, and you get a notification. Choose **Send back…**, add a note of up to 2,000 characters if you like (it goes above the review, as yours), and choose **Send back**. **Retry** on the task still starts a fresh run instead.
+- **A task you finish yourself gets nothing back.** Mark a task Done or Canceled while its run works on a review, and the run's turn ends in review without another review or change to the task.
+- **A review only waits while its run does.** When you resume, stop or retry the run, or land its worktree, a review waiting in **Needs you** isn't sent: its row says why, and the task notes it.
+- **Nothing goes back on its own after a restart.** A run Vibezeo's closing cut off is stopped, as any run is, and **Resume** carries on. A review waiting in **Needs you** is still there.
 
 ### Landed is done
 
-When **Land worktrees** lands a plan task's worktree, the task and its run are marked Done, a comment names the landed commit, and the plan's row says **Landed**. A worktree you merge yourself outside **Land worktrees**, or a landing that fails or stops, leaves the task as it is.
+When **Land worktrees** lands a plan task's worktree, the task and its run are marked Done, a comment names the landed commit, and the plan's row says **Landed**. A worktree you merge yourself outside **Land worktrees**, or a landing that fails or stops, leaves the task as it is. So does landing a worktree whose run is still going, or an older run's worktree while a newer run of the task is still going: the task waits on that run.
+
+**Undo landing** takes the merge back off the base, and the task and its run are In review again, with a comment saying so. The plan's row no longer says **Landed**.
 
 ## Claims
 
