@@ -40,8 +40,10 @@ struct Entry {
     /// Shared, not copied: what worktrees share is read again at each
     /// refresh and rail reload (the review of d06b9e3d, SF-1).
     index: Arc<SymbolIndex>,
-    /// Parses by file: a refresh parses only what changed since.
-    cache: symbols::ParseCache,
+    /// Parses by file: a refresh parses only what changed since. Shared,
+    /// so taking it under the lock copies nothing; the refresh copies it
+    /// outside (the review of d3b838de).
+    cache: Arc<symbols::ParseCache>,
 }
 
 static INDEXES: LazyLock<Mutex<HashMap<String, Entry>>> = LazyLock::new(Mutex::default);
@@ -51,9 +53,10 @@ static STARTED: AtomicU64 = AtomicU64::new(0);
 /// parse that started before isn't kept after. One that began before a
 /// discard or Remove repository and finished after brought the gone
 /// worktree's index back for good (the review of 30d5bcad). A worktree
-/// gone for good keeps `u64::MAX` ([`forget_for_good`]) for as long as
-/// the app runs, a few bytes each; any other fence goes once a newer parse
-/// is kept, which wins over older ones anyway.
+/// gone for good keeps `u64::MAX` ([`forget_for_good`]) until a worktree
+/// is made again with its id ([`made`]), a few bytes each; any other fence
+/// goes once a newer parse is kept, which wins over older ones anyway. A
+/// fence is only ever raised, except by [`made`].
 static FORGOTTEN: LazyLock<Mutex<HashMap<String, u64>>> = LazyLock::new(Mutex::default);
 /// A watcher per parsed worktree (F-WT-10 slice 2), for up to
 /// [`MAX_WATCHED_WORKTREES`] of them, until it's forgotten.
@@ -63,6 +66,10 @@ static WATCHERS: LazyLock<Mutex<HashMap<String, Watched>>> = LazyLock::new(Mutex
 static HELD: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Mutex::default);
 /// Worktrees a watched parse runs for, and whether changes came during it.
 static RUNNING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
+/// Worktrees with a follow-up refresh on its way ([`follow_up`]): one each.
+/// Every refresh that ran out of time started its own, and they ran side
+/// by side, parsing the same files (the review of d3b838de, SF-B).
+static FOLLOWING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
 /// What a watched change needs to parse again (set by [`run`]).
 static CONTEXT: OnceLock<Context> = OnceLock::new();
 
@@ -113,6 +120,9 @@ pub const MAX_WATCHED_WORKTREES: usize = 8;
 pub const WATCH_IDLE: Duration = Duration::from_secs(5 * 60);
 /// A watched worktree's share never drops below this many folders.
 const MIN_WATCHED_DIRS: usize = 64;
+/// A watched batch of more paths than this is an overflow, which parses the
+/// worktree again whatever the paths were.
+const WATCH_MAX_PATHS: usize = 20_000;
 
 /// A worktree's watcher, and when it was last parsed for itself.
 struct Watched {
@@ -183,10 +193,10 @@ async fn refresh_on(
     if !covered(lane) || is_held(lane.id.as_str()) {
         return Ok(Arc::default());
     }
-    let mut cache = lock(&INDEXES)
+    let cached = lock(&INDEXES)
         .get(lane.id.as_str())
-        .map(|e| e.cache.clone())
-        .unwrap_or_default();
+        .map(|e| e.cache.clone());
+    let mut cache = cached.map(|c| (*c).clone()).unwrap_or_default();
     let done = symbols::index_cached(git, Path::new(&lane.root), base, &mut cache).await?;
     tracing::debug!(
         code = "radar.refreshed",
@@ -216,7 +226,7 @@ async fn refresh_on(
 /// every pair of the repository was compared, each index copied, at every
 /// refresh (the review of d06b9e3d, SF-1).
 fn shares_of(parent: &str, lane_id: &str) -> BTreeMap<String, Vec<SharedSymbol>> {
-    let (mine, others) = {
+    let (mine, others): (Arc<SymbolIndex>, Vec<(String, Arc<SymbolIndex>)>) = {
         let indexes = lock(&INDEXES);
         let Some(mine) = indexes.get(lane_id).map(|e| e.index.clone()) else {
             return BTreeMap::new();
@@ -228,19 +238,29 @@ fn shares_of(parent: &str, lane_id: &str) -> BTreeMap<String, Vec<SharedSymbol>>
             .collect();
         (mine, others)
     };
+    let me = symbols::Comparable::new(&mine);
     others
         .into_iter()
         .filter_map(|(id, theirs)| {
-            let found = shared(&mine, &theirs);
+            #[cfg(test)]
+            COMPARED.with(|n| n.set(n.get() + 1));
+            let found = symbols::shared_between(&me, &symbols::Comparable::new(&theirs));
             (!found.is_empty()).then_some((id, found))
         })
         .collect()
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Pairs [`shares_of`] compared on this thread, for its test.
+    static COMPARED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// A refresh that ran out of time left files for the next one: that one
 /// comes after [`SETTLE`], since nothing else would read them while the
 /// worktree stays as it is (the review of d06b9e3d, N-2). Each refresh
-/// parses at least one more file, so the rounds end.
+/// parses at least one more file, so the rounds end. One at a time per
+/// worktree ([`FOLLOWING`]).
 fn follow_up(lane: Workspace, watch: bool) {
     let (Some(ctx), Ok(handle)) = (
         CONTEXT.get().cloned(),
@@ -248,11 +268,22 @@ fn follow_up(lane: Workspace, watch: bool) {
     ) else {
         return;
     };
+    if !follows(lane.id.as_str()) {
+        return;
+    }
     handle.spawn(refresh_later(lane, watch, ctx));
 }
 
-/// [`refresh_on`] after [`SETTLE`], as a boxed `Send` future: it can follow
-/// itself up, and the box ends that cycle.
+/// Whether `lane_id` takes a follow-up now: not while one is on its way.
+fn follows(lane_id: &str) -> bool {
+    lock(&FOLLOWING).insert(lane_id.to_string())
+}
+
+/// The follow-up after [`SETTLE`], as a boxed `Send` future: it can follow
+/// itself up, and the box ends that cycle. It reads the worktree's row
+/// again (gone or changed, it's the row now that counts) and announces as
+/// a watched change does, so a pair newly sharing in the files it read
+/// gets its notice (the review of d3b838de).
 fn refresh_later(
     lane: Workspace,
     watch: bool,
@@ -260,8 +291,14 @@ fn refresh_later(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     Box::pin(async move {
         tokio::time::sleep(SETTLE).await;
-        if let Some(git) = ctx.git().await {
-            let _ = refresh_on(&git, &lane, watch, Some(&ctx.bus)).await;
+        // Off the list before it runs, so a refresh that runs out of time
+        // again can follow itself up.
+        lock(&FOLLOWING).remove(lane.id.as_str());
+        let (Some(git), Ok(all)) = (ctx.git().await, workspaces::list(&ctx.store).await) else {
+            return;
+        };
+        if let Some(now) = all.iter().find(|w| w.id == lane.id && covered(w)) {
+            announce(&ctx.store, &git, &ctx.bus, now, &all, watch).await;
         }
     })
 }
@@ -316,7 +353,7 @@ fn keep(
             parent: parent.to_string(),
             started,
             index: index.clone(),
-            cache,
+            cache: Arc::new(cache),
         },
     );
     Some(index)
@@ -324,6 +361,12 @@ fn keep(
 
 fn is_held(lane_id: &str) -> bool {
     lock(&HELD).contains_key(lane_id)
+}
+
+/// Whether the radar keeps an index for `lane_id`, for tests elsewhere.
+#[cfg(test)]
+pub(crate) fn has_index(lane_id: &str) -> bool {
+    lock(&INDEXES).contains_key(lane_id)
 }
 
 /// While it lives, the worktree is neither parsed nor watched (it's being
@@ -497,7 +540,12 @@ pub(crate) async fn watch_with(lane: &Workspace, ctx: Context) {
         debounce: SETTLE,
         strategy: Strategy::for_platform(),
         max_dirs: dirs_each(),
-        ..WatchOptions::default()
+        // A build writes thousands of files into folders git ignores: past
+        // 500 a batch was an overflow, with its paths gone, and parsed the
+        // worktree every 2 s (the review of d3b838de, N-6). Past this many
+        // it still is, as is a batch the system says it dropped events
+        // from.
+        max_paths: WATCH_MAX_PATHS,
     };
     let lane_id = id.clone();
     // Walking the folders to watch is blocking IO.
@@ -521,10 +569,13 @@ pub(crate) async fn watch_with(lane: &Workspace, ctx: Context) {
     match made {
         Ok(Ok(w)) => {
             // A discard or another watcher may have come first (the hold is
-            // checked under the lock, as in [`refresh`]).
+            // checked under the lock, as in [`refresh`]), or the worktree
+            // was forgotten during the walk: watched only while its index
+            // is kept (the review of d3b838de, SF-A). Nothing takes these
+            // two locks the other way round.
             let mut watchers = lock(&WATCHERS);
             let now = Instant::now();
-            if !is_held(&id) && !seen(&mut watchers, &id, now) {
+            if !is_held(&id) && !seen(&mut watchers, &id, now) && lock(&INDEXES).contains_key(&id) {
                 admit(&mut watchers, id, w, MAX_WATCHED_WORKTREES, now);
             }
         }
@@ -585,7 +636,7 @@ async fn rescan(lane_id: &str, ctx: &Context) {
     // `radar:changed` comes from the refresh, only when what's shared
     // changed: each event reloads an open Check overlap…, which parses
     // every sibling again (the review of 9a4e93ab, S3).
-    announce(&ctx.store, &git, &ctx.bus, lane, &all).await;
+    announce(&ctx.store, &git, &ctx.bus, lane, &all, true).await;
 }
 
 /// The last index, parsing it first (not watching it) when there's none.
@@ -621,15 +672,25 @@ pub fn marks(lane_ids: &[String]) -> Vec<RadarMark> {
         .filter(|(id, _)| wanted.contains(id))
         .map(|(id, e)| (id.clone(), (e.parent.clone(), e.index.clone())))
         .collect();
+    // Each index read once for all its pairs: they're compared again on
+    // every `radar:changed` (the review of d3b838de).
+    let read: HashMap<&String, (&String, symbols::Comparable<'_>)> = all
+        .iter()
+        .map(|(id, (parent, index))| (id, (parent, symbols::Comparable::new(index))))
+        .collect();
     let mut out = Vec::new();
     for id in lane_ids {
-        let Some((parent, index)) = all.get(id) else {
+        let Some((parent, mine)) = read.get(id) else {
             continue;
         };
         let mut names = BTreeSet::new();
-        for (other_id, (other_parent, other)) in &all {
-            if other_id != id && other_parent == parent {
-                names.extend(shared(index, other).into_iter().map(|s| s.qualified));
+        for (other_id, (other_parent, other)) in &read {
+            if *other_id != id && other_parent == parent {
+                names.extend(
+                    symbols::shared_between(mine, other)
+                        .into_iter()
+                        .map(|s| s.qualified),
+                );
             }
         }
         if !names.is_empty() {
@@ -658,11 +719,31 @@ pub fn forget_for_good(lane_id: &str) {
     fence(lane_id, u64::MAX);
 }
 
+/// A worktree row made, or made again at a folder used before, which the
+/// store gives its old id: a fence left from [`forget_for_good`] kept the
+/// new worktree's radar off until the app restarted (the review of
+/// d3b838de, MF-A). The fence comes down to now, not away: a parse begun
+/// from a list read before the row came back carries the old worktree's
+/// base.
+pub fn made(lane_id: &str) {
+    // Under the lock [`keep`] checks the fence in.
+    let _indexes = lock(&INDEXES);
+    if let Some(at) = lock(&FORGOTTEN).get_mut(lane_id) {
+        *at = STARTED.load(Ordering::Relaxed);
+    }
+}
+
 fn fence(lane_id: &str, at: u64) {
     {
-        // Under the lock [`keep`] checks the fence in.
+        // Under the lock [`keep`] checks the fence in. Only ever raised: a
+        // later [`forget`] (a watched rescan that no longer finds a removed
+        // worktree) brought one gone for good back to a number a later
+        // parse passes (the review of d3b838de, SF-A); [`made`] alone
+        // lowers it.
         let mut indexes = lock(&INDEXES);
-        lock(&FORGOTTEN).insert(lane_id.to_string(), at);
+        let mut forgotten = lock(&FORGOTTEN);
+        let fence = forgotten.entry(lane_id.to_string()).or_insert(at);
+        *fence = (*fence).max(at);
         indexes.remove(lane_id);
     }
     lock(&WATCHERS).remove(lane_id);
@@ -684,7 +765,7 @@ pub async fn on_checkpoint(store: &Store, git: &Git, bus: &EventBus, folder: &st
     let Some(lane) = all.iter().find(|w| covered(w) && same(w)) else {
         return;
     };
-    announce(store, git, bus, lane, &all).await;
+    announce(store, git, bus, lane, &all, true).await;
 }
 
 /// Refreshes `lane`, compares it with its siblings, and raises
@@ -696,6 +777,7 @@ async fn announce(
     bus: &EventBus,
     lane: &Workspace,
     all: &[Workspace],
+    watch: bool,
 ) -> bool {
     // F-CD-22: no radar for multi-repo worktrees yet.
     if crate::services::lanes::is_multi(store, lane)
@@ -705,7 +787,7 @@ async fn announce(
     {
         return false;
     }
-    let Ok(mine) = refresh_on(git, lane, true, Some(bus)).await else {
+    let Ok(mine) = refresh_on(git, lane, watch, Some(bus)).await else {
         tracing::warn!(code = "radar.parse_failed", "radar index skipped");
         return false;
     };
@@ -1074,7 +1156,12 @@ mod tests {
         for lane in &fx.lanes {
             refresh(&fx.git, lane).await.expect("refresh");
         }
-        let kept = |id: &str| lock(&INDEXES).contains_key(id) || lock(&WATCHERS).contains_key(id);
+        // One lock at a time: the watcher's admit takes WATCHERS, then
+        // INDEXES.
+        let kept = |id: &str| {
+            let indexed = lock(&INDEXES).contains_key(id);
+            indexed || lock(&WATCHERS).contains_key(id)
+        };
         assert!(fx.lanes.iter().all(|l| kept(l.id.as_str())));
         let parent = fx.lanes[0].parent_id.clone().expect("parent");
         let terms = crate::services::terminal::TerminalService::new(
@@ -1415,6 +1502,29 @@ mod tests {
         }
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn f_wt_10_9_a_worktree_forgotten_during_its_watchers_walk_isnt_watched() {
+        // The watcher was admitted after its folder walk whatever happened
+        // meanwhile (the review of d3b838de, SF-A).
+        let fx = parse_fixture().await;
+        let a = &fx.lanes[0];
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: EventBus::new(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        forget(a.id.as_str());
+        watch_with(a, ctx.clone()).await;
+        assert!(!lock(&WATCHERS).contains_key(a.id.as_str()));
+        // With its index kept, it's watched.
+        refresh_sibling(&fx.git, a).await.expect("index");
+        watch_with(a, ctx).await;
+        assert!(lock(&WATCHERS).contains_key(a.id.as_str()));
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+    }
+
     #[test]
     fn f_wt_10_8_the_claims_intent_says_what_the_sibling_did() {
         // "which X uses" was said when X changed the symbols too (the review
@@ -1576,17 +1686,78 @@ mod tests {
             }],
             ..SymbolIndex::default()
         };
-        let ids = ["radar-own-a", "radar-own-b", "radar-own-c"];
+        let ids = ["radar-own-a", "radar-own-b", "radar-own-c", "radar-own-d"];
         for id in ids {
             let n = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
             keep(id, parent, n, index(), Default::default());
         }
+        COMPARED.with(|n| n.set(0));
         let got = shares_of(parent, ids[0]);
+        // Its own three pairs, not the repository's six: comparing every
+        // pair and keeping its own gave the same answer (the review of
+        // d3b838de).
+        let compared = COMPARED.with(std::cell::Cell::get);
         for id in ids {
             forget(id);
         }
-        assert_eq!(got.keys().collect::<Vec<_>>(), [ids[1], ids[2]]);
+        assert_eq!(got.keys().collect::<Vec<_>>(), [ids[1], ids[2], ids[3]]);
         assert!(got.values().all(|found| found.len() == 1));
+        assert_eq!(compared, 3);
+    }
+
+    #[test]
+    fn f_wt_10_9_a_worktree_made_again_at_a_folder_used_before_is_read_again() {
+        // The store gives a worktree made at a folder used before its old
+        // row's id, and the fence gone for good kept its radar off until a
+        // restart (the review of d3b838de, MF-A).
+        let empty = || (SymbolIndex::default(), symbols::ParseCache::default());
+        let id = "radar-made-again";
+        forget_for_good(id);
+        // Begun from a list read before it came back: the old worktree's.
+        let stale = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        made(id);
+        let (index, cache) = empty();
+        assert!(keep(id, "repo", stale, index, cache).is_none());
+        let fresh = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        let (index, cache) = empty();
+        assert!(keep(id, "repo", fresh, index, cache).is_some());
+        forget(id);
+        // A worktree never forgotten gets no fence from being made.
+        let new = "radar-made-new";
+        made(new);
+        assert!(!lock(&FORGOTTEN).contains_key(new));
+    }
+
+    #[test]
+    fn f_wt_10_9_a_later_forget_never_lowers_a_fence_for_good() {
+        // Remove repository: the watcher's last batch makes a rescan that no
+        // longer finds the worktree, and its forget set the fence back to a
+        // number later parses pass (the review of d3b838de, SF-A).
+        let id = "radar-for-good-stays";
+        forget_for_good(id);
+        forget(id);
+        let later = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        assert!(keep(
+            id,
+            "repo",
+            later,
+            SymbolIndex::default(),
+            Default::default()
+        )
+        .is_none());
+        assert_eq!(lock(&FORGOTTEN).get(id), Some(&u64::MAX));
+    }
+
+    #[test]
+    fn f_wt_10_2_a_worktree_has_one_follow_up_on_its_way_at_a_time() {
+        // Every refresh that ran out of time started its own, and they ran
+        // side by side (the review of d3b838de, SF-B).
+        let id = "radar-follows-once";
+        assert!(follows(id));
+        assert!(!follows(id));
+        lock(&FOLLOWING).remove(id);
+        assert!(follows(id));
+        lock(&FOLLOWING).remove(id);
     }
 
     #[test]

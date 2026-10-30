@@ -474,7 +474,7 @@ describe("overlap check (F-WT-03)", () => {
     expect(sym.dataset.symbol).toBe("Session");
     expect(sym.textContent).toContain("renamed or removed here, used there");
     expect(screen.getByTestId("overlap-unparsed").textContent).toBe(
-      "2 changed files weren't checked for symbols (other languages, too large, or unreadable).",
+      "2 changed files weren't checked for symbols (other languages, too large, unreadable, or still to read).",
     );
   });
 

@@ -609,7 +609,7 @@
   "radar.claim": "Claim these files",
   "radar.claimed": "{n, plural, one {Claimed # file for this worktree} other {Claimed # files for this worktree}}",
   "radar.claimFailed": "Couldn't claim the files: {reason}",
-  "radar.unparsed": "{n, plural, one {# changed file wasn't checked for symbols (another language, too large, or unreadable).} other {# changed files weren't checked for symbols (other languages, too large, or unreadable).}}",
+  "radar.unparsed": "{n, plural, one {# changed file wasn't checked for symbols (another language, too large, unreadable, or still to read).} other {# changed files weren't checked for symbols (other languages, too large, unreadable, or still to read).}}",
   "radar.notice.title": "{a} and {b} both touch {symbols}",
   "radar.notice.body": "Their rail rows show it; Check overlap… has the details.",
   "radar.notice.warn": "Warn both agents",

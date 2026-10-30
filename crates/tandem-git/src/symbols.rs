@@ -212,12 +212,19 @@ const MAX_SIDE_BYTES: usize = 8 * 1024 * 1024;
 /// What a definition holds besides its names, for [`MAX_SIDE_BYTES`] and
 /// [`MAX_INDEX_BYTES`].
 const DEFINITION_BYTES: usize = 64;
-/// A worktree's index holds at most this many bytes of symbols (each with
-/// its names and path) and names in use. A file whose parse would take it
-/// past counts as unparsed, and is parsed again after [`RETRY_GIVEN_UP`]:
-/// each file is bounded on its own, and [`MAX_FILES`] of them could still
-/// hold gigabytes.
+/// A worktree's index holds at most this many bytes of symbols and names
+/// in use, counted as they sit in memory ([`Parsed::bytes`]). A file whose
+/// parse would take it past counts as unparsed, and is parsed again after
+/// [`RETRY_GIVEN_UP`]: each file is bounded on its own, and [`MAX_FILES`]
+/// of them could still hold gigabytes.
 const MAX_INDEX_BYTES: usize = 32 * 1024 * 1024;
+/// What a string's heap block costs beyond its text, at most: the
+/// allocator's header and its rounding up. Counting names alone put 75 MB
+/// of symbols, 150 MB with the parse cache, under 32 MiB (the review of
+/// d3b838de, SF-C).
+const STRING_HEAP: usize = 32;
+/// What a name in use costs beside its string, in its set's tree.
+const USE_NODE: usize = 16;
 
 fn parse(lang: Lang, source: &str) -> Option<tree_sitter::Tree> {
     parse_within(lang, source, PARSE_LIMIT)
@@ -1037,18 +1044,25 @@ impl Parsed {
         }
     }
 
-    /// What it adds to an index, for [`MAX_INDEX_BYTES`].
+    /// What it adds to an index, for [`MAX_INDEX_BYTES`], as it sits in
+    /// memory: each symbol's struct and its strings with their heap
+    /// blocks, each name in use with its own, twice over, since the index
+    /// and the parse cache it's read from each hold a copy.
     fn bytes(&self) -> usize {
+        let text = |t: &String| t.len() + STRING_HEAP;
         let symbols = self.symbols.iter().map(|s| {
-            s.name.len()
-                + s.qualified.len()
-                + s.kind.len()
-                + s.path.len()
-                + s.renamed_to.as_ref().map_or(0, String::len)
-                + DEFINITION_BYTES
+            std::mem::size_of::<ChangedSymbol>()
+                + text(&s.name)
+                + text(&s.qualified)
+                + text(&s.kind)
+                + text(&s.path)
+                + s.renamed_to.as_ref().map_or(0, text)
         });
-        let uses = self.uses.iter().map(|u| u.len() + DEFINITION_BYTES);
-        symbols.chain(uses).sum()
+        let uses = self
+            .uses
+            .iter()
+            .map(|u| std::mem::size_of::<String>() + text(u) + USE_NODE);
+        2 * symbols.chain(uses).sum::<usize>()
     }
 }
 
@@ -1130,7 +1144,12 @@ fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
 /// reparse point is the file itself (a OneDrive placeholder, a
 /// deduplicated file), and opened as itself it reads as its stub, every
 /// definition removed: that one is opened again, normally (the review of
-/// d06b9e3d, N-7).
+/// d06b9e3d, N-7), and kept only when it's the same file. Opened by its
+/// name, the second open followed a link swapped in between the two (the
+/// review of d3b838de). The standard library gives no file id on Windows,
+/// so the file's creation time and size stand for it: a file the link
+/// leads to has its own, unless whoever swapped it set them, which takes a
+/// file they could write anyway.
 #[cfg(windows)]
 fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -1145,7 +1164,13 @@ fn open_file(path: &Path) -> std::io::Result<std::fs::File> {
     if meta.file_type().is_symlink() || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
         return Ok(file);
     }
-    std::fs::OpenOptions::new().read(true).open(path)
+    let again = std::fs::OpenOptions::new().read(true).open(path)?;
+    let now = again.metadata()?;
+    let same = |m: &std::fs::Metadata| (m.creation_time(), m.file_size());
+    if !now.is_file() || same(&now) != same(&meta) {
+        return Err(std::io::Error::other("the file changed as it was opened"));
+    }
+    Ok(again)
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -1335,11 +1360,35 @@ fn touches(c: SymbolChange) -> bool {
     )
 }
 
+/// An index read once for comparing with others: what it did to each name
+/// ([`changes_by_name`]). The rail's marks compare every pair of a
+/// repository's worktrees, and built both maps again for each (the review
+/// of d3b838de).
+pub struct Comparable<'a> {
+    index: &'a SymbolIndex,
+    by_name: HashMap<&'a str, &'a ChangedSymbol>,
+}
+
+impl<'a> Comparable<'a> {
+    pub fn new(index: &'a SymbolIndex) -> Self {
+        Self {
+            index,
+            by_name: changes_by_name(index),
+        }
+    }
+}
+
 /// The symbols `here` and `there` share: both changed or removed a
 /// definition of the name, or one changed or removed it and the other's
 /// new lines use it.
 pub fn shared_symbols(here: &SymbolIndex, there: &SymbolIndex) -> Vec<SharedSymbol> {
-    let (mine_by, theirs_by) = (changes_by_name(here), changes_by_name(there));
+    shared_between(&Comparable::new(here), &Comparable::new(there))
+}
+
+/// [`shared_symbols`] of two indexes each read once.
+pub fn shared_between(here: &Comparable<'_>, there: &Comparable<'_>) -> Vec<SharedSymbol> {
+    let (mine_by, theirs_by) = (&here.by_name, &there.by_name);
+    let (here, there) = (here.index, there.index);
     let names: BTreeSet<&str> = mine_by
         .keys()
         .chain(theirs_by.keys())
@@ -2192,5 +2241,37 @@ mod tests {
             .expect("index");
         assert_eq!((got.parsed, got.index.unparsed), (2, 0));
         assert_eq!(got.index.symbols.len(), 2);
+    }
+
+    #[test]
+    fn f_wt_10_2_an_index_counts_its_symbols_as_they_sit_in_memory() {
+        // Names alone put 75 MB of symbols, 150 MB with the parse cache,
+        // under 32 MiB (the review of d3b838de, SF-C).
+        let one = |name: &str| ChangedSymbol {
+            name: name.into(),
+            qualified: name.into(),
+            kind: "function".into(),
+            path: "a.ts".into(),
+            line: 1,
+            change: SymbolChange::Changed,
+            renamed_to: None,
+        };
+        let parsed = |symbols: Vec<ChangedSymbol>, uses: &[&str]| Parsed {
+            content: None,
+            symbols,
+            uses: uses.iter().map(|u| u.to_string()).collect(),
+            unparsed: false,
+            given_up: None,
+        };
+        let single = parsed(vec![one("a")], &[]).bytes();
+        // Its struct and four heap strings, in the index and in the cache.
+        assert!(
+            single >= 2 * (std::mem::size_of::<ChangedSymbol>() + 4 * STRING_HEAP),
+            "{single}"
+        );
+        assert_eq!(parsed(vec![one("a"), one("b")], &[]).bytes(), 2 * single);
+        assert!(parsed(vec![one("a")], &["b"]).bytes() > single);
+        // 300,000 small symbols no longer fit in 32 MiB.
+        assert!(300_000 * single > MAX_INDEX_BYTES);
     }
 }

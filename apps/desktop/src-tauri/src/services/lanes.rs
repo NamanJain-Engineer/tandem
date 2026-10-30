@@ -227,6 +227,9 @@ pub async fn create_kind(
             return Err(err);
         }
     };
+    // F-WT-10: a folder used before gives the row its old id, which the
+    // radar fenced off for good when that worktree went.
+    crate::services::radar::made(row.id.as_str());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", "worktree created");
     // F-WT-01: the repository's ignored files, for every new worktree.
@@ -352,6 +355,7 @@ async fn create_multi(
             return Err(err);
         }
     };
+    crate::services::radar::made(row.id.as_str());
     tracing::info!(
         code = "lane.created_multi",
         repos = lane.repos.len(),
@@ -403,6 +407,7 @@ async fn create_on_host(
             return Err(err.into());
         }
     };
+    crate::services::radar::made(row.id.as_str());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", remote = true, "worktree created");
     Ok(row)
@@ -1352,6 +1357,36 @@ mod tests {
     /// worktrees' rows without a Discard; the next worktree at that path
     /// still starts untrusted.
     #[tokio::test]
+    async fn f_wt_10_9_a_worktree_made_again_at_its_old_folder_is_read_by_the_radar() {
+        // The store gives it the old row's id, which Remove repository
+        // fenced off from the radar for good: no symbols, marks or warnings
+        // for it until a restart (the review of d3b838de, MF-A).
+        let fx = fixture().await;
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "fix login")
+            .await
+            .expect("lane");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        crate::services::workspaces::remove(&fx.store, &terms, &fx.repo.id)
+            .await
+            .expect("remove the workspace");
+        let root = Path::new(&fx.repo.root);
+        git_cmd(root, &["worktree", "remove", "--force", &lane.root]);
+        git_cmd(root, &["branch", "-D", "tandem/fix-login"]);
+        let added = crate::services::workspaces::add(&fx.store, &fx.repo.root, Some(3))
+            .await
+            .expect("add again");
+        let again = create(&fx.store, &fx.git, &added.workspace.id, "fix login")
+            .await
+            .expect("again");
+        assert_eq!(again.id, lane.id, "the old row's id");
+        crate::services::radar::refresh(&fx.git, &again)
+            .await
+            .expect("radar");
+        assert!(crate::services::radar::has_index(again.id.as_str()));
+        crate::services::radar::forget(again.id.as_str());
+    }
+
+    #[tokio::test]
     async fn f_cd_23_a_worktree_made_again_after_its_workspace_was_removed_is_untrusted() {
         let fx = fixture().await;
         let data = crate::services::lsp::data_dir().expect("data dir");
@@ -2107,7 +2142,7 @@ pub struct OverlapReport {
     /// Uncommitted changes in this worktree, which the forecast can't see.
     pub uncommitted: u32,
     /// F-WT-10: changed files not checked for symbols (other languages,
-    /// too big, past the cap).
+    /// too big, past the cap, or left for the next read).
     pub unparsed: u32,
 }
 

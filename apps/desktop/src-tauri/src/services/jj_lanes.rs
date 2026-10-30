@@ -355,6 +355,7 @@ pub async fn create(
     };
     // The row exists: the sweep's marker goes.
     jj::done_adding(&lane);
+    crate::services::radar::made(row.id.as_str());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created_jj", "jj workspace created");
     Ok(row)
