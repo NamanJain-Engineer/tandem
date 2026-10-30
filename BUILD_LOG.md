@@ -4826,6 +4826,7 @@ The owner (20 October): the product and the site should feel premium, "not somet
       - the sidebar floats below 1,100 px (Sidebar.tsx);
       - the toast region (`--z-toast`, 400) sits over the floating sidebar (`--z-sidebar`, 40);
       - a cover restarts the steady box's wait (steadyBox.ts).
+      - The cover itself comes from the site's phone layout, not the app's (the coordinating session's code review of 400f7c55, S1, and `site-motion`'s D-3008). In the app the toast could reach Approve only in a window under about 476 px tall, and the minimum is 600, so there Approve lights at 6.9 s at every window size. See the correction below.
   - At 0.13.0 the hero's note still reads "Other worktree: coupon-rules", and no scene draws "tandem/" at either release.
   - In all six scenes at both releases: no text overlaps, and 0.0 ms real-playback spread over three runs. design-shots passes 24 of 24 at both releases. Its teal counts match `site-motion`'s at 0.12.0 and 1cb90565's at 0.13.0.
   - The code review's S1 (D-3007) found three of 0.13.0's changes in the 0.12.0 rendering, which the design lead's QAs of those scenes had missed:
@@ -4834,6 +4835,33 @@ The owner (20 October): the product and the site should feel premium, "not somet
     - "1 with changes requested", where 0.12.0's catalog says "{n} changes requested".
   - Those QAs had read chain27's code, not 0.12.0's (5e01e92b). D-3007 keeps the three only because the 0.12.0 rendering is never deployed again, and a deploy before 0.13.0 would gate them first.
   - DESIGN §6 gains two checks: a release's rendering is read against that release's code, and every width a frame's layout switches at is sampled.
+- Correction to the design lead's QA of `site-motion` 400f7c55, from the coordinating session's code review: the phone frames' cover comes from the site's own layout, not the app's.
+  - "The app agrees" held for the rules: a toast stays 5 s, its z-order puts it over the floating sidebar, and a cover restarts the steady box's wait. It didn't hold for the cover itself.
+  - In the app the toast's top is 80 px above the window's foot (`bottom-8`, 48 px tall). Approve sits 368 to 396 px from the window's top (the code review's measure), so the toast could reach it only in a window under about 476 px tall.
+  - tauri.conf.json's minimum window is 960 × 600, so in the app Approve lights at 6.9 s at every window size.
+  - 400f7c55's timing stays: under the phone layout's own cover, waiting is the app's rule. `site-motion` records the cover as the phone layout's own decision (D-3008), and ee0362e7 changes only comments, tests and docs.
+  - DESIGN §6's check on layout widths now says to ask whether the app's window can be that size at all.
+- Design QA of `app-ui` @ 134f7716 (D-2634, the coordinating session's review of 6d864fa1): approved, walked in a demo built at 134f7716 on a real 2× screen.
+  - The coach with Bea unanswered, checked step by step on four paths (17 steps). The same check failed on 6d864fa1 at exactly B's and D's Thread-mode steps, where she had been opened and left unanswered.
+    - A. Thread mode before opening her: the composer's hint (3 of 4). Back in Code, the opening hint (1 of 4).
+    - B. Open her, then Thread mode:
+      - her answer hint (2 of 4) at her pane's foot;
+      - in Thread mode, the composer's hint, while the status bar keeps "◆ 1 waiting";
+      - back on her pane, the answer hint again.
+    - C. Open her, then checkout-fix: "Your first task is ready in Thread mode." (3 of 4) under the switch. Back on her, the answer hint.
+    - D. Send the task while she waits:
+      - no hint while the agent works;
+      - "Open Changes to see what it edited." (4 of 4) when it's done;
+      - back on her pane, the answer hint;
+      - once she's answered, nothing in Code, and the Changes hint in Thread mode;
+      - with Changes open, the coach ends.
+    - The answer hint stays clear of her question throughout.
+  - Her keys:
+    - Alt+Enter, Alt+x, Alt+Escape and a stray x leave her waiting.
+    - Esc alone says no, and Enter allows.
+    - Either way "Needs you" clears and the bar drops to "● 1 working".
+  - Settings › Engines reads "Gemini CLI 0.66.0-sample · Terminal only", like the other engines' sample versions.
+  - The design lead's 6d864fa1 walk went straight to Bea and answered her, so it missed the Thread-mode path. On that path, 6d864fa1 showed no hint at all while she waited.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
