@@ -101,6 +101,10 @@ release fails when its version has no section.
   engine that reported starting before Vibezeo read its banner could show
   "working" on the Dashboard, and to Auto, until you typed to it. Its report
   of starting now counts, whichever arrives first.
+- [lin] **Memory and skills save what their own check allows.** Their editors
+  read the whole text, so `Bearer` at the end of one line with a value on the
+  next looked like a key, and Save stayed off for text that saving accepts.
+  They now read a line at a time, as saving does.
 - [lin] **A finished chat stays unread until you look at it.** A chat you'd
   opened earlier and left could lose its unread dot when its turn ended in the
   background, and one you were looking at could get the dot back. Now a chat is

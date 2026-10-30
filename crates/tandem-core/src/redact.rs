@@ -20,6 +20,8 @@ pub const WINDOW: usize = 512;
 const MAX_PENDING: usize = 64 * 1024;
 
 type Validator = fn(&str) -> bool;
+/// Byte spans, start and end.
+type Spans = Vec<(usize, usize)>;
 type Extractor = fn(&str, &regex::Captures<'_>) -> Option<(usize, usize)>;
 
 #[derive(Clone, Copy)]
@@ -37,13 +39,114 @@ struct Rule {
     extract: Extract,
 }
 
-/// A rule that redacts a whole token after a word boundary (`\bghp_…`), as
-/// [`Redactor::cut_spans`] runs it: without its `\b`s, anchored at a start
-/// it's given.
-struct TokenRule {
-    re: Regex,
-    /// Whether the rule also wants a word boundary after the token.
-    end_boundary: bool,
+/// Where the removal cut, in the copy of the readable text that
+/// [`Redactor::read_and_written_spans`] reads: one byte for a run of what's
+/// removable (`untrusted::removable`), which this is itself, so it's in no
+/// text as read (D-3172).
+pub(crate) const MARK: char = '\u{1}';
+
+/// `s` without [`MARK`]s, as a validator reads a value.
+fn unmarked(s: &str) -> Cow<'_, str> {
+    if s.contains(MARK) {
+        Cow::Owned(s.replace(MARK, ""))
+    } else {
+        Cow::Borrowed(s)
+    }
+}
+
+/// `pattern` without its word boundaries, for a prefilter: it matches all
+/// that `pattern` does, and more, which the rule's own pattern then sorts
+/// out. A set of patterns with Unicode `\b`s falls back from its DFA to a
+/// slow engine on any text that isn't ASCII (1 s for 64 KB in a debug
+/// build, against 14 ms), and a set without them doesn't (D-3172).
+fn unanchored(pattern: &str) -> String {
+    pattern.replace(r"(?-u:\b)", "").replace(r"\b", "")
+}
+
+/// `pattern` with a [`MARK`] allowed after every character it matches, for
+/// the copy where the removal cut, or `None` for syntax this doesn't know.
+/// The rules use literals, escapes, classes, groups (`(?:`, `(?P<v>`, a flag
+/// group) with alternatives, and quantifiers. A word boundary is ASCII's,
+/// so a mark is a boundary too, and the DFA keeps it on any text (D-3172).
+fn tolerant(pattern: &str) -> Option<String> {
+    let atom = |a: &str| format!("(?:{a}\\x01?)");
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::with_capacity(pattern.len() * 3);
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => {
+                let next = *chars.get(i + 1)?;
+                if matches!(next, 'b' | 'B') {
+                    // ASCII's: where a rule's edge is an ASCII letter or
+                    // digit, as every token's is, it holds wherever
+                    // Unicode's would, and next to a mark or a letter
+                    // outside ASCII too.
+                    out.push_str(&format!("(?-u:\\{next})"));
+                } else if matches!(next, 'A' | 'z') {
+                    out.push('\\');
+                    out.push(next);
+                } else {
+                    out.push_str(&atom(&format!("\\{next}")));
+                }
+                i += 2;
+            }
+            '[' => {
+                let start = i;
+                i += 1;
+                if chars.get(i) == Some(&'^') {
+                    i += 1;
+                }
+                if chars.get(i) == Some(&']') {
+                    i += 1;
+                }
+                while *chars.get(i)? != ']' {
+                    if chars[i] == '\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+                out.push_str(&atom(&chars[start..i].iter().collect::<String>()));
+            }
+            '(' => {
+                let rest: String = chars[i..].iter().collect();
+                let header = if rest.starts_with("(?:") {
+                    "(?:".to_string()
+                } else if rest.starts_with("(?P<") {
+                    rest[..=rest.find('>')?].to_string()
+                } else if rest.starts_with("(?") {
+                    let close = rest.find(')')?;
+                    if !rest[2..close].chars().all(|f| f.is_ascii_alphabetic()) {
+                        return None;
+                    }
+                    rest[..=close].to_string()
+                } else {
+                    "(".to_string()
+                };
+                i += header.chars().count();
+                out.push_str(&header);
+            }
+            '{' => {
+                let close = i + chars[i..].iter().position(|&c| c == '}')?;
+                out.extend(&chars[i..=close]);
+                i = close + 1;
+            }
+            c @ (')' | '|' | '*' | '+' | '?' | '^' | '$') => {
+                out.push(c);
+                i += 1;
+            }
+            '.' => {
+                out.push_str(&atom("."));
+                i += 1;
+            }
+            c => {
+                out.push_str(&atom(&regex::escape(&c.to_string())));
+                i += 1;
+            }
+        }
+    }
+    Some(out)
 }
 
 type Spec = (String, Extract);
@@ -162,7 +265,9 @@ fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usi
             }
         }
     }
-    if value.len() < 8 || descriptive_key(key.as_str()) || !assignment_value_ok(value, quoted) {
+    // Read without the marks the copy as written has (D-3172).
+    let (clean, key) = (unmarked(value), unmarked(key.as_str()));
+    if clean.len() < 8 || descriptive_key(&key) || !assignment_value_ok(&clean, quoted) {
         return None;
     }
     Some((v.start(), v.start() + value.len()))
@@ -340,10 +445,10 @@ impl SecretFilter {
 pub struct Redactor {
     prefilter: RegexSet,
     rules: Vec<Rule>,
-    /// The token rules' bodies, unanchored, to tell which can match at all.
-    token_prefilter: RegexSet,
-    token_rules: Vec<TokenRule>,
-    boundary_re: Regex,
+    /// The rules as [`tolerant`] writes them, for
+    /// [`Redactor::read_and_written_spans`].
+    written_prefilter: RegexSet,
+    written_rules: Vec<Rule>,
     token_re: Regex,
     secrets: RwLock<SecretFilter>,
     home: Option<String>,
@@ -358,25 +463,26 @@ impl Default for Redactor {
 impl Redactor {
     pub fn new() -> Self {
         let specs = rule_specs();
-        let prefilter = RegexSet::new(specs.iter().map(|(p, _)| p.as_str()))
+        let prefilter = RegexSet::new(specs.iter().map(|(p, _)| unanchored(p)))
             .expect("redaction patterns compile");
-        let mut token_rules = Vec::new();
-        let mut token_bodies = Vec::new();
-        for (pattern, extract) in &specs {
-            let (Extract::Whole, Some(body)) = (extract, pattern.strip_prefix(r"\b")) else {
-                continue;
-            };
-            let (body, end_boundary) = match body.strip_suffix(r"\b") {
-                Some(body) => (body, true),
-                None => (body, false),
-            };
-            token_rules.push(TokenRule {
-                re: Regex::new(&format!("^(?:{body})")).expect("token pattern compiles"),
-                end_boundary,
-            });
-            token_bodies.push(body.to_string());
-        }
-        let token_prefilter = RegexSet::new(&token_bodies).expect("token patterns compile");
+        // A rule `tolerant` can't write keeps its own pattern here, and a
+        // test pins that none does.
+        let written_specs: Vec<(String, Extract)> = specs
+            .iter()
+            .map(|(pattern, extract)| {
+                let written = tolerant(pattern).filter(|t| Regex::new(t).is_ok());
+                (written.unwrap_or_else(|| pattern.clone()), *extract)
+            })
+            .collect();
+        let written_prefilter = RegexSet::new(written_specs.iter().map(|(p, _)| unanchored(p)))
+            .expect("written patterns compile");
+        let written_rules = written_specs
+            .into_iter()
+            .map(|(pattern, extract)| Rule {
+                re: Regex::new(&pattern).expect("written pattern compiles"),
+                extract,
+            })
+            .collect();
         let rules = specs
             .into_iter()
             .map(|(pattern, extract)| Rule {
@@ -388,9 +494,8 @@ impl Redactor {
         Self {
             prefilter,
             rules,
-            token_prefilter,
-            token_rules,
-            boundary_re: Regex::new(r"\b").expect("boundary pattern compiles"),
+            written_prefilter,
+            written_rules,
             token_re,
             secrets: RwLock::new(SecretFilter::new()),
             home: crate::paths::user_home()
@@ -421,22 +526,93 @@ impl Redactor {
 
     /// Byte spans to redact, sorted and merged.
     pub(crate) fn spans(&self, s: &str) -> Vec<(usize, usize)> {
+        let hits: Vec<usize> = self.prefilter.matches(s).into_iter().collect();
+        self.spans_by(s, &hits, &self.rules, false)
+    }
+
+    /// The spans in `read`, and those in `marked`, the same text with a
+    /// [`MARK`] where the removal cut (`untrusted::redacted`, D-3172).
+    ///
+    /// In `marked`, every rule steps over a mark ([`tolerant`]), and a mark
+    /// is a word boundary, so a credential is found whether the removal
+    /// split it, set it apart from a letter, or both. A match there counts
+    /// only with a mark in it or next to it: anywhere else, `read` says the
+    /// same, and the rules as they are read it. Validators read a value
+    /// without its marks.
+    ///
+    /// One prefilter scan serves both, since a rule that matches `read`
+    /// matches `marked` as `tolerant` writes it, and each rule is one scan.
+    pub(crate) fn read_and_written_spans(&self, read: &str, marked: &str) -> (Spans, Spans) {
+        let hits: Vec<usize> = self.written_prefilter.matches(marked).into_iter().collect();
+        (
+            self.spans_by(read, &hits, &self.rules, false),
+            self.spans_by(marked, &hits, &self.written_rules, true),
+        )
+    }
+
+    fn spans_by(
+        &self,
+        s: &str,
+        hits: &[usize],
+        rules: &[Rule],
+        marked: bool,
+    ) -> Vec<(usize, usize)> {
+        let bytes = s.as_bytes();
+        let mark = MARK as u8;
+        // Whether a match touches a mark, when the text has them.
+        let counts = |a: usize, b: usize| {
+            !marked
+                || bytes[a..b].contains(&mark)
+                || (a > 0 && bytes[a - 1] == mark)
+                || bytes.get(b) == Some(&mark)
+        };
         let mut spans = Vec::new();
-        for idx in self.prefilter.matches(s).into_iter() {
-            let Some(rule) = self.rules.get(idx) else {
-                continue;
-            };
-            for caps in rule.re.captures_iter(s) {
-                let span = match rule.extract {
-                    Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
-                    Extract::Value(validator) => caps
-                        .name("v")
-                        .filter(|m| validator.is_none_or(|ok| ok(m.as_str())))
-                        .map(|m| (m.start(), m.end())),
-                    Extract::Custom(extract) => extract(s, &caps),
-                };
-                if let Some((start, end)) = span.filter(|(a, b)| b > a) {
-                    spans.push((start, end));
+        let mut push = |span: Option<(usize, usize)>| {
+            if let Some((start, end)) = span.filter(|(start, end)| end > start) {
+                spans.push((start, end));
+            }
+        };
+        let value = |caps: &regex::Captures<'_>, validator: Option<Validator>| {
+            caps.name("v")
+                .filter(|v| validator.is_none_or(|ok| ok(&unmarked(v.as_str()))))
+                .map(|v| (v.start(), v.end()))
+        };
+        for rule in hits.iter().filter_map(|&idx| rules.get(idx)) {
+            match rule.extract {
+                // A whole match needs no groups: its bounds come from the
+                // DFA, without the slower engine that captures run.
+                Extract::Whole => {
+                    for m in rule.re.find_iter(s) {
+                        push(Some((m.start(), m.end())).filter(|&(a, b)| counts(a, b)));
+                    }
+                }
+                // As written, only a match that touches a mark runs the
+                // captures, over itself: a long one elsewhere costs a DFA
+                // scan, not the slower engine's.
+                Extract::Value(_) | Extract::Custom(_) if marked => {
+                    for m in rule.re.find_iter(s) {
+                        if m.start() == m.end() || !counts(m.start(), m.end()) {
+                            continue;
+                        }
+                        let Some(caps) = rule.re.captures_at(s, m.start()) else {
+                            continue;
+                        };
+                        push(match rule.extract {
+                            Extract::Value(validator) => value(&caps, validator),
+                            Extract::Custom(extract) => extract(s, &caps),
+                            Extract::Whole => None,
+                        });
+                    }
+                }
+                Extract::Value(validator) => {
+                    for caps in rule.re.captures_iter(s) {
+                        push(value(&caps, validator));
+                    }
+                }
+                Extract::Custom(extract) => {
+                    for caps in rule.re.captures_iter(s) {
+                        push(extract(s, &caps));
+                    }
                 }
             }
         }
@@ -445,7 +621,7 @@ impl Redactor {
             if !filter.exact.is_empty() {
                 let mut check = |start: usize, end: usize| {
                     let hash: [u8; 32] = Sha256::digest(&s.as_bytes()[start..end]).into();
-                    if filter.contains(&hash) {
+                    if counts(start, end) && filter.contains(&hash) {
                         spans.push((start, end));
                     }
                 };
@@ -468,48 +644,6 @@ impl Redactor {
             }
         }
         merge(spans)
-    }
-
-    /// Spans a token rule finds in `s` when a position in `cuts` counts as a
-    /// word boundary too. `s` is text something was taken out of at each cut
-    /// (`untrusted::readable`): what was taken out could set a token apart
-    /// from a letter, and the join hides that edge (D-3170). A rule that
-    /// wants a boundary after the token also takes a cut inside it, where the
-    /// removal split it. Starts are only real boundaries and cuts, so a word
-    /// that merely holds a prefix (`disk-usage-…`) isn't one.
-    pub(crate) fn cut_spans(&self, s: &str, cuts: &[usize]) -> Vec<(usize, usize)> {
-        let mut spans = Vec::new();
-        if cuts.is_empty() {
-            return spans;
-        }
-        let rules: Vec<usize> = self.token_prefilter.matches(s).into_iter().collect();
-        if rules.is_empty() {
-            return spans;
-        }
-        let mut bounds: Vec<usize> = self.boundary_re.find_iter(s).map(|m| m.start()).collect();
-        bounds.extend_from_slice(cuts);
-        bounds.sort_unstable();
-        bounds.dedup();
-        let at_bound = |i: usize| bounds.binary_search(&i).is_ok();
-        for idx in rules {
-            let Some(rule) = self.token_rules.get(idx) else {
-                continue;
-            };
-            for &start in &bounds {
-                if start >= s.len() || !s.is_char_boundary(start) {
-                    continue;
-                }
-                let Some(m) = rule.re.find(&s[start..]) else {
-                    continue;
-                };
-                let end = start + m.end();
-                let split = cuts.iter().any(|&c| c > start && c < end);
-                if end > start && (!rule.end_boundary || at_bound(end) || split) {
-                    spans.push((start, end));
-                }
-            }
-        }
-        spans
     }
 
     /// Replaces every secret in `s` with `[REDACTED]`.
@@ -634,6 +768,20 @@ mod tests {
                 (prefix.to_string(), secret.to_string(), suffix.to_string())
             })
             .collect()
+    }
+
+    #[test]
+    fn f_tk_08_1_every_rule_steps_over_a_mark() {
+        // A rule `tolerant` can't write keeps its own pattern in the pass
+        // as written, which then misses a credential the removal split. So
+        // a new rule's syntax has to be one it knows (D-3172).
+        for (pattern, _) in rule_specs() {
+            let written = tolerant(&pattern);
+            assert!(
+                written.as_deref().is_some_and(|t| Regex::new(t).is_ok()),
+                "{pattern}"
+            );
+        }
     }
 
     #[test]

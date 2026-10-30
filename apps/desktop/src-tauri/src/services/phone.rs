@@ -276,6 +276,8 @@ pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
         }
     }
     if let Some(item) = &mut r.item {
+        // The work's title is the agent's own (D-3173).
+        item.title = redacted(&item.title);
         item.closing = item
             .closing
             .take()
@@ -1096,13 +1098,15 @@ impl PhoneService {
             let Some(before) = prev.agents.get(&a.key) else {
                 continue;
             };
-            let title = match (before, a.status) {
+            let what = match (before, a.status) {
                 (b, s) if *b == s => continue,
-                (_, AgentStatus::Waiting) => format!("{} needs you", a.title),
-                (AgentStatus::Working, AgentStatus::Done) => format!("{} finished", a.title),
-                (_, AgentStatus::Failed) => format!("{} stopped with an error", a.title),
+                (_, AgentStatus::Waiting) => "needs you",
+                (AgentStatus::Working, AgentStatus::Done) => "finished",
+                (_, AgentStatus::Failed) => "stopped with an error",
                 _ => continue,
             };
+            // The agent's title is its own (D-3173).
+            let title = format!("{} {what}", tandem_core::untrusted::redacted(&a.title));
             out.push(PushAlert {
                 kind: "agent".into(),
                 id: a.key.clone(),
@@ -1820,12 +1824,19 @@ impl PhoneService {
         for r in &mut routines {
             r.name = clip(&r.name, 120);
         }
+        // An agent's title and latest line, and a thread's title, are what
+        // an agent, a model or a person's message wrote, and the phone is off
+        // this machine: redacted as written and as read, before the cut
+        // (D-3171, D-3173).
         for a in &mut agents {
-            a.title = clip(&a.title, 120);
-            a.preview = a.preview.as_deref().map(|p| clip(p, 200));
+            a.title = clip(&tandem_core::untrusted::redacted(&a.title), 120);
+            a.preview = a
+                .preview
+                .as_deref()
+                .map(|p| clip(&tandem_core::untrusted::redacted(p), 200));
         }
         for t in &mut threads {
-            t.title = clip(&t.title, 120);
+            t.title = clip(&tandem_core::untrusted::redacted(&t.title), 120);
         }
         let mut snap = PhoneSnapshot {
             desktop: host.desktop_name(),

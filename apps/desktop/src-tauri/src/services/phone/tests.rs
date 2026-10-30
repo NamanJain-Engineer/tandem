@@ -18,6 +18,8 @@ struct FakeHost {
     notices: StdMutex<Vec<String>>,
     agents: StdMutex<Vec<PhoneAgent>>,
     ran: StdMutex<Vec<String>>,
+    /// The thread's title; "Fix login" when unset.
+    thread_title: StdMutex<Option<String>>,
 }
 
 #[async_trait]
@@ -34,7 +36,12 @@ impl PhoneHost for FakeHost {
     async fn threads(&self) -> Vec<PhoneThread> {
         vec![PhoneThread {
             id: "th_1".into(),
-            title: "Fix login".into(),
+            title: self
+                .thread_title
+                .lock()
+                .expect("lock")
+                .clone()
+                .unwrap_or_else(|| "Fix login".into()),
             state: ThreadState::Idle,
             updated_at: 1,
             teammate: false,
@@ -592,7 +599,8 @@ fn f_tk_08_1_the_phones_review_hides_a_credential_behind_what_is_removable() {
         let r = review_for_phone(PhoneReview {
             item: Some(PhoneReviewItem {
                 key: "pane:pn_1".into(),
-                title: "Ada".into(),
+                // The work's title is the agent's own (D-3173).
+                title: format!("Ada, deploy with {secret}"),
                 engine: None,
                 workspace: "shop".into(),
                 branch: None,
@@ -620,6 +628,7 @@ fn f_tk_08_1_the_phones_review_hides_a_credential_behind_what_is_removable() {
         });
         let shown = serde_json::to_string(&r).expect("json");
         assert!(shown.contains("pushed with"), "{shown}");
+        assert!(shown.contains("Ada, deploy with"), "{shown}");
         assert!(!shown.contains("0123456789"), "{shown}");
     }
 }
@@ -645,6 +654,38 @@ async fn f_tk_08_1_approvals_and_alerts_on_the_phone_hide_a_credential_behind_wh
         for a in &alerts {
             assert!(!a.body.contains("0123456789"), "{a:?}");
         }
+    }
+}
+
+#[tokio::test]
+async fn f_tk_08_1_agents_and_threads_on_the_phone_hide_a_credential_behind_what_is_removable() {
+    // An agent's title and latest line, and a thread's title, are what an
+    // agent, a model or a person's message wrote: the snapshot and an
+    // alert's title redact them as written and as read, before the cut (the
+    // review of 7f61c86a, Nit 1; D-3173).
+    for secret in hidden_tokens() {
+        let r = rig();
+        let mut phone = paired(&r).await;
+        let host: Arc<dyn PhoneHost> = r.host.clone();
+        *r.host.agents.lock().expect("lock") = vec![PhoneAgent {
+            title: format!("deploy with {secret}"),
+            preview: Some(format!("export with {secret}")),
+            ..waiting_agent(AgentStatus::Working)
+        }];
+        *r.host.thread_title.lock().expect("lock") = Some(format!("push with {secret}"));
+        let snap = cmd(&r, &mut phone, 1, "view.snapshot", json!({})).await;
+        let shown = format!("{} {}", snap["data"]["agents"], snap["data"]["threads"]);
+        for said in ["deploy with", "export with", "push with"] {
+            assert!(shown.contains(said), "{said}: {shown}");
+        }
+        assert!(!shown.contains("0123456789"), "{shown}");
+        let _ = r.svc.alerts(host.as_ref()).await; // the baseline
+        r.host.agents.lock().expect("lock")[0].status = AgentStatus::Waiting;
+        let alerts = r.svc.alerts(host.as_ref()).await;
+        assert_eq!(alerts.len(), 1, "{alerts:?}");
+        assert!(alerts[0].title.starts_with("deploy with"), "{alerts:?}");
+        assert!(alerts[0].title.ends_with("needs you"), "{alerts:?}");
+        assert!(!format!("{alerts:?}").contains("0123456789"), "{alerts:?}");
     }
 }
 
