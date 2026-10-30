@@ -331,6 +331,25 @@ describe("Dashboard (F-DB-01)", () => {
     expect(useDashboard.getState().items[card.key]?.status).toBe("done");
   });
 
+  it("F-DB-01 a slow snapshot and a removal read meanwhile ask for the cards a bounded number of times", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls = fakeBackend({
+        status_snapshot: () => new Promise<DashboardItem[]>((done) => setTimeout(() => done([]), 150)),
+      });
+      followDashboard();
+      void useDashboard.getState().load();
+      await vi.advanceTimersByTimeAsync(10);
+      act(() => emitLocal("status:changed", { records: [], removed: ["pane:gone"] }));
+      await vi.advanceTimersByTimeAsync(2_000);
+      // The first read and the one the removal asked for: replaying the
+      // removal over a snapshot asks for nothing more.
+      expect(calls.filter((c) => c.cmd === "status_snapshot")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("empty and filter-empty states", async () => {
     setup([]);
     const { unmount } = render(

@@ -11,7 +11,7 @@
   "engines": {
     "claude": { "label": "Claude Code", "version": "2.1.0-sample", "hooksSupport": "claude-hooks" },
     "codex": { "label": "Codex", "version": "0.46.0-sample", "hooksSupport": "codex-notify" },
-    "gemini": { "label": "Gemini CLI", "version": "0.9.0-sample", "hooksSupport": "none" }
+    "gemini": { "label": "Gemini CLI", "version": "0.66.0-sample", "hooksSupport": "none" }
   },
   "worktrees": [
     {

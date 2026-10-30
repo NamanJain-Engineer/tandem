@@ -65,7 +65,7 @@ export const useDashboard = create<DashboardState>((set, get) => ({
       return;
     }
     set({ items: Object.fromEntries(list.map((i) => [i.key, i])), loaded: true });
-    for (const change of meanwhile) applyStatus(change.records, change.removed);
+    for (const change of meanwhile) applyStatus(change.records, change.removed, false);
   },
   setQuery: (query) => set({ query }),
   setFilter: (filter) => set({ filter }),
@@ -108,9 +108,12 @@ function lineOf(r: StatusRecord): string | null {
 }
 
 /** Applies status changes in place, so a card moves within one event
- * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. */
-export function applyStatus(records: StatusRecord[], removed: string[]): void {
-  for (const meanwhile of reading) meanwhile.push({ records, removed });
+ * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. A change
+ * replayed over a snapshot (not `live`) was kept for the other reads and
+ * asked for its snapshot when it came, so it does neither again: two reads
+ * could otherwise hand it to each other for good. */
+export function applyStatus(records: StatusRecord[], removed: string[], live = true): void {
+  if (live) for (const meanwhile of reading) meanwhile.push({ records, removed });
   const items = { ...useDashboard.getState().items };
   let unknown = removed.length > 0;
   for (const k of removed) delete items[k];
@@ -130,7 +133,7 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
     };
   }
   useDashboard.setState({ items });
-  if (unknown) refetchSoon();
+  if (unknown && live) refetchSoon();
 }
 
 function applyApprovals(upserted: ApprovalView[], resolved: string[]): void {

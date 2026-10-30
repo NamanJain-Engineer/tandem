@@ -33,13 +33,30 @@ describe("the interactive demo's page furniture", () => {
   it("DESIGN-5.2.2 demo coach: one hint at a time beside what it describes, each gone once the visitor does it", async () => {
     core = new DemoCore(0);
     const c = core;
-    const view = mount(
-      <>
-        <div data-testid="worktree-row" data-branch={DEMO_WAITING.branch} />
-        <button type="button" role="radio" aria-checked="false" value="thread" />
+    // The coach stays mounted as the page changes around it, a scene at a
+    // time: the app swaps what it shows, so the coach looks again.
+    const scene = (name: string, nodes: React.ReactNode) => (
+      <UiProvider theme="dark">
         <DemoCoach core={c} />
-      </>,
+        <div key={name}>{nodes}</div>
+      </UiProvider>
     );
+    const radio = <button type="button" role="radio" aria-checked="false" value="thread" />;
+    const bea = <div data-testid="pane" data-pane-id={DEMO_WAITING.paneId} />;
+    const view = render(
+      scene(
+        "rail",
+        <>
+          <div data-testid="worktree-row" data-branch={DEMO_WAITING.branch} />
+          {radio}
+        </>,
+      ),
+    );
+    // The coach looks again on the next frame after the page changes.
+    const show = async (name: string, nodes: React.ReactNode) => {
+      view.rerender(scene(name, nodes));
+      await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    };
     const hint = () => screen.getAllByTestId("coachmark");
     expect(hint()).toHaveLength(1);
     // The agent by its first name, as 0.12.0 names every agent (F-CD-12).
@@ -50,14 +67,13 @@ describe("the interactive demo's page furniture", () => {
     // row and none of the panes' text.
     expect(hint()[0]?.dataset.side).toBe("bottom");
     // Folded, its repository's row carries the hint, beside the rail.
-    view.rerender(
-      <UiProvider theme="dark">
+    await show(
+      "folded",
+      <>
         <div data-testid="workspace-row" data-root={DEMO_WAITING.repoRoot} />
-        <button type="button" role="radio" aria-checked="false" value="thread" />
-        <DemoCoach core={c} />
-      </UiProvider>,
+        {radio}
+      </>,
     );
-    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
     expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.name} is waiting on you.`);
     expect(hint()[0]?.dataset.side).toBe("right");
     // Opened, she asks in her pane. Its question is the engine's, with none
@@ -81,26 +97,33 @@ describe("the interactive demo's page furniture", () => {
         }),
       );
     asking("waiting");
-    view.rerender(
-      <UiProvider theme="dark">
-        <div data-testid="pane" data-pane-id={DEMO_WAITING.paneId} />
-        <button type="button" role="radio" aria-checked="false" value="thread" />
-        <DemoCoach core={c} />
-      </UiProvider>,
-    );
     act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
-    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    await show(
+      "bea",
+      <>
+        {bea}
+        {radio}
+      </>,
+    );
     expect(hint()).toHaveLength(1);
     expect(hint()[0]?.textContent).toContain(
       `Press Enter to let ${DEMO_WAITING.name} run it, or Esc to say no.`,
     );
     expect(hint()[0]?.textContent).toContain("2 of 4");
     expect(hint()[0]?.dataset.side).toBe("bottom");
-    // Left unanswered, the task's hint shows only once her workspace isn't
-    // open: one thing at a time.
-    act(() => useWorkspaces.setState({ activeId: null }));
-    expect(hint()[0]?.textContent).toContain("Your first task is ready in Thread mode.");
-    act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
+    // Left unanswered, the task's hint shows once her question isn't on
+    // screen: Thread mode keeps her workspace active. One thing at a time.
+    await show("thread", <div data-testid="composer" />);
+    expect(useWorkspaces.getState().activeId).toBe(DEMO_WAITING.workspaceId);
+    expect(hint()[0]?.textContent).toContain("Press Enter to send this task.");
+    expect(hint()[0]?.textContent).toContain("3 of 4");
+    await show(
+      "bea-again",
+      <>
+        {bea}
+        {radio}
+      </>,
+    );
     expect(hint()[0]?.textContent).toContain("Press Enter to let");
     // Answered: in Code mode the task waits one switch away.
     asking("working");
@@ -108,15 +131,13 @@ describe("the interactive demo's page furniture", () => {
     expect(hint()[0]?.textContent).toContain("Your first task is ready in Thread mode.");
     expect(hint()[0]?.textContent).toContain("3 of 4");
     // Thread mode: the same hint, on the composer.
-    view.rerender(
-      <UiProvider theme="dark">
+    await show(
+      "thread-again",
+      <>
         <div data-testid="composer" />
         <button type="button" data-testid="changes-toggle" />
-        <DemoCoach core={c} />
-      </UiProvider>,
+      </>,
     );
-    // The coach looks again on the next frame after the page changes.
-    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
     expect(hint()[0]?.textContent).toContain("Press Enter to send this task.");
     expect(hint()[0]?.textContent).toContain("3 of 4");
     act(() => {

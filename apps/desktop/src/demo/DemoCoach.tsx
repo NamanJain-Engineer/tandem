@@ -182,9 +182,9 @@ export function DemoCoach({ core }: { core: CoachCore }) {
   const state = useThreads((s) => s.list.find((x) => x.id === core.firstThread)?.state);
   const changesOpen = useThreads((s) => s.changesOpen[core.firstThread] ?? false);
   const asks = useStatus((s) => s.records[paneKey(DEMO_WAITING.paneId)]?.status);
-  // Her question, with her workspace open.
-  const asking = asks === "waiting" && active === DEMO_WAITING.workspaceId;
   const onScreen = useOnScreen();
+  // Her question, in front of the visitor: in Thread mode it isn't.
+  const asking = asks === "waiting" && onScreen.answer !== null;
 
   // Done stays done, so leaving a view doesn't bring its hint back.
   const now: Record<HintId, boolean> = {

@@ -139,14 +139,17 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     // Gemini CLI's choices under its question, and what Claude Code's Edit
     // result says after its first sentence: the app reads nothing from them.
     const theirs = [/for this session/i, /suggest changes/i, /`cat -n`/, /snippet of the edited file/i];
-    const dirs = [__dirname, join(__dirname, "../../../web/components/site/scenes")];
-    const files = dirs.flatMap((dir) =>
-      readdirSync(dir)
-        .filter((f) => /\.(tsx?|json)$/.test(f) && !/\.test\.tsx?$/.test(f))
-        .map((f) => join(dir, f)),
-    );
+    // Every file under the demo's folder and the scenes' (the sample shop's
+    // too), tests aside.
+    const under = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? under(join(dir, e.name)) : /\.test\.tsx?$/.test(e.name) ? [] : [join(dir, e.name)],
+      );
+    const files = [__dirname, join(__dirname, "../../../web/components/site/scenes")].flatMap(under);
     expect(files.some((f) => f.endsWith("/scenes/DashboardScene.tsx"))).toBe(true);
     expect(files.some((f) => f.endsWith("/demo/story.ts"))).toBe(true);
+    expect(files.some((f) => f.includes("/demo/shop/") && f.endsWith(".sample"))).toBe(true);
+    expect(files.some((f) => f.includes("/demo/fixtures/"))).toBe(true);
     for (const file of files) {
       const text = readFileSync(file, "utf8");
       for (const words of theirs) expect(text, `${file} has ${words}`).not.toMatch(words);

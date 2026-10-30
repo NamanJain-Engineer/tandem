@@ -1136,15 +1136,13 @@ export class DemoCore {
     return true;
   }
 
-  /** Keys at the waiting agent's question: Enter allows and Esc says no,
-   * as the coach says (D-2633). Any other key, an arrow's sequence among
-   * them, does nothing here. */
+  /** Keys at the waiting agent's question: Enter allows and Esc alone says
+   * no, as the coach says (D-2633). Any other key does nothing here, an
+   * escape sequence among them (an arrow, Alt and a key). */
   private answer(pty: Pty, data: string): void {
-    if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) return;
-    for (const ch of data) {
-      if (ch === "\r") return this.answerWaiting(pty, true);
-      if (ch === "\x1b") return this.answerWaiting(pty, false);
-    }
+    if (data === "\x1b") return this.answerWaiting(pty, false);
+    if (data.startsWith("\x1b")) return;
+    if (data.includes("\r")) this.answerWaiting(pty, true);
   }
 
   /** The thread's fix lands in its workspace's folder: `shop/thread/`'s

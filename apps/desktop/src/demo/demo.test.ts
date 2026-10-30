@@ -868,10 +868,11 @@ describe("F-WT-07 Land worktrees in the demo, on the shared world (D-1899)", () 
     const stop = await listen<{ records: Array<{ key: string; status: string }> }>("status:changed", (e) => void status.push(...e.records));
     // Its pane shows the question and none of Gemini CLI's choices
     // (D-2633), so it takes the two keys the coach names: Enter allows,
-    // Esc says no. Any other key does nothing, a number or an arrow among
-    // them.
+    // Esc alone says no. Any other key does nothing: a number, an arrow,
+    // Alt and a key, Esc and Enter together.
     expect(screen).not.toMatch(/Allow once|for this session|suggest changes/);
-    for (const data of ["x", "1", "3", "y", "\x1b[B"]) core.handle("pty_write", { paneId, data });
+    for (const data of ["x", "1", "3", "y", "\x1b[B", "\x1bx", "\x1b\r"])
+      core.handle("pty_write", { paneId, data });
     expect(status.filter((s) => s.key === `pane:${paneId}`)).toEqual([]);
     core.handle("pty_write", { paneId, data: "\r" });
     // Answered: the next key isn't a second answer.
@@ -1173,12 +1174,23 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
       expect([...seen].sort()).toEqual(["Bash", "Edit", "Read"]);
       // Finished, it names none.
       expect(line(claude)).toBeNull();
-      // Bea answers in her terminal; her Gemini CLI never names a tool.
+      // Bea is answered in her terminal (Enter, D-2633) and runs her tests:
+      // her Gemini CLI never names a tool, working or done.
+      const state = (paneId: string) =>
+        (core?.handle("status_snapshot", {}) as DashboardItem[]).find((d) => d.key === `pane:${paneId}`)
+          ?.status;
       core.handle("pty_spawn", { paneId: DEMO_WAITING.paneId, channel: { onmessage: () => undefined } });
       vi.advanceTimersByTime(100);
-      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "1" });
-      vi.advanceTimersByTime(5_000);
-      expect(line(DEMO_WAITING.paneId)).toBeNull();
+      expect(state(DEMO_WAITING.paneId)).toBe("waiting");
+      core.handle("pty_write", { paneId: DEMO_WAITING.paneId, data: "\r" });
+      const went: string[] = [];
+      for (let t = 0; t < 20_000; t += 100) {
+        const now = String(state(DEMO_WAITING.paneId));
+        if (went.at(-1) !== now) went.push(now);
+        expect(line(DEMO_WAITING.paneId), now).toBeNull();
+        vi.advanceTimersByTime(100);
+      }
+      expect(went).toEqual(["working", "done"]);
     } finally {
       vi.useRealTimers();
     }
