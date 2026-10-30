@@ -45,8 +45,8 @@ modules:
     sources:
       - type: file
         dest-filename: vibezeo.deb
-        url: https://vibezeo.com/downloads/Vibezeo_0.12.0_amd64.deb
-        sha256: 8e5eab097503c7c29d8729e81ffdd78b17056b36dcb0fcfff32769f71be8a94b
+        url: https://vibezeo.com/downloads/Vibezeo_0.13.0_amd64.deb
+        sha256: d3418fbeb78e73449bcf85294a75b09f7bcc20def82359a7a94dda342b3d75c2
         only-arches: [x86_64]
       - type: file
         path: com.vibezeo.Vibezeo.metainfo.xml
