@@ -479,14 +479,22 @@ impl StatusService {
             // for input. Without this a hooked agent had no status (missing
             // from the Dashboard) or kept "working" from its startup banner,
             // depending on which arrived first. The engine can report before
-            // it prints the banner and the app read the banner first, so the
-            // report counts at the later of the two times (D-3039).
+            // it prints the banner and the app read the banner first, so
+            // over a "working" read from the screen the report counts at the
+            // later of the two times. Anything else keeps the usual order: a
+            // question on the screen, such as a trust prompt, that came after
+            // the report still stands (D-3039).
             ReportEvent::Session if first => {
-                let current = self.store.get(&SessionKey::pane(&pane)).map(|c| c.ts);
+                let ts = match self.store.get(&SessionKey::pane(&pane)) {
+                    Some(cur) if cur.status == tandem_core::status::AgentStatus::Working => {
+                        report.ts.max(cur.ts)
+                    }
+                    _ => report.ts,
+                };
                 let update = StatusUpdate {
                     status: tandem_core::status::AgentStatus::Idle,
                     reason: None,
-                    ts: current.map_or(report.ts, |ts| report.ts.max(ts)),
+                    ts,
                     tool: None,
                     title: None,
                     preview: None,
@@ -876,6 +884,34 @@ mod tests {
             },
         });
         assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn f_en_05_a_question_on_screen_stands_against_an_older_session_report() {
+        // The same order, with a trust prompt on the screen: the question
+        // is for you, so a session report made before it doesn't hide it.
+        // Only a "working" read from the screen gives way whatever the
+        // times (D-3039).
+        let (s, clock) = service();
+        let trust = "Do you trust the files in this folder\\?".to_string();
+        s.watch("pn_1", &[trust], &[], None);
+        let made = clock.now_ms();
+        clock.advance(Duration::from_millis(5));
+        s.output("pn_1", || {
+            Some("Do you trust the files in this folder?".into())
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Waiting));
+        s.on_report(StatusReport {
+            v: 1,
+            pane_id: "pn_1".into(),
+            event: ReportEvent::Session,
+            ts: made,
+            payload: ReportPayload {
+                session_id: Some("ses-1".into()),
+                ..ReportPayload::default()
+            },
+        });
+        assert_eq!(status(&s, "pn_1"), Some(AgentStatus::Waiting));
     }
 
     #[test]

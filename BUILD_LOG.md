@@ -3499,6 +3499,16 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - coverage 194, and protocol drift with 596 types (none added).
   - **E2E** on the working tree, twice: m10-2-briefing-learning (4 tests), m10-3-memory-skills (4), m16-4-phone (5), m18-cn09-walk-and-review (3) and m18-tk08-lead-keeps-moving (1) passed every test in both runs.
     - Both runs exited 1 from the runner's teardown, after every spec had passed: `cleanHomes` hit ENOTEMPTY, which chain27's runner fixes.
+- [x] D-3039 refined, one commit on 8e1d58af, at the coordinator's request after app-ui's E2E hit the same race on chain27. chain27 isn't merged in.
+  - A first session report outranks only a "working" read from the screen, whatever the times. Over anything else the usual order holds, so a question read from the screen after the report stands: a trust prompt, or an engine's own approval prompt (Waiting).
+  - Test: `f_en_05_a_question_on_screen_stands_against_an_older_session_report`, the banner test's order with a trust prompt on the screen.
+    - On 8e1d58af it read `Idle` where `Waiting` was due.
+    - The banner tests pass unchanged.
+  - D-3172's "Left" bullet records the coordinator's call on its two items.
+  - Checks, as the coordinator asked, with the full gate to run on chain27 after the merge:
+    - the desktop library's tests, 1,143 (2 ignored);
+    - clippy across the workspace;
+    - fmt.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).
@@ -3854,7 +3864,8 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - The body goes through `untrusted::redacted`, as written and past what's removable (D-3036), then through the defang, as before. The spec's line says so.
 - D-3039: An agent's first session report makes it idle even when the app read its banner first (the coordinator's answer to a106fbf1's READY, question 3).
   - An engine can report its session starting before it prints its banner, and the app can read the banner first. The heuristics marked the pane "working" at the app's later time, and `StatusStore::apply` dropped the report's idle as older. The report had marked the pane hooked, so the heuristics stopped, and the agent showed "working" until its first prompt: on the Dashboard, and to Auto, which waits for an idle prompt (the m16-7-auto flake).
-  - The first session report's idle takes the later of its own time and the current record's, as a title report already does.
+  - The first session report's idle takes the later of its own time and the current record's when that record is a "working" read from the screen. Over anything else the usual order holds, so a question read from the screen after the report still stands.
+  - Refined on top of 8e1d58af, at the coordinator's request after app-ui's E2E hit the same race on chain27. As first written, the later time applied over any record, as a title report's does. That also hid a question read from the screen, such as a trust prompt or an engine's own approval prompt (Waiting), behind an idle when the report was older. Before D-3039 the older report was dropped, and Waiting stood.
 - D-3170: `untrusted::redacted` finds a credential that what's removable both sets apart and splits (the review of a106fbf1, SF1 and Nit 1).
   - The token rules are anchored on a word boundary. As written, the split stops a rule's body; once what's removable goes, the join removes the boundary. So both of D-3036's passes missed `abc\u{200B}ghp_0123456789\u{200B}abcdefghij…`, `npm_0123456789\u{200B}…\u{200B}x`, `x\u{200B}AIza0123456789\u{200B}…` and `AKIA0123456789\u{200B}ABCDEF\u{200B}Z`, and gave them back whole.
   - D-3036's two passes left a long tail too. The pass as written redacted the part before a late split, and the rest stayed visible: `xoxb-0123456789\u{200B}<54 more>`, `sk-ant-api03-<20>\u{200B}<66 more>`.
@@ -3897,6 +3908,7 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
   - Left, for 0.14.0's F-TL-02 work with F-TK-09:
     - a registered secret that the removal both splits and sets apart. Its scan finds one that's split, or set apart, not both, as before;
     - the plain rules' Unicode word boundary on text outside ASCII. It holds no boundary between Chinese text and a token run into it, so `使用ghp_…推送` stays whole, and it costs the slow engine. ASCII's boundary would find that token and keep the DFA, but it would also hold inside words such as `Gdańsk-…`.
+    - The coordinator's call: both wait for 0.14.0, with no change in 0.13.0. There, a boundary that knows CJK text is to be weighed against F-TL-02's corpus (`使用ghp_…推送` found, `Gdańsk-…` left alone) and the DFA's cost, rather than ASCII's boundary everywhere.
 - D-3173: What the phone gets that an agent, a model, a page or a message wrote is redacted as written and as read, before any cut (the review of 7f61c86a, Nit 1).
   - D-3171 left agents' latest lines in the snapshot with the plain redactor. Found on the way, with no redaction at all:
     - agents' titles (a hook's or the terminal's title), in the snapshot and in push titles ("… needs you");
