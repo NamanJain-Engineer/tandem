@@ -196,24 +196,41 @@ function moduleRefs(file: string, code: string): Ref[] {
   visit(sf);
   return out;
 }
-/** Every file a stylesheet names: @import (a string, or a url() quoted or not), Tailwind's @reference, @plugin, @config
- * and @source (a glob read from its fixed start), and url(). A name with a CSS escape in it, or in image-set()'s bare
- * strings, can't be read here, so it's null. */
+/** Every file a stylesheet names, in any case, as the build's loaders match them: @import (a string, or a url() quoted
+ * or not), Tailwind's @reference, @plugin, @config and @source and an @import's source() (a glob read from its fixed
+ * start), url(), and a CSS module's composes … from, @value … from and :import(). A name it can't read is null: a url(
+ * that doesn't parse (a bare one with an escape), a name with a CSS escape in it, and image-set()'s bare strings. */
 function styleRefs(css: string): Ref[] {
   // Comments go, but not what's inside a string ("../**/*.tsx" holds a "/*").
   const text = css.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\/\*[\s\S]*?\*\//g, (_, str: string | undefined) => str ?? "");
   const out: Ref[] = [];
   const read = (spec: string) => (spec.includes("\\") ? null : spec);
-  // A url()'s address is quoted, or bare up to its close (a bare one holds no quote, bracket or space).
-  const at = /@(?<rule>import|reference|plugin|config|source)\s+(?:not\s+)?(?:url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)|(?<q>["'])(?<str>.*?)\k<q>)/g;
+  const glob = (spec: string | null) => (spec === null ? null : spec.replace(/[{*].*$/, ""));
+  // A url()'s address is quoted, or bare up to its close (a bare one holds no quote, bracket, space or escape).
+  const url = String.raw`url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()\\]*))\s*\)`;
+  const at = new RegExp(String.raw`@(?<rule>import|reference|plugin|config|source)\s+(?:not\s+)?(?:${url}|(?<q>["'])(?<str>.*?)\k<q>)`, "gi");
   for (const m of text.matchAll(at)) {
+    const rule = (m.groups?.rule ?? "").toLowerCase();
     const spec = read(m.groups?.quoted ?? m.groups?.bare ?? m.groups?.str ?? "");
-    out.push({ spec: m.groups?.rule === "source" && spec !== null ? spec.replace(/[{*].*$/, "") : spec, how: `@${m.groups?.rule ?? ""}` });
+    out.push({ spec: rule === "source" ? glob(spec) : spec, how: `@${rule}` });
   }
-  // A url() anywhere else: the at-rules' are taken out first, so each is counted once.
-  for (const m of text.replace(at, "").matchAll(/url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)/g))
-    out.push({ spec: read(m.groups?.quoted ?? m.groups?.bare ?? ""), how: "url()" });
-  for (const _ of text.matchAll(/image-set\(/g)) out.push({ spec: null, how: "image-set()" });
+  // Every url( elsewhere (the at-rules' are taken out, so each counts once): its address where it parses, null where
+  // it doesn't.
+  const rest = text.replace(at, "");
+  const token = new RegExp(url, "iy");
+  for (const m of rest.matchAll(/url\(/gi)) {
+    token.lastIndex = m.index ?? 0;
+    const t = token.exec(rest);
+    out.push({ spec: t === null ? null : read(t.groups?.quoted ?? t.groups?.bare ?? ""), how: "url()" });
+  }
+  const modules: Array<[RegExp, string]> = [
+    [/\bcomposes\s*:[^;{}]*?\bfrom\s+(?<q>["'])(?<name>.*?)\k<q>/gi, "composes"],
+    [/@value\s[^;{}]*?\bfrom\s+(?<q>["'])(?<name>.*?)\k<q>/gi, "@value"],
+    [/:import\(\s*(?<q>["'])(?<name>.*?)\k<q>\s*\)/gi, ":import()"],
+  ];
+  for (const [re, how] of modules) for (const m of text.matchAll(re)) out.push({ spec: read(m.groups?.name ?? ""), how });
+  for (const m of text.matchAll(/\bsource\(\s*(?<q>["'])(?<name>.*?)\k<q>\s*\)/gi)) out.push({ spec: glob(read(m.groups?.name ?? "")), how: "source()" });
+  for (const _ of text.matchAll(/image-set\(/gi)) out.push({ spec: null, how: "image-set()" });
   return out;
 }
 /** The app's own source files (apps/desktop/src), not its tests and not the browser demo, which isn't the app. */
@@ -383,9 +400,11 @@ describe("F-WB-01 AC9 product scenes", () => {
   it("F-WB-01 AC9 D-1898 no scene draws the placeholder name: no tandem/ branch, and no tandem, at any step", async () => {
     // Every scene as the site draws it, on the home page or its release's page: its stage, its caption and the text read
     // for it, at the release the site shows (scenes.next.test runs this at the next slice's). Each is read whole,
-    // attributes too, which covers every step: an effect only shows or cuts what's in the markup, the only text the
-    // scenes' rules write is a count's data-prefix and number, and the player only plays and pauses (the design lead's
-    // QA of 825b4b54: its hero's radar note named tandem/coupon-rules).
+    // attributes too, which covers every step the markup holds: an effect only shows or cuts what's in it, the only
+    // `content` the scenes' sheets write is a count's data-prefix and number, and the player only plays and pauses (the
+    // design lead's QA of 825b4b54: its hero's radar note named tandem/coupon-rules). Text other CSS can write (a
+    // `content` rule elsewhere, a list-style string, a counter style's symbols) is the 0.14.0 slice's, read where the
+    // browser draws it (D-3006).
     const drawn: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
     for (const version of Object.keys(RELEASE_SCENES)) {
       const h = await versionHtml(version);
@@ -749,10 +768,17 @@ describe("F-WB-01 AC9 product scenes", () => {
       { spec: null, how: "require, passed on" },
     ]);
     // An @import's url() is read quoted or not, spaced or not (the code review of 825b4b54: `@import url(../../desktop/
-    // src/styles/app.css);` got past it), and a name it can't read (a CSS escape, image-set()'s strings) fails it.
+    // src/styles/app.css);` got past it), and a name it can't read (a CSS escape, image-set()'s strings) fails it. Names
+    // in any case, as the build's loaders match them; a url( that doesn't parse fails it; a CSS module's composes,
+    // @value and :import() name files; an @import's source() is a glob, as @source is (the delta review of 400f7c55).
     expect(
       styleRefs(
-        '@import "./a.css"; @import url("b.css"); @import url(../../desktop/src/styles/app.css) layer(base); @import\n  url( \'f.css\' ); @plugin "./c.js"; @source not "../**/*.tsx"; @source "../../desktop/src/{x,y}.tsx"; .x { background: url(./d.png); } .y { background: url("data:image/png;base64,AA"); } .z { background: image-set("g.png" 1x); } @import "\\2e/h.css";',
+        [
+          '@import "./a.css"; @import url("b.css"); @import url(../../desktop/src/styles/app.css) layer(base); @import\n  url( \'f.css\' ); @plugin "./c.js"; @source not "../**/*.tsx"; @source "../../desktop/src/{x,y}.tsx"; .x { background: url(./d.png); } .y { background: url("data:image/png;base64,AA"); } .z { background: image-set("g.png" 1x); } @import "\\2e/h.css";',
+          '@IMPORT URL(./upper.css); @import "tailwindcss" source("../../desktop/src"); @import "tailwindcss/utilities.css" source(none);',
+          ".u { background: URL(../../desktop/src/x.png); } .v { background: url(a\\ b.png); } .w { mask: url(c\\).png); }",
+          '.m { composes: a b from "./other.module.css"; } .g { composes: c from global; } @value primary, accent from "./colors.module.css"; @value gap: 4px; :import("./tokens.module.css") { t: token; }',
+        ].join("\n"),
       ),
     ).toEqual([
       { spec: "./a.css", how: "@import" },
@@ -763,8 +789,18 @@ describe("F-WB-01 AC9 product scenes", () => {
       { spec: "../", how: "@source" },
       { spec: "../../desktop/src/", how: "@source" },
       { spec: null, how: "@import" },
+      { spec: "./upper.css", how: "@import" },
+      { spec: "tailwindcss", how: "@import" },
+      { spec: "tailwindcss/utilities.css", how: "@import" },
       { spec: "./d.png", how: "url()" },
       { spec: "data:image/png;base64,AA", how: "url()" },
+      { spec: "../../desktop/src/x.png", how: "url()" },
+      { spec: null, how: "url()" },
+      { spec: null, how: "url()" },
+      { spec: "./other.module.css", how: "composes" },
+      { spec: "./colors.module.css", how: "@value" },
+      { spec: "./tokens.module.css", how: ":import()" },
+      { spec: "../../desktop/src", how: "source()" },
       { spec: null, how: "image-set()" },
     ]);
     // Nor do the tests feed the site's stylesheet: they name the app's classes to check them (size-7, border-waiting,
@@ -987,11 +1023,15 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(queue).toContain("const canApprove = approved || (settled && box.steady);");
     expect(queue).toMatch(/<Button\s*size="sm"\s*variant=\{approved \? "ghost" : "primary"\}\s*waiting=\{!canApprove\}/);
     expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Button.tsx"), "utf8")).toContain('waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40"');
-    // A cover holds it off like a move (steadyBox.ts). In a phone's frame "Warned both agents" spans the window's foot,
-    // over the card's buttons, as the app's corner toast lies over its floating sidebar there, so Approve turns on
-    // SETTLE_MS after that toast goes (the code review of 825b4b54; a browser test finds every cover).
+    // A cover holds it off like a move (steadyBox.ts). No app window puts "Warned both agents" over the card's buttons:
+    // its toast sits 32 px above the window's foot (Toast.tsx's bottom-8), a window is at least 600 px tall, and the
+    // buttons end 464 px down (the coordinator's delta review of 400f7c55). A phone's frame is the site's own layout:
+    // the toast spans its foot, where the card's buttons fall, so there Approve turns on SETTLE_MS after the toast
+    // goes (D-3008; a browser test finds every cover).
     expect(ui).toContain('const box = cover.current.covered ? "covered" : boxOf(el);');
     expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Toast.tsx"), "utf8")).toContain('className="pointer-events-none fixed bottom-8 right-4 ');
+    const tauri = JSON.parse(readFileSync(join(import.meta.dirname, "../../desktop/src-tauri/tauri.conf.json"), "utf8")) as { app: { windows: Array<{ minHeight?: number }> } };
+    expect(tauri.app.windows.map((w) => w.minHeight)).toEqual([600]);
     expect(css).toContain(".sc-note-toast { left: 1em; right: 1em; width: auto; }");
     const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(hero);
     const hundredths = (s: number) => Math.round(s * 100) / 100;

@@ -28,11 +28,12 @@ const TYPED = CLICK + 0.1;
 const WARNED = TYPED + 0.08;
 const TOAST_STAY = 5;
 /** When the card's Approve turns on, from 0.13.0 (F-TL-12.12): SETTLE_MS
- * after the card arrives, since nothing moves or covers it. In a phone's
- * frame "Warned both agents" lies over its buttons until it goes (its toast
- * spans the window's foot, where the app's corner toast sits over the
- * floating sidebar), and a cover holds Approve off like a move
- * (steadyBox.ts), so there it turns on SETTLE_MS after the toast goes. */
+ * after the card arrives, since nothing moves or covers it, as in the app at
+ * every window size. A phone's frame is the site's own layout, which no app
+ * window makes: there the card's buttons fall to the frame's foot, under
+ * "Warned both agents" until it goes, and the steady box holds Approve off
+ * under a cover as after a move (steadyBox.ts), so there it turns on
+ * SETTLE_MS after the toast goes (D-3008). */
 export const HERO_READY = {
   at: HERO_T.done + SETTLE,
   narrow: Math.max(HERO_T.done, RADAR ? WARNED + TOAST_STAY : 0) + SETTLE,

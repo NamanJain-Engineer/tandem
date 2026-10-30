@@ -401,7 +401,8 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
    sets it back, and runs both again at the version the site shows. At
    `SCENES_SLICE` the site's other release tests fail until the release commit
-   brings that release's content (its CHANGELOG section, downloads and post).
+   brings that release's content: its CHANGELOG section, downloads and post,
+   /about/'s figures and the changelog's "New in" tiles.
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)
