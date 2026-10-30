@@ -59,6 +59,7 @@
   - **For 0.14.0 (D-876):** F-TK-09, the intent radar's second slice, F-TL-12.13 then F-SH-14, the relay, and the redaction should-fix.
   - Verified: see "Release 0.13.0" in the log below.
   - Previous release: 0.12.0 (26 October; D-875), deployed by #107 (fc2ca3a6) on 26 October.
+  Deployed by #110 (36152488) on 30 October, live at 15:00 UTC. `main` came back into `product-m0-m5` with this record.
 - Blog (F-WB-06, built under M15 and owned by "M17 · Blog", D-853; D-1850 to D-1864): `/blog/` with posts as files in `apps/web/content/blog`, tag pages and an Atom feed, batched in `chain22` and deployed to vibezeo.com from `main` (D-851). Publishing a post is `docs/BLOG.md` §3. See "M15 · F-WB-06 Blog".
 - Website dark mode and motion (M15, `site-motion`, D-1870 to D-1889, D-3000 to D-3019):
   - A System / Light / Dark control in the header, the phone menu and the portal, applied before the first paint by an inline script and kept under one `localStorage` key (D-1870 to D-1873).
@@ -1584,6 +1585,16 @@ Built by the session that coordinates the parallel milestone sessions, while the
       - the radar's note fenced as untrusted text;
       - the review's settled Approve and its line comments;
       - v0.13.0 in every status bar.
+  - **Merged and deployed:** #109 into `product-m0-m5` (5d00c3f5, after CI's `quick`), then #110 to `main` (36152488). vibezeo.com served 0.13.0 four minutes later (15:00 UTC, 30 October), and the live checks passed:
+    - every page answers 200, `/changelog/0.13.0/` and the post included, and 0.12.0's pages still answer;
+    - site-info and the home page say 0.13.0, and the served .deb and .rpm match their SHA-256s;
+    - "New in 0.13.0" has its eight tiles, `/changelog/0.13.0/` its eight Added cards, and the scenes' captions say 0.13.0;
+    - the post is in the feed, and `llms.txt` names 0.13.0;
+    - the Code mode capture is byte for byte the repository's;
+    - D-869's free checks, the headers, the redirects and `site-motion`'s checks pass as before;
+    - at 1440 and 1280 no engine name is cut off;
+    - home is 7,985 px in both themes at 1440.
+    `main` came back into `product-m0-m5` with this record.
 
 ## M16 · F-AC-07 Usage dashboard
 Built on branch `m16-usage-dashboard` (from `product-m0-m5`) by the M13 session as part of its follow-on chain. Decisions come from the M13 range (D-600–D-699).
