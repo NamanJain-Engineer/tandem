@@ -2081,6 +2081,31 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - F-TK-08 (must-fixes);
     - B5's second slice and F-EX-07 (round 3), which merged first, so `0006_activity` keeps its number; F-CD-24's is `0007_lane_vcs` and F-EN-11's `0008_local_models` (D-872).
     - Their notes stay under the CHANGELOG's `## Unreleased`, above `## 0.12.0`.
+- D-876: 0.13.0 ships `chain27` as reviewed: F-TK-08, B5's second slice with F-EX-07, F-CD-23 and F-CD-24, F-EN-11, `app-ui`'s 0.13.0 work and `site-motion`'s scenes to 0.13.0.
+  - **Why now:** every piece D-875 sent to 0.13.0 passed its review rounds. The scenes slice that `release.ts` waits for (OPERATING §6) merged on 30 October (e75c37bb and f9851f1a, D-3006 to D-3008).
+  - **Two review fixes made by the coordinator:** messaging the other sessions stopped working when the container restarted on 30 October (about 09:25 UTC). So the coordinator made the last rounds' fixes on `chain27` itself, tests first, each under a max-effort review:
+    - e788fc6f, the review of `m16a-conductor`'s d2b219f1 (D-3172): a split token that runs into a letter outside ASCII stays hidden, a cut value keeps the host after its @, and the timing check holds under load;
+    - 6d5b4d0d, the review of `app-ui`'s 134f7716: a card that appears while an older snapshot is read stays, and the demo's quote scan reads only what git tracks.
+    - The review approved e788fc6f:
+      - the 4,824 glued tokens are hidden again and none is lost;
+      - the benign false positives stay at 30;
+      - the clamp can't drop a credential;
+      - the time stays linear.
+    - `app-ui` made 6d5b4d0d's two changes on its own branch in parallel (e6cb7ff7, D-2636), and they reached the coordinator after 6d5b4d0d. `chain27` keeps 6d5b4d0d, whose release E2E had already started, and takes e6cb7ff7's CHANGELOG sentence (cddc87d2). `app-ui` keeps one of the two when it merges `product-m0-m5`.
+    - Both sessions merge `product-m0-m5` before their next round.
+  - **Should-fix for 0.14.0, first in `m16a-conductor`'s next round:** the review of e788fc6f found one outside its delta. It was already there at 7f61c86a, and 8e1d58af made it easier to trigger.
+    - **Trigger:** text holding 32 KB or more of `AIza` runs makes the thread's lazy DFA give up on the prefilter set (`redact.rs:493` and `:504`, through `unanchored()`). The `regex` crate never resets that cache.
+    - **Effect:** every later redaction on that thread falls back to the PikeVM. A 1 MB log took 8.9 s after it rather than 0.27 s (debug build), on every later call, while other threads stayed fast.
+    - **Why it ships:** redaction stays correct and linear, only slower.
+    - **The fix:** either give each call fresh caches (clone the sets and rules, measuring the cost on small calls), or relax `{35}` and `{16}` to `+` in `unanchored()`. Add a test that a 64 KB `AIza` run doesn't slow the next call.
+  - **The notes:** a read-only check of every claim in the CHANGELOG and the post against the code found five wrong and three loose. They were rewritten before the build (4861e8bf), along with `code-mode.mdx`.
+  - **To 0.14.0:**
+    - F-TK-09 Lead closes the loop (approved, D-3160 to D-3169);
+    - the intent radar's second slice (`competitive-gaps` 9a4e93ab, to be reviewed after 0.13.0);
+    - F-TL-12.13, then F-SH-14 (`product-research`);
+    - the relay (`m16d-teammate-extras`, D-3078, D-3079, D-3150 to D-3159);
+    - the review nits each section lists as deferred;
+    - Local models' line in the app ("when you open this page or check again"), which leaves out that each Codex start on a local model asks 127.0.0.1 too.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
