@@ -255,18 +255,22 @@ fn review_bytes(r: &PhoneReview) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// Redacts a review's diff for the phone, withholds `.env` files, and cuts
-/// patches (the longest first, then whole files from the end) until the
-/// reply fits in one sealed frame.
+/// Redacts a review's diff for the phone, as written and past what's
+/// removable (D-3171), withholds `.env` files, and cuts patches (the longest
+/// first, then whole files from the end) until the reply fits in one sealed
+/// frame.
 pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
-    use tandem_core::redact::Redactor;
+    use tandem_core::untrusted::redacted;
     for f in &mut r.files {
-        if crate::services::review_queue::is_env(&f.path) {
+        let env = crate::services::review_queue::is_env(&f.path);
+        // A file's name is what an agent chose (the review of 8e1d58af).
+        f.path = redacted(&f.path);
+        if env {
             f.patch.clear();
             f.withheld = true;
             continue;
         }
-        let text = Redactor::global().redact(&f.patch).into_owned();
+        let text = redacted(&f.patch);
         if text.chars().count() > MAX_DIFF_FILE_CHARS {
             f.patch = text.chars().take(MAX_DIFF_FILE_CHARS).collect();
             f.truncated = true;
@@ -275,10 +279,19 @@ pub fn review_for_phone(mut r: PhoneReview) -> PhoneReview {
         }
     }
     if let Some(item) = &mut r.item {
+        // The work's title is the agent's own (D-3173), and so are its
+        // branch's and its risky files' names (the review of 8e1d58af).
+        item.title = redacted(&item.title);
+        item.branch = item.branch.take().map(|b| redacted(&b));
+        for risk in &mut item.risks {
+            for file in &mut risk.files {
+                *file = redacted(file);
+            }
+        }
         item.closing = item
             .closing
             .take()
-            .map(|c| clip(&Redactor::global().redact(&c), MAX_ITEM_CHARS));
+            .map(|c| clip(&redacted(&c), MAX_ITEM_CHARS));
     }
     loop {
         let bytes = review_bytes(&r);
@@ -1085,7 +1098,7 @@ impl PhoneService {
                     body: if desk_only(a) {
                         PANE_APPROVAL_BODY.into()
                     } else {
-                        clip(&tandem_core::redact::redact(&a.summary), 160)
+                        clip(&tandem_core::untrusted::redacted(&a.summary), 160)
                     },
                     at: now,
                 });
@@ -1095,19 +1108,21 @@ impl PhoneService {
             let Some(before) = prev.agents.get(&a.key) else {
                 continue;
             };
-            let title = match (before, a.status) {
+            let what = match (before, a.status) {
                 (b, s) if *b == s => continue,
-                (_, AgentStatus::Waiting) => format!("{} needs you", a.title),
-                (AgentStatus::Working, AgentStatus::Done) => format!("{} finished", a.title),
-                (_, AgentStatus::Failed) => format!("{} stopped with an error", a.title),
+                (_, AgentStatus::Waiting) => "needs you",
+                (AgentStatus::Working, AgentStatus::Done) => "finished",
+                (_, AgentStatus::Failed) => "stopped with an error",
                 _ => continue,
             };
+            // The agent's title is its own (D-3173).
+            let title = format!("{} {what}", tandem_core::untrusted::redacted(&a.title));
             out.push(PushAlert {
                 kind: "agent".into(),
                 id: a.key.clone(),
                 title: clip(&title, 80),
                 body: clip(
-                    &tandem_core::redact::redact(a.preview.as_deref().unwrap_or_default()),
+                    &tandem_core::untrusted::redacted(a.preview.as_deref().unwrap_or_default()),
                     160,
                 ),
                 at: now,
@@ -1795,15 +1810,16 @@ impl PhoneService {
                 PhoneApproval {
                     queued: queued.iter().any(|q| q == a.id.as_str()),
                     id: a.id.as_str().to_string(),
+                    // What the phone gets is off this machine (D-3171).
                     summary: if desk {
                         PANE_APPROVAL_BODY.into()
                     } else {
-                        clip(&a.summary, 200)
+                        clip(&tandem_core::untrusted::redacted(&a.summary), 200)
                     },
                     detail: if desk {
                         String::new()
                     } else {
-                        clip(&tandem_core::redact::redact(&a.detail), 1000)
+                        clip(&tandem_core::untrusted::redacted(&a.detail), 1000)
                     },
                     source: source_label(&a),
                     desk_only: desk,
@@ -1815,15 +1831,24 @@ impl PhoneService {
         threads.truncate(MAX_THREADS);
         let mut routines = host.routines().await;
         routines.truncate(MAX_ROUTINES);
+        // A teammate's model can name a routine (`tandem__schedule_create`),
+        // and the phone is off this machine (the review of 8e1d58af).
         for r in &mut routines {
-            r.name = clip(&r.name, 120);
+            r.name = clip(&tandem_core::untrusted::redacted(&r.name), 120);
         }
+        // An agent's title and latest line, and a thread's title, are what
+        // an agent, a model or a person's message wrote, and the phone is off
+        // this machine: redacted as written and as read, before the cut
+        // (D-3171, D-3173).
         for a in &mut agents {
-            a.title = clip(&a.title, 120);
-            a.preview = a.preview.as_deref().map(|p| clip(p, 200));
+            a.title = clip(&tandem_core::untrusted::redacted(&a.title), 120);
+            a.preview = a
+                .preview
+                .as_deref()
+                .map(|p| clip(&tandem_core::untrusted::redacted(p), 200));
         }
         for t in &mut threads {
-            t.title = clip(&t.title, 120);
+            t.title = clip(&tandem_core::untrusted::redacted(&t.title), 120);
         }
         let mut snap = PhoneSnapshot {
             desktop: host.desktop_name(),

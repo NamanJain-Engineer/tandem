@@ -1276,11 +1276,12 @@ fn closing_text(text: &str) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-/// A check's output as a review item keeps it: its last lines, redacted the
-/// same way (D-3036).
+/// A check's output as a review item keeps it: redacted the same way
+/// (D-3036), then its last lines, so a key whose first line falls before
+/// them is still found whole (the review of 8e1d58af).
 fn check_output(out: &str) -> String {
     use crate::services::bestof;
-    tandem_core::untrusted::redacted(&bestof::tail(out, bestof::TAIL_LINES))
+    bestof::tail(&tandem_core::untrusted::redacted(out), bestof::TAIL_LINES)
 }
 
 /// Builds the queue, seeds it from the status bus and follows it.
@@ -1824,6 +1825,23 @@ mod tests {
         }
         // Nothing but what's removable is nothing to read out.
         assert_eq!(closing_text("\u{200b}\u{2028} "), None);
+    }
+
+    #[test]
+    fn f_tk_08_1_check_output_hides_a_key_whose_first_line_falls_before_its_tail() {
+        // The output is redacted whole, then cut to its last lines, so a
+        // private key's body there isn't left bare when its BEGIN line is
+        // earlier (the review of 8e1d58af, Nit 3).
+        let body: Vec<String> = (0..250)
+            .map(|i| format!("MIIEvQIBADANBgkqhkiG9w0BAQEFAASC{i:04}"))
+            .collect();
+        let out = format!(
+            "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\ndone",
+            body.join("\n")
+        );
+        let kept = check_output(&out);
+        assert!(kept.ends_with("done"), "{kept}");
+        assert!(!kept.contains("MIIEvQIBADANBgkq"), "{kept}");
     }
 
     #[tokio::test]

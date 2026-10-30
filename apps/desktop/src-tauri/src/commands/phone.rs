@@ -45,6 +45,13 @@ impl AppPhoneHost {
     }
 }
 
+/// A thread's event as the phone's transcript shows it: who said it, and the
+/// text with its credentials redacted as written and past what's removable,
+/// which shows nothing on the phone either (D-3171).
+fn phone_line(event: &ThreadEvent) -> Option<(&'static str, String)> {
+    tool_line(event).map(|(role, text)| (role, tandem_core::untrusted::redacted(&text)))
+}
+
 fn tool_line(event: &ThreadEvent) -> Option<(&'static str, String)> {
     match event {
         ThreadEvent::User { text, .. } => Some(("user", text.clone())),
@@ -146,9 +153,9 @@ impl PhoneHost for AppPhoneHost {
                 .items
                 .iter()
                 .filter_map(|env| {
-                    tool_line(&env.event).map(|(role, text)| PhoneTranscriptItem {
+                    phone_line(&env.event).map(|(role, text)| PhoneTranscriptItem {
                         role: role.into(),
-                        text: tandem_core::redact::redact(&text),
+                        text,
                         at: env.ts,
                     })
                 })
@@ -710,4 +717,28 @@ pub fn start(app: &AppHandle) {
         }
         phone.start().await
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_tk_08_1_the_phones_transcript_hides_a_credential_behind_what_is_removable() {
+        // The phone is off this machine, and what's removable shows nothing
+        // there either: redacted as written and as read (D-3171).
+        let z = '\u{200b}';
+        for secret in [
+            format!("ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+            format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+        ] {
+            let (role, text) = phone_line(&ThreadEvent::Assistant {
+                markdown: format!("Pushed with {secret}."),
+            })
+            .expect("a line");
+            assert_eq!(role, "assistant");
+            assert!(text.starts_with("Pushed with"), "{text}");
+            assert!(!text.contains("0123456789"), "{text:?}");
+        }
+    }
 }

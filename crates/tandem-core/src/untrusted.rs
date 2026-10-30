@@ -114,24 +114,105 @@ pub fn readable(text: &str) -> String {
 
 /// [`readable`] text with credentials redacted, for text that is defanged
 /// later or that a model reads, since either reads past what's removable
-/// (D-3031). It redacts twice: as written, then once what's removable is
-/// gone (D-3036). A credential split by what's removable is whole only after
-/// it goes, and one that only what's removable set apart from a letter is
-/// found only before, since the join hides where it starts or ends.
+/// (D-3031). What it hides is found in three forms of the text, each in one
+/// scan a rule (D-3036, D-3170, D-3172;
+/// [`crate::redact::Redactor::untrusted_spans`]):
+/// - as read: a credential split by what's removable is whole once it goes;
+/// - as written, by the rules with no validator: what the text as written
+///   kept apart stays apart, such as a token a decoy runs into, or
+///   `Bearer` and its value across a line separator;
+/// - in a copy with a mark where the removal cut, which every rule steps
+///   over and reads as a word boundary: one set apart from a letter, whose
+///   edge the join hides, split, or both.
+///
+/// The spans are merged, so the tail after a late split goes with the rest.
 pub fn redacted(text: &str) -> String {
-    crate::redact::redact(&readable(&crate::redact::redact(text)))
+    let (read, spans) = credential_spans(text);
+    if spans.is_empty() {
+        read
+    } else {
+        crate::redact::apply(&read, &spans)
+    }
 }
 
-/// Whether `text` holds what [`redacted`] hides: a credential as written or
-/// as [`readable`] leaves it (D-3036). For a check that refuses text a model
-/// reads later, such as a memory.
+/// Whether `text` holds what [`redacted`] hides (D-3036, D-3170). For a
+/// check that refuses text a model reads later, such as a memory.
 pub fn holds_credential(text: &str) -> bool {
-    let redactor = crate::redact::Redactor::global();
-    if redactor.redact(text) != text {
-        return true;
+    !credential_spans(text).1.is_empty()
+}
+
+/// The three forms of a text that [`redacted`] reads (D-3172). `written`
+/// and `marked` are `read` with bytes put in, at the offsets in `extra` and
+/// `marks`.
+struct Forms {
+    /// [`readable`]'s text.
+    read: String,
+    /// One byte where each removable character was: a space for
+    /// whitespace, [`crate::redact::MARK`] for the rest.
+    written: String,
+    extra: Vec<usize>,
+    /// One [`crate::redact::MARK`] for each run of what's removable.
+    marked: String,
+    marks: Vec<usize>,
+}
+
+fn forms(text: &str) -> Forms {
+    use crate::redact::MARK;
+    let mut f = Forms {
+        read: String::with_capacity(text.len()),
+        written: String::with_capacity(text.len()),
+        extra: Vec::new(),
+        marked: String::with_capacity(text.len()),
+        marks: Vec::new(),
+    };
+    let mut cut = false;
+    for c in text.chars() {
+        if removable(c) {
+            f.extra.push(f.written.len());
+            f.written.push(if c.is_whitespace() { ' ' } else { MARK });
+            cut = true;
+            continue;
+        }
+        if std::mem::take(&mut cut) {
+            f.marks.push(f.marked.len());
+            f.marked.push(MARK);
+        }
+        let c = if c == '\u{212A}' { 'K' } else { c };
+        f.read.push(c);
+        f.written.push(c);
+        f.marked.push(c);
     }
-    let read = readable(text);
-    redactor.redact(&read) != read.as_str()
+    if cut {
+        f.marks.push(f.marked.len());
+        f.marked.push(MARK);
+    }
+    f
+}
+
+/// [`readable`]'s text, and the spans [`redacted`] hides in it, merged.
+fn credential_spans(text: &str) -> (String, Vec<(usize, usize)>) {
+    let f = forms(text);
+    let redactor = crate::redact::Redactor::global();
+    // With nothing removed, the text as read is all there is.
+    if f.marks.is_empty() {
+        let spans = redactor.spans(&f.read);
+        return (f.read, spans);
+    }
+    let [mut spans, written, marked] = redactor.untrusted_spans(&f.read, &f.written, &f.marked);
+    // Each byte put in is one that `read` hasn't.
+    let to_read = |put: &[usize], b: usize| b - put.partition_point(|&at| at < b);
+    spans.extend(
+        written
+            .into_iter()
+            .map(|(start, end)| (to_read(&f.extra, start), to_read(&f.extra, end))),
+    );
+    spans.extend(
+        marked
+            .into_iter()
+            .map(|(start, end)| (to_read(&f.marks, start), to_read(&f.marks, end))),
+    );
+    spans.retain(|(start, end)| end > start);
+    (f.read, crate::redact::merge(spans))
 }
 
 /// The markers Claude Code's prompt puts in place of a paste or an image
@@ -578,6 +659,383 @@ mod tests {
             redacted("Release on Thursdays \u{200b}ok"),
             "Release on Thursdays ok"
         );
+    }
+
+    #[test]
+    fn f_tk_08_1_redacted_hides_a_credential_what_is_removable_both_sets_apart_and_splits() {
+        // As written the split stops the rule's body, and once what's
+        // removable goes the join hides its edge: a token rule counts a word
+        // boundary where the removal cut too (D-3170). The review of
+        // a106fbf1's four probes, then two long tails after a late split,
+        // which go with the rest (its SF1 and Nit 1).
+        let z = '\u{200b}';
+        for text in [
+            format!("abc{z}ghp_0123456789{z}abcdefghijABCDEFGHIJ012345"),
+            format!("npm_0123456789{z}abcdefghijABCDEFGHIJ012345{z}x"),
+            format!("x{z}AIza0123456789{z}abcdefghijABCDEFGHIJ01234"),
+            format!("AKIA0123456789{z}ABCDEF{z}Z"),
+        ] {
+            assert!(holds_credential(&text), "{text:?}");
+            let safe = redacted(&text);
+            assert!(!safe.contains("0123456789"), "{safe:?}");
+            assert!(safe.contains(crate::redact::REDACTED), "{safe:?}");
+        }
+        let tail = "abcdefghijABCDEFGHIJ0123456789abcdefghijABCDEFGHIJ0123";
+        for text in [
+            format!("xoxb-0123456789{z}{tail}"),
+            format!("sk-ant-api03-ABCDEFGHIJ0123456789{z}{tail}abcdefghij01"),
+        ] {
+            let safe = redacted(&text);
+            assert!(!safe.contains(&tail[..20]), "{safe:?}");
+        }
+        // Nothing is found where nothing was cut: a word that only holds a
+        // prefix stays.
+        assert_eq!(
+            redacted("disk-usage-monitoring-service-name"),
+            "disk-usage-monitoring-service-name"
+        );
+        assert!(!holds_credential(
+            "disk\u{200b}usage-monitoring-service-name"
+        ));
+    }
+
+    #[test]
+    fn f_tk_08_1_a_bearer_token_what_is_removable_sets_apart_and_splits_is_hidden() {
+        // The value after `Bearer` too, set apart from a letter and split
+        // (the review of 7f61c86a, Nit 2; D-3172).
+        let text = "abc\u{200b}Bearer abcdefghij\u{200b}klmnopqrstuvwxyz0123";
+        assert!(holds_credential(text));
+        let safe = redacted(text);
+        assert!(
+            !safe.contains("abcdefghij") && !safe.contains("klmnopqrst"),
+            "{safe:?}"
+        );
+    }
+
+    #[test]
+    fn f_tk_08_1_a_joiner_sets_a_credential_apart_as_any_removable_does() {
+        // Unicode counts the joiners as word characters, so its word
+        // boundary doesn't hold next to one. In the copy the pass as
+        // written reads, anything removable is a mark, and a mark is a
+        // boundary, so a joiner sets a credential apart and splits it as a
+        // zero-width space does (D-3172).
+        for c in [
+            '\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{00ad}', '\u{feff}',
+        ] {
+            assert!(removable(c), "{c:?}");
+            for text in [
+                format!("x{c}AKIA01234{c}56789ABCDEF{c}x"),
+                format!("x{c}ghp_0123456789{c}abcdefghijABCDEFGHIJ012345"),
+                format!("x{c}Bearer abcdefghij{c}klmnopqrstuvwxyz0123"),
+            ] {
+                assert!(holds_credential(&text), "{text:?}");
+                let safe = redacted(&text);
+                assert!(
+                    !safe.contains("0123") && !safe.contains("klmnopqrst"),
+                    "{text:?}: {safe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_what_is_removable_elsewhere_changes_nothing() {
+        // The pass as written counts a match only with a mark in it or
+        // next to it. So an emoji's joiners elsewhere don't bring its ASCII
+        // word boundary to a word the plain redactor keeps, and a value
+        // that a mark sets apart still reads as code (D-3172; the review of
+        // 7f61c86a, Nit 4).
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        for text in [
+            "Gda\u{144}sk-Oliwa-Przymorze-Uniwersytet",
+            "passwd = fallback_getpass(prompt)",
+            "pushed with ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ] {
+            let with = format!("{text} and {family}");
+            assert_eq!(
+                redacted(&with),
+                crate::redact::redact(&readable(&with)),
+                "{with:?}"
+            );
+        }
+        assert!(!holds_credential(
+            "passwd = \u{200b}fallback_getpass(prompt)"
+        ));
+    }
+
+    /// What's removable, one of each kind the reviews used: spaces and
+    /// joiners, controls, marks, a tag and a bidirectional control.
+    fn sixteen() -> [char; 16] {
+        let all = [
+            '\u{200b}',
+            '\u{200c}',
+            '\u{200d}',
+            '\u{2060}',
+            '\u{feff}',
+            '\u{00ad}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{000b}',
+            '\u{000c}',
+            '\u{0085}',
+            '\u{034f}',
+            '\u{fe0f}',
+            '\u{180e}',
+            '\u{e0001}',
+            '\u{202e}',
+        ];
+        for c in all {
+            assert!(removable(c), "{c:?}");
+        }
+        all
+    }
+
+    #[test]
+    fn f_tk_08_1_what_the_text_as_written_kept_apart_stays_hidden() {
+        // The copy joins what the text as written kept apart, and the pass
+        // as written finds it there (the review of 8e1d58af, MUST-FIX 1;
+        // D-3172).
+        // (a) `Bearer` and its value across removable whitespace.
+        for ws in ['\u{2028}', '\u{2029}', '\u{000b}', '\u{000c}', '\u{0085}'] {
+            let text = format!("Authorization: Bearer{ws}abcdefghijklmnopqrstuvwxyz0123");
+            assert!(holds_credential(&text), "{text:?}");
+            assert!(!redacted(&text).contains("abcdefghij"), "{text:?}");
+        }
+        // (b) A high-entropy value that what's removable ends, and a tail
+        // that would make it plain once joined.
+        let tail = "a".repeat(40);
+        for key in ["session:", "key:", "auth", "signature"] {
+            for c in sixteen() {
+                let text = format!("{key} Xk9qL2mP7vR4tY8wZ1nB5cD3fG6hJ0{c}{tail}");
+                assert!(holds_credential(&text), "{text:?}");
+                assert!(!redacted(&text).contains("Xk9qL2mP7v"), "{text:?}");
+            }
+        }
+        // (c) An assignment's value that a line separator ends, before
+        // what would read as code once joined.
+        for text in [
+            "password=hunter2hunter2\u{2028}getpass()",
+            "token: hunter296690\u{2028}.",
+            "MYSQL_ROOT_PASSWORD: R00tPassw0rd99\u{2028}print(x)",
+        ] {
+            assert!(holds_credential(text), "{text:?}");
+            let safe = redacted(text);
+            for value in ["hunter2hunter2", "hunter296690", "R00tPassw0rd99"] {
+                assert!(!safe.contains(value), "{safe:?}");
+            }
+        }
+        // (d) A decoy that a removable joins to the real thing.
+        let z = '\u{200b}';
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0";
+        for (text, real) in [
+            (
+                format!(
+                    "ghp_{}{z}ghp_Zq7Xk9Lm2Np4Rs6Tv8Wx0Yz1Ab3Cd5Ef7Gh9abcd",
+                    "a".repeat(30)
+                ),
+                "Zq7Xk9Lm2Np4",
+            ),
+            (
+                format!("eyJaaaaaaaa.bbbbbbbb{z}.{jwt}"),
+                "eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+            ),
+            (
+                format!(
+                    "Bearer abcdefghijklmnopqrstuvwxyz{z}Bearer ZYXWVUTSRQPONMLKJIHGFEDCBA98765"
+                ),
+                "ZYXWVUTSRQ",
+            ),
+        ] {
+            let safe = redacted(&text);
+            assert!(!safe.contains(real), "{text:?}: {safe:?}");
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_a_mark_in_a_word_outside_ascii_makes_no_token() {
+        // In the copy, ASCII's word boundary holds after `ń`. A match there
+        // counts only where its rule's boundary has a mark or Unicode's
+        // boundary, so a soft hyphen in a place name doesn't make a token
+        // of `sk-…` (the review of 8e1d58af, Nit 1; D-3172).
+        for text in [
+            "Gda\u{144}sk-Oliwa-Przy\u{ad}morze-Uniwersytet",
+            "Gda\u{144}sk-Oliwa-Przymorze-Uniwersytet\u{200e} station",
+            "Mi\u{144}sk-Mazowiecki-Dworzec-Kolejowy\u{ad}",
+        ] {
+            assert!(!holds_credential(text), "{text:?}");
+            assert_eq!(redacted(text), readable(text));
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_a_mark_before_a_query_key_keeps_the_query() {
+        // A query's value ends at `&`, and a mark before its key is where
+        // the removal cut, not the query's (the review of 8e1d58af, Nit 2).
+        let text = "GET /api?\u{200c}access_token=Z94rKq81LmNt5Vx0Pq3S&page=2";
+        let safe = redacted(text);
+        assert!(safe.ends_with("&page=2"), "{safe:?}");
+        assert!(!safe.contains("Z94rKq81"), "{safe:?}");
+    }
+
+    /// Text built to make the redactor work hard, about `size` bytes:
+    /// - runs of token prefixes with what's removable among them, each with
+    ///   one real token of its kind so no prefilter skips it;
+    /// - what's removable everywhere, with no token;
+    /// - a private key's start with no end, and a bearer value split all
+    ///   the way;
+    /// - many kinds at once, and random text with what's removable and
+    ///   letters outside ASCII;
+    /// - text outside ASCII, where a rule with Unicode's word boundary
+    ///   can't use its DFA.
+    fn adversarial(size: usize) -> Vec<String> {
+        let z = '\u{200b}';
+        let mut one = "sk-".repeat(size / 3);
+        one.insert(size / 6 * 3, z);
+        let kinds = [
+            "sk-",
+            "ghp_",
+            "xoxb-",
+            "AKIA",
+            "eyJ",
+            "-----BEGIN ",
+            "Bearer ",
+            "SG.",
+            "AIza",
+            "npm_",
+            "glpat-",
+            "xapp-1-",
+            "https://hooks.slack.com/services/",
+            "password=",
+            "--token ",
+            "ya29.",
+            "hf_",
+            "sk_live_",
+        ];
+        let mut mixed = String::new();
+        let mut k = 0;
+        while mixed.len() < size {
+            mixed.push_str(kinds[k % kinds.len()]);
+            mixed.push(z);
+            mixed.push_str(&"aB3".repeat(k % 7));
+            k += 1;
+        }
+        let alnum = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+        let (mut random, mut seed) = (String::new(), 12_345_u32);
+        while random.len() < size {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            random.push(match (seed >> 16) % 100 {
+                0..=59 => char::from(alnum[(seed >> 8) as usize % alnum.len()]),
+                60..=69 => z,
+                70..=74 => '\u{200d}',
+                75..=84 => '\u{e9}',
+                85..=89 => '\u{65e5}',
+                90..=94 => ' ',
+                _ => '=',
+            });
+        }
+        vec![
+            one,
+            format!("sk-{z}").repeat(size / 6),
+            format!(
+                "{}eyJabcdefgh.eyJabcdefgh.abcdefghij",
+                format!("eyJ{z}").repeat(size / 6)
+            ),
+            format!(
+                "{}xapp-1-abcdefghijklmn",
+                format!("xapp-1{z}").repeat(size / 9)
+            ),
+            format!(
+                "{}SG.abcdefghijklmnop.ABCDEFGHIJKLMNOP",
+                format!("SG.{z}").repeat(size / 6)
+            ),
+            format!(
+                "{}ghp_0123456789abcdefghijABCDEFGHIJ012345",
+                format!("gh{z}p_").repeat(size / 8)
+            ),
+            format!("a{z}").repeat(size / 4),
+            format!(
+                "-----BEGIN PRIVATE KEY-----\n{}",
+                format!("MIIE{z}vQIB").repeat(size / 11)
+            ),
+            format!("Bearer {}", format!("ab{z}").repeat(size / 5)),
+            mixed,
+            random,
+            format!("\u{e9}{}", "sk-".repeat(size / 3)),
+            format!("\u{e9} Bearer {}", "a".repeat(size)),
+        ]
+    }
+
+    #[test]
+    fn f_tk_08_1_redacted_takes_time_in_line_with_the_text_however_it_is_written() {
+        // An agent or a page can write such text, and `redacted` runs on
+        // pane output, CI logs, scrollback, plugin replies and the phone.
+        // Every pass is one scan a rule, so a megabyte takes well under the
+        // bound, which is loose for a busy machine (D-3172, the review of
+        // 7f61c86a). An earlier pass ran from every start: 600 s at 1 MB.
+        // The review's two shapes and the four like them have 2 s each.
+        // The rest cost more a byte, and have 4 s: a candidate of every
+        // kind every 30 bytes, and text outside ASCII, where a rule as it
+        // is can't use its DFA. The growth check holds them all to a line.
+        // Each call is timed on its own, and so are the passes: as read
+        // alone, which is also the plain redactor's, and all three, on the
+        // forms `redacted` gives them. The redactor is built once, before
+        // the clock starts. These bounds aren't a ceiling for any text: the
+        // plain rules alone take far longer on some (the review of
+        // 8e1d58af, Nit 5).
+        let _ = crate::redact::Redactor::global();
+        type Call = (&'static str, fn(&str));
+        let calls: [Call; 4] = [
+            ("redacted", |t| {
+                let _ = std::hint::black_box(redacted(t));
+            }),
+            ("holds_credential", |t| {
+                let _ = std::hint::black_box(holds_credential(t));
+            }),
+            ("the pass as read", |t| {
+                let f = forms(t);
+                let _ = std::hint::black_box(crate::redact::Redactor::global().spans(&f.read));
+            }),
+            ("the three passes", |t| {
+                let f = forms(t);
+                let redactor = crate::redact::Redactor::global();
+                let spans = redactor.untrusted_spans(&f.read, &f.written, &f.marked);
+                let _ = std::hint::black_box(spans);
+            }),
+        ];
+        for (shape, text) in adversarial(1 << 20).into_iter().enumerate() {
+            let bound = std::time::Duration::from_secs(if shape < 6 { 2 } else { 4 });
+            for (call, run) in calls {
+                let started = std::time::Instant::now();
+                run(&text);
+                let took = started.elapsed();
+                assert!(
+                    took < bound,
+                    "{call} of {} bytes starting {:?} took {took:?}",
+                    text.len(),
+                    text.chars().take(8).collect::<String>()
+                );
+            }
+        }
+        // Twice the text, about twice the time: best of three, each side.
+        let best = |text: &str| {
+            (0..3)
+                .map(|_| {
+                    let started = std::time::Instant::now();
+                    let _ = redacted(text);
+                    started.elapsed()
+                })
+                .min()
+                .unwrap_or_default()
+        };
+        let (small, large) = (adversarial(1 << 18), adversarial(1 << 19));
+        for (a, b) in small.iter().zip(&large) {
+            let (t1, t2) = (best(a), best(b));
+            assert!(
+                t2 < t1 * 3 + std::time::Duration::from_millis(30),
+                "{} bytes took {t1:?}, twice that {t2:?}",
+                a.len()
+            );
+        }
     }
 
     #[test]

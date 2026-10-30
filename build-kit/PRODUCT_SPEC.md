@@ -1254,7 +1254,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 #### F-TH-16 Switch engine mid-thread (P1)
 **Behavior:**
 - Between turns, the user can change the engine or account from the composer.
-- Tandem starts a new engine session seeded with a summary: the last 20 messages as text plus the names of completed tool actions, with no raw tool output.
+- Tandem starts a new engine session seeded with a summary: the last 20 messages as text plus the names of completed tool actions, with no raw tool output. Secrets in it are redacted (F-TL-02), as in a handoff's brief (F-CD-16), so a token pasted in the thread doesn't reach the next engine's vendor.
 - A divider in the transcript reads "Continued on <engine> (<account>) with a summary". Token usage accumulates per engine.
 
 **Acceptance:**
