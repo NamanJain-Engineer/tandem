@@ -4024,6 +4024,12 @@ Built on `m16a-conductor` (from `product-m0-m5` at chain19) from `docs/NEXT_FEAT
     - the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt;
     - coverage 194, and protocol drift with 596 types (none added).
   - **E2E** on the working tree, twice: m10-2-briefing-learning (4 tests), m10-3-memory-skills (4), m16-4-phone (5), m18-cn09-walk-and-review (3) and m18-tk08-lead-keeps-moving (1) passed every test in both runs. Both runs exited 1 from the runner's teardown, after every spec had passed: the `cleanHomes` ENOTEMPTY that chain27 fixes.
+- [x] The review of d2b219f1 ("changes required", one must-fix), fixed by the coordinator on chain27 after merging d2b219f1, since the sessions' messaging was down after a container restart:
+  - **Must-fix (D-3172).** Nit 1's closing edge stopped hiding a split token that runs into a letter outside ASCII, which 7f61c86a and 8e1d58af hid (`A<U+200B>KIAIABN48B5MPWWYTUGé` came back whole; 4,824 of the review's 67,056 glued inputs, every rule that ends on `\b`). A match in the copy is held to Unicode's boundary at its start only, which is all `Gdańsk-…` needs. The review measured this fix on its own: none of the 4,824 lost, the same benign false positives, and the Gdańsk and query probes clean. Test: core `f_tk_08_1_a_split_token_that_runs_into_a_letter_outside_ascii_stays_hidden`.
+  - **Nit 1.** A value cut at its mark ends no later than the whole value's span, so a cut that drops the `.com` an `@host` end is read from no longer hides `@gith` too. Test: core `f_tk_08_1_a_cut_value_keeps_the_host_after_its_at`.
+  - **Nit 2.** The timing test's growth check takes the best of four on each side, in turn, and times a pair again once before failing; the bound is unchanged. It failed twice while chain27's E2E ran.
+  - **Left for 0.14.0:** check output is still captured as its last 64 KB by bytes (`bestof.rs`, `OUTPUT_CAP`) before anything redacts it, so a key across that edge can arrive in part.
+  - tandem-core 309 passed (8 + 2 more), clippy and fmt clean.
 
 ### M18 · Review loop decisions
 - D-2420: The second opinion is a worktree action (its menu and its diff), not a thread or checkpoint one. The worktree's diff already holds what its threads and checkpoints changed, and the review bar is per worktree (F-WT-02).

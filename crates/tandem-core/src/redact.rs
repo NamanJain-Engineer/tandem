@@ -37,15 +37,17 @@ enum Extract {
 struct Rule {
     re: Regex,
     extract: Extract,
-    /// Whether the rule opens and closes on a word boundary, which
-    /// [`tolerant`] writes as ASCII's (D-3172).
-    edges: (bool, bool),
+    /// Whether the rule opens on a word boundary, which [`tolerant`]
+    /// writes as ASCII's (D-3172).
+    opens_on_boundary: bool,
 }
 
-/// Whether `pattern` opens and closes on `\b`, past a flag group.
-fn edges(pattern: &str) -> (bool, bool) {
-    let body = pattern.strip_prefix("(?i)").unwrap_or(pattern);
-    (body.starts_with(r"\b"), body.ends_with(r"\b"))
+/// Whether `pattern` opens on `\b`, past a flag group.
+fn opens_on_boundary(pattern: &str) -> bool {
+    pattern
+        .strip_prefix("(?i)")
+        .unwrap_or(pattern)
+        .starts_with(r"\b")
 }
 
 /// Whether `c` is a word character as Unicode's `\b` reads it.
@@ -507,7 +509,7 @@ impl Redactor {
             .map(|((pattern, extract), (plain, _))| Rule {
                 re: Regex::new(&pattern).expect("written pattern compiles"),
                 extract,
-                edges: edges(plain),
+                opens_on_boundary: opens_on_boundary(plain),
             })
             .collect();
         let rules = specs
@@ -515,7 +517,7 @@ impl Redactor {
             .map(|(pattern, extract)| Rule {
                 re: Regex::new(&pattern).expect("redaction pattern compiles"),
                 extract,
-                edges: edges(&pattern),
+                opens_on_boundary: opens_on_boundary(&pattern),
             })
             .collect();
         let token_re = Regex::new(r"[A-Za-z0-9+/_.~-]{8,}").expect("token pattern compiles");
@@ -572,9 +574,11 @@ impl Redactor {
     ///   removal split, set apart from a letter, or both, is found.
     ///
     /// In `marked`, a match counts only with a mark in it or next to it:
-    /// anywhere else, `read` says the same. Where its rule opens or closes
-    /// on a word boundary, that edge has a mark or Unicode's boundary there,
-    /// so ASCII's doesn't add a word that a letter outside ASCII runs into.
+    /// anywhere else, `read` says the same. Where its rule opens on a word
+    /// boundary, its start has a mark or Unicode's boundary there, so
+    /// ASCII's doesn't make a token of a word that a letter outside ASCII
+    /// runs into. Its end isn't held to that: a token that runs into a
+    /// letter outside ASCII is still a token.
     /// Validators read a value without its marks, and a value with a mark
     /// in it is also read cut at that mark, where the text as written ended
     /// it.
@@ -617,22 +621,16 @@ impl Redactor {
                 || (a > 0 && at_mark(a - 1))
                 || at_mark(b)
         };
-        // Whether a match's edges are word boundaries where its rule wants
-        // them, with a mark or as Unicode reads them.
-        let edged = |rule: &Rule, a: usize, b: usize| {
-            if !marked {
-                return true;
-            }
-            let opens = !rule.edges.0
+        // Whether a match opens on a word boundary where its rule wants one,
+        // with a mark or as Unicode reads it. Only its start: a token split
+        // by a mark that runs into `é` or `中` is still hidden, as 7f61c86a
+        // hid it (the review of d2b219f1).
+        let edged = |rule: &Rule, a: usize| {
+            !marked
+                || !rule.opens_on_boundary
                 || a == 0
                 || at_mark(a - 1)
-                || !s[..a].chars().next_back().is_some_and(word);
-            let closes = !rule.edges.1
-                || b == s.len()
-                || at_mark(b)
-                || (b > a && at_mark(b - 1))
-                || !s[b..].chars().next().is_some_and(word);
-            opens && closes
+                || !s[..a].chars().next_back().is_some_and(word)
         };
         let mut spans = Vec::new();
         let mut push = |span: Option<(usize, usize)>| {
@@ -657,7 +655,7 @@ impl Redactor {
                 Extract::Whole => {
                     for m in rule.re.find_iter(s) {
                         let (a, b) = (m.start(), m.end());
-                        push((touches(a, b) && edged(rule, a, b)).then_some((a, b)));
+                        push((touches(a, b) && edged(rule, a)).then_some((a, b)));
                     }
                 }
                 // As written, only a match that counts runs the captures,
@@ -666,13 +664,14 @@ impl Redactor {
                 Extract::Value(_) | Extract::Custom(_) if marked => {
                     for m in rule.re.find_iter(s) {
                         let (a, b) = (m.start(), m.end());
-                        if a == b || !touches(a, b) || !edged(rule, a, b) {
+                        if a == b || !touches(a, b) || !edged(rule, a) {
                             continue;
                         }
                         let Some(caps) = rule.re.captures_at(s, a) else {
                             continue;
                         };
-                        push(span(s, &caps));
+                        let whole = span(s, &caps);
+                        push(whole);
                         // Where the text as written ended the value: at its
                         // first mark (the review of 8e1d58af).
                         let cut = ["v", "vq", "vu"]
@@ -687,8 +686,14 @@ impl Redactor {
                                 .re
                                 .captures_at(head, a)
                                 .filter(|c| c.get(0).is_some_and(|m| m.start() == a));
+                            // It ends no later than the whole value's span: a
+                            // cut can drop what that span's end was read from,
+                            // such as the host after a URL's `@` (the review
+                            // of d2b219f1).
                             if let Some(caps) = same {
-                                push(span(head, &caps));
+                                push(span(head, &caps).map(|(start, end)| {
+                                    (start, whole.map_or(end, |(_, limit)| end.min(limit)))
+                                }));
                             }
                         }
                     }

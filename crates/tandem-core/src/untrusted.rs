@@ -868,6 +868,33 @@ mod tests {
     }
 
     #[test]
+    fn f_tk_08_1_a_split_token_that_runs_into_a_letter_outside_ascii_stays_hidden() {
+        // Only a match's start is held to Unicode's boundary: a token that
+        // what's removable splits stays hidden when `é` or `中` follows it,
+        // as 7f61c86a hid it (the review of d2b219f1, D-3172).
+        for (text, tail) in [
+            ("A\u{200b}KIAIABN48B5MPWWYTUG\u{e9}", "\u{e9}"),
+            ("AKIAIABN\u{ad}48B5MPWWYTUG\u{4e2d}", "\u{4e2d}"),
+        ] {
+            assert!(holds_credential(text), "{text:?}");
+            let safe = redacted(text);
+            assert!(safe.ends_with(tail), "{safe:?}");
+            assert!(!safe.contains("48B5MPWWYTUG"), "{safe:?}");
+        }
+    }
+
+    #[test]
+    fn f_tk_08_1_a_cut_value_keeps_the_host_after_its_at() {
+        // Cut at the mark, the value loses the `.com` its `@host` end is
+        // read from, and hid `@gith` too: the cut ends no later than the
+        // whole value's span (the review of d2b219f1).
+        let text = "git clone https://x-access-token:ghs_tssw586HacUJ8y5lmyjLxGrbZnvvGtIhuRfs@gith\u{200b}ub.com/acme/app.git";
+        let safe = redacted(text);
+        assert!(!safe.contains("tssw586"), "{safe:?}");
+        assert!(safe.ends_with("@github.com/acme/app.git"), "{safe:?}");
+    }
+
+    #[test]
     fn f_tk_08_1_a_mark_before_a_query_key_keeps_the_query() {
         // A query's value ends at `&`, and a mark before its key is where
         // the removal cut, not the query's (the review of 8e1d58af, Nit 2).
@@ -1016,22 +1043,33 @@ mod tests {
                 );
             }
         }
-        // Twice the text, about twice the time: best of three, each side.
-        let best = |text: &str| {
-            (0..3)
-                .map(|_| {
-                    let started = std::time::Instant::now();
-                    let _ = redacted(text);
-                    started.elapsed()
-                })
-                .min()
-                .unwrap_or_default()
+        // Twice the text, about twice the time: best of four, each side,
+        // taken in turn so a busy machine slows both alike, and timed again
+        // once before failing (the review of d2b219f1: under an E2E run's
+        // load one pair read 0.50 s, then 1.64 s). The bound is the same.
+        let time = |text: &str| {
+            let started = std::time::Instant::now();
+            let _ = redacted(text);
+            started.elapsed()
+        };
+        let pair = |a: &str, b: &str| {
+            (0..4).fold(
+                (std::time::Duration::MAX, std::time::Duration::MAX),
+                |(t1, t2), _| (t1.min(time(a)), t2.min(time(b))),
+            )
+        };
+        let linear = |(t1, t2): (std::time::Duration, std::time::Duration)| {
+            t2 < t1 * 3 + std::time::Duration::from_millis(30)
         };
         let (small, large) = (adversarial(1 << 18), adversarial(1 << 19));
         for (a, b) in small.iter().zip(&large) {
-            let (t1, t2) = (best(a), best(b));
+            let mut times = pair(a, b);
+            if !linear(times) {
+                times = pair(a, b);
+            }
+            let (t1, t2) = times;
             assert!(
-                t2 < t1 * 3 + std::time::Duration::from_millis(30),
+                linear(times),
                 "{} bytes took {t1:?}, twice that {t2:?}",
                 a.len()
             );
