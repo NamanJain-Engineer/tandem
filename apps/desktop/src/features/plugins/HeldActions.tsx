@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RiskClass, HeldDraft, IpcError, ToolResultView } from "@tandem/protocol";
 import {
   offscreenRow,
@@ -259,7 +259,13 @@ function EditAndRun({
   // the dialog has held still (F-TL-12 AC 18): an error shown above moves
   // it. Keyed by the draft, not the text, so typing doesn't restart it.
   const box = useSteadyBox(true, draft.id);
+  // One run at a time: a double-click on a steady Run sent the draft twice
+  // (the review of ce0d5815). A ref, so the second click in the same frame
+  // sees the first.
+  const running = useRef(false);
+  const [busy, setBusy] = useState(false);
   const submit = () => {
+    if (running.current) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
@@ -268,8 +274,15 @@ function EditAndRun({
       return;
     }
     setProblem(null);
+    running.current = true;
+    setBusy(true);
     // A schema problem comes back as the error and nothing runs.
-    onRun(parsed).catch((e: IpcError) => setProblem(e.message));
+    onRun(parsed)
+      .catch((e: IpcError) => setProblem(e.message))
+      .finally(() => {
+        running.current = false;
+        setBusy(false);
+      });
   };
   return (
     <Dialog
@@ -285,6 +298,7 @@ function EditAndRun({
           <Button
             variant="primary"
             data-grant
+            loading={busy}
             waiting={!box.steady}
             title={box.steady ? undefined : t("approval.waitingRun")}
             onClick={() => {

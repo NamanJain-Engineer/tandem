@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConductorMemory, IpcError, WakeStatus } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
@@ -124,10 +124,13 @@ describe("Settings › Conductor (UI-67, F-CN-06, F-CN-07)", () => {
     await screen.findByText("Prefers Rust");
     const keep = screen.getByTestId("conductor-proposal-keep");
     await waitFor(() => expect(waiting(keep)).toBe(false));
+    // A double-click keeps it once (the review of ce0d5815).
+    fireEvent.click(keep);
     fireEvent.click(keep);
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "conductor_memory_resolve")?.args).toEqual({ proposalIds: ["mem_1"], keep: true }),
     );
+    expect(calls.filter((c) => c.cmd === "conductor_memory_resolve")).toHaveLength(1);
   });
 
   it("F-TL-12.16 Keep waits until its row has held still: the next proposal slides into the one resolved", async () => {
@@ -140,21 +143,36 @@ describe("Settings › Conductor (UI-67, F-CN-06, F-CN-07)", () => {
       conductor_memory_resolve: () => memory({ enabled: true, proposals: [two[1]!] }),
       conductor_wake_status: () => listening,
     });
+    // jsdom lays nothing out: each row is 40 px below the one before it,
+    // and what's in a row sits where the row does.
+    const rects = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const row = this.closest<HTMLElement>('[data-testid="conductor-proposal"]');
+      const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="conductor-proposal"]'));
+      const top = row ? 40 * rows.indexOf(row) : 0;
+      return { left: 0, top, width: 300, height: 32, right: 300, bottom: top + 32, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
     open({ conductor_memory: true });
     await screen.findByText("Prefers Rust");
     expect(
       screen.getAllByTestId("conductor-proposal-keep").every((b) => b.getAttribute("data-grant") !== null),
     ).toBe(true);
-    // Discard the first: the second takes its place, and its Keep waits.
+    // Both rows have held still: the second's Keep is on.
+    const second = () => screen.getAllByTestId("conductor-proposal-keep").at(-1)!;
+    await waitFor(() => expect(waiting(second())).toBe(false));
+    // Discard the first: the second slides into its place, and its Keep
+    // waits again (the review of ce0d5815: it was still in its first wait).
     fireEvent.click(screen.getAllByRole("button", { name: "Discard" })[0]!);
     await waitFor(() => expect(screen.getAllByTestId("conductor-proposal")).toHaveLength(1));
     const keep = screen.getByTestId("conductor-proposal-keep");
-    expect(waiting(keep)).toBe(true);
+    await waitFor(() => expect(waiting(keep)).toBe(true));
     expect(keep.getAttribute("title")).toBe("Keep turns on once this has been still on screen for a moment.");
     // A double-click's second click lands on it: nothing is kept.
     fireEvent.click(keep);
     expect(calls.filter((c) => c.cmd === "conductor_memory_resolve")).toHaveLength(1);
     await waitFor(() => expect(waiting(screen.getByTestId("conductor-proposal-keep"))).toBe(false));
+    rects.mockRestore();
   });
 
   it("F-CN-06 loading and error states", async () => {

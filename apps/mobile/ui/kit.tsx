@@ -30,8 +30,9 @@ export function Small({ children }: { children: ReactNode }) {
 type ButtonProps = {
   label: string;
   onPress: () => void;
-  /** When the tap begins (Allow judges a tap by it, F-TL-12 AC 21). */
-  onPressIn?: () => void;
+  /** When the tap begins, with the touch's own time (Allow judges a tap by
+   * it, F-TL-12 AC 21). */
+  onPressIn?: (stamp: number | undefined) => void;
   /** Why it's off, for screen readers. */
   accessibilityHint?: string;
   variant?: "primary" | "secondary" | "danger";
@@ -60,7 +61,7 @@ export function Button({
       accessibilityHint={accessibilityHint}
       testID={testID}
       onPress={onPress}
-      onPressIn={onPressIn}
+      onPressIn={onPressIn && ((e) => onPressIn(e.nativeEvent.timestamp))}
       disabled={disabled}
       style={({ pressed }) => [
         s.button,

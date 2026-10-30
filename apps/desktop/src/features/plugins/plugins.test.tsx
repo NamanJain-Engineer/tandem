@@ -407,8 +407,12 @@ describe("F-PL-08 held actions", () => {
     fireEvent.click(run);
     expect(calls.some((c) => c.cmd === "held_draft_run")).toBe(false);
     await waitFor(() => expect(waiting(screen.getByTestId("held-edit-run"))).toBe(false));
+    // A double-click runs it once (the review of ce0d5815).
+    fireEvent.click(screen.getByTestId("held-edit-run"));
     fireEvent.click(screen.getByTestId("held-edit-run"));
     await waitFor(() => expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c.cmd === "held_draft_run")).toHaveLength(1);
     expect(calls.find((c) => c.cmd === "held_draft_run")?.args).toEqual({
       draftId: "hd_12",
       editedArgs: { owner: "octo-shop", repo: "web", title: "Bump 12" },

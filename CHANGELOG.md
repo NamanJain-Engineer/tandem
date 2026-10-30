@@ -47,10 +47,12 @@ release fails when its version has no section.
   suggestion sliding into place can't be kept by a click meant for the one
   before. On a phone, Allow waits the same way, on the web and in the app, and
   each answer is sent once. A menu open elsewhere no longer dims Allow, and in
-  a very short pane, scrolling a question to its end turns Allow on.
-- [lin] **A token's expiry stays readable.** Text that names when a token or
-  secret expires or was made (`token_expires_at: 2025-10-30T18:00:00Z`,
-  `tokenExpiresAt`) is no longer hidden as if it were the token itself.
+  a very short pane the buttons keep to one row, so scrolling a question to
+  its end shows the command's last line above them.
+- [lin] **A token's expiry stays readable.** A date or time under a name
+  that says when a token or secret expires or was made
+  (`token_expires_at: 2025-10-30T18:00:00Z`) is no longer hidden as if it
+  were the token itself, while a secret under such a name still is.
 - [lin] **One crafted text no longer slows every key check after it.**
   Vibezeo hides keys and tokens before text reaches a model, your phone or
   anything else off your computer. A long text built to wear out the fast way

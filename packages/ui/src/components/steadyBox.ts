@@ -157,11 +157,16 @@ function hidden(el: HTMLElement): boolean {
 
 /** A corner's radius in px across (`h`) and down (`v`), from its computed
  * `border-*-radius` ("6px", "9999px", "50%", "8px 4px"), at most half the
- * side it rounds. */
+ * side it rounds. A value that doesn't read as a length (one an engine
+ * keeps as `calc(50% - 1px)`) is read as the most the corner can round:
+ * read as none, a pill's corner point sat outside its curve and the control
+ * counted as covered for good (the review of ce0d5815). */
 function radius(value: string, width: number, height: number): [number, number] {
   const [h = "0", v = h] = value.trim().split(/\s+/);
   const px = (s: string, side: number) => {
+    if (s === "") return 0;
     const n = Number.parseFloat(s);
+    if (Number.isNaN(n)) return side / 2;
     if (!Number.isFinite(n) || n <= 0) return 0;
     return Math.min(s.endsWith("%") ? (n * side) / 100 : n, side / 2);
   };
@@ -217,6 +222,13 @@ function pageInert(): boolean {
  * events off page-wide, so the menu doesn't hold every Allow off. */
 function covered(el: HTMLElement): boolean {
   if (typeof document.elementFromPoint !== "function") return false;
+  // The page's own viewport, the one rects and hit tests use. A phone
+  // zoomed in shrinks innerWidth and innerHeight to what it shows, and
+  // Allow below that counted as past the window, waiting for good (the
+  // review of ce0d5815, SF-3).
+  const root = document.documentElement;
+  const width = root.clientWidth || window.innerWidth;
+  const height = root.clientHeight || window.innerHeight;
   const marked = Array.from(el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`));
   const targets: HTMLElement[] = marked.length > 0 ? marked : [el];
   return targets.some((target) => {
@@ -224,7 +236,7 @@ function covered(el: HTMLElement): boolean {
     if (r.width <= 0 || r.height <= 0) return false;
     return pointsOf(target, r).some(([x, y]) => {
       // Past the window's edge nothing can be seen to be clicked.
-      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return true;
+      if (x < 0 || y < 0 || x >= width || y >= height) return true;
       const hit = document.elementFromPoint(x, y);
       if (hit === null) return true;
       if (target.contains(hit)) return false;

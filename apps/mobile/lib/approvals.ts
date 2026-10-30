@@ -27,3 +27,21 @@ export function allowTakesTap(since: number, pressedAt: number | null, now: numb
   const still = since + SETTLE_MS;
   return now >= still && (pressedAt === null || pressedAt >= still);
 }
+
+/** One clock for every time the card keeps: monotonic where the runtime
+ * has one, so a wall clock set back can't hold Allow off, or set forward
+ * pass for a wait (the review of ce0d5815). */
+export function now(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+}
+
+/** When a tap began: the touch's own time when it reads on the same clock
+ * (at most 1 s before the handler runs), else when the handler runs. A
+ * thread busy with the very refresh that moved the card ran the handler
+ * late, and a tap begun too early looked late enough (the review of
+ * ce0d5815, SF-2). Only ever the earlier of the two, so a touch time on
+ * another clock can't make a tap look later than it was handled. */
+export function pressedAt(handled: number, stamp: number | undefined): number {
+  if (stamp === undefined || !Number.isFinite(stamp)) return handled;
+  return stamp <= handled && stamp >= handled - 1_000 ? stamp : handled;
+}

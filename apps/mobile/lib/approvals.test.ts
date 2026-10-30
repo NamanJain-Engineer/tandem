@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PhoneApproval } from "@tandem/protocol";
-import { SETTLE_MS, allowTakesTap, approvalActions } from "./approvals";
+import { SETTLE_MS, allowTakesTap, approvalActions, pressedAt } from "./approvals";
 
 const base: PhoneApproval = {
   id: "ap_1",
@@ -47,5 +47,24 @@ describe("F-TL-12.21 the phone's Allow waits until its card has held still", () 
   it("with no press seen, a settled card takes the tap", () => {
     expect(allowTakesTap(since, null, since + SETTLE_MS)).toBe(true);
     expect(allowTakesTap(since, null, since + SETTLE_MS - 1)).toBe(false);
+  });
+});
+
+describe("F-TL-12.21 a tap's own time decides, not when the app got to it", () => {
+  it("a tap begun before the card held still is refused even when its handler ran late", () => {
+    const since = 10_000;
+    // The touch began 100 ms after the move; the busy thread handled it at
+    // +900 ms, which alone looks late enough.
+    expect(allowTakesTap(since, pressedAt(since + 900, since + 100), since + 950)).toBe(false);
+    expect(allowTakesTap(since, pressedAt(since + 900, since + 600), since + 950)).toBe(true);
+  });
+
+  it("a touch time on another clock is ignored, and never makes a tap later", () => {
+    expect(pressedAt(5_000, 4_500)).toBe(4_500);
+    // Ahead of the handler, or more than a second behind it: another clock.
+    expect(pressedAt(5_000, 5_200)).toBe(5_000);
+    expect(pressedAt(5_000, 1_000)).toBe(5_000);
+    expect(pressedAt(5_000, undefined)).toBe(5_000);
+    expect(pressedAt(5_000, Number.NaN)).toBe(5_000);
   });
 });

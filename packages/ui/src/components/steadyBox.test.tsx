@@ -366,6 +366,55 @@ describe("What counts as covered, and whose press a click is (F-TL-12.19)", () =
     expect(inPill([4, 4])).toBe(false);
   });
 
+  it("nit: a radius an engine keeps as calc() is read as the most the corner can round, so the pill's corners are still inside its curve", async () => {
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
+      const style = real(el);
+      if (el.tagName !== "BUTTON") return style;
+      return {
+        ...style,
+        pointerEvents: style.pointerEvents,
+        getPropertyValue: (p: string) => (p.endsWith("radius") ? "calc(50% - 1px)" : style.getPropertyValue(p)),
+      } as CSSStyleDeclaration;
+    });
+    const points: [number, number][] = [];
+    Object.defineProperty(document, "elementFromPoint", {
+      value: (x: number, y: number) => {
+        points.push([x, y]);
+        return measured;
+      },
+      configurable: true,
+    });
+    render(<Row n={0} />);
+    await waitFor(() => expect(allow().disabled).toBe(false));
+    // Allow is 90 × 30 at (0, 0), drawn as a pill: read as no radius, its
+    // corners were sampled 4 px in, outside the curve.
+    const inPill = ([x, y]: [number, number]) =>
+      (x - Math.min(Math.max(x, 15), 75)) ** 2 + (y - Math.min(Math.max(y, 15), 15)) ** 2 <= 15 ** 2;
+    for (const p of points.slice(0, 5)) expect(inPill(p), String(p)).toBe(true);
+  });
+
+  it("SF-3: a phone zoomed in still offers Allow below what it shows: the edge is the page's own viewport", async () => {
+    // Zoomed in 2x, the window shows 400 x 300 of the page's 800 x 600.
+    const root = document.documentElement;
+    Object.defineProperty(root, "clientWidth", { configurable: true, get: () => 800 });
+    Object.defineProperty(root, "clientHeight", { configurable: true, get: () => 600 });
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(400);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(300);
+    try {
+      const onAllow = vi.fn();
+      // The fourth row: Allow at 160 down, wholly on the page.
+      render(<Row n={4} onAllow={onAllow} />);
+      const four = () => screen.getByTestId("allow-4") as HTMLButtonElement;
+      await waitFor(() => expect(four().disabled).toBe(false));
+      fireEvent.click(four());
+      expect(onAllow).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (root as unknown as Record<string, unknown>).clientWidth;
+      delete (root as unknown as Record<string, unknown>).clientHeight;
+    }
+  });
+
   it("nit: a pointer that doesn't say what it is has a press of its own, and can't restart a held mouse press", async () => {
     function Swap({ k, onAllow }: { k: string; onAllow: () => void }) {
       const box = useSteadyBox(true, k);

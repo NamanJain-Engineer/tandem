@@ -1307,6 +1307,7 @@
   "runLine.cwd": "In {cwd}",
   "approval.waiting": "Allow turns on once this has been still on screen for a moment.",
   "approval.waitingEnd": "Scroll to the end of the command first.",
+  "approval.waitingEndAbove": "Scroll up a little to see the end of the command.",
   "approval.waitingChanged": "This question just changed: Allow turns on in a moment.",
   "approval.waitingApprove": "Approve turns on once this has been still on screen for a moment.",
   "approval.waitingDiff": "This diff just changed: Approve turns on in a moment.",

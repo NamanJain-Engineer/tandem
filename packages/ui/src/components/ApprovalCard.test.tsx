@@ -400,13 +400,13 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       await wait(1_050);
       // Esc to "cancel" when the card changed under the pointer.
       fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
       fireEvent.keyUp(document.body, { key: "Escape", code: "Escape" });
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(a).not.toHaveBeenCalled();
       expect(b).not.toHaveBeenCalled();
@@ -418,7 +418,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       await wait(1_050);
       fireEvent.pointerDown(document.body, { pointerId: 2, pointerType: "touch" });
@@ -428,12 +428,12 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       fireEvent.mouseUp(document.body, { button: 0 });
       fireEvent.click(document.body);
       await wait(300);
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();
       // A fresh press on B, once it has held still, allows it.
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(b).toHaveBeenCalledTimes(1);
     });
@@ -467,12 +467,12 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       fireEvent.blur(window);
       await wait(1_050);
       fireEvent.focus(window);
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(a).not.toHaveBeenCalled();
       expect(b).not.toHaveBeenCalled();

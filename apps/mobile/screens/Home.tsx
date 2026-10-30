@@ -1,6 +1,6 @@
 // Paired: agents, approvals, threads and teammate chats, routines and the
 // phone's settings, each with empty, loading, error and populated states.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -23,7 +23,7 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
-import { SETTLE_MS, allowTakesTap, approvalActions } from "../lib/approvals";
+import { SETTLE_MS, allowTakesTap, approvalActions, now, pressedAt } from "../lib/approvals";
 import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
@@ -197,19 +197,37 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
   const approvals = view.snapshot?.approvals ?? [];
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Each answer is sent once: a second tap while one is on its way, or
+  // after it went and before the list drops the card, sends nothing. Refs,
+  // so taps handled in one batch see each other (the review of ce0d5815).
+  const sending = useRef(new Set<string>());
+  const answered = useRef(new Set<string>());
   async function decide(a: PhoneApproval, d: "allow" | "deny") {
+    if (sending.current.has(a.id) || answered.current.has(a.id)) return;
+    sending.current.add(a.id);
     setBusy(a.id);
-    const r = await session.decide(a, d);
-    setBusy(null);
-    setError(r.ok ? null : r.message);
+    try {
+      const r = await session.decide(a, d);
+      if (r.ok) answered.current.add(a.id);
+      setError(r.ok ? null : r.message);
+    } finally {
+      sending.current.delete(a.id);
+      setBusy(null);
+    }
   }
-  // A scroll moves every card under the finger: each Allow waits again.
+  // A scroll moves every card under the finger: each Allow waits again. The
+  // ref is what a tap is judged by, set as the scroll lands; the state only
+  // runs the wait's timer.
+  const scrolled = useRef(0);
   const [scrolledAt, setScrolledAt] = useState(0);
   return (
     <ScrollView
       contentContainerStyle={st.list}
       scrollEventThrottle={100}
-      onScroll={() => setScrolledAt(Date.now())}
+      onScroll={() => {
+        scrolled.current = now();
+        setScrolledAt(scrolled.current);
+      }}
     >
       <Small>{t("approvals.armedNote")}</Small>
       {!view.grants?.approvals && <Notice tone="warning">{t("approvals.needsGrant")}</Notice>}
@@ -221,6 +239,7 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
           a={a}
           granted={!!view.grants?.approvals}
           busy={busy === a.id}
+          scrolled={scrolled}
           scrolledAt={scrolledAt}
           decide={decide}
         />
@@ -231,36 +250,58 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
 
 /** One approval. The list refreshes on its own and cards above come and go,
  * so Allow waits until this card has held still (its request, its place and
- * the list's scroll) for SETTLE_MS, and a tap begun before that allows
- * nothing (F-TL-12 AC 21). Deny never waits. */
+ * size, and the list's scroll) for SETTLE_MS, and a tap begun before that
+ * allows nothing (F-TL-12 AC 21). Deny never waits.
+ *
+ * A tap is judged by refs set as each change lands and by the touch's own
+ * time: read from the last render, a layout handled in the same batch as a
+ * quick tap wasn't seen yet, and a tap the busy thread handled late looked
+ * late enough (the review of ce0d5815, SF-2). One monotonic clock
+ * throughout. */
 function ApprovalCard({
   a,
   granted,
   busy,
+  scrolled,
   scrolledAt,
   decide,
 }: {
   a: PhoneApproval;
   granted: boolean;
   busy: boolean;
+  scrolled: { current: number };
   scrolledAt: number;
   decide: (a: PhoneApproval, d: "allow" | "deny") => Promise<void>;
 }) {
   const can = approvalActions(a, granted);
   const request = `${a.id}\n${a.summary}\n${a.detail}`;
-  const [top, setTop] = useState<number | null>(null);
-  const [changedAt, setChangedAt] = useState(() => Date.now());
-  useEffect(() => setChangedAt(Date.now()), [request, top]);
+  // When its request or its place last changed.
+  const changed = useRef(now());
+  const place = useRef<string | null>(null);
+  const [changedAt, setChangedAt] = useState(() => changed.current);
+  useLayoutEffect(() => {
+    changed.current = now();
+    setChangedAt(changed.current);
+  }, [request]);
   const since = Math.max(changedAt, scrolledAt);
   const [steady, setSteady] = useState(false);
   useEffect(() => {
     setSteady(false);
-    const timer = setTimeout(() => setSteady(true), Math.max(0, since + SETTLE_MS - Date.now()));
+    const timer = setTimeout(() => setSteady(true), Math.max(0, since + SETTLE_MS - now()));
     return () => clearTimeout(timer);
   }, [since]);
-  const pressedAt = useRef<number | null>(null);
+  const pressed = useRef<number | null>(null);
   return (
-    <View onLayout={(e) => setTop(e.nativeEvent.layout.y)}>
+    <View
+      onLayout={(e) => {
+        const { x, y, width, height } = e.nativeEvent.layout;
+        const at = `${x},${y},${width},${height}`;
+        if (at === place.current) return;
+        place.current = at;
+        changed.current = now();
+        setChangedAt(changed.current);
+      }}
+    >
       <Card>
         <Body>{a.summary}</Body>
         <Small>{a.source}</Small>
@@ -278,11 +319,17 @@ function ApprovalCard({
                 label={t("approvals.allow")}
                 disabled={busy || !can.allow || !steady}
                 accessibilityHint={steady ? undefined : t("approvals.allowWaiting")}
-                onPressIn={() => {
-                  pressedAt.current = Date.now();
+                onPressIn={(stamp) => {
+                  pressed.current = pressedAt(now(), stamp);
                 }}
                 onPress={() => {
-                  if (allowTakesTap(since, pressedAt.current, Date.now())) void decide(a, "allow");
+                  // Each tap its own: a screen reader's activation has no
+                  // press-in, and an old refused touch mustn't judge it.
+                  const began = pressed.current;
+                  pressed.current = null;
+                  if (allowTakesTap(Math.max(changed.current, scrolled.current), began, now())) {
+                    void decide(a, "allow");
+                  }
                 }}
               />
             )}

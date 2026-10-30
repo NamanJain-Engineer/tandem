@@ -52,18 +52,22 @@ async function settled(): Promise<void> {
 /** An IntersectionObserver the test drives: `show(true)` puts the observed
  * end marker in view. */
 function fakeObserver(): { show: (inView: boolean) => void } {
-  const seen: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+  type Entry = { isIntersecting: boolean; intersectionRatio: number };
+  const seen: Array<(entries: Entry[]) => void> = [];
   vi.stubGlobal(
     "IntersectionObserver",
     class {
-      constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+      constructor(cb: (entries: Entry[]) => void) {
         seen.push(cb);
       }
       observe() {}
       disconnect() {}
     },
   );
-  return { show: (inView) => act(() => seen.forEach((cb) => cb([{ isIntersecting: inView }]))) };
+  return {
+    show: (inView) =>
+      act(() => seen.forEach((cb) => cb([{ isIntersecting: inView, intersectionRatio: inView ? 1 : 0 }]))),
+  };
 }
 
 describe("a pane's approval (F-TL-12 slice 2)", () => {
@@ -312,22 +316,28 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(true);
   });
 
-  it("F-TL-12.20 in a 120 px pane whose buttons sit below the line's end, a scroll to the banner's end counts as seeing it, and each request starts at the top", async () => {
-    // The steady box is in view; the end marker never reports in view (at
-    // the banner's end it sits just above the view, or a wheel step carried
-    // it across between frames).
+  it("F-TL-12.20 in a 120 px pane Allow turns on once the line's end has been on screen: a jump past it says to scroll back up, the buttons keep to one row, and each request starts at the top", async () => {
+    // The steady box is in view; the end marker reports what the test says.
+    type Entry = { isIntersecting: boolean; intersectionRatio: number; target: Element };
+    const marker: Array<(e: Entry[]) => void> = [];
     vi.stubGlobal(
       "IntersectionObserver",
       class {
-        constructor(private cb: (e: Array<{ isIntersecting: boolean; target: Element }>) => void) {}
+        constructor(private cb: (e: Entry[]) => void) {}
         observe(el: Element) {
-          const inView = (el as HTMLElement).dataset.testid !== "run-line-end";
-          queueMicrotask(() => this.cb([{ isIntersecting: inView, target: el }]));
+          if ((el as HTMLElement).dataset.testid === "run-line-end") marker.push(this.cb);
+          else queueMicrotask(() => this.cb([{ isIntersecting: true, intersectionRatio: 1, target: el }]));
         }
         disconnect() {}
         unobserve() {}
       },
     );
+    const report = (ratio: number) =>
+      act(() =>
+        marker.forEach((cb) =>
+          cb([{ isIntersecting: ratio > 0, intersectionRatio: ratio, target: screen.getByTestId("run-line-end") }]),
+        ),
+      );
     fakeBackend({ approval_resolve: () => null });
     const command = `pnpm deploy ${"--flag ".repeat(400)}`;
     withApproval({ ...approval, detail: runDetail({ command, cwd: "/w", vars: [], envChanged: false }) });
@@ -338,9 +348,13 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
         </div>
       </UiProvider>,
     );
-    // jsdom lays nothing out: the banner shows 72 px of its 400.
+    // jsdom lays nothing out: the banner shows 72 px of its 400, and the
+    // marker sits where the test puts it.
     const banner = screen.getByTestId("pane-approval");
     let top = 0;
+    // The line's last line ends 324 px down: at the banner's end (328) it's
+    // just above the view, the case the review of ce0d5815 found (SF-1).
+    const markerBottom = 324;
     Object.defineProperty(banner, "clientHeight", { configurable: true, get: () => 72 });
     Object.defineProperty(banner, "scrollHeight", { configurable: true, get: () => 400 });
     Object.defineProperty(banner, "scrollTop", {
@@ -350,21 +364,38 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
         top = v;
       },
     });
+    vi.spyOn(banner, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 72 } as DOMRect);
+    const end = () => screen.getByTestId("run-line-end");
+    vi.spyOn(end(), "getBoundingClientRect").mockImplementation(
+      () => ({ top: markerBottom - top - 16, bottom: markerBottom - top }) as DOMRect,
+    );
     const once = () => screen.getByTestId("pane-approval-once") as HTMLButtonElement;
+    // The buttons keep to one row, so at the banner's end the line's last
+    // line shows above them; a narrow pane scrolls the row sideways.
+    const row = once().parentElement as HTMLElement;
+    expect(row.className).toContain("overflow-x-auto");
+    expect(row.className).not.toContain("flex-wrap");
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
     expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
-    // Partway down: still waiting.
-    top = 200;
-    fireEvent.scroll(banner);
-    await new Promise((r) => setTimeout(r, 100));
-    expect(waiting(once())).toBe(true);
-    // At its end: the line's end is behind it.
+    // A jump to the banner's end (End, Page Down, the scrollbar) passes the
+    // marker without showing it: that isn't seeing the line's end.
     top = 328;
     fireEvent.scroll(banner);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // Half of the line's last line in view isn't enough either.
+    report(0.5);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    // Scrolled back up until all of it shows: Allow turns on.
+    top = 300;
+    fireEvent.scroll(banner);
+    report(1);
     await settled();
-    // The request changes in place: it starts at the top, and its own
-    // scroll to the end is what counts.
+    // The request changes in place: it starts at the top, and only its own
+    // end on screen counts.
     act(() =>
       withApproval({
         ...approval,
@@ -374,8 +405,12 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(top).toBe(0);
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
     top = 328;
     fireEvent.scroll(banner);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    report(1);
     await settled();
   });
 
@@ -474,15 +509,17 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
 
 describe("S1: a short, narrow pane", () => {
   it("its banner's buttons, partly clipped as a whole but each in view, take a click once still", async () => {
-    // The banner's scroll area is shorter than its wrapped button row: the
-    // observer says the row is partly in view (0.953), never wholly.
+    // The banner's scroll area is shorter than its button row: the observer
+    // says the row is partly in view (0.953), never wholly. The line's last
+    // line is wholly in view, as Allow needs (D-3145).
     vi.stubGlobal(
       "IntersectionObserver",
       class {
         constructor(private cb: IntersectionObserverCallback) {}
         observe(el: Element) {
+          const ratio = (el as HTMLElement).dataset.testid === "run-line-end" ? 1 : 0.953;
           queueMicrotask(() =>
-            this.cb([{ isIntersecting: true, intersectionRatio: 0.953, target: el } as IntersectionObserverEntry], {} as never),
+            this.cb([{ isIntersecting: true, intersectionRatio: ratio, target: el } as IntersectionObserverEntry], {} as never),
           );
         }
         disconnect() {}

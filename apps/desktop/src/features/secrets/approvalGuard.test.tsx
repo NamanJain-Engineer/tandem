@@ -30,29 +30,47 @@ describe("useSettled (F-TL-12.12)", () => {
     expect(result.current).toBe(false);
   });
 
-  it("useSeenEnd starts over on every change too", () => {
-    const seen: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+  type Entry = { isIntersecting: boolean; intersectionRatio: number };
+  function observed(): Array<(entries: Entry[]) => void> {
+    const seen: Array<(entries: Entry[]) => void> = [];
     vi.stubGlobal(
       "IntersectionObserver",
       class {
-        constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        constructor(cb: (entries: Entry[]) => void) {
           seen.push(cb);
         }
         observe() {}
         disconnect() {}
       },
     );
+    return seen;
+  }
+
+  it("useSeenEnd starts over on every change too", () => {
+    const seen = observed();
     const { result, rerender } = renderHook(({ k }: { k: string | null }) => useSeenEnd(k), {
       initialProps: { k: "A" } as { k: string | null },
     });
     act(() => result.current[0](document.createElement("span")));
-    act(() => seen.at(-1)?.([{ isIntersecting: true }]));
+    act(() => seen.at(-1)?.([{ isIntersecting: true, intersectionRatio: 1 }]));
     expect(result.current[1]).toBe(true);
     rerender({ k: "B" });
     rerender({ k: "A" });
     // Back at A, but its end hasn't been in view since.
     expect(result.current[1]).toBe(false);
-    act(() => seen.at(-1)?.([{ isIntersecting: true }]));
+    act(() => seen.at(-1)?.([{ isIntersecting: true, intersectionRatio: 1 }]));
+    expect(result.current[1]).toBe(true);
+  });
+
+  it("F-TL-12.15 useSeenEnd counts the end seen only when all of its marker was on screen", () => {
+    const seen = observed();
+    const { result } = renderHook(() => useSeenEnd("A"));
+    act(() => result.current[0](document.createElement("span")));
+    // A sliver of the line's last line, or most of it, isn't its end seen.
+    act(() => seen.at(-1)?.([{ isIntersecting: true, intersectionRatio: 0.1 }]));
+    act(() => seen.at(-1)?.([{ isIntersecting: true, intersectionRatio: 0.8 }]));
+    expect(result.current[1]).toBe(false);
+    act(() => seen.at(-1)?.([{ isIntersecting: true, intersectionRatio: 1 }]));
     expect(result.current[1]).toBe(true);
   });
 
@@ -67,5 +85,10 @@ describe("useSettled (F-TL-12.12)", () => {
       "Allow turns on once this has been still on screen for a moment.",
     );
     expect(waitReason({ seenEnd: true, settled: true, steady: true })).toBeUndefined();
+    // Gone past the line's end without showing it: back up (the review of
+    // ce0d5815, SF-1).
+    expect(waitReason({ seenEnd: false, settled: true, steady: true, passed: true })).toBe(
+      "Scroll up a little to see the end of the command.",
+    );
   });
 });
