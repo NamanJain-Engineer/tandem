@@ -8,6 +8,12 @@ export const RELEASE = {
   version: "0.12.0",
 } as const;
 
+/** The latest release the product scenes have their slice for (F-WB-01
+ * AC9, D-128): their tests run at `RELEASE.version` and at this one, and
+ * `RELEASE.version` may not pass it until that release's scenes slice is
+ * in (OPERATING §6). */
+export const SCENES_SLICE: string = "0.13.0";
+
 export type Os = "macos" | "windows" | "linux";
 
 export type Download = {

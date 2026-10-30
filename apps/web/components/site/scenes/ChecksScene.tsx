@@ -1,8 +1,9 @@
 import { Check, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
-import { SAMPLE, failurePrompt, t } from "../../../lib/scenes";
+import { DEFANGS, PUSH_READS, RAIL_FOLDS, SAMPLE, failurePrompt, t } from "../../../lib/scenes";
 import { Icon } from "../Icon";
-import { AgentsSegment, AppWindow, Changes, DiffRows, Dot, Lines, Pane, StatusBar, Toast, at, fx, pasted, stint, visit, type Agents, type DiffRow } from "./parts";
+import { AgentsSegment, AppWindow, Badge, Changes, DiffRows, Dot, ELISION, Lines, Pane, StatusBar, Toast, at, fx, pasted, stint, visit, type Agents, type DiffRow } from "./parts";
+import { ChecksMark, PaneCount, RadarMark, Rail, Working, WorktreeRow, panesIn, type ChecksState } from "./rail";
 
 /** When things happen, in seconds from the scene's start. */
 export const CI_T = {
@@ -28,11 +29,13 @@ export const CI_T = {
   chip: 6.5,
   push: 6.9,
   pushed: 7.4,
-  /** A push reads nothing, and finished checks are read only every 15
-   * minutes, so the row still says failed: its badge is pressed again, and
-   * opening the dialog reads them. They're running; Close. */
+  /** 0.12.0's push reads nothing, and finished checks are read only every
+   * 15 minutes, so the row still says failed: its badge is pressed again,
+   * and opening the dialog reads them. They're running; Close. From 0.13.0
+   * the push reads them itself, once it has pushed (D-2619), so the row
+   * turns to running from that read, and nothing is opened again. */
   reopen: 7.9,
-  running: 8.7,
+  running: PUSH_READS ? 8 : 8.7,
   closed: 9.3,
   /** Running checks are read every two minutes while the window has focus
    * and the Code rail is open: a later read, passed. */
@@ -45,9 +48,9 @@ export const CI_T = {
   ready: 13.4,
 } as const;
 const T = CI_T;
-/** A press runs 260 ms (scenes.css's sc-press) and a visit leaves over
- * 180 ms (--dur-pop): a dialog closed by a press leaves once it's over. */
-const PRESSED = 0.26 + 0.18;
+/** A press runs 260 ms (scenes.css's sc-press), and the app acts on the
+ * click that ends it: what the press closes is gone then, at once. */
+const PRESS = 0.26;
 
 /** The commented file's hunk in Open diff: the finished worktree's change
  * to it, with its old and new line numbers, as DiffView shows them. It's a
@@ -94,23 +97,42 @@ NOTES.set(
 /** How many of the log's last lines the agent's pane shows. */
 export const LOG_TAIL = 6;
 
+/** How many of the first task's lines the agent's terminal scrolls off its
+ * top when the agent's closing words come, as its rows go whole: from
+ * 0.13.0 the core's note after the log takes two lines' room (D-3022), and
+ * the pane holds the rest with these gone (a browser test checks it at
+ * 1440 and 390 px, D-3006). */
+export const SCROLLED = DEFANGS ? 2 : 0;
+
+/** Where the fence around the check closes in its echoed lines: the last
+ * line that's a run of backticks alone. From 0.13.0 the defang's note
+ * follows it when the log had an `@` (D-3022). */
+function fenceEnd(lines: readonly string[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) if (/^ {2}`{3,}$/.test(lines[i] ?? "")) return i;
+  return lines.length;
+}
+
 /** The failure as the agent's terminal shows it once it's typed in, as one
  * paste: the prompt's start, down to its log's heading, then, past the
- * lines that scrolled by, the log's last lines and the fence's end. The
- * prompt the agent gets is the core's whole (a test reads it). */
+ * lines that scrolled by, the log's last lines, the fence's end and what
+ * follows it. The prompt the agent gets is the core's whole (a test reads
+ * it). */
 export function echoed(prompt: string): string[] {
   const lines = pasted(prompt);
   const head = lines.findIndex((l) => l.trim() === "Failed steps' log (last lines):");
-  if (head < 0 || lines.length - head - 1 <= LOG_TAIL + 1) return lines;
-  return [...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))];
+  const end = fenceEnd(lines);
+  if (head < 0 || end - head - 1 <= LOG_TAIL) return lines;
+  return [...lines.slice(0, head + 1), ELISION, ...lines.slice(end - LOG_TAIL)];
 }
 
 /** What of the echoed failure a phone's pane leaves out, where it has less
- * room: the blank lines, the link and, past the ⋮ when there is one, the
- * log's lines but its last two and the fence's end. */
+ * room: the blank lines, the link, what follows the fence (the defang's
+ * note, as long as the link) and, past the ⋮ when there is one, the log's
+ * lines but its last two. */
 export function foldEchoed(typed: readonly string[]): (line: string, i: number) => boolean {
-  const gap = typed.indexOf("  ⋮");
-  return (l, i) => l === "" || l.startsWith("  Link: ") || (gap >= 0 && i > gap && i < typed.length - 3);
+  const gap = typed.indexOf(ELISION);
+  const end = fenceEnd(typed);
+  return (l, i) => l === "" || l.startsWith("  Link: ") || i > end || (gap >= 0 && i > gap && i < end - 2);
 }
 
 /** The agent through the scene: done with its first task, working once the
@@ -175,6 +197,42 @@ function Row({ name, status, checks = false, className }: { name: string; status
       {checks && <ChecksBadge />}
     </span>
   );
+}
+
+/** The pull request's worktree's row from 0.13.0 (WorktreeRow: D-2611,
+ * D-2613, D-2700, D-2701), from each time on: its checks badge (failed,
+ * running from the read after the push, passed on a later one), the
+ * radar's mark and its count of panes; while its agent works, its slot
+ * too, with both marks their icons beside it. The badge is pressed to open
+ * the dialog, and where the push read nothing, again after it. In the rail
+ * the row is short of room for both marks' words, so it folds the radar's
+ * to its icon, the first to fold (`fold`); a phone's strip has the room. */
+function prSteps(fold: boolean): Array<readonly [number, ReactNode]> {
+  const radar = (compact: boolean) => SAMPLE.radar.between.includes(agent.branch) && <RadarMark key="radar" compact={compact} />;
+  const count = <PaneCount key="n" n={1} />;
+  // The badge from `seconds` on: its words come in then, as words do.
+  const badge = (seconds: number, state: ChecksState, press?: number) => (
+    <span key="checks" {...(seconds === 0 ? {} : fx("enter", seconds))}>
+      <ChecksMark state={state} {...(press === undefined ? {} : fx("press", press))} />
+    </span>
+  );
+  return [
+    [0, [badge(0, "failed", T.open), radar(fold), count]],
+    [
+      T.sent,
+      [
+        <span key="slot" {...fx("enter", T.sent)}>
+          <Working />
+        </span>,
+        <ChecksMark key="checks" state="failed" compact />,
+        radar(true),
+        count,
+      ],
+    ],
+    [T.done, [badge(T.done, "failed", PUSH_READS ? undefined : T.reopen), radar(fold), count]],
+    [T.running, [badge(T.running, "running"), radar(fold), count]],
+    [T.passed, [badge(T.passed, "passed"), radar(fold), count]],
+  ];
 }
 
 /** What there is to push and pull, as the branch chip and the status bar
@@ -274,7 +332,7 @@ function ChecksDialog({ open, read, close, rerun = false }: { open: number; read
     </div>
   );
   return (
-    <div className="sc-ci-layer" {...visit(rise, close + PRESSED - rise)}>
+    <div className="sc-ci-layer" {...visit(rise, close + PRESS - rise)}>
       {box(true)}
       {box(false)}
     </div>
@@ -317,7 +375,7 @@ function Files() {
           <span className="sc-branch-chip-name">{pr.branch}</span>
           <Changes steps={AHEAD} />
         </span>
-        <span className="sc-menu" {...visit(T.chip + 0.15, T.push + 0.25 - (T.chip + 0.15))}>
+        <span className="sc-menu" {...visit(T.chip + 0.15, T.push + PRESS - (T.chip + 0.15))}>
           <span className="sc-menu-item">{t("git.pull")}</span>
           <span className="sc-menu-item sc-menu-on" {...fx("press", T.push)}>
             {t("git.push")}
@@ -395,23 +453,51 @@ export function ChecksScene() {
   const typed = echoed(failurePrompt(pr.number, { name: failure?.name ?? "", workflow: pr.workflow, link: pr.link }, pr.log));
   return (
     <AppWindow className="sc-ci">
-      <div className="sc-body">
-        <aside className="sc-rail">
-          <span className="sc-rail-head">{t("rail.workspacesHeader")}</span>
-          <span className="sc-ws">
-            <span className="sc-ws-name">{SAMPLE.workspace}</span>
-          </span>
-          {SAMPLE.order.map((w) =>
-            w.branch === agent.branch ? (
-              <Row key={w.branch} name={w.branch} status={<Changes steps={AGENT} />} checks className="sc-lane-on" />
-            ) : (
-              <Row key={w.branch} name={w.branch} status={<Dot status={w.branch === SAMPLE.worktrees.working.branch ? "working" : "waiting"} />} />
-            ),
-          )}
-        </aside>
+      <div className={RAIL_FOLDS ? "sc-body sc-body-crail" : "sc-body"}>
+        {RAIL_FOLDS ? (
+          // From 0.13.0 the rail is CodeRail's, as the hero's is, at its
+          // 320 px (D-3006).
+          <Rail className="sc-ci-crail">
+            {SAMPLE.order.map((w) => {
+              if (w.branch === agent.branch) return <WorktreeRow key={w.branch} branch={w.branch} on steps={prSteps(true)} />;
+              const slot =
+                w.branch === SAMPLE.worktrees.working.branch ? (
+                  <Working key="slot" />
+                ) : (
+                  <span key="slot" className="sc-wtrow-ask">
+                    <Badge variant="waiting" quiet>
+                      {t("rail.waiting")}
+                    </Badge>
+                  </span>
+                );
+              const marked = SAMPLE.radar.between.includes(w.branch) && <RadarMark key="radar" compact />;
+              return <WorktreeRow key={w.branch} branch={w.branch} steps={[[0, [slot, marked, <PaneCount key="n" n={panesIn(w.branch)} />]]]} />;
+            })}
+          </Rail>
+        ) : (
+          <aside className="sc-rail">
+            <span className="sc-rail-head">{t("rail.workspacesHeader")}</span>
+            <span className="sc-ws">
+              <span className="sc-ws-name">{SAMPLE.workspace}</span>
+            </span>
+            {SAMPLE.order.map((w) =>
+              w.branch === agent.branch ? (
+                <Row key={w.branch} name={w.branch} status={<Changes steps={AGENT} />} checks className="sc-lane-on" />
+              ) : (
+                <Row key={w.branch} name={w.branch} status={<Dot status={w.branch === SAMPLE.worktrees.working.branch ? "working" : "waiting"} />} />
+              ),
+            )}
+          </aside>
+        )}
         <div className="sc-ci-main">
           {/* A phone has no rail: the worktree's row keeps its checks here. */}
-          <Row name={agent.branch} status={<Changes steps={AGENT} />} checks className="sc-ci-strip" />
+          {RAIL_FOLDS ? (
+            <span className="sc-ci-strip">
+              <WorktreeRow branch={agent.branch} on steps={prSteps(false)} />
+            </span>
+          ) : (
+            <Row name={agent.branch} status={<Changes steps={AGENT} />} checks className="sc-ci-strip" />
+          )}
           <Pane
             engine={agent.engine}
             name={agent.name}
@@ -427,9 +513,10 @@ export function ChecksScene() {
             }
             status={<Changes steps={AGENT} />}
           >
-            {/* The end of its first task: it ran the cart's tests only. */}
-            {SAMPLE.lines.finished.slice(-2).map((l) => (
-              <span key={l} className="sc-line sc-line-old">
+            {/* The end of its first task: it ran the cart's tests only.
+                Where the pane fills, they scroll off its top. */}
+            {SAMPLE.lines.finished.slice(-2).map((l, i) => (
+              <span key={l} className="sc-line sc-line-old" {...(i < SCROLLED ? fx("scroll", T.done) : {})}>
                 {l}
               </span>
             ))}
@@ -459,9 +546,10 @@ export function ChecksScene() {
         }
       />
       {/* Over the whole window, as the app's overlay is (fixed, inset 0):
-          opened from the row, then again after the push. */}
+          opened from the row, and where the push read nothing, again after
+          it. */}
       <ChecksDialog open={T.open} read={T.read} close={T.close} />
-      <ChecksDialog open={T.reopen} read={T.running} close={T.closed} rerun />
+      {!PUSH_READS && <ChecksDialog open={T.reopen} read={T.running} close={T.closed} rerun />}
     </AppWindow>
   );
 }
@@ -469,5 +557,10 @@ export function ChecksScene() {
 export const CI_CAPTION = "A failed check goes to the agent as data. Its fix is pushed and passes, and the reviewer's comment comes in too.";
 
 export function ciSceneText(): string {
-  return `${agent.branch}'s pull request #${pr.number} has a failed check, ${failed.map((c) => c.name).join(", ")}, on its rail row. Its Checks dialog lists ${pr.checks.map((c) => c.name).join(", ")}, and Send failure to agent types the check, its link and the end of its log into ${agent.name}, the worktree's agent in ${agent.engine}, marked as untrusted data, not instructions. ${agent.name} finds the cause, fixes ${pr.fix.file} and commits. Push, from the Files panel's branch chip, sends the fix up. A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running. While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass. In Open diff, Import review comments from #${pr.number} brings in ${comment.author}'s comment on ${comment.file} line ${comment.line}, ready to send to ${agent.name}. Vibezeo asks once before it reads a repository's pull requests, with your own GitHub CLI.`;
+  // The log's @ goes to the agent as ＠ from 0.13.0 (D-3022), and its push reads the checks (D-2619).
+  const defanged = DEFANGS ? ` The log's at sign reaches ${agent.name} as ＠, so it attaches no file, with a note after the log saying so.` : "";
+  const read = PUSH_READS
+    ? "Once it's pushed, Vibezeo reads the checks, and again on every poll for five minutes while CI starts its new run, so the row turns to running by itself."
+    : "A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running.";
+  return `${agent.branch}'s pull request #${pr.number} has a failed check, ${failed.map((c) => c.name).join(", ")}, on its rail row. Its Checks dialog lists ${pr.checks.map((c) => c.name).join(", ")}, and Send failure to agent types the check, its link and the end of its log into ${agent.name}, the worktree's agent in ${agent.engine}, marked as untrusted data, not instructions.${defanged} ${agent.name} finds the cause, fixes ${pr.fix.file} and commits. Push, from the Files panel's branch chip, sends the fix up. ${read} While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass. In Open diff, Import review comments from #${pr.number} brings in ${comment.author}'s comment on ${comment.file} line ${comment.line}, ready to send to ${agent.name}. Vibezeo asks once before it reads a repository's pull requests, with your own GitHub CLI.`;
 }

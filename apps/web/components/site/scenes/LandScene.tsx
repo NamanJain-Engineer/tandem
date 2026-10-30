@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { SAMPLE, t } from "../../../lib/scenes";
-import { AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
+import { SAMPLE, UNDO_SECONDARY, t } from "../../../lib/scenes";
+import { AgentsSegment, AppWindow, Changes, Dot, Glyph, StatusBar, fx } from "./parts";
 
 /** The worktrees in the order they land, each with its commits and the
  * merge commit it lands as (the story's, D-2609). */
@@ -63,13 +63,16 @@ export function LandScene() {
               </span>
               <span className="sc-dialog-done" {...fx("enter", done)}>
                 <Dot status="done" /> {t("landing.done", { n: LANES.length, base: SAMPLE.base })}
-                <span className="sc-btn">{t("landing.undo")}</span>
+                {/* A danger button in 0.12.0, secondary from 0.13.0 (D-2616). */}
+                <span className={UNDO_SECONDARY ? "sc-btn" : "sc-btn sc-btn-danger"}>{t("landing.undo")}</span>
               </span>
             </span>
           </span>
         </div>
       </div>
-      <StatusBar branch={SAMPLE.base} />
+      {/* The story's agents, as every status bar counts them: one waits and
+          one works throughout (D-3004). */}
+      <StatusBar branch={SAMPLE.base} segments={<AgentsSegment steps={[[0, SAMPLE.agents]]} />} />
     </AppWindow>
   );
 }

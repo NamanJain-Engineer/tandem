@@ -86,6 +86,7 @@
 /* Buttons as the app draws them. */
 .sc-btn { display: inline-flex; align-items: center; height: 1.875em; padding-inline: 0.75em; border-radius: 0.375em; font-family: var(--font-sans); font-size: 0.75em; font-weight: 500; white-space: nowrap; color: var(--tn-text); background: var(--tn-surface-4); box-shadow: inset 0 0 0 1px var(--tn-border-strong); }
 .sc-btn-primary { color: var(--tn-accent-fg); background: var(--tn-accent); box-shadow: none; }
+.sc-btn-danger { color: var(--tn-danger-fg); background: var(--tn-danger); box-shadow: none; }
 .sc-swap { display: inline-grid; justify-items: start; }
 .sc-swap > * { grid-area: 1 / 1; }
 
@@ -103,6 +104,8 @@
 /* The Dashboard. */
 .sc-dash { display: flex; flex-direction: column; gap: 0.875em; min-height: 0; padding: 1.25em 1.5em; overflow: hidden; }
 .sc-dash-head { display: flex; align-items: center; gap: 1em; }
+/* DashboardPanel's switch, over the Dashboard and its count. */
+.sc-dash-switch { align-self: flex-start; }
 .sc-dash-title { font-size: 1.125em; font-weight: 600; letter-spacing: -0.01em; }
 .sc-seg { display: inline-flex; gap: 0.125em; padding: 0.1875em; border-radius: 0.4375em; background: var(--tn-surface-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
 .sc-dash-group { margin-left: auto; display: inline-flex; align-items: center; gap: 0.5em; font-size: 0.75em; color: var(--tn-text-subtle); }
@@ -140,8 +143,9 @@
 .sc-card-title { font-size: 0.8125em; font-weight: 500; white-space: nowrap; }
 .sc-card-head .sc-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sc-card-state { flex: none; font-size: 0.75em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); white-space: nowrap; }
-/* The room AgentCard's menu keeps: a small IconButton, 28 px, shown on hover. */
-.sc-card-menu { flex: none; width: calc(28 * var(--sc-px)); }
+/* The room AgentCard's hover buttons keep: ⋯ and ×, each a small
+   IconButton (28 px), shown on hover. */
+.sc-card-menu { flex: none; width: calc(56 * var(--sc-px)); }
 .sc-card-meta { font-family: var(--font-mono); font-size: 0.6875em; color: var(--tn-text-subtle); white-space: nowrap; }
 /* A Dashboard card's meta, under its title row, is sans, as AgentCard's. */
 .sc-card .sc-card-meta { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-sans); font-size: 0.75em; color: var(--tn-text-muted); }
@@ -240,6 +244,9 @@
    wraps at the pane's edge, its next lines under its text, after the
    indent or the prompt mark. */
 .sc-line-gap { height: 0.5em; flex: none; }
+/* Lines left out: the scene's elision, not output. Subtle, in the site's
+   face, on a line of its own with room above and below. */
+.sc-elide { flex: none; margin-block: 0.35em; font-family: var(--font-sans); line-height: 1; color: var(--tn-text-subtle); }
 .sc-line-wrap { white-space: pre-wrap; padding-left: 2ch; text-indent: -2ch; }
 
 /* WorktreeReview's bar under a diff (the Review and CI scenes). */
@@ -271,13 +278,13 @@
 .sc-note-toast-x { flex: none; box-sizing: content-box; width: calc(14 * var(--sc-px)); height: calc(14 * var(--sc-px)); padding: calc(5 * var(--sc-px)); color: var(--tn-text-subtle); }
 
 /* The app's Badge (Badge.tsx, UI_SPEC §2.13): 18 px tall, 6 px in from its
-   4 px corners, 10 px medium text in its tone's text colour, a 1 px border
+   4 px corners, its parts 4 px apart, 10 px medium text in its tone's text colour, a 1 px border
    in its tone, mixed as the app's `border-done/40` compiles, inside its
    18 px (the site's border-box, as the app's), and no fill; the neutral
    one is filled instead, with no border. A quiet one is its 11 px text
    alone (D-2601). */
 .sc-badge, .sc-badge-quiet { display: inline-flex; flex: none; align-items: center; height: calc(18 * var(--sc-px)); font-weight: 500; line-height: 1; white-space: nowrap; }
-.sc-badge { padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); }
+.sc-badge { gap: calc(4 * var(--sc-px)); padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); }
 .sc-badge-quiet { font-size: calc(11 * var(--sc-px)); }
 .sc-badge-neutral { color: var(--tn-text-muted); }
 .sc-badge-outline { color: var(--tn-text-muted); }
@@ -343,10 +350,10 @@
 @keyframes sc-press { 0%, 100% { scale: 1; } 40% { scale: 0.92; } }
 @keyframes sc-rise  { from { opacity: 0; translate: 0 1em; } }
 @keyframes sc-slide { from { opacity: 0; translate: 2em 0; scale: 0.98; } }
-/* A visit comes in, stays and leaves, with fades of a fixed length at each
-   end, so a long stay doesn't fade for a tenth of it (D-1888). */
+/* A visit comes in, stays, and is gone at once: the app animates no
+   closing content (base.css, F-SH-10), and a toast it dismisses is removed
+   (D-3004). Its entry names where it ends, since the final frame hides it. */
 @keyframes sc-visit { from { opacity: 0; translate: 0 0.5em; } to { opacity: 1; translate: 0 0; } }
-@keyframes sc-leave { from { opacity: 1; } to { opacity: 0; } }
 @keyframes sc-count { from { --sc-n: 0; } }
 @keyframes sc-sweep { from { translate: -100% 0; } to { translate: 100% 0; } }
 /* A cut is there until its time, then gone at once; a show is the other way
@@ -366,10 +373,19 @@
 @keyframes sc-close { from { translate: 0 var(--sc-card-line); } }
 @keyframes sc-close-tail { from { scale: 1 1; } }
 @keyframes sc-spin   { to { rotate: 1turn; } }
+/* A control that waits until its place has held still (Button's waiting,
+   F-TL-12.12): what it holds is dimmed until it turns on, at once. */
+@keyframes sc-wait  { from { opacity: 0.4; } to { opacity: 1; } }
+/* A line a terminal scrolls off its top: there until its time, then gone
+   at once with its room (the terminal's 0.1em gap after it too), as a
+   terminal's rows go whole. Its own style is the final frame's, gone; its
+   effect holds it until then (D-3006). */
+[data-fx-scroll] { flex-shrink: 0; max-height: 0; margin-bottom: -0.1em; overflow: hidden; opacity: 0; }
+@keyframes sc-scroll { from, to { max-height: 20em; margin-bottom: 0; opacity: 1; } }
 
 @media screen and (prefers-reduced-motion: no-preference) {
   :root[data-fx] [data-scene] {
-    & :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], .sc-spin),
+    & :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], [data-fx-wait], [data-fx-scroll], .sc-spin),
     & .tn-dot, & .tn-attention { animation-play-state: paused; }
     & [data-fx-in]    { animation: sc-in var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-line]  { animation: sc-line var(--dur-pop) var(--ease-out-site) var(--at) both paused; }
@@ -379,7 +395,7 @@
     & [data-fx-press] { animation: sc-press 260ms var(--ease-io-site) var(--at) both paused; }
     & [data-fx-rise]  { animation: sc-rise var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
     & [data-fx-slide] { animation: sc-slide var(--dur-panel) var(--ease-out-site) var(--at) both paused; }
-    & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-leave var(--dur-pop) var(--ease-exit) calc(var(--at) + var(--stay) - var(--dur-pop)) forwards paused; }
+    & [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear calc(var(--at) + var(--stay)) forwards paused; }
     & [data-fx-sweep] { animation: sc-sweep 1.6s var(--ease-io-site) var(--at) both paused; }
     & [data-fx-count] { animation: sc-count 900ms var(--ease-out-site) var(--at) both paused; counter-reset: sc var(--sc-n); }
     & [data-fx-cut]   { animation: sc-gone 0s linear var(--at) both paused; }
@@ -387,11 +403,16 @@
     & [data-fx-stint] { animation: sc-stint var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear var(--until) forwards paused; }
     & [data-fx-close] { animation: sc-close var(--dur-base) var(--ease-standard) var(--at) both paused; }
     & .sc-lanes-tail[data-fx-close] { animation-name: sc-close-tail; }
+    & [data-fx-wait]  { animation: sc-wait 0s linear var(--at) both paused; }
+    /* In a phone's frame a toast can lie over what waits, and a cover holds
+       it off like a move (steadyBox.ts): it turns on at its --at-narrow. */
+    @container (max-width: 40rem) { & [data-fx-wait] { animation-delay: var(--at-narrow, var(--at)); } }
+    & [data-fx-scroll] { animation: sc-scroll 0s linear var(--at) backwards paused; }
     /* A spinner turns from when its state comes in (the --at it inherits), twice. */
     & .sc-spin { animation: sc-spin 0.8s linear var(--at, 0s) 2 paused; }
     & [data-fx-count] .sc-sr { display: none; }
     & [data-fx-count]::after { content: attr(data-prefix) counter(sc); }
-    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], .sc-spin, .tn-dot, .tn-attention) {
+    &[data-live] :is([data-fx-in], [data-fx-line], [data-fx-enter], [data-fx-pop], [data-fx-out], [data-fx-press], [data-fx-rise], [data-fx-slide], [data-fx-visit], [data-fx-sweep], [data-fx-count], [data-fx-cut], [data-fx-show], [data-fx-stint], [data-fx-close], [data-fx-wait], [data-fx-scroll], .sc-spin, .tn-dot, .tn-attention) {
       animation-play-state: running;
     }
   }

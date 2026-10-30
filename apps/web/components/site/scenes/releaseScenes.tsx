@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SCENE_BUILD, atLeast } from "../../../lib/scenes";
+import { RAIL_FOLDS, SCENE_BUILD, atLeast } from "../../../lib/scenes";
 import { CI_CAPTION, ChecksScene, ciSceneText } from "./ChecksScene";
 import { LAND_CAPTION, LandScene, landSceneText } from "./LandScene";
 import { PLAN_CAPTION, PlanScene, planSceneText } from "./PlanScene";
@@ -13,9 +13,9 @@ export type ReleaseScene = {
   scene: () => ReactNode;
   caption: string;
   text: () => string;
-  /** The scene's own stylesheet, beside scenes.css: only the pages that play
-   * the scene inline it (D-3001). */
-  css?: string;
+  /** The scene's own stylesheets, after scenes.css, in order: only the
+   * pages that play the scene inline them (D-3001). */
+  css?: readonly string[];
 };
 
 /** The release pages' scenes, by version (D-1885, D-1888, D-3001). A page with
@@ -30,7 +30,8 @@ export const RELEASE_SCENES: Readonly<Record<string, readonly ReleaseScene[]>> =
       scene: () => <ChecksScene />,
       caption: CI_CAPTION,
       text: ciSceneText,
-      css: "ci.css",
+      // From 0.13.0 its rail is CodeRail's, as the hero's (D-3006).
+      css: RAIL_FOLDS ? ["rail.css", "ci.css"] : ["ci.css"],
     },
   ],
   "0.12.0": [{ id: "plan", card: "Follow a plan through", scene: () => <PlanScene />, caption: PLAN_CAPTION, text: planSceneText }],

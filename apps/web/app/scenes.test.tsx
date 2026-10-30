@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -9,21 +11,21 @@ import { DASHBOARD_CAPTION, DASH_AGENTS, DASH_T, DASH_TOOLS, DashboardScene, SIN
 import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
-import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
-import { AgentsSegment, Changes, Glyph, pasted } from "../components/site/scenes/parts";
+import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_READY, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
+import { AgentsSegment, Changes, ELISION, Glyph, pasted } from "../components/site/scenes/parts";
 import { PLAN_AGENTS, PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
 import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
-import { RELEASE } from "../lib/release";
-import { DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, SAMPLE, SCENE_BUILD, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
+import { RELEASE, SCENES_SLICE } from "../lib/release";
+import { APPROVE_WAITS, DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, RAIL_FOLDS, SAMPLE, SCENE_BUILD, SETTLE, UNDO_SECONDARY, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
 import { SCENE_PAGES, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import story from "../../desktop/src/demo/story.json";
 import { REVIEW_AGENTS, REVIEW_DIFF, REVIEW_FILE, REVIEW_T, notesFor } from "../components/site/scenes/ReviewScene";
-import { CI_AGENTS, CI_T, ChecksScene, LOG_TAIL, SESSION_DIFF, ciSceneText, echoed, foldEchoed } from "../components/site/scenes/ChecksScene";
+import { CI_AGENTS, CI_T, ChecksScene, LOG_TAIL, SCROLLED, SESSION_DIFF, ciSceneText, echoed, foldEchoed } from "../components/site/scenes/ChecksScene";
 import names from "../../desktop/src/data/names.json";
 import { parsePatch } from "@tandem/ui/components/DiffView";
 
@@ -127,6 +129,93 @@ const stepsAt = (h: string, start: number) =>
   kids(h, start).map((k) => [Number(/^<span data-fx-(?:enter|stint)="" style="--at:([\d.]+)s[";]/.exec(k)?.[1] ?? 0), k] as const);
 /** What a value's steps hold at `seconds`. */
 const heldAt = <T,>(steps: ReadonlyArray<readonly [number, T]>, seconds: number) => [...steps].reverse().find(([at]) => at <= seconds)?.[1];
+/** A rail's worktree rows (rail.tsx's WorktreeRow) in `h`, by name: each row's trailing parts from each time on, as
+ * [when it shows, when it's cut, its text, its HTML]. */
+function railRows(h: string): Map<string, Array<readonly [number, number, string, string]>> {
+  const rows = new Map<string, Array<readonly [number, number, string, string]>>();
+  for (const m of h.matchAll(/<span class="sc-wtrow(?: sc-wtrow-on)?">/g)) {
+    const [, name = "", trail = ""] = kids(h, m.index ?? 0);
+    const steps = kids(trail, 0).map((step) => {
+      const show = /^<span class="sc-wtrow-step"(?: data-fx-show="" style="--at:([\d.]+)s")?>/.exec(step);
+      const [parts = ""] = kids(step, 0);
+      const cut = /^<span class="sc-wtrow-parts"(?: data-fx-cut="" style="--at:([\d.]+)s")?>/.exec(parts);
+      return [Number(show?.[1] ?? 0), cut?.[1] === undefined ? Infinity : Number(cut[1]), text(parts), parts] as const;
+    });
+    rows.set(text(name), steps);
+  }
+  return rows;
+}
+/** A name one file gives for another: what it names (null when the compiler can't read it: a template with a value in
+ * it, a variable, a require passed on), and how. */
+type Ref = { spec: string | null; how: string };
+/** Every name a script gives for another module, as the TypeScript compiler reads it (the coordinator's S3 on
+ * 23cf1fa0): static imports and exports (type-only and side-effect ones too), dynamic import(), require and
+ * require.resolve, a createRequire's require, import = require, import() in a type and new URL(…, import.meta.url). */
+function moduleRefs(file: string, code: string): Ref[] {
+  const kind = /\.[cm]?tsx$|\.jsx$/.test(file) ? ts.ScriptKind.TSX : /\.[cm]?ts$/.test(file) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const sf = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true, kind);
+  const read = (n: ts.Node | undefined) => (n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null);
+  // The names a require is bound to: require itself, and each const holding a createRequire's.
+  const requires = new Set(["require"]);
+  const bind = (n: ts.Node) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer) && ts.isIdentifier(n.initializer.expression) && n.initializer.expression.text === "createRequire")
+      requires.add(n.name.text);
+    ts.forEachChild(n, bind);
+  };
+  bind(sf);
+  const out: Ref[] = [];
+  const visit = (n: ts.Node) => {
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier) out.push({ spec: read(n.moduleSpecifier), how: ts.isImportDeclaration(n) ? "import" : "export from" });
+    else if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference)) out.push({ spec: read(n.moduleReference.expression), how: "import = require" });
+    else if (ts.isImportTypeNode(n)) out.push({ spec: ts.isLiteralTypeNode(n.argument) ? read(n.argument.literal) : null, how: "import type" });
+    else if (ts.isCallExpression(n)) {
+      const callee = n.expression;
+      const how =
+        callee.kind === ts.SyntaxKind.ImportKeyword
+          ? "import()"
+          : ts.isIdentifier(callee) && requires.has(callee.text)
+            ? "require"
+            : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && requires.has(callee.expression.text) && callee.name.text === "resolve"
+              ? "require.resolve"
+              : ts.isCallExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "createRequire"
+                ? "createRequire()()"
+                : null;
+      if (how) out.push({ spec: read(n.arguments[0]), how });
+    } else if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "URL" && n.arguments?.length === 2 && n.arguments[1]?.getText() === "import.meta.url")
+      out.push({ spec: read(n.arguments[0]), how: "new URL" });
+    else if (ts.isIdentifier(n) && (n.text === "createRequire" || requires.has(n.text)) && !ts.isImportSpecifier(n.parent)) {
+      // Anywhere else, a require or createRequire is passed on, and what it loads can't be read.
+      const p = n.parent;
+      const called = ts.isCallExpression(p) && p.expression === n;
+      const member = ts.isPropertyAccessExpression(p) && p.expression === n && p.name.text === "resolve" && ts.isCallExpression(p.parent) && p.parent.expression === p;
+      const declared = ts.isVariableDeclaration(p) && p.name === n;
+      if (!called && !member && !declared) out.push({ spec: null, how: `${n.text === "createRequire" ? "createRequire" : "require"}, passed on` });
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+/** Every file a stylesheet names: @import (a string, or a url() quoted or not), Tailwind's @reference, @plugin, @config
+ * and @source (a glob read from its fixed start), and url(). A name with a CSS escape in it, or in image-set()'s bare
+ * strings, can't be read here, so it's null. */
+function styleRefs(css: string): Ref[] {
+  // Comments go, but not what's inside a string ("../**/*.tsx" holds a "/*").
+  const text = css.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\/\*[\s\S]*?\*\//g, (_, str: string | undefined) => str ?? "");
+  const out: Ref[] = [];
+  const read = (spec: string) => (spec.includes("\\") ? null : spec);
+  // A url()'s address is quoted, or bare up to its close (a bare one holds no quote, bracket or space).
+  const at = /@(?<rule>import|reference|plugin|config|source)\s+(?:not\s+)?(?:url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)|(?<q>["'])(?<str>.*?)\k<q>)/g;
+  for (const m of text.matchAll(at)) {
+    const spec = read(m.groups?.quoted ?? m.groups?.bare ?? m.groups?.str ?? "");
+    out.push({ spec: m.groups?.rule === "source" && spec !== null ? spec.replace(/[{*].*$/, "") : spec, how: `@${m.groups?.rule ?? ""}` });
+  }
+  // A url() anywhere else: the at-rules' are taken out first, so each is counted once.
+  for (const m of text.replace(at, "").matchAll(/url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)/g))
+    out.push({ spec: read(m.groups?.quoted ?? m.groups?.bare ?? ""), how: "url()" });
+  for (const _ of text.matchAll(/image-set\(/g)) out.push({ spec: null, how: "image-set()" });
+  return out;
+}
 /** The app's own source files (apps/desktop/src), not its tests and not the browser demo, which isn't the app. */
 const APP = join(import.meta.dirname, "../../desktop/src");
 const appFiles = (dir = "."): string[] =>
@@ -289,6 +378,27 @@ describe("F-WB-01 AC9 product scenes", () => {
         expect(cls.split(" "), "no rise").not.toContain("rise");
       }
     }
+  });
+
+  it("F-WB-01 AC9 D-1898 no scene draws the placeholder name: no tandem/ branch, and no tandem, at any step", async () => {
+    // Every scene as the site draws it, on the home page or its release's page: its stage, its caption and the text read
+    // for it, at the release the site shows (scenes.next.test runs this at the next slice's). Each is read whole,
+    // attributes too, which covers every step: an effect only shows or cuts what's in the markup, the only text the
+    // scenes' rules write is a count's data-prefix and number, and the player only plays and pauses (the design lead's
+    // QA of 825b4b54: its hero's radar note named tandem/coupon-rules).
+    const drawn: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
+    for (const version of Object.keys(RELEASE_SCENES)) {
+      const h = await versionHtml(version);
+      for (const s of releaseScenes(version)) drawn.push([s.id, h]);
+    }
+    expect(drawn.map(([id]) => id).sort()).toEqual(Object.keys(ALL).sort());
+    for (const [id, page] of drawn) {
+      const fig = new RegExp(`<figure data-scene="${id}"[\\s\\S]*?</figure>`).exec(page)?.[0] ?? "";
+      expect(fig, id).toContain('<span class="sr-only">');
+      expect([...fig.matchAll(/.{0,40}tandem.{0,40}/gis)].map((m) => m[0]), id).toEqual([]);
+    }
+    const written = ["scenes.css", "home.css", "ci.css", "rail.css"].flatMap((f) => [...sheet(f).matchAll(/(?<![\w-])content:\s*([^;}]*)/g)].map((m) => m[1]?.trim()));
+    expect([...new Set(written)].sort()).toEqual(['""', "attr(data-prefix) counter(sc)"]);
   });
 
   it("F-WB-01 AC2 AC9 the scene player loads on exactly the release pages with scenes", async () => {
@@ -492,7 +602,7 @@ describe("F-WB-01 AC9 product scenes", () => {
       // that line, and the note it types arrives in the pane after the press, before the tests run.
       const edited = at(SAMPLE.lines.finished.find((l) => l.startsWith(`  editing ${story.overlap.file}`)) ?? "");
       expect(edited).toHaveLength(1);
-      const radar = [...times(h, /<span class="sc-wtrow-radar" data-fx-enter="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-note-toast sc-tone-warning" data-fx-visit="" style="--at:([\d.]+)s;/g)];
+      const radar = [...times(h, /<span class="sc-wtrow-radar(?: sc-wtrow-compact)?" data-fx-enter="" style="--at:([\d.]+)s">/g), ...times(h, /<div class="sc-note-toast sc-tone-warning" data-fx-visit="" style="--at:([\d.]+)s;/g)];
       expect(radar.length).toBeGreaterThanOrEqual(3);
       for (const r of radar) expect(r).toBeGreaterThan(edited[0] ?? 0);
       const note = pasted(SAMPLE.radar.note).filter((l) => l !== "");
@@ -523,6 +633,14 @@ describe("F-WB-01 AC9 product scenes", () => {
       expect(rows[i], w.slug).toContain(esc(t("landing.step.landed", { commit: w.mergeCommit })));
     });
     expect(h).toContain(`<span class="sc-input">${esc(story.check)}</span>`);
+    // Undo landing: 0.12.0's dialog made it a danger button; from 0.13.0 it's secondary, so the landed state's one filled
+    // button is Close (D-2616, the tree's LandWorktrees).
+    expect(UNDO_SECONDARY).toBe(atLeast(SCENE_BUILD, "0.13.0"));
+    expect(readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/LandWorktrees.tsx"), "utf8")).toContain(
+      '<Button variant="secondary" onClick={() => void undo()} disabled={busy} data-testid="landing-undo">',
+    );
+    expect(h).toContain(`<span class="${UNDO_SECONDARY ? "sc-btn" : "sc-btn sc-btn-danger"}">${t("landing.undo")}</span>`);
+    expect(shared).toContain(".sc-btn-danger { color: var(--tn-danger-fg); background: var(--tn-danger); box-shadow: none; }");
   });
 
   it("F-WB-01 AC9 D-3004 an app pixel is the window's em over 16 in the scene box's own units, so it never compounds, with or without @property", () => {
@@ -540,38 +658,123 @@ describe("F-WB-01 AC9 product scenes", () => {
     for (const f of ["scenes.css", "ci.css", "home.css"]) expect(sheet(f).match(/container-type/g)?.length ?? 0, f).toBe(f === "scenes.css" ? 1 : 0);
   });
 
-  it("F-WB-01 D-3005 the site imports only these of the app's files: its words, the demo's story and its helpers, and the core's defang", () => {
+  it("F-WB-01 D-3005 the site imports only these of the app's files: its words, the demo's story and its helpers, and the core's defang", async () => {
     // Each is pure data or a pure function that imports nothing but the story, so the site's build takes nothing else
     // of the app, and each is held to its source by tests: en.json's words by t(), story.json and story.ts by the
     // scenes' tests and the demo's (the question, a step's tool and a branch, one copy for both), untrusted.ts by the
     // core's defang.json (the code review of cced2f8f, nit 5). The tests may read any app file.
-    const web = join(import.meta.dirname, "..");
-    const desktop = join(web, "../desktop");
+    const web = realpathSync(join(import.meta.dirname, ".."));
+    const desktop = realpathSync(join(web, "../desktop"));
+    // The site's own files of every kind that can name another (TS and JS of every flavour, MDX, CSS): not its tests,
+    // its built or generated output, its static files, nor remote-lan/, the desktop's own phone page, which builds into
+    // the desktop's resources (the coordinator's S3 on 23cf1fa0: .mdx, .js, .cjs, .jsx and CSS went unread).
+    const SKIP = new Set(["node_modules", "out", ".next", ".source", "public", "test-results", ".lighthouseci", "e2e", "e2e-site", "test", "remote-lan"]);
     const own = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-        e.isDirectory()
-          ? ["node_modules", "out", ".next", "e2e-site", "test"].includes(e.name)
-            ? []
-            : own(join(dir, e.name))
-          : /\.(tsx?|mjs)$/.test(e.name) && !/\.(test|spec)\./.test(e.name)
-            ? [join(dir, e.name)]
-            : [],
+        e.isDirectory() ? (SKIP.has(e.name) ? [] : own(join(dir, e.name))) : /\.(?:[cm]?[jt]sx?|mdx|css)$/.test(e.name) && !/\.(?:test|spec)\./.test(e.name) ? [join(dir, e.name)] : [],
       );
-    const reached = new Set<string>();
-    for (const f of own(web))
-      for (const m of readFileSync(f, "utf8").matchAll(/(?:\bfrom|\bimport)\s*\(?\s*["'](\.[^"']+)["']/g)) {
-        const to = resolve(dirname(f), m[1] ?? "");
-        if (to.startsWith(desktop)) reached.add(relative(desktop, to));
+    const files = own(web);
+    for (const ext of [".tsx", ".ts", ".mjs", ".mdx", ".css"]) expect(files.some((f) => f.endsWith(ext)), ext).toBe(true);
+    // MDX is read as it compiles, its ESM and its expressions both, with the MDX compiler fumadocs-mdx uses.
+    const fumadocs = realpathSync(join(web, "node_modules/fumadocs-mdx"));
+    const mdx = (await import(pathToFileURL(createRequire(join(fumadocs, "package.json")).resolve("@mdx-js/mdx")).href)) as { compile: (file: string, options: { jsx: boolean }) => Promise<unknown> };
+    // Each name a file gives for another, resolved as the build resolves it: TypeScript's module resolution with the
+    // site's own options (a relative path, a package, a bare or aliased name), then Node's for what TypeScript doesn't
+    // map (a stylesheet's), each to its real path, so a package linked to the app is the app.
+    const config = ts.getParsedCommandLineOfConfigFile(join(web, "tsconfig.json"), undefined, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => undefined });
+    const options = { ...(config?.options ?? {}), allowJs: true, resolveJsonModule: true };
+    const real = (p: string) => (existsSync(p) ? realpathSync(p) : p);
+    const where = (spec: string, from: string): string | null => {
+      if (/^[a-z][\w+.-]*:/i.test(spec)) return null;
+      const typed = ts.resolveModuleName(spec, from, options, ts.sys).resolvedModule?.resolvedFileName;
+      if (typed) return real(typed);
+      if (spec.startsWith(".") || spec.startsWith("/")) return real(resolve(dirname(from), spec));
+      try {
+        return real(createRequire(from).resolve(spec));
+      } catch {
+        return null;
       }
-    expect([...reached].sort()).toEqual(["src/demo/story", "src/demo/story.json", "src/features/code/untrusted", "src/i18n/en.json"]);
-    expect(readFileSync(join(desktop, "src/demo/story.ts"), "utf8").match(/^import .*$/gm)).toEqual(['import story from "./story.json";']);
-    expect(readFileSync(join(desktop, "src/features/code/untrusted.ts"), "utf8")).not.toMatch(/^\s*(?:import|export [^\n]* from)\b/m);
+    };
+    const reached = new Set<string>();
+    const unread: string[] = [];
+    for (const f of files) {
+      const text = f.endsWith(".mdx") ? String(await mdx.compile(readFileSync(f, "utf8"), { jsx: true })) : readFileSync(f, "utf8");
+      for (const { spec, how } of f.endsWith(".css") ? styleRefs(text) : moduleRefs(f.replace(/\.mdx$/, ".jsx"), text)) {
+        if (spec === null) unread.push(`${relative(web, f)}: ${how}`);
+        else {
+          const to = where(spec, f);
+          if (to !== null && (to === desktop || to.startsWith(`${desktop}${sep}`))) reached.add(relative(desktop, to));
+        }
+      }
+    }
+    // A name the compiler can't read (a template with a value in it, a variable, a require passed on) is a name no test
+    // can check, so the site has none.
+    expect(unread).toEqual([]);
+    expect([...reached].sort()).toEqual(["src/demo/story.json", "src/demo/story.ts", "src/features/code/untrusted.ts", "src/i18n/en.json"]);
+    // Nor does the build alias a name to the app: Next has no aliases of its own here.
+    expect(readFileSync(join(web, "next.config.ts"), "utf8")).not.toMatch(/alias/i);
+    // And the two code files import nothing but the story, wherever an import sits: story.ts its JSON, untrusted.ts none.
+    const app = (f: string) => [join(desktop, f), readFileSync(join(desktop, f), "utf8")] as const;
+    expect(moduleRefs(...app("src/demo/story.ts"))).toEqual([{ spec: "./story.json", how: "import" }]);
+    expect(moduleRefs(...app("src/features/code/untrusted.ts"))).toEqual([]);
+    // The reader finds every form (planted here): static, side-effect, type-only and re-exported; dynamic, with a plain
+    // template or a value in it; require and require.resolve, createRequire's, bound or called at once, and passed on;
+    // import = require; import() in a type; a URL beside import.meta; and a stylesheet's @import, @plugin, @source and url().
+    const planted = moduleRefs(
+      "plant.tsx",
+      [
+        'import a from "./a"; import "./b"; import type { C } from "./c"; export { d } from "./d"; export * from "./e";',
+        "const f = await import(`./f`); const g = await import(`./${f}`); const h = require(\"./h\"); require.resolve(\"./i\");",
+        'import { createRequire } from "node:module"; const req = createRequire(import.meta.url); req("./j"); createRequire(import.meta.url)("./k"); const pass = createRequire;',
+        'import l = require("./l"); type M = import("./m").M; const n = new URL("./n.json", import.meta.url); const o = require;',
+      ].join("\n"),
+    );
+    expect(planted).toEqual([
+      { spec: "./a", how: "import" },
+      { spec: "./b", how: "import" },
+      { spec: "./c", how: "import" },
+      { spec: "./d", how: "export from" },
+      { spec: "./e", how: "export from" },
+      { spec: "./f", how: "import()" },
+      { spec: null, how: "import()" },
+      { spec: "./h", how: "require" },
+      { spec: "./i", how: "require.resolve" },
+      { spec: "node:module", how: "import" },
+      { spec: "./j", how: "require" },
+      { spec: "./k", how: "createRequire()()" },
+      { spec: null, how: "createRequire, passed on" },
+      { spec: "./l", how: "import = require" },
+      { spec: "./m", how: "import type" },
+      { spec: "./n.json", how: "new URL" },
+      { spec: null, how: "require, passed on" },
+    ]);
+    // An @import's url() is read quoted or not, spaced or not (the code review of 825b4b54: `@import url(../../desktop/
+    // src/styles/app.css);` got past it), and a name it can't read (a CSS escape, image-set()'s strings) fails it.
+    expect(
+      styleRefs(
+        '@import "./a.css"; @import url("b.css"); @import url(../../desktop/src/styles/app.css) layer(base); @import\n  url( \'f.css\' ); @plugin "./c.js"; @source not "../**/*.tsx"; @source "../../desktop/src/{x,y}.tsx"; .x { background: url(./d.png); } .y { background: url("data:image/png;base64,AA"); } .z { background: image-set("g.png" 1x); } @import "\\2e/h.css";',
+      ),
+    ).toEqual([
+      { spec: "./a.css", how: "@import" },
+      { spec: "b.css", how: "@import" },
+      { spec: "../../desktop/src/styles/app.css", how: "@import" },
+      { spec: "f.css", how: "@import" },
+      { spec: "./c.js", how: "@plugin" },
+      { spec: "../", how: "@source" },
+      { spec: "../../desktop/src/", how: "@source" },
+      { spec: null, how: "@import" },
+      { spec: "./d.png", how: "url()" },
+      { spec: "data:image/png;base64,AA", how: "url()" },
+      { spec: null, how: "image-set()" },
+    ]);
     // Nor do the tests feed the site's stylesheet: they name the app's classes to check them (size-7, border-waiting,
     // bg-info…), and Tailwind made a rule for each on every page until globals.css kept them out of its scan.
     const globals = readFileSync(join(web, "app/globals.css"), "utf8");
     expect(globals).toContain('@source not "../**/*.{test,spec}.{ts,tsx}";');
     expect(readFileSync(join(web, "package.json"), "utf8")).toMatch(/"tailwindcss": "\^4\.(?:[1-9]|\d{2,})\./);
-  });
+    // Compiling every MDX file and reading every site file takes 2 s on a quiet machine and up to 4.8 s with every
+    // core busy, as in the gate: its own timeout, as the checks guard has, not vitest's 5 s.
+  }, 30_000);
 
   it("F-WB-01 AC9 D-3004 the tests' git diff reads nothing of the machine's: no config, no attributes file, no repository above it, no GIT_* variable", () => {
     // Each of these moved a plain git diff of the sample files: 21 lines of context, an external tool's output, or
@@ -758,8 +961,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     }
     // Run check once the check isn't running.
     expect(card).toContain('{item.check && item.check.state !== "running" && (');
+    // A label that waits (from 0.13.0, below) is in its own span, as Button's is.
     const drawn = (h: string) =>
-      [...h.matchAll(/<span class="sc-btn sc-btn-sm( sc-btn-primary| sc-btn-ghost)?"[^>]*>([^<]*)<\/span>/g)].map((m) => [m[2], m[1] === " sc-btn-primary" ? "primary" : m[1] === " sc-btn-ghost" ? "ghost" : "secondary"]);
+      [...h.matchAll(/<span class="sc-btn sc-btn-sm( sc-btn-primary| sc-btn-ghost)?"[^>]*>(?:<span data-fx-wait="" style="--at:[\d.]+s(?:;--at-narrow:[\d.]+s)?">)?([^<]*)(?:<\/span>)?<\/span>/g)].map((m) => [m[2], m[1] === " sc-btn-primary" ? "primary" : m[1] === " sc-btn-ghost" ? "ghost" : "secondary"]);
     const all = BUTTONS.map(([, key, variant]) => [esc(t(key)), variant]);
     // The Review scene's card, its check passed: all of them, Second opinion pressed.
     const review = /<span class="sc-rq-card">[\s\S]*$/.exec(renderToStaticMarkup(<ReviewScene />))?.[0] ?? "";
@@ -769,11 +973,37 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(actions.match(/data-fx-press/g)).toHaveLength(1);
     // The hero's, its check running then passed: without Run check, then with it, at once.
     const hero = renderToStaticMarkup(<WorkspaceScene />);
-    const set = '(<span class="sc-rq-actions">(?:<span[^>]*>[^<]*</span>)*</span>)';
+    const set = '(<span class="sc-rq-actions">(?:<span[^>]*>(?:[^<]|<span[^>]*>[^<]*</span>)*</span>)*</span>)';
     const swap = new RegExp(`<span class="sc-rq-actions-swap"><span data-fx-cut="" style="--at:([\\d.]+)s">${set}</span><span data-fx-show="" style="--at:([\\d.]+)s">${set}</span></span>`).exec(hero);
     expect([Number(swap?.[1]), Number(swap?.[3])]).toEqual([HERO_T.passed, HERO_T.passed]);
     expect(drawn(swap?.[2] ?? "")).toEqual(all.filter(([label]) => label !== esc(t("review.runCheck"))));
     expect(drawn(swap?.[4] ?? "")).toEqual(all);
+    // From 0.13.0 Approve waits until its place has held still (F-TL-12.12, D-2854): off, its label dimmed, for
+    // steadyBox.ts's SETTLE_MS once its card arrives at Done. Run check joining the buttons at the check's end doesn't
+    // move it (a browser test measures it), so it waits once. The Review scene's card has been in the queue for minutes.
+    const ui = readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/steadyBox.ts"), "utf8");
+    expect(ui).toContain(`export const SETTLE_MS = ${SETTLE * 1000};`);
+    expect(queue).toContain("const box = useSteadyBox(!approved, item.diffHash);");
+    expect(queue).toContain("const canApprove = approved || (settled && box.steady);");
+    expect(queue).toMatch(/<Button\s*size="sm"\s*variant=\{approved \? "ghost" : "primary"\}\s*waiting=\{!canApprove\}/);
+    expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Button.tsx"), "utf8")).toContain('waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40"');
+    // A cover holds it off like a move (steadyBox.ts). In a phone's frame "Warned both agents" spans the window's foot,
+    // over the card's buttons, as the app's corner toast lies over its floating sidebar there, so Approve turns on
+    // SETTLE_MS after that toast goes (the code review of 825b4b54; a browser test finds every cover).
+    expect(ui).toContain('const box = cover.current.covered ? "covered" : boxOf(el);');
+    expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Toast.tsx"), "utf8")).toContain('className="pointer-events-none fixed bottom-8 right-4 ');
+    expect(css).toContain(".sc-note-toast { left: 1em; right: 1em; width: auto; }");
+    const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(hero);
+    const hundredths = (s: number) => Math.round(s * 100) / 100;
+    expect(hundredths(HERO_READY.at)).toBe(hundredths(HERO_T.done + SETTLE));
+    expect(hundredths(HERO_READY.narrow)).toBe(RADAR ? hundredths(Number(warned?.[1]) + Number(warned?.[2]) + SETTLE) : hundredths(HERO_READY.at));
+    expect(HERO_READY.narrow > HERO_READY.at).toBe(RADAR);
+    const approve = `<span class="sc-btn sc-btn-sm sc-btn-primary">${APPROVE_WAITS ? `<span data-fx-wait="" style="--at:${hundredths(HERO_READY.at)}s;--at-narrow:${hundredths(HERO_READY.narrow)}s">${t("review.approve")}</span>` : t("review.approve")}</span>`;
+    for (const k of [2, 4]) expect(swap?.[k], String(k)).toContain(approve);
+    expect(actions).not.toContain("data-fx-wait");
+    expect(css).toMatch(/@keyframes sc-wait\s+\{ from \{ opacity: 0\.4; \} to \{ opacity: 1; \} \}/);
+    expect(css).toContain("& [data-fx-wait]  { animation: sc-wait 0s linear var(--at) both paused; }");
+    expect(css).toContain("@container (max-width: 40rem) { & [data-fx-wait] { animation-delay: var(--at-narrow, var(--at)); } }");
   });
 
   it("F-WB-01 AC9 D-3001 the second opinion shows where the app shows it: reviewing in the review bar, done as a toast with Show diff, then 2 comments · Copy review · Send", () => {
@@ -838,37 +1068,45 @@ describe("F-WB-01 AC9 product scenes", () => {
     const h = renderToStaticMarkup(<WorkspaceScene />);
     const { finished, working, waiting } = SAMPLE.worktrees;
     const rail = /<nav class="sc-crail">[\s\S]*?<\/nav>/.exec(h)?.[0] ?? "";
-    const row = (branch: string) => rail.split(/(?=<span class="sc-wtrow[ "])/).find((r) => r.includes(`<span class="sc-wtrow-name">${branch}</span>`)) ?? "";
-    // A row's trailing parts from each time on: [when it shows, when it's cut, what it holds].
-    const steps = (r: string) =>
-      [...r.matchAll(/<span class="sc-wtrow-step"(?: data-fx-show="" style="--at:([\d.]+)s")?><span class="sc-wtrow-parts"(?: data-fx-cut="" style="--at:([\d.]+)s")?>([\s\S]*?)<\/span><\/span>(?=<span class="sc-wtrow-step"|<\/span><span class="sc-wtrow-menu")/g)].map((m) => [
-        Number(m[1] ?? 0),
-        m[2] === undefined ? Infinity : Number(m[2]),
-        text(m[3] ?? ""),
-      ]);
+    const rows = railRows(rail);
+    expect([...rows.keys()]).toEqual(SAMPLE.order.map((w) => w.branch));
+    // A row's trailing parts from each time on: [when it shows, when it's cut, its text, its HTML].
+    const steps = (branch: string) => rows.get(branch) ?? [];
     const working1 = t("rail.working", { n: 1 });
-    const mark = t("radar.mark.one", { symbol: SAMPLE.symbol });
     // Each shows until the next one: one row's parts at a time.
     for (const w of SAMPLE.order) {
-      const all = steps(row(w.branch));
+      const all = steps(w.branch);
       for (const [i, [, cut]] of all.entries()) expect(cut, w.branch).toBe(all[i + 1]?.[0] ?? Infinity);
     }
-    const [m1 = 0, m2 = 0] = SAMPLE.radar.between.map((b) => Number(new RegExp(`<span class="sc-wtrow-name">${re(b)}</span>[\\s\\S]*?<span class="sc-wtrow-radar" data-fx-enter="" style="--at:([\\d.]+)s">`).exec(rail)?.[1]));
+    // The radar's mark comes in once the radar sees the pair (from 0.13.0, D-2704): RadarMark's, the radar alone beside
+    // the row's status, and with the symbol, in code type, once the agent is done (D-2613, D-2700).
+    const mark = (html: string) => /<span class="sc-wtrow-radar( sc-wtrow-compact)?" data-fx-enter="" style="--at:([\d.]+)s">/.exec(html);
+    const [m1 = 0, m2 = 0] = SAMPLE.radar.between.map((b) => Number(steps(b).map(([, , , html]) => mark(html)?.[2]).find((x) => x !== undefined)));
     expect(SAMPLE.radar.between).toEqual([finished.branch, working.branch]);
     // The finished one: at work, marked by the radar, then done, so only its mark and its pane.
-    expect(steps(row(finished.branch)).map(([at, , parts]) => [at, parts])).toEqual(
+    expect(steps(finished.branch).map(([at, , words]) => [at, words])).toEqual(
       RADAR
-        ? [[0, `${working1}1`], [m1, `${working1}${mark}1`], [HERO_DONE, `${mark}1`]]
+        ? [[0, `${working1}1`], [m1, `${working1}1`], [HERO_DONE, `${SAMPLE.symbol}1`]]
         : [[0, `${working1}1`], [HERO_DONE, "1"]],
     );
     // The working one stays at work, beside its shell: two panes.
-    expect(steps(row(working.branch)).map(([at, , parts]) => [at, parts])).toEqual(RADAR ? [[0, `${working1}2`], [m2, `${working1}${mark}2`]] : [[0, `${working1}2`]]);
+    expect(steps(working.branch).map(([at, , words]) => [at, words])).toEqual(RADAR ? [[0, `${working1}2`], [m2, `${working1}2`]] : [[0, `${working1}2`]]);
+    const compact = (branch: string) => steps(branch).map(([, , , html]) => (mark(html) ? mark(html)?.[1] !== undefined : null));
+    expect(compact(finished.branch)).toEqual(RADAR ? [null, true, false] : [null, null]);
+    expect(compact(working.branch)).toEqual(RADAR ? [null, true] : [null]);
+    if (RADAR) {
+      expect(steps(finished.branch)[2]?.[3]).toContain(`<span class="sc-wtrow-symbol">${SAMPLE.symbol}</span>`);
+      expect(rail).not.toContain(esc(t("radar.mark.one", { symbol: SAMPLE.symbol })));
+      expect([m1, m2]).toEqual([HERO_T.mark, HERO_T.mark + 0.1]);
+    }
     // The waiting one turns to Needs you, in waiting's quiet badge, when its engine asks, and stays so.
-    expect(steps(row(waiting.branch)).map(([at, , parts]) => [at, parts])).toEqual([[0, `${working1}1`], [HERO_ASK, `${t("rail.waiting")}1`]]);
-    expect(row(waiting.branch)).toContain(`<span class="sc-badge-quiet sc-badge-waiting">${t("rail.waiting")}</span>`);
-    // The worktree in view is the selected row.
+    expect(steps(waiting.branch).map(([at, , words]) => [at, words])).toEqual([[0, `${working1}1`], [HERO_ASK, `${t("rail.waiting")}1`]]);
+    expect(steps(waiting.branch)[1]?.[3]).toContain(`<span class="sc-badge-quiet sc-badge-waiting">${t("rail.waiting")}</span>`);
+    // The worktree in view is the selected row. 0.12.0's rows keep their menu's room; from 0.13.0 the menu covers a
+    // row's end while it's hovered, and no row keeps room for it (D-2611).
     expect(rail.match(/<span class="sc-wtrow sc-wtrow-on">/g)).toHaveLength(1);
-    expect(row(finished.branch).startsWith('<span class="sc-wtrow sc-wtrow-on">')).toBe(true);
+    expect(text(kids(rail, rail.indexOf('<span class="sc-wtrow sc-wtrow-on">'))[1] ?? "")).toBe(finished.branch);
+    expect(rail.match(/<span class="sc-wtrow-menu"><\/span>/g)?.length ?? 0).toBe(RAIL_FOLDS ? 0 : SAMPLE.order.length);
     // The status bar's agents: waiting first, then working, as each changes (AgentsSegment).
     const n = SAMPLE.order.length;
     expect(HERO_AGENTS).toEqual([
@@ -884,7 +1122,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(bar).toContain(`<span class="sc-agents"><span class="sc-agents-waiting"><span class="sc-dot"><svg`);
     // At every change the segment holds the rail's count: the rows whose slot says Needs you, and those at work.
     for (const [when, held] of HERO_AGENTS) {
-      const now = SAMPLE.order.map((w) => heldAt(steps(row(w.branch)).map(([at, , parts]) => [Number(at), String(parts)] as const), when) ?? "");
+      const now = SAMPLE.order.map((w) => heldAt(steps(w.branch).map(([at, , words]) => [at, words] as const), when) ?? "");
       expect({ waiting: now.filter((p) => p.startsWith(t("rail.waiting"))).length, working: now.filter((p) => p.startsWith(working1)).length }, `${when}s`).toEqual(held);
     }
     // Three agents, as the caption says.
@@ -995,6 +1233,32 @@ describe("F-WB-01 AC9 product scenes", () => {
     for (const s of ["api", "docs", "rate-limits", "release-notes", "db:migrate", "Cursor Agent", "OpenCode"]) expect(text(h), s).not.toContain(s);
   });
 
+  it("F-WB-01 AC9 D-3006 F-TL-12 DashboardPanel's switch is over the count, and from 0.13.0 questions are pinned first: the story asks none of Vibezeo", () => {
+    const app = (f: string) => readFileSync(join(import.meta.dirname, "../../desktop/src", f), "utf8");
+    // DashboardPanel, in 0.12.0 and the tree: the Agents | Review switch, then the view, the Dashboard, whose header
+    // starts with its count (the design lead's polish on 54a05e0d).
+    expect(app("features/dashboard/ReviewQueue.tsx")).toMatch(/<div className="px-3 pt-3">\s*<SegmentedControl\s*size="sm"[\s\S]*?<\/div>\s*\{view === "review" \? <ReviewQueue \/> : <Dashboard onScreen=\{visible\} \/>\}/);
+    const h = renderToStaticMarkup(<DashboardScene />);
+    const n = SAMPLE.order.length;
+    const [sw, count] = [h.indexOf('<span class="sc-seg sc-dash-switch">'), h.indexOf(`>${esc(t("dashboard.count", { n }))}<`)];
+    expect(sw).toBeGreaterThan(-1);
+    expect(sw).toBeLessThan(count);
+    expect(h.slice(sw, count)).toContain(`>${t("review.viewAgents", { n })}<`);
+    expect(shared).toContain(".sc-dash-switch { align-self: flex-start; }");
+    // F-TL-12.12 (the tree, so 0.13.0): a card with a question open is pinned first, in its own group above the count,
+    // whatever the filter or search. A question is Vibezeo's own (pendingApproval: a Thread agent's approval, or a
+    // pane's `vibezeo run`), and the story asks none: Bea's question is her engine's, in her terminal (D-3001, D-3002),
+    // and the demo's items carry none. So the scene draws no such group at either release; a story that gives an agent
+    // one fails this, and the scene draws the group then.
+    const dashboard = app("features/dashboard/Dashboard.tsx");
+    expect(dashboard).toContain("const asking = askingGroup(all);");
+    expect(dashboard).toMatch(/\{asking && renderGroup\(asking\)\}\s*<header/);
+    expect(app("features/dashboard/model.ts")).toMatch(/export function askingGroup\(items: DashboardItem\[\]\): Group \| null \{\s*const asking = items\s*\.filter\(\(i\) => i\.pendingApproval\)/);
+    expect([...app("demo/backend.ts").matchAll(/pendingApproval: ([^,\n]+)/g)].map((m) => m[1])).toEqual(["null", "null"]);
+    expect(JSON.stringify(story)).not.toMatch(/pendingApproval|vibezeo run/);
+    expect(h).not.toContain(esc(t("dashboard.group.asking", { n: 1 })).split(" · ")[0] ?? "");
+  });
+
   it("F-WB-01 AC9 D-3002 each Dashboard card ends its title row on its state, as AgentCard does, and the status bar counts the cards", () => {
     // AgentCard, in 0.12.0 and the tree: its dot, its engine's tile, its title, then STATUS_LABEL · elapsed in muted text,
     // elapsed being the minutes since the state began. The demo starts every pane 42 minutes back, and a new state starts
@@ -1004,12 +1268,19 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(dashboard).toMatch(
       /<StatusDot status=\{view\(item\.status\)\} size=\{8\} \/>[\s\S]*?<EngineGlyph[\s\S]*?\{title\}\s*<\/span>\s*<span className="shrink-0 text-sm tabular-nums text-fg-muted">\s*\{STATUS_LABEL\[item\.status\]\(\)\} · \{elapsed\(item\.since, now\)\}\s*<\/span>\s*<span\s*className="flex shrink-0 items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"[\s\S]*?<IconButton\s*size="sm"/,
     );
-    // Its title is cardTitle's, the first name and the work (model.ts), cut to the card; its menu keeps its room after
-    // the state, shown on hover: a small IconButton is 28 px (size-7). The design lead's polish on cced2f8f.
+    // Its title is cardTitle's, the first name and the work (model.ts), cut to the card. After the state, the span that
+    // shows on hover keeps its room: ⋯'s menu and ×, each a small IconButton, 28 px (size-7), so 56 (the design lead's
+    // polish on cced2f8f; the coordinator's S2 on 23cf1fa0: the room was one button's).
     expect(app("features/dashboard/model.ts")).toContain("if (name && work) return `${name} · ${work}`;");
     expect(dashboard).toMatch(/data-testid="agent-card-title"\s*className="min-w-0 flex-1 truncate /);
+    const hover = /className="flex shrink-0 items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"\s*onClick=\{\(e\) => e\.stopPropagation\(\)\}\s*>([\s\S]*?)<\/span>/.exec(dashboard)?.[1] ?? "";
+    expect([...hover.matchAll(/<IconButton\b/g)]).toHaveLength(2);
+    expect([...hover.matchAll(/<IconButton\s+size="(\w+)"\s+icon=\{<(\w+) size=\{14\} \/>\}/g)].map((m) => [m[1], m[2]])).toEqual([
+      ["sm", "MoreHorizontal"],
+      ["sm", "X"],
+    ]);
     expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/IconButton.tsx"), "utf8")).toContain('size === "sm" ? "size-7" : "size-8"');
-    expect(shared).toContain(".sc-card-menu { flex: none; width: calc(28 * var(--sc-px)); }");
+    expect(shared).toContain(".sc-card-menu { flex: none; width: calc(56 * var(--sc-px)); }");
     expect(shared).toMatch(/\.sc-card-head \.sc-card-title \{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/);
     for (const [status, key] of [["waiting", "agentStatus.waiting"], ["working", "agentStatus.working"], ["done", "agentStatus.done"]]) expect(dashboard).toContain(`  ${status}: () => t("${key}"),`);
     expect(dashboard).toContain('return m < 60 ? t("time.minutes", { n: m })');
@@ -1201,6 +1472,8 @@ describe("F-WB-01 AC9 product scenes", () => {
       [1, 2],
       [1, 1],
     ]);
+    // Land: the story's, throughout, as every status bar counts them.
+    expect(segment(renderToStaticMarkup(<LandScene />))).toEqual([[0, SAMPLE.agents]]);
     // A segment with nobody waiting or at work isn't drawn, as the app's isn't: no empty segment, no gap.
     expect(renderToStaticMarkup(<AgentsSegment steps={[[0, { waiting: 0, working: 0 }]]} />)).toBe("");
     expect(renderToStaticMarkup(<AgentsSegment steps={[[0, { waiting: 0, working: 1 }], [1, { waiting: 0, working: 0 }]]} />)).not.toContain('<span class="sc-agents"></span>');
@@ -1286,8 +1559,12 @@ describe("F-WB-01 AC9 product scenes", () => {
   it("F-WB-01 AC9 scene keyframes move only transform and opacity (and the counter)", () => {
     for (const m of css.matchAll(/@keyframes ([\w-]+) \{([\s\S]*?\})\s*\}/g)) {
       const props = [...(m[2] ?? "").matchAll(/([\w-]+)\s*:/g)].map((p) => p[1]);
-      for (const p of props) expect(["opacity", "translate", "scale", "rotate", "--sc-n"], `${m[1]}: ${p}`).toContain(p);
+      // A line a terminal scrolls off holds its room until it goes, then gives it up at once: a 0 s step, so nothing is
+      // laid out between (D-3006).
+      const held = m[1] === "sc-scroll" ? ["max-height", "margin-bottom"] : [];
+      for (const p of props) expect(["opacity", "translate", "scale", "rotate", "--sc-n", ...held], `${m[1]}: ${p}`).toContain(p);
     }
+    expect(css).toContain("& [data-fx-scroll] { animation: sc-scroll 0s linear var(--at) backwards paused; }");
     // A spinner turns (UI_SPEC §2.18) from when its state comes in, a set number of times, and only while its scene plays.
     expect(css).toMatch(/@keyframes sc-spin\s+\{ to \{ rotate: 1turn; \} \}/);
     expect(css).toMatch(/& \.sc-spin \{ animation: sc-spin 0\.8s linear var\(--at, 0s\) 2 paused; \}/);
@@ -1341,12 +1618,14 @@ describe("F-WB-01 AC9 product scenes", () => {
       ...["tokens.css", "brand.css", "base.css", "site.css"].map((f) => join(styles, f)),
       join(import.meta.dirname, "globals.css"),
       join(import.meta.dirname, "docs/docs.css"),
-      ...["scenes.css", "ci.css", "home.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
+      ...["scenes.css", "ci.css", "rail.css", "home.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
     ];
+    // Every scene sheet: rail.css too, split from home.css (D-3006).
+    expect(readdirSync(join(import.meta.dirname, "../components/site/scenes")).filter((f) => f.endsWith(".css")).sort()).toEqual(["ci.css", "home.css", "rail.css", "scenes.css"]);
     const globals = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
     for (const f of ["tokens", "brand", "base", "site"]) expect(globals).toContain(`@import "@tandem/ui/${f}.css";`);
     const source = (f: string) => readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    // Defined: in a stylesheet, by next/font (app/fonts.ts), or inline by a scene's effects (parts.tsx's --at, --stay, --until and --to).
+    // Defined: in a stylesheet, by next/font (app/fonts.ts), or inline by a scene's effects (parts.tsx's --at, --at-narrow, --stay, --until and --to).
     const defined = new Set(sheets.flatMap((f) => [...source(f).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])));
     for (const m of readFileSync(join(import.meta.dirname, "fonts.ts"), "utf8").matchAll(/variable: "(--[\w-]+)"/g)) defined.add(m[1]);
     // The docs' code blocks: Shiki writes each token's two colours inline, as these, since fumadocs turns its default colour off.
@@ -1357,7 +1636,7 @@ describe("F-WB-01 AC9 product scenes", () => {
       );
     const code = [...tsx(join(import.meta.dirname, "../components")), ...tsx(import.meta.dirname), ...tsx(join(import.meta.dirname, "../lib"))];
     for (const f of code) for (const m of readFileSync(f, "utf8").matchAll(/"(--[\w-]+)":/g)) defined.add(m[1]);
-    expect([...defined].filter((v) => ["--at", "--stay", "--until", "--to", "--font-inter", "--font-jbm"].includes(v)).sort()).toEqual(["--at", "--font-inter", "--font-jbm", "--stay", "--to", "--until"]);
+    expect([...defined].filter((v) => ["--at", "--at-narrow", "--stay", "--until", "--to", "--font-inter", "--font-jbm"].includes(v)).sort()).toEqual(["--at", "--at-narrow", "--font-inter", "--font-jbm", "--stay", "--to", "--until"]);
     const missing: string[] = [];
     for (const f of [...sheets, ...code]) {
       const used = new Set([...source(f).matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
@@ -1391,7 +1670,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(ci).not.toMatch(/animation|@keyframes/);
     // Only the CI scene names a sheet of its own; its page inlines it whole, in the head after scenes.css (the
     // precedence comes after Next's), and the home page and 0.12.0's don't have it.
-    expect(Object.values(RELEASE_SCENES).flat().flatMap((s) => (s.css ? [[s.id, s.css]] : []))).toEqual([["checks", "ci.css"]]);
+    // From 0.13.0 its rail is CodeRail's, as the hero's, whose rules (rail.css) come first (D-3006).
+    const ciSheets = RAIL_FOLDS ? ["rail.css", "ci.css"] : ["ci.css"];
+    expect(Object.values(RELEASE_SCENES).flat().flatMap((s) => (s.css ? [[s.id, s.css]] : []))).toEqual([["checks", ciSheets]]);
     // Inlined as the sheet reads: every selector, at-rule, declaration and block end, with its whitespace runs one space.
     // Dropping every space would hide `.a .b` turned into `.a.b` (the coordinator's nit 3 on 2966da74).
     const tokens = (text: string) =>
@@ -1401,7 +1682,7 @@ describe("F-WB-01 AC9 product scenes", () => {
         .filter((x) => x !== "" && x !== ";");
     expect(tokens(sceneCss("ci.css"))).toEqual(tokens(ci));
     expect(tokens(".sc-a .sc-b { margin: 0  1px; }")).not.toEqual(tokens(".sc-a.sc-b { margin: 0 1px; }"));
-    expect(v090).toContain(`<style data-precedence="scenes" data-href="scenes/ci.css">${sceneCss("ci.css")}</style>`);
+    expect(v090).toContain(`<style data-precedence="scenes" data-href="${ciSheets.map((f) => `scenes/${f}`).join(" ")}">${ciSheets.map((f) => sceneCss(f)).join("")}</style>`);
     const v120 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.12.0" }) }));
     expect(v120).not.toContain("<style");
     expect(home).not.toContain("scenes/ci.css");
@@ -1473,16 +1754,13 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(notice?.[6]).toBe(t("radar.notice.warn"));
     const [shown, stay, press] = [notice?.[1], notice?.[2], notice?.[5]].map(Number) as [number, number, number];
     expect([shown, press]).toEqual([HERO_T.notice, HERO_T.warn]);
-    // The press dismisses it: from the click that ends it (260 ms), it leaves over its fade (the site's --dur-pop), the
-    // visit's last stretch.
+    // The press dismisses it: it's gone at once at the click that ends it (260 ms), as the app removes it (D-3004).
     const pressMs = Number(/& \[data-fx-press\][^{]*\{ animation: sc-press (\d+)ms/.exec(css)?.[1]);
-    const popMs = Number(/--dur-pop:\s*(\d+)ms/.exec(app("packages/ui/src/styles/site.css"))?.[1]);
-    expect(css).toMatch(/& \[data-fx-visit\] \{ animation: sc-visit var\(--dur-pop\)[^,]*, sc-leave var\(--dur-pop\) var\(--ease-exit\) calc\(var\(--at\) \+ var\(--stay\) - var\(--dur-pop\)\)/);
-    expect(Math.round((shown + stay) * 100)).toBe(Math.round((press + pressMs / 1000 + popMs / 1000) * 100));
+    expect(Math.round((shown + stay) * 100)).toBe(Math.round((press + pressMs / 1000) * 100));
     const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s"><span class="sc-note-toast-text"><span class="sc-note-toast-title">([^<]*)<\/span><\/span><svg[^>]*sc-note-toast-x/.exec(hero);
     expect(warned?.[3]).toBe(t("radar.notice.warned"));
-    // Once the notice has gone, for the 5 s a toast stays: one toast at a time in one place.
-    expect(Math.round(Number(warned?.[1]) * 100)).toBe(Math.round((shown + stay) * 100));
+    // Once the notice has gone and the notes are typed, for the 5 s a toast stays: one toast at a time in one place.
+    expect(Number(warned?.[1])).toBeGreaterThan(shown + stay);
     expect(Number(warned?.[2])).toBe(5);
     // Both are the window's own, over the sidebar, never inside a pane.
     expect(/<div class="sc-pane[ "][\s\S]*?<\/div><\/div>/.exec(hero)?.[0]).not.toContain("sc-note-toast");
@@ -1603,14 +1881,18 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     const cases = JSON.parse(readFileSync(join(dir, "fixtures/radar_notes.json"), "utf8")) as Case[];
     expect(readFileSync(join(dir, "radar_notes.rs"), "utf8")).toContain('assert_eq!(note, case.note, "{}", case.why);');
     for (const c of cases) expect(radarNote(c.other, c.symbols, true), c.why).toBe(c.note);
-    // It names the other worktree by its branch, as radar.rs passes it (`other.lane_branch`), and the core names a
-    // worktree's branch tandem/<slug> as the demo does (the code review of cced2f8f, nit 1).
+    // The core names the other worktree by its branch, as radar.rs passes it (`other.lane_branch`), tandem/<slug> as
+    // the demo names it (the code review of cced2f8f, nit 1). The hero's note is the core's with the worktree's name
+    // there, as the site shows every worktree (D-1898, the design lead's QA of 825b4b54).
     expect(readFileSync(join(dir, "../src/services/radar.rs"), "utf8")).toMatch(/Ok\(note_text\(\s*other\.lane_branch\.as_deref\(\)\.unwrap_or\(&other\.name\),/);
     expect(app("demo/story.ts")).toContain("return `tandem/${slug}`;");
     expect(branchOf(working.branch)).toBe(`tandem/${working.branch}`);
     expect(radarNote(branchOf(working.branch), cases[0]?.symbols ?? [], false)).toBe(cases[0]?.note);
     expect(cases.length).toBeGreaterThanOrEqual(4);
-    expect(cases[0]).toEqual({ why: expect.any(String), other: branchOf(working.branch), symbols: [{ name: SAMPLE.symbol, qualified: SAMPLE.symbol, here: "changed", there: "changed" }], note: SAMPLE.radar.note });
+    expect(cases[0]).toEqual({ why: expect.any(String), other: branchOf(working.branch), symbols: [{ name: SAMPLE.symbol, qualified: SAMPLE.symbol, here: "changed", there: "changed" }], note: expect.any(String) });
+    const core = cases[0]?.note ?? "";
+    expect(core.split(branchOf(working.branch))).toHaveLength(2);
+    expect(SAMPLE.radar.note).toBe(core.replace(`\nOther worktree: ${branchOf(working.branch)}\n`, `\nOther worktree: ${working.branch}\n`));
     expect(SAMPLE.radar.note).not.toMatch(/[@\uFF20]/);
     // Between them: several symbols with each side's change, an @ defanged with the note, one that stays, a fence that
     // outlasts a backtick run.
@@ -1624,7 +1906,7 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     // trimEnd() would stop at the U+0085 and leave one.
     expect(cases.some((c) => c.symbols.length === 0 && c.other === "tandem/edge \u0085 \uFEFF" && c.note.endsWith("Other worktree: tandem/edge  \n```"))).toBe(true);
     expect(SAMPLE.radar.note.startsWith(`Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository,`)).toBe(true);
-    expect(SAMPLE.radar.note).toContain(`${untrustedLabel("the overlapping symbols")}\n\`\`\`text\nOther worktree: tandem/${working.branch}\n- ${SAMPLE.symbol}: changed here, changed there\n\`\`\``);
+    expect(SAMPLE.radar.note).toContain(`${untrustedLabel("the overlapping symbols")}\n\`\`\`text\nOther worktree: ${working.branch}\n- ${SAMPLE.symbol}: changed here, changed there\n\`\`\``);
     // The demo marks the same two and types the same note (backend.ts's radarNote).
     expect(app("demo/backend.ts")).toContain('return [{ name: o.symbol, qualified: o.symbol, here: "changed", there: "changed" }];');
     // Into the agent, the way its terminal echoes a paste, and only on a wide frame.
@@ -1639,16 +1921,25 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     // (the code review of cced2f8f, nit 6). React puts the "scenes" styles after Next's, scenes.css among them.
     expect(homePage).toContain('import "../components/site/scenes/scenes.css";');
     expect(homePage).not.toContain('import "../components/site/scenes/home.css";');
-    expect(home).toContain(`<style data-precedence="scenes" data-href="scenes/home.css">${sceneCss("home.css")}</style>`);
+    // The rail's rules (rail.css) come first: the CI scene draws CodeRail's rail too, from 0.13.0 (D-3006).
+    expect(home).toContain(`<style data-precedence="scenes" data-href="scenes/rail.css scenes/home.css">${sceneCss("rail.css")}${sceneCss("home.css")}</style>`);
     expect(home.match(/<style/g)).toHaveLength(1);
     expect(page("changelog/[version]/page.site.tsx")).not.toContain("home.css");
     // Every class it styles is one a home-page scene draws, and none that only a release page's scenes draw.
     const dir = join(import.meta.dirname, "../components/site/scenes");
     const classes = (f: string) => new Set([...readFileSync(join(dir, f), "utf8").matchAll(/\bsc-[a-z0-9-]*[a-z0-9]/g)].map((m) => m[0]));
-    const homeDraws = new Set(["WorkspaceScene.tsx", "ReviewScene.tsx", "DashboardScene.tsx", "parts.tsx"].flatMap((f) => [...classes(f)]));
+    const homeDraws = new Set(["WorkspaceScene.tsx", "ReviewScene.tsx", "DashboardScene.tsx", "parts.tsx", "rail.tsx"].flatMap((f) => [...classes(f)]));
     const styled = new Set([...homeCss.matchAll(/\.(sc-[a-z0-9-]*[a-z0-9])/g)].map((m) => m[1] ?? ""));
     expect([...styled].filter((c) => !homeDraws.has(c))).toEqual([]);
     expect(homeCss).not.toMatch(/animation|@keyframes/);
+    // rail.css styles only the rail's parts: what rail.tsx draws (the checks badge in each of its states) and what the
+    // two scenes with a rail put in its rows.
+    const railCss = sheet("rail.css");
+    const states = (/export type ChecksState = ([^;]+);/.exec(readFileSync(join(dir, "rail.tsx"), "utf8"))?.[1] ?? "").match(/[a-z]+/g) ?? [];
+    expect(states).toEqual(["failed", "running", "passed"]);
+    const railDraws = new Set([...["rail.tsx", "parts.tsx", "WorkspaceScene.tsx", "ChecksScene.tsx"].flatMap((f) => [...classes(f)]), ...states.map((x) => `sc-wtrow-checks-${x}`)]);
+    expect([...new Set([...railCss.matchAll(/\.(sc-[a-z0-9-]*[a-z0-9])/g)].map((m) => m[1] ?? ""))].filter((c) => !railDraws.has(c))).toEqual([]);
+    expect(railCss).not.toMatch(/animation|@keyframes/);
     for (const f of ["ChecksScene.tsx", "LandScene.tsx", "PlanScene.tsx"]) for (const c of ["sc-crail", "sc-side", "sc-code", "sc-tabs"]) expect(classes(f).has(c), `${c} in ${f}`).toBe(false);
   });
 
@@ -1683,29 +1974,64 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     for (const s of [text, WORKSPACE_CAPTION]) expect(s).not.toMatch(/\b(she|her|hers|he|him|his)\b/i);
   });
 
-  it("F-WB-01 AC9 D-2704 the 0.12.0 hero leaves the intent radar out, at a rail width CodeRail allows, with nothing cut", () => {
+  it("F-WB-01 AC9 D-2704 D-3006 the hero draws the intent radar from 0.13.0, with RadarMark's compact rule, at a rail width CodeRail allows, with nothing cut", () => {
     // 0.12.0's mark is words ("Shares applyCoupon"): a row holding them needs about 410 px, and CodeRail stops at 360
-    // (the design lead's must-fix on cced2f8f). The radar comes back with 0.13.0's icon mark (D-2613) and the rail's
-    // folding (D-2701), in the 0.13.0 slice.
+    // (the design lead's must-fix on cced2f8f), so the 0.12.0 hero leaves the radar out. 0.13.0's mark is the radar,
+    // alone beside the row's status and with the symbol otherwise (D-2613, D-2700), in a row that folds while it's
+    // short of room (D-2701), and that hero draws it (D-3006).
     expect(RADAR).toBe(atLeast(RELEASE.version, "0.13.0"));
+    expect(RAIL_FOLDS).toBe(RADAR);
     // 0.12.0's CodeRail (297d1238) clamps the rail to 180–360 px. The tree's measures its minimum from 0.13.0 (D-2701,
-    // D-2703), up to the same 360.
-    const codeRail = readFileSync(join(import.meta.dirname, "../../desktop/src/features/code/CodeRail.tsx"), "utf8");
-    const [min, max] = [180, 360];
+    // D-2703): 246 px with no jj or Preview row, up to the same 360.
+    const app = (f: string) => readFileSync(join(import.meta.dirname, "../../desktop/src", f), "utf8");
+    const codeRail = app("features/code/CodeRail.tsx");
+    const [min, max] = [RAIL_FOLDS ? 246 : 180, 360];
     expect(codeRail).toContain(`export const RAIL_MAX = ${max};`);
     expect(codeRail).toContain("export const RAIL_MIN = railMin(PARTS, []);");
+    expect(codeRail).toContain("/** The minimum in Chromium with no jj or Preview row: 246. */");
     const width = Number(/\.sc-code \{[^}]*grid-template-columns: calc\((\d+) \* var\(--sc-px\)\)/.exec(sheet("home.css"))?.[1]);
-    expect(width).toBeGreaterThanOrEqual(min ?? NaN);
-    expect(width).toBeLessThanOrEqual(max ?? NaN);
-    // None of it is drawn: no mark, no notice, no note typed into Ada's pane, no "Warned both agents".
+    expect(width).toBeGreaterThanOrEqual(min);
+    expect(width).toBeLessThanOrEqual(max);
+    // Drawn from 0.13.0, none of it before: the marks, the notice, the note typed into Ada's pane, "Warned both agents".
     const hero = renderToStaticMarkup(<WorkspaceScene />);
     const note = pasted(SAMPLE.radar.note).filter((l) => l.trim() !== "");
     for (const s of ["sc-wtrow-radar", "sc-tone-warning", esc(t("radar.notice.warn")), esc(t("radar.notice.warned")), ...note.map((l) => esc(l))]) expect(hero.includes(s), s).toBe(RADAR);
-    // A row keeps its menu's room, as 0.12.0's WorktreeRow (297d1238) keeps the menu in the row, hidden until hover: a
-    // small IconButton, 28 px.
-    expect(sheet("home.css")).toContain(".sc-wtrow-menu { flex: none; width: calc(28 * var(--sc-px)); }");
-    // When 0.13.0 ships this fails: the 0.13.0 slice draws the radar with RadarMark's compact rule and the rail's folding.
-    expect(RADAR, "the hero's radar waits for the 0.13.0 slice (D-2704)").toBe(false);
+    // RadarMark (the tree): a waiting Badge that leads with the radar, 10 px, then the symbol in code type, cut at 16 of
+    // its characters; beside the row's status (showsStatus: it waits, works or failed), or folded, the radar alone. Its
+    // words are its name and tooltip, never drawn.
+    const radar = app("features/code/IntentRadar.tsx");
+    expect(radar).toContain("const compact = fold || beside;");
+    expect(radar).toMatch(/<Badge variant="waiting" className="whitespace-nowrap">\s*<Radar size=\{10\} aria-hidden="true" className="shrink-0" \/>\s*\{!compact &&\s*\(one \? \(\s*<span data-words="" className="max-w-\[16ch\] truncate font-mono">/);
+    expect(app("features/code/workspaceStatus.ts")).toContain("return s.waiting || s.working > 0 || s.failed;");
+    const rail = sheet("rail.css");
+    expect(rail).toContain(".sc-wtrow-radar-icon { flex: none; width: calc(10 * var(--sc-px)); height: calc(10 * var(--sc-px)); }");
+    expect(rail).toContain(".sc-wtrow-symbol { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }");
+    expect(hero).not.toContain(esc(t("radar.mark.one", { symbol: SAMPLE.symbol })));
+    // 0.12.0's row keeps its menu's room, as its WorktreeRow (297d1238) keeps the menu in the row, hidden until hover: a
+    // small IconButton, 28 px. The tree's covers the row's end with it while it's hovered, so no row keeps room (D-2611).
+    expect(app("features/code/Worktrees.tsx")).toContain(
+      'className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-sm bg-surface-4 opacity-0 group-hover/wt:pointer-events-auto',
+    );
+    expect(rail).toContain(".sc-wtrow-menu { flex: none; width: calc(28 * var(--sc-px)); }");
+    expect(hero.includes('<span class="sc-wtrow-menu">')).toBe(!RAIL_FOLDS);
+    // A browser test checks that no row runs past the rail, at 1440 and 390, and that none needs to fold here.
+  });
+
+  it("F-WB-01 AC9 the scenes have their slice for the release the site shows: release.ts never names a later one (OPERATING §6)", () => {
+    // A release's scenes slice draws what it changes; until it's in, the site can't name that release (the
+    // coordinator's S1 on 23cf1fa0). The guards it replaces failed by design when 0.13.0 shipped; this fails the same
+    // way for a release past the last slice, and is never weakened to get through.
+    expect(atLeast(SCENES_SLICE, RELEASE.version), `release.ts names ${RELEASE.version}, past the scenes' last slice (${SCENES_SLICE}): that release's scenes slice comes first`).toBe(true);
+    // Every scene test runs again with the site at SCENES_SLICE (scenes.next.test.tsx), so the slice's scenes are held
+    // before release.ts names it.
+    const next = readFileSync(join(import.meta.dirname, "scenes.next.test.tsx"), "utf8");
+    expect(next).toContain("return { ...real, RELEASE: { ...real.RELEASE, version: real.SCENES_SLICE } };");
+    expect(next).toContain('await import("./scenes.test");');
+    const operating = readFileSync(join(import.meta.dirname, "../../../docs/OPERATING.md"), "utf8");
+    expect(operating).toMatch(/Bumping `release\.ts` to a new version needs that release's scenes slice\s+first/);
+    // The gate runs no browser, so a slice's browser checks run on a site built at SCENES_SLICE as well (the code review
+    // of 825b4b54, nit 2).
+    expect(operating).toMatch(/So a slice also sets `release\.ts` to `SCENES_SLICE`, runs\s+`pnpm --filter web build:site` and\s+`PLAYWRIGHT_CHROMIUM=\/opt\/pw-browsers\/chromium pnpm --filter web test:site`,\s+sets it back, and runs both again at the version the site shows\./);
   });
 });
 
@@ -1782,8 +2108,18 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const lines = pasted(prompt);
     const head = lines.indexOf("  Failed steps' log (last lines):");
     expect(head).toBeGreaterThan(0);
-    expect(echoed(prompt)).toEqual([...lines.slice(0, head + 1), "  ⋮", ...lines.slice(-(LOG_TAIL + 1))]);
-    expect(lines.at(-1)).toBe("  ```");
+    // The fence's end, then, from the release that defangs, the core's note (D-3022): the story's log has an @. The log's
+    // last lines are counted back from the fence, so the note never takes one's place (the coordinator's S1 on 23cf1fa0).
+    const end = lines.lastIndexOf("  ```");
+    expect(lines.slice(end + 1)).toEqual(DEFANGS ? [`  ${DEFANGED}`] : []);
+    expect(lines.slice(end - LOG_TAIL, end)).toEqual(SAMPLE.pr.log.slice(-LOG_TAIL).map((l) => (l === "" ? "" : `  ${l}`)));
+    expect(echoed(prompt)).toEqual([...lines.slice(0, head + 1), ELISION, ...lines.slice(end - LOG_TAIL)]);
+    // The ⋮ is the scene's elision, not something the terminal printed: its own line, subtle, in the site's face, with
+    // room above and below (the design lead's condition on keeping it, nit 3 on cced2f8f).
+    expect(ELISION).toBe("⋮");
+    expect(h).toMatch(new RegExp(`<span class="sc-elide" data-fx-line="" style="--at:[\\d.]+s">${ELISION}</span>`));
+    expect(h).not.toMatch(new RegExp(`<span class="sc-line[^"]*"[^>]*>\\s*${ELISION}<`));
+    expect(css).toContain(".sc-elide { flex: none; margin-block: 0.35em; font-family: var(--font-sans); line-height: 1; color: var(--tn-text-subtle); }");
     let at: number = CI_T.send;
     for (const shown of echoed(prompt).filter((l) => l !== "")) {
       const m = new RegExp(`data-fx-line="" style="--at:([\\d.]+)s">${re(esc(shown))}<`).exec(h);
@@ -1792,14 +2128,15 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
       at = Number(m?.[1]);
     }
     // On a phone it keeps the prompt's start, the ⋮ and the log's last two lines with the fence's end; a log too short
-    // to leave lines out keeps them all. Only blank lines and the link fold then.
+    // to leave lines out keeps them all. Only blank lines, the link and the note after the fence fold then.
     const kept = (typed: string[]) => typed.filter((l, i) => !foldEchoed(typed)(l, i));
     const typed = echoed(prompt);
-    expect(kept(typed)).toEqual(typed.filter((l, i) => l !== "" && !l.startsWith("  Link: ") && (i <= typed.indexOf("  ⋮") || i >= typed.length - 3)));
+    const closes = typed.lastIndexOf("  ```");
+    expect(kept(typed)).toEqual(typed.filter((l, i) => l !== "" && !l.startsWith("  Link: ") && i <= closes && (i <= typed.indexOf(ELISION) || i >= closes - 2)));
     expect(kept(typed)[0]).toBe(`› ${prompt.split("\n")[0]}`);
-    expect(kept(typed).slice(-4)).toEqual(["  ⋮", ...lines.slice(-3)]);
+    expect(kept(typed).slice(-4)).toEqual([ELISION, ...lines.slice(end - 2, end + 1)]);
     const short = echoed(failurePrompt(pr.number, check, SAMPLE.pr.log.slice(-2)));
-    expect(short).not.toContain("  ⋮");
+    expect(short).not.toContain(ELISION);
     expect(kept(short)).toEqual(short.filter((l) => l !== "" && !l.startsWith("  Link: ")));
     expect(kept(short)).toContain(`  ${SAMPLE.pr.log.at(-1)}`);
     // The fix it then makes is the story's: the test file, +12 −8, the tests all passing, its commit, its words.
@@ -1830,11 +2167,10 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const layer = /<div class="sc-ci-layer" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(h);
     const [rise, stay] = [Number(layer?.[1]), Number(layer?.[2])];
     expect(rise).toBeGreaterThan(CI_T.open);
-    // It's there until Close's press is over, then leaves: the press never plays on a fading dialog.
+    // It's there until Close's press is over, then gone at once, as the app's closing dialog is (D-3004).
     const press = Number(/& \[data-fx-press\] \{ animation: sc-press (\d+)ms/.exec(css)?.[1]) / 1000;
-    const leave = Number(/--dur-pop:\s*(\d+)ms;/.exec(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/styles/site.css"), "utf8"))?.[1]) / 1000;
-    expect([press, leave]).toEqual([0.26, 0.18]);
-    expect(rise + stay - leave).toBeCloseTo(CI_T.close + press, 5);
+    expect(press).toBe(0.26);
+    expect(rise + stay).toBeCloseTo(CI_T.close + press, 5);
     // The agent works from when it's sent until its commit.
     expect(h).toMatch(new RegExp(`<span data-fx-stint="" style="--at:${CI_T.sent}s;--until:${CI_T.done}s"><span class="sc-dot"><svg[^>]*data-status="working"`));
     // Its pane's header has how long it's been at it while it works: a new state, so its clock starts again ("now").
@@ -1843,8 +2179,10 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
 
   it("F-WB-01 AC9 D-3001 the fix is pushed from the branch chip before the checks run again, and they pass", () => {
     const ahead = (n: number) => esc(t("git.branch.short", { ahead: n, behind: 0 }));
-    // In order: the commit leaves one to push, Push is pressed, pushed, the row's badge pressed again, running, passed.
-    const order = [when(ahead(1)), CI_T.push, when(esc(t("git.pushed", { branch: pr.worktree }))), CI_T.reopen, when(esc(t("checks.running"))), when(esc(t("checks.passed")))];
+    // In order: the commit leaves one to push, Push is pressed, pushed, then (where the push read nothing) the row's badge
+    // pressed again, running, passed. From 0.13.0 the badge says the status bar's words (D-2700).
+    const [running, passed] = RAIL_FOLDS ? [t("status.ciRunning"), t("status.ciPassed")] : [t("checks.running"), t("checks.passed")];
+    const order = [when(ahead(1)), CI_T.push, when(esc(t("git.pushed", { branch: pr.worktree }))), ...(PUSH_READS ? [] : [CI_T.reopen]), when(esc(running)), when(esc(passed))];
     expect(order.every(Number.isFinite), String(order)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(h).toMatch(new RegExp(`data-fx-press="" style="--at:${CI_T.push}s">${re(esc(t("git.push")))}<`));
@@ -1853,11 +2191,11 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(h).not.toContain("tandem/");
   });
 
-  it("F-WB-01 AC9 D-3001 D-2619 0.12.0's push read no checks: opening them again does, Refresh spinning, and the new run is Running until a later read passes it", () => {
+  it("F-WB-01 AC9 D-3001 D-2619 the checks are read as the app reads them: 0.12.0's push read none, so opening them again does; from 0.13.0 the push does", () => {
     // The app: the dialog reads as it opens, and its Refresh (secondary) shows its spinner while it does; finished checks
     // are read every 15 minutes and running ones every 2 with the window in front. In 0.12.0 nothing else read them, a
-    // push included (the coordinator's must-fix on 54a05e0d). The tree's push reads them (D-2619, from 0.13.0), so a new
-    // reader still fails this test, and the 0.13.0 slice draws the push reading them.
+    // push included (the coordinator's must-fix on 54a05e0d). The tree's push reads them (D-2619, from 0.13.0): the
+    // scene draws each release's, and a new reader still fails this test.
     expect(PUSH_READS).toBe(atLeast(RELEASE.version, "0.13.0"));
     const src = join(import.meta.dirname, "../../desktop/src");
     const app = (f: string) => readFileSync(join(src, f), "utf8");
@@ -1899,19 +2237,12 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect(propertySites("checks")).toEqual(["stores/worktrees.ts: checks in loadChecks", "stores/worktrees.ts: checks in useWorktrees"]);
     expect(store).toContain("if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));");
     expect(store).toMatch(/useWorktrees = create<WorktreesState>\(\(set, get\) => \(\{[\s\S]*?\n {2}checks: \{\},/);
-    // The tree's push reads them once it has pushed (D-2619), 0.12.0's didn't: the scene shows 0.12.0's until the 0.13.0
-    // slice, and this fails once 0.13.0 ships, until it does.
+    // The tree's push reads them once it has pushed (D-2619), 0.12.0's didn't: the scene draws each (PUSH_READS).
     const git = app("stores/git.ts");
     expect(git).toContain('if (!err && context.type === "workspace") void checksAfterPush(context.workspaceId);');
     expect(store).toContain("export const CHECKS_AFTER_PUSH_MS = 5 * 60_000;");
-    expect(PUSH_READS, "the CI scene's push waits for the 0.13.0 slice (D-2619)").toBe(false);
-    // In the scene: once pushed, the row's badge is pressed again, and the dialog rises again.
     const r = (n: number) => Math.round(n * 100) / 100;
-    expect(CI_T.reopen).toBeGreaterThan(CI_T.pushed);
-    expect(h).toContain(`<span data-fx-press="" style="--at:${CI_T.reopen}s"><span class="sc-checks-fail" data-fx-press="" style="--at:${CI_T.open}s">`);
-    const layers = [...h.matchAll(/<div class="sc-ci-layer" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
-    expect(layers.map(([rise]) => rise)).toEqual([r(CI_T.open + 0.2), r(CI_T.reopen + 0.2)]);
-    const second = h.slice(h.lastIndexOf('<div class="sc-ci-layer"'));
+    const layers = [...h.matchAll(/<div class="sc-ci-layer" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/g)].map((m) => [Number(m[1]), Number(m[2]), m.index ?? 0] as const);
     // Each dialog is two boxes in one place: as it reads, with Refresh's spinner from the rise, until the read returns;
     // then as the read leaves it, Refresh's label alone. Each is its own size, so the dialog shrinks as the app's does when
     // Send and the spinner go (the coordinator's nit 7 on 2966da74).
@@ -1926,35 +2257,61 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
       expect(kids(layer, 0)).toHaveLength(2);
       return [reading, done] as const;
     };
-    // The rows: as they were, the failure with its Send failure to agent (not pressed now), until the read; then the new
-    // run, all three Running in Badge's outline variant, and no Send.
-    const [was, now] = boxes(second, CI_T.running, CI_T.reopen + 0.2);
-    expect(was).toContain(`<span class="sc-badge sc-badge-error">${t("checks.bucket.fail")}</span>`);
-    expect(was).toContain(`>${t("failure.send")}<`);
-    expect(was).not.toContain("data-fx-press");
-    expect(t("checks.bucket.pending")).toBe("Running");
-    expect(now.match(/<span class="sc-badge sc-badge-outline">Running<\/span>/g)?.length).toBe(pr.checks.length);
-    expect(now).not.toContain(t("failure.send"));
-    // The row reads Checks running from the read; Close is pressed, and the dialog leaves once the press is over;
-    // passed comes on a later read, once the dialog has gone.
-    expect(when(esc(t("checks.running")))).toBe(CI_T.running);
-    expect(now).toContain(`<span class="sc-btn sc-btn-primary" data-fx-press="" style="--at:${CI_T.closed}s">${t("common.close")}</span>`);
-    const [rise2 = NaN, stay2 = NaN] = layers[1] ?? [];
-    expect(rise2 + stay2).toBeCloseTo(CI_T.closed + 0.26 + 0.18, 5);
-    expect(when(esc(t("checks.passed")))).toBe(CI_T.passed);
-    expect(CI_T.passed).toBeGreaterThan(rise2 + stay2);
+    const layerAt = (i: number) => {
+      const at = layers[i]?.[2] ?? -1;
+      return at < 0 ? "" : `${h.slice(at, h.indexOf(">", at) + 1)}${kids(h, at).join("")}</div>`;
+    };
     // The first open reads too: Refresh spins until its read, and the rows are as the row said, Send pressed after it.
-    const first = h.slice(h.indexOf('<div class="sc-ci-layer"'), h.lastIndexOf('<div class="sc-ci-layer"'));
-    const [reading, read] = boxes(first, CI_T.read, CI_T.open + 0.2);
+    const [reading, read] = boxes(layerAt(0), CI_T.read, CI_T.open + 0.2);
     expect(text(reading).replace(t("checks.refresh"), "")).toBe(text(read).replace(t("checks.refresh"), ""));
     expect(reading).not.toContain("data-fx-press");
     expect(read).toContain(`<span class="sc-btn sc-btn-sm" data-fx-press="" style="--at:${CI_T.send}s">${t("failure.send")}</span>`);
     expect(CI_T.read).toBeLessThan(CI_T.send);
-    // The text says how they're read, and that Vibezeo asks once before it reads a repository's pull requests (UI-156).
     const said = ciSceneText();
-    expect(said).toContain(
-      "A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running. While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass.",
-    );
+    if (PUSH_READS) {
+      // From 0.13.0: once pushed, the push reads them (checksAfterPush), and every poll does for five minutes while CI
+      // lists its new run, so the row turns to running by itself, from that read; nothing is opened again. The badge is
+      // pressed once, to open the dialog, and there's one dialog. Passed comes on a later read.
+      expect(git).toContain('if (!err && context.type === "workspace") void checksAfterPush(context.workspaceId);');
+      expect(store).toMatch(/pushedAt\.set\(laneId, Date\.now\(\)\);\s*await loadChecks\(\[laneId\]\);/);
+      expect(store).toContain("if (pushed !== undefined && now - pushed < CHECKS_AFTER_PUSH_MS) return true;");
+      expect(layers.map(([rise]) => rise)).toEqual([r(CI_T.open + 0.2)]);
+      expect(r(CI_T.running - CI_T.pushed)).toBe(0.6);
+      // Pressed once, in the rail's row and the phone's strip, which draws that row.
+      if (RAIL_FOLDS) expect([...h.matchAll(/<span class="sc-wtrow-checks[^"]*" data-fx-press="" style="--at:([\d.]+)s"/g)].map((m) => Number(m[1]))).toEqual([CI_T.open, CI_T.open]);
+      expect(h).not.toContain(`style="--at:${CI_T.reopen}s"`);
+      expect(said).toContain(
+        "Once it's pushed, Vibezeo reads the checks, and again on every poll for five minutes while CI starts its new run, so the row turns to running by itself. While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass.",
+      );
+      expect(said).not.toContain("A push doesn't read the checks");
+    } else {
+      // 0.12.0's: once pushed, the row's badge is pressed again, and the dialog rises again and reads them.
+      expect(CI_T.reopen).toBeGreaterThan(CI_T.pushed);
+      expect(h).toContain(`<span data-fx-press="" style="--at:${CI_T.reopen}s"><span class="sc-checks-fail" data-fx-press="" style="--at:${CI_T.open}s">`);
+      expect(layers.map(([rise]) => rise)).toEqual([r(CI_T.open + 0.2), r(CI_T.reopen + 0.2)]);
+      // The rows: as they were, the failure with its Send failure to agent (not pressed now), until the read; then the new
+      // run, all three Running in Badge's outline variant, and no Send.
+      const [was, now] = boxes(layerAt(1), CI_T.running, CI_T.reopen + 0.2);
+      expect(was).toContain(`<span class="sc-badge sc-badge-error">${t("checks.bucket.fail")}</span>`);
+      expect(was).toContain(`>${t("failure.send")}<`);
+      expect(was).not.toContain("data-fx-press");
+      expect(t("checks.bucket.pending")).toBe("Running");
+      expect(now.match(/<span class="sc-badge sc-badge-outline">Running<\/span>/g)?.length).toBe(pr.checks.length);
+      expect(now).not.toContain(t("failure.send"));
+      // The row reads Checks running from the read; Close is pressed, and the dialog is gone once the press is over.
+      expect(when(esc(t("checks.running")))).toBe(CI_T.running);
+      expect(now).toContain(`<span class="sc-btn sc-btn-primary" data-fx-press="" style="--at:${CI_T.closed}s">${t("common.close")}</span>`);
+      const [, stay2 = NaN] = layers[1] ?? [];
+      expect((layers[1]?.[0] ?? NaN) + stay2).toBeCloseTo(CI_T.closed + 0.26, 5);
+      expect(CI_T.passed).toBeGreaterThan((layers[1]?.[0] ?? NaN) + stay2);
+      expect(said).toContain(
+        "A push doesn't read the checks, so the row still shows the failure; opening the Checks dialog again reads them, and they're running. While they run, Vibezeo reads them every two minutes while its window has focus and its Code rail is open, and they pass.",
+      );
+    }
+    // Passed comes on a later read, in the rail and the status bar.
+    expect(CI_T.passed).toBeGreaterThan(CI_T.running);
+    expect(when(esc(t(RAIL_FOLDS ? "status.ciPassed" : "checks.passed")))).toBe(CI_T.passed);
+    // The text says how they're read, and that Vibezeo asks once before it reads a repository's pull requests (UI-156).
     expect(said).not.toMatch(/on Refresh|reads the checks again, every|in front/);
     expect(said).toContain("Vibezeo asks once before it reads a repository's pull requests, with your own GitHub CLI.");
   }, 30_000);
@@ -1998,14 +2355,21 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     const at = (s: string) => bar.indexOf(s);
     expect(at(t("status.ciFailed", { n: 1 }))).toBeLessThan(at('class="sc-agents"'));
     expect(at('class="sc-agents"')).toBeLessThan(at(t("status.version", { version: SCENE_BUILD })));
-    // The rail's rows: each agent's dot through the scene. At every change the segment holds the rail's count.
-    const rail = /<aside class="sc-rail">[\s\S]*?<\/aside>/.exec(h)?.[0] ?? "";
-    const rows = [...rail.matchAll(/<span class="sc-lane[ "]/g)].map((m) => {
-      const status = rail.indexOf("<span", (m.index ?? 0) + 1);
-      return rail.startsWith('<span class="sc-swap">', status)
-        ? stepsAt(rail, status).map(([when, k]) => [when, /data-status="(\w+)"/.exec(k)?.[1] ?? ""] as const)
-        : [[0, /data-status="(\w+)"/.exec(rail.slice(status))?.[1] ?? ""] as const];
-    });
+    // The rail's rows: each agent's state through the scene, its dot in 0.12.0's simplified rail, from 0.13.0 the slot of
+    // CodeRail's row ("● 1 working", "Needs you", none once done). At every change the segment holds the rail's count.
+    const rows = RAIL_FOLDS
+      ? [...railRows(/<nav class="sc-crail[ "][\s\S]*?<\/nav>/.exec(h)?.[0] ?? "").values()].map((steps) =>
+          steps.map(([when, , words]) => [when, words.startsWith(t("rail.waiting")) ? "waiting" : words.startsWith(t("rail.working", { n: 1 })) ? "working" : "done"] as const),
+        )
+      : (() => {
+          const rail = /<aside class="sc-rail">[\s\S]*?<\/aside>/.exec(h)?.[0] ?? "";
+          return [...rail.matchAll(/<span class="sc-lane[ "]/g)].map((m) => {
+            const status = rail.indexOf("<span", (m.index ?? 0) + 1);
+            return rail.startsWith('<span class="sc-swap">', status)
+              ? stepsAt(rail, status).map(([when, k]) => [when, /data-status="(\w+)"/.exec(k)?.[1] ?? ""] as const)
+              : [[0, /data-status="(\w+)"/.exec(rail.slice(status))?.[1] ?? ""] as const];
+          });
+        })();
     expect(rows).toHaveLength(SAMPLE.order.length);
     const counts = (k: string) => ({ waiting: Number(/(\d+) waiting/.exec(text(k))?.[1] ?? 0), working: Number(/(\d+) working/.exec(text(k))?.[1] ?? 0) });
     const segment = stepsAt(bar, bar.indexOf('<span class="sc-swap">', at(t("status.ciFailed", { n: 1 })) + 1)).map(([when, k]) => [when, counts(k)] as const);
@@ -2053,7 +2417,8 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
     expect([px("text-2xs"), px("text-xs"), px("radius-xs")]).toEqual([10, 11, 4]);
     const rule = (sel: string) => new RegExp(`(?:^|\\n)${re(sel)} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
     expect(rule(".sc-badge, .sc-badge-quiet")).toContain("height: calc(18 * var(--sc-px)); font-weight: 500;");
-    expect(rule(".sc-badge")).toBe(" padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); ");
+    // Its parts 4 px apart (gap-1): RadarMark's radar and symbol, from 0.13.0.
+    expect(rule(".sc-badge")).toBe(" gap: calc(4 * var(--sc-px)); padding-inline: calc(6 * var(--sc-px)); border-radius: calc(4 * var(--sc-px)); font-size: calc(10 * var(--sc-px)); ");
     expect(rule(".sc-badge-quiet")).toBe(" font-size: calc(11 * var(--sc-px)); ");
     expect(css).not.toMatch(/\.sc-badge[^{]*\{[^}]*(box-shadow|999px)/);
     // One of the app's pixels: the window's em is 16 of them, worked out once on the window.
@@ -2088,22 +2453,32 @@ describe("F-WB-01 AC9 D-3001 0.9.0's CI results and review comments back to the 
   });
 
   it("F-WB-01 AC9 D-3001 its final frame tells the story: checks passed, the agent's summary, the comment in the review, and 1 comment · Copy review · Send to Ada", () => {
-    expect(h).toContain(t("checks.passed"));
+    // From 0.13.0 the row's badge says the status bar's words (D-2700).
+    expect(h).toContain(t(RAIL_FOLDS ? "status.ciPassed" : "checks.passed"));
     // WorktreeReview's bar: the count, Copy review (secondary), then Send to the worktree's agent by name (primary), once the import's toast has gone.
     expect(h).toContain(
       `<span class="sc-review-bar" data-fx-in="" style="--at:${CI_T.imported}s"><span class="sc-review-count">${t("worktree.review.count", { n: pr.comments.length })}</span><span class="sc-btn sc-btn-sm">${t("worktree.review.copy")}</span><span class="sc-btn sc-btn-sm sc-btn-primary" data-fx-enter="" style="--at:${CI_T.ready}s">${esc(t("worktree.review.sendTo", { name: agent.name }))}</span></span>`,
     );
     expect(CI_T.ready).toBeGreaterThan(CI_T.imported + 1.5);
-    // The agent's last word, what it changed, arrives as it's done.
+    // The agent's last word, what it changed, arrives as it's done. From 0.13.0 the note after the log takes two lines'
+    // room, so the first task's two lines scroll off the terminal's top then, whole, and the final frame doesn't have
+    // them (a browser test checks the pane holds the rest, D-3006).
     const summary = SAMPLE.pr.fix.lines.at(-1) ?? "";
     expect(h).toMatch(new RegExp(`data-fx-line="" style="--at:${CI_T.done}s">${re(esc(summary))}<`));
+    expect(SCROLLED).toBe(DEFANGS ? 2 : 0);
+    const old = [...h.matchAll(/<span class="sc-line sc-line-old"( data-fx-scroll="" style="--at:([\d.]+)s")?>/g)];
+    expect(old).toHaveLength(2);
+    expect(old.map((m) => (m[1] ? Number(m[2]) : null))).toEqual([0, 1].map((i) => (i < SCROLLED ? CI_T.done : null)));
+    expect(css).toContain("[data-fx-scroll] { flex-shrink: 0; max-height: 0; margin-bottom: -0.1em; overflow: hidden; opacity: 0; }");
+    expect(css).toMatch(/@keyframes sc-scroll \{ from, to \{ max-height: 20em; margin-bottom: 0; opacity: 1; \} \}/);
+    expect(css).toMatch(/\.sc-term \{[^}]*gap: 0\.1em;/);
     // What comes and goes isn't in it: the Checks dialog and the toasts.
     for (const s of [t("checks.title", { branch: pr.worktree }), t("failure.sent", { name: agent.name }), t("git.pushed", { branch: pr.worktree }), t("worktree.review.imported", { n: pr.comments.length })])
       expect(visiting(s), s).toBe(true);
     // Send is the one teal thing it ends on: each dialog's Close (primary) comes and goes with its dialog.
     const inVisit = (i: number) => h.lastIndexOf("data-fx-visit", i) > Math.max(h.lastIndexOf("data-fx-in", i), h.lastIndexOf("data-fx-pop", i));
     const primaries = [...h.matchAll(/class="sc-btn[^"]*sc-btn-primary"[^>]*>([^<]*)</g)];
-    expect(primaries.map((m) => m[1])).toEqual([esc(t("worktree.review.sendTo", { name: agent.name })), ...Array<string>(4).fill(t("common.close"))]);
+    expect(primaries.map((m) => m[1])).toEqual([esc(t("worktree.review.sendTo", { name: agent.name })), ...Array<string>(PUSH_READS ? 2 : 4).fill(t("common.close"))]);
     expect(primaries.filter((m) => !inVisit(m.index ?? 0)).map((m) => m[1])).toEqual([esc(t("worktree.review.sendTo", { name: agent.name }))]);
   });
 });
@@ -2153,7 +2528,7 @@ describe("F-WB-01 AC9 D-3002 a value's steps never show together, and words come
     expect(css).toMatch(
       /& \[data-fx-stint\] \{ animation: sc-stint var\(--dur-pop\) var\(--ease-out-site\) var\(--at\) both paused, sc-gone 0s linear var\(--until\) forwards paused; \}/,
     );
-    expect(css.match(/\[data-fx-cut\], \[data-fx-show\], \[data-fx-stint\], \[data-fx-close\], \.sc-spin/g)?.length).toBe(2);
+    expect(css.match(/\[data-fx-cut\], \[data-fx-show\], \[data-fx-stint\], \[data-fx-close\], \[data-fx-wait\], \[data-fx-scroll\], \.sc-spin/g)?.length).toBe(2);
     // The final frame: what's cut isn't in it, nor a stint; what enters is.
     expect(css).toMatch(/\[data-fx-visit\], \[data-fx-out\], \[data-fx-cut\], \[data-fx-stint\] \{ opacity: 0; \}/);
     expect(css).not.toMatch(/\[data-fx-enter\][^{]*\{[^}]*opacity: 0/);
@@ -2169,31 +2544,46 @@ describe("F-WB-01 AC9 D-3002 a value's steps never show together, and words come
     const lanes = [...land.matchAll(/<span class="sc-swap sc-step">/g)].map((m) => kids(land, m.index ?? 0));
     expect(lanes.map((l) => l.length)).toEqual(SAMPLE.order.map(() => 5));
     for (const step of lanes.flat()) expect(kids(step, 0), step.slice(0, 80)).toEqual([expect.stringMatching(/^<span class="sc-dot">/)]);
-    // What `.sc-checks > * > *` finds: each step's own contents, the running one's spinner directly inside it.
+    // What `.sc-checks > * > *` finds: each step's own contents, the running one's spinner directly inside it. From 0.13.0
+    // the CI rail is CodeRail's: a row's trail holds each step's parts directly (`.sc-wtrow-parts`, a row with a gap), and
+    // the checks badge leads with its icon or its spinner, then its words (D-3006).
     const ci = renderToStaticMarkup(<ChecksScene />);
     const badges = [...ci.matchAll(/<span class="sc-swap sc-checks">/g)].map((m) => kids(ci, m.index ?? 0).flatMap((k) => kids(k, 0)));
-    expect(badges.length).toBeGreaterThan(0);
+    expect(badges.length > 0).toBe(!RAIL_FOLDS);
     for (const contents of badges) {
       expect(contents.map((c) => /^<span(?: class="([^"]*)")?/.exec(c)?.[1] ?? "")).toEqual(["", "sc-checks-run", "sc-checks-pass"]);
       expect(contents[0]).toMatch(/^<span data-fx-press=""[^>]*><span class="sc-checks-fail"/);
       expect(kids(contents[1] ?? "", 0)).toEqual(['<span class="sc-spin"></span>']);
+    }
+    expect(sheet("rail.css")).toMatch(/\.sc-wtrow-parts \{ display: inline-flex; align-items: center; gap: calc\(6 \* var\(--sc-px\)\); \}/);
+    const marks = [...ci.matchAll(/<span class="sc-wtrow-checks sc-wtrow-checks-(\w+)(?: sc-wtrow-compact)?"[^>]*>/g)];
+    expect(marks.length > 0).toBe(RAIL_FOLDS);
+    for (const m of marks) {
+      const [first = ""] = kids(ci, m.index ?? 0);
+      expect(first, m[1]).toMatch(m[1] === "running" ? /^<span class="sc-spin"><\/span>$/ : /^<svg[^>]*class="lucide lucide-(?:circle-x|check) sc-wtrow-checks-icon"/);
     }
   });
 
   it("F-WB-01 AC9 D-3002 D-3003 no scene fades one thing out as another comes in, and only marks pop", () => {
     // A fade away in place is left only in DotChange: a dot changing colour is §4.7's status change. A pop is left only
     // for that mark; AgentCard's waiting border comes at once (the coordinator's nit 6). Words, a button's included,
-    // enter. A visit leaves with a fade too, so each is listed (the coordinator's nit 4): only what closes over the
-    // scene, as UI_SPEC §1.8's exits fade (a toast, the Checks dialog, the branch chip's menu). The Review bar's states
-    // are cut, as the app re-renders them, and the pane's done flash is gone (0.12.0 has none).
+    // enter. Each visit is listed (the coordinator's nit 4): only what closes over the scene (a toast, the Checks dialog,
+    // the branch chip's menu), and each is gone at once, as the app animates no closing content (base.css, F-SH-10) and
+    // removes a toast it dismisses (the design lead's call on exits, D-3004). The Review bar's states are cut, as the app
+    // re-renders them, and the pane's done flash is gone (0.12.0 has none).
+    expect(css).toContain("& [data-fx-visit] { animation: sc-visit var(--dur-pop) var(--ease-out-site) var(--at) both paused, sc-gone 0s linear calc(var(--at) + var(--stay)) forwards paused; }");
+    expect(css).not.toContain("sc-leave");
+    const ui = (f: string) => readFileSync(join(import.meta.dirname, "../../../packages/ui/src", f), "utf8");
+    expect(ui("styles/base.css")).toMatch(/\.tn-fade\[data-state="closed"\],\s*\.tn-pop\[data-state="closed"\],\s*\.tn-dialog\[data-state="closed"\],\s*\.tn-sheet\[data-state="closed"\] \{ animation: none; \}/);
+    expect(ui("components/Toast.tsx")).toContain("const dismiss = useCallback((id: number) => setItems((all) => all.filter((t) => t.id !== id)), []);");
     const dir = join(import.meta.dirname, "../components/site/scenes");
     const uses = readdirSync(dir)
       .filter((f) => f.endsWith(".tsx"))
       .sort()
       .flatMap((f) => [...readFileSync(join(dir, f), "utf8").matchAll(/^.*(?:fx\("(?:pop|out)"|visit\().*$/gm)].map((m) => `${f}: ${m[0].trim()}`));
     expect(uses).toEqual([
-      'ChecksScene.tsx: <div className="sc-ci-layer" {...visit(rise, close + PRESSED - rise)}>',
-      'ChecksScene.tsx: <span className="sc-menu" {...visit(T.chip + 0.15, T.push + 0.25 - (T.chip + 0.15))}>',
+      'ChecksScene.tsx: <div className="sc-ci-layer" {...visit(rise, close + PRESS - rise)}>',
+      'ChecksScene.tsx: <span className="sc-menu" {...visit(T.chip + 0.15, T.push + PRESS - (T.chip + 0.15))}>',
       'parts.tsx: export function visit(seconds: number, stay: number) {',
       'parts.tsx: <span {...fx("out", seconds)}>',
       'parts.tsx: <span {...fx("pop", seconds)}>',
