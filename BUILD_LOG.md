@@ -4673,6 +4673,22 @@ The owner (20 October): the product and the site should feel premium, "not somet
   - Calls:
     - The CI pane keeps its ⋮ for what scrolled by, drawn as an elision in fg-subtle (polish), since the prompt's start and its untrusted label are what the scene is about.
     - Scenes cut exits as the build does. DESIGN §4.7's "exit: fade" now says so.
+- Design QA of `site-motion` @ d51649f7 (on 23cf1fa0): approved.
+  - The CI pane's ⋮ is drawn as an elision: fg-subtle, unindented, on its own line between "Failed steps' log (last lines):" and the log's tail.
+  - Land's status bar holds "◆ 1 waiting ● 1 working" throughout.
+- `app-ui`'s 4e8def0f merged into chain27 (4a19b868) with its full E2E at 159 of 159. Its design approval is d13324ff's frames, above.
+- Design QA of `app-ui` @ 4fd28132 (the review of 4e8def0f, D-2629 to D-2632), walked in a demo built at 4fd28132.
+  - D-2632 drew Bea's ask as Gemini CLI 0.66.0's whole confirmation: the command in a rounded box, "Allow execution of [Shell]?", and three numbered choices.
+  - The design lead first approved that whole screen, as the engine's output attributed by the pane's "Gemini CLI · simulated in this demo" banner.
+  - The coordinating session then decided it the stricter way, the one the design lead had first advised: quote no more of another product's interface than the app needs.
+    - Bea's pane keeps the command and Gemini CLI's one question line, which registry.json's waitingPatterns match.
+    - The numbered choices go; the box may stay as drawing.
+    - Claude Code's edit result in the demo keeps only its first sentence.
+  - That decision supersedes the approval. The QA of `app-ui`'s final SHA follows.
+  - Already true at 4fd28132:
+    - Answering runs her tests and commits, "Needs you" clears, and the status bar drops to "● 1 working".
+    - At the rail's 246 minimum, no name is cut. D-2629's folding case rests on `app-ui`'s E2E step.
+  - Polish: the coach's second hint covers the start of Bea's pane header as soon as she's opened. It should wait until her ask is answered.
 - Design QA of `app-ui` slice 1 (tokens and primitives, 42367ede), with the ink-or-slate call (D-1894): ink adopted; must-fix are merging `product-m0-m5`, 6 px controls and 4 px chips, one elevation set (drop `--tn-edge`, alias `--shadow-1…3` to `brand.css`), DECISIONS worded as D-1894, and the site's stage and lines moved off slate (T8, `site-motion`).
 
 ## Decisions
