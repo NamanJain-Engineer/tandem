@@ -27,6 +27,16 @@ const CLICK = HERO_T.warn + 0.26;
 const TYPED = CLICK + 0.1;
 const WARNED = TYPED + 0.08;
 const TOAST_STAY = 5;
+/** When the card's Approve turns on, from 0.13.0 (F-TL-12.12): SETTLE_MS
+ * after the card arrives, since nothing moves or covers it. In a phone's
+ * frame "Warned both agents" lies over its buttons until it goes (its toast
+ * spans the window's foot, where the app's corner toast sits over the
+ * floating sidebar), and a cover holds Approve off like a move
+ * (steadyBox.ts), so there it turns on SETTLE_MS after the toast goes. */
+export const HERO_READY = {
+  at: HERO_T.done + SETTLE,
+  narrow: Math.max(HERO_T.done, RADAR ? WARNED + TOAST_STAY : 0) + SETTLE,
+} as const;
 
 /** The agents at work and waiting across the repository, from each time
  * on: all of them, then the one that asks waits, then the finished one is
@@ -131,7 +141,7 @@ function Sidebar() {
           </span>
           <ReviewQueue count={1} {...fx("show", HERO_T.done)}>
             <span {...fx("in", HERO_T.done)}>
-              {/* From 0.13.0 its Approve waits until its place has held still (F-TL-12.12): it arrives at Done and holds still from then. */}
+              {/* From 0.13.0 its Approve waits until its place has held still, uncovered (F-TL-12.12): it arrives at Done and holds still from then. */}
               <ReviewCard
                 lane={finished}
                 minutes={0}
@@ -139,7 +149,8 @@ function Sidebar() {
                 diff={SAMPLE.diff}
                 risks={[t("review.rule.auth")]}
                 passed={HERO_T.passed}
-                ready={APPROVE_WAITS ? HERO_T.done + SETTLE : undefined}
+                ready={APPROVE_WAITS ? HERO_READY.at : undefined}
+                readyNarrow={APPROVE_WAITS ? HERO_READY.narrow : undefined}
               />
             </span>
           </ReviewQueue>

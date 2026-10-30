@@ -434,15 +434,16 @@ export function Changes({ steps, className }: { steps: ReadonlyArray<readonly [n
  * Approve the primary, Open diff secondary, the rest ghosts, Run check
  * among them once the repository's check isn't running. Second opinion is
  * pressed at `opinion`, when it is. */
-function ReviewActions({ ranCheck, opinion, ready }: { ranCheck: boolean; opinion?: number; ready?: number }) {
+function ReviewActions({ ranCheck, opinion, ready, readyNarrow }: { ranCheck: boolean; opinion?: number; ready?: number; readyNarrow?: number }) {
   const ghost = (key: string, press?: number) => (
     <span className="sc-btn sc-btn-sm sc-btn-ghost" {...(press === undefined ? {} : fx("press", press))}>
       {t(key)}
     </span>
   );
+  const narrow = readyNarrow === undefined || readyNarrow === ready ? undefined : { "--at-narrow": secs(readyNarrow) };
   return (
     <span className="sc-rq-actions">
-      <span className="sc-btn sc-btn-sm sc-btn-primary">{ready === undefined ? t("review.approve") : <span {...fx("wait", ready)}>{t("review.approve")}</span>}</span>
+      <span className="sc-btn sc-btn-sm sc-btn-primary">{ready === undefined ? t("review.approve") : <span {...fx("wait", ready, narrow)}>{t("review.approve")}</span>}</span>
       <span className="sc-btn sc-btn-sm">{t("review.openDiff")}</span>
       {ghost("review.sendBack")}
       {ghost("review.secondOpinion", opinion)}
@@ -462,9 +463,10 @@ function ReviewActions({ ranCheck, opinion, ready }: { ranCheck: boolean; opinio
  * its risks, each an outlined Badge; the repository's check, running until
  * `passed` (passed throughout without it); then its buttons, Approve off,
  * its label dimmed, until `ready` when it's given (from 0.13.0 it waits
- * until its place has held still: F-TL-12.12). The diff's numbers count up
- * from `count` when it's given, a scene's effect: the app writes them at
- * once. */
+ * until its place has held still, uncovered: F-TL-12.12), or `readyNarrow`
+ * in a phone's frame, where a toast can lie over it. The diff's numbers
+ * count up from `count` when it's given, a scene's effect: the app writes
+ * them at once. */
 export function ReviewCard({
   lane,
   minutes,
@@ -475,6 +477,7 @@ export function ReviewCard({
   count,
   opinion,
   ready,
+  readyNarrow,
 }: {
   lane: { name: string; engine: string; branch: string };
   minutes: number;
@@ -485,6 +488,7 @@ export function ReviewCard({
   count?: number;
   opinion?: number;
   ready?: number;
+  readyNarrow?: number;
 }) {
   const stat = { n: diff.files, adds: diff.adds, dels: diff.dels };
   return (
@@ -524,14 +528,14 @@ export function ReviewCard({
         )}
       </span>
       {passed === undefined ? (
-        <ReviewActions ranCheck opinion={opinion} ready={ready} />
+        <ReviewActions ranCheck opinion={opinion} ready={ready} readyNarrow={readyNarrow} />
       ) : (
         <span className="sc-rq-actions-swap">
           <span {...fx("cut", passed)}>
-            <ReviewActions ranCheck={false} opinion={opinion} ready={ready} />
+            <ReviewActions ranCheck={false} opinion={opinion} ready={ready} readyNarrow={readyNarrow} />
           </span>
           <span {...fx("show", passed)}>
-            <ReviewActions ranCheck opinion={opinion} ready={ready} />
+            <ReviewActions ranCheck opinion={opinion} ready={ready} readyNarrow={readyNarrow} />
           </span>
         </span>
       )}

@@ -11,7 +11,7 @@ import { DASHBOARD_CAPTION, DASH_AGENTS, DASH_T, DASH_TOOLS, DashboardScene, SIN
 import { LandScene } from "../components/site/scenes/LandScene";
 import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/scenes/ReviewScene";
 import { Scene } from "../components/site/scenes/Scene";
-import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
+import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_READY, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
 import { AgentsSegment, Changes, ELISION, Glyph, pasted } from "../components/site/scenes/parts";
 import { PLAN_AGENTS, PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
@@ -196,15 +196,24 @@ function moduleRefs(file: string, code: string): Ref[] {
   visit(sf);
   return out;
 }
-/** Every file a stylesheet names: @import, Tailwind's @reference, @plugin, @config and @source (a glob read from its
- * fixed start), and url(). */
+/** Every file a stylesheet names: @import (a string, or a url() quoted or not), Tailwind's @reference, @plugin, @config
+ * and @source (a glob read from its fixed start), and url(). A name with a CSS escape in it, or in image-set()'s bare
+ * strings, can't be read here, so it's null. */
 function styleRefs(css: string): Ref[] {
   // Comments go, but not what's inside a string ("../**/*.tsx" holds a "/*").
   const text = css.replace(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\/\*[\s\S]*?\*\//g, (_, str: string | undefined) => str ?? "");
   const out: Ref[] = [];
-  for (const m of text.matchAll(/@(import|reference|plugin|config|source)\s+(?:not\s+)?(?:url\(\s*)?(["'])(.*?)\2/g))
-    out.push({ spec: m[1] === "source" ? (m[3] ?? "").replace(/[{*].*$/, "") : (m[3] ?? ""), how: `@${m[1]}` });
-  for (const m of text.matchAll(/(?<!@import\s)url\(\s*(["']?)(.*?)\1\s*\)/g)) out.push({ spec: m[2] ?? "", how: "url()" });
+  const read = (spec: string) => (spec.includes("\\") ? null : spec);
+  // A url()'s address is quoted, or bare up to its close (a bare one holds no quote, bracket or space).
+  const at = /@(?<rule>import|reference|plugin|config|source)\s+(?:not\s+)?(?:url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)|(?<q>["'])(?<str>.*?)\k<q>)/g;
+  for (const m of text.matchAll(at)) {
+    const spec = read(m.groups?.quoted ?? m.groups?.bare ?? m.groups?.str ?? "");
+    out.push({ spec: m.groups?.rule === "source" && spec !== null ? spec.replace(/[{*].*$/, "") : spec, how: `@${m.groups?.rule ?? ""}` });
+  }
+  // A url() anywhere else: the at-rules' are taken out first, so each is counted once.
+  for (const m of text.replace(at, "").matchAll(/url\(\s*(?:(?<uq>["'])(?<quoted>.*?)\k<uq>|(?<bare>[^\s"'()]*))\s*\)/g))
+    out.push({ spec: read(m.groups?.quoted ?? m.groups?.bare ?? ""), how: "url()" });
+  for (const _ of text.matchAll(/image-set\(/g)) out.push({ spec: null, how: "image-set()" });
   return out;
 }
 /** The app's own source files (apps/desktop/src), not its tests and not the browser demo, which isn't the app. */
@@ -739,21 +748,33 @@ describe("F-WB-01 AC9 product scenes", () => {
       { spec: "./n.json", how: "new URL" },
       { spec: null, how: "require, passed on" },
     ]);
-    expect(styleRefs('@import "./a.css"; @import url("b.css"); @plugin "./c.js"; @source not "../**/*.tsx"; @source "../../desktop/src/{x,y}.tsx"; .x { background: url(./d.png); } .y { background: url("data:image/png;base64,AA"); }')).toEqual([
+    // An @import's url() is read quoted or not, spaced or not (the code review of 825b4b54: `@import url(../../desktop/
+    // src/styles/app.css);` got past it), and a name it can't read (a CSS escape, image-set()'s strings) fails it.
+    expect(
+      styleRefs(
+        '@import "./a.css"; @import url("b.css"); @import url(../../desktop/src/styles/app.css) layer(base); @import\n  url( \'f.css\' ); @plugin "./c.js"; @source not "../**/*.tsx"; @source "../../desktop/src/{x,y}.tsx"; .x { background: url(./d.png); } .y { background: url("data:image/png;base64,AA"); } .z { background: image-set("g.png" 1x); } @import "\\2e/h.css";',
+      ),
+    ).toEqual([
       { spec: "./a.css", how: "@import" },
       { spec: "b.css", how: "@import" },
+      { spec: "../../desktop/src/styles/app.css", how: "@import" },
+      { spec: "f.css", how: "@import" },
       { spec: "./c.js", how: "@plugin" },
       { spec: "../", how: "@source" },
       { spec: "../../desktop/src/", how: "@source" },
+      { spec: null, how: "@import" },
       { spec: "./d.png", how: "url()" },
       { spec: "data:image/png;base64,AA", how: "url()" },
+      { spec: null, how: "image-set()" },
     ]);
     // Nor do the tests feed the site's stylesheet: they name the app's classes to check them (size-7, border-waiting,
     // bg-info…), and Tailwind made a rule for each on every page until globals.css kept them out of its scan.
     const globals = readFileSync(join(web, "app/globals.css"), "utf8");
     expect(globals).toContain('@source not "../**/*.{test,spec}.{ts,tsx}";');
     expect(readFileSync(join(web, "package.json"), "utf8")).toMatch(/"tailwindcss": "\^4\.(?:[1-9]|\d{2,})\./);
-  });
+    // Compiling every MDX file and reading every site file takes 2 s on a quiet machine and up to 4.8 s with every
+    // core busy, as in the gate: its own timeout, as the checks guard has, not vitest's 5 s.
+  }, 30_000);
 
   it("F-WB-01 AC9 D-3004 the tests' git diff reads nothing of the machine's: no config, no attributes file, no repository above it, no GIT_* variable", () => {
     // Each of these moved a plain git diff of the sample files: 21 lines of context, an external tool's output, or
@@ -942,7 +963,7 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(card).toContain('{item.check && item.check.state !== "running" && (');
     // A label that waits (from 0.13.0, below) is in its own span, as Button's is.
     const drawn = (h: string) =>
-      [...h.matchAll(/<span class="sc-btn sc-btn-sm( sc-btn-primary| sc-btn-ghost)?"[^>]*>(?:<span data-fx-wait="" style="--at:[\d.]+s">)?([^<]*)(?:<\/span>)?<\/span>/g)].map((m) => [m[2], m[1] === " sc-btn-primary" ? "primary" : m[1] === " sc-btn-ghost" ? "ghost" : "secondary"]);
+      [...h.matchAll(/<span class="sc-btn sc-btn-sm( sc-btn-primary| sc-btn-ghost)?"[^>]*>(?:<span data-fx-wait="" style="--at:[\d.]+s(?:;--at-narrow:[\d.]+s)?">)?([^<]*)(?:<\/span>)?<\/span>/g)].map((m) => [m[2], m[1] === " sc-btn-primary" ? "primary" : m[1] === " sc-btn-ghost" ? "ghost" : "secondary"]);
     const all = BUTTONS.map(([, key, variant]) => [esc(t(key)), variant]);
     // The Review scene's card, its check passed: all of them, Second opinion pressed.
     const review = /<span class="sc-rq-card">[\s\S]*$/.exec(renderToStaticMarkup(<ReviewScene />))?.[0] ?? "";
@@ -966,11 +987,23 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(queue).toContain("const canApprove = approved || (settled && box.steady);");
     expect(queue).toMatch(/<Button\s*size="sm"\s*variant=\{approved \? "ghost" : "primary"\}\s*waiting=\{!canApprove\}/);
     expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Button.tsx"), "utf8")).toContain('waiting && !disabled && "cursor-not-allowed hover:bg-[inherit] [&>*]:opacity-40"');
-    const approve = `<span class="sc-btn sc-btn-sm sc-btn-primary">${APPROVE_WAITS ? `<span data-fx-wait="" style="--at:${HERO_T.done + SETTLE}s">${t("review.approve")}</span>` : t("review.approve")}</span>`;
+    // A cover holds it off like a move (steadyBox.ts). In a phone's frame "Warned both agents" spans the window's foot,
+    // over the card's buttons, as the app's corner toast lies over its floating sidebar there, so Approve turns on
+    // SETTLE_MS after that toast goes (the code review of 825b4b54; a browser test finds every cover).
+    expect(ui).toContain('const box = cover.current.covered ? "covered" : boxOf(el);');
+    expect(readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Toast.tsx"), "utf8")).toContain('className="pointer-events-none fixed bottom-8 right-4 ');
+    expect(css).toContain(".sc-note-toast { left: 1em; right: 1em; width: auto; }");
+    const warned = /<div class="sc-note-toast sc-tone-success" data-fx-visit="" style="--at:([\d.]+)s;--stay:([\d.]+)s">/.exec(hero);
+    const hundredths = (s: number) => Math.round(s * 100) / 100;
+    expect(hundredths(HERO_READY.at)).toBe(hundredths(HERO_T.done + SETTLE));
+    expect(hundredths(HERO_READY.narrow)).toBe(RADAR ? hundredths(Number(warned?.[1]) + Number(warned?.[2]) + SETTLE) : hundredths(HERO_READY.at));
+    expect(HERO_READY.narrow > HERO_READY.at).toBe(RADAR);
+    const approve = `<span class="sc-btn sc-btn-sm sc-btn-primary">${APPROVE_WAITS ? `<span data-fx-wait="" style="--at:${hundredths(HERO_READY.at)}s;--at-narrow:${hundredths(HERO_READY.narrow)}s">${t("review.approve")}</span>` : t("review.approve")}</span>`;
     for (const k of [2, 4]) expect(swap?.[k], String(k)).toContain(approve);
     expect(actions).not.toContain("data-fx-wait");
     expect(css).toMatch(/@keyframes sc-wait\s+\{ from \{ opacity: 0\.4; \} to \{ opacity: 1; \} \}/);
     expect(css).toContain("& [data-fx-wait]  { animation: sc-wait 0s linear var(--at) both paused; }");
+    expect(css).toContain("@container (max-width: 40rem) { & [data-fx-wait] { animation-delay: var(--at-narrow, var(--at)); } }");
   });
 
   it("F-WB-01 AC9 D-3001 the second opinion shows where the app shows it: reviewing in the review bar, done as a toast with Show diff, then 2 comments · Copy review · Send", () => {
@@ -1585,12 +1618,14 @@ describe("F-WB-01 AC9 product scenes", () => {
       ...["tokens.css", "brand.css", "base.css", "site.css"].map((f) => join(styles, f)),
       join(import.meta.dirname, "globals.css"),
       join(import.meta.dirname, "docs/docs.css"),
-      ...["scenes.css", "ci.css", "home.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
+      ...["scenes.css", "ci.css", "rail.css", "home.css"].map((f) => join(import.meta.dirname, "../components/site/scenes", f)),
     ];
+    // Every scene sheet: rail.css too, split from home.css (D-3006).
+    expect(readdirSync(join(import.meta.dirname, "../components/site/scenes")).filter((f) => f.endsWith(".css")).sort()).toEqual(["ci.css", "home.css", "rail.css", "scenes.css"]);
     const globals = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");
     for (const f of ["tokens", "brand", "base", "site"]) expect(globals).toContain(`@import "@tandem/ui/${f}.css";`);
     const source = (f: string) => readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    // Defined: in a stylesheet, by next/font (app/fonts.ts), or inline by a scene's effects (parts.tsx's --at, --stay, --until and --to).
+    // Defined: in a stylesheet, by next/font (app/fonts.ts), or inline by a scene's effects (parts.tsx's --at, --at-narrow, --stay, --until and --to).
     const defined = new Set(sheets.flatMap((f) => [...source(f).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1])));
     for (const m of readFileSync(join(import.meta.dirname, "fonts.ts"), "utf8").matchAll(/variable: "(--[\w-]+)"/g)) defined.add(m[1]);
     // The docs' code blocks: Shiki writes each token's two colours inline, as these, since fumadocs turns its default colour off.
@@ -1601,7 +1636,7 @@ describe("F-WB-01 AC9 product scenes", () => {
       );
     const code = [...tsx(join(import.meta.dirname, "../components")), ...tsx(import.meta.dirname), ...tsx(join(import.meta.dirname, "../lib"))];
     for (const f of code) for (const m of readFileSync(f, "utf8").matchAll(/"(--[\w-]+)":/g)) defined.add(m[1]);
-    expect([...defined].filter((v) => ["--at", "--stay", "--until", "--to", "--font-inter", "--font-jbm"].includes(v)).sort()).toEqual(["--at", "--font-inter", "--font-jbm", "--stay", "--to", "--until"]);
+    expect([...defined].filter((v) => ["--at", "--at-narrow", "--stay", "--until", "--to", "--font-inter", "--font-jbm"].includes(v)).sort()).toEqual(["--at", "--at-narrow", "--font-inter", "--font-jbm", "--stay", "--to", "--until"]);
     const missing: string[] = [];
     for (const f of [...sheets, ...code]) {
       const used = new Set([...source(f).matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
@@ -1992,7 +2027,11 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     const next = readFileSync(join(import.meta.dirname, "scenes.next.test.tsx"), "utf8");
     expect(next).toContain("return { ...real, RELEASE: { ...real.RELEASE, version: real.SCENES_SLICE } };");
     expect(next).toContain('await import("./scenes.test");');
-    expect(readFileSync(join(import.meta.dirname, "../../../docs/OPERATING.md"), "utf8")).toMatch(/Bumping `release\.ts` to a new version needs that release's scenes slice\s+first/);
+    const operating = readFileSync(join(import.meta.dirname, "../../../docs/OPERATING.md"), "utf8");
+    expect(operating).toMatch(/Bumping `release\.ts` to a new version needs that release's scenes slice\s+first/);
+    // The gate runs no browser, so a slice's browser checks run on a site built at SCENES_SLICE as well (the code review
+    // of 825b4b54, nit 2).
+    expect(operating).toMatch(/So a slice also sets `release\.ts` to `SCENES_SLICE`, runs\s+`pnpm --filter web build:site` and\s+`PLAYWRIGHT_CHROMIUM=\/opt\/pw-browsers\/chromium pnpm --filter web test:site`,\s+sets it back, and runs both again at the version the site shows\./);
   });
 });
 

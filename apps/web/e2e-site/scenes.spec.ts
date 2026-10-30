@@ -688,9 +688,10 @@ for (const width of [1440, 390] as const) {
 }
 
 // The hero's review card: Run check joins its buttons when its check passes without moving Approve, so Approve's
-// place holds from when the card arrives; from 0.13.0 Approve waits once, for SETTLE_MS from then (F-TL-12.12, D-3006).
+// place holds from when the card arrives; from 0.13.0 Approve waits once, for SETTLE_MS from then (F-TL-12.12, D-3006),
+// or in a phone's frame until SETTLE_MS after "Warned both agents" stops covering it (the test below).
 for (const width of [1440, 390] as const) {
-  test(`F-WB-01 AC9 D-3006 at ${width} px the hero's Approve holds its place when the check passes, and from 0.13.0 waits only as its card arrives`, async ({ page }) => {
+  test(`F-WB-01 AC9 D-3006 at ${width} px the hero's Approve holds its place when the check passes, and from 0.13.0 waits once, from when its card arrives`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
@@ -715,6 +716,74 @@ for (const width of [1440, 390] as const) {
     const moved = (a: number[], b: number[]) => Math.max(...a.map((x, i) => Math.abs(x - (b[i] ?? NaN))));
     expect(moved(after.place, before.place)).toBeLessThan(0.5);
     expect(moved(settled.place, before.place)).toBeLessThan(0.5);
-    expect([arrived.label, settled.label, before.label, after.label]).toEqual(waits ? [0.4, 1, 1, 1] : [1, 1, 1, 1]);
+    expect([arrived.label, settled.label, before.label, after.label]).toEqual(!waits ? [1, 1, 1, 1] : width === 390 ? [0.4, 0.4, 0.4, 0.4] : [0.4, 1, 1, 1]);
+  });
+}
+
+// What the app's steady box sees (steadyBox.ts's covered()): Approve's middle and corners, each pulled up to 4 px in,
+// and what's drawn on top at each. A cover holds Approve off like a move, so it shows ready only once nothing has moved
+// or covered it for SETTLE_MS (F-TL-12.12). In a phone's frame "Warned both agents" lies over it until the toast goes
+// (the code review of 825b4b54); at 1440 and 1280 nothing does.
+const SETTLE = 0.5; // steadyBox.ts's SETTLE_MS: scenes.test ties the scenes' SETTLE to it.
+for (const width of [1440, 1280, 390, 320] as const) {
+  test(`F-WB-01 AC9 D-3006 at ${width} px the hero's Approve is never shown ready while anything covers it, and turns on SETTLE_MS after it last did`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+    // Approve waits from 0.13.0 (APPROVE_WAITS).
+    if (!atLeast(await sceneBuild(page), "0.13.0")) return;
+    await seek(page, "workspace", 7);
+    await page.locator('[data-scene="workspace"] .sc-rq-card .sc-btn-primary').first().scrollIntoViewIfNeeded();
+    const samples: Array<{ t: number; arrived: number; inView: boolean; covered: boolean; ready: boolean }> = [];
+    for (let i = 120; i <= 230; i++) {
+      const t = i / 20;
+      await seek(page, "workspace", t);
+      const sample = await page.evaluate(() => {
+        const scene = document.querySelector('[data-scene="workspace"]') as Element;
+        const stage = scene.querySelector("[data-stage]") as Element;
+        const shown = [...scene.querySelectorAll(".sc-rq-actions-swap > *")].find((e) => Number(getComputedStyle(e).opacity) > 0.5) as Element;
+        const approve = shown.querySelector(".sc-btn-primary") as Element;
+        // The card comes in with a rise, a scene's effect the app doesn't have (its card is there at once).
+        const entry = approve.closest("[data-fx-in]") as Element;
+        const arrived = Number.parseFloat(getComputedStyle(entry).getPropertyValue("--at"));
+        // Drawn: its opacity on the scene's clock, within the stage, or within the card's entry for what's in the card
+        // (a step not in yet, or gone, is at 0).
+        const drawn = (e: Element) => {
+          const root = entry.contains(e) ? entry : stage;
+          let o = 1;
+          for (let x: Element | null = e; x && x !== root; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
+          return o > 0.01;
+        };
+        const r = approve.getBoundingClientRect();
+        const dx = Math.min(4, r.width / 4);
+        const dy = Math.min(4, r.height / 4);
+        const points = [
+          [r.left + r.width / 2, r.top + r.height / 2],
+          [r.left + dx, r.top + dy],
+          [r.right - dx, r.top + dy],
+          [r.left + dx, r.bottom - dy],
+          [r.right - dx, r.bottom - dy],
+        ] as const;
+        const inView = points.every(([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight);
+        // What's on top at a point: the first element there that's drawn.
+        const covered = points.some(([x, y]) => {
+          const top = document.elementsFromPoint(x, y).find(drawn);
+          return top !== undefined && !approve.contains(top);
+        });
+        const label = approve.firstElementChild ?? approve;
+        return { arrived, inView, covered, ready: Number(getComputedStyle(label).opacity) > 0.99 };
+      });
+      samples.push({ t, ...sample });
+    }
+    expect(samples.every((s) => s.inView)).toBe(true);
+    const arrived = samples[0]?.arrived ?? Number.NaN;
+    const on = samples.filter((s) => s.t >= arrived);
+    // Never ready under a cover.
+    expect(on.filter((s) => s.covered && s.ready).map((s) => s.t)).toEqual([]);
+    // Ready from SETTLE_MS after its card arrived or a cover last left, and not before: one sample's step either side.
+    const from = Math.max(arrived, ...on.filter((s) => s.covered).map((s) => s.t + 0.05));
+    expect(on.filter((s) => Math.abs(s.t - (from + SETTLE)) > 0.06 && s.ready !== s.t > from + SETTLE).map((s) => s.t)).toEqual([]);
+    // A phone's frame is the one with a cover.
+    expect(on.some((s) => s.covered)).toBe(width <= 390);
   });
 }

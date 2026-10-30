@@ -384,7 +384,7 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    words from `en.json`, and label the build from `lib/release.ts`. A scene
    or part of one that needs a newer release is gated on it (`LANDS` in
    `lib/scenes.ts` switches on 0.9.0's landing queue; `RADAR`, `RAIL_FOLDS`,
-   `PUSH_READS`, `DEFANGS` and `APPROVE_WAITS` on 0.13.0's): after
+   `PUSH_READS`, `DEFANGS`, `APPROVE_WAITS` and `UNDO_SECONDARY` on 0.13.0's): after
    bumping `release.ts`, look at each scene's final frame in both themes and
    check it against the release.
    Bumping `release.ts` to a new version needs that release's scenes slice
@@ -393,6 +393,15 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    at that version while the site still shows the one before. A version past
    `SCENES_SLICE` fails the gate (the site's vitest) until its slice is in. Never
    weaken, skip or delete those guards to get a release through.
+   The gate runs no browser (`test:site` is in neither it nor CI, §7), and a
+   slice's browser checks (the rails' rows folding, the CI pane's scroll,
+   Approve's place and what covers it) only run on a site built at the slice's
+   release. So a slice also sets `release.ts` to `SCENES_SLICE`, runs
+   `pnpm --filter web build:site` and
+   `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
+   sets it back, and runs both again at the version the site shows. At
+   `SCENES_SLICE` the site's other release tests fail until the release commit
+   brings that release's content (its CHANGELOG section, downloads and post).
 6. Gate, commit, push, then deploy (§7) with the owner's go-ahead.
 
 ### 6a. Windows from Linux (no Windows CI until Actions minutes return)

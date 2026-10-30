@@ -404,6 +404,9 @@
     & [data-fx-close] { animation: sc-close var(--dur-base) var(--ease-standard) var(--at) both paused; }
     & .sc-lanes-tail[data-fx-close] { animation-name: sc-close-tail; }
     & [data-fx-wait]  { animation: sc-wait 0s linear var(--at) both paused; }
+    /* In a phone's frame a toast can lie over what waits, and a cover holds
+       it off like a move (steadyBox.ts): it turns on at its --at-narrow. */
+    @container (max-width: 40rem) { & [data-fx-wait] { animation-delay: var(--at-narrow, var(--at)); } }
     & [data-fx-scroll] { animation: sc-scroll 0s linear var(--at) backwards paused; }
     /* A spinner turns from when its state comes in (the --at it inherits), twice. */
     & .sc-spin { animation: sc-spin 0.8s linear var(--at, 0s) 2 paused; }
