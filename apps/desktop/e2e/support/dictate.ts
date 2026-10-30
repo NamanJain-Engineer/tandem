@@ -1,7 +1,7 @@
 import { browser } from "@wdio/globals";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { home, invoke } from "./app";
+import { home, invoke, waitFor } from "./app";
 
 /** The committed WAV fixtures (scripts/gen-voice-fixtures.sh). */
 export function fixture(name: string): string {
@@ -31,18 +31,15 @@ export function modelServer(mode: "normal" | "slow" | { corruptByte: number }): 
  * until it's the active model. */
 export async function ensureModel(id = BASE_EN): Promise<void> {
   modelServer("normal");
-  let view = await models();
+  const view = await models();
   if (view.active === id) return;
   const row = view.models.find((m) => m.id === id);
   if (row?.state === "downloaded") await invoke("dictate_model_select", { modelId: id });
   else await invoke("dictate_model_download", { modelId: id });
-  await browser.waitUntil(
-    async () => {
-      view = await models();
-      return view.active === id;
-    },
-    { timeout: 120_000, interval: 300, timeoutMsg: `${id} never became active: ${JSON.stringify(view)}` },
-  );
+  await waitFor(models, (v) => v.active === id, `${id} never became active`, {
+    timeout: 120_000,
+    interval: 300,
+  });
 }
 
 export async function key(which: "hold" | "toggle" | "esc", phase: "down" | "up"): Promise<boolean> {

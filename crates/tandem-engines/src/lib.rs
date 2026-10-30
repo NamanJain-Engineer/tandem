@@ -11,6 +11,8 @@ pub mod briefing;
 pub mod chat;
 pub mod detect;
 pub mod events;
+#[cfg(feature = "fixtures")]
+pub mod fake_lsp;
 pub mod forecast;
 pub mod guard;
 pub mod handoff;
@@ -19,6 +21,7 @@ pub mod hook;
 pub mod launch;
 pub mod learn;
 pub mod library;
+pub mod local_models;
 pub mod registry;
 pub mod sandbox;
 pub mod status_server;

@@ -107,6 +107,25 @@ describe("worktrees (F-CD-15)", () => {
     expect(worktreesOf([REPO, FIX, FIX2, PLAIN], "notes")).toEqual([]);
   });
 
+  it("F-CD-15.4 D-2611 a worktree's row is named as its workspace, its branch kept for the tooltip and ⋯, which takes no room", () => {
+    backend();
+    render(
+      <UiProvider>
+        <CodeRail />
+      </UiProvider>,
+    );
+    const rows = screen.getAllByTestId("worktree-row");
+    expect(rows.map((r) => within(r).getByTestId("worktree-row-name").textContent)).toEqual(["fix-auth", "fix-auth-2"]);
+    // The New worktree dialog's name field has its own id: E2E waits for it to go.
+    expect(screen.queryByTestId("worktree-name")).toBeNull();
+    expect(rows.map((r) => r.getAttribute("data-branch"))).toEqual(["tandem/fix-auth", "tandem/fix-auth-2"]);
+    const first = rows[0] as HTMLElement;
+    // The name keeps 10 characters beside a status (D-2603); ⋯ covers the row's end.
+    expect(within(first).getByTestId("worktree-row-name").className).toContain("min-w-[min(10ch,100%)]");
+    const menu = within(first).getByRole("button", { name: "Actions for tandem/fix-auth" });
+    expect(menu.parentElement?.closest(".absolute")).not.toBeNull();
+  });
+
   it("F-CD-15.1 New worktree sends the task text, and the new worktree opens under its repository", async () => {
     let created = false;
     backend({
@@ -156,6 +175,25 @@ describe("worktrees (F-CD-15)", () => {
     fireEvent.click(confirm);
     await waitFor(() => expect(forced).toEqual([false, true]));
     expect(await screen.findByText("Discarded tandem/fix-auth")).toBeTruthy();
+  });
+
+  it("F-CD-24.4 a stale jj workspace's refusal is shown, never forced past", async () => {
+    const stale =
+      "The jj workspace at /code/shop/.tandem/worktrees/fix-auth is out of date: run `jj workspace update-stale` there, then try again";
+    backend({
+      lane_remove: () => {
+        const err: IpcError = { code: "invalid", message: stale, stage: "jj", hint: null, retryable: false };
+        throw err;
+      },
+    });
+    useWorktrees.getState().open({ kind: "discard", worktreeId: "wt_1" });
+    dialogs();
+    fireEvent.change(screen.getByLabelText("Type tandem/fix-auth to confirm"), {
+      target: { value: "tandem/fix-auth" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard worktree" }));
+    expect(await screen.findByText(stale)).toBeTruthy();
+    expect(named("lane_remove").map((c) => c.args?.force)).toEqual([false]);
   });
 
   it("F-CD-15.2 cancelling the native confirm keeps the worktree, with no error", async () => {

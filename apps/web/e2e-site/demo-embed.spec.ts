@@ -79,8 +79,8 @@ test("demo AC2 AC3 the ready message runs the scripted turn; full screen opens o
   await frame.locator('[data-testid="changes-toggle"]').click();
   await expect(frame.locator('[data-testid="change-row"]')).toHaveCount(2);
   const rows = await frame.locator('[data-testid="change-row"]').allTextContents();
-  expect(rows.join(" ")).toContain("redirect.ts");
-  expect(rows.join(" ")).toContain("redirect.test.ts");
+  expect(rows.join(" ")).toContain("session.ts");
+  expect(rows.join(" ")).toContain("session.test.ts");
 
   await page.getByRole("link", { name: "Explore full screen" }).click();
   const stage = page.locator("[data-demo-stage]");
@@ -122,26 +122,48 @@ test("demo AC4 on a phone the frame says Tap to explore, which opens a usable fu
   await context.close();
 });
 
+/** The demo's message limit, read from DemoCore's own source, so this test
+ * and DemoCore's unit test count to the same number (D-2635). */
+const LIMIT = Number(
+  /export const DEMO_MESSAGE_LIMIT = (\d+);/.exec(
+    readFileSync(join(import.meta.dirname, "../../desktop/src/demo/backend.ts"), "utf8"),
+  )?.[1],
+);
+
 test("demo AC5 the 13th message says Demo limit reached; Reset the demo brings the sample workspace back", async ({ page }) => {
+  expect(LIMIT).toBe(12);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/demo/app/");
   const frame = page.mainFrame();
   await frame.waitForSelector('[data-testid="demo-bar"]');
+  const box = frame.locator('[data-testid="composer"] textarea[aria-label="Message"]').first();
+  const working = page.locator('[data-testid="thread-working"]');
+  const limit = page.locator('[data-testid="demo-limit"]');
+  // A message sent while the agent works is refused and doesn't count. So
+  // each goes once the last turn has ended, and counts only once it's in
+  // the transcript, with the composer emptied (D-2635).
+  const sent = async (text: string) => {
+    await expect(box).toHaveValue("");
+    await expect(frame.locator('[data-testid="thread-user"]', { hasText: text }).first()).toBeVisible();
+  };
   await sendReady(frame);
   await frame.getByRole("button", { name: "Deny" }).first().click();
-  const box = frame.locator('[data-testid="composer"] textarea[aria-label="Message"]').first();
-  for (let i = 2; i <= 12; i++) {
-    await expect(box).toBeEnabled();
+  await sent("checkout sends some people back");
+  await expect(working).toHaveCount(0, { timeout: 15_000 });
+  for (let i = 2; i <= LIMIT; i++) {
+    await expect(limit).toHaveCount(0);
     await box.fill(`question ${i}`);
     await box.press("Enter");
-    await expect(frame.getByText(`question ${i}`, { exact: true })).toBeVisible();
-    await expect(page.locator('[data-testid="thread-working"]')).toHaveCount(0, { timeout: 15_000 });
+    await sent(`question ${i}`);
+    await expect(working).toHaveCount(0, { timeout: 15_000 });
   }
-  await expect(page.locator('[data-testid="demo-limit"]')).toHaveCount(0);
+  // The 12th used the last message: the bar says so, and the 13th is refused.
+  await expect(limit).toBeVisible();
   await box.fill("question 13");
   await box.press("Enter");
-  await expect(page.getByText(/Demo limit reached/).first()).toBeVisible();
-  await expect(page.locator('[data-testid="demo-limit"]')).toBeVisible();
+  await expect(page.getByText(/Demo limit reached\. Download/).first()).toBeVisible();
+  await expect(box).toHaveValue("question 13");
+  await expect(frame.locator('[data-testid="thread-user"]', { hasText: "question 13" })).toHaveCount(0);
   await expect(page.locator('[data-testid="demo-bar"]').getByRole("link", { name: "Download for Linux" })).toBeVisible();
   await page.getByRole("button", { name: "Reset the demo" }).click();
   await page.waitForSelector('[data-testid="demo-bar"]');

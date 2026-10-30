@@ -1,5 +1,5 @@
 import { $, browser } from "@wdio/globals";
-import { freshOffline, invoke, mod } from "../support/app";
+import { freshOffline, invoke, mod, waitFor } from "../support/app";
 import { chatSpawns, lead, makeTeammate, newChat, sendAndWait, type Teammate } from "../support/agents";
 
 type MailRow = {
@@ -28,13 +28,11 @@ async function events(threadId: string): Promise<Envelope[]> {
 }
 
 async function delivered(id: string, to: string): Promise<MailRow> {
-  let row: MailRow | undefined;
-  await browser.waitUntil(
-    async () => {
-      row = (await mailOf(to)).find((m) => m.id === id);
-      return row?.state === "delivered";
-    },
-    { timeout: 20_000, timeoutMsg: `mail ${id} wasn't delivered: ${JSON.stringify(row)}` },
+  const row = await waitFor(
+    async () => (await mailOf(to)).find((m) => m.id === id),
+    (r) => r?.state === "delivered",
+    `mail ${id} wasn't delivered`,
+    { timeout: 20_000 },
   );
   return row as MailRow;
 }

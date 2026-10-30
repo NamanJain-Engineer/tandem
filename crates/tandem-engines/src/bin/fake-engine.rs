@@ -2,7 +2,8 @@
 //! CLI, chosen by the name it runs as (`claude`, `codex`, …) or
 //! `TANDEM_FAKE_ENGINE`. Built only with `--features fixtures`.
 //!
-//! - `--version` prints `<name> 1.2.3 (test engine)`.
+//! - `--version` prints `<name> 1.2.3 (test engine)`; as `codex`, what the
+//!   real CLI prints, `codex-cli 1.2.3`, then ` (test engine)`.
 //! - Otherwise it is a small TUI: bracketed paste on, a banner, the cwd; each
 //!   read from the terminal is logged as hex (so separate writes stay
 //!   separate) and every line is answered.
@@ -185,13 +186,6 @@ fn send_line(v: serde_json::Value) {
     let _ = std::io::stdout().flush();
 }
 
-/// A task review (F-TK-04): every fake engine gives this verdict instead of
-/// the echo, so a run's review approves whichever fake reviews it.
-fn review_reply(text: &str) -> Option<&'static str> {
-    (text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve"))
-        .then_some("Verdict: Approve\nThe change does what the task asks.")
-}
-
 /// Lead's answer to a plan request (F-TK-06): two tasks between the
 /// prompt's markers, the second on an engine Vibezeo didn't offer.
 fn plan_reply(text: &str) -> Option<String> {
@@ -216,6 +210,48 @@ fn plan_reply(text: &str) -> Option<String> {
     Some(format!(
         "I read the repository.\nPLAN-BEGIN-{nonce}\n{plan}\nPLAN-END-{nonce}\nTwo tasks."
     ))
+}
+
+/// Lead answering a plan run's question (F-TK-08): the first line of the
+/// first instructions file its message quotes, or the question sent on to
+/// the user when there's none. Like an engine that can read its working
+/// folder, it also says what a `.env` there holds: an answer session's
+/// folder is empty (E2E-M18-TK-08).
+fn lead_answer(text: &str) -> Option<String> {
+    if !text.contains("A run in this plan asks a question.") {
+        return None;
+    }
+    let code = text
+        .rsplit("ESCALATE-")
+        .next()?
+        .split(':')
+        .next()?
+        .to_string();
+    let rule = text
+        .split("in its main checkout.")
+        .nth(1)
+        .and_then(|r| r.split("```markdown\n").nth(1))
+        .and_then(|r| r.lines().next())
+        .map(str::trim)
+        .filter(|l| !l.is_empty());
+    let seen = std::env::current_dir()
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join(".env")).ok())
+        .map(|env| format!(" (.env: {})", env.trim()))
+        .unwrap_or_default();
+    Some(match rule {
+        Some(rule) => {
+            format!("The instructions settle it.\nANSWER-{code}\n{rule}{seen}\nEND-{code}")
+        }
+        None => format!("ESCALATE-{code}: The repository's instructions don't settle it."),
+    })
+}
+
+/// A task review's verdict (F-TK-04), the same from every fake chat engine:
+/// whichever installed engine reviews a run gives one.
+fn review_reply(text: &str) -> Option<&'static str> {
+    (text.contains("Post one comment on TAN-") && text.contains("Verdict: Approve"))
+        .then_some("Verdict: Approve\nThe change does what the task asks.")
 }
 
 /// A second opinion (F-WT-05): findings on the first added line of the
@@ -555,7 +591,12 @@ fn main() {
             .unwrap_or_default()
     });
     if argv.iter().skip(1).any(|a| a == "--version" || a == "-v") {
-        println!("{name} {} (test engine)", version(&name));
+        let shown = if name == "codex" {
+            "codex-cli"
+        } else {
+            name.as_str()
+        };
+        println!("{shown} {} (test engine)", version(&name));
         return;
     }
     let args = &argv[1.min(argv.len())..];

@@ -4,7 +4,7 @@ import { Key } from "webdriverio";
 import { PhoneClient } from "@tandem/remote/client";
 import { parsePairingFragment } from "@tandem/remote/protocol";
 import { MemoryPairingStore } from "@tandem/remote/store";
-import { addFolder, freshUser, invoke, mod, paneIds, paneText, split, waitForPaneText } from "../support/app";
+import { addFolder, clickAllow, freshUser, invoke, mod, paneIds, paneText, split, waitForPaneText } from "../support/app";
 import { expectNoSeriousA11yViolationsInBothThemes } from "../support/axe";
 import { testRoute, waitForEntitlement } from "../support/hosted";
 import { E2E_KNOWN_SENTENCE } from "../support/phone";
@@ -136,7 +136,7 @@ describe("E2E-M16-4 Phone", () => {
     const item = $('[data-testid="remote-queue-item"]');
     await item.waitForDisplayed({ timeout: 10_000 });
     expect(await item.getText()).toContain("E2E phone asked to allow: Run `pnpm deploy`");
-    await item.$("button=Allow").click();
+    await clickAllow('[data-testid="remote-queue-item"] [data-testid="remote-queue-allow"]');
     await until(
       async () => !(await invoke<Array<{ id: string }>>("approvals_pending")).some((a) => a.id === view.id),
       "the confirmed allow didn't apply",

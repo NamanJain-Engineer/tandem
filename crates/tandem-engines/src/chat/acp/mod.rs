@@ -359,6 +359,8 @@ impl AcpParser {
             diff: state.diff,
             detail: state.detail,
             paths: state.paths,
+            // The diff carries its lines.
+            lines: None,
         })
     }
 
@@ -539,6 +541,13 @@ pub fn offered(result: &Value) -> Option<Vec<ModelOffer>> {
             })
             .collect(),
     )
+}
+
+/// A teammate's briefing as the text that opens an ACP prompt (F-AG-06):
+/// with no `@` that names a file for the agent to attach, as when it's a
+/// system prompt, since its memory and skills are agents' words (D-3023).
+pub fn briefing_block(text: &str) -> String {
+    tandem_core::untrusted::defang_noted(text)
 }
 
 /// What a thread says when the agent wants a sign-in: the methods it named,
@@ -763,6 +772,13 @@ impl ChatAdapter for AcpAdapter {
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        // An agent's tools are its own.
+        if req.tools_off {
+            return Err(AdapterError::Unsupported(format!(
+                "{} can't run with every tool off",
+                self.label
+            )));
+        }
         let spec = self.launch(&req);
         let first = self.start_with(spec, req.clone(), events.clone()).await;
         match (first, &self.fallback) {
@@ -1020,7 +1036,7 @@ impl AcpSession {
             .swap(false, std::sync::atomic::Ordering::SeqCst)
         {
             if let Some(text) = self.req.briefing_text() {
-                blocks.push(json!({"type": "text", "text": text}));
+                blocks.push(json!({"type": "text", "text": briefing_block(&text)}));
             }
         }
         blocks.push(json!({"type": "text", "text": turn.text}));

@@ -46,6 +46,14 @@ describe("Button (UI_SPEC §2.1)", () => {
     const { container } = render(<Button variant="primary">Continue</Button>);
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it("D-2701 a mark is a rail row's: 28 px tall with 4 px sides, and with no words it's its icon alone", () => {
+    expect(buttonClass("ghost", "mark").split(" ")).toEqual(expect.arrayContaining(["h-7", "px-1", "gap-1"]));
+    render(<Button variant="ghost" size="mark" aria-label="Open" iconLeft={<svg aria-hidden="true" />} />);
+    const button = screen.getByRole("button", { name: "Open" });
+    expect(button.textContent).toBe("");
+    expect([...button.children].map((c) => c.tagName.toLowerCase())).toEqual(["svg"]);
+  });
 });
 
 describe("buttonClass (the public site's link-buttons)", () => {

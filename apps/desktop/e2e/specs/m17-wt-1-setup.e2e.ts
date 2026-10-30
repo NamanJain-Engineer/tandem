@@ -2,7 +2,7 @@ import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
+import { addFolder, clickAllow, freshOffline, home, invoke, mod, settled, userHome } from "../support/app";
 import { newWorktree, pick, repoMenu } from "../support/worktrees";
 
 const GIT_ENV = {
@@ -91,7 +91,7 @@ describe("E2E-M17-WT-1 worktree setup", function () {
     await browser.pause(1_000);
     expect(existsSync(join(wt("setup-one"), "setup-marker.txt"))).toBe(false);
     await settled();
-    await $('[data-testid="worktree-review-trust"]').click();
+    await clickAllow('[data-testid="worktree-review-trust"]');
     expect((await waitForFile(join(wt("setup-one"), "setup-marker.txt"))).trim()).toBe("from-repo");
   });
 

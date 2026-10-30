@@ -215,7 +215,14 @@ describe("Land worktrees (F-WT-07, UI-155)", () => {
     expect(screen.getAllByTestId("landing-step")[0]?.textContent).toContain("Landed 1111111");
     // A worktree the base already had landed nothing new.
     expect(screen.getAllByTestId("landing-step")[2]?.textContent).toContain("Already in main");
-    expect(await screen.findByTestId("landing-undo")).toBeTruthy();
+    // A success has one filled button, Close: Undo landing says what it does
+    // without being the loudest thing there (the design review of D-2612).
+    const undo = await screen.findByTestId("landing-undo");
+    expect(undo.dataset.variant).toBe("secondary");
+    const filled = screen
+      .getAllByRole("button")
+      .filter((b) => b.dataset.variant === "primary" || b.dataset.variant === "danger");
+    expect(filled.map((b) => b.textContent)).toEqual(["Close"]);
   });
 
   it("F-WT-07.5 a worktree with uncommitted changes can't be ticked, and a dirty base can't land", async () => {

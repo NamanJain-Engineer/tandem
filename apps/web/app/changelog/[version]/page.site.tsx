@@ -3,16 +3,18 @@ import { Badge } from "@tandem/ui/components/Badge";
 import { CATEGORIES } from "@tandem/protocol/changelog";
 import { ArrowLeft, ArrowRight, Download } from "lucide-react";
 import type { Metadata } from "next";
-// The Land scene's styles (D-1880, D-1885).
+import type { ReactNode } from "react";
+// The release pages' scenes and their styles (D-1880, D-1885, D-1888).
 import "../../../components/site/scenes/scenes.css";
 import { Scene } from "../../../components/site/scenes/Scene";
-import { LAND_CAPTION, LandScene, landSceneText } from "../../../components/site/scenes/LandScene";
+import { releaseScenes, type ReleaseScene } from "../../../components/site/scenes/releaseScenes";
 import { Icon } from "../../../components/site/Icon";
 import { InlineMarkdown } from "../../../components/site/InlineMarkdown";
 import { SiteFrame } from "../../../components/site/SiteFrame";
+import type { ChangelogEntry } from "@tandem/protocol/changelog";
 import { PLATFORM_LABEL, RELEASES, addedCard, versionPath } from "../../../lib/changelog";
 import { RELEASE } from "../../../lib/release";
-import { LANDS } from "../../../lib/scenes";
+import { sceneCss } from "../../../lib/sceneCss";
 import { SITE } from "../../../lib/site";
 
 type Params = { params: Promise<{ version: string }> };
@@ -38,11 +40,45 @@ export default async function VersionPage({ params }: Params) {
   const older = RELEASES[at + 1];
   const platforms = [...new Set(release.entries.flatMap((e) => e.platforms))];
   const latest = release.version === RELEASE.version;
-  // 0.9.0 brought Land worktrees: its page plays the scene the home page
-  // gave up for length (D-1897, D-1885).
-  const scene = release.version === "0.9.0" && LANDS;
+  // Each of the release's scenes plays full width, directly above its own
+  // Added card (D-1898), so the notes split around them.
+  const added = release.entries.filter((e) => e.category === "Added");
+  const slots = releaseScenes(release.version)
+    .map((s) => {
+      const i = added.findIndex((e) => addedCard(e.text).title.replace(/\.$/, "") === s.card);
+      if (i < 0) throw new Error(`${release.version}: no Added card "${s.card}" for the ${s.id} scene`);
+      return { scene: s, at: i };
+    })
+    .sort((a, b) => a.at - b.at);
+  const scene = slots.length > 0;
+  // A scene's own rules come only with it: in the head, after scenes.css.
+  const sheets = [...new Set(slots.flatMap((s) => s.scene.css ?? []))];
+  // The Added list's breaks: before each scene's card, and its end.
+  const breaks = [...new Set([0, ...slots.map((s) => s.at), added.length])].sort((a, b) => a - b);
+  const blocks: ReactNode[] = [];
+  breaks.slice(0, -1).forEach((from, k) => {
+    for (const s of slots) if (s.at === from) blocks.push(<ReleaseSceneBlock key={s.scene.id} scene={s.scene} since={release.version} />);
+    const last = k === breaks.length - 2;
+    const to = breaks[k + 1] ?? added.length;
+    blocks.push(
+      <div key={`notes-${from}`} className="flex min-w-0 flex-col gap-6 lg:col-span-8 lg:col-start-5">
+        {to > from && <Cards entries={added.slice(from, to)} heading={from === 0} />}
+        {last &&
+          CATEGORIES.filter((c) => c !== "Added").map((c) => {
+            const entries = release.entries.filter((e) => e.category === c);
+            if (!entries.length) return null;
+            return <Bullets key={c} title={c} entries={entries} />;
+          })}
+      </div>,
+    );
+  });
   return (
     <SiteFrame current="/changelog/">
+      {sheets.map((f) => (
+        <style key={f} href={`scenes/${f}`} precedence="scenes">
+          {sceneCss(f)}
+        </style>
+      ))}
       <article className="relative isolate">
       <div aria-hidden="true" className="bg-lens absolute inset-x-0 top-0 -z-10 h-[32rem]" />
       <div className="container-site grid gap-10 py-16 lg:grid-cols-12 lg:gap-6 lg:py-24">
@@ -94,52 +130,74 @@ export default async function VersionPage({ params }: Params) {
             </p>
           ))}
         </div>
-        {/* The scene takes the container's full width, so the app's text
-            reads at its own size (D-1886). */}
-        {scene && (
-          <Scene id="land" text={landSceneText()} caption={LAND_CAPTION} since="0.9.0" className="rise lg:col-span-12">
-            <LandScene />
-          </Scene>
-        )}
-        <div className="flex min-w-0 flex-col gap-6 lg:col-span-8 lg:col-start-5">
-          {CATEGORIES.map((c) => {
-            const entries = release.entries.filter((e) => e.category === c);
-            if (!entries.length) return null;
-            const cards = c === "Added";
-            return (
-              <section key={c} className="flex flex-col gap-5 border-t border-line pt-10">
-                <h2 className="eyebrow">{c}</h2>
-                <ul className={cards ? "grid gap-4" : "flex flex-col gap-3"}>
-                  {entries.map((e) => (
-                    <li
-                      key={e.text}
-                      className={
-                        cards
-                          ? "reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
-                          : "ml-5 list-disc pl-1 text-copy-sm leading-7 text-fg-muted marker:text-fg-subtle [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg [&_strong]:text-fg"
-                      }
-                    >
-                      {cards ? (
-                        <AddedCard text={e.text} />
-                      ) : (
-                        <p>
-                          <InlineMarkdown text={e.text} />
-                        </p>
-                      )}
-                      <span className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-subtle">
-                        {e.platforms.map((p) => PLATFORM_LABEL[p]).join(", ")}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
+        {blocks}
       </div>
       </article>
       {scene && <script src="/demo/embed.js" defer />}
     </SiteFrame>
+  );
+}
+
+/** A release scene, full width, labelled with the release that brought it
+ * (D-1886). No scroll reveal: it sits just under the summary, often at the
+ * first screen's fold, where `rise` would leave it half faded at load (and
+ * its text below contrast while it was). */
+function ReleaseSceneBlock({ scene, since }: { scene: ReleaseScene; since: string }) {
+  return (
+    <Scene id={scene.id} text={scene.text()} caption={scene.caption} since={since} className="lg:col-span-12">
+      {scene.scene()}
+    </Scene>
+  );
+}
+
+/** Added entries as cards, under the section's heading where the section
+ * starts (the rest of it continues below a scene). */
+function Cards({ entries, heading }: { entries: readonly ChangelogEntry[]; heading: boolean }) {
+  return (
+    <section className={heading ? "flex flex-col gap-5 border-t border-line pt-10" : "flex flex-col gap-5"}>
+      {heading && <h2 className="eyebrow">Added</h2>}
+      <ul className="grid gap-4">
+        {entries.map((e) => (
+          <li
+            key={e.text}
+            className="reveal surface flex flex-col gap-3 p-6 text-copy-sm leading-7 lg:p-7 text-fg-muted [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg"
+          >
+            <AddedCard text={e.text} />
+            <Platforms entry={e} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Changed, Fixed and Security entries as a list. */
+function Bullets({ title, entries }: { title: string; entries: readonly ChangelogEntry[] }) {
+  return (
+    <section className="flex flex-col gap-5 border-t border-line pt-10">
+      <h2 className="eyebrow">{title}</h2>
+      <ul className="flex flex-col gap-3">
+        {entries.map((e) => (
+          <li
+            key={e.text}
+            className="ml-5 list-disc pl-1 text-copy-sm leading-7 text-fg-muted marker:text-fg-subtle [&_code]:font-mono [&_code]:text-[0.875em] [&_code]:text-fg [&_strong]:text-fg"
+          >
+            <p>
+              <InlineMarkdown text={e.text} />
+            </p>
+            <Platforms entry={e} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Platforms({ entry }: { entry: ChangelogEntry }) {
+  return (
+    <span className="font-mono text-eyebrow uppercase tracking-[0.08em] text-fg-subtle">
+      {entry.platforms.map((p) => PLATFORM_LABEL[p]).join(", ")}
+    </span>
   );
 }
 

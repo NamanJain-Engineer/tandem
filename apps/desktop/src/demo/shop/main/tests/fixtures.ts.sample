@@ -1,0 +1,34 @@
+import type { Cart } from "../src/cart/cart";
+import type { Product } from "../src/catalog/product";
+import { signIn } from "../src/auth/session";
+
+/** A cart of `n` items at 10.00 each, its prices held for an hour. */
+export function cartFor(n: number): Cart {
+  return {
+    id: `cart-${n}`,
+    items: Array.from({ length: n }, (_, i) => ({ sku: `sku-${i + 1}`, name: `Item ${i + 1}`, price: 1000, qty: 1 })),
+    expiresAt: Date.now() + 3_600_000,
+  };
+}
+
+const request = (path: string, sid?: string) =>
+  ({ url: path, headers: new Headers(sid ? { cookie: `sid=${sid}` } : {}) }) as Request;
+
+/** A request to `path` from someone who isn't signed in. */
+export function guest(path = "/checkout"): Request {
+  return request(path);
+}
+
+/** A request from `customer`, with `coupon` applied if there is one. */
+export function signedIn(customer: string, coupon: string | null = null): Request {
+  return request("/checkout", signIn(customer, coupon));
+}
+
+/** A request from `customer` whose session expired `ago` ms ago. */
+export function signedInAgo(customer: string, ago: number, coupon: string | null = null): Request {
+  return request("/checkout", signIn(customer, coupon, -ago));
+}
+
+export function products(n: number): Product[] {
+  return Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `Product ${i + 1}`, price: 500 * (i + 1) }));
+}

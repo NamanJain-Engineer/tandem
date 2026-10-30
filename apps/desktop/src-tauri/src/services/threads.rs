@@ -30,7 +30,7 @@ use tandem_engines::chat::{
 };
 use tandem_engines::events::{
     ApprovalDecisionView, ErrorAction, ErrorStage, ThreadEvent, ThreadEventEnvelope, ToolStatus,
-    TurnEndReason,
+    ToolVerb, TurnEndReason,
 };
 use tandem_gateway::{ApprovalAnswer, Caller, ToolApproval};
 use tandem_store::repo::attachments::{self as attachments_repo, Attachment, AttachmentKind};
@@ -232,6 +232,8 @@ pub struct ThreadService {
     status_sink: std::sync::OnceLock<ThreadStatusSink>,
     /// Saves the folder before each turn (F-EX-01); unset in tests.
     checkpoints: std::sync::OnceLock<Arc<crate::services::checkpoints::CheckpointService>>,
+    /// F-EX-07: each turn sent goes in the thread's ledger.
+    activity: std::sync::OnceLock<Arc<crate::services::activity::ActivityService>>,
     /// Tells the teammates service that chats changed.
     chats_sink: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>>,
     /// Hears every teammate chat turn that ended (learning, F-AG-08).
@@ -384,6 +386,7 @@ impl ThreadService {
             data: std::sync::OnceLock::new(),
             status_sink: std::sync::OnceLock::new(),
             checkpoints: std::sync::OnceLock::new(),
+            activity: std::sync::OnceLock::new(),
             chats_sink: std::sync::OnceLock::new(),
             turn_sink: std::sync::OnceLock::new(),
             health_sink: std::sync::OnceLock::new(),
@@ -395,6 +398,10 @@ impl ThreadService {
 
     pub fn set_checkpoints(&self, c: Arc<crate::services::checkpoints::CheckpointService>) {
         let _ = self.checkpoints.set(c);
+    }
+
+    pub fn set_activity(&self, a: Arc<crate::services::activity::ActivityService>) {
+        let _ = self.activity.set(a);
     }
 
     /// The app's titler and data folder (tests may leave them unset).
@@ -646,6 +653,23 @@ impl ThreadService {
             .map_err(store_err)
     }
 
+    /// The person has the thread on screen (F-TH-01 AC2): it's read. Only
+    /// the UI calls it, when a thread is opened or a turn ends on one that's
+    /// shown; reading a thread ([`Self::get`], the phone, Conductor) never
+    /// marks it read.
+    pub async fn mark_read(&self, id: &ThreadId) -> Result<(), IpcError> {
+        let thread = self.thread(id).await?;
+        if thread.unread {
+            repo::set_unread(&self.store, id, false)
+                .await
+                .map_err(store_err)?;
+            self.publish_threads().await;
+        }
+        Ok(())
+    }
+
+    /// A thread and what it needs on screen. Reads only: it doesn't mark the
+    /// thread read ([`Self::mark_read`] does).
     pub async fn get(&self, id: &ThreadId) -> Result<ThreadDetail, IpcError> {
         let thread = self.thread(id).await?;
         let turns = repo::turns(&self.store, id).await.map_err(store_err)?;
@@ -653,15 +677,6 @@ impl ThreadService {
         let attachments = attachments_repo::unsent(&self.store, id)
             .await
             .map_err(store_err)?;
-        // Opening a thread reads it (F-TH-01 AC2).
-        let mut thread = thread;
-        if thread.unread {
-            if let Err(e) = repo::set_unread(&self.store, id, false).await {
-                tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread read");
-            }
-            thread.unread = false;
-            self.publish_threads().await;
-        }
         let plan_revisions = repo::plan_revisions(&self.store, id)
             .await
             .map_err(store_err)?;
@@ -1394,6 +1409,11 @@ impl ThreadService {
         };
         let blocked = run.blocked;
         let engine_fault = run.engine_fault;
+        // Unread until the thread is opened again (F-TH-01 AC2). Set before
+        // anything signals the end, so a read on that signal wins.
+        if let Err(e) = repo::set_unread(&self.store, thread, true).await {
+            tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread unread");
+        }
         if reason == TurnEndReason::Completed {
             if let Some(version) = self.save_plan(thread, &run.id).await {
                 self.emit(thread, &mut run, ThreadEvent::PlanRevision { version })
@@ -1436,10 +1456,6 @@ impl ThreadService {
             }
         }
         tracing::info!(code = "threads.turn_ended", reason = ?reason, "turn ended");
-        // Unread until the thread is opened again (F-TH-01 AC2).
-        if let Err(e) = repo::set_unread(&self.store, thread, true).await {
-            tracing::warn!(code = "threads.unread_failed", error = %e, "couldn't mark a thread unread");
-        }
         if let (TurnEndReason::Completed, Some(first)) = (reason, run.title_from.take()) {
             self.ai_title(thread, first);
         }
@@ -1709,24 +1725,40 @@ impl ThreadService {
         // Outside the lock: a slow stdin never holds up the event stream.
         self.ensure_start(&thread).await;
         // F-EX-01: the folder as it was before the engine hears the message.
+        let turn_at = self.clock.now_ms();
+        let mut checkpoint = None;
         if let (Some(cps), Some(ws)) = (self.checkpoints.get(), thread.workspace_id.as_ref()) {
-            cps.before_turn(
-                crate::services::checkpoints::Request {
-                    folder: std::path::PathBuf::from(&thread.cwd),
-                    workspace_id: Some(ws.as_str().to_string()),
-                    thread_id: Some(id.as_str().to_string()),
-                    turn_id: Some(turn_id.as_str().to_string()),
-                    label: repo::get(&self.store, id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|t| t.title)
-                        .unwrap_or_default(),
-                    ..Default::default()
-                },
-                tandem_store::repo::checkpoints::CheckpointReason::Turn,
-            )
-            .await;
+            checkpoint = cps
+                .before_turn(
+                    crate::services::checkpoints::Request {
+                        folder: std::path::PathBuf::from(&thread.cwd),
+                        workspace_id: Some(ws.as_str().to_string()),
+                        thread_id: Some(id.as_str().to_string()),
+                        turn_id: Some(turn_id.as_str().to_string()),
+                        label: repo::get(&self.store, id)
+                            .await
+                            .ok()
+                            .flatten()
+                            .map(|t| t.title)
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    },
+                    tandem_store::repo::checkpoints::CheckpointReason::Turn,
+                )
+                .await;
+        }
+        // F-EX-07: the turn, never its text.
+        if let Some(activity) = self.activity.get() {
+            activity
+                .turn(
+                    "thread",
+                    id.as_str(),
+                    Some(thread.engine_id.as_str()),
+                    checkpoint.map(|c| c.id),
+                    turn_at,
+                    false,
+                )
+                .await;
         }
         let seeded = seed.is_some();
         let text = match seed {
@@ -2048,15 +2080,22 @@ impl ThreadService {
                         // An edit's files claim once, when it succeeded: a
                         // tool's first row comes before its outcome, and an
                         // edit that was refused or failed changed nothing
-                        // (F-TK-07).
+                        // (F-TK-07). A Task's files are its subagent's edits
+                        // that happened, so they claim however it ended
+                        // (D-2622).
                         if let ThreadEvent::Tool {
                             id: tool,
+                            verb,
                             paths: Some(paths),
-                            status: ToolStatus::Ok,
+                            status,
                             ..
                         } = &other
                         {
-                            if run.claimed.insert(tool.clone()) {
+                            let finished =
+                                !matches!(status, ToolStatus::Running | ToolStatus::Pending);
+                            let happened =
+                                *status == ToolStatus::Ok || (*verb == ToolVerb::Task && finished);
+                            if happened && run.claimed.insert(tool.clone()) {
                                 if let Some(sink) = self.edit_sink.get() {
                                     sink(thread, paths);
                                 }
@@ -2535,6 +2574,7 @@ impl AppLauncher {
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
+                tools_off: false,
             },
         ))
     }
@@ -2655,6 +2695,7 @@ impl AppLauncher {
                 engine_version: found.version,
                 relocate: Some(relocate),
                 briefing,
+                tools_off: false,
             },
         ))
     }
@@ -3227,6 +3268,7 @@ impl ChatLauncher for AppLauncher {
                 relocate: None,
                 briefing,
                 stdio_servers,
+                tools_off: false,
             },
         ))
     }
@@ -3407,7 +3449,6 @@ mod tests {
     use tandem_core::ids::ApprovalId;
     use tandem_core::DataDir;
     use tandem_engines::chat::AdapterError;
-    use tandem_engines::events::ToolVerb;
 
     /// What the scripted engine does with a turn.
     type Script = Arc<dyn Fn(TurnId, mpsc::Sender<AdapterEvent>) + Send + Sync>;
@@ -3553,6 +3594,7 @@ mod tests {
                     relocate: None,
                     briefing: None,
                     stdio_servers: Vec::new(),
+                    tools_off: false,
                 },
             ))
         }
@@ -3843,6 +3885,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_07_1_a_task_that_ended_in_error_claims_what_its_subagent_edited() {
+        // claude.rs names the subagent's edits that happened on the Task's
+        // row, whatever its end: those files changed.
+        let mut task = ThreadEvent::tool("t1", ToolVerb::Task, "Rename", ToolStatus::Error);
+        if let ThreadEvent::Tool { paths, .. } = &mut task {
+            *paths = Some(vec!["/w/src/a.ts".to_string()]);
+        }
+        let (f, seen) = claimed_by(vec![
+            ThreadEvent::tool("t1", ToolVerb::Task, "Rename", ToolStatus::Running),
+            task,
+        ])
+        .await;
+        assert_eq!(
+            seen,
+            vec![(
+                f.thread.id.as_str().to_string(),
+                vec!["/w/src/a.ts".to_string()]
+            )]
+        );
+    }
+
+    #[tokio::test]
     async fn f_tk_07_1_a_denied_edit_claims_nothing() {
         // Every adapter's first row of a tool comes before its outcome:
         // Claude's tool_use, Codex's item/started, ACP's pending tool_call.
@@ -3956,6 +4020,48 @@ mod tests {
         }
         assert_eq!(detail.thread.state, ThreadState::Done);
         assert_eq!(detail.running, None);
+    }
+
+    #[tokio::test]
+    async fn f_ex_07_2_a_turn_goes_in_the_ledger_without_its_text() {
+        let script: Script = Arc::new(|turn, tx| {
+            play(tx, vec![ev(&turn, end(TurnEndReason::Completed))]);
+        });
+        let f = fixture(OnStop::Ack, script).await;
+        let activity =
+            crate::services::activity::ActivityService::new(f.store.clone(), Arc::new(SystemClock));
+        f.svc.set_activity(activity.clone());
+        let sentence = "please rename the quarterly flamingo report";
+        f.svc
+            .send(&f.thread.id, sentence.into(), Vec::new(), false)
+            .await
+            .expect("send");
+        ended(&f, 1).await;
+        let events = activity
+            .list("thread", f.thread.id.as_str(), None, 0)
+            .await
+            .expect("list")
+            .events;
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            (events[0].kind.as_str(), events[0].summary.as_str()),
+            ("turn", "Turn sent")
+        );
+        let rows: Vec<String> = f
+            .store
+            .read(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT source_id || kind || summary || detail_json || COALESCE(checkpoint_id, '') FROM activity",
+                )?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .expect("rows");
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|r| !r.contains("flamingo")), "{rows:?}");
     }
 
     #[tokio::test]
@@ -5075,6 +5181,7 @@ mod tests {
                         relocate: None,
                         briefing: None,
                         stdio_servers: Vec::new(),
+                        tools_off: false,
                     },
                 ))
             }
@@ -5374,11 +5481,14 @@ mod tests {
         })
     }
 
-    struct FixedTitler(&'static str);
+    /// Answers once the test opens its gate: the first turn ends as soon as
+    /// it's sent, so an ungated title could land before the local one is read.
+    struct FixedTitler(&'static str, Arc<tokio::sync::Notify>);
 
     #[async_trait]
     impl Titler for FixedTitler {
         async fn title(&self, _: &str) -> Option<String> {
+            self.1.notified().await;
             Some(self.0.to_string())
         }
     }
@@ -5404,8 +5514,11 @@ mod tests {
     #[tokio::test]
     async fn f_th_15_the_first_message_names_the_thread_then_the_ai_title_and_a_rename_sticks() {
         let f = fixture(OnStop::Ack, reply("Hi")).await;
-        f.svc
-            .configure(Arc::new(FixedTitler("Login redirect fix")), data(&f));
+        let gate = Arc::new(tokio::sync::Notify::new());
+        f.svc.configure(
+            Arc::new(FixedTitler("Login redirect fix", gate.clone())),
+            data(&f),
+        );
         send(
             &f,
             "fix the login bug where the redirect loops forever",
@@ -5416,6 +5529,7 @@ mod tests {
             now(&f).await.title,
             "Fix the login bug where the redirect loops"
         );
+        gate.notify_one();
         ended(&f, 1).await;
         for _ in 0..300 {
             if now(&f).await.title == "Login redirect fix" {
@@ -5466,8 +5580,15 @@ mod tests {
         send(&f, "hello", vec![]).await;
         ended(&f, 1).await;
         assert!(now(&f).await.unread);
+        // Reading it (the UI's reload on TurnEnd, the phone, Conductor)
+        // leaves it unread: only the person opening it marks it read.
         let detail = f.svc.get(&f.thread.id).await.expect("get");
-        assert!(!detail.thread.unread);
+        assert!(detail.thread.unread);
+        assert!(now(&f).await.unread);
+        f.svc.mark_read(&f.thread.id).await.expect("mark read");
+        assert!(!now(&f).await.unread);
+        // Marking a read thread read again changes nothing.
+        f.svc.mark_read(&f.thread.id).await.expect("again");
         assert!(!now(&f).await.unread);
     }
 

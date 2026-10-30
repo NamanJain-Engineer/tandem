@@ -179,6 +179,7 @@ setting_keys! {
     SkillsSeen,
     ReviewChecks,
     ReviewApiPaths,
+    LocalModelPorts,
 }
 
 /// How a value is checked before it is stored.
@@ -1084,6 +1085,9 @@ pub static SCHEMA: &[SettingSpec] = &[
     // paths, set from the review queue on this computer (never the repo).
     spec!(ReviewChecks, json!({}), V::Map, Hidden, []),
     spec!(ReviewApiPaths, json!({}), V::Map, Hidden, []),
+    // F-EN-11: the ports the user added to look for model servers on this
+    // computer, as `kind:port` entries under "ports" (D-2517).
+    spec!(LocalModelPorts, json!({"ports": []}), V::Map, Hidden, []),
 ];
 
 pub fn spec(key: SettingKey) -> &'static SettingSpec {

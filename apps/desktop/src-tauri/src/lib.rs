@@ -60,6 +60,8 @@ macro_rules! app_commands {
             commands::plan::plan_create_tasks,
             commands::plan::plan_prepare,
             commands::plan::plan_execute,
+            commands::plan::plan_supervise,
+            commands::plan::plan_answer,
             commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
             commands::task_exec::task_attempt_stop,
@@ -166,6 +168,7 @@ macro_rules! app_commands {
             commands::handoff::handoff_start,
             commands::handoff::handoff_to_thread,
             commands::lanes::lane_create,
+            commands::lanes::lane_kind_get,
             commands::lanes::lane_diff,
             commands::lanes::lane_second_opinion,
             commands::review::review_queue,
@@ -213,6 +216,13 @@ macro_rules! app_commands {
             commands::files::fs_delete,
             commands::files::fs_watch,
             commands::files::fs_unwatch,
+            commands::lsp::lsp_sync,
+            commands::lsp::lsp_definition,
+            commands::lsp::lsp_references,
+            commands::lsp::lsp_hover,
+            commands::lsp::lsp_trust,
+            commands::lsp::lsp_close,
+            commands::lsp::lsp_files_changed,
             commands::checkpoints::checkpoints_list,
             commands::checkpoints::checkpoint_create,
             commands::checkpoints::checkpoint_diff,
@@ -314,6 +324,12 @@ macro_rules! app_commands {
             commands::secrets::secrets_delete,
             commands::secrets::secrets_run_plan,
             commands::secrets::secrets_run,
+            commands::secrets::secrets_agents_plan,
+            commands::secrets::secrets_agents_apply,
+            commands::secrets::run_rules_list,
+            commands::secrets::run_rules_set,
+            commands::activity::activity_list,
+            commands::activity::activity_export,
             commands::data_controls::data_export,
             commands::data_controls::data_delete_local,
             commands::find_work::find_work,
@@ -337,6 +353,10 @@ macro_rules! app_commands {
             commands::acp_agents::acp_agent_test,
             commands::acp_agents::acp_agent_add,
             commands::acp_agents::acp_agent_remove,
+            commands::local_models::local_models_list,
+            commands::local_models::local_models_add_port,
+            commands::local_models::local_models_remove_port,
+            commands::local_models::local_model_start,
             commands::library::library_list,
             commands::library::library_transcript,
             commands::library::library_resume,
@@ -402,6 +422,7 @@ macro_rules! app_commands {
             commands::threads::thread_create,
             commands::threads::thread_list,
             commands::threads::thread_get,
+            commands::threads::thread_mark_read,
             commands::threads::thread_events,
             commands::threads::thread_subscribe,
             commands::threads::thread_send,
@@ -699,6 +720,11 @@ fn spawn_background(state: &AppState) {
     let telemetry = state.telemetry.clone();
     tauri::async_runtime::spawn(telemetry.clone().run_uploader());
     tauri::async_runtime::spawn(state.audit.clone().run());
+    // F-CD-23: language servers stop after ten idle minutes.
+    // Servers run in $DATA/lsp, not in the repository (D-2580).
+    crate::services::lsp::set_work_dir(state.data.root().join("lsp"));
+    crate::services::lsp::set_data_dir(state.data.clone());
+    tauri::async_runtime::spawn(crate::services::lsp::run_reaper());
     // F-WT-10: the intent radar follows checkpoints.
     tauri::async_runtime::spawn(crate::services::radar::run(
         state.store.clone(),
@@ -727,18 +753,26 @@ fn spawn_background(state: &AppState) {
     tauri::async_runtime::spawn(async move {
         let _ = tandem_store::repo::bestof::settle_checks(&store).await;
     });
-    // Command recall keeps its retention at startup and hourly (F-EX-02).
+    // Command recall and the activity ledger keep their retention at
+    // startup and hourly (F-EX-02, F-EX-07).
     let recall = state.recall.clone();
+    let activity = state.terminals.activity.clone();
     tauri::async_runtime::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
             tick.tick().await;
             recall.prune().await;
+            activity.prune().await;
         }
     });
     let staging = state.data.staging();
     tauri::async_runtime::spawn_blocking(move || {
         services::staging::sweep(&staging, services::staging::KEEP_FOR)
+    });
+    // Answer sessions' folders a crash left behind (F-TK-08, D-2838).
+    let run = state.data.run();
+    tauri::async_runtime::spawn_blocking(move || {
+        services::plan::sweep_answer_folders(&run, services::plan::ANSWER_FOLDER_KEEP)
     });
     // Live panes' scrollback is snapshotted every 5 minutes so a crash keeps
     // something to show on restore (§5.4).
@@ -937,6 +971,7 @@ pub fn run() {
         }
     };
     services::telemetry::install_panic_hook(&state.data.crashes());
+    services::agent_run::install_crash_kill();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
     let initial_links = deeplink::from_args(std::env::args().skip(1));
     let window_state_file = state.data.window_state().to_string_lossy().into_owned();
@@ -1138,6 +1173,22 @@ pub fn run() {
                         feed.clone(),
                         key,
                         record,
+                        {
+                            // Windows: the installer exits the process
+                            // without the exit event (F-TL-12), so this does
+                            // what the exit event would.
+                            let terminals = state.terminals.clone();
+                            let remote = state.remote.clone();
+                            let scrollback = state.data.scrollback();
+                            std::sync::Arc::new(move || {
+                                services::agent_run::before_update_exit(
+                                    &terminals,
+                                    &scrollback,
+                                );
+                                remote.shutdown();
+                                services::merge_queue::shutdown();
+                            })
+                        },
                     ),
                 ));
             }
@@ -1231,6 +1282,26 @@ pub fn run() {
                 // Before anything can start their chats (resume does it
                 // again, with the waits).
                 plans.withhold_kept();
+                // F-TK-08: a plan run's question goes to its plan, and a run
+                // started again after a restart is still its plan's.
+                {
+                    let sink = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_question_sink(std::sync::Arc::new(move |q| {
+                            if let Some(plans) = sink.upgrade() {
+                                plans.on_question_event(q);
+                            }
+                        }));
+                    let lookup = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_supervision_lookup(std::sync::Arc::new(move |attempt, issue| {
+                            lookup
+                                .upgrade()
+                                .and_then(|p| p.supervision_for(attempt, issue))
+                        }));
+                }
                 tauri::async_runtime::spawn(async move { plans.resume() });
                 // F-TK-05: a new claim overlap is a notice in both agents'
                 // panes, and the queue shows every overlap there is. A pane
@@ -1273,6 +1344,25 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let state = engines_state.state::<AppState>();
                 state.terminals.status.start(&state.data.run()).await;
+                // `vibezeo run` (F-TL-12): agents find `vibezeo` first on
+                // their PATH, and its requests reach the app's handler.
+                if let Some(server) = state.terminals.status.server() {
+                    if let Some(hook) = services::engines::hook_bin() {
+                        match services::agent_run::install(&state.data.run(), &hook) {
+                            Ok(bin) => state.terminals.set_run_bin(bin),
+                            Err(err) => tracing::warn!(code = "secrets.vibezeo_install_failed", error = %err, "agents won't find vibezeo"),
+                        }
+                    }
+                    server.set_run_handler(std::sync::Arc::new(services::agent_run::Handler(
+                        services::agent_run::AgentRuns::new(
+                            state.store.clone(),
+                            state.keychain.clone(),
+                            state.approvals.broker.clone(),
+                            state.terminals.clone(),
+                            state.data.root().to_path_buf(),
+                        ),
+                    )));
+                }
                 state.terminals.engines.load_cached().await;
                 let config = state.config.refresh().await;
                 state.terminals.engines.apply_config(&config);
@@ -1320,8 +1410,10 @@ pub fn run() {
                     }
                 },
             ));
-            // Worktree sweep: at startup, then every 6 h (F-CD-15). It never
-            // deletes anything; finished worktrees become one notification.
+            // Worktree sweep: at startup, then every 6 h (F-CD-15). Finished
+            // worktrees become one notification. The only folder it removes
+            // is a jj workspace whose making Vibezeo itself cut short (F-CD-24:
+            // its commits kept, and kept whole when jj can't snapshot it).
             let sweep_state = handle.clone();
             tauri::async_runtime::spawn(supervisor::supervise_task(
                 "scheduler/worktree-sweep",
@@ -1405,11 +1497,21 @@ pub fn run() {
         // scrollback snapshot and every process tree is stopped.
         Ok(app) => app.run(|handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // F-TL-12: an agent's running `vibezeo run` ends with the app
+                // (its group killed, its row written), never left holding values.
+                services::agent_run::mark_exiting();
+                services::agent_run::shutdown_all();
                 let state = handle.state::<AppState>();
                 state.terminals.shutdown(&state.data.scrollback());
                 state.remote.shutdown();
                 // F-WT-07: a landing's check doesn't outlive the app.
                 services::merge_queue::shutdown();
+                // F-CD-23: language servers get shutdown and exit, all at
+                // once, and their trees are killed if they hang.
+                tauri::async_runtime::block_on(async {
+                    let stop = services::lsp::global().shutdown();
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(7), stop).await;
+                });
             }
         }),
         Err(err) => {

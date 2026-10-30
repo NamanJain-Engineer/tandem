@@ -103,7 +103,16 @@ function Tool({ tool }: { tool: ToolEvent }) {
       icon={v.icon}
       verb={v.verb}
       arg={v.arg}
-      meta={v.meta}
+      meta={
+        v.metaLabel ? (
+          <>
+            <span aria-hidden="true">{v.meta}</span>
+            <span className="sr-only">{v.metaLabel}</span>
+          </>
+        ) : (
+          v.meta
+        )
+      }
       status={tool.status}
       statusLabel={v.statusLabel}
     >
@@ -332,9 +341,19 @@ const RowView = memo(function RowView({
           <CheckCircle2 size={13} aria-hidden="true" className="shrink-0 text-done-text" />
           {row.files > 0 && (
             <span>
-              {t("thread.summary.files", { n: row.files })}{" "}
-              <span className="tabular-nums text-diff-add-fg">{t("thread.summary.add", { n: row.add })}</span>{" "}
-              <span className="tabular-nums text-diff-del-fg">{t("thread.summary.del", { n: row.del })}</span>
+              {t("thread.summary.files", { n: row.files })}
+              {row.add !== null && row.del !== null && (
+                <>
+                  {" "}
+                  <span aria-hidden="true" className="tabular-nums text-diff-add-fg">
+                    {t("thread.summary.add", { n: row.add })}
+                  </span>{" "}
+                  <span aria-hidden="true" className="tabular-nums text-diff-del-fg">
+                    {t("thread.summary.del", { n: row.del })}
+                  </span>
+                  <span className="sr-only">{t("thread.lines.label", { add: row.add, del: row.del })}</span>
+                </>
+              )}
             </span>
           )}
           {row.files > 0 && row.tests && <span aria-hidden="true">·</span>}
@@ -394,6 +413,7 @@ const RowView = memo(function RowView({
             risk={plugin.riskClass === "spend" ? "high" : "low"}
             riskText={plugin.cost ? t("plugins.approval.spendNote", { cost: plugin.cost }) : undefined}
             allowThread={r.options.includes("conversation")}
+            requestKey={`${r.id}\n${r.detail}`}
             onAllow={() => actions.approve(r.id, "once")}
             onAllowThread={() => actions.approve(r.id, "conversation")}
             onDeny={(reason) => actions.deny(r.id, reason)}
@@ -414,6 +434,7 @@ const RowView = memo(function RowView({
           }
           context={r.summary}
           allowThread={r.options.includes("thread")}
+          requestKey={`${r.id}\n${r.detail}`}
           onAllow={() => actions.approve(r.id, "once")}
           onAllowThread={() => actions.approve(r.id, "thread")}
           onDeny={(reason) => actions.deny(r.id, reason)}
@@ -501,6 +522,7 @@ function approvalLabels(kind: string) {
     cancel: t("thread.approval.cancel"),
     showDetail: file ? t("thread.approval.viewDiff") : t("thread.approval.showDetail"),
     hideDetail: file ? t("thread.approval.hideDiff") : t("thread.approval.hideDetail"),
+    steadying: t("approval.waiting"),
   };
 }
 export { approvalLabels };

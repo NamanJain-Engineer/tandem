@@ -7,6 +7,7 @@ import type { AttachmentId } from "./AttachmentId";
 import type { ErrorAction } from "./ErrorAction";
 import type { ErrorStage } from "./ErrorStage";
 import type { LimitKind } from "./LimitKind";
+import type { LineCounts } from "./LineCounts";
 import type { MailId } from "./MailId";
 import type { ToolStatus } from "./ToolStatus";
 import type { ToolVerb } from "./ToolVerb";
@@ -17,7 +18,13 @@ export type ThreadEvent = { "type": "user", text: string, attachments: Array<Att
  * The files an edit names, absolute: what the thread's working
  * tree claims (F-TK-07). Left out for other tools.
  */
-paths?: Array<string>, } | { "type": "assistant_delta", text: string, } | { "type": "assistant", markdown: string, } | { "type": "approval_request", id: ApprovalId, kind: ApprovalKind, summary: string, detail: string, options: Array<ApprovalScope>, expiresAt: number, } | { "type": "approval_resolved", id: ApprovalId, decision: ApprovalDecisionView, } | { "type": "usage", input: number, output: number, cacheRead: number, cacheWrite: number, contextFillPct: number | null, costUsd: number | null, } | { "type": "limit", kind: LimitKind, resetsAt: number | null, message: string, } | { "type": "note", text: string, } | { "type": "error", code: string, message: string, stage: ErrorStage, hint: string | null, action: ErrorAction | null, } | { "type": "plan_revision", version: number, } | { "type": "divider", text: string, } | { "type": "mail_row", mailId: MailId, from: string, to: string, preview: string, 
+paths?: Array<string>, 
+/**
+ * A successful edit's lines added and removed, counted from its
+ * input by an engine that sends no diff (F-TH-12, D-2608). Left out
+ * when unknown, and for edits that didn't happen.
+ */
+lines?: LineCounts, } | { "type": "assistant_delta", text: string, } | { "type": "assistant", markdown: string, } | { "type": "approval_request", id: ApprovalId, kind: ApprovalKind, summary: string, detail: string, options: Array<ApprovalScope>, expiresAt: number, } | { "type": "approval_resolved", id: ApprovalId, decision: ApprovalDecisionView, } | { "type": "usage", input: number, output: number, cacheRead: number, cacheWrite: number, contextFillPct: number | null, costUsd: number | null, } | { "type": "limit", kind: LimitKind, resetsAt: number | null, message: string, } | { "type": "note", text: string, } | { "type": "error", code: string, message: string, stage: ErrorStage, hint: string | null, action: ErrorAction | null, } | { "type": "plan_revision", version: number, } | { "type": "divider", text: string, } | { "type": "mail_row", mailId: MailId, from: string, to: string, preview: string, 
 /**
  * The recipient's delivered turn: shown in place of its message.
  */

@@ -874,7 +874,7 @@ command -v act && act -W .github/workflows/release.yml -j linux --dryrun || true
    - The lane briefing text is sent before the task.
    - Lane menu: Diff vs base (DiffView), Merge into base, Create PR (runs `gh pr create` in a shell pane when `gh` is present), Remove lane. "Open in Files" arrives in M9.
    - A forced remove needs a local confirm dialog. An `Origin` of Conductor or Phone is rejected (`invariant_rule_5_local_review_origin`).
-   - A sweep at startup and every 6 h, which raises a "Clean up lanes" notification and never deletes anything.
+   - A sweep at startup and every 6 h, which raises a "Clean up lanes" notification and never deletes a worktree (later, F-CD-24: except a jj workspace whose making Vibezeo cut short).
 3. **Launch wizard and presets (F-CD-14, UI-12).**
    - Open with `Mod+Shift+L`, from the empty state, or from `+`.
    - Built-in presets Solo, Pair, Bench and Fleet. The seat editor, How many (1–8), a shared task, isolation, and the Will launch preview.
@@ -2077,11 +2077,63 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: code intelligence (M)
+
+**Goal.** Definitions, references, hover and diagnostics in the Files editor and the worktree diffs, from the language servers the user already has (F-CD-23). From `docs/NEXT_FEATURES.md` (§1 #19). Built on branch `competitive-gaps`; decisions D-2536–D-2539.
+
+**Owns:** F-CD-23 (P2)
+**Prerequisites.** F-CD-19 (the Files editor), F-WT-02 (the worktree diff), F-WT-10 (the tree-sitter index, for the fallback).
+
+**Ordered tasks**
+1. **Client.** `services::lsp`: a JSON-RPC client over stdio (Content-Length framing) behind a transport, the server registry (rust-analyzer, typescript-language-server, pyright-langserver, gopls), start on first use per folder and language, idle stop after 10 minutes, at most 4, restarts bounded; `didOpen`/`didChange`, `definition`, `references`, `hover`, `publishDiagnostics`. A `fake-lsp` fixture binary in `tandem-engines` (feature `fixtures`) for tests and E2E.
+2. **Commands.** `lsp_sync`, `lsp_definition`, `lsp_references`, `lsp_hover`; the tree-sitter fallback for definitions.
+3. **UI.** The editor's keys, hover, diagnostics and status line; the References panel; the diff's name menu.
+
+**Verification**
+```bash
+cargo test -p tandem-desktop --lib f_cd_23
+pnpm --filter desktop exec vitest run -t "F-CD-23"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd23*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD23-1 Code intelligence.** A Python folder with the fake language server on PATH as `pyright-langserver`. Expected: the status line says pyright is off until the repository is trusted, and Trust repository… (native confirm: yes) starts it; F12 on a call opens the definition in the other file; Shift+F12 lists the references; the status line counts a diagnostic; a Rust file says "No language server for Rust"; with the fake server also as `typescript-language-server`, a TypeScript file's server starts without asking again.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+
+## M18 · Next features: jj workspaces (M)
+
+**Goal.** Lanes as jj workspaces in repositories co-located with jj, with the diff and overlap check through jj (F-CD-24). From `docs/NEXT_FEATURES.md` (§1 #21). Built on branch `competitive-gaps`; decisions D-2598, D-2599, D-2660–D-2699 and D-3090–D-3109 (D-874).
+
+**Owns:** F-CD-24 (P2)
+**Prerequisites.** F-CD-15 (worktrees), F-WT-02 (the worktree diff), F-WT-03 (the overlap check), F-CD-22's single-repository guard.
+
+**Ordered tasks**
+1. **jj runner.** `tandem_git::jj`: finding `jj` (login PATH and the usual install places) and its version, co-location detection, a `JjRunner` seam (argv, `--no-pager --color=never`, a time limit) with a fake for unit tests; `workspace add`, the base commit, `diff --git` fed to the git diff parser, `diff --name-only`, `workspace forget`.
+2. **Lanes.** `lane_create`'s `kind`, the remembered choice per repository, `lane_kind_get`, jj lanes' diff, overlap and Discard, the guard for what still needs git, the briefing line.
+3. **UI.** The New worktree dialog's jj / git choice, the rail's jj mark, the jj-only and remote notes.
+
+**Verification**
+```bash
+cargo test -p tandem-git jj
+cargo test -p tandem-desktop --lib f_cd_24
+pnpm --filter desktop exec vitest run -t "F-CD-24"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-cd24*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-CD24-1 jj workspaces.** A git repository co-located with jj (`jj git init --colocate`), the real `jj` on PATH. Expected: New worktree preselects jj workspace and makes `.tandem/worktrees/<slug>` with `jj workspace add`; the rail row is marked jj; an agent pane runs there; a change there gives the same diff as the same change in a git worktree; Discard forgets the workspace and removes the folder, and its commit is still in `jj log`.
+
+**Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
+
+---
+
 ## M18 · Next features: engines (M)
 
 **Goal.** The engine work `docs/NEXT_FEATURES.md` ranks first (§1 #1, #3, #5, #9): one instructions file for every engine, an engine catalog that keeps up with the vendors, engine versions under the user's control, and one library of every engine's local sessions. Built on its own branch (decisions D-2400–D-2419); each feature lands on its own and can ship in any release after it's green.
 
-**Owns:** F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-TH-17 (P2)
+**Owns:** F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-TH-17 (P2)
 **Prerequisites.** M4 (engine registry and detection), M17's F-WT-01 (worktree copy patterns).
 
 **Ordered tasks**
@@ -2090,6 +2142,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 3. **Engine versions (F-EN-08).** The registry's `updates` table (npm package, native versions folder and installer, Pin switch, self-updating methods); `tandem_engines::versions` (install method from where the command resolves, the version book, rollback commands); `$DATA/engine-versions.json` fed by Thread turn results; Pin in the pane launch; the background process list behind a `ProcessTable` trait; commands `engine_versions`, `engine_check_update`, `engine_pin`, `engine_rollback_command`, `engine_background`, `engine_background_stop`; UI-161 in Settings › Engines and the thread's banner.
 4. **Session library (F-TH-17).** `tandem_engines::library` (Claude Code's `projects/*/*.jsonl` and Codex's `sessions/**/*.jsonl` through a `SessionFs`, never through a link), every account's home and each engine's own; commands `library_list`, `library_transcript`, `library_resume`, `library_brief`, `library_continue`, `library_search`, `library_search_set`; the `sessionSearch` limit and the `session_search` setting; `$DATA/session-index.db` (FTS5); UI-162 from the command palette, Continue through UI-13.
 5. **ACP agents (F-EN-10).** Gemini CLI's `--acp` as a built-in Thread engine; `tandem_engines::acp_agents` (the form's rules, an agent as a registry entry) and `chat::acp::probe` (`initialize` with a 10 s limit); `$DATA/acp-agents.json` merged into the engine service's registry and detection; commands `acp_agents_list`, `acp_agent_test`, `acp_agent_add`, `acp_agent_remove`; UI-163 in Settings › Engines and "via ACP" in the Thread engine picker.
+6. **Local models (F-EN-11).** `tandem_engines::local_models` (server kinds and their documented ports and paths, model lists parsed, Codex's `config.toml` for a local provider); `services::local_models` (a `LocalHttp` trait, a no-proxy client that asks only `http://127.0.0.1`, the finder, a provider home per server and model under `$PROVIDERS/codex/`); commands `local_models_list`, `local_models_add_port`, `local_models_remove_port`, `local_model_start`; `panes.local_model` (migration 0008) for the "On this computer" chip and `panes.launch_config` for every start, each of which reads the Codex version (0.149.0 or newer), marks the pane's folders untrusted in the home and on the command line, and passes the model and provider on Codex's command line, last; UI-164, whose list reads Codex's version at each call, and the Privacy page's line.
 
 **Verification**
 ```bash
@@ -2102,6 +2155,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 - **E2E-M18-EN07 Instructions.** A repository with a `CLAUDE.md` and an `AGENTS.md` that differ, and an ignored `CLAUDE.local.md`. Expected: the panel says Claude Code reads `CLAUDE.md`, not `AGENTS.md`, and shows the difference; "Use one file for all" writes nothing until confirmed, then `CLAUDE.md` is `@AGENTS.md`; Undo restores it byte for byte; "Copy into worktrees" adds `CLAUDE.local.md` to `.vibezeo/worktree.json`.
 - **E2E-M18-EN09 Engine catalog.** Fake `agy` and `kiro-cli` on the login PATH. Expected: both detected and launched in panes, Kiro with `KIRO_HOME`; Gemini CLI keeps its note; Antigravity isn't chat-capable, and Kiro is, through its ACP mode (F-EN-10, D-2510).
 - **E2E-M18-EN10 ACP agents.** `/bin/sleep 30` added as an agent; then the fake engine linked as `my-agent` outside the login PATH, added by its full path with `acp`. Expected: "Not an ACP agent: it didn't answer within 10 seconds" after 10 s and nothing saved; an `OPENAI_API_KEY` of `sk-proj-…` refused; the fake agent's test shows its name and version, Add lists it, `engines_list` has it `added`; the picker offers "My agent · via ACP" and a thread with it answers "You said: hello" with no account (D-869); after Remove the thread says the agent was removed, and the same label added again gets a new id.
+- **E2E-M18-EN11 Local models.** A stand-in Ollama on 127.0.0.1 answering `/api/tags` with one model, added by its port; a fake `codex` on the login PATH; a `.codex/config.toml` in the folder naming a cloud model, a remote thread-config endpoint, `approvals_reviewer = "auto_review"`, an MCP server and the folder as trusted. Expected: `192.168.1.5` refused as a host; the server listed with "qwen3-coder:30b · 18.6 GB · 30.5B" and `/api/tags` asked; Start in Codex opens a Codex pane whose spawn has `CODEX_HOME` at `$PROVIDERS/codex/local-ollama-<port>`, whose `config.toml` names the model and `http://127.0.0.1:<port>/v1`, lists the folder as untrusted and holds nothing from the folder's own settings, and whose header says "On this computer". Every spawn ends with the local settings on Codex's command line (the model, also for review and memories, the provider, sub-agents off, approvals to the user, connectors, plugins and metrics off, `projects={…}` with the folder, `/tmp` and `/` untrusted, `--cd <folder>`). With the fake reporting Codex 0.148.0, Start is refused naming 0.149.0 and nothing spawns, and the page's list, read again with no new engine detection, turns Start off with the same reason. After a crash and a relaunch with the server stopped, the card's Start fresh says the server isn't running and nothing starts; with the server back on its port, the restore starts Codex with the same settings.
 - **E2E-M18-TH17 Session library.** A Claude Code session in an account's home and in Claude Code's own home, a Codex session in its own home, and a file that isn't a session. Expected: all three listed, the bad file counted; Resume runs `claude --resume <id>` in the repository with the account's `CLAUDE_CONFIG_DIR`; Continue opens the handoff sheet with the Codex prompt in the brief and starts Claude Code; `library_search` waits for the Privacy switch (never for a plan, D-2900), finds the session by a prompt word once it's on, and turning search off deletes `session-index.db`.
 - **E2E-M18-EN08 Engine versions.** A fake Codex installed under `node_modules` at 1.2.0 and a recording `npm` on the login PATH. Expected: "1.2.0 · npm" with no npm call until Check for updates, which runs `npm view @openai/codex version`; pinned Codex and Claude Code panes start with `check_for_update_on_startup=false` and `DISABLE_AUTOUPDATER`; a failure since 1.3.0 shows the banner and Roll back shows `npm install -g @openai/codex@1.2.0` without running it; a detached Codex is listed alone and Stop ends it after a confirm.
 
@@ -2182,6 +2236,30 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: activity ledger (M)
+
+**Goal.** The activity ledger `docs/NEXT_FEATURES.md` ranks (§1 F-EX-07): one timeline per agent pane or thread, joining what's already stored (commands, checkpoints, thread approvals) with the events only the ledger records (turns sent, tools, subagents, pane approvals, `vibezeo run`), with an export.
+
+**Owns:** F-EX-07 (P2)
+**Prerequisites.** F-EX-01 checkpoints, F-EX-02 command recall, F-TH-11 approvals, the status hooks (§6.6), F-TL-12's `vibezeo run`.
+
+**Ordered tasks**
+1. **Store.** Migration `0006_activity` and `repo::activity` (insert, list by source, prune by age and count, delete).
+2. **Recording.** `services::activity`: thread turns and agent-pane prompts, tool and subagent starts from status reports, pane approvals and `vibezeo run`; `activity_list` joins command history, checkpoints and thread approvals; `activity_export` writes JSON Lines.
+3. **UI and docs.** The Activity dialog (pane menu, thread menu, Dashboard card), and Extras › Activity in the docs.
+
+**Verification**
+```bash
+cargo test -p tandem-store activity && cargo test -p tandem-desktop --lib f_ex_07
+pnpm --filter desktop exec vitest run -t "F-EX-07"
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-ex07-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-EX07 Activity ledger** (`m18-ex07-activity.e2e.ts`). An agent pane on the fake engine: a prompt, a `vibezeo run` answered Allow once, then two commands typed in the pane after the agent exits; Activity lists the turn, the approval, the run with its secret's name and exit code, and both commands, in order, never the prompt's words or the secret's value; Export's file has the same events as JSON Lines.
+
+---
+
 ## M18 · Next features: agent-proof secrets (M)
 
 **Goal.** The first slice of bold bet B5 (`docs/NEXT_FEATURES.md`): named secrets in the OS keychain, `vibezeo-secret://` references in a folder's `.env`, resolved only for a command started with Run with secrets, and masked in that command's pane.
@@ -2210,7 +2288,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 **Goal.** The review loop from `docs/NEXT_FEATURES.md` (§1 #6 and #2, §3 B4): another engine's read-only second opinion, one review queue across engines, and walking that queue by voice and on the phone. Built on `m16a-conductor`; decisions D-2420 to D-2439.
 
-**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06, F-TK-07 (P2)
+**Owns:** F-WT-05, F-DB-04, F-CN-09, F-TK-05, F-TK-06, F-TK-07, F-TK-08 (P2)
 **Prerequisites.** M17 · Worktree workflow (F-WT-02's review bar), F-TH-09 (Read only threads), F-EX-01 (checkpoints).
 
 **Ordered tasks**
@@ -2220,11 +2298,12 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 4. **Claims (F-TK-05).** `claims.json` and the `claim`, `release` and `list_claims` tools in `tandem-tasks`; sessions' working trees; inferred claims from `PreToolUse` edit paths; overlap notices in panes and the review queue; release on merge, removal and the main checkout's last session; the briefing line. Later: claims inferred from checkpoints, and notices in chat threads.
 5. **Plan with Lead (F-TK-06; bold bet B3's first slice).** `services::plan` (the planning prompt with the offered engines and their usage, the nonce-marked reply parser, the draft), `plan_*` commands, `Issue.suggested_engine`, Execute all through F-TK-04, and the Tasks page's plan sheet. Later: Lead answering agents, second-engine review and merging.
 6. **Follow a plan through (F-TK-07; bold bet B3's second slice).** `ThreadEvent::Tool.paths` from each chat adapter's edits and `ThreadService`'s edit sink, so chat threads claim what they edit; the claims line in F-TK-04's briefing; plans kept in `$DATA/plans.json` and read again after a restart; the plan's runs and verdicts per task; Land approved through F-WT-07's Land worktrees. Later: Lead answering agents (the supervisor loop).
+7. **Lead keeps a plan moving (F-TK-08; bold bet B3's third slice, the supervisor loop).** Plan runs end a turn with a `QUESTION-<code>` line when they need a decision; Lead answers routine ones in its plan thread from the instructions files at the plan's base commit in the main checkout, labelled "Lead (automatic answer)", or sends them to you; the topics that always come to you, a keyword check before Lead, 3 answers per run and 10 per plan; approvals never answered; the switch in Execute all's check and in the plan; `plan_supervise` and `plan_answer`.
 
 **Verification**
 ```bash
 cargo test -p tandem-desktop --lib f_wt_05 && cargo test -p tandem-desktop --lib f_db_04 && cargo test -p tandem-desktop --lib f_cn_09
-cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06 && cargo test -p tandem-desktop --lib f_tk_07
+cargo test -p tandem-tasks && cargo test -p tandem-desktop --lib f_tk_05 && cargo test -p tandem-desktop --lib f_tk_06 && cargo test -p tandem-desktop --lib f_tk_07 && cargo test -p tandem-desktop --lib f_tk_08
 pnpm --filter desktop exec vitest run src/features/code/secondOpinion.test.tsx src/features/dashboard/reviewQueue.test.tsx
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-{wt05,db04,cn09}-*.e2e.ts'
 ```
@@ -2235,6 +2314,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 - **E2E-M18-TK-05 Claims.** Two worktrees' fake Claude Code agents. Expected: one claims `src/auth/` with the tool, the other's edit of `src/auth/session.ts` is claimed from its hook; both panes show "… both claim src/auth/session.ts" once and the review queue lists the overlap; an overlap that arises while a worktree's tab is hidden and its pane parked reaches that pane when its tab is shown; removing one worktree clears it.
 - **E2E-M18-TK-06 Plan with Lead.** A git workspace, no account (D-869), and the fake Claude as Lead. Expected: Plan with Lead opens "Plan: …" in that workspace with the goal and the markers; the fake reply becomes a draft of two tasks, one engine falling back; an edited title is what Create tasks writes, as two To do tasks in a new project with their engines; with one task already running from its own Execute…, Execute all… lists both runs and starts nothing until Run; after Run the other task has one run on its suggested engine, the running one keeps its single run, and the plan says it left that one alone.
 - **E2E-M18-TK-07 Follow a plan through.** A git workspace, no account (D-869), and the fake Claude. Expected: a thread in a worktree that writes a file claims it; after Execute all… and Run, the plan shows its runs as they move from queued to in review with Approve; after the runs' worktrees are committed, Land 2 approved… opens Land worktrees with both chosen in plan order; after a restart of the app the plan is still listed with its tasks.
+- **E2E-M18-TK-08 Lead keeps a plan moving.** A git workspace whose `CLAUDE.md` names the test runner, no account, and the fake Claude, whose runs ask one routine question and one about pushing. Expected: Execute all's check offers Lead's answers, on, saying it uses your engine and subscription; the routine question reaches Lead's thread once and its answer reaches the run labelled "Lead (automatic answer)", the task as a comment, and the plan as "Lead answered 1", and that run goes on to review; the push question never reaches Lead, shows as Needs you with its reason, and Answer… sends your answer so its run goes on.
 - **E2E-M18-DB-04 Review queue.** Two worktree agents and a thread. Expected: the agent that changed a migration and deleted a test joins within 1.5 s with both rules; the one without changes doesn't; the thread joins; approve, then a new change shows Changed since you approved; Send back opens the diff, Merge the forecast; the check passes for `true` and fails with exit 1.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
@@ -2243,7 +2323,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **189 features** (65 P0, 67 P1, 57 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 23 so far (F-AC-08, F-AC-09, F-CD-22, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EX-06, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (65 P0, 67 P1, 62 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 28 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2266,7 +2346,8 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **189 features** (6
 | F-EN-08 | P2 | M18 | F-TH-17 | P2 | M18 | F-WT-07 | P2 | M18 | F-WT-08 | P2 | M18 |
 | F-CN-09 | P2 | M18 | F-RT-06 | P2 | M18 | F-TL-11 | P2 | M18 | F-WT-10 | P2 | M18 |
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
-| F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | | | |
+| F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
+| F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | F-EN-11 | P2 | M18 |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |
@@ -2293,7 +2374,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **189 features** (6
 | F-TL-05 | P1 | M15 | F-TL-06 | P0 | M15 | F-TL-07 | P1 | M13 | F-TL-10 | P1 | M13 |
 | F-RM-04 | P2 | M16 | F-RM-05 | P2 | M16 | F-RM-06 | P2 | M16 | F-RM-07 | P2 | M16 |
 
-**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 23 = 189 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
+**Per-milestone totals:** M0 2 · M1 7 · M2 8 · M3 12 · M4 9 · M5 8 · M6 8 · M7 16 · M8 11 · M9 5 · M10 12 · M11 8 · M12 8 · M13 10 · M14 2 · M15 6 · M16 24 · M17 10 · M18 28 = 194 (F-RM-04 to F-RM-07 added on `mobile-apps`, F-WT-01 to F-WT-04 on `competitive-gaps`, F-WB-06 on `site-blog`, and M18's on its sessions' branches).
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|

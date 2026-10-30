@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkAgain, fakeEngine, fakeLog, freshOffline, home, invoke } from "../support/app";
 import { assistantTexts, sendMessage, threadMode, waitForAssistant } from "../support/thread";
@@ -51,6 +51,14 @@ describe("E2E-M7-5 Codex", () => {
     const report = await checkAgain();
     expect(report.found.map((f) => f.engineId)).toContain("codex");
     await threadMode();
+  });
+
+  // Later specs run without this Codex, and with no version set for it.
+  after(async () => {
+    rmSync(join(home(), "fakebin", "codex"), { force: true });
+    writeFileSync(versions(), "");
+    const report = await checkAgain();
+    expect(report.found.map((f) => f.engineId)).not.toContain("codex");
   });
 
   it("F-TH-05.2 a killed idle app-server restarts on the next send, resumes, and keeps the history", async function () {

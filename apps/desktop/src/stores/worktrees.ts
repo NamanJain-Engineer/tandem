@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type {
   FileDiff,
   Forge,
+  LaneKind,
+  LaneKinds,
   IpcError,
   LaneChecks,
   PrsRun,
@@ -121,11 +123,44 @@ async function run<T>(cmd: string, args: Record<string, unknown>): Promise<Outco
   }
 }
 
+/** F-CD-24: whether New worktree offers a jj workspace for this repository. */
+export function laneKinds(workspaceId: string): Promise<Outcome<LaneKinds>> {
+  return run<LaneKinds>("lane_kind_get", { workspaceId });
+}
+
+/** F-CD-24: trusts the repository (F-CD-23's trust, after the native
+ * confirm), which jj needs before it runs there. */
+export async function trustRepository(workspaceId: string): Promise<Outcome<null>> {
+  try {
+    const value = await invoke<null>(
+      "lsp_trust",
+      { context: { type: "workspace", workspaceId }, path: "." },
+      // The person answers the native confirm.
+      { timeoutMs: 10 * 60_000 },
+    );
+    return { ok: true, value };
+  } catch (e) {
+    return { ok: false, error: e as IpcError };
+  }
+}
+
+/** F-CD-24: a jj workspace, and other things it can't do yet. */
+export function isJj(ws: Pick<WorkspaceSummary, "laneVcs">): boolean {
+  return ws.laneVcs === "jj";
+}
+
 /** `lane_create`, then the new worktree is selected in the rail while
  * `prepareWorktree` runs. Its tab waits for the setup's or preview's pane
  * rather than starting a shell beside it (D-863). */
-export async function createWorktree(workspaceId: string, slugSource: string): Promise<Outcome<Workspace>> {
-  const out = await run<Workspace>("lane_create", { workspaceId, slugSource });
+export async function createWorktree(
+  workspaceId: string,
+  slugSource: string,
+  kind?: LaneKind,
+): Promise<Outcome<Workspace>> {
+  const out = await run<Workspace>(
+    "lane_create",
+    kind ? { workspaceId, slugSource, kind } : { workspaceId, slugSource },
+  );
   if (out.ok) {
     const ws = useWorkspaces.getState();
     await ws.refresh();
@@ -532,13 +567,31 @@ export const CHECKS_POLL_MS = 120_000;
 /** Worktrees with no pull request, or whose checks all finished, are read
  * this rarely between Refreshes: each read is two gh calls. */
 export const CHECKS_IDLE_MS = 15 * 60_000;
+/** A push starts CI again, and gh can take a minute to list the new run:
+ * for this long after one, every poll reads the worktree's checks. */
+export const CHECKS_AFTER_PUSH_MS = 5 * 60_000;
 
 const checkedAt = new Map<string, number>();
+const pushedAt = new Map<string, number>();
 let polling = false;
 
-/** Whether a poll should read this worktree now (S6). */
-export function checksDue(c: LaneChecks | undefined, at: number | undefined, now: number): boolean {
+/** Forgets when each worktree's checks were read and pushed, between tests. */
+export function resetChecksPolling(): void {
+  checkedAt.clear();
+  pushedAt.clear();
+  polling = false;
+}
+
+/** Whether a poll should read this worktree now (S6), given when it was
+ * last read and when it was last pushed. */
+export function checksDue(
+  c: LaneChecks | undefined,
+  at: number | undefined,
+  now: number,
+  pushed?: number,
+): boolean {
   if (!c || at === undefined || c.state === "error") return true;
+  if (pushed !== undefined && now - pushed < CHECKS_AFTER_PUSH_MS) return true;
   const live = c.state === "ready" && (c.checks.length === 0 || c.checks.some((x) => x.bucket === "pending"));
   return live || now - at >= CHECKS_IDLE_MS;
 }
@@ -550,7 +603,7 @@ export async function pollChecks(laneIds: string[], now = Date.now()): Promise<v
   polling = true;
   try {
     const { checks } = useWorktrees.getState();
-    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now)));
+    await loadChecks(laneIds.filter((id) => checksDue(checks[id], checkedAt.get(id), now, pushedAt.get(id))));
   } finally {
     polling = false;
   }
@@ -564,6 +617,15 @@ export async function loadChecks(laneIds: string[]): Promise<void> {
     checkedAt.set(laneId, Date.now());
     if (out.ok) useWorktrees.setState((s) => ({ checks: { ...s.checks, [laneId]: out.value } }));
   }
+}
+
+/** After a push from a worktree whose checks the rail shows: read them
+ * now, and on every poll until CI's new run is listed (F-WT-08). */
+export async function checksAfterPush(laneId: string): Promise<void> {
+  const c = useWorktrees.getState().checks[laneId];
+  if (!c || c.state === "not_allowed") return;
+  pushedAt.set(laneId, Date.now());
+  await loadChecks([laneId]);
 }
 
 /** Allows or forgets gh for the worktree's repository, then re-reads it. */

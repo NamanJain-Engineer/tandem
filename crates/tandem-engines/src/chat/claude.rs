@@ -30,8 +30,8 @@ use super::{
     AdapterError, AdapterEvent, ChatAdapter, ChatSession, ChatStart, InterruptOutcome, TurnInput,
 };
 use crate::events::{
-    truncate_output, ErrorAction, ErrorStage, LimitKind, ThreadEvent, ToolStatus, ToolVerb,
-    TurnEndReason,
+    truncate_output, ErrorAction, ErrorStage, LimitKind, LineCounts, ThreadEvent, ToolStatus,
+    ToolVerb, TurnEndReason,
 };
 use crate::transcript::window_for;
 
@@ -39,6 +39,50 @@ use crate::transcript::window_for;
 pub const PERMISSION_TOOL: &str = "mcp__tandem__tandem_approvals__request";
 /// Tools a Read-only or Plan-mode thread can't use at all.
 const NO_WRITES: &str = "Bash,Edit,Write,MultiEdit,NotebookEdit";
+/// The oldest Claude Code a session with every tool off runs on (F-TK-08,
+/// D-2838): the first Vibezeo checked to have `--tools ""`, `--safe-mode`,
+/// `--disable-slash-commands`, `--no-session-persistence` and
+/// `--permission-prompts none` (its `system/init` then lists no tool, MCP
+/// server, command or skill). An older or unknown one never answers.
+pub const TOOLS_OFF_MIN: (u64, u64, u64) = (2, 1, 310);
+/// Every built-in tool Claude Code has had, denied as a second layer under
+/// `--tools ""` (F-TK-08, D-2838): 2.1.310's own list and the older names.
+/// A name a version doesn't know is ignored.
+pub const ALL_TOOLS: &str = "Agent,AskUserQuestion,Bash,BashOutput,Config,CronCreate,CronDelete,CronList,Edit,EnterPlanMode,EnterWorktree,ExitPlanMode,ExitWorktree,Glob,Grep,KillBash,KillShell,LS,ListAgents,ListMcpResourcesTool,LSP,Monitor,MultiEdit,NotebookEdit,NotebookRead,PowerShell,REPL,Read,ReadMcpResourceTool,RemoteTrigger,ReportFindings,ScheduleWakeup,SendMessage,Skill,Sleep,SlashCommand,Task,TaskCreate,TaskGet,TaskList,TaskOutput,TaskStop,TaskUpdate,TeamCreate,TeamDelete,TodoRead,TodoWrite,ToolSearch,WebFetch,WebSearch,Workflow,Write";
+/// What a session with every tool off also runs with: no scheduled tasks,
+/// and no auto-memory to read or write.
+pub const TOOLS_OFF_ENV: &[(&str, &str)] = &[
+    ("CLAUDE_CODE_DISABLE_CRON", "1"),
+    ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1"),
+];
+
+/// A Claude Code at `version` can run a session with every tool off. A
+/// pre-release of [`TOOLS_OFF_MIN`] itself (`2.1.310-rc.1`) comes before
+/// it, so it can't; one of a later version can.
+pub fn tools_off_supported(version: Option<&str>) -> bool {
+    match version.and_then(claude_version) {
+        Some((v, pre_release)) if v == TOOLS_OFF_MIN => !pre_release,
+        Some((v, _)) => v > TOOLS_OFF_MIN,
+        None => false,
+    }
+}
+
+/// The version in `version` as `parse_version` reads it (the first run of
+/// digits and dots that starts `x.y.z`), and whether a pre-release (`-rc.1`)
+/// follows that run. Build metadata (`+5`) isn't one.
+fn claude_version(version: &str) -> Option<((u64, u64, u64), bool)> {
+    let in_run = |c: char| c.is_ascii_digit() || c == '.';
+    let mut rest = version;
+    loop {
+        let run = &rest[rest.find(in_run)?..];
+        let len = run.find(|c: char| !in_run(c)).unwrap_or(run.len());
+        let (number, after) = run.split_at(len);
+        if let Some(v) = super::codex::protocol::parse_version(number) {
+            return Some((v, after.starts_with('-')));
+        }
+        rest = after;
+    }
+}
 const PROMPT_TOO_LONG_HINT: &str =
     "The conversation is too long. Start a new thread with a summary?";
 /// Tool input kept as the row's detail.
@@ -56,8 +100,46 @@ pub fn permissions(access: Access, mode: ThreadMode) -> (&'static str, Option<&'
 }
 
 /// The spawn arguments (F-TH-04 AC1/AC2: every spawn has
-/// `--setting-sources user` and `--strict-mcp-config`).
+/// `--setting-sources user` and `--strict-mcp-config`). With `tools_off`
+/// (F-TK-08, D-2838): no built-in tool (`--tools ""`, with every one also
+/// denied), no MCP server (strict, with no config), no customization
+/// (`--safe-mode`: CLAUDE.md, skills, plugins, hooks, output styles), no
+/// commands, nothing saved to resume, `dontAsk` with nobody to ask, and no
+/// briefing or session to resume.
 pub fn args(req: &ChatStart) -> Vec<OsString> {
+    if req.tools_off {
+        let mut a: Vec<OsString> = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--setting-sources",
+            "user",
+            "--strict-mcp-config",
+            "--safe-mode",
+            "--tools",
+            "",
+            "--disallowedTools",
+            ALL_TOOLS,
+            "--disable-slash-commands",
+            "--no-session-persistence",
+            "--permission-mode",
+            "dontAsk",
+            "--permission-prompts",
+            "none",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        if let Some(model) = &req.model {
+            a.push("--model".into());
+            a.push(model.into());
+        }
+        return a;
+    }
     let mut a: Vec<OsString> = [
         "-p",
         "--output-format",
@@ -141,6 +223,12 @@ pub enum Parsed {
         tool_name: String,
         input: Value,
     },
+    /// A tool block started streaming in a session with every tool off
+    /// (F-TK-08): before the tool can run.
+    ToolStart {
+        id: String,
+        name: String,
+    },
 }
 
 /// The approval card for a tool use Claude asks about: its kind, one-line
@@ -213,22 +301,157 @@ struct ToolCall {
     summary: String,
     detail: Option<String>,
     paths: Option<Vec<String>>,
+    lines: Option<LineCounts>,
+}
+
+/// What a Task's subagent edited so far (F-TH-12): the Task's result names
+/// the files, with their lines when every edit said them.
+#[derive(Debug, Default)]
+struct SubagentEdits {
+    paths: Vec<String>,
+    lines: LineCounts,
+    /// An edit that didn't say its lines.
+    uncounted: bool,
+}
+
+/// The tools whose lines are counted (F-TH-12).
+const COUNTED: [&str; 3] = ["Edit", "MultiEdit", "Write"];
+
+/// The lines an edit tool's input says it changes (F-TH-12, D-2608), since
+/// Claude Code sends no diff: an Edit's old and new strings, a MultiEdit's
+/// edits summed (so two edits to one line count it twice), and all of a
+/// Write's content, which holds only when the Write made a new file (see
+/// [`created`]). `replace_all` changes every occurrence, and how many isn't
+/// in the input, so such an edit says nothing.
+fn input_lines(tool: &str, input: &Value) -> Option<LineCounts> {
+    let edit = |e: &Value| {
+        if e.get("replace_all").and_then(Value::as_bool) == Some(true) {
+            return None;
+        }
+        let s = |k: &str| e.get(k).and_then(Value::as_str);
+        LineCounts::edit(s("old_string")?, s("new_string")?)
+    };
+    match tool {
+        "Edit" => edit(input),
+        "MultiEdit" => input
+            .get("edits")?
+            .as_array()?
+            .iter()
+            .map(edit)
+            .sum::<Option<LineCounts>>(),
+        "Write" => Some(LineCounts::created(
+            input.get("content").and_then(Value::as_str)?,
+        )),
+        _ => None,
+    }
+}
+
+/// The lines Claude Code's result says an edit changed: the hunks of its
+/// `tool_use_result.structuredPatch`, read only when the message answers a
+/// single tool. Exact, so they win over the input's count; a new file's
+/// Write carries none.
+fn patch_lines(message: &Value, blocks: &[Value]) -> Option<LineCounts> {
+    let results = blocks
+        .iter()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_result"))
+        .count();
+    if results != 1 {
+        return None;
+    }
+    let hunks = message
+        .pointer("/tool_use_result/structuredPatch")?
+        .as_array()?;
+    let mut lines = Vec::new();
+    for h in hunks {
+        for l in h.get("lines")?.as_array()? {
+            lines.push(l.as_str()?);
+        }
+    }
+    (!lines.is_empty()).then(|| LineCounts::patch(lines))
+}
+
+/// A tool result's status, text, and, for an edit that happened, its lines:
+/// the result's patch, or what its input says (a Write's only when it made
+/// the file).
+fn outcome(
+    call: &ToolCall,
+    block: &Value,
+    patch: Option<LineCounts>,
+) -> (ToolStatus, String, Option<LineCounts>) {
+    let text = result_text(&block["content"]);
+    let is_error = block
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let status = if !is_error {
+        ToolStatus::Ok
+    } else if denied(&text) {
+        ToolStatus::Denied
+    } else {
+        ToolStatus::Error
+    };
+    let counted = status == ToolStatus::Ok && COUNTED.contains(&call.name.as_str());
+    let lines = counted
+        .then(|| {
+            patch.or_else(|| {
+                call.lines
+                    .filter(|_| call.name != "Write" || created(&text))
+            })
+        })
+        .flatten();
+    (status, text, lines)
+}
+
+/// Whether a Write's result says it made a new file. Over a file that
+/// existed, what it replaced isn't in the event, so it counts no lines.
+fn created(text: &str) -> bool {
+    text.trim_start().starts_with("File created successfully")
 }
 
 /// The files an edit tool names, absolute (F-TK-07); `None` for tools that
-/// don't edit.
+/// don't edit. A tool this list doesn't know (an MCP server's, a new one)
+/// edits when its input names a file by an absolute path and what goes in
+/// it: it's named, so the turn says it changed the file, and counts no
+/// lines, so the turn's total says none rather than a partial one (D-2622).
+/// A relative path is a forge's, in a repository somewhere else (GitHub's
+/// `create_or_update_file`), so it names no file here.
 pub fn edited_paths(tool: &str, input: &Value, cwd: &Path) -> Option<Vec<String>> {
-    let key = match tool {
-        "Edit" | "Write" | "MultiEdit" => "file_path",
-        "NotebookEdit" => "notebook_path",
-        _ => return None,
+    let str_at = |k: &str| {
+        input
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
     };
-    let path = input
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|p| !p.is_empty())?;
+    let path = match tool {
+        "Edit" | "Write" | "MultiEdit" => str_at("file_path")?,
+        "NotebookEdit" => str_at("notebook_path")?,
+        "Read" | "Grep" | "Glob" | "Bash" | "WebFetch" | "WebSearch" | "Task" => return None,
+        _ => {
+            let writes = UNKNOWN_EDIT_KEYS.iter().any(|k| input.get(k).is_some());
+            if !writes {
+                return None;
+            }
+            ["file_path", "path", "notebook_path"]
+                .into_iter()
+                .find_map(str_at)
+                .filter(|p| crate::events::is_absolute(p))?
+        }
+    };
     Some(vec![crate::events::absolute(cwd, path)])
 }
+
+/// What a tool's input holds when it writes a file: its content, an
+/// edit's replacement, a list of edits, a patch.
+const UNKNOWN_EDIT_KEYS: [&str; 8] = [
+    "content",
+    "file_text",
+    "new_string",
+    "new_str",
+    "new_source",
+    "edits",
+    "patch",
+    "diff",
+];
 
 /// One line for a tool row: the command, path, pattern or URL.
 pub fn arg_summary(tool: &str, input: &Value, cwd: &Path) -> String {
@@ -284,6 +507,10 @@ pub struct ClaudeParser {
     model: String,
     /// Tool id → (name, summary, detail, edited files), for its result row.
     tools: HashMap<String, ToolCall>,
+    /// Task id → what its subagent edited, for the Task's result.
+    subagents: HashMap<String, SubagentEdits>,
+    /// Every tool is off: a tool block starting is reported at once.
+    tools_off: bool,
 }
 
 impl ClaudeParser {
@@ -294,7 +521,16 @@ impl ClaudeParser {
             announce: !resumed,
             model: String::new(),
             tools: HashMap::new(),
+            subagents: HashMap::new(),
+            tools_off: false,
         }
+    }
+
+    /// A parser for a session with every tool off (F-TK-08): any block
+    /// but text or thinking starting is [`Parsed::ToolStart`].
+    pub fn tools_off(mut self) -> Self {
+        self.tools_off = true;
+        self
     }
 
     pub fn line(&mut self, line: &str, now: DateTime<FixedOffset>) -> Vec<Parsed> {
@@ -302,9 +538,16 @@ impl ClaudeParser {
             return Vec::new();
         };
         let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
-        // A subagent's own messages stay inside its Task row.
-        if !v.get("parent_tool_use_id").is_none_or(Value::is_null) {
-            return Vec::new();
+        // A subagent's own messages stay inside its Task row; its edits
+        // count on the Task's result (F-TH-12).
+        match v.get("parent_tool_use_id") {
+            None | Some(Value::Null) => {}
+            Some(task) => {
+                if let Some(task) = task.as_str() {
+                    self.subagent(kind, &v, task);
+                }
+                return Vec::new();
+            }
         }
         match kind {
             "system" => self.system(&v),
@@ -368,6 +611,21 @@ impl ClaudeParser {
 
     fn stream(&mut self, v: &Value) -> Vec<Parsed> {
         let ev = &v["event"];
+        if self.tools_off && ev.get("type").and_then(Value::as_str) == Some("content_block_start") {
+            let block = &ev["content_block"];
+            let kind = block.get("type").and_then(Value::as_str).unwrap_or("");
+            if !matches!(kind, "text" | "thinking" | "redacted_thinking") {
+                let name = block.get("name").and_then(Value::as_str).unwrap_or(kind);
+                return vec![Parsed::ToolStart {
+                    id: block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("tool")
+                        .to_string(),
+                    name: name.to_string(),
+                }];
+            }
+        }
         if ev.get("type").and_then(Value::as_str) != Some("content_block_delta") {
             return Vec::new();
         }
@@ -435,6 +693,7 @@ impl ClaudeParser {
                     let summary = arg_summary(&name, &input, &self.cwd);
                     let detail = detail(&input);
                     let paths = edited_paths(&name, &input, &self.cwd);
+                    let lines = input_lines(&name, &input);
                     let mut ev = ThreadEvent::tool(&id, verb(&name), &summary, ToolStatus::Running);
                     if let ThreadEvent::Tool {
                         detail: d,
@@ -452,6 +711,7 @@ impl ClaudeParser {
                             summary,
                             detail,
                             paths,
+                            lines,
                         },
                     );
                     out.push(Parsed::Event(ev));
@@ -466,27 +726,30 @@ impl ClaudeParser {
         let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else {
             return Vec::new();
         };
+        let patch = patch_lines(v, blocks);
         let mut out = Vec::new();
         for b in blocks {
             if b.get("type").and_then(Value::as_str) != Some("tool_result") {
                 continue;
             }
             let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+            let call = self.tools.get(id).cloned().unwrap_or_default();
+            let (status, text, mut lines) = outcome(&call, b, patch);
             let ToolCall {
                 name,
                 summary,
                 detail,
-                paths,
-            } = self.tools.get(id).cloned().unwrap_or_default();
-            let text = result_text(&b["content"]);
-            let is_error = b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
-            let status = if !is_error {
-                ToolStatus::Ok
-            } else if denied(&text) {
-                ToolStatus::Denied
-            } else {
-                ToolStatus::Error
-            };
+                mut paths,
+                ..
+            } = call;
+            // A Task names the files its subagent edited, however it ended:
+            // only the subagent's edits that happened are kept (D-2622).
+            if let Some(sub) = self.subagents.remove(id) {
+                if !sub.paths.is_empty() {
+                    paths = Some(sub.paths);
+                    lines = (!sub.uncounted).then_some(sub.lines);
+                }
+            }
             let (output, truncated) = truncate_output(&text);
             out.push(Parsed::Event(ThreadEvent::Tool {
                 id: id.to_string(),
@@ -499,9 +762,64 @@ impl ClaudeParser {
                 diff: None,
                 detail,
                 paths,
+                lines,
             }));
         }
         out
+    }
+
+    /// A subagent's message (F-TH-12): its rows stay inside its Task's, and
+    /// its edits that happened are kept for the Task's result.
+    fn subagent(&mut self, kind: &str, v: &Value, task: &str) {
+        let Some(blocks) = v.pointer("/message/content").and_then(Value::as_array) else {
+            return;
+        };
+        let is = |b: &Value, t: &str| b.get("type").and_then(Value::as_str) == Some(t);
+        match kind {
+            "assistant" => {
+                for b in blocks.iter().filter(|b| is(b, "tool_use")) {
+                    let name = b.get("name").and_then(Value::as_str).unwrap_or("");
+                    let input = b.get("input").cloned().unwrap_or(Value::Null);
+                    let Some(paths) = edited_paths(name, &input, &self.cwd) else {
+                        continue;
+                    };
+                    let id = b.get("id").and_then(Value::as_str).unwrap_or("");
+                    self.tools.insert(
+                        id.to_string(),
+                        ToolCall {
+                            name: name.to_string(),
+                            paths: Some(paths),
+                            lines: input_lines(name, &input),
+                            ..ToolCall::default()
+                        },
+                    );
+                }
+            }
+            "user" => {
+                let patch = patch_lines(v, blocks);
+                for b in blocks.iter().filter(|b| is(b, "tool_result")) {
+                    let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+                    let Some(call) = self.tools.remove(id) else {
+                        continue;
+                    };
+                    let (status, _, lines) = outcome(&call, b, patch);
+                    if status != ToolStatus::Ok {
+                        continue;
+                    }
+                    let sub = self.subagents.entry(task.to_string()).or_default();
+                    for p in call.paths.unwrap_or_default() {
+                        if !sub.paths.iter().any(|q| crate::events::same_file(q, &p)) {
+                            sub.paths.push(p);
+                        }
+                    }
+                    match lines {
+                        Some(l) => sub.lines = sub.lines + l,
+                        None => sub.uncounted = true,
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn result(&mut self, v: &Value, now: DateTime<FixedOffset>) -> Vec<Parsed> {
@@ -655,18 +973,39 @@ impl ChatAdapter for ClaudeAdapter {
         "claude"
     }
 
+    fn answers_without_tools(&self, version: Option<&str>) -> bool {
+        tools_off_supported(version)
+    }
+
     async fn start(
         &self,
         req: ChatStart,
         events: mpsc::Sender<AdapterEvent>,
     ) -> Result<Box<dyn ChatSession>, AdapterError> {
+        if req.tools_off && !tools_off_supported(req.engine_version.as_deref()) {
+            let (a, b, c) = TOOLS_OFF_MIN;
+            return Err(AdapterError::Unsupported(format!(
+                "Claude Code {} can't run with every tool off: {a}.{b}.{c} or newer can",
+                req.engine_version
+                    .as_deref()
+                    .unwrap_or("of an unknown version")
+            )));
+        }
         // Status hooks are for panes; a thread's process never reports there.
-        let env: Vec<(String, String)> = req
+        let mut env: Vec<(String, String)> = req
             .env
             .iter()
             .filter(|(k, _)| !k.starts_with("TANDEM_STATUS"))
             .cloned()
             .collect();
+        if req.tools_off {
+            env.retain(|(k, _)| !TOOLS_OFF_ENV.iter().any(|(off, _)| off == k));
+            env.extend(
+                TOOLS_OFF_ENV
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string())),
+            );
+        }
         let spec = ProcessSpec::new(req.program.clone(), args(&req), env, req.cwd.clone());
         let spec = super::Relocate::apply(req.relocate.as_ref(), spec);
         let (process, lines) = ChatProcess::spawn(spec)?;
@@ -677,12 +1016,18 @@ impl ChatAdapter for ClaudeAdapter {
             acked: Arc::new(Notify::new()),
             asks: Arc::new(Mutex::new(HashMap::new())),
             cwd: req.cwd.clone(),
+            tools_off: req.tools_off,
         };
         let parser = ClaudeParser::new(
             req.cwd.clone(),
             &self.limit_patterns,
             req.resume_session.is_some(),
         );
+        let parser = if req.tools_off {
+            parser.tools_off()
+        } else {
+            parser
+        };
         tokio::spawn(session.clone().read(parser, lines, events));
         Ok(Box::new(session))
     }
@@ -698,6 +1043,8 @@ struct ClaudeSession {
     /// (Claude's request id, the tool input to hand back on Allow).
     asks: Arc<Mutex<HashMap<String, (String, Value)>>>,
     cwd: PathBuf,
+    /// Every tool is off (F-TK-08): a tool starting kills the process.
+    tools_off: bool,
 }
 
 impl ClaudeSession {
@@ -719,7 +1066,28 @@ impl ClaudeSession {
                 })],
             };
             for p in parsed {
+                // With every tool off, a tool starting, asked about or
+                // reported ends the process before the tool can do anything
+                // more; the row still goes out, so the session ends with no
+                // answer (F-TK-08).
+                let tool = matches!(
+                    &p,
+                    Parsed::ToolStart { .. }
+                        | Parsed::Permission { .. }
+                        | Parsed::Event(ThreadEvent::Tool { .. })
+                );
+                if self.tools_off && tool {
+                    self.process.kill_tree().await;
+                }
                 match p {
+                    Parsed::ToolStart { id, name } => {
+                        let turn = lock(&self.turn).clone();
+                        if let Some(turn_id) = turn {
+                            let event =
+                                ThreadEvent::tool(&id, ToolVerb::Other, &name, ToolStatus::Running);
+                            let _ = events.send(AdapterEvent::Event { turn_id, event }).await;
+                        }
+                    }
                     Parsed::Ack => self.acked.notify_waiters(),
                     Parsed::Permission {
                         request_id,

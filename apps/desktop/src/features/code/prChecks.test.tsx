@@ -1,18 +1,29 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DashboardItem,
   FileDiff,
   ImportedComment,
   LaneChecks,
+  PrCheck,
   Tab,
   WorkspaceSummary,
 } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
+import { useLayout } from "../../stores/layout";
+import { useStatus } from "../../stores/status";
 import { useWorkspaces } from "../../stores/workspaces";
-import { CHECKS_IDLE_MS, checksDue, loadChecks, pollChecks, useWorktrees } from "../../stores/worktrees";
+import {
+  CHECKS_AFTER_PUSH_MS,
+  CHECKS_IDLE_MS,
+  checksDue,
+  loadChecks,
+  pollChecks,
+  useWorktrees,
+} from "../../stores/worktrees";
+import { gitKey, useGit } from "../../stores/git";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
 import { checksState } from "./PullRequestChecks";
@@ -74,7 +85,7 @@ const COMMENTS: ImportedComment[] = [
     author: "ana",
     body: "Rename this",
     fenced:
-      "> Untrusted content from a pull request review comment\n```text\n@ana on a.ts:2:\nRename this\n```",
+      "> Untrusted content from a pull request review comment\n```text\nana on a.ts:2:\nRename this\n```",
   },
 ];
 
@@ -100,10 +111,12 @@ const agent = (paneId: string, workspaceId: string): DashboardItem => ({
 let calls: Call[] = [];
 const named = (cmd: string) => calls.filter((c) => c.cmd === cmd);
 let checks: LaneChecks = READY;
+let pushFails = false;
 
 beforeEach(() => {
   resetStores();
   checks = READY;
+  pushFails = false;
   useWorktrees.setState({ checks: {}, ask: null });
   useDashboard.setState({ items: {} });
   useReviews.setState({ byLane: {}, next: 1, importedIds: {} });
@@ -119,6 +132,11 @@ beforeEach(() => {
     pty_type_prompt: () => null,
     lane_forge: () => "github",
     lane_runtime: () => null,
+    git_push: () => {
+      if (pushFails)
+        throw { code: "io", message: "rejected: fetch first", stage: "git", hint: null, retryable: false };
+      return null;
+    },
   });
   useWorkspaces.setState({ list: [REPO, WT], activeId: "shop", activeTab: {} });
 });
@@ -134,13 +152,16 @@ function withDialogs(node: React.ReactNode) {
 }
 
 describe("CI results and review comments (F-WT-08)", () => {
-  it("F-WT-08.1 the row says 1 check failed: test, and Send failure to agent types the core's fenced prompt on a click", async () => {
+  it("F-WT-08.1 the row says CI failed (1 check failed: test as its name and title), and Send failure to agent types the core's fenced prompt on a click", async () => {
     useDashboard.setState({ items: { "pane:pn_1": agent("pn_1", "wt_1") } });
     withDialogs(<WorktreeRow wt={WT} base="main" />);
     await act(() => loadChecks(["wt_1"]));
     const badge = await screen.findByTestId("worktree-checks");
     expect(badge.dataset.state).toBe("failed");
-    expect(badge.textContent).toBe("1 check failed: test");
+    // D-2700: the status bar's words; its name starts with them (WCAG 2.5.3).
+    expect(badge.textContent).toBe("CI failed");
+    expect(badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
+    expect(badge.title).toBe("1 check failed: test");
     // F-WT-08.4: reading checks never sends anything.
     expect(named("pty_type_prompt")).toHaveLength(0);
     expect(named("lane_check_failure")).toHaveLength(0);
@@ -155,6 +176,91 @@ describe("CI results and review comments (F-WT-08)", () => {
     await waitFor(() => expect(named("pty_type_prompt")).toHaveLength(1));
     expect(named("lane_check_failure")[0]?.args).toEqual({ laneId: "wt_1", name: "test" });
     expect(named("pty_type_prompt")[0]?.args).toEqual({ paneId: "pn_1", text: PROMPT });
+  });
+
+  it("F-WT-08.1 D-2614 D-2700 beside the row's status the badge is its icon alone, its name and title kept", async () => {
+    // The worktree's agent is working: its row says "● 1 working" (D-2603).
+    useLayout.setState({
+      tabs: { tb_wt_1: { tree: null, active: null, maximized: null, panes: { p1: {} as never }, keepEmpty: false } },
+    });
+    useStatus.setState({
+      records: {
+        "pane:p1": { key: "pane:p1", status: "working", reason: null, since: 1, ts: 1, tool: null, title: null, preview: null },
+      },
+    });
+    withDialogs(<WorktreeRow wt={WT} base="main" />);
+    await act(() => loadChecks(["wt_1"]));
+    const badge = await screen.findByRole("button", { name: "CI failed: 1 check failed: test" });
+    expect(badge.dataset.testid).toBe("worktree-checks");
+    expect(badge.hasAttribute("data-compact")).toBe(true);
+    expect(badge.textContent).toBe("");
+    expect(badge.querySelector("svg")).not.toBeNull();
+    expect(badge.title).toBe("1 check failed: test");
+    // With nothing beside it, its words show whole, never cut short.
+    act(() => useStatus.setState({ records: {} }));
+    expect(badge.hasAttribute("data-compact")).toBe(false);
+    expect(badge.textContent).toBe("CI failed");
+    expect(badge.querySelector(".truncate")).toBeNull();
+    fireEvent.click(badge);
+    expect(useWorktrees.getState().ask).toEqual({ kind: "checks", worktreeId: "wt_1" });
+  });
+
+  it("F-WT-08.1 D-2700 the badge says the status bar's words in every state, its title the checks'", async () => {
+    const states: Array<[PrCheck["bucket"], string, string]> = [
+      ["pending", "CI running", "Checks running"],
+      ["cancel", "CI cancelled", "Checks cancelled"],
+      ["pass", "CI passed", "Checks passed"],
+    ];
+    for (const [bucket, words, title] of states) {
+      checks = { ...READY, checks: [{ ...READY.checks[0]!, bucket }] };
+      const { unmount } = withDialogs(<WorktreeRow wt={WT} base="main" />);
+      await act(() => loadChecks(["wt_1"]));
+      const badge = await screen.findByRole("button", { name: words });
+      expect(badge.textContent).toBe(words);
+      expect(badge.title).toBe(title);
+      unmount();
+    }
+  });
+
+  it("F-WT-08.1 D-2700 while a row's contents overflow it, its marks fold to their icons, the radar mark first, then the badge", async () => {
+    useWorktrees.setState({ radar: { wt_1: ["applyCoupon"] } });
+    // The row's contents: 120 px, and 80 more for each mark that shows its words.
+    let room = 200;
+    const row = (el: Element) => el instanceof HTMLElement && el.dataset.testid === "worktree-row";
+    const scroll = vi
+      .spyOn(Element.prototype, "scrollWidth", "get")
+      .mockImplementation(function (this: Element) {
+        return row(this) ? 120 + 80 * this.querySelectorAll("[data-words]").length : 0;
+      });
+    const client = vi
+      .spyOn(Element.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: Element) {
+        return row(this) ? room : 0;
+      });
+    try {
+      withDialogs(<WorktreeRow wt={WT} base="main" />);
+      await act(() => loadChecks(["wt_1"]));
+      const badge = await screen.findByTestId("worktree-checks");
+      const radar = screen.getByTestId("worktree-radar");
+      // Room for one mark's words: the radar mark folds, the badge keeps "CI failed".
+      expect(radar.hasAttribute("data-compact")).toBe(true);
+      expect(radar.getAttribute("aria-label")).toBe("applyCoupon, shared with another worktree");
+      expect(badge.textContent).toBe("CI failed");
+      // New contents are measured again from nothing folded: room for both now.
+      room = 400;
+      act(() => useWorktrees.setState({ radar: { wt_1: ["applyCoupon", "priceOf"] } }));
+      expect(radar.textContent).toBe("2 symbols");
+      expect(badge.textContent).toBe("CI failed");
+      // Room for neither: both are their icons, never their words cut short.
+      room = 150;
+      act(() => useWorktrees.setState({ radar: { wt_1: ["applyCoupon"] } }));
+      expect(radar.textContent).toBe("");
+      expect(badge.textContent).toBe("");
+      expect(badge.getAttribute("aria-label")).toBe("CI failed: 1 check failed: test");
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
   });
 
   it("F-WT-08.3 Check pull request asks first; Not now runs nothing, Allow allows the repository and shows the checks", async () => {
@@ -221,7 +327,7 @@ describe("CI results and review comments (F-WT-08)", () => {
     expect(prompt).toContain(
       "1. Imported review comment:\n   > Untrusted content from a pull request review comment",
     );
-    expect(prompt).toContain("   ```text\n   @ana on a.ts:2:\n   Rename this\n   ```");
+    expect(prompt).toContain("   ```text\n   ana on a.ts:2:\n   Rename this\n   ```");
     expect(prompt).not.toContain("1. a.ts:2");
     // Importing again adds nothing new, even once it was removed (or sent).
     act(() => useReviews.getState().remove("wt_1", list[0]!.id));
@@ -245,6 +351,61 @@ describe("CI results and review comments (F-WT-08)", () => {
     expect(named("lane_checks")).toHaveLength(1);
     // Finished: the next poll skips it.
     await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(1);
+  });
+
+  it("F-WT-08.5 D-2619 a push reads the worktree's checks again at once, and each poll reads them until CI's new run shows", async () => {
+    // The rail has read wt_1's checks: CI failed, every check finished, so
+    // polls leave it alone for 15 minutes.
+    await act(() => loadChecks(["wt_1"]));
+    await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(1);
+    // A push starts CI again: the checks are read right after it.
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await waitFor(() => expect(named("lane_checks")).toHaveLength(2));
+    const order = calls.map((c) => c.cmd).filter((c) => c === "git_push" || c === "lane_checks");
+    expect(order).toEqual(["lane_checks", "git_push", "lane_checks"]);
+    // gh may list the new run a minute later: until then each poll reads
+    // the checks, though the last answer had finished.
+    await pollChecks(["wt_1"]);
+    expect(named("lane_checks")).toHaveLength(3);
+    const now = 10_000_000;
+    expect(checksDue(READY, now - 1_000, now, now - 1_000)).toBe(true);
+    expect(checksDue(READY, now - 1_000, now, now - CHECKS_AFTER_PUSH_MS)).toBe(false);
+    expect(checksDue(READY, now - 1_000, now, undefined)).toBe(false);
+  });
+
+  it("F-WT-08.5 F-WT-08.3 D-2619 a push that failed reads no checks, nor does one in a repository not allowed", async () => {
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    await act(() => loadChecks(["wt_1"]));
+    pushFails = true;
+    expect((await act(() => useGit.getState().push(context)))?.message).toBe("rejected: fetch first");
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("lane_checks")).toHaveLength(1);
+    pushFails = false;
+    // Not allowed: the core would run no gh, and the rail asks it nothing.
+    checks = { ...READY, state: "not_allowed", pr: null, checks: [] };
+    await act(() => loadChecks(["wt_1"]));
+    const before = named("lane_checks").length;
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("lane_checks")).toHaveLength(before);
+    expect(named("git_push")).toHaveLength(2);
+  });
+
+  it("F-WT-08.5 D-2619 a push while another git action runs pushes nothing and reads no checks", async () => {
+    const context = { type: "workspace" as const, workspaceId: "wt_1" };
+    await act(() => loadChecks(["wt_1"]));
+    const key = gitKey(context);
+    act(() =>
+      useGit.setState((s) => ({
+        byKey: { ...s.byKey, [key]: { ...(s.byKey[key] ?? ({} as never)), context, busy: "pull" } },
+      })),
+    );
+    expect(await act(() => useGit.getState().push(context))).toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(named("git_push")).toHaveLength(0);
     expect(named("lane_checks")).toHaveLength(1);
   });
 

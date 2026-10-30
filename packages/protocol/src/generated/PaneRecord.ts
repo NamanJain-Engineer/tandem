@@ -21,4 +21,9 @@ restoreState: string, createdAt: number,
 /**
  * A browser pane's page: the URL it last committed (F-CD-17).
  */
-browserUrl: string | null, };
+browserUrl: string | null, 
+/**
+ * "{model} · {kind}" for a Codex pane started on a model server on
+ * this computer (F-EN-11): its header says "On this computer".
+ */
+localModel?: string, };

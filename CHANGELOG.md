@@ -7,6 +7,202 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## 0.13.0
+
+Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.
+Vibezeo is free and needs no account, and everything in this release runs on
+your computer, with nothing sent to our servers. Lead now keeps a plan
+moving: it answers its runs' routine questions and brings you the ones that
+need you. Agents can run commands that need your secrets without seeing
+them, each agent session keeps a record of what it did, and the Files editor
+goes to definitions with the language servers you already have. jj
+workspaces and Codex on a model served from your own computer are new too.
+
+### Added
+
+- [lin] **Lead keeps a plan moving.** A run started by Execute all can stop and
+  ask when its task and the repository don't settle something. Lead answers
+  routine questions, each in a session of its own with every tool off, so it
+  can't open a file or run a command: all it gets is the task as the plan wrote
+  it, the question, and the repository's instructions files (such as AGENTS.md
+  and CLAUDE.md) as committed when Execute all started, never a run's worktree.
+  Lead answers with Claude Code 2.1.310 or newer; with another engine as Lead,
+  every question comes to you. The answer reaches the run labelled "Lead
+  (automatic answer)" and goes on the task as Lead's comment, and each row
+  counts them. An answer has no more authority than the task: it can't approve
+  anything, change access or start a tool. The option is on by default in
+  Execute all's check, uses your engine and subscription, and the plan can turn
+  it off at once while its runs can ask.
+- [lin] **What matters comes to you.** Lead never answers questions about
+  approvals or permissions, access, the sandbox, secrets or credentials, network
+  calls, deploys or publishing, pushing, deleting files or branches outside the
+  worktree, or the plan's scope, and it answers at most 3 questions per run and
+  10 per plan. Those questions show as Needs you in the plan with the reason, a
+  notification tells you, and Answer… sends your answer to the run. A run
+  waiting for an approval shows "Waiting for your approval", and a question Lead
+  hadn't answered when Vibezeo closed comes to you after the restart.
+- [lin] **Agents can run commands that need secrets.** An agent in an agent pane
+  runs `vibezeo run -- pnpm deploy`; the pane shows the whole command and every
+  secret it would get, and asks first (Allow once, Allow for this agent, Deny).
+  The command runs outside the agent, and the agent sees its output with each
+  secret's value hidden. Settings › Secrets can let a command run without asking
+  in a folder, and Run with secrets can tell agents about it in the folder's
+  `AGENTS.md`. You answer these on your computer: the phone and notifications
+  only say a run is waiting. Characters outside plain ASCII in the command are
+  marked, so a look-alike letter can't pass.
+- [lin] **Activity for each agent session.** **Activity…** in an agent pane's, a
+  thread's or a Dashboard card's menu lists what that session did, in order:
+  turns sent (never their words), files changed, commands, tools, approvals and
+  `vibezeo run`s. **Export…** saves it as JSON Lines. It stays on your computer
+  for up to 14 days.
+- [lin] **Code intelligence in the editor and diffs.** With the language
+  servers you already have (rust-analyzer, typescript-language-server, pyright,
+  gopls), the Files editor goes to definitions (F12 or Mod+Click), finds
+  references (Shift+F12), shows hover text and underlines problems, and
+  worktree and review diffs jump from a changed name to its definition or
+  callers. No server runs until you trust the repository (each worktree on its
+  own when agents run sandboxed), and nothing is installed or sent by Vibezeo.
+  Folders on this computer only.
+- [lin] **jj workspaces.** With jj installed on this computer, in a trusted
+  repository co-located with jj, New worktree… makes a jj workspace
+  (`jj workspace add`) instead of a git worktree, with a git worktree one click
+  away and your choice remembered. Its diff and overlap check come from jj,
+  agents in it are told to use jj, and Discard worktree… forgets the workspace
+  while its commits stay (asking first, as for uncommitted changes, when jj
+  didn't keep everything in it). Folders on this computer only. Landing, pull
+  requests, previews, setup, second opinion, the intent radar and the git
+  panel aren't available for jj workspaces yet.
+- [lin] **Local models.** Settings › Engines › Local models finds Ollama,
+  LM Studio and llama.cpp servers running on this computer and lists their
+  models, with the size and parameter count each server reports. Vibezeo
+  asks only 127.0.0.1, and only when you open the page, choose Check again,
+  add or remove a port, or start Codex on one of its models. Ollama's cloud
+  models aren't listed: they run on ollama.com.
+- [lin] **Start Codex on a local model.** On an Ollama or LM Studio model,
+  Start in Codex opens a Codex pane in your open folder that says "On this
+  computer". It runs in a provider home of its own for that model, never on
+  your Codex account and never through a proxy, every time it starts, and
+  each start checks that the server still offers the model on this computer.
+  It uses none of the repository's own Codex settings (its
+  `.codex/config.toml`, hooks or MCP servers), and Codex's connectors,
+  plugins, usage metrics and sub-agents are off. Codex asks before each
+  command and edit unless your Codex arguments set an approval policy. It
+  needs Codex 0.149.0 or newer. Your own Codex settings and accounts aren't
+  touched.
+
+### Changed
+
+- [lin] **Claude Code threads summarise their edits too.** A finished Claude
+  Code turn says which files its edits changed, a subagent's and a
+  notebook's included, with the lines added and removed where the edit says
+  them, and each edit's row shows its own counts. When an edit's lines
+  aren't known, such as a notebook's, a file written over whole or a file an
+  MCP server's tool wrote, the turn lists its files without line counts
+  rather than a partial total. An edit that was refused or failed
+  counts nothing, a subagent's edits count even when its task ends in an
+  error, and files changed by shell commands aren't counted.
+- [lin] **The rail's marks say it in a word.** A worktree's pull request
+  checks read as the status bar has them, CI running, CI passed, CI failed
+  or CI cancelled, and hovering says which checks failed. The overlap mark
+  shows the symbol two worktrees share, such as `applyCoupon`, and a screen
+  reader hears those words first. A row that's short of room shows a mark's
+  icon rather than cut its words, and a pane header's branch gives way before
+  the pane's title does.
+- [lin] **The rail never cuts a row off.** A row too narrow for everything it
+  shows folds it: a worktree's Preview to its globe, its marks to their icons,
+  and last its agents' status to a dot that still says Needs you or 2 working
+  when you hover it. The rail stops at the width of a fully folded row, about
+  250 px rather than 180, a little wider while a row shows a jj badge or a
+  preview, and widens itself to fit one. A row's ⋯ shows in place of its
+  agents' count, never over a mark.
+- [lin] **Checks follow a push.** After you push from a worktree's git panel,
+  its pull request's checks are read at once and every 2 minutes for the next
+  5, so its row moves to CI running when GitHub starts the new run instead of
+  up to 15 minutes later.
+- [lin] **An account is named when there's a choice.** A pane's header and
+  its Dashboard card name the agent's account only when its engine has more
+  than one, so a single account's "Default" no longer shows.
+
+### Fixed
+
+- [lin] **A new agent no longer looks busy before its first prompt.** An
+  engine that reported starting before Vibezeo read its banner could show
+  "working" on the Dashboard, and to Auto, until you typed to it. Its report
+  of starting now counts, whichever arrives first.
+- [lin] **Memory and skills save what their own check allows.** Their editors
+  read the whole text, so `Bearer` at the end of one line with a value on the
+  next looked like a key, and Save stayed off for text that saving accepts.
+  They now read a line at a time, as saving does.
+- [lin] **A finished chat stays unread until you look at it.** A chat you'd
+  opened earlier and left could lose its unread dot when its turn ended in the
+  background, and one you were looking at could get the dot back. Now a chat is
+  marked read only while Thread mode shows it (the selected chat, or a chat in
+  the grid) with Settings closed and Vibezeo's window in front and focused:
+  when you open it, when its turn ends, or when you come back to Thread mode or
+  to the window.
+- [lin] **Allow can't move under your click.** A chat's Allow and Allow for
+  this thread, held actions' Approve & run and the review queue's Approve now
+  wait until they've held still on screen for half a second, and while anything
+  covers them, like the Dashboard's and the pane's Allow. So the next request
+  sliding into place, or a new held draft arriving on top, can't take a click
+  or a double-click meant for something else. A chat card's keys answer only
+  the card you're on, and only once its Allow would. A phone's queued Allow in
+  Settings › Remote, Trust and connect for a new SSH host key and Trust and run
+  for a repository's worktree setup wait the same way. A waiting Allow can
+  still be reached with Tab, and a card scrolled out of view takes no key.
+- [lin] **The task list keeps your latest changes.** When changes came quickly,
+  an earlier refresh that finished last could show the list as it was before
+  them until the next change.
+- [lin] **A plan's runs show where they are.** When a plan started, a run that
+  finished while Plan with Lead was first reading the runs could stay shown as
+  in setup or running, with no verdict, until you opened the plan again.
+- [lin] **A plan's counts read right for one.** A plan says "1 with changes
+  requested", where it said "1 changes requested".
+- [lin] **A Dashboard card's line follows its agent.** While Claude Code works,
+  its card names the tool it's running, and the name goes when it stops.
+  Before, an open Dashboard named no tool, and a card that opened mid-tool kept
+  that tool's name after Claude Code had finished.
+- [lin] **A Dashboard card keeps up while the cards load.** An agent that
+  changed while the Dashboard was reading its cards could show its earlier
+  state until it changed again, and a new agent's card could go missing until
+  the agent next reported.
+- [lin] **Screen readers name the rail's unread dots.** The dot on a workspace
+  or a pane that finished while you were away is read as "Finished while you
+  were away". Before, screen readers skipped its label.
+
+### Security
+
+- [lin] **Text from elsewhere can't hand an agent a file or run a command.**
+  What Vibezeo passes an agent from somewhere else can't make Claude Code read
+  a file on your computer: a worktree's diff and a second opinion's words, in
+  the review you send or for the second opinion itself, a pull request's
+  review comments, a failed check's log, Warn both agents' note, a teammate's
+  mail, the terminal selection, clipboard, file name or branch name in a
+  prompt, a branch's name in a review you send back, a web page's elements,
+  the turn a teammate learns from, a teammate's briefing for an ACP agent, a
+  handoff brief, the summary that continues work on another account, and what
+  Auto and Conductor send. Any `@` there that could name a file is written ＠,
+  and the message says so. Characters nobody can see, and any that Claude Code
+  or typing would drop, go first, so they can't hide a word or a command. A
+  paste marker such as [Pasted text #1] can't stand in for something you
+  pasted, words such as ultrathink get a hyphen, and a word such as /release
+  or /apps/web:release, which could run one of your skills, gets a full-width
+  slash. A handoff brief, or what Auto or Conductor sends an agent, that
+  starts with `/` or `!`, or is just "exit" or "quit", has its first character
+  written full width (／, ！), so it runs no slash or shell command and quits
+  nothing, mid-turn too. What Conductor types in parts, without Enter between
+  them, can't join into such a word either.
+- [lin] **A key split by a character nobody can see is still hidden.** Vibezeo
+  hides keys and tokens before text reaches a model, your phone or anything
+  else off your computer, and now also finds one that an invisible character
+  splits, sets apart from the word before it, or both: in what Conductor reads
+  from panes and threads and what it says, the review queue's lines, a
+  plugin's replies and errors, a teammate's brief and memory, what your phone
+  shows, crash reports, usage statistics and Copy diagnostics. A plugin's
+  replies now lose every key Vibezeo recognises, not only the connection's
+  own. A thread that switches engines hides keys in the summary it hands the
+  next engine too, as a handoff's brief does.
+
 ## 0.12.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

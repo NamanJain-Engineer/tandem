@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tandem_core::error::IpcError;
+use tandem_core::ErrorCode;
 use tandem_git::cli::Git;
 use tandem_git::{ops, Branch, FileDiff, GitError, GitStatus, Repo};
 use ts_rs::TS;
@@ -81,6 +82,17 @@ impl GitPanelService {
         let repo = tokio::task::spawn_blocking(move || whole_repo(&path))
             .await
             .map_err(|e| GitError::Invalid(e.to_string()))??;
+        // F-CD-24: a jj workspace has no `.git`; discovery found the
+        // repository around it, which git must not change for it.
+        if let Some(r) = &repo {
+            if tandem_git::jj::in_jj_workspace(&folder, r.root()) {
+                return Err(IpcError::new(
+                    ErrorCode::Invalid,
+                    crate::services::jj_lanes::JJ_NOT_YET,
+                )
+                .with_stage("jj"));
+            }
+        }
         Ok((folder, repo))
     }
 

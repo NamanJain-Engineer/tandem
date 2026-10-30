@@ -1,0 +1,8 @@
+export type Item = { sku: string; name: string; price: number; qty: number };
+
+/** A shopper's cart. Its prices are held until `expiresAt`. */
+export type Cart = {
+  id: string;
+  items: Item[];
+  expiresAt: number;
+};

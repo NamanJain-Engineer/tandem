@@ -51,6 +51,9 @@ pub struct ReportPayload {
     /// inferred claims (F-TK-05). Paths only, never the edit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
+    /// The person submitted a prompt (UserPromptSubmit): one turn (F-EX-07).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub prompt: bool,
 }
 
 fn v1() -> u32 {

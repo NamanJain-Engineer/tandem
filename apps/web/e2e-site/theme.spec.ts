@@ -9,7 +9,7 @@ import { THEME_KEY } from "../lib/theme";
 // against the exported site.
 
 const AXE = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
-const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/404.html", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
+const PAGES = [...SITE_PAGES, ...blogPages(), "/changelog/0.5.0/", "/changelog/0.9.0/", "/changelog/0.12.0/", "/404.html", ...DOCS_PAGES.slice(0, 3).map((p) => docsPath(p.slug))];
 // The test server answers a missing page with its own 404, so the site's is
 // opened by its file.
 // The page backgrounds (--site-page) of each theme.
@@ -87,6 +87,27 @@ test("F-WB-01 AC4 F-WB-01 AC7 the header's control switches the page at once and
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-theme"))).toBe(false);
   await ctx.close();
+});
+
+test("F-WB-01 AC4 the chosen theme's cell draws its 1 px ring, in both themes (WCAG 1.4.11, D-3001)", async ({ browser }) => {
+  // An undefined var() in a box-shadow voids all of it: check what the browser draws, not the stylesheet's text.
+  for (const stored of ["light", "dark"] as const) {
+    const ctx = await context(browser, stored === "light" ? "dark" : "light", stored);
+    const page = await ctx.newPage();
+    await page.goto("/");
+    const cell = page.locator(`.site-header > nav > fieldset label[data-choice="${stored}"]`);
+    const [shadow, ring] = await cell.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--tn-text-muted)";
+      el.append(probe);
+      const muted = getComputedStyle(probe).color;
+      probe.remove();
+      return [getComputedStyle(el).boxShadow, muted];
+    });
+    expect(shadow, stored).not.toBe("none");
+    expect(shadow, stored).toContain(`${ring} 0px 0px 0px 1px`);
+    await ctx.close();
+  }
 });
 
 test("F-WB-01 AC4 keyboard focus shows on the theme control's cell, not only on its hidden radio (WCAG 2.4.7)", async ({ browser }) => {

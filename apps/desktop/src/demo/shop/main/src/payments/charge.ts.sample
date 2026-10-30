@@ -1,0 +1,4 @@
+/** Charges a customer, in cents (the payment provider is stubbed). */
+export async function charge(customer: string, cents: number): Promise<Response> {
+  return Response.json({ customer, charged: cents });
+}

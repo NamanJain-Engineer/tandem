@@ -24,19 +24,23 @@ import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
 import { useWorktrees } from "../../stores/worktrees";
+import { diffNames } from "../../stores/intel";
 import { useEngines } from "../../stores/engines";
 import { switchMode } from "../shell/actions";
 import { useThreads } from "../../stores/threads";
+import { DEFANGED, defangMarked } from "./untrusted";
 
 /** One review comment on a worktree's diff (F-WT-02). A General one (a
  * second opinion's lines that aren't on a shown line, F-WT-05) has no line.
  * `imported` when it came from the pull request (F-WT-08): someone else's
- * text, so the prompt carries the core's fenced copy, not the words. */
+ * text, so the prompt carries the core's fenced copy, not the words.
+ * `opinion` when the second opinion wrote it: another engine's words. */
 export type ReviewComment = DiffLineTarget & {
   id: number;
   comment: string;
   general?: boolean;
   imported?: { id: string; author: string; fenced: string };
+  opinion?: boolean;
 };
 
 const QUOTE_MAX = 200;
@@ -57,11 +61,20 @@ function quote(text: string): string {
 
 /** The one prompt "Send to agent" types (F-WT-02). The words are the
  * agent's instructions, so they stay in English like the app's other
- * prompts to engines. */
+ * prompts to engines. The paths and lines are the worktree agent's, the
+ * second opinion's words another engine's, and the branch whoever named it:
+ * no `@` in them names a file for the agent to attach (D-3023). Your own
+ * comments stay as you wrote them. */
 export function buildReviewPrompt(branch: string, comments: ReviewComment[]): string {
+  let defanged = false;
+  const safe = (text: string) => {
+    const out = defangMarked(text);
+    defanged ||= out.wroteAt;
+    return out.text;
+  };
   const sorted = [...comments].sort(byPlace);
   const n = sorted.length;
-  const head = `Review of your changes on ${branch} (${n} ${n === 1 ? "comment" : "comments"}):`;
+  const head = `Review of your changes on ${safe(branch)} (${n} ${n === 1 ? "comment" : "comments"}):`;
   const indent = (text: string) =>
     text
       .split("\n")
@@ -74,12 +87,14 @@ export function buildReviewPrompt(branch: string, comments: ReviewComment[]): st
     const where = c.general
       ? "General"
       : c.side === "new"
-        ? `${c.path}:${c.line}`
-        : `${c.path} (removed line ${c.line})`;
-    const q = quote(c.text);
-    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(c.comment.trim())}`;
+        ? `${safe(c.path)}:${c.line}`
+        : `${safe(c.path)} (removed line ${c.line})`;
+    const q = safe(quote(c.text));
+    const words = c.opinion ? safe(c.comment.trim()) : c.comment.trim();
+    return `${i + 1}. ${where}\n${q ? `   > ${q}\n` : ""}${indent(words)}`;
   });
-  return `${head}\n\n${items.join("\n\n")}\n\nAddress each comment, then say what you changed.`;
+  const note = defanged ? `${DEFANGED}\n\n` : "";
+  return `${head}\n\n${items.join("\n\n")}\n\n${note}Address each comment, then say what you changed.`;
 }
 
 type ReviewsState = {
@@ -154,10 +169,20 @@ export const useReviews = create<ReviewsState>((set, get) => ({
       line: c.line,
       text: c.text,
       comment: c.comment,
+      opinion: true,
       id: id++,
     }));
     if (op.general)
-      added.push({ path: "", side: "new", line: 0, text: "", comment: op.general, general: true, id: id++ });
+      added.push({
+        path: "",
+        side: "new",
+        line: 0,
+        text: "",
+        comment: op.general,
+        general: true,
+        opinion: true,
+        id: id++,
+      });
     const list = get().byLane[op.laneId] ?? [];
     set({ next: id, byLane: { ...get().byLane, [op.laneId]: [...list, ...added] } });
   },
@@ -283,6 +308,11 @@ export function ReviewDiff({
   const [sending, setSending] = useState(false);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
+  // F-CD-23: names on the new side, in the worktree; results open in Files.
+  const names = useMemo(
+    () => diffNames({ type: "workspace", workspaceId: wt.id }, () => useWorktrees.setState({ ask: null })),
+    [wt.id],
+  );
   const chosen = agents.find((a) => a.key === target) ?? agents[0] ?? null;
   // F-WT-08: once its repository is allowed and it has a pull request.
   const pr = useWorktrees((s) => (s.checks[wt.id]?.state === "ready" ? s.checks[wt.id]?.pr : null));
@@ -445,6 +475,7 @@ export function ReviewDiff({
       <DiffView
         files={files}
         labels={labels}
+        names={names}
         comments={{
           label: (tg) =>
             t(tg.side === "new" ? "worktree.review.commentOn" : "worktree.review.commentOnRemoved", {

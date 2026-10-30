@@ -3,4 +3,4 @@
 /**
  * Which ranking ordered a result.
  */
-export type FindRanking = "local" | "hosted";
+export type FindRanking = "local" | "hosted" | "mixed";

@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, GitBranch, MoreHorizontal } from "lucide-react";
-import type { FileDiff, MergeReport, WorkspaceSummary } from "@tandem/protocol";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AlertTriangle, GitBranch, Globe, MoreHorizontal } from "lucide-react";
+import type { FileDiff, LaneKind, LaneKinds, MergeReport, WorkspaceSummary } from "@tandem/protocol";
 import {
   Badge,
+  Banner,
   Button,
   ConfirmDialog,
   Dialog,
   IconButton,
   Input,
   Menu,
+  SegmentedControl,
   Skeleton,
   Tooltip,
   cx,
@@ -24,6 +26,9 @@ import {
   createPullRequest,
   createPullRequests,
   createWorktree,
+  isJj,
+  laneKinds,
+  trustRepository,
   PREVIEW_POLL_MS,
   loadForge,
   loadRuntime,
@@ -43,12 +48,15 @@ import { ComparePreviewsDialog } from "./ComparePreviews";
 import { LandWorktreesDialog } from "./LandWorktrees";
 import { AllowChecksDialog, ChecksBadge, ChecksDialog } from "./PullRequestChecks";
 import { RadarMark } from "./IntentRadar";
+import { folded, useMarkFolds } from "./markFolds";
 import { PullRequestsDialog } from "./MultiPullRequests";
 import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
+import { WorkspaceSlot } from "./WorkspaceSlot";
+import { showsStatus, useWorkspaceStatus } from "./workspaceStatus";
 
 type Show = ReturnType<typeof useToast>["show"];
 
@@ -85,8 +93,23 @@ async function openPullRequests(wt: WorkspaceSummary, show: Show): Promise<void>
   else if (out.error.code !== "cancelled") show({ tone: "error", title: out.error.message });
 }
 
+/** What a jj workspace's menu keeps (F-CD-24); the rest need git. */
+const JJ_KEEPS = new Set(["wt-diff", "wt-files", "wt-overlap", "wt-sep", "wt-discard"]);
+
 export function worktreeMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEntry[] {
   const entries = singleRepoMenu(wt, base, show);
+  if (isJj(wt)) {
+    const kept = entries.map((e): MenuEntry => {
+      if (JJ_KEEPS.has(e.id) || e.type === "separator" || e.type === "label") return e;
+      return { ...e, disabled: true } as MenuEntry;
+    });
+    const at = kept.findIndex((e) => e.id === "wt-files") + 1;
+    return [
+      ...kept.slice(0, at),
+      { id: "wt-jj-note", type: "label", label: t("worktree.jj.notYet") },
+      ...kept.slice(at),
+    ];
+  }
   if ((wt.repos?.length ?? 0) === 0) return entries;
   const kept = entries.map((e): MenuEntry => {
     if (MULTI_KEEPS.has(e.id) || e.type === "separator" || e.type === "label") return e;
@@ -225,16 +248,60 @@ function singleRepoMenu(wt: WorkspaceSummary, base: string, show: Show): MenuEnt
   ];
 }
 
-/** A worktree under its repository in the Code rail (F-CD-15 AC4). */
-export function WorktreeRow({
-  wt,
-  base,
-  slot,
-}: {
-  wt: WorkspaceSummary;
-  base: string;
-  slot?: React.ReactNode;
-}) {
+/** F-WT-09: the row's preview, while it answers; it opens in a browser tab.
+ * It leads with a globe, as a browser pane's rail row does, and it's the
+ * first part to fold to its icon (D-2701): its word says least. */
+function PreviewMark({ url, branch, fold }: { url: string; branch: string; fold: boolean }) {
+  const name = t("worktree.preview.openLabel", { branch });
+  return (
+    <Button
+      variant="ghost"
+      size="mark"
+      data-testid="worktree-preview"
+      data-compact={fold ? "" : undefined}
+      aria-label={name}
+      title={name}
+      onClick={(e) => {
+        e.stopPropagation();
+        openPreview(url);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="shrink-0"
+      iconLeft={<Globe size={12} aria-hidden="true" className="shrink-0" />}
+    >
+      {fold ? undefined : <span data-words="">{t("worktree.preview.open")}</span>}
+    </Button>
+  );
+}
+
+/** D-2700: ⋯ takes the place of what's under it whole, never the end of
+ * one: its cover reaches left to the start of the first part under its
+ * button. That's the row's count, or the room the row keeps for ⋯ when it
+ * has none, so a mark is never under it; the name, if it reaches ⋯, is cut
+ * short as any text is. Measured as ⋯ shows, and when the contents change. */
+function coverMarks(row: HTMLElement): void {
+  const menu = row.querySelector<HTMLElement>('[data-testid="worktree-row-menu"]');
+  const button = menu?.querySelector("button")?.getBoundingClientRect();
+  const parts = [...row.children];
+  const name = parts.findIndex((c) => c.getAttribute("data-testid") === "worktree-row-name");
+  if (!menu || !button || name < 0) return;
+  let left = button.left;
+  for (const part of parts.slice(name + 1)) {
+    if (part === menu) continue;
+    const r = part.getBoundingClientRect();
+    if (r.width > 0 && r.right > button.left) left = Math.min(left, r.left);
+  }
+  menu.style.paddingLeft = `${button.left - left}px`;
+}
+
+/** A worktree under its repository in the Code rail (F-CD-15 AC4). It's
+ * named as its workspace is (a worktree's branch is `tandem/` and that
+ * name), so beside a status the name keeps its room: at least 10
+ * characters, as a workspace row's does (D-2603). The branch is in its
+ * tooltip. ⋯ shows at the row's end only while it's hovered or focused, in
+ * place of its count or in the room the row keeps for it (D-2700). The
+ * rail is never narrower than a fully folded row (D-2701). */
+export function WorktreeRow({ wt, base }: { wt: WorkspaceSummary; base: string }) {
   const activeId = useWorkspaces((s) => s.activeId);
   const { show } = useToast();
   const branch = wt.laneBranch ?? wt.name;
@@ -247,12 +314,36 @@ export function WorktreeRow({
   }, [wt.id, wt.missing, wt.kind]);
   const block = useWorktrees((s) => s.runtimes[wt.id]);
   const preview = useWorktrees((s) => s.previews[wt.id]);
+  // D-2700, D-2701: the marks fold to their icons, and the status words to
+  // their dot, while the row's contents don't fit. The row reads its status
+  // once for all of its parts.
+  const status = useWorkspaceStatus(wt);
+  const beside = showsStatus(status);
+  const checks = useWorktrees((s) => s.checks[wt.id]);
+  const radar = useWorktrees((s) => s.radar[wt.id]);
+  const contents = JSON.stringify([
+    wt.name,
+    wt.missing,
+    // F-CD-24's jj badge takes room in the row too.
+    wt.laneVcs ?? null,
+    status,
+    checks?.state === "ready" ? checks.checks.map((c) => c.bucket) : null,
+    radar ?? null,
+    preview?.status === "ready",
+    wt.liveCount,
+  ]);
+  const { ref, folds } = useMarkFolds(contents);
+  // New contents move the marks, under ⋯ if it's showing.
+  useLayoutEffect(() => {
+    if (ref.current) coverMarks(ref.current);
+  }, [ref, contents, folds]);
   const openIt = () => {
     useWorkspaces.getState().select(wt.id);
     switchMode("code");
   };
   return (
     <div
+      ref={ref}
       role="treeitem"
       aria-level={2}
       aria-selected={activeId === wt.id}
@@ -266,9 +357,12 @@ export function WorktreeRow({
           openIt();
         }
       }}
+      onPointerEnter={(e) => coverMarks(e.currentTarget)}
+      onFocus={(e) => coverMarks(e.currentTarget)}
       className={cx(
-        "group/wt flex h-7 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm outline-none hover:bg-surface-4 focus-visible:shadow-focus",
-        activeId === wt.id ? "bg-surface-4 text-fg" : "text-fg-muted hover:text-fg",
+        // Whenever ⋯ shows, on hover or focus, the row is ⋯'s colour.
+        "group/wt relative flex h-7 w-full cursor-default items-center gap-1.5 rounded-sm px-2 text-left text-sm outline-none focus-within:bg-surface-4 hover:bg-surface-4 focus-visible:shadow-focus",
+        activeId === wt.id ? "bg-surface-4 text-fg" : "text-fg-muted focus-within:text-fg hover:text-fg",
       )}
     >
       {wt.missing ? (
@@ -280,67 +374,76 @@ export function WorktreeRow({
         label={
           wt.missing
             ? t("rail.missing")
-            : block
-              ? t("worktree.runtime.tooltip", {
-                  root: wt.root,
-                  start: String(block.start),
-                  end: String(block.end),
-                })
-              : wt.root
+            : t("worktree.row.tooltip", {
+                branch,
+                place: block
+                  ? t("worktree.runtime.tooltip", {
+                      root: wt.root,
+                      start: String(block.start),
+                      end: String(block.end),
+                    })
+                  : wt.root,
+              })
         }
       >
-        <span className="min-w-0 flex-1 truncate">{branch}</span>
+        <span data-testid="worktree-row-name" className="min-w-[min(10ch,100%)] flex-1 truncate">
+          {wt.name}
+        </span>
       </Tooltip>
-      {slot}
-      {preview?.status === "ready" && preview.url ? (
-        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="worktree-preview"
-            aria-label={t("worktree.preview.openLabel", { branch })}
-            onClick={() => openPreview(preview.url ?? "")}
-          >
-            {t("worktree.preview.open")}
-          </Button>
+      {isJj(wt) ? (
+        <span data-testid="worktree-jj" aria-label={t("worktree.jj.badgeLabel")}>
+          <Badge variant="outline">{t("worktree.jj.badge")}</Badge>
         </span>
       ) : null}
-      <ChecksBadge wt={wt} />
-      <RadarMark wt={wt} />
-      {wt.liveCount > 0 && (
-        <span aria-label={t("rail.live", { n: wt.liveCount })}>
+      <WorkspaceSlot status={status} fold={folded(folds, "status")} />
+      {preview?.status === "ready" && preview.url ? (
+        <PreviewMark url={preview.url} branch={branch} fold={folded(folds, "preview")} />
+      ) : null}
+      <ChecksBadge wt={wt} beside={beside} fold={folded(folds, "checks")} />
+      <RadarMark wt={wt} beside={beside} fold={folded(folds, "radar")} />
+      {wt.liveCount > 0 ? (
+        <span data-testid="worktree-live" aria-label={t("rail.live", { n: wt.liveCount })}>
           <Badge>{wt.liveCount}</Badge>
         </span>
+      ) : (
+        // With no count for ⋯ to take, the row keeps its room: as wide as
+        // a one-digit count, so ⋯ never covers a mark (D-2700).
+        <span data-testid="worktree-menu-room" aria-hidden="true" className="w-4 shrink-0" />
       )}
+      {/* A click on the cover is the row's, not a hidden mark's; ⋯'s own
+          clicks and keys stay with its menu. */}
       <span
-        className="opacity-0 group-hover/wt:opacity-100 group-focus-within/wt:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+        data-testid="worktree-row-menu"
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center rounded-sm bg-surface-4 opacity-0 group-hover/wt:pointer-events-auto group-hover/wt:opacity-100 group-focus-within/wt:pointer-events-auto group-focus-within/wt:opacity-100"
       >
-        <Menu
-          align="end"
-          trigger={
-            <IconButton
-              size="sm"
-              icon={<MoreHorizontal size={14} />}
-              label={t("worktree.menuLabel", { branch })}
-            />
-          }
-          entries={worktreeMenu(wt, base, show)}
-        />
+        <span className="flex" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <Menu
+            align="end"
+            trigger={
+              <IconButton
+                size="sm"
+                icon={<MoreHorizontal size={14} />}
+                label={t("worktree.menuLabel", { branch })}
+              />
+            }
+            entries={worktreeMenu(wt, base, show)}
+          />
+        </span>
       </span>
     </div>
   );
 }
 
-/** The pane header chip "⎇ tandem/{slug}"; hovering shows the path. */
+/** The pane header chip "⎇ tandem/{slug}"; hovering shows the path. It
+ * gives way before the pane's title, down to its icon (26 px; PaneChrome
+ * leaves it that room), so the title keeps its 10 characters (D-2611). */
 export function WorktreeChip({ wt }: { wt: WorkspaceSummary }) {
   return (
     <Tooltip label={wt.root}>
       <span
         data-testid="worktree-chip"
         tabIndex={0}
-        className="inline-flex max-w-[160px] shrink-0 items-center gap-0.5 rounded-xs text-xs text-fg-subtle focus-visible:shadow-focus focus-visible:outline-none"
+        className="inline-flex min-w-[26px] max-w-[160px] items-center gap-0.5 overflow-hidden rounded-xs text-xs text-fg-subtle focus-visible:shadow-focus focus-visible:outline-none"
       >
         <GitBranch size={11} aria-hidden="true" className="shrink-0" />
         <span className="truncate">{wt.laneBranch}</span>
@@ -354,11 +457,43 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // F-CD-24: whether a jj workspace is offered; `undefined` while loading.
+  const [kinds, setKinds] = useState<LaneKinds | null | undefined>(undefined);
+  const [kind, setKind] = useState<LaneKind>("git");
+  const asked = useRef<Promise<LaneKinds | null> | null>(null);
+  const [asking, setAsking] = useState(0);
   const { show } = useToast();
+  useEffect(() => {
+    let live = true;
+    // Unknown (an error, or no answer): a git worktree, as before.
+    const answer = laneKinds(ws.id).then((out) => (out.ok && out.value ? out.value : null));
+    asked.current = answer;
+    void answer.then((k) => {
+      if (!live) return;
+      setKinds(k);
+      if (k) setKind(k.preferred);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ws.id, asking]);
+  // From a jj workspace, the new one is a jj workspace (F-CD-24); jj runs
+  // only in a trusted repository.
+  const offers = (k: LaneKinds | null | undefined) => k?.colocated === true && k.trusted && !isJj(ws);
+  const trustNeeded = kinds?.colocated === true && !kinds.trusted && !isJj(ws);
+  const trust = async () => {
+    const out = await trustRepository(ws.id);
+    if (out.ok) setAsking((n) => n + 1);
+    else if (out.error.code !== "cancelled") setError(out.error.message);
+  };
+  const choose = offers(kinds);
   const submit = async () => {
     setBusy(true);
     setError(null);
-    const out = await createWorktree(ws.id, text);
+    // Create before the answer came: wait for it, and make what it prefers.
+    const known = kinds === undefined ? await asked.current : kinds;
+    const chosen = kinds === undefined ? known?.preferred : kind;
+    const out = await createWorktree(ws.id, text, offers(known) ? chosen : undefined);
     setBusy(false);
     if (out.ok) {
       show({ tone: "success", title: t("worktree.created", { branch: out.value.laneBranch ?? "" }) });
@@ -393,7 +528,32 @@ function NewWorktreeDialog({ ws, onClose }: { ws: WorkspaceSummary; onClose: () 
           e.preventDefault();
           void submit();
         }}
+        className="flex flex-col gap-3"
       >
+        {kinds?.jjOnly ? <Banner tone="info">{t("worktree.jj.only")}</Banner> : null}
+        {kinds?.refused ? <Banner tone="warning">{kinds.refused}</Banner> : null}
+        {trustNeeded ? (
+          <Banner tone="info" action={{ label: t("worktree.jj.trust"), onClick: () => void trust() }}>
+            {t("worktree.jj.untrusted")}
+          </Banner>
+        ) : null}
+        {choose ? (
+          <div data-testid="worktree-kind">
+            <SegmentedControl
+              label={t("worktree.jj.make")}
+              value={kind}
+              onValueChange={(id) => setKind(id === "jj" ? "jj" : "git")}
+              items={[
+                {
+                  id: "jj",
+                  label: t("worktree.jj.workspace"),
+                  tooltip: t("worktree.jj.version", { version: kinds?.jjVersion ?? "" }),
+                },
+                { id: "git", label: t("worktree.jj.git") },
+              ]}
+            />
+          </div>
+        ) : null}
         <Input
           label={t("worktree.newField")}
           placeholder={t("worktree.newPlaceholder")}

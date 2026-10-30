@@ -88,7 +88,8 @@ fn library_of(data: &DataDir, folder: Option<&Path>, path: &Path) -> Option<Path
 
 /// `prompts_render`: `values` from the UI (selection, file, typed values,
 /// the clipboard when the prompt uses it) plus the folder's branch.
-/// Selection and clipboard go in labelled as untrusted data (rule 8).
+/// Selection and clipboard go in labelled as untrusted data (rule 8), and
+/// the file and the branch defanged (D-3027).
 pub async fn render(
     data: &DataDir,
     folder: Option<&Path>,
@@ -118,14 +119,11 @@ pub async fn render(
             }
         }
     }
-    let shown = values.clone();
-    let mut guarded = values;
-    prompts::guard(&mut guarded);
-    let (text, missing) = prompts::render(&prompt.body, &guarded);
+    let (text, missing) = prompts::fill(&prompt.body, &values);
     Ok(Rendered {
         text: text.trim_end_matches('\n').to_string(),
         missing,
-        values: shown,
+        values,
     })
 }
 
@@ -260,6 +258,41 @@ mod tests {
         .await
         .expect_err("outside");
         assert_eq!(err.code, ErrorCode::PathEscape);
+    }
+
+    #[tokio::test]
+    async fn f_ex_05_2_a_branch_named_like_a_path_names_no_file() {
+        // Git takes this name, from whoever pushed the branch (D-3027).
+        let (_t, data, folder) = setup();
+        assert!(Command::new("git")
+            .args(["init", "-q", "-b", "@/etc/passwd"])
+            .current_dir(&folder)
+            .status()
+            .expect("git")
+            .success());
+        std::fs::create_dir_all(repo_dir(&folder)).expect("mkdir");
+        let path = repo_dir(&folder).join("t.md");
+        std::fs::write(&path, "On {{branch}}: review it.").expect("w");
+        let r = render(
+            &data,
+            Some(&folder),
+            &path.to_string_lossy(),
+            BTreeMap::new(),
+        )
+        .await
+        .expect("render");
+        assert_eq!(
+            r.text,
+            format!(
+                "On \u{FF20}/etc/passwd: review it.\n{}",
+                tandem_core::untrusted::DEFANGED
+            )
+        );
+        // The picker shows the name as it is.
+        assert_eq!(
+            r.values.get("branch").map(String::as_str),
+            Some("@/etc/passwd")
+        );
     }
 
     #[test]

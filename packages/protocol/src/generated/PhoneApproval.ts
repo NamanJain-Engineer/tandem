@@ -8,4 +8,9 @@ source: string,
 /**
  * The phone allowed it and it waits for the desktop to confirm.
  */
-queued: boolean, createdAt: number, };
+queued: boolean, 
+/**
+ * A pane's `vibezeo run`: answered on the computer only, where the
+ * whole line shows. The phone gets the fixed body and no Allow.
+ */
+deskOnly: boolean, createdAt: number, };

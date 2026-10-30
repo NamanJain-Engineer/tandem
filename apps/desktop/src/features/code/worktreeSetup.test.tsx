@@ -23,6 +23,7 @@ import {
 } from "../../stores/worktrees";
 import { useSidebar } from "../../stores/sidebar";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { waiting } from "../../test/waiting";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
 
 function ws(id: string, over: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
@@ -166,6 +167,17 @@ describe("worktree setup (F-WT-01)", () => {
     expect(named("lane_setup_run")).toHaveLength(0);
     await screen.findByTestId("worktree-review");
     expect(screen.getByText("pnpm install")).toBeTruthy();
+    // S5: the review opens on its own after Launch, Retry or New worktree:
+    // Trust and run waits a moment, so a click aimed at the new panes
+    // trusts nothing, and Tab still reaches it.
+    const trust = screen.getByTestId("worktree-review-trust") as HTMLButtonElement;
+    expect(trust.hasAttribute("data-grant")).toBe(true);
+    expect(waiting(trust)).toBe(true);
+    expect(trust.disabled).toBe(false);
+    expect(trust.title).toBe("Trust and run turns on once this has been still on screen for a moment.");
+    fireEvent.click(trust);
+    expect(named("worktree_setup_trust")).toHaveLength(0);
+    await waitFor(() => expect(waiting(trust)).toBe(false));
     fireEvent.click(screen.getByTestId("worktree-review-trust"));
     await waitFor(() => expect(useWorktrees.getState().ask).toBeNull());
     expect(named("worktree_setup_trust")[0]?.args).toEqual({ workspaceId: "wt_1", digest: "d1" });
@@ -309,7 +321,7 @@ describe("overlap check (F-WT-03)", () => {
     expect(verdict.getAttribute("data-verdict")).toBe("conflicts");
     expect(verdict.textContent).toContain("Merging will conflict in 1 file");
     expect(verdict.textContent).toContain("README.md");
-    expect(verdict.textContent).toContain("1 uncommitted change isn't in the forecast");
+    expect(verdict.textContent).toContain("1 uncommitted change isn't in the forecast. Commit it to include it.");
     expect(named("lane_merge")).toHaveLength(0);
   });
 
@@ -496,6 +508,7 @@ describe("worktree runtime (F-WT-06)", () => {
     await prepareWorktree("wt_1");
     const review = await screen.findByTestId("worktree-review");
     expect(review.textContent).toContain("DB=app_{{slug}}");
+    await waitFor(() => expect(waiting(screen.getByTestId("worktree-review-trust"))).toBe(false));
     fireEvent.click(screen.getByTestId("worktree-review-trust"));
     await waitFor(() => expect(useWorktrees.getState().ask).toBeNull());
     expect(named("worktree_setup_trust")).toHaveLength(1);
@@ -589,6 +602,7 @@ describe("previews (F-WT-09)", () => {
     await startPreview("wt_1");
     const review = await screen.findByTestId("worktree-review");
     expect(review.textContent).toContain("serve {{port}}");
+    await waitFor(() => expect(waiting(screen.getByTestId("worktree-review-trust"))).toBe(false));
     fireEvent.click(screen.getByTestId("worktree-review-trust"));
     await waitFor(() => expect(named("lane_preview_start")).toHaveLength(2));
     expect(named("lane_setup_run")).toHaveLength(0);

@@ -64,7 +64,7 @@ describe("the download build says nothing about plans or credits (D-2903, DESIGN
     expect(screen.getByTestId("settings-free-line").textContent).toBe(
       "Vibezeo is free. If it helps you, tell a friend.",
     );
-  });
+  }, 20_000); // every Settings page in one walk: over 5 s under the full suite's load
 
   it("D-2913 hosted settings with no account: Conductor's page only says it comes with accounts; Privacy hides hosted switches", async () => {
     useSettings.setState({ values: { settings_last_page: "conductor" }, loaded: true });

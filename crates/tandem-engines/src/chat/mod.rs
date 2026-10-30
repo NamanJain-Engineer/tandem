@@ -79,6 +79,11 @@ pub struct ChatStart {
     /// Local stdio MCP servers besides the gateway: the tasks server
     /// (F-TK-02), one connection per session.
     pub stdio_servers: Vec<StdioServer>,
+    /// A session with every tool off, no MCP server, briefing or resume:
+    /// Lead answering a plan run's question (F-TK-08, D-2838). An adapter
+    /// that can't hold its engine to that refuses to start
+    /// ([`ChatAdapter::answers_without_tools`]).
+    pub tools_off: bool,
 }
 
 /// A stdio MCP server an engine starts itself.
@@ -201,6 +206,14 @@ pub enum AdapterError {
 #[async_trait]
 pub trait ChatAdapter: Send + Sync {
     fn engine_id(&self) -> &str;
+    /// Whether a [`ChatStart::tools_off`] session can hold this engine, at
+    /// `version` (`--version`'s), to no tool at all (F-TK-08): only Claude
+    /// Code from [`claude::TOOLS_OFF_MIN`]. Codex's read-only sandbox still
+    /// runs commands that read the disk, and ACP agents bring their own
+    /// tools.
+    fn answers_without_tools(&self, _version: Option<&str>) -> bool {
+        false
+    }
     async fn start(
         &self,
         req: ChatStart,

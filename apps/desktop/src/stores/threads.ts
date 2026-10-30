@@ -14,6 +14,7 @@ import { GRID_MAX, addCell, neighbor, removeCell, type GridAdd } from "../featur
 import { emptyThread, fromHistory, reduce, type ThreadView } from "../features/thread/reducer";
 import { useSession } from "./session";
 import { useSettings } from "./settings";
+import { useUi } from "./ui";
 
 /** Events loaded when a thread opens, and per "load older" page. */
 export const PAGE = 200;
@@ -49,6 +50,12 @@ type ThreadsState = {
   open: (id: string) => Promise<void>;
   loadOlder: (id: string) => Promise<void>;
   reloadDetail: (id: string) => Promise<void>;
+  /** F-TH-01 AC2: the thread is on screen (opened, selected or in the grid),
+   * so it's read. Reading a thread never marks it read. */
+  markRead: (id: string) => Promise<void>;
+  /** The app's window has focus (anywhere in it, its browser panes
+   * included): chats can only be read while it has. */
+  windowFocused: boolean;
   send: (
     id: string,
     text: string,
@@ -107,11 +114,90 @@ export const useThreads = create<ThreadsState>((set, get) => {
   const patch = (id: string, next: Partial<ThreadLive>) =>
     set((s) => ({ byId: { ...s.byId, [id]: { ...(s.byId[id] ?? blank()), ...next } } }));
 
+  /** Threads are showing: the window is focused and visible, in Thread
+   * mode, with Settings closed (PRODUCT_SPEC: unread is what finished while
+   * Vibezeo wasn't in front). */
+  const showing = () => {
+    const ui = useUi.getState();
+    return get().windowFocused && !document.hidden && ui.mode === "thread" && !ui.settingsOpen;
+  };
+  /** What Thread mode shows: the grid's cells as the limit shows them
+   * (ThreadMain's slice), or else the selected thread. */
+  const shownIds = (): string[] => {
+    const { selectedId, grid } = get();
+    const limit = useSession.getState().entitlement?.limits.threadGrid ?? GRID_MAX;
+    const cells = limit > 1 ? grid.slice(0, Math.min(limit, GRID_MAX)) : [];
+    return cells.length > 1 ? cells : selectedId ? [selectedId] : [];
+  };
+  /** On screen now: shown, while threads are showing. Every thread opened
+   * this session stays subscribed, so a turn ending elsewhere must leave it
+   * unread. */
+  const onScreen = (id: string) => showing() && shownIds().includes(id);
+  /** What threads show, once they're showing again: read. */
+  const markShown = () => {
+    if (!showing()) return;
+    for (const id of shownIds()) {
+      if (get().list.find((t) => t.id === id)?.unread) void get().markRead(id);
+    }
+  };
+  /** Bumped by each mark: a reload that started before a mark can't bring
+   * the dot back. */
+  const marks: Record<string, number> = {};
+  // The window shown again or focused, Thread mode entered, Settings
+  // closed: what threads show is read.
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", markShown);
+  const nativeFocus = inTauri() && !usingFakeBackend();
+  const focused = (on: boolean) => {
+    set({ windowFocused: on });
+    if (on) markShown();
+  };
+  if (nativeFocus) {
+    // The native window's focus: focus inside a browser pane (a child
+    // webview) leaves this document without it, but the window has it, on
+    // Linux and macOS. On Windows a browser pane is a raw child WebView2:
+    // focusing it blurs the window, so marking waits until focus returns
+    // (delayed, never lost). The listener goes first, so a change while the
+    // first query runs isn't missed; an event that arrived wins over the
+    // query's older answer.
+    void import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        const w = getCurrentWindow();
+        let heard = false;
+        await w.onFocusChanged(({ payload }) => {
+          heard = true;
+          focused(payload);
+        });
+        const now = await w.isFocused();
+        if (!heard) focused(now);
+      })
+      .catch((e: unknown) => {
+        // Fails closed: unfocused, so nothing is marked read. Only the
+        // error's kind is logged, never thread content.
+        console.warn(
+          "Vibezeo: the window focus listener failed; threads stay unread until the app restarts",
+          e instanceof Error ? e.name : typeof e,
+        );
+      });
+  } else if (typeof window !== "undefined") {
+    window.addEventListener("focus", () => focused(true));
+    window.addEventListener("blur", () => focused(false));
+  }
+  useUi.subscribe((ui, prev) => {
+    if (ui.mode !== prev.mode || ui.settingsOpen !== prev.settingsOpen) markShown();
+  });
+
   const onEnvelope = (env: ThreadEventEnvelope) => {
     const cur = get().byId[env.threadId];
     if (!cur) return;
     // A new turn starting or ending changes the detail (running, queued).
-    if (env.event.type === "turn_end" || (env.event.type === "user" && env.seq === 0)) {
+    // A turn that ends on a thread the person is looking at is read already:
+    // marked first, so the reload shows it read.
+    if (env.event.type === "turn_end" && onScreen(env.threadId)) {
+      const id = env.threadId;
+      void get()
+        .markRead(id)
+        .then(() => get().reloadDetail(id));
+    } else if (env.event.type === "turn_end" || (env.event.type === "user" && env.seq === 0)) {
       void get().reloadDetail(env.threadId);
     }
     patch(env.threadId, { view: reduce(cur.view, env), live: [...cur.live, env] });
@@ -123,6 +209,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
     listError: null,
     selectedId: null,
     showArchived: false,
+    // Under Tauri the window starts hidden (until app_ready), and unmapping
+    // doesn't set document.hidden in WebKitGTK: unfocused until the window
+    // says otherwise. In a browser (the demo, tests) it's taken as focused.
+    windowFocused: !(inTauri() && !usingFakeBackend()),
     byId: {},
     refresh: async () => {
       try {
@@ -196,6 +286,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
     open: async (id) => {
       const cur = get().byId[id];
       if (cur && cur.status !== "error") {
+        // Opened and on screen: read (F-TH-01 AC2), before the detail
+        // reloads. Opened while chats aren't showing (a grid restored at a
+        // launch in Code mode): read once they show (markShown).
+        if (onScreen(id)) await get().markRead(id);
         void get().reloadDetail(id);
         return;
       }
@@ -214,6 +308,9 @@ export const useThreads = create<ThreadsState>((set, get) => {
             throw e;
           });
         }
+        // Read once subscribed, if it's on screen: a turn that ends from
+        // here on reaches onEnvelope, which marks it read again while it is.
+        if (onScreen(id)) await get().markRead(id);
         const [detail, page] = await Promise.all([
           invoke<ThreadDetail>("thread_get", { threadId: id }),
           invoke<ThreadEventPage>("thread_events", { threadId: id, limit: PAGE }),
@@ -244,9 +341,27 @@ export const useThreads = create<ThreadsState>((set, get) => {
       const view = cur.live.reduce(reduce, fromHistory(history));
       patch(id, { history, view, nextBeforeId: page.nextBeforeId });
     },
-    reloadDetail: async (id) => {
+    markRead: async (id) => {
       try {
-        const detail = await invoke<ThreadDetail>("thread_get", { threadId: id });
+        await invoke("thread_mark_read", { threadId: id });
+        marks[id] = (marks[id] ?? 0) + 1;
+        set((s) => ({ list: s.list.map((t) => (t.id === id ? { ...t, unread: false } : t)) }));
+      } catch {
+        // The next open retries.
+      }
+    },
+    reloadDetail: async (id) => {
+      const mark = marks[id] ?? 0;
+      try {
+        const loaded = await invoke<ThreadDetail>("thread_get", { threadId: id });
+        // Marked read while this was in flight: this reload is older than
+        // the mark, so the list's own unread (the mark, or a turn that has
+        // ended since) wins over the one it brought.
+        const current = get().list.find((t) => t.id === id)?.unread;
+        const detail =
+          (marks[id] ?? 0) !== mark && current !== undefined
+            ? { ...loaded, thread: { ...loaded.thread, unread: current } }
+            : loaded;
         patch(id, { detail });
         set((s) => ({ list: s.list.map((t) => (t.id === id ? detail.thread : t)) }));
       } catch {
@@ -368,6 +483,7 @@ export function resetThreads(): void {
     listError: null,
     selectedId: null,
     showArchived: false,
+    windowFocused: true,
     byId: {},
     grid: [],
     gridColumns: 1,

@@ -53,12 +53,26 @@ export const useDashboard = create<DashboardState>((set, get) => ({
   filter: "all",
   ...loadPrefs(),
   load: async () => {
-    const list = await invoke<DashboardItem[]>("status_snapshot").catch(() => null);
+    // Each read is numbered as it starts. One that lands after a newer one
+    // was applied is older than what's shown, and goes: what came during it
+    // came during the newer one too, which replays it, or before that one
+    // was asked for, which its snapshot holds (the review of 134f7716).
+    const mine = ++started;
+    // Updates that come while the snapshot is read are newer than it: kept,
+    // to apply over it.
+    const meanwhile: StatusChange[] = [];
+    reading.add(meanwhile);
+    const list = await invoke<DashboardItem[]>("status_snapshot")
+      .catch(() => null)
+      .finally(() => reading.delete(meanwhile));
     if (!list) {
       set({ loaded: true });
       return;
     }
+    if (mine < landed) return;
+    landed = mine;
     set({ items: Object.fromEntries(list.map((i) => [i.key, i])), loaded: true });
+    for (const change of meanwhile) applyStatus(change.records, change.removed, false);
   },
   setQuery: (query) => set({ query }),
   setFilter: (filter) => set({ filter }),
@@ -87,9 +101,29 @@ function refetchSoon(): void {
   refetch = setTimeout(() => void useDashboard.getState().load(), 80);
 }
 
+type StatusChange = { records: StatusRecord[]; removed: string[] };
+/** For each snapshot being read, the updates that came meanwhile. */
+const reading = new Set<StatusChange[]>();
+/** The reads started, and the newest one applied. */
+let started = 0;
+let landed = 0;
+
+/** A card's line as dashboard.rs draws it: the record's preview, else its
+ * tool, and none when that's blank. The store keeps a preview and replaces
+ * the tool with each report, so a tool's name goes when its agent stops
+ * (D-2627). */
+function lineOf(r: StatusRecord): string | null {
+  const line = r.preview ?? r.tool;
+  return line?.trim() ? line : null;
+}
+
 /** Applies status changes in place, so a card moves within one event
- * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. */
-export function applyStatus(records: StatusRecord[], removed: string[]): void {
+ * (F-DB-01 AC5: ≤500 ms); unknown sources trigger a fresh snapshot. A change
+ * replayed over a snapshot (not `live`) was kept for the other reads and
+ * asked for its snapshot when it came, so it does neither again: two reads
+ * could otherwise hand it to each other for good. */
+export function applyStatus(records: StatusRecord[], removed: string[], live = true): void {
+  if (live) for (const meanwhile of reading) meanwhile.push({ records, removed });
   const items = { ...useDashboard.getState().items };
   let unknown = removed.length > 0;
   for (const k of removed) delete items[k];
@@ -105,25 +139,33 @@ export function applyStatus(records: StatusRecord[], removed: string[]): void {
       reason: r.reason,
       since: r.since,
       title: r.title ?? cur.title,
-      preview: r.preview ?? cur.preview,
+      preview: lineOf(r),
     };
   }
   useDashboard.setState({ items });
-  if (unknown) refetchSoon();
+  if (unknown && live) refetchSoon();
 }
 
 function applyApprovals(upserted: ApprovalView[], resolved: string[]): void {
   const items = { ...useDashboard.getState().items };
   const sameSource = (a: ApprovalView, item: DashboardItem) =>
     JSON.stringify(a.source) === JSON.stringify(item.source);
+  let cleared = false;
   for (const [key, item] of Object.entries(items)) {
-    const fresh = upserted.find((a) => sameSource(a, item));
+    const shown = item.pendingApproval;
+    const open = shown && !resolved.includes(shown.id);
+    // The shown approval stays until it's answered: another one from the
+    // same source mustn't take its place under the person's cursor.
+    const fresh = upserted.find((a) => sameSource(a, item) && (!open || a.id === shown.id));
     if (fresh) items[key] = { ...item, pendingApproval: fresh };
-    else if (item.pendingApproval && resolved.includes(item.pendingApproval.id))
+    else if (shown && !open) {
       items[key] = { ...item, pendingApproval: null };
+      // Another may wait behind it.
+      cleared = true;
+    }
   }
   useDashboard.setState({ items });
-  if (upserted.some((a) => !Object.values(items).some((i) => sameSource(a, i)))) refetchSoon();
+  if (cleared || upserted.some((a) => !Object.values(items).some((i) => sameSource(a, i)))) refetchSoon();
 }
 
 let following = false;

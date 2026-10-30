@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Bot, Folder, MessagesSquare, Settings, SquareTerminal } from "lucide-react";
-import type { FindMatch, FindWorkResult, IpcError } from "@tandem/protocol";
+import type { FindMatch, FindRanking, FindWorkResult, IpcError } from "@tandem/protocol";
 import { CommandPalette, type PaletteGroup, type PaletteItem } from "@tandem/ui";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { showSource } from "../../stores/focus";
 import { useLayout } from "../../stores/layout";
@@ -20,6 +20,12 @@ import { useBoot } from "../shell/useBoot";
 const FIND_DEBOUNCE_MS = 120;
 /** With the hosted ranking on, a search is a credit: wait for a real pause. */
 const FIND_HOSTED_DEBOUNCE_MS = 600;
+/** The results' heading says which ranking ordered them (D-1302, F-EN-11). */
+const RANKING_HEADING: Record<FindRanking, MessageKey> = {
+  local: "palette.findWork",
+  hosted: "palette.findHosted",
+  mixed: "palette.findMixed",
+};
 
 type Found = { query: string; result: FindWorkResult } | { query: string; error: string };
 
@@ -159,10 +165,9 @@ export function Palette() {
           matches.length
             ? [
                 {
-                  heading:
-                    found && "result" in found && found.result.ranking === "hosted"
-                      ? t("palette.findHosted")
-                      : t("palette.findWork"),
+                  heading: t(
+                    found && "result" in found ? RANKING_HEADING[found.result.ranking] : "palette.findWork",
+                  ),
                   items: matches.map(matchItem),
                 },
               ]

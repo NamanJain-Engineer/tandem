@@ -1,15 +1,18 @@
 import type { FileDiff, ThreadEvent } from "@tandem/protocol";
 
+type ToolEvent = Extract<ThreadEvent, { type: "tool" }>;
+import { MAIN, changedIn, diffsOf, grep, lineCount, testRun } from "./repo";
+
 /** One step of a simulated turn: an event after a pause, or a stop that
  * waits for the visitor to answer an approval. */
 export type Step = { wait: number; event: ThreadEvent } | { approval: ThreadEvent & { type: "approval_request" } };
 
 const tool = (
   id: string,
-  verb: Extract<ThreadEvent, { type: "tool" }>["verb"],
+  verb: ToolEvent["verb"],
   argSummary: string,
-  status: Extract<ThreadEvent, { type: "tool" }>["status"],
-  extra: Partial<Extract<ThreadEvent, { type: "tool" }>> = {},
+  status: ToolEvent["status"],
+  extra: Partial<ToolEvent> = {},
 ): ThreadEvent => ({
   type: "tool",
   id,
@@ -24,70 +27,54 @@ const tool = (
   ...extra,
 });
 
-/** The edit the simulated agent makes, as a unified diff. */
-export const CHECKOUT_PATCH = [
-  "diff --git a/src/checkout/redirect.ts b/src/checkout/redirect.ts",
-  "--- a/src/checkout/redirect.ts",
-  "+++ b/src/checkout/redirect.ts",
-  "@@ -12,7 +12,9 @@ export function nextStep(session: Session): string {",
-  "   if (!session.user) {",
-  "-    return `/login?next=${encodeURIComponent(session.path)}`;",
-  "+    // Don't send the login page back to itself.",
-  "+    const next = session.path.startsWith(\"/login\") ? \"/checkout\" : session.path;",
-  "+    return `/login?next=${encodeURIComponent(next)}`;",
-  "   }",
-  "   return session.cart.empty ? \"/cart\" : \"/checkout/pay\";",
-  " }",
-  "",
-].join("\n");
+/** The first thread's fix, in `shop` itself on main (`shop/thread/`):
+ * `getSession` renews a session that expired a moment ago, and its tests
+ * say so. */
+export const THREAD_CHANGES: FileDiff[] = diffsOf("thread");
 
-export const TEST_PATCH = [
-  "diff --git a/src/checkout/redirect.test.ts b/src/checkout/redirect.test.ts",
-  "--- a/src/checkout/redirect.test.ts",
-  "+++ b/src/checkout/redirect.test.ts",
-  "@@ -20,3 +20,9 @@ describe(\"nextStep\", () => {",
-  "     expect(nextStep(guest(\"/cart\"))).toBe(\"/login?next=%2Fcart\");",
-  "   });",
-  "+",
-  "+  it(\"never redirects the login page to itself\", () => {",
-  "+    expect(nextStep(guest(\"/login?next=%2Flogin\"))).toBe(\"/login?next=%2Fcheckout\");",
-  "+  });",
-  " });",
-  "",
-].join("\n");
+const SESSION = "src/auth/session.ts";
+const SESSION_TEST = "src/auth/session.test.ts";
 
-/** What the Changes panel lists once the simulated fix is in. */
-export const DEMO_CHANGES: FileDiff[] = [
-  {
-    path: "src/checkout/redirect.test.ts",
-    change: "modified",
-    additions: 4,
-    deletions: 0,
-    binary: false,
-    patch: TEST_PATCH,
-    truncated: false,
-  },
-  {
-    path: "src/checkout/redirect.ts",
-    change: "modified",
-    additions: 3,
-    deletions: 1,
-    binary: false,
-    patch: CHECKOUT_PATCH,
-    truncated: false,
-  },
-];
+/** A Claude Code Edit as its stream carries it (D-2608): no diff, but the
+ * file it names, its input (the text it replaces with a line around it,
+ * as Claude Code's own edits have, and the text that goes there) and the
+ * lines it changes. Its first row, while it runs, has the file and input. */
+function claudeEdit(path: string, root: string): { running: Partial<ToolEvent>; done: Partial<ToolEvent> } {
+  const file = `${root}/${path}`;
+  const before = (MAIN[path] ?? "").split("\n");
+  const after = (changedIn("thread")[path] ?? "").split("\n");
+  let head = 0;
+  while (head < before.length && head < after.length && before[head] === after[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < before.length - head &&
+    tail < after.length - head &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+  )
+    tail += 1;
+  const from = Math.max(0, head - 1);
+  const input = {
+    file_path: file,
+    old_string: before.slice(from, Math.min(before.length, before.length - tail + 1)).join("\n"),
+    new_string: after.slice(from, Math.min(after.length, after.length - tail + 1)).join("\n"),
+  };
+  const counts = THREAD_CHANGES.find((f) => f.path === path);
+  const running = { detail: JSON.stringify(input, null, 2), paths: [file] };
+  return {
+    running,
+    done: {
+      ...running,
+      // Claude Code's result, its first sentence only (D-2633).
+      output: `The file ${file} has been updated.`,
+      lines: { added: counts?.additions ?? 0, removed: counts?.deletions ?? 0 },
+    },
+  };
+}
 
-export const TEST_OUTPUT = [
-  "> shop@1.4.0 test",
-  "> vitest run src/checkout",
-  "",
-  " ✓ src/checkout/redirect.test.ts (4 tests) 12ms",
-  " ✓ src/checkout/cart.test.ts (9 tests) 31ms",
-  "",
-  " Test Files  2 passed (2)",
-  "      Tests  13 passed (13)",
-].join("\n");
+/** The command the fix asks to run, and what it prints once the fix is in. */
+export const TEST_COMMAND = "pnpm test auth";
+export const TEST_OUTPUT = testRun({ ...MAIN, ...changedIn("thread") }, "auth").join("\n");
+const TESTS_PASSED = /Tests {2}(\d+) passed/.exec(TEST_OUTPUT)?.[1] ?? "0";
 
 const usage = (input: number, output: number, fill: number): ThreadEvent => ({
   type: "usage",
@@ -100,32 +87,35 @@ const usage = (input: number, output: number, fill: number): ThreadEvent => ({
 });
 
 /** A turn that reads, edits, asks to run the tests, and reports back. The
- * first turn of the demo, whatever the visitor typed. */
-export function fixTurn(approvalId: string, expiresAt: number): Step[] {
+ * first turn of the demo, whatever the visitor typed, in `root` (shop's
+ * folder). */
+export function fixTurn(approvalId: string, expiresAt: number, root: string): Step[] {
+  const session = claudeEdit(SESSION, root);
+  const sessionTest = claudeEdit(SESSION_TEST, root);
   return [
     {
       wait: 500,
       event: {
         type: "reasoning",
-        text: "The loop starts when a guest lands on /login with next=/login: the guard sends them back to the login page it came from.",
+        text: "The loop starts when a session expires while another tab still holds its cookie: getSession drops it, checkout sends that tab to /login, and signing in again only fixes the tab you sign in from.",
         durationMs: 1800,
       },
     },
-    { wait: 600, event: tool("t1", "grep", "nextStep src/", "running") },
-    { wait: 500, event: tool("t1", "grep", "nextStep src/", "ok", { output: "src/checkout/redirect.ts:12\nsrc/checkout/redirect.test.ts:3" }) },
-    { wait: 300, event: tool("t2", "read", "src/checkout/redirect.ts", "running") },
-    { wait: 500, event: tool("t2", "read", "src/checkout/redirect.ts", "ok", { output: "(24 lines)" }) },
-    { wait: 700, event: tool("t3", "edit", "src/checkout/redirect.ts", "running") },
-    { wait: 500, event: tool("t3", "edit", "src/checkout/redirect.ts", "ok", { diff: CHECKOUT_PATCH }) },
-    { wait: 400, event: tool("t4", "edit", "src/checkout/redirect.test.ts", "running") },
-    { wait: 500, event: tool("t4", "edit", "src/checkout/redirect.test.ts", "ok", { diff: TEST_PATCH }) },
+    { wait: 600, event: tool("t1", "grep", "getSession src/", "running") },
+    { wait: 500, event: tool("t1", "grep", "getSession src/", "ok", { output: grep(MAIN, "getSession").join("\n") }) },
+    { wait: 300, event: tool("t2", "read", SESSION, "running") },
+    { wait: 500, event: tool("t2", "read", SESSION, "ok", { output: `(${lineCount(MAIN[SESSION] ?? "")} lines)` }) },
+    { wait: 700, event: tool("t3", "edit", SESSION, "running", session.running) },
+    { wait: 500, event: tool("t3", "edit", SESSION, "ok", session.done) },
+    { wait: 400, event: tool("t4", "edit", SESSION_TEST, "running", sessionTest.running) },
+    { wait: 500, event: tool("t4", "edit", SESSION_TEST, "ok", sessionTest.done) },
     {
       approval: {
         type: "approval_request",
         id: approvalId,
         kind: "command",
-        summary: "Run `npm test -- src/checkout`",
-        detail: "npm test -- src/checkout",
+        summary: `Run \`${TEST_COMMAND}\``,
+        detail: TEST_COMMAND,
         options: ["once", "thread"],
         expiresAt,
       },
@@ -136,8 +126,8 @@ export function fixTurn(approvalId: string, expiresAt: number): Step[] {
 /** After Allow: the tests run and the agent wraps up. */
 export function afterAllow(): Step[] {
   return [
-    { wait: 300, event: tool("t5", "bash", "npm test -- src/checkout", "running") },
-    { wait: 1400, event: tool("t5", "bash", "npm test -- src/checkout", "ok", { output: TEST_OUTPUT }) },
+    { wait: 300, event: tool("t5", "bash", TEST_COMMAND, "running") },
+    { wait: 1400, event: tool("t5", "bash", TEST_COMMAND, "ok", { output: TEST_OUTPUT }) },
     {
       wait: 600,
       event: {
@@ -145,9 +135,9 @@ export function afterAllow(): Step[] {
         markdown: [
           "Fixed the redirect loop.",
           "",
-          "- **Cause:** a guest on `/login?next=/login` was sent back to `/login`, forever.",
-          "- **Fix:** `nextStep` now sends them to `/checkout` instead (`src/checkout/redirect.ts`).",
-          "- **Test:** added *never redirects the login page to itself*; all 13 checkout tests pass.",
+          "- **Cause:** a session that expired while another tab still had its cookie was dropped, so checkout sent that tab to `/login`, again and again.",
+          `- **Fix:** \`getSession\` now renews a session that expired less than 15 minutes ago (\`${SESSION}\`).`,
+          `- **Tests:** \`${SESSION_TEST}\` covers the renewal now; all ${TESTS_PASSED} tests pass.`,
           "",
           "Open **Changes** to review the diff.",
         ].join("\n"),
@@ -164,8 +154,7 @@ export function afterDeny(): Step[] {
       wait: 500,
       event: {
         type: "assistant",
-        markdown:
-          "Understood, I won't run the tests. The fix is in `src/checkout/redirect.ts` with a new test beside it; run `npm test -- src/checkout` when you're ready.",
+        markdown: `Understood, I won't run the tests. The fix is in \`${SESSION}\`, with its tests in \`${SESSION_TEST}\`; run \`${TEST_COMMAND}\` when you're ready.`,
       },
     },
     { wait: 100, event: usage(16_900, 640, 8.4) },

@@ -50,6 +50,9 @@ export function PrivacyFlows() {
           </tbody>
         </table>
       </div>
+      <p className="px-3 text-sm text-fg-muted" data-testid="privacy-local-models">
+        {t("settings.privacy.localModels")}
+      </p>
       <DataControls />
     </section>
   );

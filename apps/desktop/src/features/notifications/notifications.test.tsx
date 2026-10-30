@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Notification } from "@tandem/protocol";
 import { LiveAnnouncer, UiProvider, resetAnnouncer } from "@tandem/ui";
 import { emitLocal } from "../../ipc/events";
 import { followNotifications, useNotifications } from "../../stores/notifications";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
 import { NotificationsBell } from "./NotificationsPopover";
+import { waiting } from "../../test/waiting";
 
 const note = (id: string, extra: Partial<Notification>): Notification => ({
   id,
@@ -125,7 +126,11 @@ describe("notification center (F-DB-02)", () => {
     await screen.findByRole("button", { name: "Notifications" });
     act(() =>
       emitLocal("notifications:new", {
-        notification: note("ntf_8", { kind: "approval", title: "Bea needs approval", body: "Claude Code · shop — Run `pnpm migrate`" }),
+        notification: note("ntf_8", {
+          kind: "approval",
+          title: "Bea needs approval",
+          body: "Claude Code · shop — Run `pnpm migrate`",
+        }),
         sound: false,
       }),
     );
@@ -134,5 +139,68 @@ describe("notification center (F-DB-02)", () => {
     expect(region.getAttribute("aria-live")).toBe("polite");
     expect(region.textContent).not.toContain("pnpm migrate");
     resetAnnouncer();
+  });
+
+  it("F-TL-12.12 a notification arriving in the frame of a click doesn't slide another Allow once under it", async () => {
+    // Rows are 60 high, in page order.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const row = this.closest('[data-testid="notification"]');
+      const rows = Array.from(document.querySelectorAll('[data-testid="notification"]'));
+      const top = row ? rows.indexOf(row) * 60 : 0;
+      return {
+        left: 0,
+        top,
+        width: 300,
+        height: 60,
+        right: 300,
+        bottom: top + 60,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    const calls = setup([
+      note("ntf_1", { kind: "approval", dedupeKey: "approval:ap_1", title: "Bea needs approval" }),
+    ]);
+    followNotifications();
+    render(
+      <UiProvider>
+        <NotificationsBell />
+      </UiProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /Notifications/ }));
+    const pop = await screen.findByTestId("notifications-popover");
+    const allowFor = (title: string) =>
+      within(
+        within(pop)
+          .getAllByTestId("notification")
+          .find((r) => r.textContent?.includes(title)) as HTMLElement,
+      ).getByTestId("notification-allow") as HTMLButtonElement;
+    await waitFor(() => expect(waiting(allowFor("Bea"))).toBe(false));
+    // S4: the bell's Allow once is marked as a control that grants.
+    expect(allowFor("Bea").hasAttribute("data-grant")).toBe(true);
+    // An agent's approval lands on top, pushing Bea's row down, just as the
+    // person clicks where Bea's Allow once was.
+    act(() =>
+      emitLocal("notifications:new", {
+        notification: note("ntf_2", {
+          kind: "approval",
+          dedupeKey: "approval:ap_2",
+          title: "Cal needs approval",
+        }),
+        sound: false,
+      }),
+    );
+    fireEvent.click(allowFor("Bea"));
+    fireEvent.click(allowFor("Cal"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.some((c) => c.cmd === "approval_resolve")).toBe(false);
+    // Once still, Bea's answers.
+    await waitFor(() => expect(waiting(allowFor("Bea"))).toBe(false));
+    fireEvent.click(allowFor("Bea"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toMatchObject({ approvalId: "ap_1" }),
+    );
+    vi.restoreAllMocks();
   });
 });

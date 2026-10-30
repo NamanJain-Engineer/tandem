@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-local-models-list"
+description = "Enables the local_models_list command without any pre-configured scope."
+commands.allow = ["local_models_list"]
+
+[[permission]]
+identifier = "deny-local-models-list"
+description = "Denies the local_models_list command without any pre-configured scope."
+commands.deny = ["local_models_list"]

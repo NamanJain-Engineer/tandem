@@ -461,6 +461,8 @@ pub fn run(args: &[String], session: String) {
     let rx = reader();
     let mut held: Vec<Value> = Vec::new();
     let mut n = 0;
+    // A plan run that asked waits for its answer (F-TK-08).
+    let mut asked: Option<String> = None;
     loop {
         let v = if held.is_empty() {
             match rx.recv() {
@@ -486,7 +488,12 @@ pub fn run(args: &[String], session: String) {
         turn.init();
         let text = text_of(&v);
         let first = text.lines().next().unwrap_or("").trim().to_string();
-        if let Some(command) = first.strip_prefix("run ") {
+        if let Some(issue) = asked.take() {
+            // The answer to its question: the run goes on and finishes.
+            let said = format!("Fixed {issue}: went on with the answer.");
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if let Some(command) = first.strip_prefix("run ") {
             let id = format!("toolu_{n}");
             turn.assistant(json!([{"type": "tool_use", "id": id, "name": "Bash", "input": {"command": command}}]));
             let allowed = if stdio_permissions {
@@ -552,11 +559,21 @@ pub fn run(args: &[String], session: String) {
                 if let Some(dir) = std::path::Path::new(path).parent() {
                     let _ = std::fs::create_dir_all(dir);
                 }
+                let existed = std::path::Path::new(path).exists();
                 let ok = std::fs::write(path, &body).is_ok();
+                // Claude Code's own words, which tell a new file from a
+                // rewrite (F-TH-12, D-2608).
+                let text = if !ok {
+                    "failed".to_string()
+                } else if existed {
+                    format!("The file {path} has been updated.")
+                } else {
+                    format!("File created successfully at: {path}")
+                };
                 emit(
                     json!({"type": "user", "session_id": turn.session, "parent_tool_use_id": null,
                     "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id,
-                        "content": if ok { "written" } else { "failed" }, "is_error": !ok}]}}),
+                        "content": text, "is_error": !ok}]}}),
                 );
                 count += 1;
             }
@@ -662,7 +679,31 @@ pub fn run(args: &[String], session: String) {
                 .and_then(|n| n.trim().parse().ok())
                 .unwrap_or(0);
             std::thread::sleep(Duration::from_secs(hold.min(120)));
+            // A plan run whose task says `[ask]` or `[ask push]` asks on the
+            // line its briefing gives (F-TK-08).
+            let code = text
+                .split("`QUESTION-")
+                .nth(1)
+                .and_then(|r| r.split(':').next());
+            let question = if text.contains("[ask push]") {
+                Some("Should I push the branch to origin when I'm done?")
+            } else if text.contains("[ask]") {
+                Some("Which test runner should the new tests use?")
+            } else {
+                None
+            };
+            if let (Some(code), Some(question)) = (code, question) {
+                let said =
+                    format!("I need a decision before I go on.\nQUESTION-{code}: {question}");
+                turn.say(&[&said]);
+                turn.done(&said);
+                asked = Some(issue);
+                continue;
+            }
             let said = format!("Fixed {issue}: the change is in the worktree.");
+            turn.say(&[&said]);
+            turn.done(&said);
+        } else if let Some(said) = crate::lead_answer(&text) {
             turn.say(&[&said]);
             turn.done(&said);
         } else if let Some(said) = crate::plan_reply(&text) {
