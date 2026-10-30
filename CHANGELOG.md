@@ -7,6 +7,17 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Fixed
+
+- [lin] **One crafted text no longer slows every key check after it.**
+  Vibezeo hides keys and tokens before text reaches a model, your phone or
+  anything else off your computer. A long text built to wear out the fast way
+  of finding them (runs of key-like fragments) left every later check on that
+  thread on the slow way, up to 33 times as long. Now only that text's own
+  check is slower.
+
 ## 0.13.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

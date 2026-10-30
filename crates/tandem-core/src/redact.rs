@@ -2,7 +2,10 @@
 //! Conductor tool results, handoff briefs, Dashboard previews, notification
 //! text, memory writes and diagnostics all go through it.
 
-use regex::{Regex, RegexSet};
+mod engine;
+
+use engine::{Caps, Pattern, Set};
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -22,7 +25,7 @@ const MAX_PENDING: usize = 64 * 1024;
 type Validator = fn(&str) -> bool;
 /// Byte spans, start and end.
 type Spans = Vec<(usize, usize)>;
-type Extractor = fn(&str, &regex::Captures<'_>) -> Option<(usize, usize)>;
+type Extractor = fn(&str, &Caps<'_>) -> Option<(usize, usize)>;
 
 #[derive(Clone, Copy)]
 enum Extract {
@@ -35,7 +38,7 @@ enum Extract {
 }
 
 struct Rule {
-    re: Regex,
+    re: Pattern,
     extract: Extract,
     /// Whether the rule opens on a word boundary, which [`tolerant`]
     /// writes as ASCII's (D-3172).
@@ -269,7 +272,7 @@ fn is_identifier_path(v: &str) -> bool {
 
 /// The value span of a `key = value` match, or `None` when the value is code
 /// rather than a literal (`token = getToken()`).
-fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usize)> {
+fn assignment_span(text: &str, caps: &Caps<'_>) -> Option<(usize, usize)> {
     let key = caps.name("k")?;
     let quoted = caps.name("vq").is_some();
     let v = caps.name("vq").or_else(|| caps.name("vu"))?;
@@ -470,11 +473,11 @@ impl SecretFilter {
 }
 
 pub struct Redactor {
-    prefilter: RegexSet,
+    prefilter: Set,
     rules: Vec<Rule>,
     /// The rules as [`tolerant`] writes them, for
     /// [`Redactor::untrusted_spans`].
-    written_prefilter: RegexSet,
+    written_prefilter: Set,
     written_rules: Vec<Rule>,
     token_re: Regex,
     secrets: RwLock<SecretFilter>,
@@ -490,32 +493,41 @@ impl Default for Redactor {
 impl Redactor {
     pub fn new() -> Self {
         let specs = rule_specs();
-        let prefilter = RegexSet::new(specs.iter().map(|(p, _)| unanchored(p)))
+        let prefilter = Set::new(&specs.iter().map(|(p, _)| unanchored(p)).collect::<Vec<_>>())
             .expect("redaction patterns compile");
         // A rule `tolerant` can't write keeps its own pattern here, and a
         // test pins that none does.
-        let written_specs: Vec<(String, Extract)> = specs
+        let written: Vec<(String, Pattern)> = specs
             .iter()
-            .map(|(pattern, extract)| {
-                let written = tolerant(pattern).filter(|t| Regex::new(t).is_ok());
-                (written.unwrap_or_else(|| pattern.clone()), *extract)
+            .map(|(pattern, _)| {
+                tolerant(pattern)
+                    .and_then(|t| Pattern::new(&t).ok().map(|re| (t, re)))
+                    .unwrap_or_else(|| {
+                        let re = Pattern::new(pattern).expect("redaction pattern compiles");
+                        (pattern.clone(), re)
+                    })
             })
             .collect();
-        let written_prefilter = RegexSet::new(written_specs.iter().map(|(p, _)| unanchored(p)))
-            .expect("written patterns compile");
-        let written_rules = written_specs
+        let written_prefilter = Set::new(
+            &written
+                .iter()
+                .map(|(p, _)| unanchored(p))
+                .collect::<Vec<_>>(),
+        )
+        .expect("written patterns compile");
+        let written_rules = written
             .into_iter()
             .zip(&specs)
-            .map(|((pattern, extract), (plain, _))| Rule {
-                re: Regex::new(&pattern).expect("written pattern compiles"),
-                extract,
+            .map(|((_, re), (plain, extract))| Rule {
+                re,
+                extract: *extract,
                 opens_on_boundary: opens_on_boundary(plain),
             })
             .collect();
         let rules = specs
             .into_iter()
             .map(|(pattern, extract)| Rule {
-                re: Regex::new(&pattern).expect("redaction pattern compiles"),
+                re: Pattern::new(&pattern).expect("redaction pattern compiles"),
                 extract,
                 opens_on_boundary: opens_on_boundary(&pattern),
             })
@@ -556,7 +568,7 @@ impl Redactor {
 
     /// Byte spans to redact, sorted and merged.
     pub(crate) fn spans(&self, s: &str) -> Vec<(usize, usize)> {
-        let hits: Vec<usize> = self.prefilter.matches(s).into_iter().collect();
+        let hits = self.prefilter.matches(s);
         self.spans_by(s, &hits, &self.rules, false)
     }
 
@@ -587,7 +599,7 @@ impl Redactor {
     /// `marked` serves `read` too, since a rule that matches `read` matches
     /// `marked` as `tolerant` writes it.
     pub(crate) fn untrusted_spans(&self, read: &str, written: &str, marked: &str) -> [Spans; 3] {
-        let hits: Vec<usize> = self.written_prefilter.matches(marked).into_iter().collect();
+        let hits = self.written_prefilter.matches(marked);
         let plain: Vec<usize> = self
             .prefilter
             .matches(written)
@@ -638,13 +650,13 @@ impl Redactor {
                 spans.push((start, end));
             }
         };
-        let value = |caps: &regex::Captures<'_>, validator: Option<Validator>| {
+        let value = |caps: &Caps<'_>, validator: Option<Validator>| {
             caps.name("v")
                 .filter(|v| validator.is_none_or(|ok| ok(&unmarked(v.as_str()))))
                 .map(|v| (v.start(), v.end()))
         };
         for rule in hits.iter().filter_map(|&idx| rules.get(idx)) {
-            let span = |s: &str, caps: &regex::Captures<'_>| match rule.extract {
+            let span = |s: &str, caps: &Caps<'_>| match rule.extract {
                 Extract::Value(validator) => value(caps, validator),
                 Extract::Custom(extract) => extract(s, caps),
                 Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
@@ -837,6 +849,45 @@ pub fn redact(s: &str) -> String {
     Redactor::global().redact(s).into_owned()
 }
 
+/// Test text, the same every run.
+#[cfg(test)]
+pub(crate) mod sample {
+    const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    fn step(seed: &mut u64) -> u64 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        *seed
+    }
+
+    /// `n` letters and digits from `seed`.
+    pub(crate) fn alnum(seed: &mut u64, n: usize) -> String {
+        (0..n)
+            .map(|_| ALNUM[(step(seed) % ALNUM.len() as u64) as usize] as char)
+            .collect()
+    }
+
+    /// `head` and then up to `gaps` letters or digits, again and again to
+    /// `len` bytes. Where `head` sits inside a rule's counted run, as `AIza`
+    /// does in `AIza[0-9A-Za-z_-]{35}`, every `head` starts a count, and a
+    /// lazy DFA builds a state for most bytes (the review of e788fc6f). The
+    /// gap takes a step of its own: drawn from the last letter's, a gap of 0
+    /// stalled the seed into `headhead…`, which a lazy DFA reads in a few
+    /// states.
+    pub(crate) fn crafted(head: &str, gaps: u64, len: usize) -> String {
+        assert!(!head.is_empty(), "a run needs a head");
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut out = String::with_capacity(len + head.len() + gaps as usize);
+        while out.len() < len {
+            out.push_str(head);
+            let gap = (step(&mut seed) % (gaps + 1)) as usize;
+            out.push_str(&alnum(&mut seed, gap));
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -894,6 +945,87 @@ mod tests {
             .map(|(rule, _)| rule.re.as_str())
             .collect();
         assert!(none.is_empty(), "rules with no sample: {none:#?}");
+    }
+
+    #[test]
+    fn f_tk_08_1_the_engine_reads_as_the_regex_crate_does() {
+        // The redactor's engine (D-877) finds what the `regex` crate finds:
+        // each rule's matches, their groups and what `captures_at` reads at
+        // each match, and the rules each prefilter names. In F-TL-02's
+        // corpus as it is, with a mark after every character, between
+        // letters outside ASCII (where a lazy DFA quits on `\b`), and in
+        // text crafted to make a lazy DFA give up.
+        let r = Redactor::new();
+        let mut texts: Vec<String> = Vec::new();
+        for (prefix, secret, suffix) in corpus() {
+            let line = format!("{prefix}{secret}{suffix}");
+            texts.push(line.chars().flat_map(|c| [c, MARK]).collect());
+            texts.push(format!("é{line}中"));
+            texts.push(line);
+        }
+        texts.push(sample::crafted("AIza", 33, 32 * 1024));
+        texts.push(sample::crafted("-AIza", 33, 16 * 1024));
+        texts.push(sample::crafted("key", 19, 16 * 1024));
+        let head = |text: &str| text.chars().take(60).collect::<String>();
+        for (set, rules) in [
+            (&r.prefilter, &r.rules),
+            (&r.written_prefilter, &r.written_rules),
+        ] {
+            let patterns: Vec<String> = rules
+                .iter()
+                .map(|rule| unanchored(rule.re.as_str()))
+                .collect();
+            let reference = regex::RegexSet::new(&patterns).expect("the regex crate builds them");
+            for text in &texts {
+                let expected: Vec<usize> = reference.matches(text).into_iter().collect();
+                assert_eq!(set.matches(text), expected, "in {:?}", head(text));
+            }
+        }
+        for rule in r.rules.iter().chain(&r.written_rules) {
+            let reference = Regex::new(rule.re.as_str()).expect("the regex crate builds it");
+            let groups = reference.captures_len();
+            let ours = |caps: Option<Caps<'_>>| {
+                caps.map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect::<Vec<_>>()
+                })
+            };
+            let theirs = |caps: Option<regex::Captures<'_>>| {
+                caps.map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect::<Vec<_>>()
+                })
+            };
+            for text in &texts {
+                let found: Vec<_> = rule
+                    .re
+                    .find_iter(text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect();
+                let expected: Vec<_> = reference
+                    .find_iter(text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect();
+                assert_eq!(found, expected, "{} in {:?}", rule.re.as_str(), head(text));
+                let found: Vec<_> = rule.re.captures_iter(text).map(|c| ours(Some(c))).collect();
+                let expected: Vec<_> = reference
+                    .captures_iter(text)
+                    .map(|c| theirs(Some(c)))
+                    .collect();
+                assert_eq!(found, expected, "{} in {:?}", rule.re.as_str(), head(text));
+                for (a, _) in reference.find_iter(text).map(|m| (m.start(), m.end())) {
+                    assert_eq!(
+                        ours(rule.re.captures_at(text, a)),
+                        theirs(reference.captures_at(text, a)),
+                        "{} at {a} in {:?}",
+                        rule.re.as_str(),
+                        head(text)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

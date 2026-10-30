@@ -61,6 +61,8 @@ rand = "0.8"
 rand_core = { version = "0.6", features = ["getrandom"] }
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-streamable-http-server"] }
 regex = "1"
+# The redactor holds its lazy DFAs' caches (D-877); already built for `regex`.
+regex-automata = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

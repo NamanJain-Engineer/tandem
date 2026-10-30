@@ -56,7 +56,7 @@
     - `site-motion`'s scenes for 0.13.0 (D-3006 to D-3008);
     - "New in 0.13.0", the roadmap (F-SH-14 next) and the post "What's new in 0.13.0";
     - 4,804 tests and 159 E2E spec files.
-  - **For 0.14.0 (D-876):** F-TK-09, the intent radar's second slice, F-TL-12.13 then F-SH-14, the relay, and the redaction should-fix.
+  - **For 0.14.0 (D-876):** F-TK-09, the intent radar's second slice, F-TL-12.13 then F-SH-14, and the relay. The redaction should-fix is on `chain28` (D-877).
   - Verified: see "Release 0.13.0" in the log below.
   - Previous release: 0.12.0 (26 October; D-875), deployed by #107 (fc2ca3a6) on 26 October.
   Deployed by #110 (36152488) on 30 October, live at 15:00 UTC. `main` came back into `product-m0-m5` with this record.
@@ -2200,6 +2200,32 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - the relay (`m16d-teammate-extras`, D-3078, D-3079, D-3150 to D-3159);
     - the review nits each section lists as deferred;
     - Local models' line in the app ("when you open this page or check again"), which leaves out that each Codex start on a local model asks 127.0.0.1 too.
+- D-877: The redactor holds its lazy DFAs' caches, so a crafted text slows only its own redaction. This is the should-fix from the review of e788fc6f (D-876). The coordinator made it on `chain28`, since messaging the sessions still fails.
+  - **What the review found, confirmed:**
+    - 32 KB of `AIza` followed by 0 to 33 random letters or digits, repeated, makes the prefilter's lazy DFA give up. The `regex` crate keeps that cache for later searches and never resets it, so every later redaction on that thread runs on the slow engine.
+    - It reaches the rules too. 64 KB of `key` runs left the high-entropy rule's later scans 25 times as slow: 7.3 ms to 185 ms in a release build, on 1.3 MB of `session_token = …` lines.
+    - A first test missed it. Its gap came from the last letter's seed, so a gap of 0 stalled the seed, and the text became plain `AIzaAIza…`, which a lazy DFA reads in a few states.
+  - **Measured before choosing** (release build):
+    - Fresh caches per call cost 72 µs on 70 bytes (0.18 µs warm), 2.4 ms on a 5 KB log (69 µs warm) and 50 ms on 1 MB (9.6 ms warm). One rule's fresh cache costs 48 to 121 µs.
+    - Cloning only above a size doesn't stop short calls either: clears add up across calls on a pooled cache.
+    - Relaxing `{35}` and `{16}` to `+` in the prefilter made the warm megabyte take twice as long, since a set reports every match position. Inputs that mix many prefixes would still grow the states.
+  - **The change** (`redact/engine.rs`):
+    - The prefilters run on `regex-automata`'s lazy DFA, and the rules on its lazy DFA regex. It is 0.4.18, already built for `regex`, now a direct dependency.
+    - Each search takes its cache from a pool. A search that cleared its cache resets it before it goes back, so every search starts with no clears but its own and keeps the states earlier ones built.
+    - A search whose lazy DFA gives up finishes on the `regex` crate's engines without one (one-pass, backtracker, PikeVM). So does a search that quits at a letter outside ASCII where a rule has Unicode's `\b`.
+    - Groups are read on those engines over the match's own span, as `regex` reads them. Where the lazy DFA couldn't finish, the slow engine finds the match and its groups in one pass.
+    - The configuration is the `regex` crate's: 2 MB caches, the 10 MB NFA limit, the same literal prefilters, and giving up after 3 clears under 10 bytes a state.
+  - **Tests (F-TK-08.1):**
+    - On the old code, a 270 KB log took 276 ms before 32 KB of `AIza` runs and 7.9 s after. 99 KB of session lines took 241 ms before 64 KB of `key` runs and 4.3 s after. On the new code both stay within the bound, each shape on a redactor and a thread of its own.
+    - On a cache that keeps its clears, the prefilter and the high-entropy rule each give up on those texts. Through the engine, their caches go back with none.
+    - A quit finishes on the slow engine and finds what `regex` finds.
+    - Every rule, as written and as `tolerant` writes it, and both prefilters, find what the `regex` crate finds. That holds for matches, groups and `captures_at`, in F-TL-02's corpus, with marks, between letters outside ASCII, and in the crafted texts.
+    - No rule matches empty text.
+    - The two timing tests take one lock, since each is heavy enough to be the other's load.
+  - **Speed:**
+    - In a release build, warm, the prefilter is as fast as before from 70 bytes to 1 MB. Rule matches and groups are within about 10%. Building one set and its rules takes 9 ms against 6.
+    - On D-3172's 13 adversarial megabytes (debug build), every call stays within that test's bounds, as before.
+  - **Not covered:** the app's other patterns, from the engine registry, run on terminal output through the `regex` crate: status heuristics, limits, the terminal, accounts and handoff. Whether any of them can be made to give up the same way is a check for 0.14.0.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.
