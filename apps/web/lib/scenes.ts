@@ -170,9 +170,10 @@ export function failurePrompt(pr: number, check: { name: string; workflow?: stri
 }
 
 /** A worktree's branch, as the core names it (`tandem/<slug>`), the demo's
- * branchOf. The scenes show the name for it (D-1898), but text the core
- * writes, such as the radar's note, names the branch whole (radar.rs passes
- * `lane_branch`). */
+ * branchOf. The scenes show the name for it (D-1898), in text the core
+ * writes too: radar.rs's note names the branch whole (it passes
+ * `lane_branch`), and the scenes' names the worktree (the design lead's QA
+ * of 825b4b54). */
 export { branchOf };
 
 /** What a worktree did to a symbol (tandem-git's SymbolChange), as the
@@ -303,10 +304,12 @@ export const SAMPLE = {
   symbol: story.overlap.symbol,
   /** The two worktrees that both change it, which the intent radar marks,
    * and the note Warn both agents types into the first one's agent about
-   * the other (0.9.0's F-WT-10): both changed it, as the demo says. */
+   * the other (0.9.0's F-WT-10): both changed it, as the demo says. It's
+   * the core's, with the other worktree's name where the core writes its
+   * branch, `tandem/` and all (D-1898). */
   radar: {
     between: story.overlap.between,
-    note: radarNote(branchOf(story.overlap.between[1] ?? ""), [{ qualified: story.overlap.symbol, here: "changed", there: "changed" }]),
+    note: radarNote(story.overlap.between[1] ?? "", [{ qualified: story.overlap.symbol, here: "changed", there: "changed" }]),
   },
   /** What each agent's terminal prints, in order: the story's steps. */
   lines: {

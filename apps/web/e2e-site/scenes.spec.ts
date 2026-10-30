@@ -588,11 +588,12 @@ for (const width of [1440, 390] as const) {
       for (const t of times) {
         await seek(page, id, t + 0.05);
         const rows = await page.evaluate((id) => {
-          // Shown within the scene: the page's reveal around it runs on the scroll, not the scene's clock.
-          const root = document.querySelector(`[data-scene="${id}"]`) as Element;
+          // Shown within the scene's stage, on its clock: the page's reveal runs on the scroll, and the hero's entrance
+          // (its figure's `enter`, 0 for the first 0.3 s after load) on the page's.
+          const stage = document.querySelector(`[data-scene="${id}"] [data-stage]`) as Element;
           const opaque = (e: Element) => {
             let o = 1;
-            for (let x: Element | null = e; x && x !== root.parentElement; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
+            for (let x: Element | null = e; x && x !== stage; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
             return o > 0.5;
           };
           const symbol = document.querySelector(`[data-scene="${id}"] .sc-wtrow-symbol`)?.textContent ?? "";

@@ -371,6 +371,27 @@ describe("F-WB-01 AC9 product scenes", () => {
     }
   });
 
+  it("F-WB-01 AC9 D-1898 no scene draws the placeholder name: no tandem/ branch, and no tandem, at any step", async () => {
+    // Every scene as the site draws it, on the home page or its release's page: its stage, its caption and the text read
+    // for it, at the release the site shows (scenes.next.test runs this at the next slice's). Each is read whole,
+    // attributes too, which covers every step: an effect only shows or cuts what's in the markup, the only text the
+    // scenes' rules write is a count's data-prefix and number, and the player only plays and pauses (the design lead's
+    // QA of 825b4b54: its hero's radar note named tandem/coupon-rules).
+    const drawn: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
+    for (const version of Object.keys(RELEASE_SCENES)) {
+      const h = await versionHtml(version);
+      for (const s of releaseScenes(version)) drawn.push([s.id, h]);
+    }
+    expect(drawn.map(([id]) => id).sort()).toEqual(Object.keys(ALL).sort());
+    for (const [id, page] of drawn) {
+      const fig = new RegExp(`<figure data-scene="${id}"[\\s\\S]*?</figure>`).exec(page)?.[0] ?? "";
+      expect(fig, id).toContain('<span class="sr-only">');
+      expect([...fig.matchAll(/.{0,40}tandem.{0,40}/gis)].map((m) => m[0]), id).toEqual([]);
+    }
+    const written = ["scenes.css", "home.css", "ci.css", "rail.css"].flatMap((f) => [...sheet(f).matchAll(/(?<![\w-])content:\s*([^;}]*)/g)].map((m) => m[1]?.trim()));
+    expect([...new Set(written)].sort()).toEqual(['""', "attr(data-prefix) counter(sc)"]);
+  });
+
   it("F-WB-01 AC2 AC9 the scene player loads on exactly the release pages with scenes", async () => {
     expect([...SCENE_PAGES].sort()).toEqual(Object.keys(RELEASE_SCENES).map((v) => `changelog/${v}/index.html`).sort());
     for (const page of SCENE_PAGES) expect(allowedScripts(page), page).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
@@ -1825,14 +1846,18 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     const cases = JSON.parse(readFileSync(join(dir, "fixtures/radar_notes.json"), "utf8")) as Case[];
     expect(readFileSync(join(dir, "radar_notes.rs"), "utf8")).toContain('assert_eq!(note, case.note, "{}", case.why);');
     for (const c of cases) expect(radarNote(c.other, c.symbols, true), c.why).toBe(c.note);
-    // It names the other worktree by its branch, as radar.rs passes it (`other.lane_branch`), and the core names a
-    // worktree's branch tandem/<slug> as the demo does (the code review of cced2f8f, nit 1).
+    // The core names the other worktree by its branch, as radar.rs passes it (`other.lane_branch`), tandem/<slug> as
+    // the demo names it (the code review of cced2f8f, nit 1). The hero's note is the core's with the worktree's name
+    // there, as the site shows every worktree (D-1898, the design lead's QA of 825b4b54).
     expect(readFileSync(join(dir, "../src/services/radar.rs"), "utf8")).toMatch(/Ok\(note_text\(\s*other\.lane_branch\.as_deref\(\)\.unwrap_or\(&other\.name\),/);
     expect(app("demo/story.ts")).toContain("return `tandem/${slug}`;");
     expect(branchOf(working.branch)).toBe(`tandem/${working.branch}`);
     expect(radarNote(branchOf(working.branch), cases[0]?.symbols ?? [], false)).toBe(cases[0]?.note);
     expect(cases.length).toBeGreaterThanOrEqual(4);
-    expect(cases[0]).toEqual({ why: expect.any(String), other: branchOf(working.branch), symbols: [{ name: SAMPLE.symbol, qualified: SAMPLE.symbol, here: "changed", there: "changed" }], note: SAMPLE.radar.note });
+    expect(cases[0]).toEqual({ why: expect.any(String), other: branchOf(working.branch), symbols: [{ name: SAMPLE.symbol, qualified: SAMPLE.symbol, here: "changed", there: "changed" }], note: expect.any(String) });
+    const core = cases[0]?.note ?? "";
+    expect(core.split(branchOf(working.branch))).toHaveLength(2);
+    expect(SAMPLE.radar.note).toBe(core.replace(`\nOther worktree: ${branchOf(working.branch)}\n`, `\nOther worktree: ${working.branch}\n`));
     expect(SAMPLE.radar.note).not.toMatch(/[@\uFF20]/);
     // Between them: several symbols with each side's change, an @ defanged with the note, one that stays, a fence that
     // outlasts a backtick run.
@@ -1846,7 +1871,7 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     // trimEnd() would stop at the U+0085 and leave one.
     expect(cases.some((c) => c.symbols.length === 0 && c.other === "tandem/edge \u0085 \uFEFF" && c.note.endsWith("Other worktree: tandem/edge  \n```"))).toBe(true);
     expect(SAMPLE.radar.note.startsWith(`Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository,`)).toBe(true);
-    expect(SAMPLE.radar.note).toContain(`${untrustedLabel("the overlapping symbols")}\n\`\`\`text\nOther worktree: tandem/${working.branch}\n- ${SAMPLE.symbol}: changed here, changed there\n\`\`\``);
+    expect(SAMPLE.radar.note).toContain(`${untrustedLabel("the overlapping symbols")}\n\`\`\`text\nOther worktree: ${working.branch}\n- ${SAMPLE.symbol}: changed here, changed there\n\`\`\``);
     // The demo marks the same two and types the same note (backend.ts's radarNote).
     expect(app("demo/backend.ts")).toContain('return [{ name: o.symbol, qualified: o.symbol, here: "changed", there: "changed" }];');
     // Into the agent, the way its terminal echoes a paste, and only on a wide frame.
