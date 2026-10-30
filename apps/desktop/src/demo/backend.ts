@@ -228,7 +228,13 @@ function demoTeammates(now: number): TeammateSummary[] {
       preferredAccountId: null,
       home: `~/.vibezeo/teammates/${id}`,
       places: ["/home/you/code/shop"],
-      settings: { memoryCap: 200, learnMode: "ask", mayMessage: true, maySchedule: false, defaultAccess: "edits" },
+      settings: {
+        memoryCap: 200,
+        learnMode: "ask",
+        mayMessage: true,
+        maySchedule: false,
+        defaultAccess: "edits",
+      },
       isLead: lead,
       pinned: lead,
       sortKey: id,
@@ -244,10 +250,17 @@ function demoTeammates(now: number): TeammateSummary[] {
     ...over,
   });
   return [
-    row("tm_lead", "Lead", "You coordinate the other teammates and keep the plan.", "claude", {
-      lastLine: "Split the checkout fix between Reviewer and Triage",
-      lastAt: now - 4 * 60_000,
-    }, true),
+    row(
+      "tm_lead",
+      "Lead",
+      "You coordinate the other teammates and keep the plan.",
+      "claude",
+      {
+        lastLine: "Split the checkout fix between Reviewer and Triage",
+        lastAt: now - 4 * 60_000,
+      },
+      true,
+    ),
     row("tm_reviewer", "Reviewer", TEMPLATES[0]?.brief ?? "", "codex", {
       working: 1,
       lastLine: "Reading the diff in src/checkout/redirect.ts",
@@ -335,9 +348,13 @@ const rootOf = (slug: string) => `${ROOT}/.tandem/worktrees/${slug}`;
 /** Each worktree has a tab of its own, as `lanes::create` makes it. */
 const TABS: Tab[] = [
   { id: TAB, workspaceId: WS, name: "Tab 1", sortKey: "a0", createdAt: START },
-  ...STORY.worktrees.map(
-    (w): Tab => ({ id: tabOf(w.slug), workspaceId: wsOf(w.slug), name: "Tab 1", sortKey: "a0", createdAt: START }),
-  ),
+  ...STORY.worktrees.map((w): Tab => ({
+    id: tabOf(w.slug),
+    workspaceId: wsOf(w.slug),
+    name: "Tab 1",
+    sortKey: "a0",
+    createdAt: START,
+  })),
 ];
 
 /** Each worktree's agent pane, named for the engine (one engine a worktree). */
@@ -347,7 +364,13 @@ const WORKING = worktreeIn("working");
 const WAITING = worktreeIn("waiting");
 
 /** A pane as the core keeps it; an agent pane has its first name (F-CD-12). */
-function pane(id: string, kind: string, engineId: string | null, slug: string, humanName: string | null = null): PaneRecord {
+function pane(
+  id: string,
+  kind: string,
+  engineId: string | null,
+  slug: string,
+  humanName: string | null = null,
+): PaneRecord {
   return {
     id,
     tabId: tabOf(slug),
@@ -418,15 +441,13 @@ const WORKSPACES: WorkspaceSummary[] = [
  * working or waiting agent's aren't yet. */
 const CHECKOUTS: CheckoutSeed[] = [
   { id: WS, root: ROOT, branch: STORY.base, committed: {}, uncommitted: {} },
-  ...STORY.worktrees.map(
-    (w): CheckoutSeed => ({
-      id: wsOf(w.slug),
-      root: rootOf(w.slug),
-      branch: branchOf(w.slug),
-      committed: w.state === "done" ? changedIn(w.slug) : {},
-      uncommitted: w.state === "done" ? {} : changedIn(w.slug),
-    }),
-  ),
+  ...STORY.worktrees.map((w): CheckoutSeed => ({
+    id: wsOf(w.slug),
+    root: rootOf(w.slug),
+    branch: branchOf(w.slug),
+    committed: w.state === "done" ? changedIn(w.slug) : {},
+    uncommitted: w.state === "done" ? {} : changedIn(w.slug),
+  })),
 ];
 
 /** The worktree Code mode opens on: the working agent's, for the motion. */
@@ -456,7 +477,13 @@ function layoutOf(workspaceId: unknown): TabLayout[] {
   const tree: LayoutNode | null = !first
     ? null
     : second
-      ? { type: "split", dir: "row", ratio: 0.6, a: { type: "leaf", paneId: first.id }, b: { type: "leaf", paneId: second.id } }
+      ? {
+          type: "split",
+          dir: "row",
+          ratio: 0.6,
+          a: { type: "leaf", paneId: first.id },
+          b: { type: "leaf", paneId: second.id },
+        }
       : { type: "leaf", paneId: first.id };
   return [{ tab, tree, activePaneId: first?.id ?? null, maximizedPaneId: null }];
 }
@@ -703,7 +730,12 @@ export class DemoCore {
   /** Two finished threads to look at, whose work is in main's history,
    * and an empty one to try. */
   private seed(): void {
-    const tool = (id: string, verb: Extract<ThreadEvent, { type: "tool" }>["verb"], argSummary: string, extra: Partial<Extract<ThreadEvent, { type: "tool" }>> = {}): ThreadEvent => ({
+    const tool = (
+      id: string,
+      verb: Extract<ThreadEvent, { type: "tool" }>["verb"],
+      argSummary: string,
+      extra: Partial<Extract<ThreadEvent, { type: "tool" }>> = {},
+    ): ThreadEvent => ({
       type: "tool",
       id,
       verb,
@@ -722,7 +754,10 @@ export class DemoCore {
     const CART = "src/cart/cart.ts";
     const CART_TEST = "src/cart/cart.test.ts";
     const done = this.newThread("Show the cart's total before checkout", "codex", WS, START);
-    const turn = this.startTurn(done, "The cart page should show the total before checkout. Add it to the cart, with tests.");
+    const turn = this.startTurn(
+      done,
+      "The cart page should show the total before checkout. Add it to the cart, with tests.",
+    );
     const run = testRun({ [CART_TEST]: MAIN[CART_TEST] ?? "" }, "src/cart/cart");
     const steps: ThreadEvent[] = [
       {
@@ -759,7 +794,11 @@ export class DemoCore {
     const slow = (before[QUERY] ?? "").split("\n").findIndex((l) => l.includes("db.all")) + 1;
     const moved = this.newThread("Speed up the product search", "claude", WS, START + 30_000);
     const first = this.startTurn(moved, "Product search takes two seconds. Find the slow part.");
-    this.push(moved, first, tool("m1", "read", QUERY, { output: `(${lineCount(before[QUERY] ?? "")} lines)` }));
+    this.push(
+      moved,
+      first,
+      tool("m1", "read", QUERY, { output: `(${lineCount(before[QUERY] ?? "")} lines)` }),
+    );
     this.push(moved, first, {
       type: "assistant",
       markdown: `The search loads every product and filters them in memory (\`${QUERY}\`, line ${slow}). Asking the database for names that start with the text would let it use its index on \`name\`.`,
@@ -903,7 +942,11 @@ export class DemoCore {
         refused: `The demo can run only ${STORY.check} as a check. In Vibezeo the check runs in each worktree's folder, whatever it is.`,
       };
     }
-    return { output: testRun({ ...Object.fromEntries(this.files.head(WS)), ...this.filesOf(id) }, run[1] ?? "").join("\n") };
+    return {
+      output: testRun({ ...Object.fromEntries(this.files.head(WS)), ...this.filesOf(id) }, run[1] ?? "").join(
+        "\n",
+      ),
+    };
   }
 
   /** What a worktree's diff is against: where its branch and main meet, as
@@ -928,7 +971,11 @@ export class DemoCore {
     const merged = new Map([...this.files.head(WS), ...Object.entries(this.files.committedChanges(id))]);
     this.files.setHead(id, merged);
     this.files.setHead(WS, merged);
-    this.mainLog = [{ sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` }, ...this.commitsOf(w.slug), ...this.mainLog];
+    this.mainLog = [
+      { sha: w.mergeCommit, subject: `Merge branch '${branchOf(w.slug)}'` },
+      ...this.commitsOf(w.slug),
+      ...this.mainLog,
+    ];
     this.landed.add(w.slug);
     return w.mergeCommit;
   }
@@ -978,7 +1025,10 @@ export class DemoCore {
       }
     }
     this.later(at + 600, () => {
-      this.say(pty, `${st.mark} ${st.run} git commit\n  [${branchOf(w.slug)} ${fix.commit.sha}] ${fix.commit.subject}\n\n${fix.closing}\n`);
+      this.say(
+        pty,
+        `${st.mark} ${st.run} git commit\n  [${branchOf(w.slug)} ${fix.commit.sha}] ${fix.commit.subject}\n\n${fix.closing}\n`,
+      );
       this.files.commit(id);
       this.madeHere[w.slug] = [fix.commit, ...(this.madeHere[w.slug] ?? [])];
       // The review queue's item is the worktree's diff: it has the fix now.
@@ -1069,7 +1119,9 @@ export class DemoCore {
     return laneIds.flatMap((id) => {
       const slug = this.slugOf(id);
       if (!slug) return [];
-      const symbols = [...new Set(STORY.worktrees.flatMap((w) => this.shared(slug, w.slug).map((x) => x.qualified)))].sort();
+      const symbols = [
+        ...new Set(STORY.worktrees.flatMap((w) => this.shared(slug, w.slug).map((x) => x.qualified))),
+      ].sort();
       return symbols.length ? [{ laneId: id, symbols }] : [];
     });
   }
@@ -1080,27 +1132,60 @@ export class DemoCore {
     const slug = this.slugOf(laneId);
     if (!slug) throw { code: "not_found", message: "That worktree isn't open in the demo." };
     for (const w of STORY.worktrees) this.parsed.add(w.slug);
-    const changed = (s: string) => [...new Set([...Object.keys(this.files.committedChanges(wsOf(s))), ...this.files.changes(wsOf(s)).map((f) => f.path)])];
+    const changed = (s: string) => [
+      ...new Set([
+        ...Object.keys(this.files.committedChanges(wsOf(s))),
+        ...this.files.changes(wsOf(s)).map((f) => f.path),
+      ]),
+    ];
     const mine = changed(slug);
     const siblings: SiblingOverlap[] = STORY.worktrees
       .filter((w) => w.slug !== slug)
       .flatMap((w) => {
-        const files = changed(w.slug).filter((f) => mine.includes(f)).sort();
+        const files = changed(w.slug)
+          .filter((f) => mine.includes(f))
+          .sort();
         const symbols = this.shared(slug, w.slug);
-        return files.length || symbols.length ? [{ laneId: wsOf(w.slug), branch: branchOf(w.slug), files, symbols }] : [];
+        return files.length || symbols.length
+          ? [{ laneId: wsOf(w.slug), branch: branchOf(w.slug), files, symbols }]
+          : [];
       });
-    return { files: mine.length, siblings, forecast: { kind: "clean" }, uncommitted: this.files.dirty(laneId), unparsed: 0 };
+    return {
+      files: mine.length,
+      siblings,
+      forecast: { kind: "clean" },
+      uncommitted: this.files.dirty(laneId),
+      unparsed: 0,
+    };
   }
 
   /** The note Warn both agents types into `laneId`'s agent (radar.rs `note_text`). */
   private radarNote(laneId: string, otherId: string): string {
     const a = this.slugOf(laneId);
     const b = this.slugOf(otherId);
-    if (!a || !b || a === b) throw { code: "invalid", message: "Those aren't two worktrees of one repository" };
+    if (!a || !b || a === b)
+      throw { code: "invalid", message: "Those aren't two worktrees of one repository" };
     const found = this.shared(a, b);
-    if (found.length === 0) throw { code: "not_found", message: "These worktrees don't share symbols any more" };
-    const what: Record<SharedSymbol["here"], string> = { added: "added", changed: "changed", removed: "renamed or removed", used: "used" };
-    const data = [`Other worktree: ${branchOf(b)}`, ...found.map((s) => `- ${s.qualified}: ${what[s.here]} here, ${what[s.there]} there`)].join("\n");
+    if (found.length === 0)
+      throw { code: "not_found", message: "These worktrees don't share symbols any more" };
+    const what = (c: SharedSymbol["here"], to?: string) =>
+      c === "renamed" && to
+        ? `renamed to ${to}`
+        : (
+            {
+              added: "added",
+              changed: "changed",
+              removed: "renamed or removed",
+              renamed: "renamed or removed",
+              used: "used",
+            } as const
+          )[c];
+    const data = [
+      `Other worktree: ${branchOf(b)}`,
+      ...found.map(
+        (s) => `- ${s.qualified}: ${what(s.here, s.renamedTo)} here, ${what(s.there, s.renamedTo)} there`,
+      ),
+    ].join("\n");
     // radar.rs `note_text`: the symbols behind the label and fence (D-3022).
     return [
       "Heads-up from Vibezeo: another agent, working in a parallel worktree of this repository, is changing code that your changes also touch. Check that your work still fits theirs (a renamed or changed symbol you use, or the same one changed twice), and adjust before you finish.",
@@ -1108,6 +1193,29 @@ export class DemoCore {
       untrustedLabel("the overlapping symbols"),
       fenceDefanged("text", data),
     ].join("\n");
+  }
+
+  /** Claim these files (radar.rs `claim`): the TypeScript files this
+   * worktree changed, where its shared definitions live in the demo. */
+  private radarClaim(laneId: string, otherId: string): string[] {
+    const a = this.slugOf(laneId);
+    const b = this.slugOf(otherId);
+    if (!a || !b || a === b)
+      throw { code: "invalid", message: "Those aren't two worktrees of one repository" };
+    const touched = this.shared(a, b).some(
+      (s) => s.here === "changed" || s.here === "removed" || s.here === "renamed",
+    );
+    const files = [
+      ...new Set([
+        ...Object.keys(this.files.committedChanges(wsOf(a))),
+        ...this.files.changes(wsOf(a)).map((f) => f.path),
+      ]),
+    ]
+      .filter((f) => f.endsWith(".ts"))
+      .sort();
+    if (!touched || files.length === 0)
+      throw { code: "not_found", message: "This worktree didn't change the symbols it shares any more" };
+    return files;
   }
 
   /** A new turn in an agent pane takes a checkpoint (F-EX-01), after which
@@ -1150,7 +1258,8 @@ export class DemoCore {
   private applyFix(t: DemoThread): void {
     if (t.fixed) return;
     t.fixed = true;
-    for (const [path, text] of Object.entries(changedIn("thread"))) this.files.edit(t.thread.workspaceId ?? WS, path, text);
+    for (const [path, text] of Object.entries(changedIn("thread")))
+      this.files.edit(t.thread.workspaceId ?? WS, path, text);
   }
 
   /** The checkout a Files or git request is about: its workspace's, or
@@ -1174,7 +1283,8 @@ export class DemoCore {
   private place(workspaceId: string): ShellPlace {
     const ws = WORKSPACES.find((w) => w.id === workspaceId) ?? WORKSPACE;
     const story = STORY.worktrees.find((w) => wsOf(w.slug) === ws.id);
-    const files = () => Object.fromEntries(this.files.paths(ws.id).map((p) => [p, this.files.text(ws.id, p) ?? ""]));
+    const files = () =>
+      Object.fromEntries(this.files.paths(ws.id).map((p) => [p, this.files.text(ws.id, p) ?? ""]));
     return {
       dir: ws.root.replace(/^\/home\/you/, "~"),
       path: ws.root,
@@ -1184,7 +1294,9 @@ export class DemoCore {
       changes: () => this.files.changes(ws.id),
       diff: (path) => this.files.gitDiff(ws.id, path).patch,
       log: () => [
-        ...(story && this.committed.has(story.slug) && !this.landed.has(story.slug) ? this.commitsOf(story.slug) : []),
+        ...(story && this.committed.has(story.slug) && !this.landed.has(story.slug)
+          ? this.commitsOf(story.slug)
+          : []),
         ...this.mainLog,
       ],
       test: (filter) => testRun(files(), filter),
@@ -1443,7 +1555,10 @@ export class DemoCore {
         else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
           this.answer(pty, data);
         else if (pty && data.includes("\r") && this.checkpoint(paneId))
-          this.say(pty, "\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\n");
+          this.say(
+            pty,
+            "\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\n",
+          );
         return null;
       }
       case "pty_resize": {
@@ -1454,7 +1569,9 @@ export class DemoCore {
         if (pty.logical !== undefined) {
           pty.screen = this.rendered(pty);
           pty.seq += 1;
-          pty.channel.onmessage(encodeFrame(FrameKind.Data, pty.seq, encoder.encode(`\x1b[2J\x1b[3J\x1b[H${pty.screen}`)));
+          pty.channel.onmessage(
+            encodeFrame(FrameKind.Data, pty.seq, encoder.encode(`\x1b[2J\x1b[3J\x1b[H${pty.screen}`)),
+          );
         }
         return null;
       }
@@ -1726,6 +1843,8 @@ export class DemoCore {
         return this.overlap(String(args?.laneId ?? ""));
       case "lane_radar_note":
         return this.radarNote(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
+      case "lane_radar_claim":
+        return this.radarClaim(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
       case "pty_type_prompt": {
         const paneId = String(args?.paneId ?? "");
         const pty = this.ptyOf(paneId);
@@ -1738,7 +1857,10 @@ export class DemoCore {
             const then = this.ciFixed
               ? "it reads the failure again; here its fix is committed and waits for a push"
               : "it reads the failure and gets to work on it";
-            this.say(pty, `${ciEcho(STORY.pr.number)}\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`);
+            this.say(
+              pty,
+              `${ciEcho(STORY.pr.number)}\x1b[2m(This agent is simulated. In Vibezeo ${then}.)\x1b[0m\n`,
+            );
           }
         } else if (pty && !pty.shell) {
           // The radar's note, or a review (F-WT-02): typed in, and simulated from there.
@@ -1809,7 +1931,11 @@ export class DemoCore {
       case "acp_agent_test":
       case "acp_agent_add":
       case "acp_agent_remove":
-        throw { code: "unavailable", message: "The demo can't run commands. In the app, this adds any agent that speaks the Agent Client Protocol." };
+        throw {
+          code: "unavailable",
+          message:
+            "The demo can't run commands. In the app, this adds any agent that speaks the Agent Client Protocol.",
+        };
       // Model servers run on your computer (F-EN-11).
       case "local_models_list":
         return [];
@@ -1818,7 +1944,8 @@ export class DemoCore {
       case "local_model_start":
         throw {
           code: "unavailable",
-          message: "The demo can't reach your computer. In the app, this finds Ollama and LM Studio running on it.",
+          message:
+            "The demo can't reach your computer. In the app, this finds Ollama and LM Studio running on it.",
         };
       // Engines' session files are on your computer (F-TH-17).
       case "library_list":

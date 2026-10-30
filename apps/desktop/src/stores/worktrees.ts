@@ -673,6 +673,12 @@ export function radarNote(laneId: string, otherId: string): Promise<Outcome<stri
   return run<string>("lane_radar_note", { laneId, otherId });
 }
 
+/** "Claim these files" (F-WT-10): claims, for `laneId`'s worktree, the files
+ * where it changed what it shares with `otherId`; the paths claimed. */
+export function radarClaim(laneId: string, otherId: string): Promise<Outcome<string[]>> {
+  return run<string[]>("lane_radar_claim", { laneId, otherId });
+}
+
 // ---- Multi-repo pull requests (F-CD-22) -------------------------------------
 
 /** How often UI-158 reads a running pull request run. */

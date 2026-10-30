@@ -2027,7 +2027,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## M18 · Next features: intent radar (S)
 
-**Goal.** Warn about conflicts that git can't see yet: which symbols each worktree changed, and when two parallel worktrees touch the same one (F-WT-10). From `docs/NEXT_FEATURES.md` (§3 B6, first slice). Built on branch `competitive-gaps`; decisions D-2520–D-2539.
+**Goal.** Warn about conflicts that git can't see yet: which symbols each worktree changed, and when two parallel worktrees touch the same one (F-WT-10). From `docs/NEXT_FEATURES.md` (§3 B6, first and second slices). Built on branch `competitive-gaps`; decisions D-2528–D-2530, then D-3120–D-3139 for the second slice (chain28, 0.14.0).
 
 **Owns:** F-WT-10 (P2)
 **Prerequisites.** F-WT-03 (the overlap check), F-EX-01 (checkpoints), F-WT-02 (typing into a worktree's agent).
@@ -2036,16 +2036,20 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 1. **Symbol index.** `tandem_git::symbols`: tree-sitter definitions for TypeScript/TSX, Rust and Python with qualified names, base against worktree (added, changed, removed), and the names new lines use; skip and count other files and big ones.
 2. **Radar.** `services::radar`: per-worktree indexes refreshed on `checkpoint:created` and by `lane_overlap`; shared symbols between siblings; `radar:overlap` for newly shared pairs; `lane_radar` and `lane_radar_note`.
 3. **UI.** Shared symbols in UI-153, the rail's radar mark, the notice with Warn both agents.
+4. **Slice 2: languages and renames.** Go and Java grammars (pinned, MIT); `renamed` with `renamedTo`, only for a unique same-kind, same-scope pair whose bodies match once their own names are set aside.
+5. **Slice 2: live.** A parsed worktree is watched (`tandem_core::files::watch`, 2 s settle, ≤5,000 folders), parsed again for changed files only, once at a time, never while it's being discarded; `radar:changed`.
+6. **Slice 2: claim.** `lane_radar_claim` and **Claim these files** in UI-153, through F-TK-05's claims (`TaskStore::claim_for_tree`).
 
 **Verification**
 ```bash
-cargo test -p tandem-git f_wt_10 && cargo test -p tandem-desktop --lib f_wt_10
+cargo test -p tandem-git f_wt_10 && cargo test -p tandem-desktop --lib f_wt_10 && cargo test -p tandem-tasks f_wt_10
 pnpm --filter desktop exec vitest run -t "F-WT-10"
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-wt10*.e2e.ts'
 ```
 
 **E2E**
 - **E2E-M18-WT10-1 Intent radar.** A TypeScript repository with two worktrees: one renames `class Session`, the other adds a call to `Session.refresh`. Expected: Check overlap lists `Session` for both with what each did; the rail marks both worktrees.
+- **E2E-M18-WT10-2 Intent radar, live.** A TypeScript repository with two worktrees, both read once by Check overlap. With no checkpoint, one renames `parse` to `parseLine` (same body) and the other adds a call to `parse`. Expected: the notice names `parse → parseLine` within 20 s; the rail marks both worktrees; Check overlap says "used here, renamed to parseLine there"; Claim these files confirms one claimed file.
 
 **Exit checklist:** G green · `trace-tests --milestone M18 --fail-on-missing` · the full E2E regression.
 

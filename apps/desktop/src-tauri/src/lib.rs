@@ -196,6 +196,7 @@ macro_rules! app_commands {
             commands::lanes::lane_review_comments,
             commands::lanes::lane_radar,
             commands::lanes::lane_radar_note,
+            commands::lanes::lane_radar_claim,
             commands::lanes::lane_create_prs,
             commands::lanes::lane_prs_get,
             commands::lanes::worktree_env_check,

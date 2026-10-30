@@ -1,8 +1,10 @@
 //! Intent radar (F-WT-10): the symbols a worktree changed since its base,
 //! and the names its new lines use, from tree-sitter parses of TypeScript
-//! and TSX, Rust and Python. Two worktrees share a symbol when both changed
-//! (or removed) its definition, or one removed or changed it and the
-//! other's new lines use it. Reads only.
+//! and TSX, Rust, Python, Go and Java. Two worktrees share a symbol when
+//! both changed (or removed, or renamed) its definition, or one removed,
+//! renamed or changed it and the other's new lines use it. A rename is
+//! found only when nothing else could explain the pair ([`compare`]).
+//! Reads only.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -23,6 +25,10 @@ pub const MAX_FILE_BYTES: usize = 512 * 1024;
 pub const MAX_FILES: usize = 300;
 /// Shorter names aren't matched between worktrees (`id`, `x`, `fn`).
 pub const MIN_NAME: usize = 3;
+/// A definition with less text than this (non-space characters, its name
+/// set aside) never pairs as a rename by its text alone: two stubs alike
+/// (`def a(): pass`) are as likely two different functions.
+pub const MIN_RENAME_TEXT: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
@@ -30,6 +36,8 @@ pub enum Lang {
     Tsx,
     Rust,
     Python,
+    Go,
+    Java,
 }
 
 impl Lang {
@@ -40,6 +48,8 @@ impl Lang {
             "tsx" => Self::Tsx,
             "rs" => Self::Rust,
             "py" => Self::Python,
+            "go" => Self::Go,
+            "java" => Self::Java,
             _ => return None,
         })
     }
@@ -50,6 +60,8 @@ impl Lang {
             Self::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
             Self::Python => tree_sitter_python::LANGUAGE.into(),
+            Self::Go => tree_sitter_go::LANGUAGE.into(),
+            Self::Java => tree_sitter_java::LANGUAGE.into(),
         }
     }
 
@@ -69,15 +81,20 @@ pub enum SymbolChange {
     Added,
     Changed,
     Removed,
+    /// Removed, with a definition added in its place that differs only by
+    /// its name ([`ChangedSymbol::renamed_to`]).
+    Renamed,
     /// Its new or changed lines use the name.
     Used,
 }
 
 impl SymbolChange {
-    /// Which change wins when one name changed several ways.
+    /// Which change wins when one name changed several ways (a plain
+    /// removal outranks a rename: it's the less certain reading).
     fn weight(self) -> u8 {
         match self {
-            Self::Removed => 3,
+            Self::Removed => 4,
+            Self::Renamed => 3,
             Self::Changed => 2,
             Self::Added => 1,
             Self::Used => 0,
@@ -94,6 +111,11 @@ pub struct Definition {
     /// 1-based.
     pub line: u32,
     text: u64,
+    /// The text's hash with each whole-word use of its own name set aside:
+    /// equal for two definitions that differ only by their names.
+    shape: u64,
+    /// Non-space characters in the text, its name set aside.
+    size: usize,
 }
 
 /// A definition the worktree added, changed or removed.
@@ -107,6 +129,10 @@ pub struct ChangedSymbol {
     pub path: String,
     pub line: u32,
     pub change: SymbolChange,
+    /// For [`SymbolChange::Renamed`]: the qualified name it has now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub renamed_to: Option<String>,
 }
 
 /// A worktree's symbol index.
@@ -131,6 +157,20 @@ pub struct SharedSymbol {
     pub qualified: String,
     pub here: SymbolChange,
     pub there: SymbolChange,
+    /// When a side renamed it: the qualified name that side gives it now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub renamed_to: Option<String>,
+}
+
+impl SharedSymbol {
+    /// How a notice names it: `parse → parseLine` for a rename.
+    pub fn display(&self) -> String {
+        match &self.renamed_to {
+            Some(to) => format!("{} → {to}", self.qualified),
+            None => self.qualified.clone(),
+        }
+    }
 }
 
 fn hash(bytes: &[u8]) -> u64 {
@@ -194,7 +234,70 @@ fn definition<'t>(lang: Lang, node: Node<'t>) -> Option<(&'static str, Node<'t>)
             "class_definition" => named("class"),
             _ => None,
         },
+        (Lang::Go, k) => match k {
+            "function_declaration" => named("function"),
+            "method_declaration" => named("method"),
+            // `type Server struct { … }`: the spec names it.
+            "type_spec" | "type_alias" => {
+                let kind = match node.child_by_field_name("type").map(|t| t.kind()) {
+                    Some("struct_type") => "struct",
+                    Some("interface_type") => "interface",
+                    _ => "type",
+                };
+                named(kind)
+            }
+            _ => None,
+        },
+        (Lang::Java, k) => match k {
+            "class_declaration" => named("class"),
+            "interface_declaration" | "annotation_type_declaration" => named("interface"),
+            "enum_declaration" => named("enum"),
+            "record_declaration" => named("record"),
+            "method_declaration" => named("method"),
+            "constructor_declaration" => named("constructor"),
+            _ => None,
+        },
     }
+}
+
+/// The type a Go method's receiver names (`func (s *Server) Handle()` →
+/// `Server`): its methods live under that name.
+fn go_receiver(node: Node<'_>, source: &str) -> Option<String> {
+    let receiver = node.child_by_field_name("receiver")?;
+    let mut stack = vec![receiver];
+    while let Some(n) = stack.pop() {
+        if n.kind() == "type_identifier" {
+            let name = text(n, source).trim();
+            return (!name.is_empty()).then(|| name.to_string());
+        }
+        let mut cursor = n.walk();
+        stack.extend(n.named_children(&mut cursor));
+    }
+    None
+}
+
+/// `text` with every whole-word `name` (letters, digits and `_` around it
+/// end the word) set aside.
+fn without_name(text: &str, name: &str) -> String {
+    if name.is_empty() {
+        return text.to_string();
+    }
+    let word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find(name) {
+        let before = rest[..i].chars().next_back();
+        let after = rest[i + name.len()..].chars().next();
+        out.push_str(&rest[..i]);
+        if before.is_some_and(word) || after.is_some_and(word) {
+            out.push_str(name);
+        } else {
+            out.push('\u{0}');
+        }
+        rest = &rest[i + name.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The type an `impl` block is for: its methods live under that name.
@@ -236,12 +339,25 @@ fn walk_definitions(
                 qualified.push_str(lang.separator());
             }
             qualified.push_str(&name);
+            // A Go method lives under its receiver's type.
+            if lang == Lang::Go && kind == "method" {
+                if let Some(owner) = go_receiver(node, source) {
+                    qualified = format!("{owner}.{name}");
+                }
+            }
+            let whole = text(node, source);
+            let unnamed = without_name(whole, &name);
             out.push(Definition {
                 name: name.clone(),
                 qualified,
                 kind,
                 line: u32::try_from(node.start_position().row + 1).unwrap_or(u32::MAX),
-                text: hash(text(node, source).as_bytes()),
+                text: hash(whole.as_bytes()),
+                shape: hash(unnamed.as_bytes()),
+                size: unnamed
+                    .chars()
+                    .filter(|c| !c.is_whitespace() && *c != '\u{0}')
+                    .count(),
             });
             scope.push(name);
             pushed = true;
@@ -274,6 +390,11 @@ fn is_name(lang: Lang, kind: &str) -> bool {
         ),
         Lang::Rust => matches!(kind, "identifier" | "type_identifier" | "field_identifier"),
         Lang::Python => kind == "identifier",
+        Lang::Go => matches!(
+            kind,
+            "identifier" | "type_identifier" | "field_identifier" | "package_identifier"
+        ),
+        Lang::Java => matches!(kind, "identifier" | "type_identifier"),
     }
 }
 
@@ -306,6 +427,71 @@ pub fn uses(lang: Lang, source: &str, lines: Option<&BTreeSet<u32>>) -> BTreeSet
     out
 }
 
+/// The scope part of a qualified name (`Session` for `Session.refresh`).
+fn scope_of<'a>(qualified: &'a str, sep: &str) -> &'a str {
+    qualified.rsplit_once(sep).map(|(s, _)| s).unwrap_or("")
+}
+
+/// Renames among the definitions `removed` from a file and those `added`
+/// to it, as (removed qualified, added qualified). A pair is a rename only
+/// when nothing else could explain it: the same kind, the same scope (once
+/// the scope's own rename, found first, is applied), and the same text
+/// once each one's own name is set aside; and each is the other's only such
+/// match. A type's members that moved with it unchanged keep their names, so
+/// `Session.refresh` → `UserSession.refresh` is renamed with `Session`.
+/// Anything less certain (a rename with an edit, two that could pair either
+/// way) isn't a rename: a false one is worse than none.
+fn renames(lang: Lang, removed: &[&Definition], added: &[&Definition]) -> Vec<(String, String)> {
+    let sep = lang.separator();
+    let mut by_depth: Vec<&Definition> = removed.to_vec();
+    by_depth.sort_by_key(|d| (d.qualified.matches(sep).count(), d.qualified.clone()));
+    let mut found: BTreeMap<String, String> = BTreeMap::new();
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    let mapped = |scope: &str, found: &BTreeMap<String, String>| -> String {
+        found
+            .get(scope)
+            .cloned()
+            .unwrap_or_else(|| scope.to_string())
+    };
+    // How many removed definitions each added one could pair with.
+    let matches = |r: &Definition, a: &Definition, found: &BTreeMap<String, String>| {
+        r.kind == a.kind
+            && r.shape == a.shape
+            && mapped(scope_of(&r.qualified, sep), found) == scope_of(&a.qualified, sep)
+    };
+    for r in &by_depth {
+        let candidates: Vec<&&Definition> = added
+            .iter()
+            .filter(|a| !taken.contains(&a.qualified) && matches(r, a, &found))
+            .collect();
+        let [a] = candidates.as_slice() else {
+            continue;
+        };
+        // And `r` is the only removed one that `a` could pair with.
+        let rivals = by_depth
+            .iter()
+            .filter(|o| !found.contains_key(&o.qualified) && matches(o, a, &found))
+            .count();
+        if rivals != 1 {
+            continue;
+        }
+        // A member that moved with its renamed type keeps its name and its
+        // text; anything else needs enough text to tell it apart.
+        let moved = r.name == a.name;
+        if moved && r.text != a.text {
+            continue;
+        }
+        if !moved && r.size < MIN_RENAME_TEXT {
+            continue;
+        }
+        if r.qualified != a.qualified {
+            taken.insert(a.qualified.clone());
+            found.insert(r.qualified.clone(), a.qualified.clone());
+        }
+    }
+    found.into_iter().collect()
+}
+
 /// What changed between a file's base and worktree versions.
 pub fn compare(
     lang: Lang,
@@ -322,21 +508,35 @@ pub fn compare(
     };
     let (before, after) = (index(base), index(now));
     let mut out = Vec::new();
-    let symbol = |d: &Definition, change| ChangedSymbol {
+    let symbol = |d: &Definition, change, renamed_to: Option<String>| ChangedSymbol {
         name: d.name.clone(),
         qualified: d.qualified.clone(),
         kind: d.kind.to_string(),
         path: path.to_string(),
         line: d.line,
         change,
+        renamed_to,
     };
+    // Renames pair one definition removed with one added (a name that's
+    // defined more than once on either side never pairs).
+    let removed: Vec<&Definition> = before
+        .iter()
+        .filter(|(q, v)| !after.contains_key(*q) && v.len() == 1)
+        .map(|(_, v)| &v[0])
+        .collect();
+    let added: Vec<&Definition> = after
+        .iter()
+        .filter(|(q, v)| !before.contains_key(*q) && v.len() == 1)
+        .map(|(_, v)| &v[0])
+        .collect();
+    let renamed: BTreeMap<String, String> = renames(lang, &removed, &added).into_iter().collect();
     for (q, now_defs) in &after {
         match before.get(q) {
             None => out.extend(
                 now_defs
                     .iter()
                     .take(1)
-                    .map(|d| symbol(d, SymbolChange::Added)),
+                    .map(|d| symbol(d, SymbolChange::Added, None)),
             ),
             Some(was) => {
                 let texts = |v: &Vec<Definition>| {
@@ -349,7 +549,7 @@ pub fn compare(
                         now_defs
                             .iter()
                             .take(1)
-                            .map(|d| symbol(d, SymbolChange::Changed)),
+                            .map(|d| symbol(d, SymbolChange::Changed, None)),
                     );
                 }
             }
@@ -357,7 +557,10 @@ pub fn compare(
     }
     for (q, was) in &before {
         if !after.contains_key(q) {
-            out.extend(was.iter().take(1).map(|d| symbol(d, SymbolChange::Removed)));
+            out.extend(was.iter().take(1).map(|d| match renamed.get(q) {
+                Some(to) => symbol(d, SymbolChange::Renamed, Some(to.clone())),
+                None => symbol(d, SymbolChange::Removed, None),
+            }));
         }
     }
     out
@@ -539,17 +742,19 @@ pub async fn index(git: &Git, root: &Path, base: &str) -> Result<SymbolIndex, Gi
         .index)
 }
 
-/// What `of` did to `name`, its strongest change, with the qualified name.
-fn change_of<'a>(of: &'a SymbolIndex, name: &str) -> Option<(&'a str, SymbolChange)> {
+/// What `of` did to `name`, its strongest change: the symbol.
+fn change_of<'a>(of: &'a SymbolIndex, name: &str) -> Option<&'a ChangedSymbol> {
     of.symbols
         .iter()
         .filter(|s| s.name == name)
         .max_by_key(|s| s.change.weight())
-        .map(|s| (s.qualified.as_str(), s.change))
 }
 
 fn touches(c: SymbolChange) -> bool {
-    matches!(c, SymbolChange::Changed | SymbolChange::Removed)
+    matches!(
+        c,
+        SymbolChange::Changed | SymbolChange::Removed | SymbolChange::Renamed
+    )
 }
 
 /// The symbols `here` and `there` share: both changed or removed a
@@ -568,21 +773,27 @@ pub fn shared_symbols(here: &SymbolIndex, there: &SymbolIndex) -> Vec<SharedSymb
         let mine = change_of(here, name);
         let theirs = change_of(there, name);
         let pair = match (mine, theirs) {
-            (Some((q, a)), Some((_, b))) if touches(a) && touches(b) => Some((q, a, b)),
-            (Some((q, a)), _) if touches(a) && there.uses.contains(name) => {
-                Some((q, a, SymbolChange::Used))
+            (Some(m), Some(t)) if touches(m.change) && touches(t.change) => Some((
+                m,
+                m.change,
+                t.change,
+                m.renamed_to.clone().or(t.renamed_to.clone()),
+            )),
+            (Some(m), _) if touches(m.change) && there.uses.contains(name) => {
+                Some((m, m.change, SymbolChange::Used, m.renamed_to.clone()))
             }
-            (_, Some((q, b))) if touches(b) && here.uses.contains(name) => {
-                Some((q, SymbolChange::Used, b))
+            (_, Some(t)) if touches(t.change) && here.uses.contains(name) => {
+                Some((t, SymbolChange::Used, t.change, t.renamed_to.clone()))
             }
             _ => None,
         };
-        if let Some((qualified, a, b)) = pair {
+        if let Some((def, a, b, renamed_to)) = pair {
             out.push(SharedSymbol {
                 name: name.to_string(),
-                qualified: qualified.to_string(),
+                qualified: def.qualified.clone(),
                 here: a,
                 there: b,
+                renamed_to,
             });
         }
     }
@@ -695,6 +906,7 @@ mod tests {
                     path: "a.ts".into(),
                     line: 1,
                     change: *c,
+                    renamed_to: None,
                 })
                 .collect(),
             uses: uses.iter().map(|s| (*s).to_string()).collect(),
@@ -732,5 +944,167 @@ mod tests {
         let a = idx(&[("alpha", Added), ("id", Removed)], &[]);
         let b = idx(&[("beta", Added)], &["alpha", "id"]);
         assert!(shared_symbols(&a, &b).is_empty());
+    }
+
+    fn changes(lang: Lang, base: &str, now: &str) -> Vec<(String, SymbolChange, Option<String>)> {
+        let mut out: Vec<_> = compare(lang, "f", Some(base), Some(now))
+            .into_iter()
+            .map(|s| (s.qualified, s.change, s.renamed_to))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn f_wt_10_5_go_and_java_definitions_with_qualified_names() {
+        let go = "package shop\n\ntype Server struct{ n int }\n\ntype Store interface{ Get() int }\n\nfunc (s *Server) Handle() int { return s.n }\n\nfunc NewServer() *Server { return &Server{} }\n";
+        assert_eq!(
+            names(&definitions(Lang::Go, go)),
+            [
+                ("Server", "struct"),
+                ("Store", "interface"),
+                ("Server.Handle", "method"),
+                ("NewServer", "function"),
+            ]
+        );
+        let java = "package com.shop;\n\npublic class Cart {\n  private int n;\n  public Cart() {}\n  public int total() { return n; }\n  interface Line { int price(); }\n}\n\nenum Size { S, M }\n";
+        assert_eq!(
+            names(&definitions(Lang::Java, java)),
+            [
+                ("Cart", "class"),
+                ("Cart.Cart", "constructor"),
+                ("Cart.total", "method"),
+                ("Cart.Line", "interface"),
+                ("Cart.Line.price", "method"),
+                ("Size", "enum"),
+            ]
+        );
+        assert_eq!(Lang::of("cmd/main.go"), Some(Lang::Go));
+        assert_eq!(Lang::of("src/Cart.java"), Some(Lang::Java));
+        use SymbolChange::*;
+        // A changed method body, a new function, a deleted one.
+        let base = "package shop\n\ntype Server struct{}\n\nfunc (s *Server) Handle() int { return 1 }\n\nfunc Old() {}\n";
+        let now = "package shop\n\ntype Server struct{}\n\nfunc (s *Server) Handle() int { return 2 }\n\nfunc New() int { return 3 }\n";
+        assert_eq!(
+            changes(Lang::Go, base, now),
+            [
+                ("New".to_string(), Added, None),
+                ("Old".to_string(), Removed, None),
+                ("Server.Handle".to_string(), Changed, None),
+            ]
+        );
+        let base = "class Cart {\n  int total() { return 1; }\n}\n";
+        let now = "class Cart {\n  int total() { return 2; }\n}\n";
+        assert_eq!(
+            changes(Lang::Java, base, now),
+            [
+                ("Cart".to_string(), Changed, None),
+                ("Cart.total".to_string(), Changed, None),
+            ]
+        );
+        // Uses on new lines, in both.
+        assert!(uses(Lang::Go, "func f() { s.Handle() }\n", None).contains("Handle"));
+        assert!(
+            uses(Lang::Java, "class A { void f() { cart.total(); } }\n", None).contains("total")
+        );
+    }
+
+    #[test]
+    fn f_wt_10_6_a_rename_is_found_only_when_nothing_else_explains_it() {
+        use SymbolChange::*;
+        // A function renamed with the same body.
+        let base = "export function parse(s: string): string {\n  return s.trim();\n}\n";
+        let now = "export function parseLine(s: string): string {\n  return s.trim();\n}\n";
+        assert_eq!(
+            changes(Lang::TypeScript, base, now),
+            [
+                ("parse".to_string(), Renamed, Some("parseLine".to_string())),
+                ("parseLine".to_string(), Added, None),
+            ]
+        );
+        // A class renamed, its methods moving with it unchanged; a use of its
+        // own name inside it (a static factory) is set aside too.
+        let base = "export class Session {\n  static make(): Session { return new Session(); }\n  refresh(): void {}\n}\n";
+        let now = "export class UserSession {\n  static make(): UserSession { return new UserSession(); }\n  refresh(): void {}\n}\n";
+        let got = changes(Lang::TypeScript, base, now);
+        assert!(
+            got.contains(&(
+                "Session".to_string(),
+                Renamed,
+                Some("UserSession".to_string())
+            )),
+            "{got:?}"
+        );
+        assert!(got.contains(&(
+            "Session.refresh".to_string(),
+            Renamed,
+            Some("UserSession.refresh".to_string())
+        )));
+        // `make` names the class in its text, so it differs: removed, not
+        // renamed (its owner's rename doesn't excuse an edit).
+        assert!(
+            got.contains(&("Session.make".to_string(), Removed, None)),
+            "{got:?}"
+        );
+        // A rename that also edits the body: removed and added.
+        let base = "function parse(s: string) { return s.trim(); }\n";
+        let now = "function parseLine(s: string) { return s.trim().toLowerCase(); }\n";
+        assert_eq!(
+            changes(Lang::TypeScript, base, now),
+            [
+                ("parse".to_string(), Removed, None),
+                ("parseLine".to_string(), Added, None),
+            ]
+        );
+        // Two removed and two added that could pair either way: neither.
+        let base = "function a1() { return 1; }\nfunction b1() { return 1; }\n";
+        let now = "function a2() { return 1; }\nfunction b2() { return 1; }\n";
+        assert!(changes(Lang::TypeScript, base, now)
+            .iter()
+            .all(|(_, c, to)| *c != Renamed && to.is_none()));
+        // Another kind, or another scope, doesn't pair.
+        let base = "class A { run() { return 1; } }\nfunction go() { return 1; }\n";
+        let now = "class A { }\nclass B { run() { return 1; } }\nfunction go2() { return 2; }\n";
+        assert!(changes(Lang::TypeScript, base, now)
+            .iter()
+            .all(|(_, c, _)| *c != Renamed));
+        // Two stubs alike never pair: `def gone(): pass` → `def fresh(): pass`.
+        let got = changes(
+            Lang::Python,
+            "def gone():\n    pass\n",
+            "def fresh():\n    pass\n",
+        );
+        assert!(got.iter().all(|(_, c, _)| *c != Renamed), "{got:?}");
+        // A name inside a longer word isn't set aside: `parse` in `parser`.
+        assert_eq!(without_name("parse(parser)", "parse"), "\u{0}(parser)");
+        // Rust and Go renames too.
+        let got = changes(
+            Lang::Rust,
+            "fn load(path: &str) -> usize { path.len() * 2 }\n",
+            "fn load_all(path: &str) -> usize { path.len() * 2 }\n",
+        );
+        assert!(got.contains(&("load".to_string(), Renamed, Some("load_all".to_string()))));
+        let got = changes(
+            Lang::Go,
+            "package a\nfunc Load(path string) int { return len(path) * 2 }\n",
+            "package a\nfunc LoadAll(path string) int { return len(path) * 2 }\n",
+        );
+        assert!(got.contains(&("Load".to_string(), Renamed, Some("LoadAll".to_string()))));
+    }
+
+    #[test]
+    fn f_wt_10_6_a_renamed_symbol_is_shared_with_its_new_name() {
+        use SymbolChange::*;
+        let mut renamed = idx(&[("parse", Renamed), ("parseLine", Added)], &[]);
+        renamed.symbols[0].renamed_to = Some("parseLine".into());
+        let caller = idx(&[], &["parse"]);
+        let got = shared_symbols(&caller, &renamed);
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].here, got[0].there), (Used, Renamed));
+        assert_eq!(got[0].display(), "parse → parseLine");
+        // A plain removal of the same name elsewhere outranks a rename.
+        let mut both = idx(&[("parse", Renamed), ("parse", Removed)], &[]);
+        both.symbols[0].renamed_to = Some("parseLine".into());
+        assert_eq!(shared_symbols(&both, &caller)[0].here, Removed);
     }
 }

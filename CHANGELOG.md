@@ -9,6 +9,18 @@ release fails when its version has no section.
 
 ## Unreleased
 
+### Added
+
+- [lin] **The intent radar, live.** Once a worktree has been read, the
+  radar reads it again about two seconds after a change, and every two
+  seconds while changes go on, so a clash shows up while the agents are
+  still working, not after their turn. It now reads Go and Java too, and says
+  when a definition was renamed (`parse → parseLine`) rather than removed,
+  only when nothing else could explain it. **Claim these files** in Check
+  overlap… claims the files where this worktree changed, renamed or removed
+  what it shares, so agents in the other worktrees see the claim before they
+  edit them. Everything stays on this computer.
+
 ### Fixed
 
 - [lin] **One crafted text no longer slows every key check after it.**
