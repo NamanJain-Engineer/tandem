@@ -350,6 +350,51 @@ describe("Dashboard (F-DB-01)", () => {
     }
   });
 
+  it("F-DB-01 a snapshot that lands after a newer one is dropped, so a card that came meanwhile stays", async () => {
+    vi.useFakeTimers();
+    try {
+      const p1 = item("working", "build");
+      const p2 = item("waiting", "deploy");
+      // The first read is slow and older than p2. The read p2's first
+      // report asks for is quick, holds both and lands first.
+      const reads: Array<[number, DashboardItem[]]> = [
+        [300, [p1]],
+        [20, [p1, p2]],
+      ];
+      const calls = fakeBackend({
+        status_snapshot: () => {
+          const [ms, list] = reads.shift() ?? [0, []];
+          return new Promise<DashboardItem[]>((done) => setTimeout(() => done(list), ms));
+        },
+      });
+      followDashboard();
+      void useDashboard.getState().load();
+      await vi.advanceTimersByTimeAsync(10);
+      act(() =>
+        emitLocal("status:changed", {
+          records: [
+            {
+              key: p2.key,
+              status: "waiting",
+              reason: null,
+              since: 2,
+              ts: 2,
+              tool: null,
+              title: "deploy",
+              preview: null,
+            },
+          ],
+          removed: [],
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(calls.filter((c) => c.cmd === "status_snapshot")).toHaveLength(2);
+      expect(Object.keys(useDashboard.getState().items)).toEqual([p1.key, p2.key]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("empty and filter-empty states", async () => {
     setup([]);
     const { unmount } = render(

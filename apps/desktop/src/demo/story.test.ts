@@ -139,13 +139,27 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     // Gemini CLI's choices under its question, and what Claude Code's Edit
     // result says after its first sentence: the app reads nothing from them.
     const theirs = [/for this session/i, /suggest changes/i, /`cat -n`/, /snippet of the edited file/i];
-    // Every file under the demo's folder and the scenes' (the sample shop's
-    // too), tests aside.
+    // Every source and sample file under the demo's folder and the scenes'
+    // (the sample shop's too), tests aside, and nothing an editor or a tool
+    // leaves there: no dot-files, dot-folders or node_modules.
+    const test = /\.test\.tsx?$/;
+    const source = /\.(tsx?|json|css|md)(\.sample)?$/;
     const under = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-        e.isDirectory() ? under(join(dir, e.name)) : /\.test\.tsx?$/.test(e.name) ? [] : [join(dir, e.name)],
-      );
-    const files = [__dirname, join(__dirname, "../../../web/components/site/scenes")].flatMap(under);
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        if (e.name.startsWith(".") || e.name === "node_modules") return [];
+        if (e.isDirectory()) return under(join(dir, e.name));
+        return source.test(e.name) && !test.test(e.name) ? [join(dir, e.name)] : [];
+      });
+    const dirs = [__dirname, join(__dirname, "../../../web/components/site/scenes")];
+    const files = dirs.flatMap(under);
+    // That's every file git tracks there, tests aside.
+    const tracked = dirs.flatMap((dir) =>
+      execFileSync("git", ["ls-files"], { cwd: dir, encoding: "utf8" })
+        .split("\n")
+        .filter((f) => f && !test.test(f))
+        .map((f) => join(dir, f)),
+    );
+    expect(files).toEqual(expect.arrayContaining(tracked));
     expect(files.some((f) => f.endsWith("/scenes/DashboardScene.tsx"))).toBe(true);
     expect(files.some((f) => f.endsWith("/demo/story.ts"))).toBe(true);
     expect(files.some((f) => f.includes("/demo/shop/") && f.endsWith(".sample"))).toBe(true);

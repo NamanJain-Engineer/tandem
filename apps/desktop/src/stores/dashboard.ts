@@ -57,6 +57,7 @@ export const useDashboard = create<DashboardState>((set, get) => ({
     // to apply over it.
     const meanwhile: StatusChange[] = [];
     reading.add(meanwhile);
+    const mine = ++started;
     const list = await invoke<DashboardItem[]>("status_snapshot")
       .catch(() => null)
       .finally(() => reading.delete(meanwhile));
@@ -64,6 +65,11 @@ export const useDashboard = create<DashboardState>((set, get) => ({
       set({ loaded: true });
       return;
     }
+    // A snapshot asked for later is already shown, and this older one would
+    // take away a card that came meanwhile. Each change during this read is
+    // in that snapshot, in its replay or applied since, so none is lost.
+    if (mine < landed) return;
+    landed = mine;
     set({ items: Object.fromEntries(list.map((i) => [i.key, i])), loaded: true });
     for (const change of meanwhile) applyStatus(change.records, change.removed, false);
   },
@@ -97,6 +103,9 @@ function refetchSoon(): void {
 type StatusChange = { records: StatusRecord[]; removed: string[] };
 /** For each snapshot being read, the updates that came meanwhile. */
 const reading = new Set<StatusChange[]>();
+/** Snapshots asked for, and the newest one shown: they can land out of order. */
+let started = 0;
+let landed = 0;
 
 /** A card's line as dashboard.rs draws it: the record's preview, else its
  * tool, and none when that's blank. The store keeps a preview and replaces
