@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button, Coachmark } from "@tandem/ui";
 import { t } from "../i18n";
+import { paneKey, useStatus } from "../stores/status";
 import { useThreads } from "../stores/threads";
 import { useWorkspaces } from "../stores/workspaces";
 import { DEMO_MESSAGE_LIMIT, DEMO_WAITING } from "./backend";
@@ -16,7 +17,7 @@ export type CoachCore = {
   messagesLeft: () => number;
 };
 
-type HintId = "waiting" | "send" | "changes";
+type HintId = "waiting" | "answer" | "send" | "changes";
 
 /** Where a hint can sit: the first of its spots that's on screen wins. */
 type Spot = {
@@ -27,8 +28,9 @@ type Spot = {
   text: () => string;
 };
 
-/** Three hints, in order, with DESIGN §9's words (§5.2.2). None sits over
- * the rail's content. */
+/** Four hints, in order, with DESIGN §9's words (§5.2.2) and, at the
+ * waiting agent's question, the keys that answer it (D-2633). None sits
+ * over the rail's content. */
 const HINTS: { id: HintId; spots: Spot[] }[] = [
   {
     id: "waiting",
@@ -46,6 +48,20 @@ const HINTS: { id: HintId; spots: Spot[] }[] = [
         anchor: `[data-testid="workspace-row"][data-root="${DEMO_WAITING.repoRoot}"]`,
         side: "right",
         text: () => t("demo.coach.waiting", { name: DEMO_WAITING.name }),
+      },
+    ],
+  },
+  {
+    id: "answer",
+    // Her pane shows the engine's question and none of its choices
+    // (D-2633), so the keys are named here, in the demo's own words: at the
+    // pane's foot, clear of the question at its top.
+    spots: [
+      {
+        anchor: `[data-testid="pane"][data-pane-id="${DEMO_WAITING.paneId}"]`,
+        side: "bottom",
+        align: "start",
+        text: () => t("demo.coach.answer", { name: DEMO_WAITING.name }),
       },
     ],
   },
@@ -151,9 +167,10 @@ function useOnScreen(): Found {
 }
 
 /** One hint at a time, each beside what it describes and gone once the
- * visitor does it: open the waiting agent, send the ready task, open its
- * Changes. A hint whose target isn't on screen waits its turn; Changes waits
- * until the agent has edited something. */
+ * visitor does it: open the waiting agent, answer her, send the ready task,
+ * open its Changes. A hint whose target isn't on screen waits its turn; the
+ * task's waits while her question is open in front of the visitor, and
+ * Changes until the agent has edited something. */
 export function DemoCoach({ core }: { core: CoachCore }) {
   const [hidden, setHidden] = useState(stored);
   const [done, setDone] = useState<ReadonlySet<HintId>>(() => new Set());
@@ -164,15 +181,24 @@ export function DemoCoach({ core }: { core: CoachCore }) {
   );
   const state = useThreads((s) => s.list.find((x) => x.id === core.firstThread)?.state);
   const changesOpen = useThreads((s) => s.changesOpen[core.firstThread] ?? false);
+  const asks = useStatus((s) => s.records[paneKey(DEMO_WAITING.paneId)]?.status);
+  // Her question, with her workspace open.
+  const asking = asks === "waiting" && active === DEMO_WAITING.workspaceId;
   const onScreen = useOnScreen();
 
   // Done stays done, so leaving a view doesn't bring its hint back.
   const now: Record<HintId, boolean> = {
     waiting: active === DEMO_WAITING.workspaceId,
+    answer: asks !== undefined && asks !== "waiting",
     send: sent,
     changes: changesOpen,
   };
-  const ready: Record<HintId, boolean> = { waiting: true, send: true, changes: sent && state !== "working" };
+  const ready: Record<HintId, boolean> = {
+    waiting: true,
+    answer: asking,
+    send: !asking,
+    changes: sent && state !== "working",
+  };
   const fresh = HINTS.filter((h) => now[h.id] && !done.has(h.id))
     .map((h) => h.id)
     .join(",");

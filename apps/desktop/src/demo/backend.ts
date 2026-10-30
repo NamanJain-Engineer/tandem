@@ -1136,14 +1136,14 @@ export class DemoCore {
     return true;
   }
 
-  /** Keys at the waiting agent's question, a Gemini CLI select: 1, 2 or
-   * Enter (its first choice, highlighted) allow; 3 or Esc say no. Any other
-   * key, an arrow's sequence among them, does nothing here. */
+  /** Keys at the waiting agent's question: Enter allows and Esc says no,
+   * as the coach says (D-2633). Any other key, an arrow's sequence among
+   * them, does nothing here. */
   private answer(pty: Pty, data: string): void {
     if (data.startsWith("\x1b[") || data.startsWith("\x1bO")) return;
     for (const ch of data) {
-      if (ch === "1" || ch === "2" || ch === "\r") return this.answerWaiting(pty, true);
-      if (ch === "3" || ch === "\x1b") return this.answerWaiting(pty, false);
+      if (ch === "\r") return this.answerWaiting(pty, true);
+      if (ch === "\x1b") return this.answerWaiting(pty, false);
     }
   }
 

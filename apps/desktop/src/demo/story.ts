@@ -115,46 +115,30 @@ export function engineLabel(engine: string): string {
   return STORY.engines[engine]?.label ?? engine;
 }
 
-/** Each engine's own question before it runs a command, as its terminal
- * puts it: Gemini CLI 0.66.0's ToolConfirmationMessage, for its shell tool,
- * shows the command in a rounded box, asks, then lists its choices,
- * numbered, the first highlighted. The app sees an agent pane wait only
- * when its screen matches the engine's waitingPatterns (registry.json), and
- * "Allow execution" does (D-2624). */
-const ASKS: Record<string, { question: string; choices: string[] }> = {
-  gemini: {
-    question: "Allow execution of [Shell]?",
-    choices: ["Allow once", "Allow for this session", "No, suggest changes (esc)"],
-  },
+/** Each engine's own question before it runs a command, word for word:
+ * Gemini CLI 0.66.0's for its shell tool. The app sees an agent pane wait
+ * only when its screen matches the engine's waitingPatterns (registry.json),
+ * and "Allow execution" does (D-2624). The demo quotes another product only
+ * as far as the app's behaviour needs, so none of its choices (D-2633). */
+const ASKS: Record<string, string> = {
+  gemini: "Allow execution of [Shell]?",
 };
-
-function askOf(w: StoryWorktree): { question: string; choices: string[] } {
-  const ask = ASKS[w.engine];
-  if (!ask) throw new Error(`story.json: no question in ${w.engine}'s words`);
-  return ask;
-}
 
 /** The waiting agent's question in its terminal: the engine's own, since
  * 0.12.0 raises no approval for it (only `vibezeo run` does). The demo's
  * pane and the site's scenes both read it from here (D-1899). */
 export function askLine(w: StoryWorktree): string {
-  return askOf(w).question;
+  const ask = ASKS[w.engine];
+  if (!ask) throw new Error(`story.json: no question in ${w.engine}'s words`);
+  return ask;
 }
 
 /** All the waiting agent's terminal shows when it asks: the command it
- * wants to run in a box, the question, and its choices. */
+ * wants to run, drawn in a box, and the question. */
 export function askScreen(w: StoryWorktree): string[] {
-  const { question, choices } = askOf(w);
   const command = w.ask ?? "";
   const rule = "─".repeat(command.length + 2);
-  return [
-    `╭${rule}╮`,
-    `│ ${command} │`,
-    `╰${rule}╯`,
-    question,
-    "",
-    ...choices.map((c, i) => `${i === 0 ? "●" : " "} ${i + 1}. ${c}`),
-  ];
+  return [`╭${rule}╮`, `│ ${command} │`, `╰${rule}╯`, askLine(w)];
 }
 
 /** The tool Claude Code's hooks name for a step (hook.rs's PreToolUse). */

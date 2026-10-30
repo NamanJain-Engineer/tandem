@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -114,26 +122,35 @@ describe("F-WB-01 D-2609 the sample world the demo and the site's scenes share (
     const w = worktreeIn("waiting");
     // The engine's own question in its terminal: 0.12.0 raises no approval
     // for an engine's question, only for `vibezeo run` (D-1899). Gemini CLI
-    // 0.66.0's (ToolConfirmationMessage): the command in a box, the question,
-    // then its choices, numbered, the first one highlighted.
+    // 0.66.0's question line, which registry.json's waitingPatterns match,
+    // under the command in a box: no more of its screen than that (D-2633).
     expect(askLine(w)).toBe("Allow execution of [Shell]?");
     const rule = "─".repeat((w.ask ?? "").length + 2);
-    expect(askScreen(w)).toEqual([
-      `╭${rule}╮`,
-      `│ ${w.ask} │`,
-      `╰${rule}╯`,
-      "Allow execution of [Shell]?",
-      "",
-      "● 1. Allow once",
-      "  2. Allow for this session",
-      "  3. No, suggest changes (esc)",
-    ]);
+    expect(askScreen(w)).toEqual([`╭${rule}╮`, `│ ${w.ask} │`, `╰${rule}╯`, "Allow execution of [Shell]?"]);
     // Its card waits with no line: Gemini CLI has no hooks (D-2624).
     expect(previewOf(w)).toBeNull();
     // Nor do the others': Ada has finished, and Arlo's Codex names no
     // tools (drift.test.ts holds the rule to the app's sources).
     expect(previewOf(worktreeIn("done"))).toBeNull();
     expect(previewOf(worktreeIn("working"))).toBeNull();
+  });
+
+  it("F-WB-01 D-2633 the demo and the site's scenes quote another product only as far as the app needs", () => {
+    // Gemini CLI's choices under its question, and what Claude Code's Edit
+    // result says after its first sentence: the app reads nothing from them.
+    const theirs = [/for this session/i, /suggest changes/i, /`cat -n`/, /snippet of the edited file/i];
+    const dirs = [__dirname, join(__dirname, "../../../web/components/site/scenes")];
+    const files = dirs.flatMap((dir) =>
+      readdirSync(dir)
+        .filter((f) => /\.(tsx?|json)$/.test(f) && !/\.test\.tsx?$/.test(f))
+        .map((f) => join(dir, f)),
+    );
+    expect(files.some((f) => f.endsWith("/scenes/DashboardScene.tsx"))).toBe(true);
+    expect(files.some((f) => f.endsWith("/demo/story.ts"))).toBe(true);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const words of theirs) expect(text, `${file} has ${words}`).not.toMatch(words);
+    }
   });
 
   it("F-WB-01 D-2609 the pull request's checks are lint, test and build, with test failing", () => {

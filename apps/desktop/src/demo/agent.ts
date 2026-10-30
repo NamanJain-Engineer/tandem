@@ -60,18 +60,12 @@ function claudeEdit(path: string, root: string): { running: Partial<ToolEvent>; 
   };
   const counts = THREAD_CHANGES.find((f) => f.path === path);
   const running = { detail: JSON.stringify(input, null, 2), paths: [file] };
-  // Claude Code's result: the new text's lines, numbered as `cat -n` does.
-  const snippet = input.new_string
-    .split("\n")
-    .map((line, i) => `${String(from + i + 1).padStart(6)}→${line}`);
   return {
     running,
     done: {
       ...running,
-      output: [
-        `The file ${file} has been updated. Here's the result of running \`cat -n\` on a snippet of the edited file:`,
-        ...snippet,
-      ].join("\n"),
+      // Claude Code's result, its first sentence only (D-2633).
+      output: `The file ${file} has been updated.`,
       lines: { added: counts?.additions ?? 0, removed: counts?.deletions ?? 0 },
     },
   };

@@ -5,6 +5,7 @@ import { UiProvider } from "@tandem/ui";
 import { TitleBar } from "../features/shell/TitleBar";
 import { setInvokeBackend } from "../ipc/invoke";
 import { useSession } from "../stores/session";
+import { paneKey, useStatus } from "../stores/status";
 import { useThreads } from "../stores/threads";
 import { useUi } from "../stores/ui";
 import { useWorkspaces } from "../stores/workspaces";
@@ -44,7 +45,7 @@ describe("the interactive demo's page furniture", () => {
     // The agent by its first name, as 0.12.0 names every agent (F-CD-12).
     expect(DEMO_WAITING.name).toBe(worktreeIn("waiting").agentName);
     expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.name} is waiting on you. Open it to see why.`);
-    expect(hint()[0]?.textContent).toContain("1 of 3");
+    expect(hint()[0]?.textContent).toContain("1 of 4");
     // Under the waiting worktree's row, in the rail's free space: over no
     // row and none of the panes' text.
     expect(hint()[0]?.dataset.side).toBe("bottom");
@@ -59,11 +60,53 @@ describe("the interactive demo's page furniture", () => {
     await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
     expect(hint()[0]?.textContent).toContain(`${DEMO_WAITING.name} is waiting on you.`);
     expect(hint()[0]?.dataset.side).toBe("right");
+    // Opened, she asks in her pane. Its question is the engine's, with none
+    // of its choices (D-2633), so the coach names the keys in the demo's own
+    // words, from her pane's foot, clear of the question at its top.
+    const asking = (status: "waiting" | "working") =>
+      act(() =>
+        useStatus.setState({
+          records: {
+            [paneKey(DEMO_WAITING.paneId)]: {
+              key: paneKey(DEMO_WAITING.paneId),
+              status,
+              reason: null,
+              since: 1,
+              ts: 1,
+              tool: null,
+              title: null,
+              preview: null,
+            },
+          },
+        }),
+      );
+    asking("waiting");
+    view.rerender(
+      <UiProvider theme="dark">
+        <div data-testid="pane" data-pane-id={DEMO_WAITING.paneId} />
+        <button type="button" role="radio" aria-checked="false" value="thread" />
+        <DemoCoach core={c} />
+      </UiProvider>,
+    );
     act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
-    // In Code mode the task waits one switch away.
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect(hint()).toHaveLength(1);
+    expect(hint()[0]?.textContent).toContain(
+      `Press Enter to let ${DEMO_WAITING.name} run it, or Esc to say no.`,
+    );
+    expect(hint()[0]?.textContent).toContain("2 of 4");
+    expect(hint()[0]?.dataset.side).toBe("bottom");
+    // Left unanswered, the task's hint shows only once her workspace isn't
+    // open: one thing at a time.
+    act(() => useWorkspaces.setState({ activeId: null }));
+    expect(hint()[0]?.textContent).toContain("Your first task is ready in Thread mode.");
+    act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
+    expect(hint()[0]?.textContent).toContain("Press Enter to let");
+    // Answered: in Code mode the task waits one switch away.
+    asking("working");
     expect(hint()).toHaveLength(1);
     expect(hint()[0]?.textContent).toContain("Your first task is ready in Thread mode.");
-    expect(hint()[0]?.textContent).toContain("2 of 3");
+    expect(hint()[0]?.textContent).toContain("3 of 4");
     // Thread mode: the same hint, on the composer.
     view.rerender(
       <UiProvider theme="dark">
@@ -75,7 +118,7 @@ describe("the interactive demo's page furniture", () => {
     // The coach looks again on the next frame after the page changes.
     await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
     expect(hint()[0]?.textContent).toContain("Press Enter to send this task.");
-    expect(hint()[0]?.textContent).toContain("2 of 3");
+    expect(hint()[0]?.textContent).toContain("3 of 4");
     act(() => {
       useThreads.setState({ list: [{ ...(c.handle("thread_get", { threadId: c.firstThread }) as ThreadDetail).thread, state: "working" }] });
       c.handle("thread_send", { threadId: c.firstThread, text: "hi", attachments: [] });
@@ -86,7 +129,7 @@ describe("the interactive demo's page furniture", () => {
     expect(hint()[0]?.textContent).toContain("Open Changes to see what it edited.");
     // In the header band beside the button, off the transcript.
     expect(hint()[0]?.dataset.side).toBe("left");
-    expect(hint()[0]?.textContent).toContain("3 of 3");
+    expect(hint()[0]?.textContent).toContain("4 of 4");
     act(() => useThreads.getState().toggleChanges(c.firstThread));
     expect(screen.queryByTestId("coachmark")).toBeNull();
     expect(localStorage.getItem(HINT_KEY)).toBe("1");
