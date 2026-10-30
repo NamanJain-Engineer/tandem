@@ -164,7 +164,8 @@ workspaces and Codex on a model served from your own computer are new too.
   that tool's name after Claude Code had finished.
 - [lin] **A Dashboard card keeps up while the cards load.** An agent that
   changed while the Dashboard was reading its cards could show its earlier
-  state until it changed again.
+  state until it changed again, and a new agent's card could go missing until
+  the agent next reported.
 - [lin] **Screen readers name the rail's unread dots.** The dot on a workspace
   or a pane that finished while you were away is read as "Finished while you
   were away". Before, screen readers skipped its label.
