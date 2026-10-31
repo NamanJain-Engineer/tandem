@@ -228,6 +228,17 @@
 .sc-plan-layer { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: 1.5em; background: var(--tn-overlay); }
 .sc-plan-dialog { width: 45em; }
 .sc-plan-line { display: inline-flex; align-items: center; gap: 0.5em; font-size: 0.8125em; }
+/* The started dialog's Send reviews back switch (SendBackSwitch, from
+   0.14.0), in the app's pixels: the Switch after its label, 8 px apart, in
+   its 13 px text (Choice.tsx's gap-2 and text-base); on, its 28 by 16 track
+   is the accent, ringed in it, with its 12 px thumb 14 px in, in the
+   accent's text colour. Its hint is 4 px under it, 12 px and muted
+   (gap-1, text-sm). */
+.sc-plan-switch { display: flex; flex-direction: column; gap: calc(4 * var(--sc-px)); }
+.sc-switch-row { display: flex; align-items: center; gap: calc(8 * var(--sc-px)); font-size: calc(13 * var(--sc-px)); line-height: calc(20 * var(--sc-px)); }
+.sc-switch { display: inline-flex; flex: none; align-items: center; width: calc(28 * var(--sc-px)); height: calc(16 * var(--sc-px)); border-radius: calc(8 * var(--sc-px)); background: var(--tn-accent); box-shadow: 0 0 0 1px var(--tn-accent); }
+.sc-switch-thumb { width: calc(12 * var(--sc-px)); height: calc(12 * var(--sc-px)); margin-left: calc(14 * var(--sc-px)); border-radius: 50%; background: var(--tn-accent-fg); }
+.sc-plan-switch-hint { font-size: calc(12 * var(--sc-px)); line-height: calc(18 * var(--sc-px)); color: var(--tn-text-muted); }
 .sc-plan-summary { font-size: 0.8125em; font-variant-numeric: tabular-nums; color: var(--tn-text-muted); }
 .sc-runs { display: flex; flex-direction: column; gap: 0.125em; }
 .sc-run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0.5em; padding: 0.375em 0.5em; font-size: 0.8125em; }
@@ -235,9 +246,11 @@
 .sc-run-id { color: var(--tn-text-muted); }
 .sc-run-label { white-space: nowrap; color: var(--tn-text-muted); }
 .sc-run-label .sc-swap { justify-items: end; }
-/* PlanWithLead's line under a row ("Review sent back · round 1 of 2"): below
-   the title, as its pl-6 puts it past the dot. */
-.sc-run-note { grid-column: 2 / -1; color: var(--tn-text-muted); }
+/* PlanWithLead's line under a row ("Review sent back · round 1 of 2"), in
+   the app's pixels: 4 px under the row's line (the row's gap-1) and 24 px
+   in (pl-6), where the title starts 16 px in (the dot's 8 and gap-2), so
+   8 px past the title's start. */
+.sc-run-note { grid-column: 2 / -1; padding-left: calc(8 * var(--sc-px)); margin-top: calc(4 * var(--sc-px)); color: var(--tn-text-muted); }
 .sc-plan-foot { gap: 0.5em; }
 
 /* Spinner (UI_SPEC §2.18): a faint ring and its arc in the text's colour. */
@@ -326,6 +339,9 @@
   .sc-run { grid-template-columns: auto minmax(0, 1fr); }
   .sc-run-label { grid-column: 2; }
   .sc-run-label .sc-swap { justify-items: start; }
+  /* The rounds line under the label, which a phone's frame puts under the
+     title: the two in one column. */
+  .sc-run-note { padding-left: 0; }
   .sc-note-toast { left: 1em; right: 1em; width: auto; }
 }
 

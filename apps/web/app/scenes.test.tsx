@@ -13,12 +13,15 @@ import { ReviewScene, reviewFile, reviewSceneText } from "../components/site/sce
 import { Scene } from "../components/site/scenes/Scene";
 import { HERO_AGENTS, HERO_ASK, HERO_DONE, HERO_READY, HERO_T, WORKSPACE_CAPTION, WorkspaceScene, workspaceSceneText } from "../components/site/scenes/WorkspaceScene";
 import { AgentsSegment, Changes, ELISION, Glyph, pasted } from "../components/site/scenes/parts";
-import { PLAN_AGENTS, PLAN_RUNS, PlanScene, planAt, planTimes } from "../components/site/scenes/PlanScene";
+import { PLAN_AGENTS, PLAN_CAPTION, PLAN_RUNS, PlanScene, planAt, planSceneText, planTimes } from "../components/site/scenes/PlanScene";
 import { RELEASE_SCENES, releaseScenes } from "../components/site/scenes/releaseScenes";
 import { RELEASES, addedCard } from "../lib/changelog";
 import { SCENE_ROWS } from "../lib/home";
 import { RELEASE, SCENES_SLICE } from "../lib/release";
 import { APPROVE_WAITS, DEFANGED, DEFANGS, LANDS, NAMES_TOOLS, PUSH_READS, RADAR, RAIL_FOLDS, SAMPLE, SCENE_BUILD, SENDS_BACK, SETTLE, UNDO_SECONDARY, atLeast, branchOf, failurePrompt, hookTool, promptTitle, radarNote, t, tabTitle, untrustedLabel } from "../lib/scenes";
+import * as scenes from "../lib/scenes";
+import { SCENE_RECORD } from "../lib/sceneRecord";
+import { parseChangelog } from "@tandem/protocol/changelog";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
@@ -403,8 +406,8 @@ describe("F-WB-01 AC9 product scenes", () => {
     // attributes too, which covers every step the markup holds: an effect only shows or cuts what's in it, the only
     // `content` the scenes' sheets write is a count's data-prefix and number, and the player only plays and pauses (the
     // design lead's QA of 825b4b54: its hero's radar note named tandem/coupon-rules). Text other CSS can write (a
-    // `content` rule elsewhere, a list-style string, a counter style's symbols) is the 0.14.0 slice's, read where the
-    // browser draws it (D-3006).
+    // `content` rule elsewhere, a list-style string, a counter style's symbols) is read where the browser draws it:
+    // e2e-site/scenes.spec.ts reads each scene's laid-out text, ::before, ::after and ::marker included (D-3006).
     const drawn: Array<[string, string]> = ["workspace", ...SCENE_ROWS.filter((r) => atLeast(SCENE_BUILD, r.release)).map((r) => r.id)].map((id) => [id, home]);
     for (const version of Object.keys(RELEASE_SCENES)) {
       const h = await versionHtml(version);
@@ -430,6 +433,9 @@ describe("F-WB-01 AC9 product scenes", () => {
   });
 
   it("F-WB-01 AC9 the 0.12.0 scene follows a plan through: each run reviewed, two approved, one with changes requested (from 0.14.0 sent back to its run and approved), Land N approved… (D-1888)", () => {
+    // From 0.14.0 a run's Changes requested goes back to it (F-TK-09): the gate follows the release, as every gate does
+    // (the code review of a17c7d7a, S1).
+    expect(SENDS_BACK).toBe(atLeast(RELEASE.version, "0.14.0"));
     const h = renderToStaticMarkup(<PlanScene />);
     const { goal, tasks } = SAMPLE.plan;
     // In the shop world, not the goal field's own example (design lead).
@@ -452,23 +458,86 @@ describe("F-WB-01 AC9 product scenes", () => {
       expect(h, s).toContain(esc(s));
     for (const task of tasks) expect(h).toContain(`<span class="sc-mono sc-run-id">${task.id}</span>`);
     const reviewed = ["queued", "running", "reviewing", "in_review"];
+    /** Each run's steps, as [state, verdict]: what the app's attempt carries, and its runLabel reads. */
+    const steps = PLAN_RUNS.map((r) => r.steps.map((s) => [s.state, s.verdict]));
+    const plan = readFileSync(join(import.meta.dirname, "../../desktop/src/features/tasks/PlanWithLead.tsx"), "utf8");
+    // runLabel adds a run's verdict to whatever its state is, so a verdict written while the run is still Reviewing shows.
+    expect(plan).toMatch(/const state = t\(`tasks\.runs\.state\.\$\{a\.state\}` as MessageKey\);\s*if \(a\.reviewVerdict === "approve"\) return `\$\{state\} · \$\{t\("plan\.verdict\.approve"\)\}`;\s*if \(a\.reviewVerdict === "changes_requested"\) return `\$\{state\} · \$\{t\("plan\.verdict\.changes"\)\}`;/);
+    /** The rounds line: from 0.14.0 under the row whose review goes back. */
+    const rounds = t("plan.review.rounds", { n: 1 });
     if (SENDS_BACK) {
-      // From 0.14.0 the third review goes back to its run (F-TK-09): it
-      // runs and is reviewed again, never Ready to review in between, its
-      // row says so under it, and its second turn is approved.
-      expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual([reviewed, reviewed, ["queued", "running", "reviewing", "running", "reviewing", "in_review"]]);
-      expect(PLAN_RUNS.map((r) => r.verdict)).toEqual(["approve", "approve", "approve"]);
-      expect(h).not.toContain(esc(t("plan.verdict.changes")));
+      // From 0.14.0 the third review goes back to its run (F-TK-09), as tasks_exec.rs does it: the verdict is written
+      // while the run is still Reviewing, the plan sends the review back (its rounds line shows) and the run is Running
+      // again with no verdict; it's reviewed again and its second turn is approved. Never Ready to review in between.
+      const exec = readFileSync(join(import.meta.dirname, "../../desktop/src-tauri/src/services/tasks_exec.rs"), "utf8");
+      expect(exec).toMatch(/let reviewed = self\.review\(host, &a\)\.await;[\s\S]*?review_verdict: Some\(reviewed\.as_ref\(\)\.map\(\|r\| r\.verdict\.clone\(\)\)\),[\s\S]*?self\.send_back\(&a, r\)\.await[\s\S]*?host\.send\(thread, text\)[\s\S]*?state: Some\(AttemptState::Running\),\s*review_verdict: Some\(None\),/);
+      const approved = reviewed.map((s) => [s, s === "in_review" ? "approve" : null]);
+      expect(steps).toEqual([
+        approved,
+        approved,
+        [
+          ["queued", null],
+          ["running", null],
+          ["reviewing", null],
+          ["reviewing", "changes_requested"],
+          ["running", null],
+          ["reviewing", null],
+          ["in_review", "approve"],
+        ],
+      ]);
+      // It shows Changes requested as the app's row does while the verdict is written, and never as a run waiting
+      // for you (the code review of a17c7d7a, N6).
+      expect(h).toContain(esc(`${t("tasks.runs.state.reviewing")} · ${t("plan.verdict.changes")}`));
+      expect(h).not.toContain(esc(`${t("tasks.runs.state.in_review")} · ${t("plan.verdict.changes")}`));
+      expect(h).not.toContain(esc(t("plan.count.changes", { n: 1 })));
       const back = PLAN_RUNS[2]!;
-      expect(back.sentBack).toBe(back.steps[3]!.at);
-      expect(h).toMatch(new RegExp(`<span class="sc-run-note"><span class="sc-swap"><span data-fx-cut=""[^>]*></span><span data-fx-enter=""[^>]*>${esc(t("plan.review.rounds", { n: 1 }))}</span></span></span>`));
+      const asks = back.steps.findIndex((s) => s.verdict === "changes_requested");
+      expect(back.sentBack).toBe(back.steps[asks + 1]!.at);
+      // One element, coming in as the review goes back, its words directly in it (nit N3: no empty first step).
+      expect(h).toContain(`<span class="sc-run-note" data-fx-enter="" style="--at:${back.sentBack}s">${esc(rounds)}</span>`);
       expect(PLAN_RUNS.slice(0, 2).every((r) => r.sentBack === null)).toBe(true);
+      // The send-back has its own moment (N5): Changes requested holds before it, and nothing else in the plan changes
+      // within 0.4 s of it.
+      const beat = back.sentBack ?? NaN;
+      const others = planTimes().filter((x) => x !== beat);
+      expect(Math.min(...others.map((x) => Math.abs(x - beat)))).toBeGreaterThan(0.39);
+      expect(beat - back.steps[asks]!.at).toBeGreaterThan(0.39);
+      // The switch that sends a review back, as the started dialog draws it between its first line and the runs: on
+      // with its label and its hint, as Execute all leaves it by default (the code review of a17c7d7a, S2). Lead's
+      // switch, above it in the app, is left out, as the 0.13.0 rendering always has: no question comes up for Lead.
+      expect(plan).toContain("const [sendBack, setSendBack] = useState(true);");
+      expect(plan).toMatch(
+        /\{plan\.state === "started" && \([\s\S]*?\{t\("plan\.started", \{ n: plan\.queued\.length \}\)\}\s*<\/p>[\s\S]*?<SuperviseSwitch plan=\{plan\} onError=\{setError\} \/>\s*<SendBackSwitch plan=\{plan\} onError=\{setError\} \/>\s*<PlanRuns plan=\{plan\} attempts=\{attempts\} \/>/,
+      );
+      expect(plan).toMatch(/<Switch\s*label=\{t\("plan\.sendBack\.switch"\)\}\s*checked=\{plan\.sendBack\}[\s\S]*?<p className="text-sm text-fg-muted">\s*\{pending \? t\("plan\.sendBack\.switching"\) : t\("plan\.sendBack\.switchHint"\)\}/);
+      const sw = `<span class="sc-plan-switch"><span class="sc-switch-row"><span class="sc-switch-label">${esc(t("plan.sendBack.switch"))}</span><span class="sc-switch"><span class="sc-switch-thumb"></span></span></span><span class="sc-plan-switch-hint">${esc(t("plan.sendBack.switchHint"))}</span></span>`;
+      expect(h).toContain(`${esc(t("plan.started", { n: tasks.length }))}</span>${sw}<span class="sc-plan-summary">`);
+      expect(h.match(/class="sc-plan-switch"/g)).toHaveLength(1);
+      // The app's Switch (Choice.tsx), in its pixels: a 28 by 16 track, accent and ringed in it when on, a 12 px thumb
+      // 14 px in, in the accent's text colour, after its 13 px label, 8 px apart; its hint 4 px under, 12 px, muted.
+      const choice = readFileSync(join(import.meta.dirname, "../../../packages/ui/src/components/Choice.tsx"), "utf8");
+      for (const c of ["h-4 w-7 shrink-0 items-center rounded-full", "data-[state=checked]:bg-accent data-[state=checked]:ring-accent", "size-3 translate-x-0.5 rounded-full", "data-[state=checked]:translate-x-[14px] data-[state=checked]:bg-accent-fg", '<div className={cx("flex items-center gap-2", className)}>', 'className={cx("text-base text-fg"'])
+        expect(choice).toContain(c);
+      expect(plan).toMatch(/<div className="flex flex-col gap-1" data-testid="plan-send-back" aria-busy=\{pending\}>/);
+      const px = (n: number) => `calc\\(${n} \\* var\\(--sc-px\\)\\)`;
+      expect(css).toMatch(new RegExp(`\\.sc-plan-switch \\{ display: flex; flex-direction: column; gap: ${px(4)}; \\}`));
+      expect(css).toMatch(new RegExp(`\\.sc-switch-row \\{[^}]*gap: ${px(8)}; font-size: ${px(13)};`));
+      expect(css).toMatch(new RegExp(`\\.sc-switch \\{[^}]*width: ${px(28)}; height: ${px(16)};[^}]*background: var\\(--tn-accent\\); box-shadow: 0 0 0 1px var\\(--tn-accent\\); \\}`));
+      expect(css).toMatch(new RegExp(`\\.sc-switch-thumb \\{ width: ${px(12)}; height: ${px(12)}; margin-left: ${px(14)};[^}]*background: var\\(--tn-accent-fg\\); \\}`));
+      expect(css).toMatch(new RegExp(`\\.sc-plan-switch-hint \\{ font-size: ${px(12)};[^}]*color: var\\(--tn-text-muted\\); \\}`));
+      // The rounds line sits where the app's does: 4 px under the row, 8 past the title's start (pl-6 to its 16; N1). A
+      // phone's frame puts the label under the title, and the line in one column with it.
+      expect(plan).toMatch(/<li\s+key=\{id\}\s+className="flex flex-col gap-1 rounded-md px-2 py-1\.5 hover:bg-surface-2"/);
+      expect(plan).toContain('<p className="flex flex-wrap items-center gap-x-3 pl-6 text-sm text-fg-muted">');
+      expect(css).toMatch(new RegExp(`\\.sc-run-note \\{ grid-column: 2 / -1; padding-left: ${px(8)}; margin-top: ${px(4)};`));
+      expect(/@container \(max-width: 40rem\) \{[\s\S]*?\.sc-run-label \{ grid-column: 2; \}[\s\S]*?\.sc-run-note \{ padding-left: 0; \}/.test(css)).toBe(true);
     } else {
       // Every run is reviewed before its verdict: Queued, Running, Reviewing, Ready to review.
       expect(h).toContain(esc(`${t("tasks.runs.state.in_review")} · ${t("plan.verdict.changes")}`));
       expect(PLAN_RUNS.map((r) => r.steps.map((s) => s.state))).toEqual(tasks.map(() => reviewed));
-      expect(PLAN_RUNS.map((r) => r.verdict).sort()).toEqual(["approve", "approve", "changes_requested"]);
+      expect(steps.map((r) => r.filter(([, v]) => v !== null))).toEqual([[["in_review", "approve"]], [["in_review", "approve"]], [["in_review", "changes_requested"]]]);
       expect(h).not.toContain("sc-run-note");
+      expect(h).not.toContain("sc-plan-switch");
     }
     // It ends with every approved run ready to land: Land N approved…
     // primary and Close ghost (PlanWithLead's started footer).
@@ -477,6 +546,21 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(end.summary).toBe(
       SENDS_BACK ? t("plan.count.approved", { n: 3 }) : `${t("plan.count.approved", { n: 2 })} · ${t("plan.count.changes", { n: 1 })}`,
     );
+    // The caption and the text say what the scene draws (nits N7 and S3): their numbers from the runs, the release that
+    // sends a review back named, and from 0.14.0 each verdict in the order it comes, with the rounds line's words.
+    const said = planSceneText();
+    expect(said).toContain(`"${t("plan.land", { n: end.approved })}"`);
+    expect(said).toContain(` reads ${SENDS_BACK ? end.summary : end.summary.split(" · ").join(" and ")}, `);
+    expect(PLAN_CAPTION).toMatch(SENDS_BACK ? /; from 0\.14\.0, a review that asks for changes goes back to its run, and all three are ready to land\.$/ : /, and the approved two are ready to land\.$/);
+    if (SENDS_BACK) {
+      expect(said).toContain(`from 0.14.0 it goes back to that run as its next message, and its row says "${rounds}"`);
+      expect(said).toContain(`switch "${t("plan.sendBack.switch")}" is on`);
+      const engines = tasks.map((x) => x.engine);
+      const told = said.slice(said.indexOf("Another engine reviews each run."));
+      const named = [...told.matchAll(new RegExp(engines.map(re).join("|"), "g"))].map((m) => m[0]);
+      const verdicts = PLAN_RUNS.flatMap((r) => r.steps.filter((s) => s.verdict !== null).map((s) => [s.at, r.task.engine] as const)).sort((x, y) => x[0] - y[0]);
+      expect(named).toEqual(verdicts.map(([, e]) => e));
+    } else expect(said).not.toContain(rounds);
     expect(end.chip).toBe("waiting");
     expect(h).toMatch(new RegExp(`<span data-fx-enter=""[^>]*><span class="sc-btn sc-btn-primary">${t("plan.land", { n: landing })}</span></span>`));
     for (let n = 1; n < landing; n++)
@@ -1521,7 +1605,9 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(labels).toHaveLength(PLAN_RUNS.length);
     const busy = [t("tasks.runs.state.running"), t("tasks.runs.state.reviewing")];
     for (const at of planTimes()) {
-      const running = labels.filter((l) => busy.some((b) => (heldAt(l, at) ?? "").endsWith(` · ${b}`))).length;
+      // A label is "{engine} · {state}", and " · {verdict}" while the run has one: from 0.14.0 Reviewing has one for a
+      // moment, as the app's does once the review asks for changes.
+      const running = labels.filter((l) => busy.includes((heldAt(l, at) ?? "").split(" · ")[1] ?? "")).length;
       expect(heldAt(PLAN_AGENTS, at), `${at}s`).toEqual({ waiting: SAMPLE.agents.waiting, working: SAMPLE.agents.working + running });
       if (running > 0) expect(planAt(at).summary, `${at}s`).toContain(t("plan.count.running", { n: running }));
     }
@@ -2092,6 +2178,46 @@ describe("F-WB-01 AC9 D-2702 the hero is one Code-mode window, with one worktree
     // The gate runs no browser, so a slice's browser checks run on a site built at SCENES_SLICE as well (the code review
     // of 825b4b54, nit 2).
     expect(operating).toMatch(/So a slice also sets `release\.ts` to `SCENES_SLICE`, runs\s+`pnpm --filter web build:site` and\s+`PLAYWRIGHT_CHROMIUM=\/opt\/pw-browsers\/chromium pnpm --filter web test:site`,\s+sets it back, and runs both again at the version the site shows\./);
+  });
+
+  it("F-WB-01 AC9 D-3006 the scenes slice records each bullet of its release's CHANGELOG section, and only those: the gate a scene draws it under, or why none does", () => {
+    // SCENES_SLICE can't name a release with no slice behind it (the coordinator's S2 on 825b4b54): its slice records
+    // what each of its release's notes draws. A release's section is `## x.y.z` once the release renames `## Unreleased`
+    // to it, and `## Unreleased` until then, for the slice's release alone (OPERATING §6, D-2906).
+    const changelog = readFileSync(join(import.meta.dirname, "../../../CHANGELOG.md"), "utf8");
+    const section = (version: string) =>
+      parseChangelog(changelog).find((r) => r.version === version) ??
+      (version === SCENES_SLICE ? parseChangelog(changelog.replace(/^## Unreleased\b.*$/m, `## ${version}`)).find((r) => r.version === version) : undefined);
+    expect(Object.keys(SCENE_RECORD)).toContain(SCENES_SLICE);
+    const dir = join(import.meta.dirname, "../components/site/scenes");
+    const sceneFiles = readdirSync(dir)
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => readFileSync(join(dir, f), "utf8"));
+    const gates = scenes as unknown as Record<string, unknown>;
+    let drawn = 0;
+    for (const [version, record] of Object.entries(SCENE_RECORD)) {
+      const notes = section(version);
+      expect(notes, `${version}: no CHANGELOG section`).toBeDefined();
+      const titles = (notes?.entries ?? []).map((e) => addedCard(e.text).title);
+      expect(titles.length, version).toBeGreaterThan(0);
+      expect(titles.filter((x) => x === ""), `${version}: a bullet without a bold title`).toEqual([]);
+      expect(Object.keys(record).sort(), `${version}: the record's bullets`).toEqual([...titles].sort());
+      for (const [title, place] of Object.entries(record)) {
+        if (place.startsWith("not drawn: ")) {
+          expect(place.length, `${title}: why it isn't drawn`).toBeGreaterThan(30);
+          continue;
+        }
+        // A gate lib/scenes.ts exports, on the bullet's own release, that a scene reads.
+        drawn++;
+        expect(typeof gates[place], `${title}: ${place} isn't a gate`).toBe("boolean");
+        expect(gates[place], `${title}: ${place} follows ${version}`).toBe(atLeast(SCENE_BUILD, version));
+        const reads = new RegExp(`import \\{[^}]*\\b${place}\\b[^}]*\\} from "\\.\\./\\.\\./\\.\\./lib/scenes"`);
+        expect(sceneFiles.some((f) => reads.test(f)), `${title}: no scene reads ${place}`).toBe(true);
+      }
+    }
+    // 0.14.0's bullet the scenes draw: Lead closes the loop, in the plan scene (D-884).
+    expect(SCENE_RECORD["0.14.0"]?.["Lead closes the loop."]).toBe("SENDS_BACK");
+    expect(drawn).toBeGreaterThan(0);
   });
 });
 

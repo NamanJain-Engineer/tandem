@@ -56,7 +56,7 @@
     - `site-motion`'s scenes for 0.13.0 (D-3006 to D-3008);
     - "New in 0.13.0", the roadmap (F-SH-14 next) and the post "What's new in 0.13.0";
     - 4,804 tests and 159 E2E spec files.
-  - **For 0.14.0 (D-876):** on `chain28`, the redaction should-fix (D-877), the intent radar's second slice with its reviews' fixes (D-878 to D-880, D-883, D-886), F-TK-09 with its reviews' fixes (D-881, D-885), F-TL-12.13 with its reviews' (D-882, D-888), and the site's 0.14.0 scenes slice (D-884). F-SH-14 and the relay move to 0.15.0.
+  - **For 0.14.0 (D-876):** on `chain28`, the redaction should-fix (D-877), the intent radar's second slice with its reviews' fixes (D-878 to D-880, D-883, D-886), F-TK-09 with its reviews' fixes (D-881, D-885), F-TL-12.13 with its reviews' (D-882, D-888), and the site's 0.14.0 scenes slice with its review's fixes (D-884, D-887). F-SH-14 and the relay move to 0.15.0.
   - Verified: see "Release 0.13.0" in the log below.
   - Previous release: 0.12.0 (26 October; D-875), deployed by #107 (fc2ca3a6) on 26 October.
   Deployed by #110 (36152488) on 30 October, live at 15:00 UTC. `main` came back into `product-m0-m5` with this record.
@@ -67,7 +67,7 @@
   - The product in the first viewport as an animated scene of Code mode, with scene rows for the Dashboard, review and second opinion, and the merge queue on 0.9.0 (D-1880).
   - A shorter home page (D-1881), cut to 7,986 px at 1440 (D-1885): the merge-queue scene plays on /changelog/0.9.0/, the principles are on /about/, sections are 96 px apart and the capability index is one line each.
   - The site's dark theme is the app's ink (D-1883, D-1884; the interim block went in D-1887). The scenes draw 0.12.0's tinted engine tiles and brand elevations (D-1887).
-  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001). The hero is one worktree's window in Code mode, as 0.12.0 draws it (D-2702, D-3003), without the intent radar until 0.13.0 (D-2704, D-3004). The scenes to 0.13.0 are in, gated on that release, and every scene test runs at both (D-3006); the 0.12.0 rendering draws three of 0.13.0's changes and is never deployed again (D-3007). 0.13.0 shipped them (D-876). Next, 0.11.0's claims and the governor, once 0.13.0 ships; the 0.14.0 slice brings a record of what each CHANGELOG bullet draws (D-3006).
+  - The release pages' scenes catch up with 0.9.0 to 0.12.0 for `chain27`, one slice at a time (D-1888): 0.12.0's "Follow a plan through" and 0.9.0's "CI results and review comments back to the agent" (D-3001) are in, and every scene's sample work is the in-app demo's `story.json` (D-3000, D-3001). The hero is one worktree's window in Code mode, as 0.12.0 draws it (D-2702, D-3003), without the intent radar until 0.13.0 (D-2704, D-3004). The scenes to 0.13.0 are in, gated on that release, and every scene test runs at both (D-3006); the 0.12.0 rendering draws three of 0.13.0's changes and is never deployed again (D-3007). 0.13.0 shipped them (D-876). Next, 0.11.0's claims and the governor, once 0.13.0 ships; the 0.14.0 slice's record of what each CHANGELOG bullet draws is in (D-3006, D-887).
   Deployed to vibezeo.com by #100 (06dcc276) on 25 October, 10:29 UTC, with the design lead's D-1897; `main` came back into `product-m0-m5` with this record. See "M15 · Website dark mode and motion".
 - Website redesign (M15, D-1800 to D-1815): phases 1–4 and 6 of `docs/WEBSITE_BRIEF.md` (`docs-briefs`) are merged with the `chain4` batch: OS light and dark themes, marketing type, the new home page, Pricing, Download, Changelog, the inner pages and the docs, and the performance phase (marketing pages ship no framework JavaScript, D-1813; Lighthouse at 0.95 on five URLs). They reach vibezeo.com with the next release. The signed-in captures of phase 5 wait on the owner (`HUMAN_TODO.md`). See "M15 · Website redesign".
 - Website elite pass (M15, `site-elite`, D-1819 and D-1830 to D-1844; `docs/WEBSITE_ELITE.md`). The site and docs are rebuilt on a lit visual system:
@@ -2376,6 +2376,75 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
   - **Not changed (0.15.0):** N-1, refreshes still hold about five copies of a worktree's symbols at their peak, and some memory is uncounted (the cap counts what's kept); N-2, ignore-file walks per folder multiply with 20,000-path batches, which only macOS and Windows's recursive watches see, before either ships; N-3, Windows compares creation time and size, not a real file id (HUMAN_TODO's Windows run checks it); N-7, `marks()` compares each pair both ways. N-2 and N-3 go with the Mac and Windows releases, N-1 and N-7 with the radar's next slice.
   - **Tests:** radar 2 new and 2 changed: a parse with the old base isn't kept after `made`, before or after it began, and the pin goes with `forget_for_good` (the made-again test); a worktree made again tells its overlaps again, another pair's notice stays; one follow-up at a time, whose rounds go on while refreshes run out of time and end with a round that brings nothing.
   - **Gate:** passed on this commit's tree: 2,837 Rust tests (9 ignored) and 2,163 TypeScript (desktop 1,074, ui 508, web 268, api 235, remote 33, mobile 31, protocol 14); the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt; coverage 195; no protocol drift.
+- D-887: The review of a17c7d7a (D-884, the site's 0.14.0 scenes slice) required two fixes and asked for three more, with seven nits. The coordinator made them on `chain28`, since messaging `site-motion` still fails.
+  - **Must-fix:**
+    - M1: the plan scene's browser test follows the built scene's release, as the CI scene's test does.
+      - From 0.14.0 it expects 3 approved, "Land 3 approved…", the rounds line and the Send reviews back switch. Before 0.14.0 it expects 2 approved · 1 with changes requested, "Land 2 approved…", and neither.
+      - A new check at 1440 and 360 px seeks to 0.05 s before the send-back and 0.05 s and 0.25 s after it, timed from the rounds line's own `--at`. The line is hidden, then coming in, then whole. TAN-33 reads "Gemini CLI · Reviewing · Changes requested", then "Gemini CLI · Running". The dialog's box is the same there and at every later change.
+      - Another check loads /changelog/0.12.0/ at 12 widths from 320 to 1440 px. The final frame's dialog stays inside the window, nothing in it reaches past its edges, and the switch's label stays on one line.
+      - The browser runs are below.
+    - M2: the two pieces of work planned for the 0.14.0 slice are in.
+      - **The record** (the coordinator's S2 on 825b4b54): `SCENE_RECORD` in `lib/sceneRecord.ts`, by release, then by each CHANGELOG bullet's bold title. Each entry is the gate a scene draws the bullet under, or "not drawn: " and why. 0.14.0's record:
+        - "Lead closes the loop." is `SENDS_BACK`, in the plan scene. The scene ends before landing, so it doesn't draw Landed rows or Done tasks.
+        - "The intent radar, live." isn't drawn. The hero's marks (`RADAR`) look the same whether the radar read the worktrees live or after a turn, and no scene draws Go, Java, a rename or Claim these files.
+        - "Keep and Run can't move under your click either." isn't drawn. No scene draws memory suggestions, Conductor, Execute all's check, Edit & run, the pull-request checks' Allow, a Vibezeo approval or the phone app. The hero's waiting control is Approve (`APPROVE_WAITS`).
+        - Neither are the token's expiry or the key check's speed.
+      - **Its test** reads the slice's section: `## 0.14.0` once it exists, `## Unreleased` until then. The record's keys must be exactly that section's bullets. A gate the record names must be a boolean that `lib/scenes.ts` exports, must follow the bullet's release, and must be imported by a scene. Each of these mutations fails it: a key dropped, a bullet added, Lead closes the loop put under `RADAR`. Renaming `## Unreleased` to `## 0.14.0` passes.
+      - **The placeholder name, read where the browser draws it** (the coordinator's delta review of 400f7c55): e2e-site reads each scene's text as Chromium lays it out, from its layout tree (DOMSnapshot).
+        - That includes `::before`, `::after` and `::marker`, with counters, `attr()` and counter styles worked out.
+        - It reads every page with scenes, at 1440 and 390 px, with the effects on and under reduced motion. It finds no "tandem" in any case.
+        - It first plants a `content` rule, a `list-style` string and an `@counter-style`'s symbols in a scene, and finds each of them.
+  - **Should-fix:**
+    - S1: the plan test pins `SENDS_BACK` to `atLeast(RELEASE.version, "0.14.0")`. Moving the gate to 0.15.0 now fails it at 0.14.0 (checked).
+    - S2: from 0.14.0 the started dialog draws SendBackSwitch between "Queued 3 tasks…" and the count line, as PlanWithLead does.
+      - The label and the app's Switch, on: in the app's pixels, a 28 by 16 track in the accent, ringed in it, with its 12 px thumb 14 px in, in the accent's text colour, 8 px after the label.
+      - Its hint sits under it, 12 px and muted, in en.json's words. It shows at every width: its three lines fit a phone's frame, with about 24 px to spare above and below at 320 px.
+      - The dialog keeps one size from 0.2 s to the end.
+      - Lead's switch (SuperviseSwitch), above it in the app, stays out, as the 0.13.0 rendering always had it:
+        - drawn with its hint, it doubled the dialog's settings and pushed the runs down at 1440;
+        - a phone's frame had no room for its hint;
+        - no question comes up in the scene for Lead to answer.
+      - Tests pin the app's started branch, its `useState(true)`, the Switch's classes in Choice.tsx, and the scene's rules.
+    - S3: the 0.14.0 caption and text name the release: "…; from 0.14.0, a review that asks for changes goes back to its run…". /changelog/0.12.0/'s "New in 0.12.0" no longer takes credit for it. The release commit puts the scene on 0.14.0's own page. That needs its `## 0.14.0` section, so the entry isn't added here:
+      - a `"0.14.0"` entry in `RELEASE_SCENES` above "Lead closes the loop";
+      - the page in `SCENE_PAGES`;
+      - the page in the browser checks' lists;
+      - the placeholder test's ids as a set, since two pages draw the plan scene.
+      - Tried here with `## Unreleased` renamed: the scene tests pass. Only the changelog index still fails, until `RELEASE_TILE_MAP` has the new Added titles.
+  - **Nits:**
+    - N1: the rounds line sits 4 app px under its row and 8 past the title's start (PlanWithLead's gap-1 and pl-6). A phone's frame puts the label under the title, and there the line lines up with the label.
+    - N2: not done. The dialog keeps one size (S2 and M1's check), so the line's room is there before the line comes. A transform can only move the foot or the rows into that room, which leaves the same blank as bottom padding. The app's own change, a centred dialog growing by the line, changes the box. Until 6.3 s the blank is a line under TAN-33.
+    - N3: the empty first step is gone. The line is one element that comes in as the review goes back.
+    - N4: OPERATING §6's gate list now names `SENDS_BACK` on 0.14.0's gates. It also says a slice records its release's bullets (`SCENE_RECORD`), and counts the plan's send-back and each scene's drawn text among a slice's browser checks.
+    - N5: from 0.14.0 the send-back has a moment of its own:
+      - Claude Code's review starts at 6.8 s (it was 6.1 s), and the changes after the send-back come half a second apart: 6.3, 6.8, 7.3, 7.8 and 8.3 s.
+      - Nothing else in the plan changes within 0.4 s of the send-back (a test).
+      - 0.13.0's timing is unchanged.
+    - N6: Changes requested holds for 0.4 s first, as the app writes the verdict while the run is still Reviewing.
+      - At 5.9 s the row reads "Gemini CLI · Reviewing · Changes requested". At 6.3 s it reads Running, and the rounds line comes in.
+      - Each step carries its verdict, as an attempt does, and runLabel adds the verdict to any state, as PlanWithLead's does.
+      - The test checks the steps against tasks_exec.rs's order. It also checks that Changes requested never reads Ready to review · Changes requested and never counts as "1 with changes requested".
+    - N7: the text's numbers come from the runs (`planAt(Infinity)`), and so do the caption's. From 0.14.0 the text tells the verdicts in the order they come: Codex's approval, Gemini CLI's request and its round, Claude Code's approval, Gemini CLI's second review. A test checks that order, the rounds line's words and the Land button's.
+  - **0.13.0 is as it was:** at 0.13.0 the plan scene's markup, caption and text match HEAD byte for byte (`renderToStaticMarkup`, cmp), and so does the whole /changelog/0.12.0/ page. The new CSS rules match nothing there.
+  - **Corrections to D-884's notes** (the review's N3):
+    - "The rounds line has the height of a line from the start (an empty first step)": the room came from its last step, which was laid out at opacity 0 from the start. The empty step drew nothing.
+    - "The hero's Allow already waits": the hero's control that waits is the review queue's Approve (`APPROVE_WAITS`). 0.14.0's Fixed bullet names Keep, Plan with Lead's Run, Edit & run's Run and the pull-request checks' Allow, and no scene draws any of them. `SCENE_RECORD` says so.
+    - "The browser checks run with the release, when the site is built at 0.14.0": OPERATING §6 has a slice run them at `SCENES_SLICE` and again at the version the site shows. D-884 didn't, and its plan test failed at 0.14.0 (M1). This round ran both.
+  - **Tests:**
+    - **Vitest at 0.13.0:** web passes 270 of 270 in 23 files. scenes.test and scenes.next pass 67 + 67, one new in each: the record.
+    - **Vitest with `release.ts` at 0.14.0:** 198 of 204 pass. The 6 failures are all release content, none a scene test, and they wait for the release commit:
+      - blog: there's no "What's new in 0.14.0" post.
+      - the changelog index: the newest section is 0.13.0.
+      - home: /about/'s figures and the "New in" tiles.
+      - pages: there's no 0.14.0 section to render.
+      - site: the downloads are named 0.13.0.
+    - **Browser:** `build:site` gave 61 pages at each version. `test:site` passed 92 of 92 at 0.14.0 and 92 of 92 at 0.13.0. 54 of them are scene checks, 5 of them new.
+      - An earlier 0.14.0 run, on a build with both switches, failed two tests:
+        - The new width check had resized one page and read its boxes at once. Chromium takes a few frames to size a scene's em text by its new container, so the check now loads the page at each width.
+        - blog's reading-progress test failed once and passed in the next two runs. It's flaky, and not this slice's.
+    - **Lint:** web lint (tsc, eslint) passes.
+  - **Not changed:** the docs' tasks page (tasks.mdx) already says the plan has the switch. No CHANGELOG note: the change is the website's. Current state's line on the site now says the 0.14.0 slice's record is in.
+  - **Gate:** passed on this commit's tree: lint, coverage 195, 2,165 TypeScript tests (desktop 1,074, ui 508, web 270, api 235, remote 33, mobile 31, protocol 14) and the desktop build; the Rust steps are D-886's (265f6af3), with no Rust changed since.
 - D-888: The review of b3ff3696 (F-TL-12.13's fix round) required one fix and asked for four more, with six nits; the coordinator made them on `chain28` (D-3193 to D-3196), since messaging `product-research` still fails.
   - **Must-fix:** M-1: the end marker sat over the run's last 16 px, the "With … from .env" line, not the command's last line, so in a short pane a jump to the banner's end (End, Page Down, Tab to Allow) turned Allow on with the command's tail never on screen. The marker is now `RunLine`'s `endRef`: the command `<pre>`'s last line box, the full width and one line high (D-3193).
   - **Should-fix:**
