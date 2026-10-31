@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { PhoneApproval } from "@tandem/protocol";
-import { SETTLE_MS, STAMP_WINDOW_MS, allowTakesTap, answerSettles, approvalActions, pressedAt } from "./approvals";
+import {
+  NO_ANSWERS,
+  SETTLE_MS,
+  STAMP_WINDOW_MS,
+  afterReply,
+  afterSnapshot,
+  allowTakesTap,
+  approvalActions,
+  pressedAt,
+  takesAnswer,
+} from "./approvals";
 
 const base: PhoneApproval = {
   id: "ap_1",
@@ -85,13 +95,59 @@ describe("F-TL-12.21 a tap's own time decides, not when the app got to it", () =
   });
 });
 
-describe("F-TL-12.21 an answer the computer only queued doesn't settle the card", () => {
-  it("a queued Allow can still be dropped there, so the card takes an answer again", () => {
-    // Marked answered, a queued Allow the computer dropped left the card's
-    // Allow and Deny doing nothing (the review of b3ff3696, S-3).
-    expect(answerSettles({ ok: true, data: { state: "queued" } })).toBe(false);
-    expect(answerSettles({ ok: true, data: {} })).toBe(true);
-    expect(answerSettles({ ok: true, data: { state: "allowed" } })).toBe(true);
-    expect(answerSettles({ ok: false })).toBe(false);
+describe("F-TL-12.21 each answer from the phone is sent once, and a dropped queued Allow asks again", () => {
+  // The desktop's replies to approval.decide (phone.rs): `applied` (Deny,
+  // or Allow while armed) and `queued` (Allow while not armed).
+  const applied = { ok: true, data: { state: "applied" } } as const;
+  const queuedReply = { ok: true, data: { state: "queued" } } as const;
+  const listed = (queued: boolean) => [
+    { ...base, queued },
+    { ...base, id: "ap_2" },
+  ];
+
+  it("a queued Allow takes no second tap until the computer drops it, and then takes one", () => {
+    let s = NO_ANSWERS;
+    expect(takesAnswer(s, "ap_1")).toBe(true);
+    // 1. The computer queues the Allow. The card keeps its buttons until
+    // the next snapshot, a round trip away.
+    s = afterReply(s, "ap_1", queuedReply);
+    // 2. A second tap in that window sent a second Allow, a second row in
+    // the computer's queue (the review of 8f35e5d0, S-3): it's ignored.
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    // 3. Shown queued, then not queued: the computer dropped it.
+    s = afterSnapshot(s, listed(true));
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    s = afterSnapshot(s, listed(false));
+    // 4. The card asks again, and a tap is taken (the review of b3ff3696,
+    // S-3). Another card was never touched.
+    expect(takesAnswer(s, "ap_1")).toBe(true);
+    expect(takesAnswer(s, "ap_2")).toBe(true);
+    s = afterReply(s, "ap_1", queuedReply);
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+  });
+
+  it("a snapshot taken before the queue had the Allow doesn't give the card back", () => {
+    let s = afterReply(NO_ANSWERS, "ap_1", queuedReply);
+    // An earlier refresh lands after the reply: not queued yet.
+    s = afterSnapshot(s, listed(false));
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    s = afterSnapshot(s, listed(true));
+    s = afterSnapshot(s, listed(true));
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    // Confirmed on the computer: the card leaves the list, still answered.
+    s = afterSnapshot(s, []);
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+  });
+
+  it("an applied answer stays answered whatever the list shows, and a refused one sends nothing", () => {
+    let s = afterReply(NO_ANSWERS, "ap_1", applied);
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    s = afterSnapshot(s, listed(true));
+    s = afterSnapshot(s, listed(false));
+    expect(takesAnswer(s, "ap_1")).toBe(false);
+    // Refused (not found, desk only, failed): nothing went, so the card
+    // still takes an answer.
+    const refused = afterReply(NO_ANSWERS, "ap_2", { ok: false });
+    expect(takesAnswer(refused, "ap_2")).toBe(true);
   });
 });

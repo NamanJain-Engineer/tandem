@@ -12,6 +12,7 @@ import {
   paneText,
   sendToPane,
   split,
+  waitFor,
   waitForPaneText,
 } from "../support/app";
 
@@ -22,6 +23,9 @@ import {
 // agent's own environment never has it.
 
 const VALUE = "sk_test_e2e_agent_4242";
+
+/** The style F-TL-12.20 holds the banner to 72 px with, while it runs. */
+const SHORT_BANNER_ID = "e2e-tl12-short-banner";
 
 /** Waits for `/sh` after `mark` to report its exit code. */
 async function exitAfter(pane: string, mark: string): Promise<number> {
@@ -105,43 +109,88 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
     expect(await $(banner()).isExisting()).toBe(false);
   });
 
-  it("F-TL-12.20 in a short banner Allow waits for the command's own last line, not the lines below it", async () => {
+  it("F-TL-12.20 in a short banner Allow waits for the command's own last line, held on screen, not the lines below it", async () => {
     // The marker sat over the variables line, and a jump to the banner's
     // end turned Allow on with the command's tail never on screen (the
     // review of b3ff3696, M-1). A real webview lays it out: the banner is
-    // held to 72 px, as in a 120 px pane.
-    const words = Array.from({ length: 24 }, (_, i) => `word${i}`).join(" ");
-    await sendToPane(agent, `/sh echo R7; vibezeo run -- echo ${words} TAIL-END\r`);
-    await $(banner()).waitForDisplayed({ timeout: 15_000 });
+    // held to 72 px, as in a 120 px pane, from its first frame. Shortened
+    // after it showed, it had been on screen whole, the command's end with
+    // it (the review of 8f35e5d0, S-2).
     const once = `${banner()} [data-testid="pane-approval-once"]`;
-    await browser.execute((sel: string) => {
-      const b = document.querySelector<HTMLElement>(sel);
-      if (b) b.style.maxHeight = "72px";
-    }, banner());
-    // The command wraps to more lines than the banner shows.
-    const lines = await browser.execute((sel: string) => {
-      const pre = document.querySelector<HTMLElement>(`${sel} [data-testid="run-line-command"]`);
-      return pre ? Math.round(pre.getBoundingClientRect().height / parseFloat(getComputedStyle(pre).lineHeight)) : 0;
-    }, banner());
-    expect(lines).toBeGreaterThanOrEqual(2);
-    // A jump to the end (End, Page Down, Tab to a button): the command's
-    // last line is above the view, and Allow says to scroll up.
-    await browser.execute((sel: string) => {
-      const b = document.querySelector<HTMLElement>(sel);
-      if (b) b.scrollTop = b.scrollHeight;
-    }, banner());
-    await browser.pause(900);
-    expect(await $(once).getAttribute("aria-disabled")).toBe("true");
-    expect(await $(once).getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
-    // The command's last line wholly in view: the end is seen, and Allow
-    // turns on once its own place has held still.
-    await browser.execute((sel: string) => {
-      document.querySelector(`${sel} [data-testid="run-line-end"]`)?.scrollIntoView({ block: "center" });
-    }, banner());
-    await browser.pause(300);
-    await clickAllow(once);
-    expect(await exitAfter(agent, "R7")).toBe(0);
-    expect(await textAfter(agent, "R7")).toContain("TAIL-END");
+    await browser.execute((css: string) => {
+      const style = document.createElement("style");
+      style.id = SHORT_BANNER_ID;
+      style.textContent = css;
+      document.head.append(style);
+    }, `[data-testid="pane-approval"]{max-height:72px!important}`);
+    try {
+      // 80 words: 4 lines or more at any width the E2E window gives a pane.
+      const words = Array.from({ length: 80 }, (_, i) => `segment${i}`).join(" ");
+      await sendToPane(agent, `/sh echo R7; vibezeo run -- echo ${words} TAIL-END\r`);
+      await $(banner()).waitForDisplayed({ timeout: 15_000 });
+      const shape = await browser.execute((sel: string) => {
+        const b = document.querySelector<HTMLElement>(sel);
+        const pre = b?.querySelector<HTMLElement>('[data-testid="run-line-command"]');
+        if (!b || !pre) return { height: -1, lines: 0 };
+        // The command's lines: its height less the padding and borders
+        // above and below, in lines of its own height.
+        const cs = getComputedStyle(pre);
+        const inside =
+          pre.getBoundingClientRect().height -
+          parseFloat(cs.paddingTop) -
+          parseFloat(cs.paddingBottom) -
+          parseFloat(cs.borderTopWidth) -
+          parseFloat(cs.borderBottomWidth);
+        return {
+          height: b.getBoundingClientRect().height,
+          lines: Math.round(inside / parseFloat(cs.lineHeight)),
+        };
+      }, banner());
+      expect(shape.height).toBeGreaterThan(0);
+      expect(shape.height).toBeLessThanOrEqual(72);
+      // With 3 lines or more, the last one is below the view at the top.
+      expect(shape.lines).toBeGreaterThanOrEqual(3);
+      // At the top: Allow is off, and says to scroll to the end.
+      await browser.pause(900);
+      expect(await $(once).getAttribute("aria-disabled")).toBe("true");
+      expect(await $(once).getAttribute("title")).toBe("Scroll to the end of the command first.");
+      // End, with the focus in the banner (on Allow once, without scrolling
+      // to it), so the key scrolls the banner and not the terminal. The view
+      // lands at the banner's end, past the command's last line: Allow stays
+      // off and says to scroll up a little. Where scrolling is smooth, End
+      // animates and the line passes through the view for a frame or two,
+      // which doesn't count either (the review of 8f35e5d0, S-1).
+      await browser.execute((sel: string) => {
+        document.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true });
+      }, once);
+      await browser.keys("End");
+      await waitFor(
+        () =>
+          browser.execute((sel: string) => {
+            const b = document.querySelector<HTMLElement>(sel);
+            return b ? Math.round(b.scrollHeight - b.clientHeight - b.scrollTop) : -1;
+          }, banner()),
+        (left) => left >= 0 && left <= 1,
+        "the banner's scroll left after End",
+        { timeout: 5_000 },
+      );
+      await browser.pause(900);
+      expect(await $(once).getAttribute("aria-disabled")).toBe("true");
+      expect(await $(once).getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+      // The command's last line wholly in view, held there past the dwell:
+      // the end is seen. Allow then waits only for its own place, below the
+      // view, which clickAllow brings into view and gives its half second.
+      await browser.execute((sel: string) => {
+        document.querySelector(`${sel} [data-testid="run-line-end"]`)?.scrollIntoView({ block: "center" });
+      }, banner());
+      await browser.pause(900);
+      expect(String(await $(once).getAttribute("title"))).not.toContain("end of the command");
+      await clickAllow(once);
+      expect(await exitAfter(agent, "R7")).toBe(0);
+      expect(await textAfter(agent, "R7")).toContain("TAIL-END");
+    } finally {
+      await browser.execute((id: string) => document.getElementById(id)?.remove(), SHORT_BANNER_ID);
+    }
   });
 
   it("F-TL-12.10 outside an agent pane it says why and exits 1", async () => {

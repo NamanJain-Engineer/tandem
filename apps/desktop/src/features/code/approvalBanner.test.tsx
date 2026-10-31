@@ -393,6 +393,21 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
     expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // Home, then an animated End (smooth scrolling, WebView2's default): the
+    // command's last line shows for a frame on its way past, which isn't
+    // seeing it either (the review of 8f35e5d0, S-1).
+    top = 0;
+    fireEvent.scroll(banner);
+    top = 260;
+    fireEvent.scroll(banner);
+    report(1);
+    await new Promise((r) => setTimeout(r, 16));
+    top = 328;
+    fireEvent.scroll(banner);
+    report(0);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
     // Partly above the view, it still says up, not down (the review of
     // b3ff3696, N-1); half of the line isn't enough.
     top = 275;
@@ -424,7 +439,7 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(once())).toBe(true);
     report(1);
     await settled();
-  });
+  }, 10_000); // six real waits of 700 ms and two dwells: over 5 s
 
   it("F-TL-12.20 the end marker comes after the command's last piece, a marked one too, and before the folder", () => {
     fakeBackend();
@@ -443,6 +458,35 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(end.previousSibling?.nodeName).toBe("MARK");
     expect(end.getAttribute("aria-hidden")).toBe("true");
     expect(end.className).toContain("absolute");
+  });
+
+  it("F-TL-12.20 the end marker is the command's last line box: the <pre> holds it, at the content's bottom, the full width and one line high", () => {
+    // jsdom lays nothing out, so these pin the classes that place it. Each
+    // change passed every other test (the review of 8f35e5d0, S-2).
+    fakeBackend();
+    withApproval(approval);
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    const pre = screen.getByTestId("run-line-command");
+    const end = screen.getByTestId("run-line-end");
+    // The <pre> is its containing block. Without `relative` the marker sat
+    // at the pane's bottom, in view at once, with the line below the view.
+    expect(pre.classList.contains("relative")).toBe(true);
+    expect(end.classList.contains("absolute")).toBe(true);
+    // Its bottom is the content's: `bottom-1` over the <pre>'s `py-1`.
+    expect(pre.classList.contains("py-1")).toBe(true);
+    expect(end.classList.contains("bottom-1")).toBe(true);
+    // The full width, so all of it in view is the whole row in view.
+    expect(end.classList.contains("inset-x-0")).toBe(true);
+    // One line high: `1lh`, and at least one `text-sm` line (the <pre>'s
+    // size) in an engine without `lh`. At 0 px, a last line with only its
+    // bottom 3 px in view counted as seen.
+    expect(end.style.height).toBe("1lh");
+    expect(pre.classList.contains("text-sm")).toBe(true);
+    expect(end.style.minHeight).toBe("var(--text-sm--line-height)");
   });
 
   it("F-TL-12.13 a look-alike letter in the folder shows the warning too", () => {

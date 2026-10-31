@@ -56,11 +56,55 @@ export function pressedAt(handled: number, stamp: number | undefined): number {
   return stamp >= handled - STAMP_WINDOW_MS ? stamp : -Infinity;
 }
 
-/** Whether the computer's answer settles the card: an Allow it only
- * queued (not armed for it) can still be dropped there, and the card then
- * asks again; marked answered, it took no answer until the tab came back
- * (the review of b3ff3696, S-3). While queued, the card offers no
- * buttons, so nothing goes twice. */
-export function answerSettles(r: { ok: boolean; data?: { state?: string } }): boolean {
-  return r.ok && r.data?.state !== "queued";
+/** What the Approvals tab keeps of its answers, so each is sent once
+ * (F-TL-12 AC 21). `answered`: the cards an answer went out for, which take
+ * no more taps. `queued`: of those, the Allows the computer only queued (it
+ * wasn't armed), each with whether a snapshot has shown it queued yet. */
+export type Answers = {
+  readonly answered: ReadonlySet<string>;
+  readonly queued: ReadonlyMap<string, boolean>;
+};
+
+export const NO_ANSWERS: Answers = { answered: new Set(), queued: new Map() };
+
+/** Whether a tap on this card may send an answer. */
+export function takesAnswer(s: Answers, id: string): boolean {
+  return !s.answered.has(id);
+}
+
+/** After the computer's reply (`applied` or `queued`). Any reply that took
+ * the answer marks the card answered: the card keeps its buttons until the
+ * next snapshot, a round trip later, and a second tap meanwhile sent a
+ * second Allow (the review of 8f35e5d0, S-3). A queued Allow is remembered
+ * too, since the computer can still drop it. */
+export function afterReply(s: Answers, id: string, r: { ok: boolean; data?: { state?: string } }): Answers {
+  if (!r.ok) return s;
+  const queued = new Map(s.queued);
+  if (r.data?.state === "queued") queued.set(id, false);
+  else queued.delete(id);
+  return { answered: new Set(s.answered).add(id), queued };
+}
+
+/** After a snapshot. A queued Allow that one snapshot showed queued and a
+ * later one shows not queued was dropped on the computer: its card takes an
+ * answer again (the review of b3ff3696, S-3). Shown not queued before any
+ * snapshot showed it queued, it may be a snapshot taken before the queue
+ * had it, so that changes nothing. */
+export function afterSnapshot(
+  s: Answers,
+  approvals: ReadonlyArray<Pick<PhoneApproval, "id" | "queued">>,
+): Answers {
+  if (s.queued.size === 0) return s;
+  const listed = new Map(approvals.map((a) => [a.id, a.queued]));
+  const answered = new Set(s.answered);
+  const queued = new Map(s.queued);
+  for (const [id, shown] of s.queued) {
+    const isQueued = listed.get(id);
+    if (isQueued === true) queued.set(id, true);
+    else if (isQueued === false && shown) {
+      queued.delete(id);
+      answered.delete(id);
+    }
+  }
+  return { answered, queued };
 }

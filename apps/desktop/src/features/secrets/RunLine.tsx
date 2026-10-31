@@ -33,14 +33,18 @@ export function RunLine({ run, endRef }: { run: RunApproval; endRef?: (el: HTMLE
           ),
         )}
         {endRef && (
-          // The last line box: the content's bottom (above the padding),
-          // one line high (`1lh`, the line's own height).
+          // The last line box: the `<pre>` is its containing block
+          // (`relative`), `bottom-1` is the content's bottom (above `py-1`),
+          // the full width, and one line high (`1lh`, the line's own
+          // height). An engine without `lh` drops that height, and the
+          // minimum keeps it one `text-sm` line, not 0 px (the review of
+          // 8f35e5d0, S-2).
           <span
             ref={endRef}
             aria-hidden="true"
             data-testid="run-line-end"
             className="pointer-events-none absolute inset-x-0 bottom-1"
-            style={{ height: "1lh" }}
+            style={{ height: "1lh", minHeight: "var(--text-sm--line-height)" }}
           />
         )}
       </pre>

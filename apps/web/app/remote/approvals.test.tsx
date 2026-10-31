@@ -29,7 +29,7 @@ afterEach(() => {
   host.remove();
 });
 
-const show = (a: PhoneApproval, decide: (id: string, d: "allow" | "deny") => Promise<void>) =>
+const show = (a: PhoneApproval, decide: (id: string, d: "allow" | "deny") => Promise<boolean>) =>
   act(() => root.render(<ApprovalRow a={a} canAnswer decide={decide} />));
 const allow = () => host.querySelector<HTMLButtonElement>('[data-testid="remote-approval-allow"]')!;
 const deny = () => host.querySelector<HTMLButtonElement>('[data-testid="remote-approval-deny"]')!;
@@ -38,7 +38,7 @@ const pause = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
 
 describe("The phone's approvals (F-TL-12.21)", () => {
   it("Allow waits until its row has held still, a tap before that allows nothing, and Deny never waits", async () => {
-    const decide = vi.fn(async () => undefined);
+    const decide = vi.fn(async () => false);
     show(approval, decide);
     expect(allow().hasAttribute("data-grant")).toBe(true);
     expect(waiting(allow())).toBe(true);
@@ -60,9 +60,9 @@ describe("The phone's approvals (F-TL-12.21)", () => {
     expect(decide).toHaveBeenLastCalledWith("ap_2", "deny");
   });
 
-  it("an answer goes once: both buttons are off while it's on its way", async () => {
+  it("an answer goes once: both buttons are off while it's on its way, and back if the computer didn't take it", async () => {
     let finish: () => void = () => undefined;
-    const decide = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    const decide = vi.fn(() => new Promise<boolean>((r) => (finish = () => r(false))));
     show(approval, decide);
     act(() => deny().click());
     act(() => deny().click());
@@ -73,10 +73,34 @@ describe("The phone's approvals (F-TL-12.21)", () => {
     expect(deny().disabled).toBe(false);
   });
 
+  it("an answer the computer took isn't sent again before the list moves, and a dropped queued Allow can be sent again", async () => {
+    // Back on after the reply, the buttons sent a queued Allow again before
+    // the list showed it queued (the review of 8f35e5d0).
+    const decide = vi.fn(async () => true);
+    show(approval, decide);
+    await pause(700);
+    act(() => allow().click());
+    await pause(0);
+    act(() => allow().click());
+    act(() => deny().click());
+    await pause(0);
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(allow().disabled).toBe(true);
+    // The list shows it queued, then not: the computer dropped it.
+    show({ ...approval, queued: true }, decide);
+    expect(host.textContent).toContain("Waiting for you on your computer");
+    show({ ...approval, queued: false }, decide);
+    await pause(700);
+    expect(allow().disabled).toBe(false);
+    act(() => allow().click());
+    await pause(0);
+    expect(decide).toHaveBeenCalledTimes(2);
+  });
+
   it("a pane's run is answered on the computer: no Allow on the phone, only Deny", () => {
     show(
       { ...approval, deskOnly: true },
-      vi.fn(async () => undefined),
+      vi.fn(async () => false),
     );
     expect(host.querySelector('[data-testid="remote-approval-allow"]')).toBeNull();
     expect(host.textContent).toContain("Answer on your computer");

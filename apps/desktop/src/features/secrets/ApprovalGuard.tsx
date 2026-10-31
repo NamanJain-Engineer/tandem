@@ -30,10 +30,17 @@ export function useSettled(key: string | null): boolean {
  * count as seen: all of it, give or take a rounding. */
 const WHOLE = 0.99;
 
+/** How long all of the end marker must stay in view for the line's end to
+ * count as seen. An animated jump shows the line for a frame or two on its
+ * way past, which nobody can read: End or Page Down where scrolling is
+ * smooth (WebView2's default), a wheel notch, a fast scrollbar drag (the
+ * review of 8f35e5d0, S-1). */
+export const DWELL_MS = 400;
+
 /** A ref for a marker over the command's last line ([`RunLine`]'s
- * `endRef`), and whether all of that marker has been in view (not clipped
- * by the pane or scrolled away) since `key` changed: Allow waits for the
- * person to have seen the command's end.
+ * `endRef`), and whether all of that marker has stayed in view (not clipped
+ * by the pane or scrolled away) for {@link DWELL_MS} since `key` changed:
+ * Allow waits for the person to have seen the command's end.
  *
  * The third ref is for the scroller that holds the line and, below it, the
  * buttons (the pane's banner), and the fourth value says whether the view
@@ -59,15 +66,31 @@ export function useSeenEnd(
       setSeen(change);
       return;
     }
+    // The dwell starts when all of the marker comes into view and stops at
+    // any report that it no longer is: one report used to be enough.
+    let dwell: ReturnType<typeof setTimeout> | null = null;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= WHOLE)) setSeen(change);
+        // One target: a batch is its crossings in order, and the last one
+        // is where it is now.
+        const latest = entries[entries.length - 1];
+        if (latest === undefined) return;
+        if (latest.isIntersecting && latest.intersectionRatio >= WHOLE) {
+          // Still whole (1 to 0.995 and back) keeps the dwell running.
+          dwell ??= setTimeout(() => setSeen(change), DWELL_MS);
+        } else if (dwell !== null) {
+          clearTimeout(dwell);
+          dwell = null;
+        }
       },
       // Told as it crosses WHOLE too: rounding can keep a ratio just short of 1.
       { threshold: [0, WHOLE, 1] },
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      if (dwell !== null) clearTimeout(dwell);
+      io.disconnect();
+    };
   }, [key, el, change]);
   useEffect(() => {
     if (key === null || scroller === null) return;

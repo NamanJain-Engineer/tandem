@@ -23,7 +23,17 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
-import { SETTLE_MS, allowTakesTap, answerSettles, approvalActions, now, pressedAt } from "../lib/approvals";
+import {
+  NO_ANSWERS,
+  SETTLE_MS,
+  afterReply,
+  afterSnapshot,
+  allowTakesTap,
+  approvalActions,
+  now,
+  pressedAt,
+  takesAnswer,
+} from "../lib/approvals";
 import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
@@ -194,21 +204,28 @@ function AgentsTab({ view, onType }: { view: SessionView; onType: (a: PhoneAgent
 }
 
 function ApprovalsTab({ session, view }: { session: RemoteSession; view: SessionView }) {
-  const approvals = view.snapshot?.approvals ?? [];
+  const snapshot = view.snapshot;
+  const approvals = snapshot?.approvals ?? [];
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Each answer is sent once: a second tap while one is on its way, or
-  // after it went and before the list drops the card, sends nothing. Refs,
-  // so taps handled in one batch see each other (the review of ce0d5815).
+  // after it went and before the list drops the card or shows it queued,
+  // sends nothing. Refs, so taps handled in one batch see each other (the
+  // review of ce0d5815).
   const sending = useRef(new Set<string>());
-  const answered = useRef(new Set<string>());
+  const answers = useRef(NO_ANSWERS);
+  // A queued Allow the computer dropped gives its card back, before the
+  // card's buttons can take a tap.
+  useLayoutEffect(() => {
+    if (snapshot) answers.current = afterSnapshot(answers.current, snapshot.approvals);
+  }, [snapshot]);
   async function decide(a: PhoneApproval, d: "allow" | "deny") {
-    if (sending.current.has(a.id) || answered.current.has(a.id)) return;
+    if (sending.current.has(a.id) || !takesAnswer(answers.current, a.id)) return;
     sending.current.add(a.id);
     setBusy(a.id);
     try {
       const r = await session.decide(a, d);
-      if (answerSettles(r)) answered.current.add(a.id);
+      answers.current = afterReply(answers.current, a.id, r);
       setError(r.ok ? null : r.message);
     } finally {
       sending.current.delete(a.id);

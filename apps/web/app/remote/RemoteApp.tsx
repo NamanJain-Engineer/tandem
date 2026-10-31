@@ -340,7 +340,8 @@ function Approvals({
   onDone: () => void;
 }) {
   const [message, setMessage] = useState<{ tone: "info" | "error"; text: string } | null>(null);
-  async function decide(approvalId: string, decision: "allow" | "deny") {
+  /** Whether the computer took the answer. */
+  async function decide(approvalId: string, decision: "allow" | "deny"): Promise<boolean> {
     const r = await client.command<{ state: "applied" | "queued" }>("approval.decide", {
       approvalId,
       decision,
@@ -350,6 +351,7 @@ function Approvals({
       setMessage({ tone: "info", text: "Sent. It applies once you confirm it on your computer." });
     else setMessage({ tone: "info", text: decision === "allow" ? "Allowed." : "Denied." });
     onDone();
+    return r.ok;
   }
   return (
     <div className="flex flex-col gap-3">
@@ -386,16 +388,27 @@ export function ApprovalRow({
 }: {
   a: PhoneApproval;
   canAnswer: boolean;
-  decide: (approvalId: string, decision: "allow" | "deny") => Promise<void>;
+  decide: (approvalId: string, decision: "allow" | "deny") => Promise<boolean>;
 }) {
   const [busy, setBusy] = useState(false);
+  // Each answer is sent once (F-TL-12 AC 21): one the computer took keeps
+  // the buttons off until the list drops the card or shows it queued. Back
+  // on after the reply, they sent a queued Allow again before the list
+  // moved (the review of 8f35e5d0). Shown queued and then not, the Allow was
+  // dropped on the computer, and the card takes an answer again.
+  const [taken, setTaken] = useState(false);
+  const [shownQueued, setShownQueued] = useState(a.queued);
+  if (a.queued !== shownQueued) {
+    setShownQueued(a.queued);
+    if (!a.queued) setTaken(false);
+  }
   const allowed = canAnswer && !a.queued && !a.deskOnly;
   const box = useSteadyBox(allowed, `${a.id}\n${a.summary}\n${a.detail ?? ""}`);
   const answer = async (decision: "allow" | "deny") => {
-    if (busy) return;
+    if (busy || taken) return;
     setBusy(true);
     try {
-      await decide(a.id, decision);
+      if (await decide(a.id, decision)) setTaken(true);
     } finally {
       setBusy(false);
     }
@@ -418,7 +431,7 @@ export function ApprovalRow({
               <Button
                 size="sm"
                 variant="primary"
-                disabled={busy}
+                disabled={busy || taken}
                 data-grant
                 waiting={!box.steady}
                 title={
@@ -435,7 +448,7 @@ export function ApprovalRow({
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy}
+              disabled={busy || taken}
               onClick={() => void answer("deny")}
               data-testid="remote-approval-deny"
             >
