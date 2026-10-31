@@ -13,7 +13,7 @@ use tandem_tasks::{IssueStatus, Writer};
 
 use super::supervisor::sensitive;
 use super::{clean, cut, not_found, PlanReview, PlanService, PlanView, ReviewState, ReviewWait};
-use crate::services::tasks_exec::ChangesRequested;
+use crate::services::tasks_exec::{Back, ChangesRequested};
 
 /// Changes requested goes back to a run this many times; the next one comes
 /// to you.
@@ -130,15 +130,31 @@ pub fn decide(
 
 impl PlanService {
     /// A plan run's review asked for changes (F-TK-09): the message to send
-    /// back to the run, or `None` when the review came to you, as the plan
-    /// shows it.
-    pub async fn on_changes_requested(&self, c: ChangesRequested) -> Option<String> {
+    /// back to the run, the review kept for you, as the plan shows it, or
+    /// nothing kept when the plan is gone or the task closed, which the run
+    /// tells as any review (the review of e00668ee, S2).
+    pub async fn on_changes_requested(&self, c: ChangesRequested) -> Back {
         let gate = self.delivery(&c.plan_id);
         let _held = gate.lock().await;
         let near = self
             .host
             .near_limit(&c.engine_id, c.account_id.as_ref())
             .await;
+        // Read once the plan's other deliveries are done: one you closed
+        // the task during wasn't seen (the review of e00668ee, Nit 3).
+        if let Some(tracker) = self.host.tracker() {
+            let issue = c.issue_id.clone();
+            let closed = tokio::task::spawn_blocking(move || {
+                tracker.get(&issue).map_or(true, |i| {
+                    matches!(i.status, IssueStatus::Done | IssueStatus::Canceled)
+                })
+            })
+            .await
+            .unwrap_or(true);
+            if closed {
+                return Back::NotPlans;
+            }
+        }
         let now = self.host.now();
         let diff = c.diff.map(|d| format!("{d:016x}")).unwrap_or_default();
         // Kept and shown as the run reads them: without what's removable,
@@ -146,7 +162,9 @@ impl PlanService {
         let reasons = clean(&c.reasons, true);
         let (review, view, replaced) = {
             let mut plans = self.lock();
-            let e = plans.get_mut(&c.plan_id)?;
+            let Some(e) = plans.get_mut(&c.plan_id) else {
+                return Back::NotPlans;
+            };
             let mine = |r: &&PlanReview| r.attempt_id == c.attempt_id;
             let round = u32::try_from(e.view.reviews.iter().filter(mine).count())
                 .unwrap_or(u32::MAX)
@@ -211,7 +229,7 @@ impl PlanService {
                     round = review.round,
                     "a run's review went back to it"
                 );
-                Some(review_message(&review.reasons, None, false))
+                Back::Send(review_message(&review.reasons, None, false))
             }
             _ => {
                 self.host
@@ -221,7 +239,7 @@ impl PlanService {
                         &review.issue_id,
                     )
                     .await;
-                None
+                Back::Yours
             }
         }
     }

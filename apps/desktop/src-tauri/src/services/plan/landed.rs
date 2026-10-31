@@ -13,6 +13,8 @@ const SHORT: usize = 12;
 /// On a task whose landing was undone.
 pub(super) const UNLANDED: &str =
     "Undo landing took this task's merge off the base, so it's in review again.";
+/// On one you'd moved on from Done since it landed: its status is yours.
+pub(super) const UNLANDED_KEPT: &str = "Undo landing took this task's merge off the base.";
 
 impl PlanService {
     /// Land worktrees landed `lane_id` as `commit`. Nothing for a worktree
@@ -42,6 +44,7 @@ impl PlanService {
                 issue_id: issue_id.clone(),
                 commit: commit.to_string(),
                 at: now,
+                attempt_id: Some(attempt.clone()),
             });
             e.view.clone()
         };
@@ -70,9 +73,11 @@ impl PlanService {
     }
 
     /// Undo landing took `commits` (the landed merges) off the base: a plan
-    /// task that landed as one of them is in review again, with its run and
-    /// a comment, and its row no longer says Landed. It read Done and Landed
-    /// with its commit gone from the base (the review of 0e20d5b7, SF-8).
+    /// task that landed as one of them is in review again, with the run that
+    /// landed and a comment, and its row no longer says Landed. It read Done
+    /// and Landed with its commit gone from the base (the review of
+    /// 0e20d5b7, SF-8). A task you've moved on from Done since keeps your
+    /// status (the review of e00668ee, Nit 5).
     pub async fn on_unlanded(&self, commits: &[String]) {
         let (views, issues) = {
             let mut plans = self.lock();
@@ -83,7 +88,7 @@ impl PlanService {
                 e.view.landed.retain(|l| {
                     let undone = commits.contains(&l.commit);
                     if undone {
-                        issues.push(l.issue_id.clone());
+                        issues.push((l.issue_id.clone(), l.attempt_id.clone()));
                     }
                     !undone
                 });
@@ -105,19 +110,23 @@ impl PlanService {
             tasks = issues.len(),
             "plan tasks' landing was undone"
         );
-        for issue_id in issues {
-            self.host.run_unlanded(&issue_id).await;
+        for (issue_id, attempt) in issues {
+            self.host.run_unlanded(&issue_id, attempt.as_ref()).await;
             let Some(tracker) = self.host.tracker() else {
                 continue;
             };
             let written = tokio::task::spawn_blocking(move || {
-                tracker.force_update(
-                    &issue_id,
-                    Some(IssueStatus::InReview),
-                    None,
-                    &Writer::human(),
-                )?;
-                tracker.add_comment(&issue_id, UNLANDED, None, None, &Writer::human())
+                let done = tracker.get(&issue_id)?.status == IssueStatus::Done;
+                if done {
+                    tracker.force_update(
+                        &issue_id,
+                        Some(IssueStatus::InReview),
+                        None,
+                        &Writer::human(),
+                    )?;
+                }
+                let body = if done { UNLANDED } else { UNLANDED_KEPT };
+                tracker.add_comment(&issue_id, body, None, None, &Writer::human())
             })
             .await;
             if !matches!(written, Ok(Ok(_))) {

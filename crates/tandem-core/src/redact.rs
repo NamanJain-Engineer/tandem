@@ -297,7 +297,11 @@ fn assignment_span(text: &str, caps: &Caps<'_>) -> Option<(usize, usize)> {
     }
     // Read without the marks the copy as written has (D-3172).
     let (clean, key) = (unmarked(value), unmarked(key.as_str()));
-    if clean.len() < 8 || descriptive_key(&key) || !assignment_value_ok(&clean, quoted) {
+    if clean.len() < 8
+        || descriptive_key(&key)
+        || (time_key(&key) && time_like(&clean))
+        || !assignment_value_ok(&clean, quoted)
+    {
         return None;
     }
     Some((v.start(), v.start() + value.len()))
@@ -318,10 +322,11 @@ fn starts_like_code(v: &str) -> bool {
 
 /// Keys that describe a credential rather than hold one: `token_type`,
 /// `password_hint`, `secret_name`. A credential's times (`token_expires_at`,
-/// `tokenExpiresAt`) are read by their values instead ([`time_like`]): as
-/// key suffixes, `at` and `expiry` let any value through, and a camelCase
-/// key's last word let `secretId: "<a UUID>"` through, a Vault SecretID
-/// (the review of 0e20d5b7, SF-2).
+/// `tokenExpiresAt`) are read by their key and value together ([`time_key`],
+/// [`time_like`]): as key suffixes, `at` and `expiry` let any value
+/// through, and a camelCase key's last word let `secretId: "<a UUID>"`
+/// through, a Vault SecretID (the review of 0e20d5b7, SF-2). `secret_id`
+/// is one too: an id that is the secret (the review of e00668ee, S1).
 fn descriptive_key(key: &str) -> bool {
     const SUFFIXES: [&str; 22] = [
         "type", "types", "name", "kind", "pattern", "url", "uri", "id", "field", "label", "file",
@@ -329,10 +334,52 @@ fn descriptive_key(key: &str) -> bool {
         "format", "mode",
     ];
     let lower = key.to_ascii_lowercase();
-    lower
-        .rsplit(['_', '-'])
-        .next()
-        .is_some_and(|last| lower.contains(['_', '-']) && SUFFIXES.contains(&last))
+    let mut words = lower.rsplit(['_', '-']);
+    let (Some(last), before) = (words.next(), words.next()) else {
+        return false;
+    };
+    lower.contains(['_', '-'])
+        && SUFFIXES.contains(&last)
+        && !(last == "id" && before == Some("secret"))
+}
+
+/// Whether a key's last word names a time: `token_expires_at`,
+/// `tokenExpiresAt`, `SESSION_TOKEN_EXPIRY`, `secret_rotated`. Only under
+/// such a key is a time ([`time_like`]) the value, not the credential: under
+/// every key, `password=2024-01-01` and `api_key=1730311200.5` went through
+/// in clear (the review of e00668ee, S1).
+fn time_key(key: &str) -> bool {
+    const TIME_WORDS: [&str; 18] = [
+        "at",
+        "expires",
+        "expire",
+        "expiry",
+        "expiration",
+        "exp",
+        "iat",
+        "nbf",
+        "created",
+        "updated",
+        "issued",
+        "rotated",
+        "refreshed",
+        "since",
+        "until",
+        "date",
+        "time",
+        "timestamp",
+    ];
+    let key = key.trim_end_matches(['_', '-']);
+    let word = key.rsplit(['_', '-']).next().unwrap_or(key);
+    // camelCase: the last word starts at the last capital, unless the word
+    // is all capitals (`SESSION_TOKEN_AT`).
+    let last = if word.bytes().any(|b| b.is_ascii_lowercase()) {
+        word.rfind(|c: char| c.is_ascii_uppercase())
+            .map_or(word, |i| &word[i..])
+    } else {
+        word
+    };
+    TIME_WORDS.contains(&last.to_ascii_lowercase().as_str())
 }
 
 /// A date or a time as RFC 3339 and ISO 8601 write them (`2025-10-30`,
@@ -412,7 +459,7 @@ fn assignment_value_ok(v: &str, quoted: bool) -> bool {
     if v.starts_with('$') || v.starts_with('{') || v.starts_with('<') || v.starts_with('%') {
         return false;
     }
-    if v.chars().all(|c| c.is_ascii_digit()) || time_like(v) {
+    if v.chars().all(|c| c.is_ascii_digit()) {
         return false;
     }
     let has_digit_or_symbol = v.chars().any(|c| !c.is_ascii_alphabetic());
@@ -1133,6 +1180,57 @@ mod tests {
             "é025-10-30",
         ] {
             assert!(!time_like(v), "{v}");
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_time_passes_only_under_a_key_that_names_one() {
+        // Under every key, a date or a number with a fraction went through
+        // in clear, `password=2024-01-01` among them (the review of
+        // e00668ee, S1).
+        for key in [
+            "token_expires_at",
+            "tokenExpiresAt",
+            "SESSION_TOKEN_AT",
+            "SESSION_TOKEN_EXPIRY",
+            "refresh_token_expires",
+            "secret_rotated",
+            "token_created_",
+        ] {
+            assert!(time_key(key), "{key}");
+        }
+        for key in [
+            "password",
+            "DB_PASSWORD",
+            "api_key",
+            "secret",
+            "secretId",
+            "token_at_rest",
+            "tokenExpiresAT",
+        ] {
+            assert!(!time_key(key), "{key}");
+        }
+        // A secret's id is the secret (Vault's SecretID); a token's isn't.
+        assert!(!descriptive_key("secret_id"));
+        assert!(!descriptive_key("VAULT_SECRET_ID"));
+        assert!(descriptive_key("token_id"));
+        let r = Redactor::new();
+        for line in [
+            "password=2024-01-01",
+            "DB_PASSWORD=\"1987-05-12\"",
+            "password: 31415926.53",
+            "api_key=1730311200.5",
+            "secret = 2025-10-30T18:00:00Z",
+            "mysql --password 2024-01-01",
+        ] {
+            assert!(r.redact(line).contains(REDACTED), "{line}");
+        }
+        for line in [
+            "token_expires_at: 2025-10-30T18:00:00Z",
+            "SESSION_TOKEN_AT=2025-10-30T18:00:00Z",
+            "secret_rotated=1730311200.5",
+        ] {
+            assert_eq!(r.redact(line), line);
         }
     }
 

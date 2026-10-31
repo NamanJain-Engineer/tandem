@@ -226,6 +226,12 @@ pub struct PlanLanded {
     /// The commit it landed as.
     pub commit: String,
     pub at: i64,
+    /// The run whose worktree landed: Undo landing puts that one in review
+    /// again, not the task's latest Done run (the review of e00668ee,
+    /// Nit 5). None in a plan kept before it was named.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<AttemptId>,
 }
 
 /// A plan run's question (F-TK-08).
@@ -634,8 +640,9 @@ pub trait PlanHost: Send + Sync {
     /// False for one still going (F-TK-09).
     async fn run_landed(&self, attempt: &AttemptId) -> bool;
     /// Undo landing took the task's landed merge off the base: its run that
-    /// landed is in review again (F-TK-09).
-    async fn run_unlanded(&self, issue_id: &str);
+    /// landed (`attempt`, else its latest Done run) is in review again
+    /// (F-TK-09).
+    async fn run_unlanded(&self, issue_id: &str, attempt: Option<&AttemptId>);
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1869,15 +1876,15 @@ impl PlanHost for AppHost {
         self.state().task_exec.landed(attempt).await
     }
 
-    async fn run_unlanded(&self, issue_id: &str) {
-        self.state().task_exec.unlanded(issue_id).await;
+    async fn run_unlanded(&self, issue_id: &str, attempt: Option<&AttemptId>) {
+        self.state().task_exec.unlanded(issue_id, attempt).await;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::tasks_exec::ChangesRequested;
+    use crate::services::tasks_exec::{Back, ChangesRequested};
     use std::collections::HashSet;
 
     #[derive(Default)]
@@ -1928,10 +1935,12 @@ mod tests {
         moved_on: Mutex<bool>,
         /// The run's review is still being written down.
         settling: Mutex<bool>,
-        /// The tasks whose landing was undone.
-        unlanded: Mutex<Vec<String>>,
+        /// The tasks whose landing was undone, and the run that landed.
+        unlanded: Mutex<Vec<(String, Option<AttemptId>)>>,
         /// Runs resumed with a review, and the text.
         resumed: Mutex<Vec<(AttemptId, String)>>,
+        /// Resume fails.
+        resume_fails: Mutex<bool>,
         /// Worktrees and the task and run each is (F-TK-09).
         lanes: Mutex<HashMap<String, (String, AttemptId)>>,
         /// Runs marked Done because their worktree landed; the run in
@@ -2201,6 +2210,12 @@ mod tests {
             }
         }
         async fn resume_run(&self, attempt: &AttemptId, text: String) -> Result<(), IpcError> {
+            if *self.resume_fails.lock().expect("l") {
+                return Err(IpcError::new(
+                    ErrorCode::Conflict,
+                    "This run never started a session.",
+                ));
+            }
             self.resumed
                 .lock()
                 .expect("l")
@@ -2217,8 +2232,11 @@ mod tests {
             self.landed.lock().expect("l").push(attempt.clone());
             true
         }
-        async fn run_unlanded(&self, issue_id: &str) {
-            self.unlanded.lock().expect("l").push(issue_id.to_string());
+        async fn run_unlanded(&self, issue_id: &str, attempt: Option<&AttemptId>) {
+            self.unlanded
+                .lock()
+                .expect("l")
+                .push((issue_id.to_string(), attempt.cloned()));
         }
     }
 
@@ -4177,10 +4195,12 @@ mod tests {
     async fn f_tk_09_1_a_runs_review_goes_back_to_it_for_two_rounds_then_comes_to_you() {
         let (_d, fake, plans, _bus) = rig(false);
         let view = sending_back(&fake, &plans).await;
-        let first = plans
+        let Back::Send(first) = plans
             .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
             .await
-            .expect("sent back");
+        else {
+            panic!("sent back");
+        };
         assert!(
             first.starts_with(&format!("{}:\n", review::LABEL)),
             "{first}"
@@ -4189,12 +4209,12 @@ mod tests {
         let second = plans
             .on_changes_requested(changes(&view, "atm_1", "Add a test for it too.", 2))
             .await;
-        assert!(second.is_some(), "round 2");
+        assert!(matches!(second, Back::Send(_)), "round 2");
         // The third comes to you, with why, and a notification.
         let third = plans
             .on_changes_requested(changes(&view, "atm_1", "Now rename the helper.", 3))
             .await;
-        assert_eq!(third, None);
+        assert_eq!(third, Back::Yours);
         let all = reviews(&plans, &view.id);
         assert_eq!(
             all.iter().map(|r| (r.round, r.state)).collect::<Vec<_>>(),
@@ -4222,14 +4242,16 @@ mod tests {
         let retried = plans
             .on_changes_requested(changes(&view, "atm_2", "Handle the empty input.", 4))
             .await;
-        assert!(retried.is_some());
+        assert!(matches!(retried, Back::Send(_)));
         assert_eq!(reviews(&plans, &view.id)[3].round, 1);
-        // A plan that's gone sends nothing and keeps nothing.
+        // A plan that's gone sends nothing and keeps nothing: the run tells
+        // its review as any run's, not as one that came to you (the review
+        // of e00668ee, S2).
         plans.discard(&view.id).expect("remove");
         let gone = plans
             .on_changes_requested(changes(&view, "atm_2", "More.", 5))
             .await;
-        assert_eq!(gone, None);
+        assert_eq!(gone, Back::NotPlans);
     }
 
     #[tokio::test]
@@ -4243,7 +4265,7 @@ mod tests {
             plans
                 .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
                 .await,
-            None
+            Back::Yours
         );
         let r = reviews(&plans, &view.id)[0].clone();
         assert_eq!(
@@ -4312,6 +4334,120 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn f_tk_09_2_send_back_refuses_a_long_note_and_keeps_a_review_that_couldnt_go() {
+        // A note over the limit, a run whose review is still being written
+        // down, and a Resume that failed (the review of e00668ee, S3).
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        plans.send_back(&view.id, false).expect("off");
+        plans
+            .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
+            .await;
+        let r = reviews(&plans, &view.id)[0].clone();
+        assert_eq!(r.state, ReviewState::Escalated);
+        // Refused, not cut without a word.
+        let long = plans
+            .send_review(&view.id, &r.id, Some("x".repeat(review::NOTE_MAX + 1)))
+            .await
+            .expect_err("too long");
+        assert_eq!(long.code, ErrorCode::Invalid);
+        // Still being written down: again in a moment.
+        *fake.settling.lock().expect("l") = true;
+        let busy = plans
+            .send_review(&view.id, &r.id, None)
+            .await
+            .expect_err("settling");
+        assert_eq!(
+            (busy.code, busy.retryable, busy.message.as_str()),
+            (ErrorCode::Conflict, true, review::SETTLING)
+        );
+        *fake.settling.lock().expect("l") = false;
+        // A Resume that failed leaves it waiting for you, without the note.
+        *fake.resume_fails.lock().expect("l") = true;
+        plans
+            .send_review(&view.id, &r.id, Some("Keep the old API.".into()))
+            .await
+            .expect_err("resume failed");
+        let kept = reviews(&plans, &view.id)[0].clone();
+        assert_eq!((kept.state, kept.note), (ReviewState::Escalated, None));
+        assert!(fake.resumed.lock().expect("l").is_empty());
+        // At the limit, it goes.
+        *fake.resume_fails.lock().expect("l") = false;
+        plans
+            .send_review(&view.id, &r.id, Some("x".repeat(review::NOTE_MAX)))
+            .await
+            .expect("sent");
+        assert_eq!(fake.resumed.lock().expect("l").len(), 1);
+        assert_eq!(reviews(&plans, &view.id)[0].state, ReviewState::SentByYou);
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_2_a_run_that_moved_on_drops_its_review_waiting_for_you() {
+        // Stop, Resume or Retry, and its worktree landing, drop a review
+        // still waiting for you, with why, on the task; another run's stays
+        // (the review of e00668ee, S3).
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        plans.send_back(&view.id, false).expect("off");
+        let atm = |n: &str| AttemptId::from_db(n.to_string());
+        plans
+            .on_changes_requested(changes(&view, "atm_1", "Handle the empty input.", 1))
+            .await;
+        plans.run_moved_on(&atm("atm_9"), review::GONE).await;
+        assert_eq!(reviews(&plans, &view.id)[0].state, ReviewState::Escalated);
+        plans.run_moved_on(&atm("atm_1"), review::GONE).await;
+        let r = reviews(&plans, &view.id)[0].clone();
+        assert_eq!(
+            (r.state, r.reason.as_deref()),
+            (ReviewState::Dropped, Some(review::GONE))
+        );
+        assert!(task_notes(&fake)
+            .last()
+            .expect("noted")
+            .starts_with("Review not sent: "));
+        plans
+            .on_changes_requested(changes(&view, "atm_1", "Now the docs.", 2))
+            .await;
+        fake.lanes
+            .lock()
+            .expect("l")
+            .insert("wt_1".into(), ("TAN-1".into(), atm("atm_1")));
+        plans.on_landed("wt_1", "0123456789abcdef").await;
+        let r = reviews(&plans, &view.id)[1].clone();
+        assert_eq!(
+            (r.state, r.reason.as_deref()),
+            (ReviewState::Dropped, Some(review::LANDED))
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_1_a_task_closed_while_its_review_waits_on_the_plan_gets_nothing_back() {
+        // The plan's other deliveries held its review, and the task you'd
+        // closed meanwhile got it (the review of e00668ee, Nit 3): it's no
+        // plan's then, kept nowhere, and the run tells it as any review.
+        let (_d, fake, plans, _bus) = rig(false);
+        let view = sending_back(&fake, &plans).await;
+        let told = fake.notified.lock().expect("l").len();
+        let gate = plans.delivery(&view.id);
+        let held = gate.lock().await;
+        let waiting = tokio::spawn({
+            let plans = plans.clone();
+            let c = changes(&view, "atm_1", "Handle the empty input.", 1);
+            async move { plans.on_changes_requested(c).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        fake.tracker
+            .clone()
+            .expect("tracker")
+            .force_update("TAN-1", Some(IssueStatus::Canceled), None, &Writer::human())
+            .expect("cancel");
+        drop(held);
+        assert_eq!(waiting.await.expect("join"), Back::NotPlans);
+        assert!(reviews(&plans, &view.id).is_empty());
+        assert_eq!(fake.notified.lock().expect("l").len(), told);
+    }
+
+    #[tokio::test]
     async fn f_tk_09_3_a_review_while_the_engine_is_near_its_limit_comes_to_you() {
         let (_d, fake, plans, _bus) = rig(false);
         let view = sending_back(&fake, &plans).await;
@@ -4320,7 +4456,7 @@ mod tests {
             plans
                 .on_changes_requested(changes(&view, "atm_1", "Add a test.", 1))
                 .await,
-            None
+            Back::Yours
         );
         assert_eq!(
             reviews(&plans, &view.id)[0].reason.as_deref(),
@@ -4333,11 +4469,13 @@ mod tests {
         let (_d, fake, plans, _bus) = rig(false);
         let view = sending_back(&fake, &plans).await;
         plans.discard(&view.id).expect("discard");
+        // Not the plan's: the run tells it as any review (the review of
+        // e00668ee, S2).
         assert_eq!(
             plans
                 .on_changes_requested(changes(&view, "atm_1", "Add a test.", 1))
                 .await,
-            None
+            Back::NotPlans
         );
         assert!(plans.send_review(&view.id, "rvw_1", None).await.is_err());
         assert!(
@@ -4465,24 +4603,30 @@ mod tests {
             tracker.get("TAN-2").expect("TAN-2").status,
             IssueStatus::Done
         );
-        // Landed again (Undo landing, then land): one record, the new commit.
+        // Landed again (Undo landing, then land): one record, the new commit,
+        // with the run that landed.
         plans.on_landed("wt_1", "aaaabbbbcccc").await;
         let kept = plans.get(&view.id).expect("plan");
         assert_eq!(kept.landed.len(), 1);
         assert_eq!(kept.landed[0].commit, "aaaabbbbcccc");
+        assert_eq!(kept.landed[0].attempt_id, Some(atm("atm_1")));
         // Kept across a restart.
         let (_fake2, after) = restarted(&dir, ThreadState::Done, String::new());
         assert_eq!(after.get(&view.id).expect("kept").landed.len(), 1);
-        // Undo landing took its merge off: in review again, with its run,
-        // and no longer Landed (the review of 0e20d5b7, SF-8). A merge no
-        // plan task landed as changes nothing.
+        // Undo landing took its merge off: in review again, with the run
+        // that landed, and no longer Landed (the review of 0e20d5b7, SF-8;
+        // of e00668ee, Nit 5). A merge no plan task landed as changes
+        // nothing.
         plans.on_unlanded(&["feedface".to_string()]).await;
         assert_eq!(plans.get(&view.id).expect("plan").landed.len(), 1);
         plans
             .on_unlanded(&["aaaabbbbcccc".to_string(), "feedface".to_string()])
             .await;
         assert!(plans.get(&view.id).expect("plan").landed.is_empty());
-        assert_eq!(*fake.unlanded.lock().expect("l"), vec!["TAN-1".to_string()]);
+        assert_eq!(
+            *fake.unlanded.lock().expect("l"),
+            vec![("TAN-1".to_string(), Some(atm("atm_1")))]
+        );
         assert_eq!(
             tracker.get("TAN-1").expect("TAN-1").status,
             IssueStatus::InReview
@@ -4494,6 +4638,25 @@ mod tests {
                 .last()
                 .map(|c| c.body.as_str()),
             Some(landed::UNLANDED)
+        );
+        // A task you've moved on since keeps your status; the comment says
+        // what happened. Before, it was put in review whatever it was.
+        plans.on_landed("wt_1", "ccccdddd").await;
+        tracker
+            .force_update("TAN-1", Some(IssueStatus::Todo), None, &Writer::human())
+            .expect("todo");
+        plans.on_unlanded(&["ccccdddd".to_string()]).await;
+        assert_eq!(
+            tracker.get("TAN-1").expect("TAN-1").status,
+            IssueStatus::Todo
+        );
+        assert_eq!(
+            tracker
+                .comments("TAN-1")
+                .expect("comments")
+                .last()
+                .map(|c| c.body.as_str()),
+            Some(landed::UNLANDED_KEPT)
         );
     }
 }

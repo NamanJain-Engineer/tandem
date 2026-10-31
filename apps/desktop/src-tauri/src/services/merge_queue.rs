@@ -730,6 +730,20 @@ async fn drive(
                 )
             }
         }
+        // The worktree's own commit, when the base had it before this
+        // landing: up to date then, it's told as that, not as this landing's
+        // last merge, which Undo landing takes off (the review of e00668ee,
+        // Nit 5).
+        let had = match queue::resolve(git, &lane.root, &lane.branch).await {
+            Ok(Some(own))
+                if queue::contained_in(git, &lane.root, &own, &base.before)
+                    .await
+                    .unwrap_or(false) =>
+            {
+                Some(own)
+            }
+            _ => None,
+        };
         // 1. The base's commit into the worktree; what it gives is checked.
         step(key, i, |s| s.state = LandingStepState::MergingBase);
         mark_merging(data, key, &lane.root, &lane.branch, &expected);
@@ -840,7 +854,7 @@ async fn drive(
             Ok(Merged::Done { head: merge }) if merge == expected => {
                 release_landed(&lane.root);
                 step(key, i, |s| s.state = LandingStepState::Landed);
-                tell(lane_id, merge);
+                tell(lane_id, had.unwrap_or(merge));
             }
             Ok(Merged::Done { head: merge }) => {
                 release_landed(&lane.root);
@@ -1507,6 +1521,63 @@ mod tests {
             )]
         );
         assert_eq!(told[0].1, git(&fx.main, &["rev-parse", "HEAD"]));
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_5_a_worktree_the_base_had_already_is_told_as_its_own_commit() {
+        // Told as the landing's last merge, Undo landing put a task in
+        // review again that nothing was taken from (the review of e00668ee,
+        // Nit 5).
+        let fx = fixture(&["alpha", "beta"]).await;
+        for name in ["alpha", "beta"] {
+            let wt = fx.main.join(".tandem/worktrees").join(name);
+            std::fs::write(wt.join(format!("{name}.txt")), format!("{name}\n")).expect("write");
+            commit_all(&wt, name);
+        }
+        // beta is in main already; alpha lands a merge first.
+        git(
+            &fx.main,
+            &["merge", "-q", "--no-ff", "--no-edit", "tandem/beta"],
+        );
+        let beta = git(
+            &fx.main.join(".tandem/worktrees/beta"),
+            &["rev-parse", "HEAD"],
+        );
+        let told: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let heard = told.clone();
+        let hook: LandedHook = Arc::new(move |lane, commit| {
+            heard.lock().expect("lock").push((lane, commit));
+            Box::pin(async {})
+        });
+        start_telling(
+            &fx.store,
+            &fx.data,
+            &fx.git,
+            &env(),
+            &fx.repo,
+            &fx.lanes,
+            None,
+            Some(hook),
+        )
+        .await
+        .expect("start");
+        let run = finished(&fx).await;
+        assert_eq!(
+            states(&run),
+            [LandingStepState::Landed, LandingStepState::Landed]
+        );
+        assert_eq!(run.steps[1].commit, None, "beta was already there");
+        let told = told.lock().expect("lock").clone();
+        assert_eq!(
+            told,
+            vec![
+                (
+                    run.steps[0].lane_id.clone(),
+                    run.steps[0].commit.clone().expect("commit")
+                ),
+                (run.steps[1].lane_id.clone(), beta),
+            ]
+        );
     }
 
     #[tokio::test]

@@ -72,11 +72,17 @@ enum Cue {
     Part(&'static str),
     /// Two words in a row.
     Pair(&'static str, &'static str),
-    /// One of the words, and a word starting with the stem, anywhere.
+    /// One of the words, and a word starting with the stem, at most
+    /// [`NEAR`] words apart. Anywhere in the text, "sync the docs" and "the
+    /// upstream fix" named pushing (the review of e00668ee, S4).
     Near(&'static [&'static str], &'static str),
-    /// A phrase anywhere in the text, such as a command's flags.
+    /// A phrase, such as a command's flags, starting a word: inside one,
+    /// "the expr creates" named "pr create" (the review of e00668ee, S4).
     Phrase(&'static str),
 }
+
+/// How far apart a [`Cue::Near`]'s two words can be.
+const NEAR: usize = 4;
 use Cue::{Near, Pair, Part, Phrase, Stem, Word};
 
 /// The topics that always come to you, and the words that name them
@@ -177,7 +183,7 @@ const SENSITIVE: &[(&str, &[Cue])] = &[
         "pushing",
         &[
             Part("push"),
-            Phrase("pr create"),
+            Pair("pr", "create"),
             Near(
                 &[
                     "send",
@@ -305,19 +311,25 @@ pub fn sensitive(question: &str) -> Option<&'static str> {
 
 /// [`sensitive`] in one reading of a folded text.
 fn topic_in(text: &str) -> Option<&'static str> {
-    let split: Vec<&str> = text
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    let mut words: Vec<String> = split.iter().map(|w| (*w).to_string()).collect();
+    // A run of single letters is read as a word too, where it stands: read
+    // after the text's last word, "k e y … the api" named an API key (the
+    // review of e00668ee, Nit 8).
+    let mut words: Vec<String> = Vec::new();
     let mut run = String::new();
-    for w in split.iter().chain(std::iter::once(&"")) {
+    let split = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty());
+    for w in split.chain(std::iter::once("")) {
         if w.chars().count() == 1 {
             run.push_str(w);
-        } else if run.chars().count() >= 3 {
-            words.push(std::mem::take(&mut run));
         } else {
+            if run.chars().count() >= 3 {
+                words.push(std::mem::take(&mut run));
+            }
             run.clear();
+        }
+        if !w.is_empty() {
+            words.push(w.to_string());
         }
     }
     let spaced = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -328,11 +340,15 @@ fn topic_in(text: &str) -> Option<&'static str> {
                 Stem(s) => words.iter().any(|x| x.starts_with(s)),
                 Part(p) => words.iter().any(|x| x.contains(p)),
                 Pair(a, b) => words.windows(2).any(|p| p[0] == *a && p[1] == *b),
-                Near(verbs, stem) => {
-                    words.iter().any(|x| verbs.contains(&x.as_str()))
-                        && words.iter().any(|x| x.starts_with(stem))
-                }
-                Phrase(p) => spaced.contains(p),
+                Near(verbs, stem) => words.iter().enumerate().any(|(i, x)| {
+                    verbs.contains(&x.as_str())
+                        && words[i.saturating_sub(NEAR)..words.len().min(i + NEAR + 1)]
+                            .iter()
+                            .any(|y| y.starts_with(stem))
+                }),
+                Phrase(p) => spaced
+                    .match_indices(p)
+                    .any(|(i, _)| !spaced[..i].ends_with(char::is_alphanumeric)),
             })
             .then_some(*topic)
     })
@@ -1366,6 +1382,33 @@ mod tests {
             "The off-by-1 in the loop drops the last item.",
         ] {
             assert_eq!(sensitive(q), None, "{q:?}");
+        }
+    }
+
+    #[test]
+    fn f_tk_08_3_a_topics_words_are_read_together() {
+        // "pr create" inside other words, a verb anywhere with "upstream" or
+        // "branch" anywhere, and a run of letters read after the text's last
+        // word named topics these don't (the review of e00668ee, S4, Nit 8).
+        for q in [
+            "This PR creates the parser; keep it.",
+            "The expr creates a closure on each call.",
+            "Sync the docs with the new API. The upstream fix landed last week.",
+            "Drop the debug logging. The branch name in the title is wrong too.",
+            "Sort k e y order, then call the api.",
+        ] {
+            assert_eq!(sensitive(q), None, "{q:?}");
+        }
+        for (q, topic) in [
+            ("Then gh pr create --fill.", "pushing"),
+            ("Sync your branch with upstream first.", "pushing"),
+            (
+                "Drop the stale feature branch.",
+                "deleting files or branches",
+            ),
+            ("Then run git branch -D old.", "deleting files or branches"),
+        ] {
+            assert_eq!(sensitive(q), Some(topic), "{q:?}");
         }
     }
 

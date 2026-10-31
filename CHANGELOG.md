@@ -35,7 +35,8 @@ release fails when its version has no section.
   its run. The option is on by default in Execute all's check, and the plan
   can turn it off. When Land worktrees lands a plan task's worktree, the task
   is marked Done with the commit in a comment, and its row says Landed; Undo
-  landing puts it back in review.
+  landing puts it and the run that landed back in review. A task you mark
+  Done or Canceled while its run works gets nothing more from that run.
 
 ### Fixed
 

@@ -49,7 +49,7 @@ When the review of a run started by **Execute all…** asks for changes, the pla
 - **These come to you instead:** a third request for changes on the same run; a review that mentions approvals, access, the sandbox, secrets, network calls, deploys, pushing, deleting files or the plan's scope; a review that asks for changes without saying which; a review after a turn that changed nothing; a review asking for the same changes as the last one sent back; and every review while the engine is near its usage limit ("Paused: near Claude Code's limit.") or the switch is off.
 - **The check for those topics reads words.** Hidden characters, look-alike letters, digits for letters and spaced-out letters don't hide one, but a review can always say a thing in words the check doesn't know. That's why the run reads every review as data, never as instructions.
 - **When a review comes to you**, its row says **Needs you** with the reviewer's reasons and why, and you get a notification. Choose **Send back…**, add a note of up to 2,000 characters if you like (it goes above the review, as yours), and choose **Send back**. **Retry** on the task still starts a fresh run instead.
-- **A task you finish yourself gets nothing back.** Mark a task Done or Canceled while its run works on a review, and the run's turn ends in review without another review or change to the task.
+- **A task you finish yourself gets nothing back.** Mark a task Done or Canceled while its run works, and the run's turn ends in review without a review or a change to the task. A task the run marks Done itself is still reviewed and you're told it's ready, but nothing goes back to the run.
 - **A review only waits while its run does.** When you resume, stop or retry the run, or land its worktree, a review waiting in **Needs you** isn't sent: its row says why, and the task notes it.
 - **Nothing goes back on its own after a restart.** A run Vibezeo's closing cut off is stopped, as any run is, and **Resume** carries on. A review waiting in **Needs you** is still there.
 
@@ -57,7 +57,7 @@ When the review of a run started by **Execute all…** asks for changes, the pla
 
 When **Land worktrees** lands a plan task's worktree, the task and its run are marked Done, a comment names the landed commit, and the plan's row says **Landed**. A worktree you merge yourself outside **Land worktrees**, or a landing that fails or stops, leaves the task as it is. So does landing a worktree whose run is still going, or an older run's worktree while a newer run of the task is still going: the task waits on that run.
 
-**Undo landing** takes the merge back off the base, and the task and its run are In review again, with a comment saying so. The plan's row no longer says **Landed**.
+**Undo landing** takes the merge back off the base, and the task and the run that landed are In review again, with a comment saying so. The plan's row no longer says **Landed**. A task you've moved on from Done since keeps the status you gave it.
 
 ## Claims
 

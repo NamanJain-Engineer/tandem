@@ -138,11 +138,10 @@ pub struct ChangesRequested {
     pub account_id: Option<AccountId>,
 }
 
-/// What the plan sends back to the run as its next message, or `None`:
-/// the review came to you (F-TK-09).
-pub type ReviewSink = Arc<
-    dyn Fn(ChangesRequested) -> futures::future::BoxFuture<'static, Option<String>> + Send + Sync,
->;
+/// What the plan makes of a run's Changes requested (F-TK-09): its next
+/// message, the review kept for you, or nothing, when no plan took it.
+pub type ReviewSink =
+    Arc<dyn Fn(ChangesRequested) -> futures::future::BoxFuture<'static, Back> + Send + Sync>;
 
 /// A review's reasons are cut here (characters) before they go back to
 /// the run (F-TK-09).
@@ -156,12 +155,15 @@ struct Reviewed {
 }
 
 /// What a plan run's Changes requested comes to (F-TK-09).
-enum Back {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Back {
     /// The plan's message for the run's next turn.
     Send(String),
     /// It came to you: the plan said so, with why.
     Yours,
-    /// Not a plan's to weigh: the run isn't one, or its task is closed.
+    /// Not a plan's to weigh: the run isn't one, its plan is gone or its
+    /// task is closed. Its review is told as any run's is (the review of
+    /// e00668ee, S2).
     NotPlans,
 }
 
@@ -179,6 +181,23 @@ struct Turns {
 fn diff_hash(diff: &str) -> u64 {
     diff.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// Whether you closed the task (or the app did, as you): it's Done or
+/// Canceled, and its last status was written without a run's connection.
+/// A run's tasks server always writes with one, so a run that closed its
+/// own task, or another's, didn't close it as you (the review of e00668ee,
+/// MF-A).
+fn closed_by_you(tracker: &TaskStore, issue: &Issue) -> bool {
+    if !matches!(issue.status, IssueStatus::Done | IssueStatus::Canceled) {
+        return false;
+    }
+    tracker.history(&issue.id).is_ok_and(|h| {
+        h.iter()
+            .rev()
+            .find(|e| e.field == "status" || e.field == "created")
+            .is_some_and(|e| e.connection.is_none())
     })
 }
 
@@ -308,7 +327,6 @@ pub trait ExecHost: Send + Sync {
     ) -> Result<(WorkspaceId, PathBuf), IpcError>;
     /// Removes a lane that has nothing in it (Stop during setup).
     async fn remove_lane(&self, lane: &WorkspaceId) -> Result<(), IpcError>;
-    /// The lane's changes as a unified diff.
     /// The worktree's diff against its base; `None` when it can't be read.
     async fn lane_diff(&self, lane: &WorkspaceId) -> Option<String>;
     /// The teammate's chat engine, account (when no engine is given).
@@ -412,6 +430,10 @@ pub fn question_of(reply: &str, nonce: &str) -> Option<String> {
     let question = last.strip_prefix(&format!("QUESTION-{nonce}:"))?.trim();
     (!question.is_empty()).then(|| question.chars().take(QUESTION_MAX).collect())
 }
+
+/// What the reviewer reads for a worktree's diff that couldn't be read:
+/// never "no changes" (the review of e00668ee, Nit 6).
+const UNREAD_DIFF: &str = "(the diff couldn't be read: read the changed files)";
 
 /// The reviewer's briefing: the issue (fenced) and the lane's diff
 /// (fenced), with no `@` in either that names a file (D-2839).
@@ -1343,18 +1365,24 @@ impl TaskExecService {
         // A task you've marked Done or Canceled meanwhile gets nothing from
         // the turn: no status, no result, no review. It was set In review
         // again, and its review then went back to the run (the review of
-        // 0e20d5b7, MF-1).
-        if issue
-            .as_ref()
-            .is_some_and(|i| matches!(i.status, IssueStatus::Done | IssueStatus::Canceled))
-        {
-            self.finish(id, AttemptState::InReview, None).await;
-            return true;
+        // 0e20d5b7, MF-1). One a run closed, its own or another, is still
+        // reviewed and told, as F-TK-04's were: a run that closed its task
+        // went unreviewed (the review of e00668ee, MF-A).
+        if let (Some(t), Some(i)) = (&tracker, &issue) {
+            if closed_by_you(t, i) {
+                self.finish(id, AttemptState::InReview, None).await;
+                return true;
+            }
         }
         if let Some(t) = &tracker {
             if let Some(issue) = issue {
-                let status =
-                    (issue.status != IssueStatus::InReview).then_some(IssueStatus::InReview);
+                // A closed task stays closed; nothing goes back to its run
+                // (`send_back`).
+                let status = (!matches!(
+                    issue.status,
+                    IssueStatus::InReview | IssueStatus::Done | IssueStatus::Canceled
+                ))
+                .then_some(IssueStatus::InReview);
                 // The run's reply, unless it wrote its own result: a turn the
                 // review sent it back for replaces the one written here for
                 // the turn before (F-TK-09).
@@ -1397,17 +1425,22 @@ impl TaskExecService {
             .await;
         let mut yours = false;
         if let Some(r) = reviewed.filter(|r| r.verdict == "changes_requested") {
-            match self.send_back(&a, r).await {
+            // The plan counts its rounds; this count is a second line, should
+            // a plan's ever send more. Counted before the plan hears of it,
+            // which keeps what it sends as sent (the review of e00668ee,
+            // Nit 4).
+            let back = if turn.sent_back >= crate::services::plan::REVIEW_ROUNDS {
+                tracing::warn!(
+                    code = "tasks.review_rounds_capped",
+                    "a review wasn't sent back past the rounds a run gets"
+                );
+                Back::NotPlans
+            } else {
+                self.send_back(&a, r).await
+            };
+            match back {
                 Back::Yours => yours = true,
                 Back::NotPlans => {}
-                // The plan counts its rounds; this count is a second line,
-                // should a plan's ever send more.
-                Back::Send(_) if turn.sent_back >= crate::services::plan::REVIEW_ROUNDS => {
-                    tracing::warn!(
-                        code = "tasks.review_rounds_capped",
-                        "a review wasn't sent back past the rounds a run gets"
-                    );
-                }
                 Back::Send(text) => {
                     // F-TK-09: the run's own thread, so its agent fixes its
                     // own worktree. Sent first: a review that couldn't reach
@@ -1479,7 +1512,8 @@ impl TaskExecService {
         ) else {
             return Back::NotPlans;
         };
-        // A task you've marked Done or Canceled since isn't reopened.
+        // A closed task isn't reopened: its plan looks again once it has
+        // the review (the review of e00668ee, Nit 3).
         let Ok(tracker) = self.tracker() else {
             return Back::NotPlans;
         };
@@ -1488,7 +1522,7 @@ impl TaskExecService {
         }) {
             return Back::NotPlans;
         }
-        let text = sink(ChangesRequested {
+        sink(ChangesRequested {
             plan_id: supervision.plan_id,
             attempt_id: a.id.clone(),
             issue_id: a.issue_id.clone(),
@@ -1497,8 +1531,7 @@ impl TaskExecService {
             engine_id: a.engine_id.clone(),
             account_id: a.account_id.clone(),
         })
-        .await;
-        text.map_or(Back::Yours, Back::Send)
+        .await
     }
 
     /// A second session reviews the diff; returns the verdict, its reasons
@@ -1512,7 +1545,11 @@ impl TaskExecService {
             Some(l) => host.lane_diff(l).await,
             None => None,
         };
-        let diff = read.clone().unwrap_or_default();
+        let diff = match (&read, &a.lane_workspace_id) {
+            (Some(d), _) => d.clone(),
+            (None, Some(_)) => UNREAD_DIFF.into(),
+            (None, None) => String::new(),
+        };
         let engine = self.review_engine(&a.engine_id);
         // Like a plan's runs, the review takes the account with the most
         // room, not the default.
@@ -1583,10 +1620,8 @@ impl TaskExecService {
                 "This run already ended.",
             ));
         }
-        // A question it was waiting on is closed (F-TK-08), and a review
-        // waiting for you is stale (F-TK-09).
+        // A question it was waiting on is closed (F-TK-08).
         self.close_question(id);
-        self.moved_on(id).await;
         if a.state == AttemptState::Setup && a.thread_id.is_none() {
             // Setup finishes its step and rolls back (see `cancelled`).
             if let Ok(mut c) = self.cancelled.lock() {
@@ -1601,6 +1636,10 @@ impl TaskExecService {
             h.abort();
             let _ = h.await;
         }
+        // A review waiting for you is stale (F-TK-09). Told once the run's
+        // review is over: one its plan kept after hearing this stayed with
+        // Send back… on a stopped run (the review of e00668ee, Nit 1).
+        self.moved_on(id).await;
         let a = repo::get(&self.store, id).await.map_err(store_err)?;
         if let Some(t) = &a.thread_id {
             host.stop(t).await;
@@ -1650,15 +1689,21 @@ impl TaskExecService {
                 .is_ok()
     }
 
-    /// Undo landing took off the merge a task landed as (F-TK-09): its latest
-    /// run that landed is in review again.
-    pub async fn unlanded(&self, issue_id: &str) {
+    /// Undo landing took off the merge a task landed as (F-TK-09): the run
+    /// that landed is in review again. A plan kept before it named that run
+    /// names none: then it's the task's latest run that landed, which needn't
+    /// be the one (the review of e00668ee, Nit 5).
+    pub async fn unlanded(&self, issue_id: &str, attempt: Option<&AttemptId>) {
         let Ok(all) = repo::list(&self.store).await else {
             return;
         };
         let Some(a) = all
             .into_iter()
-            .filter(|a| a.issue_id == issue_id && a.state == AttemptState::Done)
+            .filter(|a| {
+                a.issue_id == issue_id
+                    && a.state == AttemptState::Done
+                    && attempt.is_none_or(|id| a.id == *id)
+            })
             .max_by_key(|a| a.queued_at)
         else {
             return;
@@ -1837,6 +1882,15 @@ pub(crate) mod tests {
         pub(crate) approval: AtomicBool,
         /// The reviewer's verdicts, one per review, before the usual one.
         pub(crate) verdicts: StdMutex<std::collections::VecDeque<String>>,
+        /// The worktree's diff can't be read.
+        pub(crate) unread: AtomicBool,
+        /// TAN-1 is closed during the run's first turn, after Vibezeo set it
+        /// In progress: the status, and who writes it.
+        pub(crate) closes: StdMutex<Option<(IssueStatus, Writer)>>,
+        /// You close the task while the run works on a review sent back.
+        pub(crate) close_on_send: StdMutex<Option<IssueStatus>>,
+        /// What the runs told you: the title and the body.
+        pub(crate) notified: StdMutex<Vec<(String, String)>>,
     }
 
     #[async_trait]
@@ -1868,7 +1922,7 @@ pub(crate) mod tests {
             Ok(())
         }
         async fn lane_diff(&self, _lane: &WorkspaceId) -> Option<String> {
-            Some("diff --git a/x b/x\n+fixed".into())
+            (!self.unread.load(Ordering::SeqCst)).then(|| "diff --git a/x b/x\n+fixed".into())
         }
         async fn teammate_engine(&self, _t: &TeammateId) -> Option<(String, Option<AccountId>)> {
             Some(("claude".into(), None))
@@ -1905,6 +1959,13 @@ pub(crate) mod tests {
         }
         async fn send(&self, _t: &ThreadId, text: String) -> Result<(), IpcError> {
             self.sent.lock().expect("lock").push(text);
+            if let (Some(status), Some(t)) = (
+                self.close_on_send.lock().expect("lock").take(),
+                self.tracker.get(),
+            ) {
+                t.force_update("TAN-1", Some(status), None, &Writer::human())
+                    .expect("close");
+            }
             Ok(())
         }
         async fn thread_state(&self, t: &ThreadId) -> Option<ThreadState> {
@@ -1921,6 +1982,12 @@ pub(crate) mod tests {
             })
         }
         async fn last_reply(&self, _t: &ThreadId) -> Option<String> {
+            if let (Some((status, by)), Some(t)) =
+                (self.closes.lock().expect("lock").take(), self.tracker.get())
+            {
+                t.force_update("TAN-1", Some(status), None, &by)
+                    .expect("close");
+            }
             Some(
                 self.replies
                     .lock()
@@ -1939,7 +2006,9 @@ pub(crate) mod tests {
             self.review_account
                 .map(|a| AccountId::from_db(a.to_string()))
         }
-        async fn notify(&self, _title: String, _body: String, _issue: &str) {}
+        async fn notify(&self, title: String, body: String, _issue: &str) {
+            self.notified.lock().expect("lock").push((title, body));
+        }
     }
 
     struct Fixture {
@@ -3185,21 +3254,44 @@ pub(crate) mod tests {
         assert_ne!(diff_hash("+fixed"), diff_hash("+fixed "));
     }
 
-    /// What a fixture's plan heard of its runs' reviews; it sends back
-    /// `answers` in turn, then nothing.
-    fn reviewing(
-        f: &Fixture,
-        answers: Vec<Option<String>>,
-    ) -> Arc<StdMutex<Vec<ChangesRequested>>> {
+    /// What a fixture's plan heard of its runs' reviews; it answers
+    /// `answers` in turn, then keeps each for you.
+    fn reviewing(f: &Fixture, answers: Vec<Back>) -> Arc<StdMutex<Vec<ChangesRequested>>> {
         let heard: Arc<StdMutex<Vec<ChangesRequested>>> = Arc::default();
         let sink = heard.clone();
         let answers = Arc::new(StdMutex::new(std::collections::VecDeque::from(answers)));
         f.svc.set_review_sink(Arc::new(move |c| {
             sink.lock().expect("lock").push(c);
-            let next = answers.lock().expect("lock").pop_front().flatten();
+            let next = answers
+                .lock()
+                .expect("lock")
+                .pop_front()
+                .unwrap_or(Back::Yours);
             Box::pin(async move { next })
         }));
         heard
+    }
+
+    /// The review sessions the fixture's runs started.
+    fn review_sessions(f: &Fixture) -> usize {
+        f.host
+            .sessions
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|s| s.review)
+            .count()
+    }
+
+    /// What the fixture's runs told you, by title.
+    fn told(f: &Fixture) -> Vec<String> {
+        f.host
+            .notified
+            .lock()
+            .expect("lock")
+            .iter()
+            .map(|(title, _)| title.clone())
+            .collect()
     }
 
     fn reviewed_plan_run(issue: &str) -> ExecuteInput {
@@ -3243,7 +3335,7 @@ pub(crate) mod tests {
             "First pass.".to_string(),
             "Second pass, with the test.".to_string(),
         ]);
-        let heard = reviewing(&f, vec![Some("REVIEW SENT BACK".into())]);
+        let heard = reviewing(&f, vec![Back::Send("REVIEW SENT BACK".into())]);
         let id = f
             .svc
             .execute(reviewed_plan_run("TAN-1"))
@@ -3299,7 +3391,7 @@ pub(crate) mod tests {
             2,
         )
         .await;
-        let heard = reviewing(&f, vec![None]);
+        let heard = reviewing(&f, vec![Back::Yours]);
         let id = f
             .svc
             .execute(reviewed_plan_run("TAN-1"))
@@ -3331,39 +3423,182 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn f_tk_09_1_a_task_canceled_during_a_sent_back_turn_gets_nothing_back() {
+    async fn f_tk_09_1_a_task_you_close_during_a_sent_back_turn_gets_nothing_back() {
         // The turn set it In review again, and its review then went back to
-        // the run (the review of 0e20d5b7, MF-1).
+        // the run (the review of 0e20d5b7, MF-1). You close it once the
+        // review has gone: the test closed it inside the plan before (the
+        // review of e00668ee, Nit 3).
+        for closed in [IssueStatus::Canceled, IssueStatus::Done] {
+            let f = fixture(
+                FakeHost {
+                    pro: true,
+                    instant: true,
+                    verdicts: StdMutex::new(
+                        [
+                            "Verdict: Changes requested. The empty input panics.".to_string(),
+                            "Verdict: Changes requested. It still panics.".to_string(),
+                        ]
+                        .into(),
+                    ),
+                    close_on_send: StdMutex::new(Some(closed)),
+                    ..Default::default()
+                },
+                1,
+            )
+            .await;
+            f.host
+                .replies
+                .lock()
+                .expect("lock")
+                .extend(["First pass.".to_string(), "Second pass.".to_string()]);
+            let heard = reviewing(&f, vec![Back::Send("REVIEW SENT BACK".into())]);
+            let id = f
+                .svc
+                .execute(reviewed_plan_run("TAN-1"))
+                .await
+                .expect("execute")
+                .attempt
+                .id;
+            settled(&f, &id).await;
+            assert_eq!(
+                *f.host.sent.lock().expect("lock"),
+                vec!["REVIEW SENT BACK".to_string()]
+            );
+            assert_eq!(heard.lock().expect("lock").len(), 1);
+            assert_eq!(review_sessions(&f), 1, "the turn after it isn't reviewed");
+            let issue = f.tracker.get("TAN-1").expect("issue");
+            assert_eq!(issue.status, closed);
+            assert_eq!(issue.result.as_deref(), Some("First pass."));
+            assert!(told(&f).is_empty(), "{closed:?}: nothing to review");
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_04_4_a_run_that_closes_its_own_task_is_still_reviewed() {
+        // A task the run marked Done skipped its review and the "Ready for
+        // review" (the review of e00668ee, MF-A). As F-TK-04's runs were,
+        // it's reviewed and told, its status stays, and nothing goes back.
+        for review in [false, true] {
+            let f = fixture(
+                FakeHost {
+                    pro: true,
+                    instant: true,
+                    verdicts: StdMutex::new(
+                        ["Verdict: Changes requested. The empty input panics.".to_string()].into(),
+                    ),
+                    closes: StdMutex::new(Some((IssueStatus::Done, Writer::agent("tm_1", "tc_1")))),
+                    ..Default::default()
+                },
+                1,
+            )
+            .await;
+            let heard = reviewing(&f, vec![Back::Send("REVIEW SENT BACK".into())]);
+            let run = if review {
+                reviewed_plan_run("TAN-1")
+            } else {
+                input("TAN-1")
+            };
+            let id = f.svc.execute(run).await.expect("execute").attempt.id;
+            settled(&f, &id).await;
+            assert_eq!(review_sessions(&f), 1, "plan run: {review}");
+            let a = repo::get(&f.svc.store, &id).await.expect("get");
+            assert_eq!(a.review_verdict.as_deref(), Some("changes_requested"));
+            assert!(heard.lock().expect("lock").is_empty());
+            assert!(f.host.sent.lock().expect("lock").is_empty());
+            let issue = f.tracker.get("TAN-1").expect("issue");
+            assert_eq!(issue.status, IssueStatus::Done);
+            assert_eq!(
+                issue.result.as_deref(),
+                Some("Fixed the redirect loop; tests pass.")
+            );
+            assert_eq!(told(&f), vec!["Ready for review".to_string()]);
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_04_4_a_task_you_close_during_its_first_turn_gets_nothing_from_it() {
+        for closed in [IssueStatus::Canceled, IssueStatus::Done] {
+            let f = fixture(
+                FakeHost {
+                    pro: true,
+                    instant: true,
+                    closes: StdMutex::new(Some((closed, Writer::human()))),
+                    ..Default::default()
+                },
+                1,
+            )
+            .await;
+            let heard = reviewing(&f, vec![]);
+            let id = f
+                .svc
+                .execute(reviewed_plan_run("TAN-1"))
+                .await
+                .expect("execute")
+                .attempt
+                .id;
+            settled(&f, &id).await;
+            assert_eq!(review_sessions(&f), 0);
+            assert!(heard.lock().expect("lock").is_empty());
+            let issue = f.tracker.get("TAN-1").expect("issue");
+            assert_eq!((issue.status, issue.result), (closed, None));
+            assert!(told(&f).is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_2_a_review_is_told_once_whoever_has_it() {
+        // Kept for you, the plan says it needs you; no plan took it (the
+        // plan is gone, or the task closed), the run says it's ready for
+        // review. It was told as kept for you, and nothing said it (the
+        // review of e00668ee, S2).
+        for (answer, want) in [
+            (Back::Yours, Vec::<String>::new()),
+            (Back::NotPlans, vec!["Ready for review".to_string()]),
+        ] {
+            let f = fixture(
+                FakeHost {
+                    pro: true,
+                    instant: true,
+                    verdicts: StdMutex::new(
+                        ["Verdict: Changes requested. Add a test.".to_string()].into(),
+                    ),
+                    ..Default::default()
+                },
+                1,
+            )
+            .await;
+            let heard = reviewing(&f, vec![answer]);
+            let id = f
+                .svc
+                .execute(reviewed_plan_run("TAN-1"))
+                .await
+                .expect("execute")
+                .attempt
+                .id;
+            settled(&f, &id).await;
+            assert_eq!(heard.lock().expect("lock").len(), 1);
+            assert_eq!(told(&f), want);
+        }
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_1_an_unread_diff_is_none_and_says_so_to_the_reviewer() {
+        // Read as no changes, it told the reviewer "(no changes)" (the
+        // review of e00668ee, S3 and Nit 6).
         let f = fixture(
             FakeHost {
                 pro: true,
                 instant: true,
+                unread: AtomicBool::new(true),
                 verdicts: StdMutex::new(
-                    [
-                        "Verdict: Changes requested. The empty input panics.".to_string(),
-                        "Verdict: Changes requested. It still panics.".to_string(),
-                    ]
-                    .into(),
+                    ["Verdict: Changes requested. Add a test.".to_string()].into(),
                 ),
                 ..Default::default()
             },
             1,
         )
         .await;
-        f.host
-            .replies
-            .lock()
-            .expect("lock")
-            .extend(["First pass.".to_string(), "Second pass.".to_string()]);
-        let heard: Arc<StdMutex<Vec<ChangesRequested>>> = Arc::default();
-        let (sink, tracker) = (heard.clone(), f.tracker.clone());
-        // You cancel the task while its run works on the review sent back.
-        f.svc.set_review_sink(Arc::new(move |c| {
-            sink.lock().expect("lock").push(c);
-            let _ =
-                tracker.force_update("TAN-1", Some(IssueStatus::Canceled), None, &Writer::human());
-            Box::pin(async { Some("REVIEW SENT BACK".to_string()) })
-        }));
+        let heard = reviewing(&f, vec![Back::Yours]);
         let id = f
             .svc
             .execute(reviewed_plan_run("TAN-1"))
@@ -3372,23 +3607,128 @@ pub(crate) mod tests {
             .attempt
             .id;
         settled(&f, &id).await;
-        assert_eq!(
-            *f.host.sent.lock().expect("lock"),
-            vec!["REVIEW SENT BACK".to_string()]
-        );
-        assert_eq!(heard.lock().expect("lock").len(), 1);
-        let reviews = f
+        assert_eq!(heard.lock().expect("lock")[0].diff, None);
+        let briefing = f
             .host
             .sessions
             .lock()
             .expect("lock")
             .iter()
-            .filter(|s| s.review)
-            .count();
-        assert_eq!(reviews, 1, "the turn after it isn't reviewed");
-        let issue = f.tracker.get("TAN-1").expect("issue");
-        assert_eq!(issue.status, IssueStatus::Canceled);
-        assert_eq!(issue.result.as_deref(), Some("First pass."));
+            .find(|s| s.review)
+            .map(|s| s.text.clone())
+            .expect("reviewed");
+        assert!(briefing.contains(UNREAD_DIFF), "{briefing}");
+        assert!(!briefing.contains("(no changes)"));
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_2_resume_starts_a_turn_without_the_last_verdict_and_tells_the_plan() {
+        // The review of e00668ee, S3: a review of the last turn waiting for
+        // you is stale (MovedOn), the verdict isn't this turn's, and the
+        // result written from the last reply goes on following the replies.
+        let f = fixture(
+            FakeHost {
+                pro: true,
+                verdicts: StdMutex::new(
+                    ["Verdict: Changes requested. Add a test.".to_string()].into(),
+                ),
+                ..Default::default()
+            },
+            1,
+        )
+        .await;
+        f.host.replies.lock().expect("lock").extend([
+            "First pass.".to_string(),
+            // Read again by Resume: the result was written from it.
+            "First pass.".to_string(),
+            "Second pass.".to_string(),
+        ]);
+        let heard = asked(&f);
+        reviewing(&f, vec![Back::Yours]);
+        let id = f
+            .svc
+            .execute(reviewed_plan_run("TAN-1"))
+            .await
+            .expect("execute")
+            .attempt
+            .id;
+        f.host.release.store(true, Ordering::SeqCst);
+        settled(&f, &id).await;
+        assert_eq!(
+            f.tracker.get("TAN-1").expect("issue").result.as_deref(),
+            Some("First pass.")
+        );
+        f.host.release.store(false, Ordering::SeqCst);
+        f.svc
+            .resume(&id, Some("Go on.".into()))
+            .await
+            .expect("resume");
+        let a = repo::get(&f.svc.store, &id).await.expect("get");
+        assert_eq!((a.state, a.review_verdict), (AttemptState::Running, None));
+        assert!(heard
+            .lock()
+            .expect("lock")
+            .contains(&QuestionEvent::MovedOn {
+                attempt_id: id.clone()
+            }));
+        f.host.release.store(true, Ordering::SeqCst);
+        settled(&f, &id).await;
+        assert_eq!(
+            f.tracker.get("TAN-1").expect("issue").result.as_deref(),
+            Some("Second pass.")
+        );
+    }
+
+    #[tokio::test]
+    async fn f_tk_09_5_undo_landing_puts_the_run_that_landed_in_review_again() {
+        let f = fixture(FakeHost::default(), 1).await;
+        let done = |id: &str, at: i64| {
+            let store = f.svc.store.clone();
+            let id = AttemptId::from_db(id.to_string());
+            async move {
+                repo::insert(
+                    &store,
+                    NewAttempt {
+                        id: id.clone(),
+                        issue_id: "TAN-1".into(),
+                        workspace_id: WorkspaceId::from_db("ws_1".into()),
+                        teammate_id: None,
+                        engine_id: "claude".into(),
+                        account_id: None,
+                        access: Access::Edits,
+                        review: false,
+                    },
+                    at,
+                )
+                .await
+                .expect("insert");
+                repo::update(
+                    &store,
+                    &id,
+                    AttemptPatch {
+                        state: Some(AttemptState::Done),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("update");
+                id
+            }
+        };
+        let older = done("atm_old", 1_000).await;
+        let newer = done("atm_new", 2_000).await;
+        let state = |id: &AttemptId| {
+            let (store, id) = (f.svc.store.clone(), id.clone());
+            async move { repo::get(&store, &id).await.expect("get").state }
+        };
+        // The one that landed, though a newer run of the task landed too:
+        // it was the newest Done run (the review of e00668ee, Nit 5).
+        f.svc.unlanded("TAN-1", Some(&older)).await;
+        assert_eq!(state(&older).await, AttemptState::InReview);
+        assert_eq!(state(&newer).await, AttemptState::Done);
+        // A plan kept before it named the run: the newest Done run.
+        f.svc.unlanded("TAN-1", None).await;
+        assert_eq!(state(&newer).await, AttemptState::InReview);
     }
 
     #[tokio::test]
