@@ -325,21 +325,15 @@ impl PlanService {
             return Err(e);
         }
         // In progress again while the run works, as when the plan sends a
-        // review back.
+        // review back: chosen under the task's lock, never over a close
+        // (the review of 66e0dcd9, Nit 3).
         if let Some(tracker) = self.host.tracker() {
             let issue = review.issue_id.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                if tracker
-                    .get(&issue)
-                    .is_ok_and(|i| i.status == IssueStatus::InReview)
-                {
-                    let _ = tracker.force_update(
-                        &issue,
-                        Some(IssueStatus::InProgress),
-                        None,
-                        &Writer::human(),
-                    );
-                }
+                tracker.update_from(&issue, &Writer::human(), |i| {
+                    let back = i.status == IssueStatus::InReview;
+                    (back.then_some(IssueStatus::InProgress), None)
+                })
             })
             .await;
         }

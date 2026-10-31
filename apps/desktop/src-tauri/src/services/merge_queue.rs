@@ -730,19 +730,19 @@ async fn drive(
                 )
             }
         }
-        // The worktree's own commit, when the base had it before this
-        // landing: up to date then, it's told as that, not as this landing's
-        // last merge, which Undo landing takes off (the review of e00668ee,
-        // Nit 5).
+        // Whether the base had all of the worktree before this landing
+        // (merged by hand, or by an earlier landing): up to date then,
+        // nothing of it lands now, and it isn't told. Told as this landing's
+        // last merge, undoing that put a task in review that nothing was
+        // taken from (the review of e00668ee, Nit 5); told as its own
+        // commit, it replaced the plan's record of the landing that did take
+        // it, and marked a worktree merged by hand Done (the review of
+        // 66e0dcd9, Nit 5).
         let had = match queue::resolve(git, &lane.root, &lane.branch).await {
-            Ok(Some(own))
-                if queue::contained_in(git, &lane.root, &own, &base.before)
-                    .await
-                    .unwrap_or(false) =>
-            {
-                Some(own)
-            }
-            _ => None,
+            Ok(Some(own)) => queue::contained_in(git, &lane.root, &own, &base.before)
+                .await
+                .unwrap_or(false),
+            _ => false,
         };
         // 1. The base's commit into the worktree; what it gives is checked.
         step(key, i, |s| s.state = LandingStepState::MergingBase);
@@ -854,7 +854,9 @@ async fn drive(
             Ok(Merged::Done { head: merge }) if merge == expected => {
                 release_landed(&lane.root);
                 step(key, i, |s| s.state = LandingStepState::Landed);
-                tell(lane_id, had.unwrap_or(merge));
+                if !had {
+                    tell(lane_id, merge);
+                }
             }
             Ok(Merged::Done { head: merge }) => {
                 release_landed(&lane.root);
@@ -1524,10 +1526,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn f_tk_09_5_a_worktree_the_base_had_already_is_told_as_its_own_commit() {
+    async fn f_tk_09_5_a_worktree_the_base_had_already_isnt_told() {
         // Told as the landing's last merge, Undo landing put a task in
         // review again that nothing was taken from (the review of e00668ee,
-        // Nit 5).
+        // Nit 5); told as its own commit, it replaced the record of the
+        // landing that took it, and marked a worktree merged by hand Done
+        // (the review of 66e0dcd9, Nit 5).
         let fx = fixture(&["alpha", "beta"]).await;
         for name in ["alpha", "beta"] {
             let wt = fx.main.join(".tandem/worktrees").join(name);
@@ -1538,10 +1542,6 @@ mod tests {
         git(
             &fx.main,
             &["merge", "-q", "--no-ff", "--no-edit", "tandem/beta"],
-        );
-        let beta = git(
-            &fx.main.join(".tandem/worktrees/beta"),
-            &["rev-parse", "HEAD"],
         );
         let told: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
         let heard = told.clone();
@@ -1567,16 +1567,14 @@ mod tests {
             [LandingStepState::Landed, LandingStepState::Landed]
         );
         assert_eq!(run.steps[1].commit, None, "beta was already there");
+        // Only alpha, which landed now.
         let told = told.lock().expect("lock").clone();
         assert_eq!(
             told,
-            vec![
-                (
-                    run.steps[0].lane_id.clone(),
-                    run.steps[0].commit.clone().expect("commit")
-                ),
-                (run.steps[1].lane_id.clone(), beta),
-            ]
+            vec![(
+                run.steps[0].lane_id.clone(),
+                run.steps[0].commit.clone().expect("commit")
+            )]
         );
     }
 

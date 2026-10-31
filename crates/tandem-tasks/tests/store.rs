@@ -424,3 +424,48 @@ fn f_tk_06_3_a_task_keeps_its_suggested_engine() {
     );
     assert!(matches!(bad, Err(TaskError::Invalid(_))));
 }
+
+#[test]
+fn f_tk_04_an_update_chosen_under_the_lock_never_writes_over_a_close() {
+    // The execution service wrote In progress from a copy read before you
+    // closed the task, over your close (the review of 66e0dcd9, SF-1).
+    let open = |i: &Issue| {
+        let closed = matches!(i.status, IssueStatus::Done | IssueStatus::Canceled);
+        ((!closed).then_some(IssueStatus::InProgress), None)
+    };
+    for _ in 0..20 {
+        let (_d, s) = store();
+        new_issue(&s, "Race");
+        let barrier = Arc::new(Barrier::new(2));
+        let (s2, b2) = (s.clone(), barrier.clone());
+        let you = std::thread::spawn(move || {
+            b2.wait();
+            s2.force_update("TAN-1", Some(IssueStatus::Canceled), None, &Writer::human())
+                .expect("close");
+        });
+        barrier.wait();
+        s.update_from("TAN-1", &Writer::human(), open)
+            .expect("update");
+        you.join().expect("join");
+        assert_eq!(s.get("TAN-1").expect("get").status, IssueStatus::Canceled);
+    }
+    // Chosen from the issue as it is: a closed one keeps its status and
+    // history, and the result is written or kept as chosen.
+    let (_d, s) = store();
+    new_issue(&s, "Closed");
+    s.force_update("TAN-1", Some(IssueStatus::Done), None, &Writer::human())
+        .expect("close");
+    let before = s.history("TAN-1").expect("history").len();
+    let kept = s
+        .update_from("TAN-1", &Writer::human(), open)
+        .expect("kept");
+    assert_eq!((kept.status, kept.revision), (IssueStatus::Done, 2));
+    assert_eq!(s.history("TAN-1").expect("history").len(), before);
+    let with = s
+        .update_from("TAN-1", &Writer::human(), |i| {
+            (None, Some(format!("Was {:?}", i.status)))
+        })
+        .expect("result");
+    assert_eq!(with.result.as_deref(), Some("Was Done"));
+    assert_eq!(with.status, IssueStatus::Done);
+}

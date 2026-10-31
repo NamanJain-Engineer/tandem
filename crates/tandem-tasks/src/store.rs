@@ -754,7 +754,22 @@ impl TaskStore {
         result: Option<String>,
         by: &Writer,
     ) -> Result<Issue, TaskError> {
+        self.update_from(id, by, |_| (status, result))
+    }
+
+    /// [`Self::force_update`] with the status and the result chosen from the
+    /// issue as it is under its lock (`None` keeps each). The execution
+    /// service decides from the task as it is, not from a copy read before,
+    /// so it never writes over a status changed since, such as your close
+    /// (the review of 66e0dcd9, SF-1 and Nit 3).
+    pub fn update_from(
+        &self,
+        id: &str,
+        by: &Writer,
+        choose: impl FnOnce(&Issue) -> (Option<IssueStatus>, Option<String>),
+    ) -> Result<Issue, TaskError> {
         self.edit_issue(id, None, by, |i| {
+            let (status, result) = choose(i);
             if let Some(s) = status {
                 i.status = s;
             }

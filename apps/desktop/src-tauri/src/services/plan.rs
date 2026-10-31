@@ -4650,6 +4650,9 @@ mod tests {
             tracker.get("TAN-1").expect("TAN-1").status,
             IssueStatus::Todo
         );
+        // Its run stays as it is too: back in review with its Approve, it
+        // was offered to land again (the review of 66e0dcd9, Nit 4).
+        assert_eq!(fake.unlanded.lock().expect("l").len(), 1);
         assert_eq!(
             tracker
                 .comments("TAN-1")

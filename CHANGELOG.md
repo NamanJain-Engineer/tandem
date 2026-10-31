@@ -36,7 +36,8 @@ release fails when its version has no section.
   can turn it off. When Land worktrees lands a plan task's worktree, the task
   is marked Done with the commit in a comment, and its row says Landed; Undo
   landing puts it and the run that landed back in review. A task you mark
-  Done or Canceled while its run works gets nothing more from that run.
+  Done or Canceled while its run waits, sets up or works gets nothing more
+  from that run.
 
 ### Fixed
 
@@ -54,7 +55,9 @@ release fails when its version has no section.
 - [lin] **A token's expiry stays readable.** A date or time under a name
   that says when a token or secret expires or was made
   (`token_expires_at: 2025-10-30T18:00:00Z`) is no longer hidden as if it
-  were the token itself, while a secret under such a name still is.
+  were the token itself, while a secret under such a name still is. In a
+  link, a token after such a time, or after a setting like
+  `token_type=bearer`, is now hidden too.
 - [lin] **One crafted text no longer slows every key check after it.**
   Vibezeo hides keys and tokens before text reaches a model, your phone or
   anything else off your computer. A long text built to wear out the fast way

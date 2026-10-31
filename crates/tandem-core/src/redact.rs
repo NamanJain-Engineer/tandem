@@ -237,6 +237,15 @@ fn rule_specs() -> Vec<Spec> {
             ),
             Extract::Custom(assignment_span),
         ),
+        // `?token_type=bearer&access_token=…`: each query parameter on its
+        // own. The rule above reads a value up to a space, so a parameter it
+        // refused (descriptive, a time, too short) took the rest of the query
+        // with it, and a short token after it went unread (the review of
+        // 66e0dcd9, Nit 8).
+        (
+            format!(r#"(?i)[?&](?P<k>{KEY_WORDS})=(?P<vu>[^\s"'`,;)&#]{{8,}})"#),
+            Extract::Custom(assignment_span),
+        ),
         // `--token abc…`, `--api-key=…`
         (
             r#"(?i)--[A-Za-z0-9-]*(?:password|passwd|secret|token|api-?key|access-?key|auth-?key)[A-Za-z0-9-]*(?:=|[ \t]+)(?P<v>[^\s"'`]{8,})"#.to_string(),

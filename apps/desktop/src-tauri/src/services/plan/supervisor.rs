@@ -72,18 +72,21 @@ enum Cue {
     Part(&'static str),
     /// Two words in a row.
     Pair(&'static str, &'static str),
-    /// One of the words, and a word starting with the stem, at most
-    /// [`NEAR`] words apart. Anywhere in the text, "sync the docs" and "the
-    /// upstream fix" named pushing (the review of e00668ee, S4).
+    /// One of the words, and a word starting with the stem, in the same
+    /// sentence. Anywhere in the text, "sync the docs" and "the upstream
+    /// fix" named pushing (the review of e00668ee, S4); four words apart,
+    /// "sync your fork with the latest upstream changes" didn't (the review
+    /// of 66e0dcd9, SF-3).
     Near(&'static [&'static str], &'static str),
     /// A phrase, such as a command's flags, starting a word: inside one,
     /// "the expr creates" named "pr create" (the review of e00668ee, S4).
     Phrase(&'static str),
+    /// A phrase on its own: starting and ending at a word's edges, spaces
+    /// between its words. "pr create" as a `Pair` read "In this PR, create a
+    /// test" (the review of 66e0dcd9, SF-3).
+    Exact(&'static str),
 }
-
-/// How far apart a [`Cue::Near`]'s two words can be.
-const NEAR: usize = 4;
-use Cue::{Near, Pair, Part, Phrase, Stem, Word};
+use Cue::{Exact, Near, Pair, Part, Phrase, Stem, Word};
 
 /// The topics that always come to you, and the words that name them
 /// (D-2830, D-2839). Cheap and on the safe side: a question that names one
@@ -183,7 +186,7 @@ const SENSITIVE: &[(&str, &[Cue])] = &[
         "pushing",
         &[
             Part("push"),
-            Pair("pr", "create"),
+            Exact("pr create"),
             Near(
                 &[
                     "send",
@@ -309,11 +312,10 @@ pub fn sensitive(question: &str) -> Option<&'static str> {
         .find_map(|t| topic_in(t))
 }
 
-/// [`sensitive`] in one reading of a folded text.
-fn topic_in(text: &str) -> Option<&'static str> {
-    // A run of single letters is read as a word too, where it stands: read
-    // after the text's last word, "k e y … the api" named an API key (the
-    // review of e00668ee, Nit 8).
+/// A text's words, a run of three or more single letters read as a word
+/// too, where it stands: read after the text's last word, "k e y … the
+/// api" named an API key (the review of e00668ee, Nit 8).
+fn words_of(text: &str) -> Vec<String> {
     let mut words: Vec<String> = Vec::new();
     let mut run = String::new();
     let split = text
@@ -332,7 +334,43 @@ fn topic_in(text: &str) -> Option<&'static str> {
             words.push(w.to_string());
         }
     }
+    words
+}
+
+/// A text's sentences: split at `.`, `;`, `!` or `?` before a space or the
+/// end (so `v1.2`, `p.u.s.h` and `a/b.c` stay whole), but not at the full
+/// stop of a one-letter word (`e.g.`, `i.e.`, an initial). Not at a line's
+/// end: a list's items would part a verb from what it names, and a miss is
+/// the unsafe side.
+fn sentences(text: &str) -> Vec<&str> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (k, &(i, c)) in chars.iter().enumerate() {
+        if !matches!(c, '.' | ';' | '!' | '?') {
+            continue;
+        }
+        let spaced = chars
+            .get(k + 1)
+            .is_none_or(|(_, next)| next.is_whitespace());
+        let letter = |j: usize| chars.get(j).is_some_and(|(_, x)| x.is_alphanumeric());
+        let short = c == '.' && k >= 1 && letter(k - 1) && !(k >= 2 && letter(k - 2));
+        if spaced && !short {
+            out.push(&text[start..i]);
+            start = i + c.len_utf8();
+        }
+    }
+    out.push(&text[start..]);
+    out
+}
+
+/// [`sensitive`] in one reading of a folded text.
+fn topic_in(text: &str) -> Option<&'static str> {
+    let words = words_of(text);
+    let sentences: Vec<Vec<String>> = sentences(text).into_iter().map(words_of).collect();
     let spaced = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // A word's edge: nothing more of a word follows.
+    let edge = |rest: &str| !rest.starts_with(char::is_alphanumeric);
     SENSITIVE.iter().find_map(|(topic, cues)| {
         cues.iter()
             .any(|cue| match cue {
@@ -340,15 +378,16 @@ fn topic_in(text: &str) -> Option<&'static str> {
                 Stem(s) => words.iter().any(|x| x.starts_with(s)),
                 Part(p) => words.iter().any(|x| x.contains(p)),
                 Pair(a, b) => words.windows(2).any(|p| p[0] == *a && p[1] == *b),
-                Near(verbs, stem) => words.iter().enumerate().any(|(i, x)| {
-                    verbs.contains(&x.as_str())
-                        && words[i.saturating_sub(NEAR)..words.len().min(i + NEAR + 1)]
-                            .iter()
-                            .any(|y| y.starts_with(stem))
+                Near(verbs, stem) => sentences.iter().any(|ws| {
+                    ws.iter().any(|x| verbs.contains(&x.as_str()))
+                        && ws.iter().any(|x| x.starts_with(stem))
                 }),
                 Phrase(p) => spaced
                     .match_indices(p)
                     .any(|(i, _)| !spaced[..i].ends_with(char::is_alphanumeric)),
+                Exact(p) => spaced.match_indices(p).any(|(i, _)| {
+                    !spaced[..i].ends_with(char::is_alphanumeric) && edge(&spaced[i + p.len()..])
+                }),
             })
             .then_some(*topic)
     })
@@ -1387,23 +1426,46 @@ mod tests {
 
     #[test]
     fn f_tk_08_3_a_topics_words_are_read_together() {
-        // "pr create" inside other words, a verb anywhere with "upstream" or
-        // "branch" anywhere, and a run of letters read after the text's last
-        // word named topics these don't (the review of e00668ee, S4, Nit 8).
+        // "pr create" inside other words or across a comma, a verb in one
+        // sentence with "upstream" or "branch" in another, and a run of
+        // letters read after the text's last word named topics these don't
+        // (the review of e00668ee, S4 and Nit 8; of 66e0dcd9, SF-3).
         for q in [
             "This PR creates the parser; keep it.",
             "The expr creates a closure on each call.",
+            "In this PR, create a regression test for the empty input.",
+            "Before you open the PR, create a changelog entry.",
             "Sync the docs with the new API. The upstream fix landed last week.",
             "Drop the debug logging. The branch name in the title is wrong too.",
             "Sort k e y order, then call the api.",
         ] {
             assert_eq!(sensitive(q), None, "{q:?}");
         }
+        // Within a sentence, however far apart: four words apart missed
+        // these (the review of 66e0dcd9, SF-3).
         for (q, topic) in [
             ("Then gh pr create --fill.", "pushing"),
             ("Sync your branch with upstream first.", "pushing"),
             (
+                "Sync your fork with the latest upstream changes.",
+                "pushing",
+            ),
+            ("Send these changes to the upstream repo.", "pushing"),
+            ("Then sync with u p s t r e a m.", "pushing"),
+            (
                 "Drop the stale feature branch.",
+                "deleting files or branches",
+            ),
+            (
+                "Remove the old feature/login-v2 branch.",
+                "deleting files or branches",
+            ),
+            (
+                "Remove the rest, e.g. the old branch.",
+                "deleting files or branches",
+            ),
+            (
+                "Remove the old code\n- and the feature branch",
                 "deleting files or branches",
             ),
             ("Then run git branch -D old.", "deleting files or branches"),

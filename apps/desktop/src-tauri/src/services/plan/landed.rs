@@ -111,21 +111,37 @@ impl PlanService {
             "plan tasks' landing was undone"
         );
         for (issue_id, attempt) in issues {
-            self.host.run_unlanded(&issue_id, attempt.as_ref()).await;
             let Some(tracker) = self.host.tracker() else {
                 continue;
             };
+            // The task first: one you've moved on from Done keeps its run
+            // as it is too. Put back in review with its Approve, the run
+            // was offered to land again (the review of 66e0dcd9, Nit 4).
+            let done = {
+                let (tracker, issue_id) = (tracker.clone(), issue_id.clone());
+                tokio::task::spawn_blocking(move || {
+                    tracker
+                        .get(&issue_id)
+                        .is_ok_and(|i| i.status == IssueStatus::Done)
+                })
+                .await
+                .unwrap_or(false)
+            };
+            if done {
+                self.host.run_unlanded(&issue_id, attempt.as_ref()).await;
+            }
+            // Chosen under the task's lock: a status you set since the read
+            // is kept, and the comment says so (the review of 66e0dcd9,
+            // Nit 3).
             let written = tokio::task::spawn_blocking(move || {
-                let done = tracker.get(&issue_id)?.status == IssueStatus::Done;
+                let mut back = false;
                 if done {
-                    tracker.force_update(
-                        &issue_id,
-                        Some(IssueStatus::InReview),
-                        None,
-                        &Writer::human(),
-                    )?;
+                    tracker.update_from(&issue_id, &Writer::human(), |i| {
+                        back = i.status == IssueStatus::Done;
+                        (back.then_some(IssueStatus::InReview), None)
+                    })?;
                 }
-                let body = if done { UNLANDED } else { UNLANDED_KEPT };
+                let body = if back { UNLANDED } else { UNLANDED_KEPT };
                 tracker.add_comment(&issue_id, body, None, None, &Writer::human())
             })
             .await;
