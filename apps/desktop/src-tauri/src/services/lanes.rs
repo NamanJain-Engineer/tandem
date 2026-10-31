@@ -229,7 +229,7 @@ pub async fn create_kind(
     };
     // F-WT-10: a folder used before gives the row its old id, which the
     // radar fenced off for good when that worktree went.
-    crate::services::radar::made(row.id.as_str());
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", "worktree created");
     // F-WT-01: the repository's ignored files, for every new worktree.
@@ -355,7 +355,7 @@ async fn create_multi(
             return Err(err);
         }
     };
-    crate::services::radar::made(row.id.as_str());
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tracing::info!(
         code = "lane.created_multi",
         repos = lane.repos.len(),
@@ -407,7 +407,7 @@ async fn create_on_host(
             return Err(err.into());
         }
     };
-    crate::services::radar::made(row.id.as_str());
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", remote = true, "worktree created");
     Ok(row)
@@ -1353,9 +1353,6 @@ mod tests {
         assert!(!crate::services::lsp::is_trusted(data, &path));
     }
 
-    /// F-CD-23: removing the repository's workspace soft-removes its
-    /// worktrees' rows without a Discard; the next worktree at that path
-    /// still starts untrusted.
     #[tokio::test]
     async fn f_wt_10_9_a_worktree_made_again_at_its_old_folder_is_read_by_the_radar() {
         // The store gives it the old row's id, which Remove repository
@@ -1386,6 +1383,9 @@ mod tests {
         crate::services::radar::forget(again.id.as_str());
     }
 
+    /// F-CD-23: removing the repository's workspace soft-removes its
+    /// worktrees' rows without a Discard; the next worktree at that path
+    /// still starts untrusted.
     #[tokio::test]
     async fn f_cd_23_a_worktree_made_again_after_its_workspace_was_removed_is_untrusted() {
         let fx = fixture().await;

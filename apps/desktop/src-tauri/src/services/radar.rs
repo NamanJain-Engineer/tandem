@@ -66,10 +66,19 @@ static WATCHERS: LazyLock<Mutex<HashMap<String, Watched>>> = LazyLock::new(Mutex
 static HELD: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Mutex::default);
 /// Worktrees a watched parse runs for, and whether changes came during it.
 static RUNNING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
-/// Worktrees with a follow-up refresh on its way ([`follow_up`]): one each.
-/// Every refresh that ran out of time started its own, and they ran side
-/// by side, parsing the same files (the review of d3b838de, SF-B).
-static FOLLOWING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+/// Worktrees with a follow-up refresh ([`follow_up`]), from its wait to
+/// the end of its last round, and whether another refresh ran out of time
+/// meanwhile: one each, which goes round again then. Every refresh that ran
+/// out of time started its own, and they ran side by side, parsing the same
+/// files (the review of d3b838de, SF-B); held only while it waited, a
+/// refresh that ran out of time during its run still started another (the
+/// review of c30bb8bf, SF-3).
+static FOLLOWING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
+/// The base each worktree row was made with ([`made`]): a parse with
+/// another base read the old worktree's list, before the row came back
+/// with its id (the review of c30bb8bf, SF-1). A leaf lock, taken under
+/// [`INDEXES`].
+static PINNED: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Mutex::default);
 /// What a watched change needs to parse again (set by [`run`]).
 static CONTEXT: OnceLock<Context> = OnceLock::new();
 
@@ -206,7 +215,7 @@ async fn refresh_on(
     );
     let id = lane.id.as_str();
     let before = shares_of(parent.as_str(), id);
-    let Some(index) = keep(id, parent.as_str(), started, done.index, cache) else {
+    let Some(index) = keep(id, parent.as_str(), started, base, done.index, cache) else {
         return Ok(Arc::default());
     };
     if shares_of(parent.as_str(), id) != before {
@@ -260,7 +269,8 @@ thread_local! {
 /// comes after [`SETTLE`], since nothing else would read them while the
 /// worktree stays as it is (the review of d06b9e3d, N-2). Each refresh
 /// parses at least one more file, so the rounds end. One at a time per
-/// worktree ([`FOLLOWING`]).
+/// worktree ([`FOLLOWING`]): a refresh that runs out of time while one is
+/// on its way or running gives it one more round instead.
 fn follow_up(lane: Workspace, watch: bool) {
     let (Some(ctx), Ok(handle)) = (
         CONTEXT.get().cloned(),
@@ -274,31 +284,67 @@ fn follow_up(lane: Workspace, watch: bool) {
     handle.spawn(refresh_later(lane, watch, ctx));
 }
 
-/// Whether `lane_id` takes a follow-up now: not while one is on its way.
+/// Whether `lane_id` takes a new follow-up now: not while one is on its
+/// way or running, which goes round once more instead.
 fn follows(lane_id: &str) -> bool {
-    lock(&FOLLOWING).insert(lane_id.to_string())
+    let mut following = lock(&FOLLOWING);
+    match following.get_mut(lane_id) {
+        Some(again) => {
+            *again = true;
+            false
+        }
+        None => {
+            following.insert(lane_id.to_string(), false);
+            true
+        }
+    }
 }
 
-/// The follow-up after [`SETTLE`], as a boxed `Send` future: it can follow
-/// itself up, and the box ends that cycle. It reads the worktree's row
-/// again (gone or changed, it's the row now that counts) and announces as
-/// a watched change does, so a pair newly sharing in the files it read
-/// gets its notice (the review of d3b838de).
+/// Whether `lane_id`'s follow-up goes round again: a refresh ran out of
+/// time during its round. When not, the follow-up ends and is off the list.
+fn again(lane_id: &str) -> bool {
+    let mut following = lock(&FOLLOWING);
+    match following.get_mut(lane_id) {
+        Some(again) if *again => {
+            *again = false;
+            true
+        }
+        _ => {
+            following.remove(lane_id);
+            false
+        }
+    }
+}
+
+/// The follow-up's rounds, each after [`SETTLE`], as a boxed `Send`
+/// future: a round's refresh can follow itself up, and the box ends that
+/// cycle. A worktree's own refresh goes round as a watched change does
+/// ([`on_watched`]: one parse at a time with its watched rescans, and a
+/// pair newly sharing in the files it read gets its notice, the review of
+/// d3b838de). A sibling's only reads the row again (gone or changed, it's
+/// the row now that counts) and parses on: a sibling read finished in time
+/// raises no notice either (the review of c30bb8bf, N-4).
 fn refresh_later(
     lane: Workspace,
     watch: bool,
     ctx: Context,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     Box::pin(async move {
-        tokio::time::sleep(SETTLE).await;
-        // Off the list before it runs, so a refresh that runs out of time
-        // again can follow itself up.
-        lock(&FOLLOWING).remove(lane.id.as_str());
-        let (Some(git), Ok(all)) = (ctx.git().await, workspaces::list(&ctx.store).await) else {
-            return;
-        };
-        if let Some(now) = all.iter().find(|w| w.id == lane.id && covered(w)) {
-            announce(&ctx.store, &git, &ctx.bus, now, &all, watch).await;
+        let id = lane.id.as_str().to_string();
+        loop {
+            tokio::time::sleep(SETTLE).await;
+            if watch {
+                on_watched(id.clone(), ctx.clone()).await;
+            } else if let (Some(git), Ok(all)) =
+                (ctx.git().await, workspaces::list(&ctx.store).await)
+            {
+                if let Some(now) = all.iter().find(|w| w.id == lane.id && covered(w)) {
+                    let _ = refresh_on(&git, now, false, Some(&ctx.bus)).await;
+                }
+            }
+            if !again(&id) {
+                return;
+            }
         }
     })
 }
@@ -323,6 +369,7 @@ fn keep(
     lane_id: &str,
     parent: &str,
     started: u64,
+    base: &str,
     index: SymbolIndex,
     cache: symbols::ParseCache,
 ) -> Option<Arc<SymbolIndex>> {
@@ -332,6 +379,15 @@ fn keep(
     // this keeps.
     let mut indexes = lock(&INDEXES);
     if is_held(lane_id) {
+        return None;
+    }
+    // Parsed from the old worktree's row: its base isn't the one this row
+    // was made with, whenever the parse began (the review of c30bb8bf,
+    // SF-1).
+    if lock(&PINNED)
+        .get(lane_id)
+        .is_some_and(|pinned| pinned != base)
+    {
         return None;
     }
     // Begun before the worktree was forgotten (a discard, Remove
@@ -716,21 +772,51 @@ pub fn forget(lane_id: &str) {
 /// watched rescan), which kept its index and could watch it again (the
 /// review of d06b9e3d, N-1).
 pub fn forget_for_good(lane_id: &str) {
+    {
+        let _indexes = lock(&INDEXES);
+        lock(&PINNED).remove(lane_id);
+    }
     fence(lane_id, u64::MAX);
+    unwarn(lane_id);
 }
 
-/// A worktree row made, or made again at a folder used before, which the
-/// store gives its old id: a fence left from [`forget_for_good`] kept the
-/// new worktree's radar off until the app restarted (the review of
+/// A worktree row made with `base`, or made again at a folder used before,
+/// which the store gives its old id: a fence left from [`forget_for_good`]
+/// kept the new worktree's radar off until the app restarted (the review of
 /// d3b838de, MF-A). The fence comes down to now, not away: a parse begun
-/// from a list read before the row came back carries the old worktree's
-/// base.
-pub fn made(lane_id: &str) {
-    // Under the lock [`keep`] checks the fence in.
-    let _indexes = lock(&INDEXES);
-    if let Some(at) = lock(&FORGOTTEN).get_mut(lane_id) {
-        *at = STARTED.load(Ordering::Relaxed);
+/// before still read the old worktree's files. And the row's base is
+/// pinned: a parse that begins later from a list read before the row came
+/// back carries the old worktree's base, and is refused for it (the review
+/// of c30bb8bf, SF-1). The old worktree's notices are forgotten, so the
+/// same overlap in the new one is told again (SF-2).
+pub fn made(lane_id: &str, base: Option<&str>) {
+    {
+        // Under the lock [`keep`] checks the fence and the pin in.
+        let _indexes = lock(&INDEXES);
+        if let Some(at) = lock(&FORGOTTEN).get_mut(lane_id) {
+            *at = STARTED.load(Ordering::Relaxed);
+        }
+        let mut pinned = lock(&PINNED);
+        match base.filter(|b| !b.is_empty()) {
+            Some(b) => {
+                pinned.insert(lane_id.to_string(), b.to_string());
+            }
+            None => {
+                pinned.remove(lane_id);
+            }
+        }
     }
+    unwarn(lane_id);
+}
+
+/// Forgets the notices raised for `lane_id`'s pairs: nothing removed them,
+/// so a worktree made again with its old id never told the same overlap
+/// again (the review of c30bb8bf, SF-2).
+fn unwarn(lane_id: &str) {
+    lock(&WARNED).retain(|key| {
+        let mut ids = key.splitn(3, '|');
+        ids.next() != Some(lane_id) && ids.next() != Some(lane_id)
+    });
 }
 
 fn fence(lane_id: &str, at: u64) {
@@ -1411,11 +1497,11 @@ mod tests {
         };
         let newer = Arc::new(newer);
         assert_eq!(
-            keep(id, "repo", 2, (*newer).clone(), Default::default()),
+            keep(id, "repo", 2, "base", (*newer).clone(), Default::default()),
             Some(newer.clone())
         );
         assert_eq!(
-            keep(id, "repo", 1, older, Default::default()),
+            keep(id, "repo", 1, "base", older, Default::default()),
             Some(newer.clone()),
             "the later parse's index stays"
         );
@@ -1652,7 +1738,7 @@ mod tests {
         forget_for_good(gone);
         let later = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
         let (index, cache) = empty();
-        assert!(keep(gone, "repo", later, index, cache).is_none());
+        assert!(keep(gone, "repo", later, "base", index, cache).is_none());
         assert!(!lock(&INDEXES).contains_key(gone));
         // Any other fence goes once a newer parse is kept, which wins over
         // the older ones anyway.
@@ -1660,10 +1746,10 @@ mod tests {
         forget(id);
         let newer = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
         let (index, cache) = empty();
-        assert!(keep(id, "repo", newer, index, cache).is_some());
+        assert!(keep(id, "repo", newer, "base", index, cache).is_some());
         assert!(!lock(&FORGOTTEN).contains_key(id));
         let (index, cache) = empty();
-        assert!(keep(id, "repo", newer - 1, index, cache).is_some());
+        assert!(keep(id, "repo", newer - 1, "base", index, cache).is_some());
         let kept = lock(&INDEXES).get(id).map(|e| e.started);
         forget(id);
         assert_eq!(kept, Some(newer), "an older parse doesn't replace it");
@@ -1689,7 +1775,7 @@ mod tests {
         let ids = ["radar-own-a", "radar-own-b", "radar-own-c", "radar-own-d"];
         for id in ids {
             let n = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
-            keep(id, parent, n, index(), Default::default());
+            keep(id, parent, n, "base", index(), Default::default());
         }
         COMPARED.with(|n| n.set(0));
         let got = shares_of(parent, ids[0]);
@@ -1713,19 +1799,44 @@ mod tests {
         let empty = || (SymbolIndex::default(), symbols::ParseCache::default());
         let id = "radar-made-again";
         forget_for_good(id);
-        // Begun from a list read before it came back: the old worktree's.
+        // Begun before it came back: the old worktree's files.
         let stale = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
-        made(id);
+        made(id, Some("b2"));
         let (index, cache) = empty();
-        assert!(keep(id, "repo", stale, index, cache).is_none());
+        assert!(keep(id, "repo", stale, "b2", index, cache).is_none());
+        // Begun after it, from a list read before: the old worktree's base
+        // (the review of c30bb8bf, SF-1).
+        let late = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
+        let (index, cache) = empty();
+        assert!(keep(id, "repo", late, "b1", index, cache).is_none());
         let fresh = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
         let (index, cache) = empty();
-        assert!(keep(id, "repo", fresh, index, cache).is_some());
-        forget(id);
+        assert!(keep(id, "repo", fresh, "b2", index, cache).is_some());
+        forget_for_good(id);
+        assert!(!lock(&PINNED).contains_key(id), "gone with the row");
         // A worktree never forgotten gets no fence from being made.
         let new = "radar-made-new";
-        made(new);
+        made(new, Some("b1"));
         assert!(!lock(&FORGOTTEN).contains_key(new));
+        made(new, None);
+        assert!(!lock(&PINNED).contains_key(new));
+    }
+
+    #[test]
+    fn f_wt_10_5_a_worktree_made_again_tells_its_overlaps_again() {
+        // Nothing forgot a pair's notice, so the same task done again in a
+        // worktree made with its old id never told the overlap again (the
+        // review of c30bb8bf, SF-2). Another pair's notice stays.
+        let (x, y, z) = ("radar-warn-x", "radar-warn-y", "radar-warn-z");
+        let names = vec!["login".to_string()];
+        lock(&WARNED).extend([pair_key(x, y, &names), pair_key(y, z, &names)]);
+        forget_for_good(x);
+        made(x, Some("b2"));
+        assert!(lock(&WARNED).insert(pair_key(x, y, &names)), "told again");
+        assert!(!lock(&WARNED).insert(pair_key(y, z, &names)));
+        unwarn(x);
+        unwarn(z);
+        forget(x);
     }
 
     #[test]
@@ -1741,6 +1852,7 @@ mod tests {
             id,
             "repo",
             later,
+            "base",
             SymbolIndex::default(),
             Default::default()
         )
@@ -1749,15 +1861,25 @@ mod tests {
     }
 
     #[test]
-    fn f_wt_10_2_a_worktree_has_one_follow_up_on_its_way_at_a_time() {
+    fn f_wt_10_2_a_worktree_has_one_follow_up_at_a_time() {
         // Every refresh that ran out of time started its own, and they ran
-        // side by side (the review of d3b838de, SF-B).
+        // side by side (the review of d3b838de, SF-B); held only while it
+        // waited, a refresh that ran out of time during its run still
+        // started another (the review of c30bb8bf, SF-3).
         let id = "radar-follows-once";
-        assert!(follows(id));
+        assert!(follows(id), "the first starts one");
+        // Two more run out of time while it waits or runs: one more round.
         assert!(!follows(id));
-        lock(&FOLLOWING).remove(id);
+        assert!(!follows(id));
+        assert!(again(id));
+        // Its own round ran out of time again: once more.
+        assert!(!follows(id));
+        assert!(again(id));
+        // A round with nothing new ends it, and the next starts afresh.
+        assert!(!again(id));
+        assert!(!lock(&FOLLOWING).contains_key(id));
         assert!(follows(id));
-        lock(&FOLLOWING).remove(id);
+        assert!(!again(id));
     }
 
     #[test]
@@ -1825,6 +1947,7 @@ mod tests {
             id,
             "repo",
             started,
+            "base",
             SymbolIndex::default(),
             Default::default(),
         );
@@ -1835,6 +1958,7 @@ mod tests {
             id,
             "repo",
             later,
+            "base",
             SymbolIndex::default(),
             Default::default(),
         );

@@ -120,6 +120,12 @@ pub async fn add(
     if tabs::list(store, &workspace.id).await?.is_empty() {
         tabs::create(store, &workspace.id, None).await?;
     }
+    // A folder used before, a removed worktree's among them, gets its old
+    // row and id back, which the radar fenced off for good when it went
+    // (the review of c30bb8bf, N-5).
+    if how != Added::Existing {
+        crate::services::radar::made(workspace.id.as_str(), workspace.lane_base.as_deref());
+    }
     tracing::info!(
         code = "workspace.added",
         created = how == Added::Created,
@@ -172,6 +178,12 @@ pub async fn add_remote(
             })?;
     if tabs::list(store, &workspace.id).await?.is_empty() {
         tabs::create(store, &workspace.id, None).await?;
+    }
+    // A folder used before, a removed worktree's among them, gets its old
+    // row and id back, which the radar fenced off for good when it went
+    // (the review of c30bb8bf, N-5).
+    if how != Added::Existing {
+        crate::services::radar::made(workspace.id.as_str(), workspace.lane_base.as_deref());
     }
     tracing::info!(
         code = "workspace.added",
