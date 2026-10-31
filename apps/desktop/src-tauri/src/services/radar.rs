@@ -67,13 +67,24 @@ static HELD: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Mutex::defa
 /// Worktrees a watched parse runs for, and whether changes came during it.
 static RUNNING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
 /// Worktrees with a follow-up refresh ([`follow_up`]), from its wait to
-/// the end of its last round, and whether another refresh ran out of time
-/// meanwhile: one each, which goes round again then. Every refresh that ran
-/// out of time started its own, and they ran side by side, parsing the same
-/// files (the review of d3b838de, SF-B); held only while it waited, a
-/// refresh that ran out of time during its run still started another (the
-/// review of c30bb8bf, SF-3).
-static FOLLOWING: LazyLock<Mutex<HashMap<String, bool>>> = LazyLock::new(Mutex::default);
+/// the end of its last round: whether another refresh ran out of time
+/// meanwhile, and whether the next round is the worktree's own (watched).
+/// One each, which goes round again then. Every refresh that ran out of
+/// time started its own, and they ran side by side, parsing the same files
+/// (the review of d3b838de, SF-B); held only while it waited, a refresh
+/// that ran out of time during its run still started another (the review
+/// of c30bb8bf, SF-3); and a worktree's own merged into a sibling's ran as
+/// the sibling's (the review of 265f6af3, N-1).
+static FOLLOWING: LazyLock<Mutex<HashMap<String, Follow>>> = LazyLock::new(Mutex::default);
+
+/// A follow-up on [`FOLLOWING`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Follow {
+    /// A refresh ran out of time since its round began: one more.
+    again: bool,
+    /// The next round is the worktree's own, as a watched change.
+    watch: bool,
+}
 /// The base each worktree row was made with ([`made`]): a parse with
 /// another base read the old worktree's list, before the row came back
 /// with its id (the review of c30bb8bf, SF-1). A leaf lock, taken under
@@ -278,52 +289,74 @@ fn follow_up(lane: Workspace, watch: bool) {
     ) else {
         return;
     };
-    if !follows(lane.id.as_str()) {
+    if !follows(lane.id.as_str(), watch) {
         return;
     }
     handle.spawn(refresh_later(lane, watch, ctx));
 }
 
 /// Whether `lane_id` takes a new follow-up now: not while one is on its
-/// way or running, which goes round once more instead.
-fn follows(lane_id: &str) -> bool {
+/// way or running, which goes round once more instead, as the worktree's
+/// own if either asked so.
+fn follows(lane_id: &str, watch: bool) -> bool {
     let mut following = lock(&FOLLOWING);
     match following.get_mut(lane_id) {
-        Some(again) => {
-            *again = true;
+        Some(f) => {
+            f.again = true;
+            f.watch |= watch;
             false
         }
         None => {
-            following.insert(lane_id.to_string(), false);
+            following.insert(
+                lane_id.to_string(),
+                Follow {
+                    again: false,
+                    watch,
+                },
+            );
             true
         }
     }
 }
 
-/// Whether `lane_id`'s follow-up goes round again: a refresh ran out of
-/// time during its round. When not, the follow-up ends and is off the list.
-fn again(lane_id: &str) -> bool {
+/// Whether `lane_id`'s follow-up goes round again, and as whose: a refresh
+/// ran out of time during its round. When not, the follow-up ends and is
+/// off the list.
+fn again(lane_id: &str) -> Option<bool> {
     let mut following = lock(&FOLLOWING);
     match following.get_mut(lane_id) {
-        Some(again) if *again => {
-            *again = false;
-            true
+        Some(f) if f.again => {
+            f.again = false;
+            Some(f.watch)
         }
         _ => {
             following.remove(lane_id);
-            false
+            None
+        }
+    }
+}
+
+/// Takes `id` off `list` if the task holding it there unwinds: left on it,
+/// every later request flagged a round that no longer runs, and the
+/// worktree was never followed up or rescanned again that session (the
+/// review of 265f6af3, N-2). Only then: ended as usual, its entry is gone
+/// already, or another's.
+struct OffOnPanic<V: 'static> {
+    list: &'static LazyLock<Mutex<HashMap<String, V>>>,
+    id: String,
+}
+
+impl<V> Drop for OffOnPanic<V> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            lock(self.list).remove(&self.id);
         }
     }
 }
 
 /// The follow-up's rounds, each after [`SETTLE`], as a boxed `Send`
 /// future: a round's refresh can follow itself up, and the box ends that
-/// cycle. A worktree's own refresh goes round as a watched change does
-/// ([`on_watched`]: one parse at a time with its watched rescans, and a
-/// pair newly sharing in the files it read gets its notice, the review of
-/// d3b838de). A sibling's only reads the row again (gone or changed, it's
-/// the row now that counts) and parses on: a sibling read finished in time
-/// raises no notice either (the review of c30bb8bf, N-4).
+/// cycle.
 fn refresh_later(
     lane: Workspace,
     watch: bool,
@@ -331,22 +364,42 @@ fn refresh_later(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     Box::pin(async move {
         let id = lane.id.as_str().to_string();
+        let _off = OffOnPanic {
+            list: &FOLLOWING,
+            id: id.clone(),
+        };
+        let mut watch = watch;
         loop {
             tokio::time::sleep(SETTLE).await;
-            if watch {
-                on_watched(id.clone(), ctx.clone()).await;
-            } else if let (Some(git), Ok(all)) =
-                (ctx.git().await, workspaces::list(&ctx.store).await)
-            {
-                if let Some(now) = all.iter().find(|w| w.id == lane.id && covered(w)) {
-                    let _ = refresh_on(&git, now, false, Some(&ctx.bus)).await;
-                }
-            }
-            if !again(&id) {
-                return;
+            follow_round(&ctx, &id, watch).await;
+            match again(&id) {
+                Some(next) => watch = next,
+                None => return,
             }
         }
     })
+}
+
+/// One round of a follow-up. A worktree's own goes as a watched change
+/// does ([`on_watched`]: one parse at a time with its watched rescans). A
+/// sibling's reads the row again (gone or changed, it's the row now that
+/// counts) and announces it without watching it: a pair newly sharing in
+/// the files it read gets its notice, as one found by a read that finished
+/// in time does through the announce that asked for it (the review of
+/// d3b838de; of 265f6af3, SF-1).
+async fn follow_round(ctx: &Context, id: &str, watch: bool) {
+    #[cfg(test)]
+    lock(&tests::ROUNDS)
+        .entry(id.to_string())
+        .or_default()
+        .push(watch);
+    if watch {
+        on_watched(id.to_string(), ctx.clone()).await;
+    } else if let (Some(git), Ok(all)) = (ctx.git().await, workspaces::list(&ctx.store).await) {
+        if let Some(now) = all.iter().find(|w| w.id.as_str() == id && covered(w)) {
+            announce(&ctx.store, &git, &ctx.bus, now, &all, false).await;
+        }
+    }
 }
 
 /// `radar:changed` for `lane_id`, on `bus` or the app's.
@@ -662,6 +715,10 @@ async fn on_watched(lane_id: String, ctx: Context) {
         }
         running.insert(lane_id.clone(), false);
     }
+    let _off = OffOnPanic {
+        list: &RUNNING,
+        id: lane_id.clone(),
+    };
     loop {
         if !is_held(&lane_id) {
             rescan(&lane_id, &ctx).await;
@@ -1123,6 +1180,11 @@ pub fn claim_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The follow-up rounds each worktree id went (`follow_round`): each
+    /// one's watch flag.
+    pub(super) static ROUNDS: LazyLock<Mutex<HashMap<String, Vec<bool>>>> =
+        LazyLock::new(Mutex::default);
 
     /// The overlap notice among what was published, the rest dropped.
     fn overlap_in(rx: &mut tokio::sync::broadcast::Receiver<BusEvent>) -> Option<BusEvent> {
@@ -1823,20 +1885,30 @@ mod tests {
     }
 
     #[test]
-    fn f_wt_10_5_a_worktree_made_again_tells_its_overlaps_again() {
+    fn f_wt_10_4_a_worktree_made_again_tells_its_overlaps_again() {
         // Nothing forgot a pair's notice, so the same task done again in a
         // worktree made with its old id never told the overlap again (the
-        // review of c30bb8bf, SF-2). Another pair's notice stays.
-        let (x, y, z) = ("radar-warn-x", "radar-warn-y", "radar-warn-z");
+        // review of c30bb8bf, SF-2). Each of `made` and `forget_for_good`
+        // forgets them on its own, and another pair's notice stays (the
+        // review of 265f6af3, N-3).
         let names = vec!["login".to_string()];
-        lock(&WARNED).extend([pair_key(x, y, &names), pair_key(y, z, &names)]);
-        forget_for_good(x);
-        made(x, Some("b2"));
-        assert!(lock(&WARNED).insert(pair_key(x, y, &names)), "told again");
-        assert!(!lock(&WARNED).insert(pair_key(y, z, &names)));
-        unwarn(x);
-        unwarn(z);
-        forget(x);
+        let (y, z) = ("radar-warn-y", "radar-warn-z");
+        for (x, by) in [("radar-warn-made", "made"), ("radar-warn-gone", "gone")] {
+            lock(&WARNED).extend([pair_key(x, y, &names), pair_key(y, z, &names)]);
+            if by == "made" {
+                made(x, Some("b2"));
+            } else {
+                forget_for_good(x);
+            }
+            assert!(
+                lock(&WARNED).insert(pair_key(x, y, &names)),
+                "{by}: told again"
+            );
+            assert!(!lock(&WARNED).insert(pair_key(y, z, &names)), "{by}");
+            unwarn(x);
+            unwarn(z);
+            forget(x);
+        }
     }
 
     #[test]
@@ -1867,19 +1939,162 @@ mod tests {
         // waited, a refresh that ran out of time during its run still
         // started another (the review of c30bb8bf, SF-3).
         let id = "radar-follows-once";
-        assert!(follows(id), "the first starts one");
+        assert!(follows(id, false), "the first starts one");
         // Two more run out of time while it waits or runs: one more round.
-        assert!(!follows(id));
-        assert!(!follows(id));
-        assert!(again(id));
+        assert!(!follows(id, false));
+        assert!(!follows(id, false));
+        assert_eq!(again(id), Some(false));
         // Its own round ran out of time again: once more.
-        assert!(!follows(id));
-        assert!(again(id));
+        assert!(!follows(id, false));
+        assert_eq!(again(id), Some(false));
         // A round with nothing new ends it, and the next starts afresh.
-        assert!(!again(id));
+        assert_eq!(again(id), None);
         assert!(!lock(&FOLLOWING).contains_key(id));
-        assert!(follows(id));
-        assert!(!again(id));
+        // The worktree's own, asked for while a sibling's goes, makes the
+        // next round its own, whatever comes after it: it ran as the
+        // sibling's (the review of 265f6af3, N-1).
+        assert!(follows(id, false));
+        assert!(!follows(id, true));
+        assert!(!follows(id, false));
+        assert_eq!(again(id), Some(true));
+        assert_eq!(again(id), None);
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_2_a_follow_up_asked_for_again_goes_round_once_more() {
+        // Off the list before its round ran, a follow-up let a refresh that
+        // ran out of time during the round start another beside it (the
+        // review of c30bb8bf, SF-3); the state above was tested, not the
+        // rounds (the review of 265f6af3, N-3).
+        let fx = parse_fixture().await;
+        let lane = fx.lanes[0].clone();
+        let id = lane.id.as_str().to_string();
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: EventBus::new(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        assert!(follows(&id, false));
+        let chain = tokio::spawn(refresh_later(lane, false, ctx));
+        // Two more before its round ends, one the worktree's own.
+        assert!(!follows(&id, false));
+        assert!(!follows(&id, true));
+        chain.await.expect("the chain ends");
+        // One more round, the worktree's own.
+        assert_eq!(lock(&ROUNDS).get(&id), Some(&vec![false, true]));
+        assert!(!lock(&FOLLOWING).contains_key(&id));
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_2_a_worktrees_own_round_waits_for_its_running_rescan() {
+        // Its own follow-up parsed beside its watched rescans (the review of
+        // c30bb8bf, SF-3): a round while one runs only asks it to go again.
+        let fx = parse_fixture().await;
+        let id = fx.lanes[0].id.as_str();
+        lock(&RUNNING).insert(id.to_string(), false);
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe(Topic::App);
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: bus.clone(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        follow_round(&ctx, id, true).await;
+        assert_eq!(lock(&RUNNING).get(id), Some(&true));
+        assert!(rx.try_recv().is_err(), "nothing parsed");
+        assert!(!lock(&INDEXES).contains_key(id));
+        lock(&RUNNING).remove(id);
+        forget(id);
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_2_a_round_that_panics_takes_its_follow_up_off_the_list() {
+        // Left on the list, every later refresh that ran out of time flagged
+        // a follow-up that no longer ran (the review of 265f6af3, N-2).
+        let id = "radar-follow-panics";
+        assert!(follows(id, false));
+        let round = tokio::spawn(async move {
+            let _off = OffOnPanic {
+                list: &FOLLOWING,
+                id: id.to_string(),
+            };
+            tokio::task::yield_now().await;
+            panic!("a round's bug");
+        });
+        assert!(round.await.is_err());
+        assert!(!lock(&FOLLOWING).contains_key(id));
+        // Ended as usual, it leaves the list as the follow-up left it.
+        assert!(follows(id, false));
+        drop(OffOnPanic {
+            list: &FOLLOWING,
+            id: id.to_string(),
+        });
+        assert_eq!(again(id), None, "still on the list until its round says");
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_1_4_a_siblings_follow_up_tells_the_pair_it_finds() {
+        // A sibling read that ran out of time inside another worktree's
+        // announce left the rest to its follow-up, which only refreshed: a
+        // share in the files it read was marked, with no notice (the review
+        // of 265f6af3, SF-1).
+        let fx = parse_fixture().await;
+        let (renamer, user) = (&fx.lanes[0], &fx.lanes[1]);
+        // The user's worktree read before its use of `parse`, as a read that
+        // ran out of time leaves it, and the rename read.
+        assert!(refresh_on(&fx.git, user, false, None).await.is_ok());
+        std::fs::write(Path::new(&renamer.root).join("src/parse.ts"), PARSE_LINE).expect("write");
+        assert!(refresh_on(&fx.git, renamer, false, None).await.is_ok());
+        std::fs::write(
+            Path::new(&user.root).join("src/main.ts"),
+            "import { parse } from './parse';\nexport const out = parse(' X ');\n",
+        )
+        .expect("write");
+        let bus = EventBus::new();
+        let mut rx = bus.subscribe(Topic::App);
+        let ctx = Context {
+            store: fx.store.clone(),
+            bus: bus.clone(),
+            git: GitSource::Fixed(fx.git.clone()),
+        };
+        follow_round(&ctx, user.id.as_str(), false).await;
+        let ev = overlap_in(&mut rx).expect("the pair's notice");
+        assert_eq!(
+            ev.payload["symbols"],
+            serde_json::json!(["parse → parseLine"])
+        );
+        assert!(
+            !lock(&WATCHERS).contains_key(user.id.as_str()),
+            "a sibling's round doesn't watch it"
+        );
+        for l in &fx.lanes {
+            forget(l.id.as_str());
+        }
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_9_a_removed_worktrees_folder_added_again_is_read_again() {
+        // Added back, the folder's row and id come back, which the radar
+        // fenced off for good when it went, so its parses were never kept
+        // again (the review of c30bb8bf, N-5; untested, of 265f6af3, N-3).
+        let fx = fixture(&["revived"]).await;
+        let lane = &fx.lanes[0];
+        workspaces::remove(&fx.store, &lane.id)
+            .await
+            .expect("remove");
+        forget_for_good(lane.id.as_str());
+        let added = crate::services::workspaces::add(&fx.store, &lane.root, None)
+            .await
+            .expect("add");
+        assert_eq!(added.workspace.id, lane.id, "its row and id came back");
+        assert!(refresh_on(&fx.git, &added.workspace, false, None)
+            .await
+            .is_ok());
+        assert!(lock(&INDEXES).contains_key(lane.id.as_str()), "kept");
+        forget(lane.id.as_str());
     }
 
     #[test]

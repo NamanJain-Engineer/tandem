@@ -1132,8 +1132,8 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `updates:state` | `UpdateState` (see `updates_state`; during a download at most one event per 5 %) | updater service | F-SH-06 |
 | `browser:state` / `browser:picker` | `BrowserState {browserId, url, title, canBack, canForward, loading, device, rotated, frame: Rect (the page inside the bounds), zoom, blocked?, picking, seq}` (`seq` grows with every change: a view drops a reply or event older than what it holds) / `{browserId, elements:[PickedElement {tag, selector (unique in the page), component?: {name, framework: "React"\|"Vue"}, rect: Rect (page coordinates), styles: {display, position, font, color, background, margin, padding}, html (outerHTML, cut at 4 KB), truncated}]}` | browser service | F-CD-17, F-CD-18 |
 | `checkpoint:created` | `{folder, checkpoint: Checkpoint}` | checkpoint service | F-EX-01 |
-| `radar:overlap` | `{repoId, a: {laneId, branch}, b: {laneId, branch}, symbols: [string]}` (a pair of worktrees newly sharing symbols after a checkpoint or a watched change; a rename reads `old → new`) | radar service | F-WT-10 |
-| `radar:changed` | `{laneIds: [string]}` (worktrees whose index a watched change just updated: the rail reloads `lane_radar`, and an open Check overlap its symbols) | radar service | F-WT-10 |
+| `radar:overlap` | `{repoId, a: {laneId, branch}, b: {laneId, branch}, symbols: [string]}` (a pair of worktrees newly sharing symbols after a checkpoint, a watched change, or the follow-up of any read that ran out of time, Check overlap…'s included; a rename reads `old → new`) | radar service | F-WT-10 |
+| `radar:changed` | `{laneIds: [string]}` (a worktree whose kept index changed what it shares, from any refresh: the rail reloads `lane_radar`, and an open Check overlap its symbols) | radar service | F-WT-10 |
 | `bestof:changed` | `{runId}` (a lane, its agent state or its check changed) | Best of N service | F-EX-04 |
 | `op:progress` | `{opId, stage, pct?, done, error?: IpcError}` | any op | §5.2 |
 
