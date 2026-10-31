@@ -225,10 +225,12 @@ function covered(el: HTMLElement): boolean {
   // The page's own viewport, the one rects and hit tests use. A phone
   // zoomed in shrinks innerWidth and innerHeight to what it shows, and
   // Allow below that counted as past the window, waiting for good (the
-  // review of ce0d5815, SF-3).
+  // review of ce0d5815, SF-3). The larger of the two: a phone's browser
+  // bars collapsed show more than clientHeight says, and Allow in that
+  // strip counted as past the window (the review of b3ff3696, N-2).
   const root = document.documentElement;
-  const width = root.clientWidth || window.innerWidth;
-  const height = root.clientHeight || window.innerHeight;
+  const width = Math.max(root.clientWidth, window.innerWidth);
+  const height = Math.max(root.clientHeight, window.innerHeight);
   const marked = Array.from(el.querySelectorAll<HTMLElement>(`[${GRANT_ATTR}]:not([${GRANT_ATTR}="false"])`));
   const targets: HTMLElement[] = marked.length > 0 ? marked : [el];
   return targets.some((target) => {

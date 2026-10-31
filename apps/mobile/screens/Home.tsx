@@ -23,7 +23,7 @@ import type {
 } from "@tandem/protocol";
 import type { RemoteSession, SessionView } from "@tandem/remote/session";
 import type { Prefs } from "../lib/prefs";
-import { SETTLE_MS, allowTakesTap, approvalActions, now, pressedAt } from "../lib/approvals";
+import { SETTLE_MS, allowTakesTap, answerSettles, approvalActions, now, pressedAt } from "../lib/approvals";
 import { checkText, lineKind, reviewLines, ruleText, statText } from "../lib/review";
 import { t, type StringKey } from "../lib/strings";
 import {
@@ -208,7 +208,7 @@ function ApprovalsTab({ session, view }: { session: RemoteSession; view: Session
     setBusy(a.id);
     try {
       const r = await session.decide(a, d);
-      if (r.ok) answered.current.add(a.id);
+      if (answerSettles(r)) answered.current.add(a.id);
       setError(r.ok ? null : r.message);
     } finally {
       sending.current.delete(a.id);

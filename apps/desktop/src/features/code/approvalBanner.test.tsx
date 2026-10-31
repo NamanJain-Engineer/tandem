@@ -316,7 +316,7 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(true);
   });
 
-  it("F-TL-12.20 in a 120 px pane Allow turns on once the line's end has been on screen: a jump past it says to scroll back up, the buttons keep to one row, and each request starts at the top", async () => {
+  it("F-TL-12.20 in a 120 px pane Allow turns on once the command's last line has been wholly on screen: a jump past it, or partly past, says to scroll back up, the buttons wrap, and each request starts at the top", async () => {
     // The steady box is in view; the end marker reports what the test says.
     type Entry = { isIntersecting: boolean; intersectionRatio: number; target: Element };
     const marker: Array<(e: Entry[]) => void> = [];
@@ -348,13 +348,21 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
         </div>
       </UiProvider>,
     );
+    const end = () => screen.getByTestId("run-line-end");
+    // The marker is the command's last line, not the run's: it sat over
+    // the variables line, and a jump to the end turned Allow on with the
+    // command's tail never on screen (the review of b3ff3696, M-1).
+    const command_ = screen.getByTestId("run-line-command");
+    expect(command_.lastChild).toBe(end());
+    expect(end().compareDocumentPosition(screen.getByTestId("run-line-cwd")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // jsdom lays nothing out: the banner shows 72 px of its 400, and the
     // marker sits where the test puts it.
     const banner = screen.getByTestId("pane-approval");
     let top = 0;
-    // The line's last line ends 324 px down: at the banner's end (328) it's
-    // just above the view, the case the review of ce0d5815 found (SF-1).
-    const markerBottom = 324;
+    // The command's last line ends 284 px down, with the folder, the
+    // variables and the buttons below it: at the banner's end (328) it's
+    // above the view.
+    const markerBottom = 284;
     Object.defineProperty(banner, "clientHeight", { configurable: true, get: () => 72 });
     Object.defineProperty(banner, "scrollHeight", { configurable: true, get: () => 400 });
     Object.defineProperty(banner, "scrollTop", {
@@ -365,32 +373,36 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
       },
     });
     vi.spyOn(banner, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 72 } as DOMRect);
-    const end = () => screen.getByTestId("run-line-end");
     vi.spyOn(end(), "getBoundingClientRect").mockImplementation(
-      () => ({ top: markerBottom - top - 16, bottom: markerBottom - top }) as DOMRect,
+      () => ({ top: markerBottom - top - 18, bottom: markerBottom - top }) as DOMRect,
     );
     const once = () => screen.getByTestId("pane-approval-once") as HTMLButtonElement;
-    // The buttons keep to one row, so at the banner's end the line's last
-    // line shows above them; a narrow pane scrolls the row sideways.
+    // The buttons wrap: on one row, scrolled sideways, one Allow cut off
+    // held both off in a narrow pane (the review of b3ff3696, S-1).
     const row = once().parentElement as HTMLElement;
-    expect(row.className).toContain("overflow-x-auto");
-    expect(row.className).not.toContain("flex-wrap");
+    expect(row.className).toContain("flex-wrap");
+    expect(row.className).not.toContain("overflow-x-auto");
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
     expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
-    // A jump to the banner's end (End, Page Down, the scrollbar) passes the
-    // marker without showing it: that isn't seeing the line's end.
+    // A jump to the banner's end (End, Page Down, Tab to a button, the
+    // scrollbar) passes the marker without showing it: that isn't seeing
+    // the command's end.
     top = 328;
     fireEvent.scroll(banner);
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
     expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
-    // Half of the line's last line in view isn't enough either.
+    // Partly above the view, it still says up, not down (the review of
+    // b3ff3696, N-1); half of the line isn't enough.
+    top = 275;
+    fireEvent.scroll(banner);
     report(0.5);
     await new Promise((r) => setTimeout(r, 700));
     expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
     // Scrolled back up until all of it shows: Allow turns on.
-    top = 300;
+    top = 260;
     fireEvent.scroll(banner);
     report(1);
     await settled();
@@ -412,6 +424,25 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(once())).toBe(true);
     report(1);
     await settled();
+  });
+
+  it("F-TL-12.20 the end marker comes after the command's last piece, a marked one too, and before the folder", () => {
+    fakeBackend();
+    withApproval({
+      ...approval,
+      detail: runDetail({ command: "rm -rf /tmp/x\u0430", cwd: "/w", vars: [], envChanged: false }),
+    });
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    const command = screen.getByTestId("run-line-command");
+    const end = screen.getByTestId("run-line-end");
+    expect(command.lastChild).toBe(end);
+    expect(end.previousSibling?.nodeName).toBe("MARK");
+    expect(end.getAttribute("aria-hidden")).toBe("true");
+    expect(end.className).toContain("absolute");
   });
 
   it("F-TL-12.13 a look-alike letter in the folder shows the warning too", () => {

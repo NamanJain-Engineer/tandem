@@ -271,9 +271,7 @@ function AgentCard({
           {run ? (
             // F-TL-12: the whole line, whatever the previews setting, before Allow.
             <div onClick={(e) => e.stopPropagation()}>
-              <RunLine run={run} />
-              {/* Over the line's last 16 px: all of it in view is its end seen. */}
-              <span ref={endRef} aria-hidden="true" data-testid="run-line-end" className="-mt-4 block h-4" />
+              <RunLine run={run} endRef={endRef} />
             </div>
           ) : unreadable ? (
             <p data-testid="agent-card-preview" className="text-sm text-fg-subtle">

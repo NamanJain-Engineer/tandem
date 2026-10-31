@@ -30,19 +30,20 @@ export function useSettled(key: string | null): boolean {
  * count as seen: all of it, give or take a rounding. */
 const WHOLE = 0.99;
 
-/** A ref for a marker over the run's last line, and whether all of that
- * marker has been in view (not clipped by the pane or scrolled away) since
- * `key` changed: Allow waits for the person to have seen the line's end.
+/** A ref for a marker over the command's last line ([`RunLine`]'s
+ * `endRef`), and whether all of that marker has been in view (not clipped
+ * by the pane or scrolled away) since `key` changed: Allow waits for the
+ * person to have seen the command's end.
  *
  * The third ref is for the scroller that holds the line and, below it, the
  * buttons (the pane's banner), and the fourth value says whether the view
  * has gone past the marker, so Allow can say to scroll back up. Only the
  * marker on screen counts: a scroll that reached the banner's end counted
- * too, and in a pane too short for the end and wrapped buttons together
- * the end was never on screen (the review of ce0d5815, SF-1). The banner's
- * buttons stay on one row instead, so at its end the line's last line
- * shows above them (F-TL-12 AC 20). Each request starts at the top, so a
- * scroll left at the last one's end can't stand for this one's. */
+ * too, and in a pane too short for the end and the buttons together the
+ * end was never on screen (the review of ce0d5815, SF-1). In such a pane
+ * the command's end is above the view at the banner's end, and Allow says
+ * to scroll up a little (F-TL-12 AC 20). Each request starts at the top, so
+ * a scroll left at the last one's end can't stand for this one's. */
 export function useSeenEnd(
   key: string | null,
 ): [(el: HTMLElement | null) => void, boolean, (el: HTMLElement | null) => void, boolean] {
@@ -74,9 +75,11 @@ export function useSeenEnd(
     setPassed(false);
     const scrolled = () => {
       if (el === null) return;
-      // Above the view: a jump to the end (End, Page Down, the scrollbar)
-      // went past it.
-      setPassed(el.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().top + 1);
+      // Above the view, wholly or in part: a jump to the end (End, Page
+      // Down, Tab to a button, the scrollbar) went past it. Only wholly,
+      // and a marker cut by the view's top said to scroll down (the review
+      // of b3ff3696, N-1).
+      setPassed(el.getBoundingClientRect().top < scroller.getBoundingClientRect().top);
     };
     scroller.addEventListener("scroll", scrolled, { passive: true });
     return () => scroller.removeEventListener("scroll", scrolled);

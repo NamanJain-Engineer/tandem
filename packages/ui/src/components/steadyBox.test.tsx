@@ -403,11 +403,35 @@ describe("What counts as covered, and whose press a click is (F-TL-12.19)", () =
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(300);
     try {
       const onAllow = vi.fn();
-      // The fourth row: Allow at 160 down, wholly on the page.
-      render(<Row n={4} onAllow={onAllow} />);
-      const four = () => screen.getByTestId("allow-4") as HTMLButtonElement;
-      await waitFor(() => expect(four().disabled).toBe(false));
-      fireEvent.click(four());
+      // The eighth row: Allow at 320 down, below the 300 the zoomed window
+      // shows and wholly on the page. The fourth sat inside the 300, and
+      // the test passed without the fix (the review of b3ff3696, S-4).
+      render(<Row n={8} onAllow={onAllow} />);
+      const eight = () => screen.getByTestId("allow-8") as HTMLButtonElement;
+      await waitFor(() => expect(eight().disabled).toBe(false));
+      fireEvent.click(eight());
+      expect(onAllow).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (root as unknown as Record<string, unknown>).clientWidth;
+      delete (root as unknown as Record<string, unknown>).clientHeight;
+    }
+  });
+
+  it("nit: a phone's browser bars collapsed show more than clientHeight says: Allow in that strip isn't past the window", async () => {
+    // The page's viewport is 400 x 300 with the bars shown; collapsed, the
+    // window shows 380 of it, and Allow at 320 down waited as if past the
+    // window (the review of b3ff3696, N-2).
+    const root = document.documentElement;
+    Object.defineProperty(root, "clientWidth", { configurable: true, get: () => 400 });
+    Object.defineProperty(root, "clientHeight", { configurable: true, get: () => 300 });
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(400);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(380);
+    try {
+      const onAllow = vi.fn();
+      render(<Row n={8} onAllow={onAllow} />);
+      const eight = () => screen.getByTestId("allow-8") as HTMLButtonElement;
+      await waitFor(() => expect(eight().disabled).toBe(false));
+      fireEvent.click(eight());
       expect(onAllow).toHaveBeenCalledTimes(1);
     } finally {
       delete (root as unknown as Record<string, unknown>).clientWidth;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PhoneApproval } from "@tandem/protocol";
-import { SETTLE_MS, allowTakesTap, approvalActions, pressedAt } from "./approvals";
+import { SETTLE_MS, STAMP_WINDOW_MS, allowTakesTap, answerSettles, approvalActions, pressedAt } from "./approvals";
 
 const base: PhoneApproval = {
   id: "ap_1",
@@ -59,12 +59,39 @@ describe("F-TL-12.21 a tap's own time decides, not when the app got to it", () =
     expect(allowTakesTap(since, pressedAt(since + 900, since + 600), since + 950)).toBe(true);
   });
 
-  it("a touch time on another clock is ignored, and never makes a tap later", () => {
+  it("a tap begun before the card held still is refused after a stall of more than a second too", () => {
+    // Taken as begun when it was handled, a tap 200 ms after the move
+    // passed once the thread had stalled 1.5 s (the review of b3ff3696,
+    // S-2).
+    const since = 10_000;
+    expect(allowTakesTap(since, pressedAt(since + 1_500, since + 200), since + 1_501)).toBe(false);
+    expect(allowTakesTap(since, pressedAt(since + 30_000, since + 200), since + 30_001)).toBe(false);
+    expect(allowTakesTap(since, pressedAt(since + 1_500, since + 900), since + 1_501)).toBe(true);
+  });
+
+  it("a touch time on another clock refuses the tap, and never makes it later", () => {
     expect(pressedAt(5_000, 4_500)).toBe(4_500);
-    // Ahead of the handler, or more than a second behind it: another clock.
-    expect(pressedAt(5_000, 5_200)).toBe(5_000);
-    expect(pressedAt(5_000, 1_000)).toBe(5_000);
+    expect(pressedAt(5_000, 1_000)).toBe(1_000);
+    // Ahead of the handler, or further behind than any stall: another
+    // clock, and the tap allows nothing.
+    expect(pressedAt(5_000, 5_200)).toBe(-Infinity);
+    expect(pressedAt(100_000, 100_000 - STAMP_WINDOW_MS - 1)).toBe(-Infinity);
+    expect(allowTakesTap(0, pressedAt(100_000, 1_000), 100_001)).toBe(false);
+    // A few ms ahead is the two reads' rounding.
+    expect(pressedAt(5_000, 5_003)).toBe(5_000);
+    // No stamp: when it was handled.
     expect(pressedAt(5_000, undefined)).toBe(5_000);
     expect(pressedAt(5_000, Number.NaN)).toBe(5_000);
+  });
+});
+
+describe("F-TL-12.21 an answer the computer only queued doesn't settle the card", () => {
+  it("a queued Allow can still be dropped there, so the card takes an answer again", () => {
+    // Marked answered, a queued Allow the computer dropped left the card's
+    // Allow and Deny doing nothing (the review of b3ff3696, S-3).
+    expect(answerSettles({ ok: true, data: { state: "queued" } })).toBe(false);
+    expect(answerSettles({ ok: true, data: {} })).toBe(true);
+    expect(answerSettles({ ok: true, data: { state: "allowed" } })).toBe(true);
+    expect(answerSettles({ ok: false })).toBe(false);
   });
 });

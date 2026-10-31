@@ -47,9 +47,10 @@ release fails when its version has no section.
   double-click on Execute all… no longer starts every run, and the next
   suggestion sliding into place can't be kept by a click meant for the one
   before. On a phone, Allow waits the same way, on the web and in the app, and
-  each answer is sent once. A menu open elsewhere no longer dims Allow, and in
-  a very short pane the buttons keep to one row, so scrolling a question to
-  its end shows the command's last line above them.
+  each answer is sent once. A menu open elsewhere no longer dims Allow, and
+  Allow waits until the command's own last line has been wholly on screen,
+  not the folder or variables below it; in a very short pane it says to
+  scroll up a little to see it.
 - [lin] **A token's expiry stays readable.** A date or time under a name
   that says when a token or secret expires or was made
   (`token_expires_at: 2025-10-30T18:00:00Z`) is no longer hidden as if it

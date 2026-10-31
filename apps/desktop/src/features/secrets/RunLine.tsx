@@ -4,8 +4,14 @@ import { markLine, type RunApproval } from "./runApproval";
 /** The whole line a `vibezeo run` asks for, wrapped and never cut or
  * scrolled, left to right whatever its text, with every character outside
  * plain ASCII marked, the folder it runs in and every variable it gets:
- * shown wherever Allow is offered. */
-export function RunLine({ run }: { run: RunApproval }) {
+ * shown wherever Allow is offered.
+ *
+ * `endRef` takes a marker over the command's last line, the whole width
+ * and one line high: all of it in view is the command's end seen. It sat
+ * over the run's last line instead, the variables, and a jump to the end
+ * turned Allow on with the command's tail never on screen (the review of
+ * b3ff3696, M-1). */
+export function RunLine({ run, endRef }: { run: RunApproval; endRef?: (el: HTMLElement | null) => void }) {
   const pieces = markLine(run.command);
   const folder = markLine(run.cwd);
   const marked = pieces.some((p) => p.marked) || folder.some((p) => p.marked);
@@ -14,7 +20,7 @@ export function RunLine({ run }: { run: RunApproval }) {
       <pre
         dir="ltr"
         style={{ unicodeBidi: "bidi-override" }}
-        className="whitespace-pre-wrap break-all rounded-sm border border-border bg-surface-1 px-2 py-1 font-mono text-sm text-fg"
+        className="relative whitespace-pre-wrap break-all rounded-sm border border-border bg-surface-1 px-2 py-1 font-mono text-sm text-fg"
         data-testid="run-line-command"
       >
         {pieces.map((p, i) =>
@@ -25,6 +31,17 @@ export function RunLine({ run }: { run: RunApproval }) {
           ) : (
             p.text
           ),
+        )}
+        {endRef && (
+          // The last line box: the content's bottom (above the padding),
+          // one line high (`1lh`, the line's own height).
+          <span
+            ref={endRef}
+            aria-hidden="true"
+            data-testid="run-line-end"
+            className="pointer-events-none absolute inset-x-0 bottom-1"
+            style={{ height: "1lh" }}
+          />
         )}
       </pre>
       {marked && (

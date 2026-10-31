@@ -56,7 +56,7 @@
     - `site-motion`'s scenes for 0.13.0 (D-3006 to D-3008);
     - "New in 0.13.0", the roadmap (F-SH-14 next) and the post "What's new in 0.13.0";
     - 4,804 tests and 159 E2E spec files.
-  - **For 0.14.0 (D-876):** on `chain28`, the redaction should-fix (D-877), the intent radar's second slice with its reviews' fixes (D-878 to D-880, D-883), F-TK-09 with its reviews' fixes (D-881, D-885), F-TL-12.13 with its review's (D-882), and the site's 0.14.0 scenes slice (D-884). F-SH-14 and the relay move to 0.15.0.
+  - **For 0.14.0 (D-876):** on `chain28`, the redaction should-fix (D-877), the intent radar's second slice with its reviews' fixes (D-878 to D-880, D-883), F-TK-09 with its reviews' fixes (D-881, D-885), F-TL-12.13 with its reviews' (D-882, D-888), and the site's 0.14.0 scenes slice (D-884). F-SH-14 and the relay move to 0.15.0.
   - Verified: see "Release 0.13.0" in the log below.
   - Previous release: 0.12.0 (26 October; D-875), deployed by #107 (fc2ca3a6) on 26 October.
   Deployed by #110 (36152488) on 30 October, live at 15:00 UTC. `main` came back into `product-m0-m5` with this record.
@@ -559,6 +559,12 @@ Built by the coordinator on `chain28`, from product-research's approved plan (29
 - D-3149: The rest of the review's nits (the review of ce0d5815).
   - Conductor's Keep and Edit & run's Run send one answer at a time (a ref, so two clicks in one frame see each other); a double-click on a steady one sent twice. Their tests double-click.
   - `ProposalRow`'s doc comment is its own again; ARCHITECTURE's steady-box paragraph is brought up to date.
+- [x] F-TL-12.13 second review fixes (coordinator review of b3ff3696, D-888; D-3193 to D-3196): M-1, S-1 to S-4 and the nits, on `chain28`.
+- D-3193: Allow waits for the command's own last line (the review of b3ff3696, M-1 and S-1; amends D-3145).
+  - The marker is the `<pre>`'s last line box, absolutely placed at its content's bottom, the full width and `1lh` high, so it can't wrap or shrink to nothing; on a non-run approval it stays over the question's last 16 px. The banner's buttons wrap again.
+- D-3194: The phone takes a touch's own time within 60 s of its handler, and refuses the tap outside it (the review of b3ff3696, S-2; amends D-3146).
+- D-3195: Only an answer that settles a phone card marks it answered (the review of b3ff3696, S-3).
+- D-3196: The cover check's edge is the larger of the page's viewport and the window (the review of b3ff3696, N-2; amends D-3147).
 
 ### M18 sandbox log
 - F-TL-11: spec, policy and detection (7 tests, one against the test machine's real `bwrap` 0.9.0), the worktree policy (1), the chip and setting (3 vitest cases), docs and E2E-M18-TL11 (1 case). Run on its own, the spec passes; run beside E2E-M18-AC09 in parallel workers, it once met that run's leftover pane in the "still running" dialog. The E2E found nothing in the product. Review fixes (D-2479 to D-2481): a real worktree test (commits work; no hook through a missing `.git/hooks` or `core.hooksPath`) and the builder's case (1); the E2E checks the whole `~/.ssh` and a missing hooks folder, and E2E-M18-TL11 and E2E-M18-AC09 pass in both orders (a copy of TL11 run first, then AC09, then TL11). The E2E's `$HOME` lives under `/tmp`, which the sandbox shares, so `$HOME` writes are checked by the real-bwrap Rust test only.
@@ -2361,6 +2367,18 @@ The public site (`apps/web`) rebuilt to the brief on `docs-briefs` (`docs/WEBSIT
     - S4: "pr create" matched inside words ("This PR creates…", "the expr creates…") and a verb anywhere with "upstream" anywhere named pushing. Cues read whole words, near each other (D-3191).
   - **Nits fixed:** Stop told the plan before its review task ended; a Resume could fail after its send and Send back… send again (D-3188); the plan read the task before its gate, not after (D-3186); a review past the run's rounds was kept as sent (D-3189); Undo landing put the task's newest Done run, and any status, in review, and counted a worktree the base already had (D-3190); a letter run read after the text's last word (D-3191); an unread diff told the reviewer "(no changes)", and a stale doc line (D-3192).
   - **Not changed:** the bypasses the review lists as best-effort ("pu sh", "p.ush", `--force-with-lease`, "send the commits to origin"): the run reads every review as data.
+- D-888: The review of b3ff3696 (F-TL-12.13's fix round) required one fix and asked for four more, with six nits; the coordinator made them on `chain28` (D-3193 to D-3196), since messaging `product-research` still fails.
+  - **Must-fix:** M-1: the end marker sat over the run's last 16 px, the "With … from .env" line, not the command's last line, so in a short pane a jump to the banner's end (End, Page Down, Tab to Allow) turned Allow on with the command's tail never on screen. The marker is now `RunLine`'s `endRef`: the command `<pre>`'s last line box, the full width and one line high (D-3193).
+  - **Should-fix:**
+    - S-1: on one row, scrolled sideways, the banner's buttons could never show both Allows at once in a 240 px pane with a space-taking scrollbar, so neither turned on, and Deny started off-screen. They wrap again: the end is the command's line, and a short pane says to scroll up to it (D-3193).
+    - S-2: the phone took a touch stamped more than a second before its handler as begun when it was handled, so a thread stalled 1.5 s let a tap begun 200 ms after the card moved through. A stamp up to 60 s old is the tap's start; one older, or ahead, is another clock and allows nothing (D-3194).
+    - S-3: an Allow the computer only queued marked the card answered, so after the queue's drop the phone's Allow and Deny did nothing. Only an answer that settles the card marks it (`answerSettles`, D-3195).
+    - S-4: the zoom test's Allow sat inside the zoomed view and passed without the fix; it's at 320 px now, past the 300 shown.
+  - **Nits fixed:** a marker partly above the view says to scroll up, not down (N-1); the cover check's edge is the larger of the page's viewport and the window, so a phone's collapsed browser bars don't count as past the window (N-2, D-3196); ARCHITECTURE says the box samples its row's rect (N-5).
+  - **Not changed:** N-3, panning a pinch-zoomed view isn't tracked (it predates this; HUMAN_TODO's phone check covers it); N-4, a press that ends without a tap still judges a later TalkBack activation, refusing it once, on the safe side; N-6, this round's gate ran on its own tree.
+  - **Tests:** `approvalBanner.test.tsx` F-TL-12.20 rewritten (the marker is the command's last child, before the folder; a jump to the end and a view partly past it say to scroll up; the buttons wrap) and 1 new (after a marked last piece); `steadyBox.test.tsx` the zoom test at row 8 and 1 new (collapsed bars); mobile `approvals.test.ts` 2 new (a 1.5 s and a 30 s stall; another clock refuses) and 1 new (`answerSettles`); E2E `m18-tl12-agent-run.e2e.ts` F-TL-12.20 (a 72 px banner in the real webview: the end of the banner says to scroll up, the command's last line in view turns Allow on, the run goes through).
+  - **Docs:** PRODUCT_SPEC F-TL-12 (the command's last line, the buttons wrap) and AC 15 and 20; privacy.mdx; CHANGELOG; ARCHITECTURE; HUMAN_TODO's phone and Windows checks.
+  - **Gate:** passed on this commit's own tree: lint, coverage 195, 2,163 TypeScript tests (desktop 1,074, ui 508, web 268, api 235, remote 33, mobile 31, protocol 14) and the desktop build; the Rust steps are round 3's (66e0dcd9), with no Rust changed since. The E2E runs with the 0.14.0 regression.
 
 ### Website redesign log
 - Merged product-m0-m5 (#46, D-829's `git.deploymentEnabled`) into website-redesign; vercel.json keeps both that block and D-1814's cache headers. The home page's proof band adds "Linux first", only facts the build ships: the .deb's distributions (from `lib/release.ts`), Dictate on X11 and Wayland, SSH hosts on x86-64 and arm64 (a test checks the 0.5.0 CHANGELOG says them). No claim about price or markup.

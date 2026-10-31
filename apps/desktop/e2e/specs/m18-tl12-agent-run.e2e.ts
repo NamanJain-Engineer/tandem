@@ -105,6 +105,45 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
     expect(await $(banner()).isExisting()).toBe(false);
   });
 
+  it("F-TL-12.20 in a short banner Allow waits for the command's own last line, not the lines below it", async () => {
+    // The marker sat over the variables line, and a jump to the banner's
+    // end turned Allow on with the command's tail never on screen (the
+    // review of b3ff3696, M-1). A real webview lays it out: the banner is
+    // held to 72 px, as in a 120 px pane.
+    const words = Array.from({ length: 24 }, (_, i) => `word${i}`).join(" ");
+    await sendToPane(agent, `/sh echo R7; vibezeo run -- echo ${words} TAIL-END\r`);
+    await $(banner()).waitForDisplayed({ timeout: 15_000 });
+    const once = `${banner()} [data-testid="pane-approval-once"]`;
+    await browser.execute((sel: string) => {
+      const b = document.querySelector<HTMLElement>(sel);
+      if (b) b.style.maxHeight = "72px";
+    }, banner());
+    // The command wraps to more lines than the banner shows.
+    const lines = await browser.execute((sel: string) => {
+      const pre = document.querySelector<HTMLElement>(`${sel} [data-testid="run-line-command"]`);
+      return pre ? Math.round(pre.getBoundingClientRect().height / parseFloat(getComputedStyle(pre).lineHeight)) : 0;
+    }, banner());
+    expect(lines).toBeGreaterThanOrEqual(2);
+    // A jump to the end (End, Page Down, Tab to a button): the command's
+    // last line is above the view, and Allow says to scroll up.
+    await browser.execute((sel: string) => {
+      const b = document.querySelector<HTMLElement>(sel);
+      if (b) b.scrollTop = b.scrollHeight;
+    }, banner());
+    await browser.pause(900);
+    expect(await $(once).getAttribute("aria-disabled")).toBe("true");
+    expect(await $(once).getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // The command's last line wholly in view: the end is seen, and Allow
+    // turns on once its own place has held still.
+    await browser.execute((sel: string) => {
+      document.querySelector(`${sel} [data-testid="run-line-end"]`)?.scrollIntoView({ block: "center" });
+    }, banner());
+    await browser.pause(300);
+    await clickAllow(once);
+    expect(await exitAfter(agent, "R7")).toBe(0);
+    expect(await textAfter(agent, "R7")).toContain("TAIL-END");
+  });
+
   it("F-TL-12.10 outside an agent pane it says why and exits 1", async () => {
     const plain = (await paneIds()).find((p) => p !== agent) ?? "";
     const vibezeo = join(home(), "run", "bin", "vibezeo");
