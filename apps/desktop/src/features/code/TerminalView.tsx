@@ -656,7 +656,9 @@ export function TerminalView({
         }
         if (!ready) {
           ringBase = end ?? 0;
-          if (replay?.byteLength) xterm.write(replay);
+          // A pane started before its view opened shows its first output
+          // here (D-141 times it).
+          if (replay?.byteLength) xterm.write(replay, () => markFirstOutput(paneId));
           ready = true;
           for (const f of early.splice(0)) onFrame(f);
         }

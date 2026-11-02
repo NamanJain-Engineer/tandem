@@ -119,7 +119,11 @@ function decodePng(buf: Buffer): { w: number; h: number; px: Uint8Array } {
 type Hook = {
   paneCursor: (id: string) => { x: number; y: number } | null;
   webglHolds: (id: string) => boolean;
-  perf: { enable: () => void; times: () => Record<string, { mounted: number; firstOutput?: number }>; writes: () => Record<string, number> };
+  perf: {
+    enable: () => void;
+    times: () => Record<string, { mounted: number; firstOutput?: number; phases?: Record<string, number> }>;
+    writes: () => Record<string, number>;
+  };
 };
 
 /** The streaming load (MILESTONES M3 mocks): 50 MB of `yes` per pane. */
@@ -258,9 +262,17 @@ describe("perf: terminals", () => {
     })) as number;
     const times = (await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.perf.times())) as Record<
       string,
-      { mounted: number; firstOutput?: number }
+      { mounted: number; firstOutput?: number; phases?: Record<string, number> }
     >;
     const framed = agents.map((id) => (times[id]?.firstOutput ?? Infinity) - clickedAt);
+    // TANDEM_PERF_PHASES=1: each agent's marks, in ms from the click.
+    if (process.env.TANDEM_PERF_PHASES)
+      for (const id of agents) {
+        const t = times[id];
+        const from = (at?: number) => (at === undefined ? "-" : Math.round(at - clickedAt));
+        const phases = Object.entries(t?.phases ?? {}).map(([k, v]) => `${k} ${from(v)}`);
+        console.log(`phases ${id}: ${phases.join(", ")}, firstOutput ${from(t?.firstOutput)}`);
+      }
     record("sixAgentsFramedMs", Math.max(...framed), "<=", 300, "ms");
     record("sixAgentsMaxStallMs", gap, "<=", 100, "ms");
     // Back to the 16 shells for the rest.
