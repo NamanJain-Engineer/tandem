@@ -39,7 +39,12 @@ export const config: WebdriverIO.Config = {
   framework: "mocha",
   reporters: ["spec"],
   // Perf suites wait out heavy loads; run.ts raises this for them.
-  mochaOpts: { ui: "bdd", timeout: Number(process.env.TANDEM_MOCHA_TIMEOUT ?? 60_000) },
+  // TANDEM_MOCHA_GREP runs only the tests whose names match (one measurement).
+  mochaOpts: {
+    ui: "bdd",
+    timeout: Number(process.env.TANDEM_MOCHA_TIMEOUT ?? 60_000),
+    ...(process.env.TANDEM_MOCHA_GREP ? { grep: process.env.TANDEM_MOCHA_GREP } : {}),
+  },
   onPrepare: () =>
     new Promise<void>((resolve) => {
       // Found on the test runner's PATH; the app then gets the minimal one.
