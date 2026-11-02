@@ -45,8 +45,14 @@ download.
    - Six agents' first frames: the bisect blamed D-139's frame holding, fixed
      in 0.7.1. Views on screen now open before a hidden tab's queued views,
      and the suite counts from the click that shows the tab (D-141): ~2.2 s
-     to the last agent's first output. The ≤ 300 ms target is still missed;
-     next is starting agents' PTYs before their views open (F-SH-07.7).
+     to the last agent's first output. The ≤ 300 ms target is still missed.
+     A view waiting to open now starts its agent first (`pty_start`, D-2579):
+     with engines that take 1 s to load, about 300 ms (10%) less; with ones
+     that print at once, no change. What's left is the views opening one per
+     frame (300–370 ms apart on software GL) and each first parse behind
+     them, worse in the suite because its 16 booted shells are still opening
+     when it clicks; next is keeping hidden views from opening while a
+     visible one connects.
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a

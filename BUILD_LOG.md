@@ -561,6 +561,33 @@ Built on branch `free-for-everyone` (from `release-0.9.0`, c5b98702) for the own
 ### M18 · Free for everyone log
 - Limits, gates, UI, demo, docs and site in one slice. Tests found: the offline build couldn't run routines or task runs even with the limits on, because both still required sign-in (D-2902); the demo would have shown working "New routine" and Execute buttons that saved nothing (D-2905); `CHANGELOG.md` couldn't hold an Unreleased section without breaking the site (D-2906).
 
+## M18 · Reliability: six agents' first frames (`ccr-6d871eba-mxry64`)
+REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the click that shows their tab to each one's first parsed output, budget 300 ms): start an agent's process before its view opens. Taken up on 2 November 2026, when no session had it. Its decision is the last of reliability's range (D-2560 to D-2579, D-858), so F-SH-14 can still start at D-2560.
+
+- [x] A view waiting to open starts its pane first (D-2579).
+  - **Core.** `pty_start {paneId, cols, rows} → bool` (ARCHITECTURE §3.2): `TerminalService::start` spawns with no sink, so the output waits in the ring. It returns false and starts nothing when the pane has a process, live or ended.
+  - **View.** A view added while the mount queue is busy (`wouldWait`) calls `pty_start` at the grid `prestart.ts` guesses from the last view that fit: the same grid for a host of the same size, scaled for another. The call goes in `spawning`, so `connect` waits for it, then attaches. The replay lays out at the grid the process started at, `size.current` takes that grid, and the refit after connecting resizes the PTY if the guess was off. A view that opens at once connects as before. The replay's parse marks the pane's first output for the perf suite, since a pre-started agent's first output can arrive in it.
+  - **Demo.** `pty_start` answers false: the demo's panes start when their view opens.
+  - **Test support.**
+    - `TANDEM_MOCHA_GREP` runs only the named tests.
+    - The fake engine's TUI waits `TANDEM_FAKE_BOOT` ms before its banner (the E2E profile names `fake-boot.txt`).
+    - The terminals suite takes `TANDEM_PERF_BOOT_MS`, and `TANDEM_PERF_NO_PRESTART=1` (through the debug hook `__tandemTest.prestart`). `TANDEM_PERF_PHASES=1` prints each agent's phase marks and the timed steps since the click.
+  - **Tests.**
+    - Rust F-CD-03.2 (2): a pane started before its view keeps its output for the attach; a pane with a process, live or ended, isn't started again (red without the check: it started twice, with a new pid).
+    - TS F-CD-03.2 (2, `prestart.test.tsx`): the grid guess; a tab's waiting views start their panes before they open, then attach, with no `pty_spawn` (red on the old view: no `pty_start`).
+  - **Measured** (debug build, xvfb with software GL, the terminals suite's six agents alone, `sixAgentsFramedMs`):
+    - The fake engine as it was, printing at once: before, 2,452 and 2,259 ms (4,347 cold); after, 1,945, 2,152, 2,390 and 2,487 ms. No change beyond noise.
+    - Each agent taking 1 s to print anything (`TANDEM_PERF_BOOT_MS=1000`, about a real engine's load), on one build with pre-starts off and on in turn: off, 3,151, 2,970 and 2,880 ms; on, 2,843, 2,623 and 2,672 ms. About 300 ms (10%) less.
+    - **Where the rest goes:** the views open one per frame, 300 to 370 ms apart, and each first output is parsed behind those opens. A pre-started agent's first frame reaches its view about 1.4 s after the click, and is parsed 0.7 to 1.1 s later. Since the click, `xterm.open` ran 12 times (629 ms in all, at most 78 ms) and `webgl.attach` 6 times (58 ms). The 16 shells the suite boots are still queued when it clicks, so they open right after the agents, during the last ones' attach and first parse.
+    - **Still missed:** 300 ms. Next: hidden views (the shells still opening) shouldn't open while a visible view is connecting or has output waiting to parse; then the per-open cost on the reference machines.
+
+### M18 · Reliability decisions
+- D-2579: A view that waits its turn in the mount queue starts its pane's process (`pty_start`) and attaches when it opens (F-CD-03 AC2).
+  - **Only waiting views.** The view that opens at once connects as before, at the grid it measured, so a lone pane behaves exactly as it did.
+  - **A guessed grid.** A waiting view's xterm doesn't exist yet, so its grid is a guess: the last fit's grid for a host of the same size (a tab's panes usually are), scaled otherwise. A wrong guess costs one resize right after the view opens, which programs take as a window resize.
+  - **Nothing starts that wouldn't have.** The view was going to connect anyway. `spawn_with` refuses a paused agent and a plan limit just as for `pty_spawn`. A pane with a process, live or ended, is never started again, so an ended one still waits for its view's Restart.
+  - **One start per pane.** The view's `spawning` map holds the pre-start; `connect` waits for it, then attaches.
+
 ## M17 checklist (Extras)
 Built on branch `m17-extras` (from `product-m0-m5`) in parallel with the M8, M10–M15 and release sessions, at the owner's request for creative features beyond the spec. Owns F-EX-01…05 (PRODUCT_SPEC §4.19, MILESTONES M17, UI_SPEC §4.16 UI-140–145, ARCHITECTURE §3.2 "Extras"). Decisions D-700–D-799; this section holds M17's state, decisions and log so other sessions' sections stay untouched.
 - [x] 0. Spec: PRODUCT_SPEC §4.19 "EX · Extras" (F-EX-01 checkpoints and rewind, F-EX-02 command recall, F-EX-03 ports panel, F-EX-04 Best of N, F-EX-05 prompt library) with numbered acceptance criteria; MILESTONES "M17 · Extras" with tasks, verification and E2E-M17-1…5; UI_SPEC UI-140–145 and two shortcuts; ARCHITECTURE §3.2 rows for every new command and two events (§3.3), §5.8 command lines and §7 checkpoints. `scripts/check-coverage.sh` accepts P2 in M17 (157 spec IDs).
