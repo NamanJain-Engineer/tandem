@@ -924,6 +924,8 @@ impl TerminalService {
     /// no view: its output waits in the ring and the view replays it when it
     /// attaches (F-CD-03 AC2, D-2579). False when the pane already has a
     /// process, live or ended: an ended one starts again only from its view.
+    /// False under a live-pane limit too: the room goes to panes in the order
+    /// their views open, so a waiting view can't take the opening one's.
     pub async fn start(
         &self,
         pane: &PaneId,
@@ -932,7 +934,7 @@ impl TerminalService {
         max_live: Option<u32>,
     ) -> Result<bool, IpcError> {
         // `pid` answers for a session whether or not its process has ended.
-        if self.pty.pid(pane.as_str()).is_some() {
+        if max_live.is_some() || self.pty.pid(pane.as_str()).is_some() {
             return Ok(false);
         }
         self.spawn_with(pane, cols, rows, max_live, None, LaunchMode::Normal)
@@ -3394,7 +3396,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let (svc, pane) = shell_pane(dir.path()).await;
         // No view yet: its turn to open hasn't come.
-        assert!(svc.start(&pane, 80, 24, Some(4)).await.expect("start"));
+        assert!(svc.start(&pane, 80, 24, None).await.expect("start"));
         svc.pty
             .write(pane.as_str(), b"echo started-$((40+2))\n")
             .expect("write");
@@ -3423,9 +3425,9 @@ mod tests {
     async fn f_cd_03_2_starting_a_pane_with_a_session_live_or_ended_starts_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (svc, pane) = shell_pane(dir.path()).await;
-        assert!(svc.start(&pane, 80, 24, Some(4)).await.expect("start"));
+        assert!(svc.start(&pane, 80, 24, None).await.expect("start"));
         let pid = svc.pty.pid(pane.as_str());
-        assert!(!svc.start(&pane, 80, 24, Some(4)).await.expect("again"));
+        assert!(!svc.start(&pane, 80, 24, None).await.expect("again"));
         assert_eq!(svc.pty.pid(pane.as_str()), pid, "still the first process");
         // An ended process keeps its session: its view shows it ended, and
         // nothing starts it again without the user (F-CD-03).
@@ -3435,9 +3437,19 @@ mod tests {
             assert!(std::time::Instant::now() < until, "the shell never exited");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(!svc.start(&pane, 80, 24, Some(4)).await.expect("ended"));
+        assert!(!svc.start(&pane, 80, 24, None).await.expect("ended"));
         assert_eq!(svc.pty.pid(pane.as_str()), pid);
         assert!(!svc.pty.is_live(pane.as_str()));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn f_cd_03_2_under_a_pane_limit_nothing_starts_before_its_view() {
+        // The room goes to panes in the order their views open, as without
+        // pre-starts: a waiting view can't take the slot of the one opening.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (svc, pane) = shell_pane(dir.path()).await;
+        assert!(!svc.start(&pane, 80, 24, Some(4)).await.expect("start"));
+        assert_eq!(svc.pty.pid(pane.as_str()), None, "nothing started");
     }
 }
 

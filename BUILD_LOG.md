@@ -565,7 +565,7 @@ Built on branch `free-for-everyone` (from `release-0.9.0`, c5b98702) for the own
 REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the click that shows their tab to each one's first parsed output, budget 300 ms): start an agent's process before its view opens. Taken up on 2 November 2026, when no session had it. Its decision is the last of reliability's range (D-2560 to D-2579, D-858), so F-SH-14 can still start at D-2560.
 
 - [x] A view waiting to open starts its pane first (D-2579).
-  - **Core.** `pty_start {paneId, cols, rows} → bool` (ARCHITECTURE §3.2): `TerminalService::start` spawns with no sink, so the output waits in the ring. It returns false and starts nothing when the pane has a process, live or ended.
+  - **Core.** `pty_start {paneId, cols, rows} → bool` (ARCHITECTURE §3.2): `TerminalService::start` spawns with no sink, so the output waits in the ring. It returns false and starts nothing when the pane has a process, live or ended, or under a live-pane limit.
   - **View.** A view added while the mount queue is busy (`wouldWait`) calls `pty_start` at the grid `prestart.ts` guesses from the last view that fit: the same grid for a host of the same size, scaled for another. The call goes in `spawning`, so `connect` waits for it, then attaches. The replay lays out at the grid the process started at, `size.current` takes that grid, and the refit after connecting resizes the PTY if the guess was off. A view that opens at once connects as before. The replay's parse marks the pane's first output for the perf suite, since a pre-started agent's first output can arrive in it.
   - **Demo.** `pty_start` answers false: the demo's panes start when their view opens.
   - **Test support.**
@@ -573,7 +573,7 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - The fake engine's TUI waits `TANDEM_FAKE_BOOT` ms before its banner (the E2E profile names `fake-boot.txt`).
     - The terminals suite takes `TANDEM_PERF_BOOT_MS`, and `TANDEM_PERF_NO_PRESTART=1` (through the debug hook `__tandemTest.prestart`). `TANDEM_PERF_PHASES=1` prints each agent's phase marks and the timed steps since the click.
   - **Tests.**
-    - Rust F-CD-03.2 (2): a pane started before its view keeps its output for the attach; a pane with a process, live or ended, isn't started again (red without the check: it started twice, with a new pid).
+    - Rust F-CD-03.2 (3): a pane started before its view keeps its output for the attach; a pane with a process, live or ended, isn't started again (red without the check: it started twice, with a new pid); under a pane limit nothing starts before its view (red before the check, found while choosing the E2E regression).
     - TS F-CD-03.2 (2, `prestart.test.tsx`): the grid guess; a tab's waiting views start their panes before they open, then attach, with no `pty_spawn` (red on the old view: no `pty_start`).
   - **Measured** (debug build, xvfb with software GL, the terminals suite's six agents alone, `sixAgentsFramedMs`):
     - The fake engine as it was, printing at once: before, 2,452 and 2,259 ms (4,347 cold); after, 1,945, 2,152, 2,390 and 2,487 ms. No change beyond noise.
@@ -585,7 +585,8 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
 - D-2579: A view that waits its turn in the mount queue starts its pane's process (`pty_start`) and attaches when it opens (F-CD-03 AC2).
   - **Only waiting views.** The view that opens at once connects as before, at the grid it measured, so a lone pane behaves exactly as it did.
   - **A guessed grid.** A waiting view's xterm doesn't exist yet, so its grid is a guess: the last fit's grid for a host of the same size (a tab's panes usually are), scaled otherwise. A wrong guess costs one resize right after the view opens, which programs take as a window resize.
-  - **Nothing starts that wouldn't have.** The view was going to connect anyway. `spawn_with` refuses a paused agent and a plan limit just as for `pty_spawn`. A pane with a process, live or ended, is never started again, so an ended one still waits for its view's Restart.
+  - **Nothing starts that wouldn't have.** The view was going to connect anyway. `spawn_with` refuses a paused agent just as for `pty_spawn`. A pane with a process, live or ended, is never started again, so an ended one still waits for its view's Restart.
+  - **Not under a live-pane limit.** A limit a signed entitlement carries (none with no account, D-2900) gives the room to panes in the order their views open. The views waiting would otherwise start before the one opening, which connects only after its open, and take its room.
   - **One start per pane.** The view's `spawning` map holds the pre-start; `connect` waits for it, then attaches.
 
 ## M17 checklist (Extras)
