@@ -275,13 +275,22 @@ describe("perf: terminals", () => {
     >;
     const framed = agents.map((id) => (times[id]?.firstOutput ?? Infinity) - clickedAt);
     // TANDEM_PERF_PHASES=1: each agent's marks, in ms from the click.
-    if (process.env.TANDEM_PERF_PHASES)
+    if (process.env.TANDEM_PERF_PHASES) {
       for (const id of agents) {
         const t = times[id];
         const from = (at?: number) => (at === undefined ? "-" : Math.round(at - clickedAt));
         const phases = Object.entries(t?.phases ?? {}).map(([k, v]) => `${k} ${from(v)}`);
         console.log(`phases ${id}: ${phases.join(", ")}, firstOutput ${from(t?.firstOutput)}`);
       }
+      // And the main thread's timed steps since the click (xterm.open, webgl.attach…).
+      const spans = (await browser.execute(() =>
+        (window as unknown as { __tandemTest: { perf: { spans: () => Array<{ name: string; at: number; ms: number }> } } }).__tandemTest.perf.spans(),
+      )) as Array<{ name: string; at: number; ms: number }>;
+      const byName = new Map<string, number[]>();
+      for (const s of spans.filter((s) => s.at >= clickedAt)) byName.set(s.name, [...(byName.get(s.name) ?? []), s.ms]);
+      for (const [name, ms] of byName)
+        console.log(`spans ${name}: ${ms.length}× total ${Math.round(ms.reduce((a, b) => a + b, 0))} ms, max ${Math.round(Math.max(...ms))} ms`);
+    }
     record("sixAgentsFramedMs", Math.max(...framed), "<=", 300, "ms");
     record("sixAgentsMaxStallMs", gap, "<=", 100, "ms");
     // Back to the 16 shells for the rest.
