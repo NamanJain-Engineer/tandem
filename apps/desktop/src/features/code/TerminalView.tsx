@@ -144,6 +144,13 @@ const LAYOUT_SETTLE_MS = 80;
 /** One spawn per pane even when React mounts twice (StrictMode, reloads). */
 const spawning = new Map<string, Promise<unknown>>();
 
+/** Whether waiting views start their panes (the perf suite turns it off to
+ * compare, through `__tandemTest.prestart`). */
+let prestarting = true;
+export function setPrestart(on: boolean): void {
+  prestarting = on;
+}
+
 /** The grid each pane's process was started at before its view opened. */
 const startedAt = new Map<string, { cols: number; rows: number }>();
 
@@ -313,7 +320,7 @@ export function TerminalView({
     if (!el || parked) return;
     markPhase(paneId, "effect");
     // A view that waits for its turn starts its pane meanwhile.
-    if (mountQueue.wouldWait()) prestart(paneId, el, fontKey(optionsRef.current));
+    if (prestarting && mountQueue.wouldWait()) prestart(paneId, el, fontKey(optionsRef.current));
     // Opened one per frame when several views mount together (mountQueue).
     return mountQueue.add(
       () => openViewRef.current(el),

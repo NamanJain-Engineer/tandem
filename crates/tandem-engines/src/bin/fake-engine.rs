@@ -6,7 +6,8 @@
 //!   real CLI prints, `codex-cli 1.2.3`, then ` (test engine)`.
 //! - Otherwise it is a small TUI: bracketed paste on, a banner, the cwd; each
 //!   read from the terminal is logged as hex (so separate writes stay
-//!   separate) and every line is answered.
+//!   separate) and every line is answered. `TANDEM_FAKE_BOOT` (ms) holds the
+//!   banner back, as a real engine takes a while to load.
 //! - As `claude`, it runs the hooks Tandem wrote into
 //!   `$CLAUDE_CONFIG_DIR/settings.json`, feeding them hook JSON that also
 //!   carries transcript text (which must never leave `tandem-hook`).
@@ -108,6 +109,15 @@ fn out(s: &str) {
     let mut o = std::io::stdout();
     let _ = o.write_all(s.as_bytes());
     let _ = o.flush();
+}
+
+/// `TANDEM_FAKE_BOOT` (milliseconds: the value, or the contents of the file
+/// it names): how long the TUI takes to print anything, as a real engine
+/// does while it loads (the perf suite's six agents, F-CD-03 AC2).
+fn boot_delay() -> Option<Duration> {
+    let v = std::env::var("TANDEM_FAKE_BOOT").ok()?;
+    let text = std::fs::read_to_string(&v).unwrap_or(v);
+    text.trim().parse().ok().map(Duration::from_millis)
 }
 
 /// `TANDEM_FAKE_BRIEF`: the value, or the contents of the file it names.
@@ -627,6 +637,9 @@ fn main() {
     }
     let label = label(&name).to_string();
     log(&format!("start: {name} args={args:?}"));
+    if let Some(boot) = boot_delay() {
+        std::thread::sleep(boot);
+    }
     #[cfg(unix)]
     let saved = raw_mode();
     out("\x1b[?2004h");

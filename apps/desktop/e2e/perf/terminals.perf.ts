@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, totalmem, release } from "node:os";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
-import { addFolder, freshUser, invoke, mod, paneIds, sendToPane, waitForApp, waitForPaneText } from "../support/app";
+import { addFolder, freshUser, home, invoke, mod, paneIds, sendToPane, waitForApp, waitForPaneText } from "../support/app";
 
 const ROOT = new URL("../../../..", import.meta.url).pathname;
 const OUT = join(ROOT, "perf/results/m3.json");
@@ -119,6 +119,7 @@ function decodePng(buf: Buffer): { w: number; h: number; px: Uint8Array } {
 type Hook = {
   paneCursor: (id: string) => { x: number; y: number } | null;
   webglHolds: (id: string) => boolean;
+  prestart: (on: boolean) => void;
   perf: {
     enable: () => void;
     times: () => Record<string, { mounted: number; firstOutput?: number; phases?: Record<string, number> }>;
@@ -225,6 +226,11 @@ describe("perf: terminals", () => {
   });
 
   it("spawning 6 agent panes: frames visible ≤ 300 ms, no UI stall > 100 ms", async () => {
+    // TANDEM_PERF_BOOT_MS: each agent takes this long to print anything, as
+    // a real engine does while it loads; TANDEM_PERF_NO_PRESTART=1 measures
+    // without waiting views starting their panes first (D-2579).
+    const boot = join(home(), "fake-boot.txt");
+    writeFileSync(boot, process.env.TANDEM_PERF_BOOT_MS ?? "");
     const tab = await invoke<{ id: string }>("tab_create", { workspaceId, name: "Agents" });
     const agents: string[] = [];
     for (let i = 0; i < 6; i++) agents.push((await invoke<{ id: string }>("pane_create", { tabId: tab.id, kind: "agent", cwd: null, engineId: "claude" })).id);
@@ -233,6 +239,8 @@ describe("perf: terminals", () => {
     await browser.refresh();
     await waitForApp();
     await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
+    if (process.env.TANDEM_PERF_NO_PRESTART)
+      await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.prestart(false));
     // Watch frame gaps while the tab opens and its six agents start.
     await browser.execute(() => {
       const w = window as unknown as { __maxGap: number; __gapRun: boolean };
@@ -255,6 +263,7 @@ describe("perf: terminals", () => {
       return at;
     }, `[data-testid="tab"][data-tab-id="${tab.id}"] button`)) as number;
     for (const id of agents) await waitForPaneText(id, "Fake Claude Code", 15_000);
+    writeFileSync(boot, "");
     const gap = (await browser.execute(() => {
       const w = window as unknown as { __maxGap: number; __gapRun: boolean };
       w.__gapRun = false;

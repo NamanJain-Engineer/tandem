@@ -295,6 +295,8 @@ async function main() {
     `export TANDEM_FAKE_VERSION="${join(home, "fake-version.txt")}"`,
     // `<engine> <model>,<model>` (or `signed-out`) lines: an ACP agent's models (E2E-M7-12).
     `export TANDEM_FAKE_MODELS="${join(home, "fake-models.txt")}"`,
+    // Milliseconds a fake engine's TUI takes to print anything, as a real one loads (perf).
+    `export TANDEM_FAKE_BOOT="${join(home, "fake-boot.txt")}"`,
     "",
   ].join("\n");
   for (const f of [".bash_profile", ".profile", ".zprofile"]) writeFileSync(join(userHome, f), profile);
