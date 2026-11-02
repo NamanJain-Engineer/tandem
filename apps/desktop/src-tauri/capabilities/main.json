@@ -379,6 +379,7 @@
     "allow-pane-close",
     "allow-pane-move",
     "allow-pty-spawn",
+    "allow-pty-start",
     "allow-pty-attach",
     "allow-pty-park",
     "allow-pty-write",

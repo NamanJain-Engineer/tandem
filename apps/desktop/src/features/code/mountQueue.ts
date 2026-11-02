@@ -6,7 +6,8 @@
 // The focused view can hold the queue until it has connected, so its attach
 // and spawn replies don't wait behind other views' opens (F-SH-07.7: each
 // open blocks the page for hundreds of ms on software GL). Views on screen open
-// before the queued views of a tab that was hidden since they were added.
+// before the queued views of a tab that was hidden since they were added. A
+// view that has to wait starts its pane's process meanwhile (prestart.ts).
 
 /** Opens the view; returns its cleanup. */
 export type MountJob = () => () => void;
@@ -70,6 +71,12 @@ export class MountQueue {
   /** Views waiting to open. */
   pending(): number {
     return this.queue.length;
+  }
+
+  /** True when a view added now would wait for its turn rather than open at
+   * once (its pane can start meanwhile, F-CD-03 AC2). */
+  wouldWait(): boolean {
+    return this.busy || this.queue.length > 0;
   }
 
   private start(entry: Entry): void {

@@ -26,6 +26,7 @@ import { keyAction, lastLines, lineCount, needsConfirm, pasteBytes } from "./ter
 import { openFileLink, opensLink, openUrl, pathLinkProvider, resolveLink } from "./links";
 import { mountQueue } from "./mountQueue";
 import { PARK_AFTER_MS, parkChunks, type ParkMark, type ParkTerminal } from "./park";
+import { guessSize, rememberFit } from "./prestart";
 import { PromptCapture, useFirstPrompts } from "./titles";
 import { webglPool } from "./webglPool";
 import { writeScheduler } from "./writeScheduler";
@@ -142,6 +143,31 @@ const LAYOUT_SETTLE_MS = 80;
 
 /** One spawn per pane even when React mounts twice (StrictMode, reloads). */
 const spawning = new Map<string, Promise<unknown>>();
+
+/** The grid each pane's process was started at before its view opened. */
+const startedAt = new Map<string, { cols: number; rows: number }>();
+
+/** The font a view measures its cells with: family and size. */
+const fontKey = (o: { fontFamily: string; fontSize: number }) => `${o.fontSize}px ${fontStack(o.fontFamily)}`;
+
+/** Starts the pane's process while its view waits to open (F-CD-03 AC2,
+ * prestart.ts). The core starts nothing when the pane has a process, live
+ * or ended; `connect` waits for this, then attaches. */
+function prestart(paneId: string, el: HTMLElement, font: string): void {
+  if (spawning.has(paneId)) return;
+  const size = guessSize(font, el.clientWidth, el.clientHeight);
+  if (!size) return;
+  const started = invoke<boolean>("pty_start", { paneId, ...size }, { timeoutMs: 15_000 }).then(
+    (now) => {
+      if (now) startedAt.set(paneId, size);
+    },
+    () => undefined,
+  );
+  spawning.set(paneId, started);
+  void started.finally(() => {
+    if (spawning.get(paneId) === started) spawning.delete(paneId);
+  });
+}
 
 // What a torn-down view leaves in its refs and channels. They're made out
 // here: a function made inside the view's scope keeps that scope, and so its
@@ -286,6 +312,8 @@ export function TerminalView({
     const el = host.current;
     if (!el || parked) return;
     markPhase(paneId, "effect");
+    // A view that waits for its turn starts its pane meanwhile.
+    if (mountQueue.wouldWait()) prestart(paneId, el, fontKey(optionsRef.current));
     // Opened one per frame when several views mount together (mountQueue).
     return mountQueue.add(
       () => openViewRef.current(el),
@@ -450,6 +478,9 @@ export function TerminalView({
     else
       try {
         fitAddon.fit();
+        // What the next waiting view starts its pane at (prestart.ts).
+        if (el.clientWidth > 0 && el.clientHeight > 0)
+          rememberFit(fontKey(o), { width: el.clientWidth, height: el.clientHeight, cols: xterm.cols, rows: xterm.rows });
       } catch {
         /* hidden: fit later */
       }
@@ -614,6 +645,15 @@ export function TerminalView({
         markPhase(paneId, "connected");
         if (state) useTerminals.getState().put(state);
         if (disposed) return;
+        // Started while the view waited (prestart.ts): its process has the
+        // grid it started at, so the replay lays out there, and the fit
+        // below resizes both if the guess was off.
+        const started = startedAt.get(paneId);
+        startedAt.delete(paneId);
+        if (started && !back && replay !== undefined) {
+          size.current = started;
+          if (started.cols !== xterm.cols || started.rows !== xterm.rows) xterm.resize(started.cols, started.rows);
+        }
         if (!ready) {
           ringBase = end ?? 0;
           if (replay?.byteLength) xterm.write(replay);

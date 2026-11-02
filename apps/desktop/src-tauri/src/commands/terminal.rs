@@ -246,6 +246,19 @@ pub async fn pty_spawn(
         .await
 }
 
+/// Starts a pane whose view is waiting to open; the view attaches when it
+/// does (F-CD-03 AC2). False when the pane already has a process.
+#[tauri::command]
+pub async fn pty_start(
+    state: State<'_, AppState>,
+    pane_id: PaneId,
+    cols: u16,
+    rows: u16,
+) -> Result<bool, IpcError> {
+    let max_live = state.entitlements.limits().panes;
+    state.terminals.start(&pane_id, cols, rows, max_live).await
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

@@ -285,6 +285,7 @@ macro_rules! app_commands {
             commands::terminal::pane_close,
             commands::terminal::pane_move,
             commands::terminal::pty_spawn,
+            commands::terminal::pty_start,
             commands::terminal::pty_attach,
             commands::terminal::pty_park,
             commands::terminal::pty_write,

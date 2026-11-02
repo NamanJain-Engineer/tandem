@@ -1415,6 +1415,9 @@ export class DemoCore {
         };
         return snap;
       }
+      case "pty_start":
+        // The demo's panes start when their view opens (pty_spawn below).
+        return false;
       case "pty_spawn": {
         const id = String(args?.paneId);
         // A shell answers from its worktree's checkout; an agent pane shows its still.

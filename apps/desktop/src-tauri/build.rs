@@ -292,6 +292,7 @@ const COMMANDS: &[&str] = &[
     "pane_close",
     "pane_move",
     "pty_spawn",
+    "pty_start",
     "pty_attach",
     "pty_park",
     "pty_write",
