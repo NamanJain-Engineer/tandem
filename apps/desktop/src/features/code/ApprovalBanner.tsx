@@ -19,7 +19,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const { show } = useToast();
   const key = approval ? `${approval.id}\n${approval.detail}` : null;
   const settled = useSettled(key);
-  const [endRef, seenEnd] = useSeenEnd(key);
+  const [endRef, seenEnd, scrollRef, passedEnd] = useSeenEnd(key);
   // The banner scrolls: Allow waits until its own place has held still.
   const box = useSteadyBox(approval !== null, key);
   if (!approval) return null;
@@ -35,6 +35,7 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   return (
     <ApprovalBoundary key={approval.id} onDeny={() => void decide(false)}>
       <div
+        ref={scrollRef}
         data-testid="pane-approval"
         role="status"
         className="flex max-h-[60%] min-h-8 shrink-0 flex-col gap-2 overflow-y-auto border-b border-divider bg-waiting-soft px-2 py-1 text-sm text-fg"
@@ -49,10 +50,17 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
                   ? t("runLine.title")
                   : t("dashboard.wants", { summary: approval.summary })}
             </span>
-            {run && <RunLine run={run} />}
-            <span ref={endRef} aria-hidden="true" data-testid="run-line-end" />
+            {run ? (
+              <RunLine run={run} endRef={endRef} />
+            ) : (
+              // Over the question's last 16 px: all of it in view is its
+              // end seen.
+              <span ref={endRef} aria-hidden="true" data-testid="run-line-end" className="-mt-5 block h-4" />
+            )}
           </div>
         </div>
+        {/* The buttons wrap: on one row, scrolled sideways in a narrow pane,
+            one Allow cut off held both off (the review of b3ff3696, S-1). */}
         <div ref={box.ref} className="flex flex-wrap gap-2">
           {!unreadable && (
             <Button
@@ -60,7 +68,9 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               variant="primary"
               loading={busy}
               waiting={!canAllow}
-              title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
+              title={
+                canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady, passed: passedEnd })
+              }
               data-grant
               data-testid="pane-approval-once"
               onClick={() => box.check() && void decide(true)}
@@ -74,7 +84,9 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
               variant="secondary"
               disabled={busy}
               waiting={!canAllow}
-              title={canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady })}
+              title={
+                canAllow ? undefined : waitReason({ seenEnd, settled, steady: box.steady, passed: passedEnd })
+              }
               data-grant
               data-testid="pane-approval-agent"
               onClick={() => box.check() && void decide(true, "conversation")}

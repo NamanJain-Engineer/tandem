@@ -10,6 +10,7 @@ export type SymbolIndex = { symbols: Array<ChangedSymbol>,
  */
 uses: Array<string>, 
 /**
- * Changed files not parsed: other languages, too big, or past the cap.
+ * Changed files not parsed: other languages, too big, past the cap,
+ * not regular files, not UTF-8, unreadable, or given up on.
  */
 unparsed: number, };

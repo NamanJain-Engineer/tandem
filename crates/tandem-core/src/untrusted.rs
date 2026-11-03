@@ -992,8 +992,13 @@ mod tests {
         ]
     }
 
+    /// The timing tests, one at a time: each is heavy enough to be the
+    /// other's load.
+    static TIMED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn f_tk_08_1_redacted_takes_time_in_line_with_the_text_however_it_is_written() {
+        let _timed = TIMED.lock().unwrap_or_else(|e| e.into_inner());
         // An agent or a page can write such text, and `redacted` runs on
         // pane output, CI logs, scrollback, plugin replies and the phone.
         // Every pass is one scan a rule, so a megabyte takes well under the
@@ -1074,6 +1079,75 @@ mod tests {
                 a.len()
             );
         }
+    }
+
+    #[test]
+    fn f_tk_08_1_one_crafted_text_leaves_its_threads_later_redactions_as_fast() {
+        // A lazy DFA gives up for good once its cache has been cleared three
+        // times with little searched per state, and the `regex` crate kept
+        // each cache for its thread's later searches. So 32 KB of `AIza`
+        // runs left that thread's later redactions 33 times as slow, through
+        // the prefilter (the review of e788fc6f), and 64 KB of `key` runs
+        // did the same to the high-entropy rule, 25 times. Now a search
+        // resets a cache it cleared. Each shape has a redactor and a thread
+        // of its own, so neither starts on caches the other left.
+        use crate::redact::sample::{alnum, crafted};
+        let _timed = TIMED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        // A log with a key a line, and lines the high-entropy rule reads.
+        let log: String = (0..4_000)
+            .map(|i| format!("line {i}: sk-proj-{}\n", alnum(&mut seed, 48)))
+            .collect();
+        let session: String = (0..1_500)
+            .map(|i| {
+                format!(
+                    "{i}: session_token = {} and auth ok\n",
+                    alnum(&mut seed, 32)
+                )
+            })
+            .collect();
+        let slow: Vec<String> = [
+            (log, crafted("AIza", 33, 32 * 1024)),
+            (session, crafted("key", 19, 64 * 1024)),
+        ]
+        .into_iter()
+        .filter_map(|(victim, heavy)| {
+            std::thread::spawn(move || {
+                let redactor = crate::redact::Redactor::new();
+                // The plain pass, and the three `redacted` reads.
+                let time = |text: &str| {
+                    let started = std::time::Instant::now();
+                    let _ = std::hint::black_box(redactor.spans(text));
+                    let f = forms(text);
+                    let spans = redactor.untrusted_spans(&f.read, &f.written, &f.marked);
+                    let _ = std::hint::black_box(spans);
+                    started.elapsed()
+                };
+                let best = |text: &str| (0..2).map(|_| time(text)).min().expect("timed");
+                let fast = |before: std::time::Duration, after: std::time::Duration| {
+                    after < before * 3 + std::time::Duration::from_millis(30)
+                };
+                let _ = time(&victim);
+                let before = best(&victim);
+                let _ = time(&heavy);
+                let mut after = best(&victim);
+                // Timed again once before failing, as the growth check is.
+                if !fast(before, after) {
+                    after = best(&victim);
+                }
+                (!fast(before, after)).then(|| {
+                    format!(
+                        "{} bytes took {before:?} before {:?}…, {after:?} after",
+                        victim.len(),
+                        &heavy[..8]
+                    )
+                })
+            })
+            .join()
+            .expect("the timing thread")
+        })
+        .collect();
+        assert!(slow.is_empty(), "{slow:#?}");
     }
 
     #[test]

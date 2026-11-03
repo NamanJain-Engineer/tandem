@@ -384,19 +384,25 @@ locally; `.github/workflows/release.yml` does the same once Actions run.
    words from `en.json`, and label the build from `lib/release.ts`. A scene
    or part of one that needs a newer release is gated on it (`LANDS` in
    `lib/scenes.ts` switches on 0.9.0's landing queue; `RADAR`, `RAIL_FOLDS`,
-   `PUSH_READS`, `DEFANGS`, `APPROVE_WAITS` and `UNDO_SECONDARY` on 0.13.0's): after
-   bumping `release.ts`, look at each scene's final frame in both themes and
-   check it against the release.
+   `PUSH_READS`, `DEFANGS`, `APPROVE_WAITS` and `UNDO_SECONDARY` on 0.13.0's;
+   `SENDS_BACK` on 0.14.0's): after bumping `release.ts`, look at each scene's
+   final frame in both themes and check it against the release.
    Bumping `release.ts` to a new version needs that release's scenes slice
    first: the slice draws what the release changes and sets `SCENES_SLICE`
    (`lib/release.ts`) to it, and `scenes.next.test.tsx` runs every scene test
-   at that version while the site still shows the one before. A version past
+   at that version while the site still shows the one before. The slice also
+   records, for each bullet of the release's CHANGELOG section (`## Unreleased`
+   until the release renames it), the gate a scene draws it under or why no
+   scene does (`SCENE_RECORD` in `lib/sceneRecord.ts`); a test fails while the
+   bullets and the record differ. A version past
    `SCENES_SLICE` fails the gate (the site's vitest) until its slice is in. Never
    weaken, skip or delete those guards to get a release through.
    The gate runs no browser (`test:site` is in neither it nor CI, §7), and a
    slice's browser checks (the rails' rows folding, the CI pane's scroll,
-   Approve's place and what covers it) only run on a site built at the slice's
-   release. So a slice also sets `release.ts` to `SCENES_SLICE`, runs
+   Approve's place and what covers it, the plan's review going back, and the
+   text each scene draws, `::before`, `::after` and `::marker` included) only
+   run on a site built at the slice's release.
+   So a slice also sets `release.ts` to `SCENES_SLICE`, runs
    `pnpm --filter web build:site` and
    `PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium pnpm --filter web test:site`,
    sets it back, and runs both again at the version the site shows. At

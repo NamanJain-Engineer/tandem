@@ -65,14 +65,39 @@ pub async fn plan_prepare(state: State<'_, AppState>, id: String) -> Result<Plan
 }
 
 /// The runs `plan_prepare` showed, through F-TK-04's queue. With
-/// `supervise`, Lead answers their routine questions (F-TK-08).
+/// `supervise`, Lead answers their routine questions (F-TK-08); with
+/// `send_back`, a run's Changes requested goes back to it (F-TK-09).
 #[tauri::command]
 pub async fn plan_execute(
     state: State<'_, AppState>,
     id: String,
     supervise: bool,
+    send_back: bool,
 ) -> Result<PlanView, IpcError> {
-    plans(&state)?.execute(&id, supervise).await
+    plans(&state)?.execute(&id, supervise, send_back).await
+}
+
+/// Reviews that ask for changes go back to a plan's runs, or come to you
+/// (F-TK-09).
+#[tauri::command]
+pub async fn plan_send_back(
+    state: State<'_, AppState>,
+    id: String,
+    on: bool,
+) -> Result<PlanView, IpcError> {
+    plans(&state)?.send_back(&id, on)
+}
+
+/// Send back…: a review that came to you goes to its run, with your note
+/// (F-TK-09).
+#[tauri::command]
+pub async fn plan_review_send(
+    state: State<'_, AppState>,
+    id: String,
+    review_id: String,
+    note: Option<String>,
+) -> Result<PlanView, IpcError> {
+    plans(&state)?.send_review(&id, &review_id, note).await
 }
 
 /// Lead's answers to a plan's runs, on or off (F-TK-08).

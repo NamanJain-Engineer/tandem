@@ -10,6 +10,7 @@ import type {
   WorkspaceSummary,
 } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
+import { emitLocal } from "../../ipc/events";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useLayout } from "../../stores/layout";
 import { useWorkspaces } from "../../stores/workspaces";
@@ -286,6 +287,170 @@ describe("overlap check (F-WT-03)", () => {
     expect(named("lane_overlap")[0]?.args).toEqual({ laneId: "wt_1" });
   });
 
+  it("F-WT-10.6 F-WT-10.8 a rename reads as one; Claim these files claims on the click; a watched change reloads", async () => {
+    let loads = 0;
+    backend({
+      lane_overlap: () => {
+        loads += 1;
+        return report({
+          siblings: [
+            {
+              laneId: "wt_2",
+              branch: "tandem/user",
+              files: [],
+              symbols: [
+                { name: "parse", qualified: "parse", here: "renamed", there: "used", renamedTo: "parseLine" },
+              ],
+            },
+          ],
+        });
+      },
+      lane_radar_claim: () => ["src/parse.ts"],
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    const sym = await screen.findByTestId("overlap-symbol");
+    expect(sym.textContent).toContain("renamed to parseLine here, used there");
+    // Nothing is claimed without the click.
+    expect(named("lane_radar_claim")).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("overlap-claim"));
+    await waitFor(() =>
+      expect(named("lane_radar_claim")[0]?.args).toEqual({ laneId: "wt_1", otherId: "wt_2" }),
+    );
+    expect(await screen.findByText("Claimed 1 file for this worktree")).toBeTruthy();
+    // A watched change in another repository's worktree: nothing to read.
+    useWorkspaces.setState({
+      list: [REPO, WT, ws("wt_2", { ...WT, id: "wt_2", laneBranch: "tandem/user" })],
+    });
+    const before = loads;
+    act(() => emitLocal("radar:changed", { laneIds: ["elsewhere"] }));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(loads).toBe(before);
+    // A sibling's symbols changed: the check reads them again, keeping the
+    // last report on screen meanwhile.
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_2"] }));
+    expect(screen.queryByTestId("overlap-symbol")).not.toBeNull();
+    await waitFor(() => expect(loads).toBe(before + 1));
+  });
+
+  it("F-WT-10.3 an older reload that answers last never replaces a newer report", async () => {
+    // A watched change's reload on its way when the person asks again: the
+    // first reload's reply came last and the dialog showed the older report
+    // (the review of 9a4e93ab, S3).
+    const replies: Array<(r: OverlapReport) => void> = [];
+    const on = (branch: string) =>
+      report({ siblings: [{ laneId: "wt_2", branch, files: ["src/a.ts"], symbols: [] }] });
+    backend({
+      lane_overlap: () => {
+        if (named("lane_overlap").length === 1) {
+          throw { code: "io", message: "disk busy", stage: null, hint: null, retryable: true };
+        }
+        return new Promise<OverlapReport>((resolve) => replies.push(resolve));
+      },
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    expect(await screen.findByText("Couldn't check overlap: disk busy")).toBeTruthy();
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await waitFor(() => expect(replies).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(replies).toHaveLength(2));
+    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
+    const [older, newer] = replies;
+    await act(async () => newer?.(on("tandem/newer")));
+    await waitFor(async () => expect(await branch()).toBe("tandem/newer"));
+    await act(async () => older?.(on("tandem/older")));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(await branch()).toBe("tandem/newer");
+  });
+
+  it("F-WT-10.3 changes told while a check runs bring one more, not one each", async () => {
+    // The check parses the siblings, each parse that changes what's shared
+    // tells a change, and each change started a whole check again (the
+    // review of d06b9e3d, SF-3).
+    const replies: Array<(r: OverlapReport) => void> = [];
+    const on = (branch: string) =>
+      report({ siblings: [{ laneId: "wt_2", branch, files: ["src/a.ts"], symbols: [] }] });
+    backend({
+      lane_overlap: () => new Promise<OverlapReport>((resolve) => replies.push(resolve)),
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    await waitFor(() => expect(replies).toHaveLength(1));
+    for (let n = 0; n < 3; n++) act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(named("lane_overlap")).toHaveLength(1);
+    await act(async () => replies[0]?.(on("tandem/first")));
+    await waitFor(() => expect(named("lane_overlap")).toHaveLength(2));
+    await act(async () => replies[1]?.(on("tandem/second")));
+    const branch = async () => (await screen.findByTestId("overlap-sibling")).getAttribute("data-branch");
+    await waitFor(async () => expect(await branch()).toBe("tandem/second"));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(named("lane_overlap")).toHaveLength(2);
+    // Nothing on its way: a change reads again at once.
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_1"] }));
+    await waitFor(() => expect(named("lane_overlap")).toHaveLength(3));
+  });
+
+  it("F-WT-10.8 a worktree that only uses what it shares has nothing to claim", async () => {
+    backend({
+      lane_overlap: () =>
+        report({
+          siblings: [
+            {
+              laneId: "wt_2",
+              branch: "tandem/renamer",
+              files: [],
+              symbols: [
+                { name: "parse", qualified: "parse", here: "used", there: "renamed", renamedTo: "parseLine" },
+              ],
+            },
+          ],
+        }),
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    const sym = await screen.findByTestId("overlap-symbol");
+    expect(sym.textContent).toContain("used here, renamed to parseLine there");
+    expect(screen.queryByTestId("overlap-claim")).toBeNull();
+  });
+
+  it("F-WT-10.8 a claim that fails says why", async () => {
+    backend({
+      lane_overlap: () =>
+        report({
+          siblings: [
+            {
+              laneId: "wt_2",
+              branch: "tandem/user",
+              files: [],
+              symbols: [{ name: "parse", qualified: "parse", here: "changed", there: "used" }],
+            },
+          ],
+        }),
+      lane_radar_claim: () => {
+        throw {
+          code: "unavailable",
+          message: "Claims aren't running, so nothing was claimed",
+          stage: null,
+          hint: null,
+          retryable: false,
+        };
+      },
+      lane_radar: () => [],
+    });
+    useWorktrees.getState().open({ kind: "overlap", worktreeId: "wt_1" });
+    dialogs();
+    fireEvent.click(await screen.findByTestId("overlap-claim"));
+    expect(
+      await screen.findByText("Couldn't claim the files: Claims aren't running, so nothing was claimed"),
+    ).toBeTruthy();
+  });
+
   it("F-WT-10.1 lists the symbols a sibling shares, with what each side did, and the unparsed files", async () => {
     backend({
       lane_overlap: () =>
@@ -309,7 +474,7 @@ describe("overlap check (F-WT-03)", () => {
     expect(sym.dataset.symbol).toBe("Session");
     expect(sym.textContent).toContain("renamed or removed here, used there");
     expect(screen.getByTestId("overlap-unparsed").textContent).toBe(
-      "2 changed files weren't checked for symbols (other languages, or too large).",
+      "2 changed files weren't checked for symbols (other languages, too large, unreadable, or still to read).",
     );
   });
 
@@ -321,7 +486,9 @@ describe("overlap check (F-WT-03)", () => {
     expect(verdict.getAttribute("data-verdict")).toBe("conflicts");
     expect(verdict.textContent).toContain("Merging will conflict in 1 file");
     expect(verdict.textContent).toContain("README.md");
-    expect(verdict.textContent).toContain("1 uncommitted change isn't in the forecast. Commit it to include it.");
+    expect(verdict.textContent).toContain(
+      "1 uncommitted change isn't in the forecast. Commit it to include it.",
+    );
     expect(named("lane_merge")).toHaveLength(0);
   });
 

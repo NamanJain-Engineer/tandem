@@ -120,6 +120,12 @@ pub async fn add(
     if tabs::list(store, &workspace.id).await?.is_empty() {
         tabs::create(store, &workspace.id, None).await?;
     }
+    // A folder used before, a removed worktree's among them, gets its old
+    // row and id back, which the radar fenced off for good when it went
+    // (the review of c30bb8bf, N-5).
+    if how != Added::Existing {
+        crate::services::radar::made(workspace.id.as_str(), workspace.lane_base.as_deref());
+    }
     tracing::info!(
         code = "workspace.added",
         created = how == Added::Created,
@@ -172,6 +178,12 @@ pub async fn add_remote(
             })?;
     if tabs::list(store, &workspace.id).await?.is_empty() {
         tabs::create(store, &workspace.id, None).await?;
+    }
+    // A folder used before, a removed worktree's among them, gets its old
+    // row and id back, which the radar fenced off for good when it went
+    // (the review of c30bb8bf, N-5).
+    if how != Added::Existing {
+        crate::services::radar::made(workspace.id.as_str(), workspace.lane_base.as_deref());
     }
     tracing::info!(
         code = "workspace.added",
@@ -279,6 +291,11 @@ pub async fn remove(
         }
     }
     workspaces::remove(store, id).await?;
+    // The radar's indexes and watchers go with them (the review of
+    // 9a4e93ab, S6), and no parse of them is kept again (d06b9e3d, N-1).
+    for ws in &ids {
+        crate::services::radar::forget_for_good(ws.as_str());
+    }
     Ok(removed)
 }
 

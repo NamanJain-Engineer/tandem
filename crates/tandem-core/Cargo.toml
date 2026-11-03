@@ -21,6 +21,7 @@ ignore.workspace = true
 notify.workspace = true
 rand_core.workspace = true
 regex.workspace = true
+regex-automata.workspace = true
 reqwest.workspace = true
 uuid = { version = "1", features = ["v4"] }
 serde.workspace = true

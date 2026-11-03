@@ -408,7 +408,15 @@ pub async fn merge_queue_start(
     landing_review(&window)?;
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
-    merge_queue::start(
+    // F-TK-09: a plan task's worktree that lands is Done.
+    let landed = state.plan.get().cloned().map(|plans| {
+        let hook: merge_queue::LandedHook = std::sync::Arc::new(move |lane, commit| {
+            let plans = plans.clone();
+            Box::pin(async move { plans.on_landed(&lane, &commit).await })
+        });
+        hook
+    });
+    merge_queue::start_telling(
         &state.store,
         &state.data,
         &git,
@@ -416,6 +424,7 @@ pub async fn merge_queue_start(
         &workspace_id,
         &lane_ids,
         check,
+        landed,
     )
     .await
 }
@@ -468,7 +477,12 @@ pub async fn merge_queue_undo(
     {
         return Err(IpcError::new(ErrorCode::Cancelled, "Kept the landing"));
     }
-    merge_queue::undo(&state.store, &state.data, &git, &workspace_id).await
+    let undone = merge_queue::undo(&state.store, &state.data, &git, &workspace_id).await?;
+    // F-TK-09: a plan task that landed as one of them is in review again.
+    if let Some(plans) = state.plan.get().cloned() {
+        plans.on_unlanded(&undone).await;
+    }
+    Ok(())
 }
 
 fn landing_review(window: &WebviewWindow) -> Result<LocalReview, IpcError> {
@@ -553,6 +567,20 @@ pub async fn lane_radar_note(
     let login = state.terminals.login_env().await;
     let git = lanes::git_for(&state.data, &login)?;
     radar::note(&state.store, &git, &lane_id, &other_id).await
+}
+
+/// "Claim these files" (F-WT-10): claims, for `lane_id`'s worktree, the
+/// files where it changed the definitions it shares with `other_id`, as
+/// F-TK-05 claims. Returns the paths claimed.
+#[tauri::command]
+pub async fn lane_radar_claim(
+    state: State<'_, AppState>,
+    lane_id: WorkspaceId,
+    other_id: WorkspaceId,
+) -> Result<Vec<String>, IpcError> {
+    let login = state.terminals.login_env().await;
+    let git = lanes::git_for(&state.data, &login)?;
+    radar::claim(&state.store, &git, state.tasks.clone(), &lane_id, &other_id).await
 }
 
 // ---- Multi-repo pull requests (F-CD-22) -------------------------------------

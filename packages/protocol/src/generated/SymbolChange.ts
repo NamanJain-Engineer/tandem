@@ -3,4 +3,4 @@
 /**
  * What a worktree did to a symbol.
  */
-export type SymbolChange = "added" | "changed" | "removed" | "used";
+export type SymbolChange = "added" | "changed" | "removed" | "renamed" | "used";

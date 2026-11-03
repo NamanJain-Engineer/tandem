@@ -240,6 +240,16 @@ fn not_ignored(root: &Path, rel: &Path) -> std::collections::HashSet<String> {
     names
 }
 
+/// Whether `.gitignore` keeps the folder `rel` (relative to `root`): its
+/// name is in its parent's listing, and so every folder above it is kept
+/// too. The root always is; a folder that isn't there isn't.
+pub fn folder_kept(root: &Path, rel: &Path) -> bool {
+    let Some(name) = rel.file_name().and_then(|n| n.to_str()) else {
+        return rel.as_os_str().is_empty();
+    };
+    not_ignored(root, rel.parent().unwrap_or(Path::new(""))).contains(name)
+}
+
 /// The `.gitignore` rules the tree and the watcher share: the repository's
 /// ignore files (also outside a git repository), its `info/exclude` and the
 /// user's global excludes; hidden files are shown.
@@ -686,6 +696,20 @@ mod tests {
         fs::write(root.join("src/main.rs"), "fn main() {}\n").expect("write");
         fs::write(root.join("node_modules/react/index.js"), "x\n").expect("write");
         (dir, root)
+    }
+
+    #[test]
+    fn f_wt_10_7_a_folder_is_kept_when_no_gitignore_on_its_way_ignores_it() {
+        let (_d, root) = tree();
+        fs::create_dir_all(root.join("node_modules/react/lib")).expect("mkdir");
+        assert!(folder_kept(&root, Path::new("")));
+        assert!(folder_kept(&root, Path::new("src")));
+        assert!(folder_kept(&root, Path::new("src/deep")));
+        assert!(!folder_kept(&root, Path::new("node_modules")));
+        // Inside an ignored folder, however deep.
+        assert!(!folder_kept(&root, Path::new("node_modules/react/lib")));
+        // Gone.
+        assert!(!folder_kept(&root, Path::new("src/gone")));
     }
 
     fn names(entries: &[DirEntry]) -> Vec<(&str, bool)> {

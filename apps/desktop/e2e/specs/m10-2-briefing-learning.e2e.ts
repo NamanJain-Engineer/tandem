@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
-import { freshOffline, invoke, mod } from "../support/app";
+import { clickAllow, freshOffline, invoke, mod } from "../support/app";
 import {
   argAfter,
   chatSpawns,
@@ -84,7 +84,8 @@ describe("E2E-M10-2 briefing and learning", () => {
     const card = await $('[data-testid="memory-suggestions"]');
     await card.waitForDisplayed({ timeout: 20_000 });
     expect(await card.getText()).toContain("Remember: The user said: always use pnpm");
-    await card.$("button=Keep").click();
+    // Keep writes to memory: it waits until the card has held still (F-TL-12.16).
+    await clickAllow('[data-testid="memory-suggestion-keep"]');
     await card.waitForExist({ reverse: true, timeout: 10_000 });
     const notes = readFileSync(join(scout.home, "memory", "NOTES.md"), "utf8");
     expect(notes).toContain("- Release branch is cut on Thursdays.");

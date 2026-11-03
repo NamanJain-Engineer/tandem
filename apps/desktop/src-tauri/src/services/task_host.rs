@@ -77,9 +77,10 @@ impl ExecHost for AppExecHost {
         crate::services::lanes::remove(&self.store, &self.terminals, &git, lane, None).await
     }
 
-    async fn lane_diff(&self, lane: &WorkspaceId) -> String {
+    async fn lane_diff(&self, lane: &WorkspaceId) -> Option<String> {
         crate::services::lanes::diff(&self.store, lane)
             .await
+            .ok()
             .map(|files| {
                 files
                     .into_iter()
@@ -87,7 +88,6 @@ impl ExecHost for AppExecHost {
                     .collect::<Vec<_>>()
                     .join("\n")
             })
-            .unwrap_or_default()
     }
 
     async fn teammate_engine(&self, teammate: &TeammateId) -> Option<(String, Option<AccountId>)> {

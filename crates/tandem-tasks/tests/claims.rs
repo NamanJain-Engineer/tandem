@@ -554,3 +554,120 @@ fn f_tk_05_1_overlaps_come_from_within_each_repository_in_order() {
         "one per pair, never across repositories, in order"
     );
 }
+
+#[test]
+fn f_wt_10_8_a_claim_made_for_a_working_tree_is_its_own_with_the_intent() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/renamer";
+    // From the top folder whatever a session's prefix, with the intent.
+    let mut sub = scope(tree);
+    sub.prefix = "src".into();
+    let first = s
+        .claim_for_tree(
+            &sub,
+            &paths(&["src/parse.ts"]),
+            "Intent radar: renamed parse → parseLine, which tandem/user uses",
+        )
+        .expect("claim");
+    assert!(first.overlaps.is_empty());
+    assert_eq!(first.paths, ["src/parse.ts"]);
+    let claims = s.claims().expect("claims");
+    assert_eq!(claims.len(), 1);
+    let c = &claims[0];
+    assert_eq!(c.path, "src/parse.ts");
+    assert_eq!(c.agent, "renamer");
+    assert!(!c.inferred && c.connection.is_none());
+    assert_eq!(
+        c.intent,
+        "Intent radar: renamed parse → parseLine, which tandem/user uses"
+    );
+    // The sibling's agent claiming the file meets it.
+    let user = session(&s, "/r/app/.tandem/worktrees/user");
+    let overlaps = s
+        .claim(&user, &paths(&["src/parse.ts"]), "use parse")
+        .expect("user");
+    assert_eq!(overlaps.len(), 1);
+    assert_eq!(
+        overlaps[0].agents,
+        ["renamer".to_string(), "user".to_string()]
+    );
+    // Only the tree's own real files: no `..`, no absolute path.
+    for bad in ["../x.ts", "/etc/passwd"] {
+        assert!(
+            s.claim_for_tree(&scope(tree), &paths(&[bad]), "x").is_err(),
+            "{bad}"
+        );
+    }
+    let long = "x".repeat(501);
+    assert!(s
+        .claim_for_tree(&scope(tree), &paths(&["a.ts"]), &long)
+        .is_err());
+}
+
+#[test]
+fn f_wt_10_8_a_tree_claim_keeps_real_names_and_an_agents_own_claim() {
+    let (_d, s) = store();
+    let tree = "/r/app/.tandem/worktrees/renamer";
+    // Real files with `*` or `?` in their names: the agents' check refused
+    // them as patterns.
+    s.claim_for_tree(
+        &scope(tree),
+        &paths(&["src/what?.ts", "src/a*b.ts"]),
+        "Intent radar: changed what",
+    )
+    .expect("claim");
+    let mut names: Vec<String> = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .map(|c| c.path)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["src/a*b.ts", "src/what?.ts"]);
+    // An agent's own claim on a file stays as it said it.
+    let me = session(&s, tree);
+    s.claim(&me, &paths(&["src/own.ts"]), "my own words")
+        .expect("own");
+    s.claim_for_tree(&scope(tree), &paths(&["src/own.ts"]), "Intent radar: y")
+        .expect("claim");
+    let own = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .find(|c| c.path == "src/own.ts")
+        .expect("own");
+    assert_eq!(own.intent, "my own words");
+    assert_eq!(own.connection.as_deref(), Some(me.as_str()));
+    assert!(!own.inferred);
+    // A name the checks would refuse or change is left out, and the rest
+    // are claimed: one failed the whole claim, or claimed another name (the
+    // review of 30d5bcad).
+    let tree2 = "/r/app/.tandem/worktrees/odd";
+    let long = format!("src/{}.ts", "x".repeat(600));
+    let kept = s
+        .claim_for_tree(
+            &scope(tree2),
+            &paths(&[
+                "src/ok.ts",
+                " src/space.ts",
+                "src\\back.ts",
+                "src/c\u{7}.ts",
+                long.as_str(),
+            ]),
+            "Intent radar: z",
+        )
+        .expect("the rest");
+    // Only what was claimed is said to be (the review of d06b9e3d, N-5).
+    assert_eq!(kept.paths, ["src/ok.ts"]);
+    let theirs: Vec<String> = s
+        .claims()
+        .expect("claims")
+        .into_iter()
+        .filter(|c| c.agent == "odd")
+        .map(|c| c.path)
+        .collect();
+    assert_eq!(theirs, ["src/ok.ts"]);
+    assert!(s
+        .claim_for_tree(&scope(tree2), &paths(&[" src/space.ts"]), "x")
+        .is_err());
+}

@@ -109,6 +109,9 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
   let covering: Element | null = null;
   let coverX: [number, number] | null = null;
   let shift = 0;
+  /** The control measured last: what's at its points when nothing covers
+   * it (the guard measures each one just before it hit-tests its points). */
+  let measured: Element | null = null;
   const rect = (left: number, top: number, width: number, height: number) =>
     ({
       left,
@@ -126,13 +129,15 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
     coverX = null;
     shift = 0;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the stub hands back the control measured last
+      measured = this;
       if (this.tagName !== "BUTTON") return rect(0, shift, 400, 30);
       const row = Array.from(this.parentElement?.children ?? []);
       return rect(100 * row.indexOf(this), shift, 90, 30);
     });
     Object.defineProperty(document, "elementFromPoint", {
       value: (x: number) =>
-        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : null,
+        covering !== null && (coverX === null || (x >= coverX[0] && x < coverX[1])) ? covering : measured,
       configurable: true,
     });
   }
@@ -395,13 +400,13 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       await wait(1_050);
       // Esc to "cancel" when the card changed under the pointer.
       fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
       fireEvent.keyUp(document.body, { key: "Escape", code: "Escape" });
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(a).not.toHaveBeenCalled();
       expect(b).not.toHaveBeenCalled();
@@ -413,7 +418,7 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       await wait(1_050);
       fireEvent.pointerDown(document.body, { pointerId: 2, pointerType: "touch" });
@@ -423,12 +428,12 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       fireEvent.mouseUp(document.body, { button: 0 });
       fireEvent.click(document.body);
       await wait(300);
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(b).not.toHaveBeenCalled();
       // A fresh press on B, once it has held still, allows it.
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(b).toHaveBeenCalledTimes(1);
     });
@@ -462,12 +467,12 @@ describe("ApprovalCard holds still before it allows (F-TL-12.12, S4)", () => {
       const b = vi.fn();
       const { rerender } = render(view("apr_a", a));
       await steady();
-      fireEvent.pointerDown(allow(), { pointerId: 1 });
+      fireEvent.pointerDown(allow(), { pointerId: 1, pointerType: "mouse" });
       rerender(view("apr_b", b));
       fireEvent.blur(window);
       await wait(1_050);
       fireEvent.focus(window);
-      fireEvent.pointerUp(allow(), { pointerId: 1 });
+      fireEvent.pointerUp(allow(), { pointerId: 1, pointerType: "mouse" });
       fireEvent.click(allow());
       expect(a).not.toHaveBeenCalled();
       expect(b).not.toHaveBeenCalled();

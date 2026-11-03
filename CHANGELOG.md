@@ -7,6 +7,65 @@ section: an optional summary, then `### Added`, `### Changed`, `### Fixed` or
 `[lin]` or `[all]`). `scripts/check-changelog.ts` checks the format, and a
 release fails when its version has no section.
 
+## Unreleased
+
+### Added
+
+- [lin] **The intent radar, live.** Once a worktree has been read after its
+  agent's turn or its overlap check, the radar reads it again about two
+  seconds after a change, and every two seconds while changes go on, for up
+  to eight worktrees at a time, so a clash shows up while the agents are
+  still working, not after their turn. It now reads Go and Java too, and says
+  when a definition was renamed (`parse → parseLine`) rather than removed,
+  only when nothing else could explain it. **Claim these files** in Check
+  overlap… claims the files where this worktree changed, renamed or removed
+  what it shares, so agents in the other worktrees see the claim before they
+  edit them. Everything stays on this computer.
+- [lin] **Lead closes the loop.** When the review of a run started by Execute
+  all asks for changes, the plan sends the reviewer's reasons back to that run
+  as its next message, in the same worktree, and its next turn is reviewed
+  again, for up to 2 rounds. The run reads them labelled "Review (sent back
+  automatically)", marked as another engine's review and fenced as text from
+  elsewhere, as a view to weigh rather than orders. A third request, a review
+  about approvals, access, secrets, deploys, pushing or the plan's scope, one
+  that doesn't say what to change, a turn that changed nothing, the same
+  changes asked again, and any review while the engine is near its usage limit
+  come to you instead, with why and **Send back…** for when you agree. A
+  review waiting for you is dropped, with why, once you resume, stop or retry
+  its run. The option is on by default in Execute all's check, and the plan
+  can turn it off. When Land worktrees lands a plan task's worktree, the task
+  is marked Done with the commit in a comment, and its row says Landed; Undo
+  landing puts it and the run that landed back in review. A task you mark
+  Done or Canceled while its run waits, sets up or works gets nothing more
+  from that run.
+
+### Fixed
+
+- [lin] **Keep and Run can't move under your click either.** Memory
+  suggestions' and Conductor's Keep, Plan with Lead's Run (it appears where
+  Execute all… was), Edit & run's Run and the pull-request checks' Allow now
+  wait until they've held still on screen for half a second, like Allow. So a
+  double-click on Execute all… no longer starts every run, and the next
+  suggestion sliding into place can't be kept by a click meant for the one
+  before. On a phone, Allow waits the same way, on the web and in the app, and
+  each answer is sent once. A menu open elsewhere no longer dims Allow, and
+  Allow waits until the command's own last line has stayed wholly on screen
+  for a moment, not the folder or variables below it: a jump that only
+  passes it, like End where scrolling is smooth, doesn't count. In a very
+  short pane it says to scroll up a little to see it.
+- [lin] **A token's expiry stays readable.** A date or time under a name
+  that says when a token or secret expires or was made
+  (`token_expires_at: 2025-10-30T18:00:00Z`) is no longer hidden as if it
+  were the token itself, while a secret under such a name still is. In a
+  link, a token after such a time, or after a setting like
+  `token_type=bearer`, is now hidden too.
+- [lin] **One crafted text no longer slows every key check after it.**
+  Vibezeo hides keys and tokens before text reaches a model, your phone or
+  anything else off your computer. A long text built to wear out the fast way
+  of finding them (runs of key-like fragments) made every later check slower,
+  often 100 times as long or more. Now only that text's own check is
+  slower.
+
 ## 0.13.0
 
 Linux (x86-64): a .deb for Debian and Ubuntu, and an .rpm for Fedora.

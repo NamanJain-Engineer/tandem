@@ -1246,3 +1246,10 @@ def prepare_parent(next, token):
             signatures: globalThis.Array.isArray(object?.signatures)
     only the presence of given attributes, ignoring their type signatures.
     # Signature of checking functions is:
+token_expires_at: 2025-10-30T18:00:00Z
+  "access_token_expires_at": "2025-10-30T18:00:00.000Z",
+SESSION_TOKEN_EXPIRY=2025-10-30T18:00:00+00:00
+refresh_token_expires=2025-10-30T18:00:00Z
+secret_rotated_at=2025-10-30T18:00:00Z
+api_key_created_at: 2024-01-01T00:00:00Z
+  tokenExpiresAt: "2025-10-30T18:00:00.000Z",

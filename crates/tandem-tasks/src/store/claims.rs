@@ -55,6 +55,16 @@ fn seen_path(folder: &str, raw: &str) -> Result<String, TaskError> {
     resolve(folder, "", screened(raw)?)
 }
 
+/// 1 to [`CLAIM_PATHS_MAX`] paths a call.
+fn claim_count(n: usize) -> Result<(), TaskError> {
+    if n == 0 || n > CLAIM_PATHS_MAX {
+        return Err(TaskError::invalid(format!(
+            "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
+        )));
+    }
+    Ok(())
+}
+
 /// A [`screened`] `raw` from a session in `prefix` of the working tree at
 /// `folder`.
 fn resolve(folder: &str, prefix: &str, raw: String) -> Result<String, TaskError> {
@@ -348,6 +358,44 @@ impl TaskStore {
         self.put(scope, None, paths, "", true)
     }
 
+    /// Claims a person asked for on a working tree's behalf (F-WT-10's
+    /// Claim these files): real files relative to its top folder, with an
+    /// intent, kept as the agent's own claim would be (not inferred), so its
+    /// agent and the other working trees' agents see them. Says which paths
+    /// were claimed: the toast counted the ones left out too (the review of
+    /// d06b9e3d, N-5).
+    pub fn claim_for_tree(
+        &self,
+        scope: &ClaimScope,
+        paths: &[String],
+        intent: &str,
+    ) -> Result<TreeClaim, TaskError> {
+        if intent.chars().count() > CLAIM_INTENT_MAX {
+            return Err(TaskError::invalid(format!(
+                "The intent is at most {CLAIM_INTENT_MAX} characters."
+            )));
+        }
+        claim_count(paths.len())?;
+        // Real files from the top, so `*` and `?` in a name are kept: the
+        // agents' check refused `src/what?.ts` as a pattern (the review of
+        // 9a4e93ab). A name the checks would refuse or change (spaces at an
+        // end, a `\`, a control character, too long) is left out and the
+        // rest are claimed: one such file failed the whole claim, or another
+        // name was claimed for it (the review of 30d5bcad).
+        let paths: Vec<String> = paths
+            .iter()
+            .filter(|p| p.trim() == p.as_str() && !p.contains('\\'))
+            .filter_map(|p| normalize_relative_claim_path(p).ok())
+            .collect();
+        if paths.is_empty() {
+            return Err(TaskError::invalid(
+                "None of these files can be claimed by their names.",
+            ));
+        }
+        let overlaps = self.store_claims(scope, None, paths.clone(), intent.trim(), false)?;
+        Ok(TreeClaim { paths, overlaps })
+    }
+
     fn put(
         &self,
         scope: &ClaimScope,
@@ -356,13 +404,9 @@ impl TaskStore {
         intent: &str,
         inferred: bool,
     ) -> Result<Vec<ClaimOverlap>, TaskError> {
-        if paths.is_empty() || paths.len() > CLAIM_PATHS_MAX {
-            return Err(TaskError::invalid(format!(
-                "Claim 1–{CLAIM_PATHS_MAX} paths at a time."
-            )));
-        }
+        claim_count(paths.len())?;
         // An agent's paths start at its folder and can't be patterns; the
-        // app's are real files, from the top.
+        // files the app saw edited are real ones.
         let paths = paths
             .iter()
             .map(|p| {
@@ -373,6 +417,19 @@ impl TaskStore {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        self.store_claims(scope, connection, paths, intent, inferred)
+    }
+
+    /// Keeps checked `paths` (from the working tree's top) as `scope`'s
+    /// claims, and returns the overlaps it's in.
+    fn store_claims(
+        &self,
+        scope: &ClaimScope,
+        connection: Option<&str>,
+        paths: Vec<String>,
+        intent: &str,
+        inferred: bool,
+    ) -> Result<Vec<ClaimOverlap>, TaskError> {
         let now = self.now();
         self.edit_claims(|claims| {
             // This working tree's claims, by how their paths compare.
@@ -390,6 +447,10 @@ impl TaskStore {
                         c.at = now;
                         c.main = scope.main;
                     }
+                    // Nor does a claim the app makes for the working tree
+                    // (F-WT-10's Claim these files): the agent's own intent
+                    // and connection stay.
+                    Some(c) if connection.is_none() && c.connection.is_some() && !c.inferred => {}
                     Some(c) => {
                         c.intent = intent.to_string();
                         c.inferred = false;

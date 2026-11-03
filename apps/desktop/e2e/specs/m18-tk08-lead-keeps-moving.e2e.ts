@@ -2,7 +2,17 @@ import { $, $$, browser } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addFolder, checkAgain, fakeLog, freshOffline, home, invoke, mod, userHome } from "../support/app";
+import {
+  addFolder,
+  checkAgain,
+  clickAllow,
+  fakeLog,
+  freshOffline,
+  home,
+  invoke,
+  mod,
+  userHome,
+} from "../support/app";
 
 const GIT_ENV = {
   ...process.env,
@@ -132,7 +142,7 @@ describe("E2E-M18-TK-08 Lead keeps a plan moving", function () {
     );
     expect(await textOf(option)).toContain("can't open files or run tools");
     expect(await option.$('[role="checkbox"]').getAttribute("aria-checked")).toBe("true");
-    await $('[data-testid="plan-confirm-run"]').click();
+    await clickAllow('[data-testid="plan-confirm-run"]');
     await $('[data-testid="plan-dialog"][data-state="started"]').waitForExist({ timeout: 15_000 });
     const plan = (await invoke<Plan[]>("plan_list")).find((p) => p.state === "started")!;
     expect(plan.supervise).toBe(true);

@@ -10,6 +10,7 @@ import type {
 } from "@tandem/protocol";
 import { invoke, inTauri, usingFakeBackend } from "../ipc/invoke";
 import { listen } from "../ipc/events";
+import { log } from "../ipc/log";
 import { GRID_MAX, addCell, neighbor, removeCell, type GridAdd } from "../features/thread/grid";
 import { emptyThread, fromHistory, reduce, type ThreadView } from "../features/thread/reducer";
 import { useSession } from "./session";
@@ -171,12 +172,10 @@ export const useThreads = create<ThreadsState>((set, get) => {
         if (!heard) focused(now);
       })
       .catch((e: unknown) => {
-        // Fails closed: unfocused, so nothing is marked read. Only the
-        // error's kind is logged, never thread content.
-        console.warn(
-          "Vibezeo: the window focus listener failed; threads stay unread until the app restarts",
-          e instanceof Error ? e.name : typeof e,
-        );
+        // Fails closed: unfocused, so nothing is marked read (threads stay
+        // unread until the app restarts). The app's log gets the error's
+        // kind only, through the redacting logger, never thread content.
+        log("warn", "threads.focus_failed", { kind: e instanceof Error ? e.name : typeof e });
       });
   } else if (typeof window !== "undefined") {
     window.addEventListener("focus", () => focused(true));

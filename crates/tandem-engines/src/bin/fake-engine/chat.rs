@@ -703,6 +703,11 @@ pub fn run(args: &[String], session: String) {
             let said = format!("Fixed {issue}: the change is in the worktree.");
             turn.say(&[&said]);
             turn.done(&said);
+        } else if text.starts_with("Review (sent back automatically):") {
+            // A review its plan sent back (F-TK-09): the run answers it.
+            let said = "Addressed the review: the change is in the worktree.";
+            turn.say(&[said]);
+            turn.done(said);
         } else if let Some(said) = crate::lead_answer(&text) {
             turn.say(&[&said]);
             turn.done(&said);

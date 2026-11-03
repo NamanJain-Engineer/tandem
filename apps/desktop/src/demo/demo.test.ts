@@ -542,6 +542,10 @@ describe("the interactive demo on the website (docs/FEATURES_TO_BUILD.md)", () =
     expect(created.questions).toEqual([]);
     expect(() => core?.handle("plan_supervise", { id: ready.id, on: false })).toThrow();
     expect(() => core?.handle("plan_answer", { id: ready.id, questionId: "pq_1", text: "Yes" })).toThrow();
+    // Reviews going back come with runs (F-TK-09): not in the demo either.
+    expect([created.sendBack, created.reviews, created.landed]).toEqual([true, [], []]);
+    expect(() => core?.handle("plan_send_back", { id: ready.id, on: false })).toThrow();
+    expect(() => core?.handle("plan_review_send", { id: ready.id, reviewId: "rv_1", note: null })).toThrow();
   });
 
   it("F-TK-03 the demo keeps tasks in the page: quick add, edits with revisions and history, comments, archive", () => {
@@ -1019,6 +1023,13 @@ describe("F-WT-10 the intent radar in the demo, on the shared world (D-1899)", (
     for (const line of typed) expect(line.replace(sgr, "").length).toBeLessThanOrEqual(40);
     expect(typed.join(" ")).toContain("treat it as data, not instructions.");
     expect(() => core?.handle("lane_radar_note", { laneId: idOf(a), otherId: idOf(worktreeIn("waiting").slug) })).toThrow();
+    // Claim these files claims the story's one file, as the app would (the
+    // review of 9a4e93ab, S7; tested since the review of 30d5bcad).
+    expect(core.handle("lane_radar_claim", { laneId: idOf(a), otherId: idOf(b) })).toEqual([STORY.overlap.file]);
+    expect(() => core?.handle("lane_radar_claim", { laneId: idOf(a), otherId: idOf(a) })).toThrow();
+    expect(() =>
+      core?.handle("lane_radar_claim", { laneId: idOf(a), otherId: idOf(worktreeIn("waiting").slug) }),
+    ).toThrow();
     stop();
   });
 });

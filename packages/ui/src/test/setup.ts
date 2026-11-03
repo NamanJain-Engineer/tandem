@@ -36,7 +36,9 @@ Range.prototype.getClientRects ??= noRects;
 Range.prototype.getBoundingClientRect ??= noRect;
 
 // jsdom has no PointerEvent: a minimal one, so tests can tell pointers apart
-// by `pointerId` (the steady box tracks presses per pointer).
+// by `pointerId` and `pointerType` (the steady box tracks presses per
+// pointer). Like a browser's synthetic event, one built without a
+// `pointerType` has "": a test of the mouse says so.
 if (typeof window.PointerEvent === "undefined") {
   class PointerEventShim extends MouseEvent {
     pointerId: number;
@@ -44,7 +46,7 @@ if (typeof window.PointerEvent === "undefined") {
     constructor(type: string, init: PointerEventInit = {}) {
       super(type, init);
       this.pointerId = init.pointerId ?? 1;
-      this.pointerType = init.pointerType ?? "mouse";
+      this.pointerType = init.pointerType ?? "";
     }
   }
   window.PointerEvent = PointerEventShim as unknown as typeof PointerEvent;

@@ -52,18 +52,22 @@ async function settled(): Promise<void> {
 /** An IntersectionObserver the test drives: `show(true)` puts the observed
  * end marker in view. */
 function fakeObserver(): { show: (inView: boolean) => void } {
-  const seen: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
+  type Entry = { isIntersecting: boolean; intersectionRatio: number };
+  const seen: Array<(entries: Entry[]) => void> = [];
   vi.stubGlobal(
     "IntersectionObserver",
     class {
-      constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+      constructor(cb: (entries: Entry[]) => void) {
         seen.push(cb);
       }
       observe() {}
       disconnect() {}
     },
   );
-  return { show: (inView) => act(() => seen.forEach((cb) => cb([{ isIntersecting: inView }]))) };
+  return {
+    show: (inView) =>
+      act(() => seen.forEach((cb) => cb([{ isIntersecting: inView, intersectionRatio: inView ? 1 : 0 }]))),
+  };
 }
 
 describe("a pane's approval (F-TL-12 slice 2)", () => {
@@ -312,6 +316,179 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(waiting(screen.getByTestId("pane-approval-once") as HTMLButtonElement)).toBe(true);
   });
 
+  it("F-TL-12.20 in a 120 px pane Allow turns on once the command's last line has been wholly on screen: a jump past it, or partly past, says to scroll back up, the buttons wrap, and each request starts at the top", async () => {
+    // The steady box is in view; the end marker reports what the test says.
+    type Entry = { isIntersecting: boolean; intersectionRatio: number; target: Element };
+    const marker: Array<(e: Entry[]) => void> = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private cb: (e: Entry[]) => void) {}
+        observe(el: Element) {
+          if ((el as HTMLElement).dataset.testid === "run-line-end") marker.push(this.cb);
+          else queueMicrotask(() => this.cb([{ isIntersecting: true, intersectionRatio: 1, target: el }]));
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    const report = (ratio: number) =>
+      act(() =>
+        marker.forEach((cb) =>
+          cb([{ isIntersecting: ratio > 0, intersectionRatio: ratio, target: screen.getByTestId("run-line-end") }]),
+        ),
+      );
+    fakeBackend({ approval_resolve: () => null });
+    const command = `pnpm deploy ${"--flag ".repeat(400)}`;
+    withApproval({ ...approval, detail: runDetail({ command, cwd: "/w", vars: [], envChanged: false }) });
+    render(
+      <UiProvider>
+        <div style={{ height: 120, overflow: "hidden" }}>
+          <ApprovalBanner paneId="pn_1" />
+        </div>
+      </UiProvider>,
+    );
+    const end = () => screen.getByTestId("run-line-end");
+    // The marker is the command's last line, not the run's: it sat over
+    // the variables line, and a jump to the end turned Allow on with the
+    // command's tail never on screen (the review of b3ff3696, M-1).
+    const command_ = screen.getByTestId("run-line-command");
+    expect(command_.lastChild).toBe(end());
+    expect(end().compareDocumentPosition(screen.getByTestId("run-line-cwd")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // jsdom lays nothing out: the banner shows 72 px of its 400, and the
+    // marker sits where the test puts it.
+    const banner = screen.getByTestId("pane-approval");
+    let top = 0;
+    // The command's last line ends 284 px down, with the folder, the
+    // variables and the buttons below it: at the banner's end (328) it's
+    // above the view.
+    const markerBottom = 284;
+    Object.defineProperty(banner, "clientHeight", { configurable: true, get: () => 72 });
+    Object.defineProperty(banner, "scrollHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(banner, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+      },
+    });
+    vi.spyOn(banner, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 72 } as DOMRect);
+    vi.spyOn(end(), "getBoundingClientRect").mockImplementation(
+      () => ({ top: markerBottom - top - 18, bottom: markerBottom - top }) as DOMRect,
+    );
+    const once = () => screen.getByTestId("pane-approval-once") as HTMLButtonElement;
+    // The buttons wrap: on one row, scrolled sideways, one Allow cut off
+    // held both off in a narrow pane (the review of b3ff3696, S-1).
+    const row = once().parentElement as HTMLElement;
+    expect(row.className).toContain("flex-wrap");
+    expect(row.className).not.toContain("overflow-x-auto");
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
+    // A jump to the banner's end (End, Page Down, Tab to a button, the
+    // scrollbar) passes the marker without showing it: that isn't seeing
+    // the command's end.
+    top = 328;
+    fireEvent.scroll(banner);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // Home, then an animated End (smooth scrolling, WebView2's default): the
+    // command's last line shows for a frame on its way past, which isn't
+    // seeing it either (the review of 8f35e5d0, S-1).
+    top = 0;
+    fireEvent.scroll(banner);
+    top = 260;
+    fireEvent.scroll(banner);
+    report(1);
+    await new Promise((r) => setTimeout(r, 16));
+    top = 328;
+    fireEvent.scroll(banner);
+    report(0);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // Partly above the view, it still says up, not down (the review of
+    // b3ff3696, N-1); half of the line isn't enough.
+    top = 275;
+    fireEvent.scroll(banner);
+    report(0.5);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll up a little to see the end of the command.");
+    // Scrolled back up until all of it shows: Allow turns on.
+    top = 260;
+    fireEvent.scroll(banner);
+    report(1);
+    await settled();
+    // The request changes in place: it starts at the top, and only its own
+    // end on screen counts.
+    act(() =>
+      withApproval({
+        ...approval,
+        detail: runDetail({ command: `${command} --more`, cwd: "/w", vars: [], envChanged: false }),
+      }),
+    );
+    expect(top).toBe(0);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    expect(once().getAttribute("title")).toBe("Scroll to the end of the command first.");
+    top = 328;
+    fireEvent.scroll(banner);
+    await new Promise((r) => setTimeout(r, 700));
+    expect(waiting(once())).toBe(true);
+    report(1);
+    await settled();
+  }, 10_000); // six real waits of 700 ms and two dwells: over 5 s
+
+  it("F-TL-12.20 the end marker comes after the command's last piece, a marked one too, and before the folder", () => {
+    fakeBackend();
+    withApproval({
+      ...approval,
+      detail: runDetail({ command: "rm -rf /tmp/x\u0430", cwd: "/w", vars: [], envChanged: false }),
+    });
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    const command = screen.getByTestId("run-line-command");
+    const end = screen.getByTestId("run-line-end");
+    expect(command.lastChild).toBe(end);
+    expect(end.previousSibling?.nodeName).toBe("MARK");
+    expect(end.getAttribute("aria-hidden")).toBe("true");
+    expect(end.className).toContain("absolute");
+  });
+
+  it("F-TL-12.20 the end marker is the command's last line box: the <pre> holds it, at the content's bottom, the full width and one line high", () => {
+    // jsdom lays nothing out, so these pin the classes that place it. Each
+    // change passed every other test (the review of 8f35e5d0, S-2).
+    fakeBackend();
+    withApproval(approval);
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    const pre = screen.getByTestId("run-line-command");
+    const end = screen.getByTestId("run-line-end");
+    // The <pre> is its containing block. Without `relative` the marker sat
+    // at the pane's bottom, in view at once, with the line below the view.
+    expect(pre.classList.contains("relative")).toBe(true);
+    expect(end.classList.contains("absolute")).toBe(true);
+    // Its bottom is the content's: `bottom-1` over the <pre>'s `py-1`.
+    expect(pre.classList.contains("py-1")).toBe(true);
+    expect(end.classList.contains("bottom-1")).toBe(true);
+    // The full width, so all of it in view is the whole row in view.
+    expect(end.classList.contains("inset-x-0")).toBe(true);
+    // One line high: `1lh`, and at least one `text-sm` line (the <pre>'s
+    // size) in an engine without `lh`. At 0 px, a last line with only its
+    // bottom 3 px in view counted as seen.
+    expect(end.style.height).toBe("1lh");
+    expect(pre.classList.contains("text-sm")).toBe(true);
+    expect(end.style.minHeight).toBe("var(--text-sm--line-height)");
+  });
+
   it("F-TL-12.13 a look-alike letter in the folder shows the warning too", () => {
     fakeBackend();
     withApproval({
@@ -407,15 +584,17 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
 
 describe("S1: a short, narrow pane", () => {
   it("its banner's buttons, partly clipped as a whole but each in view, take a click once still", async () => {
-    // The banner's scroll area is shorter than its wrapped button row: the
-    // observer says the row is partly in view (0.953), never wholly.
+    // The banner's scroll area is shorter than its button row: the observer
+    // says the row is partly in view (0.953), never wholly. The line's last
+    // line is wholly in view, as Allow needs (D-3145).
     vi.stubGlobal(
       "IntersectionObserver",
       class {
         constructor(private cb: IntersectionObserverCallback) {}
         observe(el: Element) {
+          const ratio = (el as HTMLElement).dataset.testid === "run-line-end" ? 1 : 0.953;
           queueMicrotask(() =>
-            this.cb([{ isIntersecting: true, intersectionRatio: 0.953, target: el } as IntersectionObserverEntry], {} as never),
+            this.cb([{ isIntersecting: true, intersectionRatio: ratio, target: el } as IntersectionObserverEntry], {} as never),
           );
         }
         disconnect() {}

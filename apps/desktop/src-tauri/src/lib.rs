@@ -64,6 +64,8 @@ macro_rules! app_commands {
             commands::plan::plan_prepare,
             commands::plan::plan_execute,
             commands::plan::plan_supervise,
+            commands::plan::plan_send_back,
+            commands::plan::plan_review_send,
             commands::plan::plan_answer,
             commands::plan::plan_discard,
             commands::task_exec::task_attempts_list,
@@ -199,6 +201,7 @@ macro_rules! app_commands {
             commands::lanes::lane_review_comments,
             commands::lanes::lane_radar,
             commands::lanes::lane_radar_note,
+            commands::lanes::lane_radar_claim,
             commands::lanes::lane_create_prs,
             commands::lanes::lane_prs_get,
             commands::lanes::worktree_env_check,
@@ -1308,6 +1311,20 @@ pub fn run() {
                             lookup
                                 .upgrade()
                                 .and_then(|p| p.supervision_for(attempt, issue))
+                        }));
+                    // F-TK-09: a plan run's Changes requested goes to its
+                    // plan, which sends it back or brings it to you.
+                    let reviews = std::sync::Arc::downgrade(&plans);
+                    state
+                        .task_exec
+                        .set_review_sink(std::sync::Arc::new(move |c| {
+                            let plans = reviews.upgrade();
+                            Box::pin(async move {
+                                match plans {
+                                    Some(p) => p.on_changes_requested(c).await,
+                                    None => crate::services::tasks_exec::Back::NotPlans,
+                                }
+                            })
                         }));
                 }
                 tauri::async_runtime::spawn(async move { plans.resume() });

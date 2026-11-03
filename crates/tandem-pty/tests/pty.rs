@@ -383,6 +383,12 @@ fn f_cd_10_shells_report_cwd_marks_and_last_output() {
             "{shell}: cwd is /tmp: {:?}",
             mgr.state(&pane)
         );
+        // fish reports the cwd before its prompt mark: the prompt after
+        // `cd` is counted before the printf, not with it.
+        assert!(
+            wait_until(Duration::from_secs(5), prompts(2)),
+            "{shell}: prompt after cd"
+        );
         // AC2: a program's own 133 mark isn't one.
         let before = marks.lock().map(|m| m.len()).unwrap_or(0);
         mgr.write(&pane, b"printf '\\033]133;A\\007spoof\\n'\r")

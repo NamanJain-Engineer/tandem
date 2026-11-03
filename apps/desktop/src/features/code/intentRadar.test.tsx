@@ -130,11 +130,22 @@ describe("Intent radar (F-WT-10)", () => {
     ];
     // wt_a's agent is working: its row says "● 1 working" (D-2603).
     useLayout.setState({
-      tabs: { tb_wt_a: { tree: null, active: null, maximized: null, panes: { p1: {} as never }, keepEmpty: false } },
+      tabs: {
+        tb_wt_a: { tree: null, active: null, maximized: null, panes: { p1: {} as never }, keepEmpty: false },
+      },
     });
     useStatus.setState({
       records: {
-        "pane:p1": { key: "pane:p1", status: "working", reason: null, since: 1, ts: 1, tool: null, title: null, preview: null },
+        "pane:p1": {
+          key: "pane:p1",
+          status: "working",
+          reason: null,
+          since: 1,
+          ts: 1,
+          tool: null,
+          title: null,
+          preview: null,
+        },
       },
     });
     const row = vi.fn();
@@ -176,6 +187,21 @@ describe("Intent radar (F-WT-10)", () => {
     expect(mark.hasAttribute("data-compact")).toBe(true);
     expect(mark.textContent).toBe("");
     expect(mark.title).toBe("2 symbols shared with another worktree: Session, Session.refresh");
+  });
+
+  it("F-WT-10.7 a watched change reloads the rail's marks, with no notice of its own", async () => {
+    render(
+      <UiProvider>
+        <Radar ids={["wt_a", "wt_b"]} />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(named("lane_radar")).toHaveLength(1));
+    expect(screen.queryAllByTestId("worktree-radar")).toHaveLength(0);
+    marks = [{ laneId: "wt_a", symbols: ["parse"] }];
+    act(() => emitLocal("radar:changed", { laneIds: ["wt_a"] }));
+    await waitFor(() => expect(named("lane_radar")).toHaveLength(2));
+    expect(await screen.findByTestId("worktree-radar")).toBeTruthy();
+    expect(screen.queryByText("Warn both agents")).toBeNull();
   });
 
   it("F-WT-10.4 a new overlap shows one notice; Warn both agents types each note only on the click", async () => {

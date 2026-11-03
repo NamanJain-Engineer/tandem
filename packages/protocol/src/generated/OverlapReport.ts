@@ -17,6 +17,6 @@ files: number, siblings: Array<SiblingOverlap>, forecast: Forecast,
 uncommitted: number, 
 /**
  * F-WT-10: changed files not checked for symbols (other languages,
- * too big, past the cap).
+ * too big, past the cap, or left for the next read).
  */
 unparsed: number, };

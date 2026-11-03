@@ -227,6 +227,9 @@ pub async fn create_kind(
             return Err(err);
         }
     };
+    // F-WT-10: a folder used before gives the row its old id, which the
+    // radar fenced off for good when that worktree went.
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", "worktree created");
     // F-WT-01: the repository's ignored files, for every new worktree.
@@ -352,6 +355,7 @@ async fn create_multi(
             return Err(err);
         }
     };
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tracing::info!(
         code = "lane.created_multi",
         repos = lane.repos.len(),
@@ -403,6 +407,7 @@ async fn create_on_host(
             return Err(err.into());
         }
     };
+    crate::services::radar::made(row.id.as_str(), row.lane_base.as_deref());
     tabs::create(store, &row.id, None).await?;
     tracing::info!(code = "lane.created", remote = true, "worktree created");
     Ok(row)
@@ -711,6 +716,10 @@ pub async fn remove_with_teardown(
     teardown: Option<(&DataDir, &LoginEnv)>,
 ) -> Result<RemoveReport, IpcError> {
     let (lane, parent) = lane_row(store, id).await?;
+    // F-WT-10 holds the radar off a worktree only once nothing can refuse
+    // the discard any more, just before its panes stop: a refused discard
+    // kept its index and watcher (the review of 9a4e93ab). A host's lane
+    // isn't on the radar.
     if let Some((remote, host)) = remote_for(&parent)? {
         use tandem_host::protocol::method;
         // Dirty refuses before anything stops, as locally.
@@ -769,6 +778,9 @@ pub async fn remove_with_teardown(
             }
         }
     }
+    // F-WT-10: neither parsed nor watched from here (its index and watcher
+    // go now).
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop, and its own trust goes, before
     // the folder does (open
@@ -798,6 +810,9 @@ pub async fn remove_with_teardown(
     LaneManager::remove(git, &repo, lane_path, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
+    // F-WT-10: gone, so no parse of it is kept again (a sibling's check may
+    // still hold it from a list read before).
+    crate::services::radar::forget_for_good(lane.id.as_str());
     crate::services::worktree_runtime::free_global(lane.id.as_str());
     tracing::info!(code = "lane.removed", "worktree removed");
     Ok(report)
@@ -822,6 +837,7 @@ async fn remove_jj(
     // halfway.
     jj_lanes::gate(Path::new(&parent.root))?;
     jj_lanes::preflight(lane, parent, force.is_some()).await?;
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     let _closing =
         crate::services::lsp::forget_worktree(&crate::services::files::local_root(lane)).await;
@@ -831,7 +847,7 @@ async fn remove_jj(
     jj_lanes::forget(lane, parent, force).await?;
     release_claims(&claimed_in);
     workspaces::remove(store, &lane.id).await?;
-    crate::services::radar::forget(lane.id.as_str());
+    crate::services::radar::forget_for_good(lane.id.as_str());
     tracing::info!(code = "lane.removed_jj", "jj workspace removed");
     Ok(RemoveReport::default())
 }
@@ -876,6 +892,7 @@ async fn remove_multi(
             return Err(dirty());
         }
     }
+    let _radar = crate::services::radar::hold(lane.id.as_str());
     stop_panes(store, terms, &lane.id).await?;
     // F-CD-23: its language servers stop, and its own trust goes, before
     // the folder does (open
@@ -1334,6 +1351,36 @@ mod tests {
             .expect("again");
         assert_eq!(PathBuf::from(&again.root), path, "the same path");
         assert!(!crate::services::lsp::is_trusted(data, &path));
+    }
+
+    #[tokio::test]
+    async fn f_wt_10_9_a_worktree_made_again_at_its_old_folder_is_read_by_the_radar() {
+        // The store gives it the old row's id, which Remove repository
+        // fenced off from the radar for good: no symbols, marks or warnings
+        // for it until a restart (the review of d3b838de, MF-A).
+        let fx = fixture().await;
+        let lane = create(&fx.store, &fx.git, &fx.repo.id, "fix login")
+            .await
+            .expect("lane");
+        let terms = TerminalService::new(PtyManager::new(), fx.store.clone());
+        crate::services::workspaces::remove(&fx.store, &terms, &fx.repo.id)
+            .await
+            .expect("remove the workspace");
+        let root = Path::new(&fx.repo.root);
+        git_cmd(root, &["worktree", "remove", "--force", &lane.root]);
+        git_cmd(root, &["branch", "-D", "tandem/fix-login"]);
+        let added = crate::services::workspaces::add(&fx.store, &fx.repo.root, Some(3))
+            .await
+            .expect("add again");
+        let again = create(&fx.store, &fx.git, &added.workspace.id, "fix login")
+            .await
+            .expect("again");
+        assert_eq!(again.id, lane.id, "the old row's id");
+        crate::services::radar::refresh(&fx.git, &again)
+            .await
+            .expect("radar");
+        assert!(crate::services::radar::has_index(again.id.as_str()));
+        crate::services::radar::forget(again.id.as_str());
     }
 
     /// F-CD-23: removing the repository's workspace soft-removes its
@@ -2095,7 +2142,7 @@ pub struct OverlapReport {
     /// Uncommitted changes in this worktree, which the forecast can't see.
     pub uncommitted: u32,
     /// F-WT-10: changed files not checked for symbols (other languages,
-    /// too big, past the cap).
+    /// too big, past the cap, or left for the next read).
     pub unparsed: u32,
 }
 
@@ -2152,7 +2199,7 @@ pub async fn overlap(
             changed_files(git, other_repo.root(), &other_base).await?
         };
         let files = shared(&mine, &theirs);
-        let symbols = match crate::services::radar::refresh(git, &other).await {
+        let symbols = match crate::services::radar::refresh_sibling(git, &other).await {
             Ok(their_symbols) => crate::services::radar::shared(&my_symbols, &their_symbols),
             Err(_) => Vec::new(),
         };

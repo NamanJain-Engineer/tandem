@@ -158,6 +158,87 @@ const SCENE_IDS = [
   ["/changelog/0.12.0/", ["plan"]],
 ] as const;
 
+/** The text the browser draws for each scene on the page, by scene: every piece of text its layout holds, what CSS
+ * writes included (::before, ::after and ::marker, with counters, attr() and counter styles worked out), read from
+ * Chromium's layout tree (DOMSnapshot). Nothing with display: none is drawn, so a width draws its own; a value's
+ * steps all lie out at once, shown or not (D-3002), so each is read. */
+async function drawnText(page: Page): Promise<Map<string, string[]>> {
+  const cdp = await page.context().newCDPSession(page);
+  const { documents, strings } = await cdp.send("DOMSnapshot.captureSnapshot", { computedStyles: [] });
+  await cdp.detach();
+  const doc = documents[0];
+  const out = new Map<string, string[]>();
+  if (!doc) return out;
+  const str = (i: number | undefined) => (i === undefined || i < 0 ? "" : (strings[i] ?? ""));
+  const parent = doc.nodes.parentIndex ?? [];
+  const attrs = doc.nodes.attributes ?? [];
+  // Each node's scene: its own data-scene, or its nearest ancestor's.
+  const sceneOf = new Map<number, string | null>();
+  const sceneAt = (i: number): string | null => {
+    const known = sceneOf.get(i);
+    if (known !== undefined) return known;
+    const a = attrs[i] ?? [];
+    let id: string | null = null;
+    for (let k = 0; k + 1 < a.length; k += 2) if (str(a[k]) === "data-scene") id = str(a[k + 1]);
+    const up = parent[i] ?? -1;
+    const found = id ?? (up >= 0 ? sceneAt(up) : null);
+    sceneOf.set(i, found);
+    return found;
+  };
+  doc.layout.nodeIndex.forEach((node, k) => {
+    const text = str(doc.layout.text[k]);
+    const id = sceneAt(node);
+    if (id !== null && text.trim() !== "") out.set(id, [...(out.get(id) ?? []), text]);
+  });
+  return out;
+}
+
+// No scene draws the placeholder name (D-1898), as the browser draws it (D-3006). The vitest reads each scene's markup
+// and the scene sheets' `content`, so CSS it doesn't pin could still write "tandem/" (the coordinator's delta review of
+// 400f7c55: a `content` rule aimed at a scene in another sheet, a list-style string, a counter style's symbols). Here
+// every sheet the page loads is in play, at both widths, with the effects on and under reduced motion.
+for (const width of [1440, 390] as const) {
+  test(`F-WB-01 AC9 D-1898 D-3006 at ${width} px no scene draws the placeholder name, read as the browser lays it out with ::before, ::after and ::marker`, async ({ browser }) => {
+    for (const reducedMotion of ["no-preference", "reduce"] as const) {
+      const context = await browser.newContext({ reducedMotion, viewport: { width, height: 900 } });
+      await context.route(/\.(webm|mp4)$/, (route) => route.fulfill({ status: 204, body: "" }));
+      await context.route(/\/demo\/app\//, (route) => route.fulfill({ status: 204, body: "" }));
+      const page = await context.newPage();
+      for (const [path, ids] of SCENE_IDS) {
+        await page.goto(path);
+        await page.waitForLoadState("load");
+        if (reducedMotion === "no-preference") await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+        const drawn = await drawnText(page);
+        expect([...drawn.keys()].sort(), path).toEqual([...ids].sort());
+        for (const [id, texts] of drawn) {
+          // Its caption's label, so the scene was read.
+          expect(texts.join(" "), `${path} ${id}`).toMatch(/simplified/i);
+          expect(texts.filter((x) => /tandem/i.test(x)), `${path} ${id} (${reducedMotion})`).toEqual([]);
+        }
+      }
+      // The reader sees what CSS writes: each of the three ways in, planted in the last page's first scene, is read.
+      await page.addStyleTag({
+        content: `[data-scene] .sc-window::after { content: "tandem/"; }
+          @counter-style placeholder-probe { system: cyclic; symbols: tandem; }
+          .probe-string { display: list-item; list-style: "tandem/ " inside; }
+          .probe-counter { display: list-item; list-style: placeholder-probe inside; }`,
+      });
+      await page.evaluate(() => {
+        const win = document.querySelector("[data-scene] .sc-window") as Element;
+        for (const c of ["probe-string", "probe-counter"]) {
+          const probe = document.createElement("span");
+          probe.className = c;
+          probe.textContent = "x";
+          win.append(probe);
+        }
+      });
+      const planted = [...(await drawnText(page)).values()].flat().filter((x) => /tandem/i.test(x));
+      for (const way of [/^tandem\/$/, /^tandem\/ $/, /^tandem\. $/]) expect(planted.some((x) => way.test(x)), `${way} (${reducedMotion})`).toBe(true);
+      await context.close();
+    }
+  });
+}
+
 test("F-WB-01 AC9 D-3001 in real playback every effect in a scene starts on one clock, so what must coincide does", async ({ page }) => {
   // Seeking (the test above) puts every effect on one clock, so it can't see this: in Chrome the Review scene's cut and
   // show once started two to five frames before the rest, and the rows moved before the comments came (SF-1).
@@ -419,15 +500,114 @@ test("F-WB-01 AC9 D-3001 the CI scene's rules load only on the page that plays i
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-scene="checks"] .sc-ci-layer') as Element).position)).toBe("absolute");
 });
 
-test("F-WB-01 AC9 the plan scene ends where the app's dialog does: 2 approved · 1 with changes requested, and Land 2 approved… (D-1888)", async ({ page }) => {
+test("F-WB-01 AC9 the plan scene ends where the app's dialog does: from 0.14.0 3 approved, Land 3 approved… and the rounds line, before it 2 approved · 1 with changes requested and Land 2 approved… (D-1888, D-884)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/changelog/0.12.0/");
   const scene = page.locator('[data-scene="plan"]');
   await scene.scrollIntoViewIfNeeded();
   await expect.poll(() => states(page, "plan"), { timeout: 20_000 }).toEqual(["finished"]);
   const shown = (selector: string) => shownIn(scene, selector);
-  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual(["2 approved · 1 with changes requested"]);
-  expect(await shown(".sc-plan-foot > .sc-swap:last-child > *")).toEqual(["Land 2 approved…"]);
+  // From 0.14.0 (SENDS_BACK) the third review goes back to its run, and its next turn is approved (F-TK-09), with the
+  // started dialog's Send reviews back switch on; before it, that review waits for you at Changes requested.
+  const sendsBack = atLeast(await sceneBuild(page), "0.14.0");
+  expect(await shown(".sc-plan-summary .sc-swap > *")).toEqual([sendsBack ? "3 approved" : "2 approved · 1 with changes requested"]);
+  expect(await shown(".sc-plan-foot > .sc-swap:last-child > *")).toEqual([sendsBack ? "Land 3 approved…" : "Land 2 approved…"]);
+  expect(await shown(".sc-run-note")).toEqual(sendsBack ? ["Review sent back · round 1 of 2"] : []);
+  expect(await shown(".sc-switch-label")).toEqual(sendsBack ? ["Send reviews back to the run (up to 2 rounds)"] : []);
+});
+
+// The plan's review going back to its run, from 0.14.0 (D-884): its own beat, as the app sends it. Just before it the
+// row says why (Reviewing · Changes requested, the verdict written while the run is still reviewed); just after, the
+// rounds line is coming in and the run is Running again. The dialog keeps one size throughout: its switch is there
+// from the start, and the rounds line has its room (the code review of a17c7d7a, M1).
+for (const width of [1440, 360] as const) {
+  test(`F-WB-01 AC9 D-884 at ${width} px the plan's review goes back to its run on a beat of its own, and the dialog keeps its size`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/changelog/0.12.0/");
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-fx"))).toBe(true);
+    const scene = page.locator('[data-scene="plan"]');
+    await scene.scrollIntoViewIfNeeded();
+    if (!atLeast(await sceneBuild(page), "0.14.0")) {
+      expect(await scene.locator(".sc-run-note, .sc-plan-switch").count()).toBe(0);
+      return;
+    }
+    const frame = async (t: number) => {
+      await seek(page, "plan", t);
+      return page.evaluate(() => {
+        const scene = document.querySelector('[data-scene="plan"]') as Element;
+        const stage = scene.querySelector("[data-stage]") as Element;
+        // Its opacity on the scene's clock, within the stage (the page's reveal runs on the scroll, not the clock).
+        const shown = (e: Element) => {
+          let o = 1;
+          for (let x: Element | null = e; x && x !== stage; x = x.parentElement) o *= Number(getComputedStyle(x).opacity);
+          return o;
+        };
+        const note = scene.querySelector(".sc-run-note") as Element;
+        const label = [...(note.closest(".sc-run") as Element).querySelectorAll(".sc-run-label .sc-swap > *")].filter((e) => shown(e) > 0.01).map((e) => (e.textContent ?? "").trim());
+        const box = (scene.querySelector(".sc-plan-dialog") as Element).getBoundingClientRect();
+        return { note: shown(note), label, box: [box.x, box.y, box.width, box.height] };
+      });
+    };
+    const beat = await scene.locator(".sc-run-note").evaluate((e) => Number.parseFloat(getComputedStyle(e).getPropertyValue("--at")));
+    const [before, after, settled] = [await frame(beat - 0.05), await frame(beat + 0.05), await frame(beat + 0.25)];
+    expect([before.note, after.note > 0, settled.note]).toEqual([0, true, 1]);
+    expect(before.label).toEqual(["Gemini CLI · Reviewing · Changes requested"]);
+    expect(after.label).toEqual(["Gemini CLI · Running"]);
+    expect(settled.label).toEqual(["Gemini CLI · Running"]);
+    // Within half a pixel: the scene's entering words are composited apart, which can move a box by a tenth.
+    const moved = (a: number[], b: number[]) => Math.max(...a.map((x, i) => Math.abs(x - (b[i] ?? Number.NaN))));
+    expect(moved(after.box, before.box)).toBeLessThan(0.5);
+    // And at every other change of the plan once the dialog has risen in, to the end.
+    const times = await page.evaluate(() =>
+      [...new Set([...document.querySelectorAll('[data-scene="plan"] .sc-plan-dialog [style*="--at"]')].map((e) => Number.parseFloat(getComputedStyle(e).getPropertyValue("--at"))))]
+        .filter((t) => t >= 0.9)
+        .sort((a, b) => a - b),
+    );
+    expect(times.length).toBeGreaterThan(5);
+    for (const t of [...times.map((x) => x + 0.05), 12]) expect(moved((await frame(t)).box, before.box), `${t} s`).toBeLessThan(0.5);
+  });
+}
+
+test("F-WB-01 AC9 D-884 from 320 to 1440 px the plan's dialog stays inside the app's window, with nothing in it past its edges", async ({ browser }) => {
+  // Its final frame, which is its tallest: from 0.14.0 with its Send reviews back switch and the switch's hint, in a
+  // phone's frame too (the code review of a17c7d7a, S2: 52 px to spare above and below at 320 px before them).
+  const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.goto("/changelog/0.12.0/");
+  const sendsBack = atLeast(await sceneBuild(page), "0.14.0");
+  const phones: boolean[] = [];
+  for (const width of [320, 360, 390, 600, 640, 672, 688, 704, 768, 1024, 1280, 1440]) {
+    // Loaded at each width: right after a resize, Chromium takes a few frames to size the scene's text by its new
+    // container, and a box read meanwhile is neither size.
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/changelog/0.12.0/");
+    const m = await page.evaluate(() => {
+      const scene = document.querySelector('[data-scene="plan"]') as Element;
+      const frame = scene.querySelector(".sc-window") as Element;
+      const win = frame.getBoundingClientRect();
+      // A phone's frame is 448 of the app's pixels wide, a wide one 1280 (scenes.css).
+      const phone = Math.round(win.width / Number.parseFloat(getComputedStyle(frame).getPropertyValue("--sc-px"))) === 448;
+      const dialog = scene.querySelector(".sc-plan-dialog") as Element;
+      const d = dialog.getBoundingClientRect();
+      const past = [...dialog.querySelectorAll("*")]
+        .filter((e) => e.getClientRects().length > 0)
+        .map((e) => [e, e.getBoundingClientRect()] as const)
+        .filter(([, r]) => r.left < d.left - 0.5 || r.right > d.right + 0.5 || r.top < d.top - 0.5 || r.bottom > d.bottom + 0.5)
+        .map(([e]) => `${e.className}: ${(e.textContent ?? "").slice(0, 30)}`);
+      const hints = [...dialog.querySelectorAll(".sc-plan-switch-hint")].filter((e) => e.checkVisibility()).length;
+      const labels = [...dialog.querySelectorAll(".sc-switch-label")].map((e) => e.getClientRects().length);
+      return { phone, space: [d.top - win.top, win.bottom - d.bottom, d.left - win.left, win.right - d.right], past, hints, labels };
+    });
+    for (const s of m.space) expect(s, `${width} px: the dialog's room in the window`).toBeGreaterThan(4);
+    expect(m.past, `${width} px`).toEqual([]);
+    // The switch's label on one line, and its hint, in either frame.
+    expect(m.labels, `${width} px`).toEqual(sendsBack ? [1] : []);
+    expect(m.hints, `${width} px`).toBe(sendsBack ? 1 : 0);
+    phones.push(m.phone);
+  }
+  // Both frames were measured.
+  expect(new Set(phones)).toEqual(new Set([true, false]));
+  await context.close();
 });
 
 test("F-WB-01 AC8 AC9 under reduced motion every scene shows its final frame and nothing moves", async ({ browser }) => {

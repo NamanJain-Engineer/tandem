@@ -78,18 +78,22 @@ describe("F-TH-01 AC2: under Tauri, the native window's focus decides what's rea
     expect(store.getState().windowFocused).toBe(false);
   });
 
-  it("D-3117: wiring that fails stays unfocused and says so in the log, with nothing of the threads", async () => {
+  it("D-3117: wiring that fails stays unfocused and says so in the app's log, with nothing of the threads", async () => {
     for (const which of ["load", "listen", "query"] as const) {
       order = [];
       fail = { [which]: true };
+      // The app's redacting logger (ipc/log.ts), not the console.
+      const log = vi.fn();
+      vi.doMock("../ipc/log", () => ({ log }));
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const store = await load();
-      await waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(log).toHaveBeenCalledTimes(1));
       expect(store.getState().windowFocused).toBe(false);
-      const logged = warn.mock.calls[0]?.map(String).join(" ") ?? "";
-      expect(logged).toContain("window focus");
-      expect(logged).not.toMatch(/refused|no window module/);
+      expect(log).toHaveBeenCalledWith("warn", "threads.focus_failed", { kind: "Error" });
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/refused|no window module/);
+      expect(warn).not.toHaveBeenCalled();
       warn.mockRestore();
+      vi.doUnmock("../ipc/log");
     }
   });
 });

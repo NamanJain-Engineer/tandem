@@ -25,6 +25,7 @@ import {
 } from "../../stores/worktrees";
 import { gitKey, useGit } from "../../stores/git";
 import { fakeBackend, resetStores, type Call } from "../../test/fakeBackend";
+import { waiting } from "../../test/waiting";
 import { ReviewDiff, buildReviewPrompt, useReviews } from "./WorktreeReview";
 import { checksState } from "./PullRequestChecks";
 import { WorktreeDialogs, WorktreeRow, worktreeMenu } from "./Worktrees";
@@ -263,7 +264,7 @@ describe("CI results and review comments (F-WT-08)", () => {
     }
   });
 
-  it("F-WT-08.3 Check pull request asks first; Not now runs nothing, Allow allows the repository and shows the checks", async () => {
+  it("F-WT-08.3 F-TL-12.18 Check pull request asks first; Not now runs nothing, Allow allows the repository and shows the checks", async () => {
     checks = { ...READY, state: "not_allowed", pr: null, checks: [] };
     withDialogs(null);
     const menu = () => worktreeMenu(WT, "main", () => 0);
@@ -282,7 +283,15 @@ describe("CI results and review comments (F-WT-08)", () => {
     // Not allowed: no "Stop checking" entry.
     expect(menu().some((x) => "id" in x && x.id === "wt-checks-forget")).toBe(false);
     act(() => select("wt-checks"));
-    fireEvent.click(await screen.findByTestId("checks-allow"));
+    // Allow waits until the dialog has held still (F-TL-12.18): a click as
+    // it opens allows nothing.
+    const allow = await screen.findByTestId("checks-allow");
+    expect(allow.getAttribute("data-grant")).not.toBeNull();
+    expect(waiting(allow)).toBe(true);
+    fireEvent.click(allow);
+    expect(named("pr_checks_allow")).toHaveLength(0);
+    await waitFor(() => expect(waiting(screen.getByTestId("checks-allow"))).toBe(false));
+    fireEvent.click(screen.getByTestId("checks-allow"));
     await waitFor(() =>
       expect(named("pr_checks_allow")[0]?.args).toEqual({ workspaceId: "wt_1", allow: true }),
     );

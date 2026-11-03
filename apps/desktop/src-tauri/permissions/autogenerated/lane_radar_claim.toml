@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-lane-radar-claim"
+description = "Enables the lane_radar_claim command without any pre-configured scope."
+commands.allow = ["lane_radar_claim"]
+
+[[permission]]
+identifier = "deny-lane-radar-claim"
+description = "Denies the lane_radar_claim command without any pre-configured scope."
+commands.deny = ["lane_radar_claim"]

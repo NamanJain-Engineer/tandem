@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RiskClass, HeldDraft, IpcError, ToolResultView } from "@tandem/protocol";
 import {
   offscreenRow,
@@ -255,7 +255,17 @@ function EditAndRun({
 }) {
   const [text, setText] = useState(() => JSON.stringify(draft.args, null, 2));
   const [problem, setProblem] = useState<string | null>(null);
+  // Run starts the tool with these arguments, so it waits like Allow until
+  // the dialog has held still (F-TL-12 AC 18): an error shown above moves
+  // it. Keyed by the draft, not the text, so typing doesn't restart it.
+  const box = useSteadyBox(true, draft.id);
+  // One run at a time: a double-click on a steady Run sent the draft twice
+  // (the review of ce0d5815). A ref, so the second click in the same frame
+  // sees the first.
+  const running = useRef(false);
+  const [busy, setBusy] = useState(false);
   const submit = () => {
+    if (running.current) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
@@ -264,8 +274,15 @@ function EditAndRun({
       return;
     }
     setProblem(null);
+    running.current = true;
+    setBusy(true);
     // A schema problem comes back as the error and nothing runs.
-    onRun(parsed).catch((e: IpcError) => setProblem(e.message));
+    onRun(parsed)
+      .catch((e: IpcError) => setProblem(e.message))
+      .finally(() => {
+        running.current = false;
+        setBusy(false);
+      });
   };
   return (
     <Dialog
@@ -274,14 +291,24 @@ function EditAndRun({
       title={t("held.editTitle", { id: `D-${draft.displayNo}` })}
       size="lg"
       footer={
-        <>
+        <span ref={box.ref} className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose}>
             {t("plugins.connect.cancel")}
           </Button>
-          <Button variant="primary" onClick={submit} data-testid="held-edit-run">
+          <Button
+            variant="primary"
+            data-grant
+            loading={busy}
+            waiting={!box.steady}
+            title={box.steady ? undefined : t("approval.waitingRun")}
+            onClick={() => {
+              if (box.check()) submit();
+            }}
+            data-testid="held-edit-run"
+          >
             {t("held.runEdited")}
           </Button>
-        </>
+        </span>
       }
     >
       <div className="flex flex-col gap-2">

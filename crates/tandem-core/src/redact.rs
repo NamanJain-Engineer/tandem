@@ -2,7 +2,10 @@
 //! Conductor tool results, handoff briefs, Dashboard previews, notification
 //! text, memory writes and diagnostics all go through it.
 
-use regex::{Regex, RegexSet};
+mod engine;
+
+use engine::{Caps, Pattern, Set};
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -22,7 +25,7 @@ const MAX_PENDING: usize = 64 * 1024;
 type Validator = fn(&str) -> bool;
 /// Byte spans, start and end.
 type Spans = Vec<(usize, usize)>;
-type Extractor = fn(&str, &regex::Captures<'_>) -> Option<(usize, usize)>;
+type Extractor = fn(&str, &Caps<'_>) -> Option<(usize, usize)>;
 
 #[derive(Clone, Copy)]
 enum Extract {
@@ -35,7 +38,7 @@ enum Extract {
 }
 
 struct Rule {
-    re: Regex,
+    re: Pattern,
     extract: Extract,
     /// Whether the rule opens on a word boundary, which [`tolerant`]
     /// writes as ASCII's (D-3172).
@@ -234,6 +237,15 @@ fn rule_specs() -> Vec<Spec> {
             ),
             Extract::Custom(assignment_span),
         ),
+        // `?token_type=bearer&access_token=…`: each query parameter on its
+        // own. The rule above reads a value up to a space, so a parameter it
+        // refused (descriptive, a time, too short) took the rest of the query
+        // with it, and a short token after it went unread (the review of
+        // 66e0dcd9, Nit 8).
+        (
+            format!(r#"(?i)[?&](?P<k>{KEY_WORDS})=(?P<vu>[^\s"'`,;)&#]{{8,}})"#),
+            Extract::Custom(assignment_span),
+        ),
         // `--token abc…`, `--api-key=…`
         (
             r#"(?i)--[A-Za-z0-9-]*(?:password|passwd|secret|token|api-?key|access-?key|auth-?key)[A-Za-z0-9-]*(?:=|[ \t]+)(?P<v>[^\s"'`]{8,})"#.to_string(),
@@ -269,7 +281,7 @@ fn is_identifier_path(v: &str) -> bool {
 
 /// The value span of a `key = value` match, or `None` when the value is code
 /// rather than a literal (`token = getToken()`).
-fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usize)> {
+fn assignment_span(text: &str, caps: &Caps<'_>) -> Option<(usize, usize)> {
     let key = caps.name("k")?;
     let quoted = caps.name("vq").is_some();
     let v = caps.name("vq").or_else(|| caps.name("vu"))?;
@@ -294,7 +306,11 @@ fn assignment_span(text: &str, caps: &regex::Captures<'_>) -> Option<(usize, usi
     }
     // Read without the marks the copy as written has (D-3172).
     let (clean, key) = (unmarked(value), unmarked(key.as_str()));
-    if clean.len() < 8 || descriptive_key(&key) || !assignment_value_ok(&clean, quoted) {
+    if clean.len() < 8
+        || descriptive_key(&key)
+        || (time_key(&key) && time_like(&clean))
+        || !assignment_value_ok(&clean, quoted)
+    {
         return None;
     }
     Some((v.start(), v.start() + value.len()))
@@ -314,7 +330,12 @@ fn starts_like_code(v: &str) -> bool {
 }
 
 /// Keys that describe a credential rather than hold one: `token_type`,
-/// `password_hint`, `secret_name`.
+/// `password_hint`, `secret_name`. A credential's times (`token_expires_at`,
+/// `tokenExpiresAt`) are read by their key and value together ([`time_key`],
+/// [`time_like`]): as key suffixes, `at` and `expiry` let any value
+/// through, and a camelCase key's last word let `secretId: "<a UUID>"`
+/// through, a Vault SecretID (the review of 0e20d5b7, SF-2). `secret_id`
+/// is one too: an id that is the secret (the review of e00668ee, S1).
 fn descriptive_key(key: &str) -> bool {
     const SUFFIXES: [&str; 22] = [
         "type", "types", "name", "kind", "pattern", "url", "uri", "id", "field", "label", "file",
@@ -322,10 +343,110 @@ fn descriptive_key(key: &str) -> bool {
         "format", "mode",
     ];
     let lower = key.to_ascii_lowercase();
-    lower
-        .rsplit(['_', '-'])
-        .next()
-        .is_some_and(|last| lower.contains(['_', '-']) && SUFFIXES.contains(&last))
+    let mut words = lower.rsplit(['_', '-']);
+    let (Some(last), before) = (words.next(), words.next()) else {
+        return false;
+    };
+    lower.contains(['_', '-'])
+        && SUFFIXES.contains(&last)
+        && !(last == "id" && before == Some("secret"))
+}
+
+/// Whether a key's last word names a time: `token_expires_at`,
+/// `tokenExpiresAt`, `SESSION_TOKEN_EXPIRY`, `secret_rotated`. Only under
+/// such a key is a time ([`time_like`]) the value, not the credential: under
+/// every key, `password=2024-01-01` and `api_key=1730311200.5` went through
+/// in clear (the review of e00668ee, S1).
+fn time_key(key: &str) -> bool {
+    const TIME_WORDS: [&str; 18] = [
+        "at",
+        "expires",
+        "expire",
+        "expiry",
+        "expiration",
+        "exp",
+        "iat",
+        "nbf",
+        "created",
+        "updated",
+        "issued",
+        "rotated",
+        "refreshed",
+        "since",
+        "until",
+        "date",
+        "time",
+        "timestamp",
+    ];
+    let key = key.trim_end_matches(['_', '-']);
+    let word = key.rsplit(['_', '-']).next().unwrap_or(key);
+    // camelCase: the last word starts at the last capital, unless the word
+    // is all capitals (`SESSION_TOKEN_AT`).
+    let last = if word.bytes().any(|b| b.is_ascii_lowercase()) {
+        word.rfind(|c: char| c.is_ascii_uppercase())
+            .map_or(word, |i| &word[i..])
+    } else {
+        word
+    };
+    TIME_WORDS.contains(&last.to_ascii_lowercase().as_str())
+}
+
+/// A date or a time as RFC 3339 and ISO 8601 write them (`2025-10-30`,
+/// `2025-10-30T18:00:00.000Z`, `2025-10-30 18:00+05:30`), or a number with
+/// a fraction (`1730311200.5`): what a credential's time holds, never the
+/// credential (D-3168).
+fn time_like(v: &str) -> bool {
+    // Read as bytes: a cut into `str` inside a character would panic.
+    let digits = |s: &[u8]| !s.is_empty() && s.iter().all(u8::is_ascii_digit);
+    if let Some((whole, fraction)) = v.split_once('.') {
+        if digits(whole.as_bytes()) && digits(fraction.as_bytes()) {
+            return true;
+        }
+    }
+    let b = v.as_bytes();
+    let date = b.len() >= 10
+        && digits(&b[..4])
+        && b[4] == b'-'
+        && digits(&b[5..7])
+        && b[7] == b'-'
+        && digits(&b[8..10]);
+    if !date {
+        return false;
+    }
+    let Some((&sep, t)) = b[10..].split_first() else {
+        return true;
+    };
+    if !matches!(sep, b'T' | b't' | b' ')
+        || t.len() < 5
+        || !digits(&t[..2])
+        || t[2] != b':'
+        || !digits(&t[3..5])
+    {
+        return false;
+    }
+    let mut rest = &t[5..];
+    if let Some((b':', seconds)) = rest.split_first() {
+        if seconds.len() < 2 || !digits(&seconds[..2]) {
+            return false;
+        }
+        rest = &seconds[2..];
+        if let Some((b'.', fraction)) = rest.split_first() {
+            let n = fraction.iter().take_while(|c| c.is_ascii_digit()).count();
+            if n == 0 {
+                return false;
+            }
+            rest = &fraction[n..];
+        }
+    }
+    match rest {
+        [] | [b'Z' | b'z'] => true,
+        [b'+' | b'-', zone @ ..] => match zone.len() {
+            2 | 4 => digits(zone),
+            5 => digits(&zone[..2]) && zone[2] == b':' && digits(&zone[3..]),
+            _ => false,
+        },
+        _ => false,
+    }
 }
 
 fn assignment_value_ok(v: &str, quoted: bool) -> bool {
@@ -470,11 +591,11 @@ impl SecretFilter {
 }
 
 pub struct Redactor {
-    prefilter: RegexSet,
+    prefilter: Set,
     rules: Vec<Rule>,
     /// The rules as [`tolerant`] writes them, for
     /// [`Redactor::untrusted_spans`].
-    written_prefilter: RegexSet,
+    written_prefilter: Set,
     written_rules: Vec<Rule>,
     token_re: Regex,
     secrets: RwLock<SecretFilter>,
@@ -490,32 +611,41 @@ impl Default for Redactor {
 impl Redactor {
     pub fn new() -> Self {
         let specs = rule_specs();
-        let prefilter = RegexSet::new(specs.iter().map(|(p, _)| unanchored(p)))
+        let prefilter = Set::new(&specs.iter().map(|(p, _)| unanchored(p)).collect::<Vec<_>>())
             .expect("redaction patterns compile");
         // A rule `tolerant` can't write keeps its own pattern here, and a
         // test pins that none does.
-        let written_specs: Vec<(String, Extract)> = specs
+        let written: Vec<(String, Pattern)> = specs
             .iter()
-            .map(|(pattern, extract)| {
-                let written = tolerant(pattern).filter(|t| Regex::new(t).is_ok());
-                (written.unwrap_or_else(|| pattern.clone()), *extract)
+            .map(|(pattern, _)| {
+                tolerant(pattern)
+                    .and_then(|t| Pattern::new(&t).ok().map(|re| (t, re)))
+                    .unwrap_or_else(|| {
+                        let re = Pattern::new(pattern).expect("redaction pattern compiles");
+                        (pattern.clone(), re)
+                    })
             })
             .collect();
-        let written_prefilter = RegexSet::new(written_specs.iter().map(|(p, _)| unanchored(p)))
-            .expect("written patterns compile");
-        let written_rules = written_specs
+        let written_prefilter = Set::new(
+            &written
+                .iter()
+                .map(|(p, _)| unanchored(p))
+                .collect::<Vec<_>>(),
+        )
+        .expect("written patterns compile");
+        let written_rules = written
             .into_iter()
             .zip(&specs)
-            .map(|((pattern, extract), (plain, _))| Rule {
-                re: Regex::new(&pattern).expect("written pattern compiles"),
-                extract,
+            .map(|((_, re), (plain, extract))| Rule {
+                re,
+                extract: *extract,
                 opens_on_boundary: opens_on_boundary(plain),
             })
             .collect();
         let rules = specs
             .into_iter()
             .map(|(pattern, extract)| Rule {
-                re: Regex::new(&pattern).expect("redaction pattern compiles"),
+                re: Pattern::new(&pattern).expect("redaction pattern compiles"),
                 extract,
                 opens_on_boundary: opens_on_boundary(&pattern),
             })
@@ -556,7 +686,7 @@ impl Redactor {
 
     /// Byte spans to redact, sorted and merged.
     pub(crate) fn spans(&self, s: &str) -> Vec<(usize, usize)> {
-        let hits: Vec<usize> = self.prefilter.matches(s).into_iter().collect();
+        let hits = self.prefilter.matches(s);
         self.spans_by(s, &hits, &self.rules, false)
     }
 
@@ -587,7 +717,7 @@ impl Redactor {
     /// `marked` serves `read` too, since a rule that matches `read` matches
     /// `marked` as `tolerant` writes it.
     pub(crate) fn untrusted_spans(&self, read: &str, written: &str, marked: &str) -> [Spans; 3] {
-        let hits: Vec<usize> = self.written_prefilter.matches(marked).into_iter().collect();
+        let hits = self.written_prefilter.matches(marked);
         let plain: Vec<usize> = self
             .prefilter
             .matches(written)
@@ -638,13 +768,13 @@ impl Redactor {
                 spans.push((start, end));
             }
         };
-        let value = |caps: &regex::Captures<'_>, validator: Option<Validator>| {
+        let value = |caps: &Caps<'_>, validator: Option<Validator>| {
             caps.name("v")
                 .filter(|v| validator.is_none_or(|ok| ok(&unmarked(v.as_str()))))
                 .map(|v| (v.start(), v.end()))
         };
         for rule in hits.iter().filter_map(|&idx| rules.get(idx)) {
-            let span = |s: &str, caps: &regex::Captures<'_>| match rule.extract {
+            let span = |s: &str, caps: &Caps<'_>| match rule.extract {
                 Extract::Value(validator) => value(caps, validator),
                 Extract::Custom(extract) => extract(s, caps),
                 Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
@@ -837,6 +967,45 @@ pub fn redact(s: &str) -> String {
     Redactor::global().redact(s).into_owned()
 }
 
+/// Test text, the same every run.
+#[cfg(test)]
+pub(crate) mod sample {
+    const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    fn step(seed: &mut u64) -> u64 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        *seed
+    }
+
+    /// `n` letters and digits from `seed`.
+    pub(crate) fn alnum(seed: &mut u64, n: usize) -> String {
+        (0..n)
+            .map(|_| ALNUM[(step(seed) % ALNUM.len() as u64) as usize] as char)
+            .collect()
+    }
+
+    /// `head` and then up to `gaps` letters or digits, again and again to
+    /// `len` bytes. Where `head` sits inside a rule's counted run, as `AIza`
+    /// does in `AIza[0-9A-Za-z_-]{35}`, every `head` starts a count, and a
+    /// lazy DFA builds a state for most bytes (the review of e788fc6f). The
+    /// gap takes a step of its own: drawn from the last letter's, a gap of 0
+    /// stalled the seed into `headhead…`, which a lazy DFA reads in a few
+    /// states.
+    pub(crate) fn crafted(head: &str, gaps: u64, len: usize) -> String {
+        assert!(!head.is_empty(), "a run needs a head");
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut out = String::with_capacity(len + head.len() + gaps as usize);
+        while out.len() < len {
+            out.push_str(head);
+            let gap = (step(&mut seed) % (gaps + 1)) as usize;
+            out.push_str(&alnum(&mut seed, gap));
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -894,6 +1063,184 @@ mod tests {
             .map(|(rule, _)| rule.re.as_str())
             .collect();
         assert!(none.is_empty(), "rules with no sample: {none:#?}");
+    }
+
+    #[test]
+    fn f_tk_08_1_the_engine_reads_as_the_regex_crate_does() {
+        // The redactor's engine (D-877) finds what the `regex` crate finds:
+        // each rule's matches, their groups and what `captures_at` reads at
+        // each match, and the rules each prefilter names. In F-TL-02's
+        // corpus as it is, with a mark after every character, between
+        // letters outside ASCII (where a lazy DFA quits on `\b`), and in
+        // text crafted to make a lazy DFA give up.
+        let r = Redactor::new();
+        let mut texts: Vec<String> = Vec::new();
+        for (prefix, secret, suffix) in corpus() {
+            let line = format!("{prefix}{secret}{suffix}");
+            texts.push(line.chars().flat_map(|c| [c, MARK]).collect());
+            texts.push(format!("é{line}中"));
+            texts.push(line);
+        }
+        texts.push(sample::crafted("AIza", 33, 32 * 1024));
+        texts.push(sample::crafted("-AIza", 33, 16 * 1024));
+        texts.push(sample::crafted("key", 19, 16 * 1024));
+        let head = |text: &str| text.chars().take(60).collect::<String>();
+        for (set, rules) in [
+            (&r.prefilter, &r.rules),
+            (&r.written_prefilter, &r.written_rules),
+        ] {
+            let patterns: Vec<String> = rules
+                .iter()
+                .map(|rule| unanchored(rule.re.as_str()))
+                .collect();
+            let reference = regex::RegexSet::new(&patterns).expect("the regex crate builds them");
+            for text in &texts {
+                let expected: Vec<usize> = reference.matches(text).into_iter().collect();
+                assert_eq!(set.matches(text), expected, "in {:?}", head(text));
+            }
+        }
+        for rule in r.rules.iter().chain(&r.written_rules) {
+            let reference = Regex::new(rule.re.as_str()).expect("the regex crate builds it");
+            let groups = reference.captures_len();
+            let ours = |caps: Option<Caps<'_>>| {
+                caps.map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect::<Vec<_>>()
+                })
+            };
+            let theirs = |caps: Option<regex::Captures<'_>>| {
+                caps.map(|c| {
+                    (0..groups)
+                        .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                        .collect::<Vec<_>>()
+                })
+            };
+            for text in &texts {
+                let found: Vec<_> = rule
+                    .re
+                    .find_iter(text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect();
+                let expected: Vec<_> = reference
+                    .find_iter(text)
+                    .map(|m| (m.start(), m.end()))
+                    .collect();
+                assert_eq!(found, expected, "{} in {:?}", rule.re.as_str(), head(text));
+                let found: Vec<_> = rule.re.captures_iter(text).map(|c| ours(Some(c))).collect();
+                let expected: Vec<_> = reference
+                    .captures_iter(text)
+                    .map(|c| theirs(Some(c)))
+                    .collect();
+                assert_eq!(found, expected, "{} in {:?}", rule.re.as_str(), head(text));
+                for (a, _) in reference.find_iter(text).map(|m| (m.start(), m.end())) {
+                    assert_eq!(
+                        ours(rule.re.captures_at(text, a)),
+                        theirs(reference.captures_at(text, a)),
+                        "{} at {a} in {:?}",
+                        rule.re.as_str(),
+                        head(text)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_credentials_time_is_read_by_its_value_not_its_key() {
+        // As key suffixes, `at` and `expiry` let any value through, and a
+        // camelCase key's last word let a Vault SecretID through (the
+        // review of 0e20d5b7, SF-2).
+        for key in ["token_type", "password-hint", "secret_name"] {
+            assert!(descriptive_key(key), "{key}");
+        }
+        for key in [
+            "token_expires_at",
+            "SESSION_TOKEN_EXPIRY",
+            "tokenExpiresAt",
+            "secretId",
+            "authToken",
+            "token_at_rest",
+        ] {
+            assert!(!descriptive_key(key), "{key}");
+        }
+        for v in [
+            "2025-10-30",
+            "2025-10-30T18:00:00Z",
+            "2025-10-30T18:00:00.000Z",
+            "2025-10-30t18:00z",
+            "2025-10-30 18:00:00+05:30",
+            "2025-10-30T18:00:00-0800",
+            "2025-10-30T18:00+01",
+            "1730311200.5",
+        ] {
+            assert!(time_like(v), "{v}");
+        }
+        for v in [
+            "2025-10-30T",
+            "2025-10-30Tab:cd",
+            "2025-10-30T18:00:00.Z",
+            "2025-10-30T18:00:00+1",
+            "2025-10-30x",
+            "2025-1O-30",
+            "Zx81kQ02pLm4wR",
+            "6a174c20-f6de-4c0e-9d3a-6c2b8f1e0a42",
+            "1.2.3",
+            "é025-10-30",
+        ] {
+            assert!(!time_like(v), "{v}");
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_time_passes_only_under_a_key_that_names_one() {
+        // Under every key, a date or a number with a fraction went through
+        // in clear, `password=2024-01-01` among them (the review of
+        // e00668ee, S1).
+        for key in [
+            "token_expires_at",
+            "tokenExpiresAt",
+            "SESSION_TOKEN_AT",
+            "SESSION_TOKEN_EXPIRY",
+            "refresh_token_expires",
+            "secret_rotated",
+            "token_created_",
+        ] {
+            assert!(time_key(key), "{key}");
+        }
+        for key in [
+            "password",
+            "DB_PASSWORD",
+            "api_key",
+            "secret",
+            "secretId",
+            "token_at_rest",
+            "tokenExpiresAT",
+        ] {
+            assert!(!time_key(key), "{key}");
+        }
+        // A secret's id is the secret (Vault's SecretID); a token's isn't.
+        assert!(!descriptive_key("secret_id"));
+        assert!(!descriptive_key("VAULT_SECRET_ID"));
+        assert!(descriptive_key("token_id"));
+        let r = Redactor::new();
+        for line in [
+            "password=2024-01-01",
+            "DB_PASSWORD=\"1987-05-12\"",
+            "password: 31415926.53",
+            "api_key=1730311200.5",
+            "secret = 2025-10-30T18:00:00Z",
+            "mysql --password 2024-01-01",
+        ] {
+            assert!(r.redact(line).contains(REDACTED), "{line}");
+        }
+        for line in [
+            "token_expires_at: 2025-10-30T18:00:00Z",
+            "SESSION_TOKEN_AT=2025-10-30T18:00:00Z",
+            "secret_rotated=1730311200.5",
+        ] {
+            assert_eq!(r.redact(line), line);
+        }
     }
 
     #[test]

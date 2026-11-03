@@ -469,6 +469,16 @@ pub struct ClaimOverlap {
     pub paths: Vec<String>,
 }
 
+/// What a claim made for a working tree (F-WT-10's Claim these files) did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TreeClaim {
+    /// The paths claimed, as kept: a name the checks would refuse or change
+    /// is left out.
+    pub paths: Vec<String>,
+    /// The other working trees' claims they meet.
+    pub overlaps: Vec<ClaimOverlap>,
+}
+
 pub fn issue_id(number: u64) -> String {
     format!("{ISSUE_PREFIX}-{number}")
 }
