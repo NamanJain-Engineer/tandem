@@ -47,6 +47,8 @@ const GOAL = "Add OAuth sign-in with Google";
 /** The fake reviewer's reasons for a task that says `[changes]`. */
 const REASONS = "Handle the empty input and add a test for it.";
 const LABEL = "Review (sent back automatically):";
+/** How it starts when you send it back yourself (Send back…). */
+const LABEL_YOURS = "Review (sent back by you):";
 const NOTE = "Keep the old API too.";
 
 function repo(name: string): string {
@@ -212,9 +214,12 @@ describe("E2E-M18-TK-09 Lead closes the loop", function () {
       [3, "escalated"],
     ]);
     expect(reviewsOf(third, changed)[1]!.note).toBe(NOTE);
-    const mine = (await sent(run.attempt.threadId!)).filter((t) => t.startsWith(LABEL));
+    const mine = (await sent(run.attempt.threadId!)).filter(
+      (t) => t.startsWith(LABEL) || t.startsWith(LABEL_YOURS),
+    );
     expect(mine).toHaveLength(2);
-    expect(mine[1]).toContain(`From you: ${NOTE}\n\n`);
+    expect(mine[0]!.startsWith(LABEL)).toBe(true);
+    expect(mine[1]!.startsWith(`${LABEL_YOURS}\nFrom you: ${NOTE}\n\n`)).toBe(true);
     await waitFor(
       () => row(changed),
       (r) => r.rounds === "Review sent back · round 2 of 2",
