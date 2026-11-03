@@ -97,6 +97,8 @@
     "allow-app-open-logs-folder",
     "allow-app-open-external",
     "allow-app-quit",
+    "allow-app-close",
+    "allow-app-close-decide",
     "allow-commands-registry",
     "allow-redact-text",
     "allow-deeplink-pending",

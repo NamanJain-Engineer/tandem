@@ -59,6 +59,7 @@ setting_keys! {
     AutoSaveFiles,
     LaunchAtLogin,
     KeepRunningInTray,
+    KeepAgentsOnClose,
     UpdateChannel,
     AutoCheckUpdates,
     NotifySystem,
@@ -300,6 +301,13 @@ pub static SCHEMA: &[SettingSpec] = &[
         V::Bool,
         General,
         ["tray", "background"]
+    ),
+    spec!(
+        KeepAgentsOnClose,
+        json!("ask"),
+        V::OneOf(&["ask", "keep", "stop"]),
+        General,
+        ["close", "quit", "background", "agents"]
     ),
     spec!(
         UpdateChannel,

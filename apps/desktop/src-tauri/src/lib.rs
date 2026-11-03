@@ -28,6 +28,8 @@ macro_rules! app_commands {
             commands::app::app_open_logs_folder,
             commands::app::app_open_external,
             commands::app::app_quit,
+            commands::app::app_close,
+            commands::app::app_close_decide,
             commands::app::commands_registry,
             commands::app::redact_text,
             commands::app::deeplink_pending,
@@ -1015,6 +1017,7 @@ pub fn run() {
         commands::test::test_notifier_calls,
         commands::test::test_notifier_click,
         commands::test::test_set_window_focused,
+        commands::test::test_window_visible,
         commands::test::test_thread_seed,
         commands::test::test_thread_state,
         commands::test::test_thread_seed_events,
@@ -1438,6 +1441,30 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let focus = handle.clone();
                 window.on_window_event(move |event| {
+                    // F-SH-14: a close with agents running asks, or keeps
+                    // them running with the window hidden, as the settings say.
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        use services::background::{self, CloseAction, CloseRequest};
+                        let state = focus.state::<AppState>();
+                        match background::decide(&state, false) {
+                            CloseAction::Proceed => {}
+                            CloseAction::Ask(agents) => {
+                                api.prevent_close();
+                                let _ = focus.emit_to(
+                                    "main",
+                                    "app:close-requested",
+                                    CloseRequest { agents, quit: false },
+                                );
+                            }
+                            CloseAction::Keep(agents) => {
+                                api.prevent_close();
+                                background::keep(&focus, agents.len());
+                            }
+                        }
+                    }
+                    if let tauri::WindowEvent::Focused(true) = event {
+                        services::background::shown(&focus);
+                    }
                     if let tauri::WindowEvent::Focused(focused) = event {
                         let state = focus.state::<AppState>();
                         state.notifications.set_focused(*focused);

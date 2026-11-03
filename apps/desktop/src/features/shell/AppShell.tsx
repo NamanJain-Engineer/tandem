@@ -41,6 +41,7 @@ import { SessionLibrary } from "../library/SessionLibrary";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
+import { CloseDialog } from "./CloseDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
 import { followRunaway } from "../../stores/runaway";
@@ -254,6 +255,7 @@ export function AppShell() {
       <Cheatsheet />
       <DiagnosticsPanel />
       <OrphansDialog />
+      <CloseDialog />
       <RestartDialog />
       <RemotePrompts />
       <UnsupportedOverlay />

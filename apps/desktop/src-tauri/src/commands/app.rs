@@ -173,6 +173,55 @@ pub fn app_quit(app: tauri::AppHandle, state: State<'_, AppState>) {
     app.exit(0);
 }
 
+/// The menu's Quit (F-SH-14): with agents running, the close dialog asks or
+/// the setting keeps them; otherwise it quits as `app_quit`.
+#[tauri::command]
+pub fn app_close(app: tauri::AppHandle, state: State<'_, AppState>) {
+    use crate::services::background::{self, CloseAction, CloseRequest};
+    use tauri::Emitter;
+    match background::decide(&state, true) {
+        CloseAction::Proceed => app_quit(app, state),
+        CloseAction::Ask(agents) => {
+            let _ = app.emit_to(
+                "main",
+                "app:close-requested",
+                CloseRequest { agents, quit: true },
+            );
+        }
+        CloseAction::Keep(agents) => background::keep(&app, agents.len()),
+    }
+}
+
+/// The close dialog's answer (F-SH-14): keep the agents running with the
+/// window hidden, or stop them and quit; `remember` saves it as the setting.
+#[tauri::command]
+pub async fn app_close_decide(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    keep: bool,
+    remember: bool,
+) -> Result<(), IpcError> {
+    use crate::services::background;
+    use tandem_core::settings::SettingKey;
+    if remember {
+        let value = serde_json::json!(background::remembered(keep));
+        crate::commands::settings::store_and_apply(
+            &app,
+            &state,
+            SettingKey::KeepAgentsOnClose,
+            value,
+        )
+        .await?;
+    }
+    if keep {
+        background::keep(&app, background::running_now(&state).len());
+    } else {
+        state.terminals.shutdown(&state.data.scrollback());
+        app.exit(0);
+    }
+    Ok(())
+}
+
 /// About › Licenses (F-TL-04 AC2): the third-party notices this build carries.
 #[tauri::command]
 pub fn app_licenses() -> String {

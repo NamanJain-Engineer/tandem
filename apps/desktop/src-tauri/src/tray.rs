@@ -4,9 +4,10 @@
 //! routines are on) and Quit. One tray for both: M8's Dictate and M11's
 //! routines each built their own under the same id, so either could remove
 //! the other's (D-819). "Pause routines" is the `pause_all_routines`
-//! setting, so Settings, the palette and the tray agree.
+//! setting, so Settings, the palette and the tray agree. While agents run
+//! with the window closed (F-SH-14), it shows too, their count first.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tandem_core::bus::{BusEvent, Topic};
@@ -22,6 +23,7 @@ const OPEN: &str = "tray-open";
 const DICTATE: &str = "tray-dictate";
 const PAUSE: &str = "tray-pause-routines";
 const QUIT: &str = "tray-quit";
+const AGENTS: &str = "tray-agents";
 
 /// What a tray menu item does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +36,7 @@ pub enum TrayAction {
 
 pub fn action(id: &str) -> Option<TrayAction> {
     match id {
-        OPEN => Some(TrayAction::Open),
+        OPEN | AGENTS => Some(TrayAction::Open),
         DICTATE => Some(TrayAction::Dictate),
         PAUSE => Some(TrayAction::TogglePause),
         QUIT => Some(TrayAction::Quit),
@@ -42,15 +44,21 @@ pub fn action(id: &str) -> Option<TrayAction> {
     }
 }
 
-/// The tray shows while Dictate or background routines are on.
-pub fn wanted(background_routines: bool, dictate_on: bool) -> bool {
-    background_routines || dictate_on
+/// The tray shows while Dictate or background routines are on, or the
+/// window is hidden with Vibezeo running (F-SH-14): then it's the way back.
+pub fn wanted(background_routines: bool, dictate_on: bool, hidden: bool) -> bool {
+    background_routines || dictate_on || hidden
 }
 
-/// The menu's items, in order (`None` is a separator): "Pause routines"
+/// The menu's items, in order (`None` is a separator): the agents running
+/// with the window closed first (it opens the window), and "Pause routines"
 /// only while background routines are on, since nothing else runs them.
-pub fn layout(background_routines: bool) -> Vec<Option<&'static str>> {
-    let mut items = vec![Some(OPEN), Some(DICTATE)];
+pub fn layout(background_routines: bool, agents: usize) -> Vec<Option<&'static str>> {
+    let mut items = Vec::new();
+    if agents > 0 {
+        items.push(Some(AGENTS));
+    }
+    items.extend([Some(OPEN), Some(DICTATE)]);
     if background_routines {
         items.push(Some(PAUSE));
     }
@@ -58,10 +66,23 @@ pub fn layout(background_routines: bool) -> Vec<Option<&'static str>> {
     items
 }
 
+/// The tray's line for agents running with the window closed.
+pub fn agents_line(n: usize) -> String {
+    if n == 1 {
+        "1 agent running".into()
+    } else {
+        format!("{n} agents running")
+    }
+}
+
 /// What the tray shows; Dictate reports through `dictate_changed`, the
 /// routines commands through `sync`.
 struct Shown {
     routines: AtomicBool,
+    /// The window is hidden with Vibezeo running (F-SH-14), and how many
+    /// agents run meanwhile.
+    hidden: AtomicBool,
+    agents: AtomicUsize,
     dictate_on: AtomicBool,
     dictate_line: Mutex<String>,
     /// The live items, kept so a change can retext or tick them.
@@ -73,6 +94,8 @@ fn shown() -> &'static Shown {
     static SHOWN: OnceLock<Shown> = OnceLock::new();
     SHOWN.get_or_init(|| Shown {
         routines: AtomicBool::new(false),
+        hidden: AtomicBool::new(false),
+        agents: AtomicUsize::new(0),
         // Dictate is on by default; its first status says otherwise.
         dictate_on: AtomicBool::new(true),
         dictate_line: Mutex::new("Dictate: starting…".into()),
@@ -128,22 +151,34 @@ pub async fn sync(app: &AppHandle, background_routines: bool) {
     refresh(app).await;
 }
 
+/// The window was hidden with Vibezeo running, with `agents` running, or
+/// shown again (F-SH-14): shows, retexts or removes the tray.
+pub async fn background(app: &AppHandle, hidden: bool, agents: usize) {
+    let s = shown();
+    s.hidden.store(hidden, Ordering::SeqCst);
+    s.agents
+        .store(if hidden { agents } else { 0 }, Ordering::SeqCst);
+    refresh(app).await;
+}
+
 async fn refresh(app: &AppHandle) {
     let s = shown();
     let routines = s.routines.load(Ordering::SeqCst);
-    if !wanted(routines, s.dictate_on.load(Ordering::SeqCst)) {
+    let agents = s.agents.load(Ordering::SeqCst);
+    let hidden = s.hidden.load(Ordering::SeqCst);
+    if !wanted(routines, s.dictate_on.load(Ordering::SeqCst), hidden) {
         let _one = SHOWING.lock().unwrap_or_else(|e| e.into_inner());
         let _ = app.remove_tray_by_id(TRAY_ID);
         return;
     }
     let state = app.state::<AppState>();
     let paused = paused(&state).await;
-    if let Err(e) = show(app, routines, paused) {
+    if let Err(e) = show(app, routines, paused, agents) {
         tracing::warn!(code = "tray.failed", error = %e, "couldn't show the tray icon");
     }
 }
 
-fn show(app: &AppHandle, routines: bool, paused: bool) -> tauri::Result<()> {
+fn show(app: &AppHandle, routines: bool, paused: bool, agents: usize) -> tauri::Result<()> {
     let _one = SHOWING.lock().unwrap_or_else(|e| e.into_inner());
     let s = shown();
     let line = s.dictate_line.lock().map(|l| l.clone()).unwrap_or_default();
@@ -152,13 +187,15 @@ fn show(app: &AppHandle, routines: bool, paused: bool) -> tauri::Result<()> {
     let pause = CheckMenuItem::with_id(app, PAUSE, "Pause routines", true, paused, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, QUIT, "Quit Vibezeo", true, None::<&str>)?;
-    let items: Vec<&dyn IsMenuItem<Wry>> = layout(routines)
+    let running = MenuItem::with_id(app, AGENTS, agents_line(agents), true, None::<&str>)?;
+    let items: Vec<&dyn IsMenuItem<Wry>> = layout(routines, agents)
         .into_iter()
         .map(|id| -> &dyn IsMenuItem<Wry> {
             match id {
                 Some(OPEN) => &open,
                 Some(DICTATE) => &status,
                 Some(PAUSE) => &pause,
+                Some(AGENTS) => &running,
                 Some(_) => &quit,
                 None => &sep,
             }
@@ -240,21 +277,22 @@ mod tests {
         assert_eq!(action("tray-dictate"), Some(TrayAction::Dictate));
         assert_eq!(action("tray-pause-routines"), Some(TrayAction::TogglePause));
         assert_eq!(action("tray-quit"), Some(TrayAction::Quit));
+        assert_eq!(action("tray-agents"), Some(TrayAction::Open));
         assert_eq!(action("other"), None);
     }
 
     #[test]
     fn f_sh_13_the_tray_shows_while_dictate_or_background_routines_are_on() {
-        assert!(wanted(true, false));
-        assert!(wanted(false, true));
-        assert!(wanted(true, true));
-        assert!(!wanted(false, false));
+        assert!(wanted(true, false, false));
+        assert!(wanted(false, true, false));
+        assert!(wanted(true, true, false));
+        assert!(!wanted(false, false, false));
     }
 
     #[test]
     fn f_sh_13_pause_routines_is_in_the_menu_only_with_background_routines() {
         assert_eq!(
-            layout(false),
+            layout(false, 0),
             vec![
                 Some("tray-open"),
                 Some("tray-dictate"),
@@ -263,7 +301,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            layout(true),
+            layout(true, 0),
             vec![
                 Some("tray-open"),
                 Some("tray-dictate"),
@@ -272,5 +310,28 @@ mod tests {
                 Some("tray-quit")
             ]
         );
+    }
+
+    #[test]
+    fn f_sh_14_the_tray_shows_while_the_window_is_hidden_with_vibezeo_running() {
+        // The only way back to the window, agents or not.
+        assert!(wanted(false, false, true));
+        assert!(!wanted(false, false, false));
+    }
+
+    #[test]
+    fn f_sh_14_agents_running_in_the_background_head_the_menu() {
+        assert_eq!(
+            layout(false, 2),
+            vec![
+                Some("tray-agents"),
+                Some("tray-open"),
+                Some("tray-dictate"),
+                None,
+                Some("tray-quit")
+            ]
+        );
+        assert_eq!(agents_line(1), "1 agent running");
+        assert_eq!(agents_line(3), "3 agents running");
     }
 }

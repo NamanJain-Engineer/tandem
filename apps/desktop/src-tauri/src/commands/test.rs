@@ -264,6 +264,20 @@ pub async fn test_notifier_click(
     Ok(())
 }
 
+/// Whether the main window is shown (F-SH-14 hides it while agents run).
+#[tauri::command]
+pub fn test_window_visible(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, IpcError> {
+    use tauri::Manager;
+    guard(&state)?;
+    Ok(app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false))
+}
+
 /// Pretends the window is focused or not (`None`: the real state).
 #[tauri::command]
 pub fn test_set_window_focused(

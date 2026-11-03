@@ -50,6 +50,11 @@
     "page": "general"
   },
   {
+    "default": "ask",
+    "key": "keep_agents_on_close",
+    "page": "general"
+  },
+  {
     "default": "stable",
     "key": "update_channel",
     "page": "updates"

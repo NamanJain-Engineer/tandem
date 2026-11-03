@@ -10,6 +10,7 @@ pub mod askpass;
 pub mod audit;
 pub mod auth;
 pub mod auto;
+pub mod background;
 pub mod bestof;
 pub mod boot;
 pub mod check_queue;

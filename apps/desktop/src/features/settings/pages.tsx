@@ -109,6 +109,24 @@ export function settingsPages(
           ),
         },
         {
+          id: "keep_agents_on_close",
+          label: t("settings.keepAgentsOnClose"),
+          description: t("settings.keepAgentsOnClose.desc"),
+          keywords: ["close", "quit", "background", "agents"],
+          control: (ids) => (
+            <SelectControl
+              k="keep_agents_on_close"
+              ids={ids}
+              fallback="ask"
+              options={[
+                { value: "ask", label: t("settings.keepAgentsOnClose.ask") },
+                { value: "keep", label: t("settings.keepAgentsOnClose.keep") },
+                { value: "stop", label: t("settings.keepAgentsOnClose.stop") },
+              ]}
+            />
+          ),
+        },
+        {
           id: "open_links_in_tandem",
           label: t("settings.openLinks"),
           description: t("settings.openLinks.desc"),

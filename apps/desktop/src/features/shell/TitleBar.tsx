@@ -101,8 +101,9 @@ export function TitleBar() {
       label: t("menu.quit"),
       kbd: ["Mod", "Q"],
       onSelect: () => {
-        // Pending layout saves are stored before the app exits (F-SH-07).
-        void flushLayouts().then(() => invoke("app_quit").catch(() => undefined));
+        // Pending layout saves are stored before the app exits (F-SH-07);
+        // with agents running, the core asks first (F-SH-14).
+        void flushLayouts().then(() => invoke("app_close").catch(() => undefined));
       },
     },
   ];

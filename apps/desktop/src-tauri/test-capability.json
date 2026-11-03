@@ -15,6 +15,7 @@
     "allow-test-notifier-calls",
     "allow-test-notifier-click",
     "allow-test-set-window-focused",
+    "allow-test-window-visible",
     "allow-test-thread-seed",
     "allow-test-thread-state",
     "allow-test-thread-seed-events",
