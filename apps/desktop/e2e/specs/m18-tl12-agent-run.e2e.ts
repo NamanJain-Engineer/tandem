@@ -117,12 +117,16 @@ describe("E2E-M18-TL12B vibezeo run for agents", function () {
     // after it showed, it had been on screen whole, the command's end with
     // it (the review of 8f35e5d0, S-2).
     const once = `${banner()} [data-testid="pane-approval-once"]`;
-    await browser.execute((css: string) => {
-      const style = document.createElement("style");
-      style.id = SHORT_BANNER_ID;
-      style.textContent = css;
-      document.head.append(style);
-    }, `[data-testid="pane-approval"]{max-height:72px!important}`);
+    await browser.execute(
+      (css: string, id: string) => {
+        const style = document.createElement("style");
+        style.id = id;
+        style.textContent = css;
+        document.head.append(style);
+      },
+      `[data-testid="pane-approval"]{max-height:72px!important}`,
+      SHORT_BANNER_ID,
+    );
     try {
       // 80 words: 4 lines or more at any width the E2E window gives a pane.
       const words = Array.from({ length: 80 }, (_, i) => `segment${i}`).join(" ");
