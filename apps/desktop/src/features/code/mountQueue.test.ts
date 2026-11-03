@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOLD_MS, MountQueue } from "./mountQueue";
+import { HOLD_MS, MountQueue, SHOWN_HOLD_MS } from "./mountQueue";
 
 function setup() {
   const frames: Array<() => void> = [];
@@ -113,5 +113,101 @@ describe("mount queue (F-CD-04)", () => {
     expect(timers.map((t) => t.ms)).toEqual([HOLD_MS]);
     timers[0]?.fn();
     expect(opened).toEqual(["focused", "b"]);
+  });
+
+  it("F-CD-03.2 views not on screen wait while one on screen hasn't shown its first output", async () => {
+    const { q, opened, job, frame } = setup();
+    const shown = new Set(["a"]);
+    const on = (id: string) => () => shown.has(id);
+    let first!: () => void;
+    q.add(
+      () => {
+        opened.push("a");
+        q.holdHidden(new Promise<void>((r) => (first = r)));
+        return () => undefined;
+      },
+      false,
+      on("a"),
+    );
+    q.add(job("h1"), false, on("h1"));
+    q.add(job("h2"), false, on("h2"));
+    frame();
+    await Promise.resolve();
+    // Their opens would come between the view and its first output.
+    expect(opened).toEqual(["a"]);
+    first();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(opened).toEqual(["a", "h1"]);
+    frame();
+    expect(opened).toEqual(["a", "h1", "h2"]);
+  });
+
+  it("F-CD-03.2 a view on screen still opens while hidden ones wait", async () => {
+    const { q, opened, job, frame } = setup();
+    const shown = new Set(["a", "b"]);
+    const on = (id: string) => () => shown.has(id);
+    q.add(
+      () => {
+        opened.push("a");
+        q.holdHidden(new Promise<void>(() => undefined));
+        return () => undefined;
+      },
+      false,
+      on("a"),
+    );
+    q.add(job("h"), false, on("h"));
+    q.add(job("b"), false, on("b"));
+    frame();
+    expect(opened).toEqual(["a", "b"]);
+    frame();
+    expect(opened).toEqual(["a", "b"]);
+    // A view added on screen meanwhile opens at once.
+    shown.add("c");
+    q.add(job("c"), false, on("c"));
+    expect(opened).toEqual(["a", "b", "c"]);
+  });
+
+  it("F-CD-03.2 the wait for a first output lasts at most SHOWN_HOLD_MS", () => {
+    const { q, opened, job, frame, timers } = setup();
+    q.add(
+      () => {
+        opened.push("a");
+        q.holdHidden(new Promise<void>(() => undefined));
+        return () => undefined;
+      },
+      false,
+      () => true,
+    );
+    q.add(job("h"), false, () => false);
+    frame();
+    expect(opened).toEqual(["a"]);
+    expect(timers.map((t) => t.ms)).toEqual([SHOWN_HOLD_MS]);
+    timers[0]?.fn();
+    expect(opened).toEqual(["a", "h"]);
+  });
+
+  it("F-CD-03.2 a view on screen would wait only behind an open or other views on screen", async () => {
+    const { q, frame } = setup();
+    expect(q.wouldWait(true)).toBe(false);
+    expect(q.wouldWait(false)).toBe(false);
+    let first!: () => void;
+    q.add(
+      () => {
+        q.holdHidden(new Promise<void>((r) => (first = r)));
+        return () => undefined;
+      },
+      false,
+      () => true,
+    );
+    // Its open takes this frame.
+    expect(q.wouldWait(true)).toBe(true);
+    frame();
+    expect(q.wouldWait(true)).toBe(false);
+    // A hidden one waits for that first output.
+    expect(q.wouldWait(false)).toBe(true);
+    first();
+    await Promise.resolve();
+    expect(q.wouldWait(false)).toBe(false);
   });
 });

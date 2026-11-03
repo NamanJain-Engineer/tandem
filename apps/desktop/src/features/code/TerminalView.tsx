@@ -151,6 +151,13 @@ export function setPrestart(on: boolean): void {
   prestarting = on;
 }
 
+/** Whether a view on screen keeps hidden ones from opening until its first
+ * output (the perf suite turns it off to compare, `__tandemTest.holdHidden`). */
+let holdingHidden = true;
+export function setHoldHidden(on: boolean): void {
+  holdingHidden = on;
+}
+
 /** The grid each pane's process was started at before its view opened. */
 const startedAt = new Map<string, { cols: number; rows: number }>();
 
@@ -320,7 +327,8 @@ export function TerminalView({
     if (!el || parked) return;
     markPhase(paneId, "effect");
     // A view that waits for its turn starts its pane meanwhile.
-    if (prestarting && mountQueue.wouldWait()) prestart(paneId, el, fontKey(optionsRef.current));
+    if (prestarting && mountQueue.wouldWait(visibleRef.current, focusedRef.current))
+      prestart(paneId, el, fontKey(optionsRef.current));
     // Opened one per frame when several views mount together (mountQueue).
     return mountQueue.add(
       () => openViewRef.current(el),
@@ -337,6 +345,10 @@ export function TerminalView({
     // attach and spawn replies don't wait behind other views' opens (F-SH-07.7).
     let release: () => void = () => undefined;
     if (focusedRef.current) mountQueue.hold(new Promise<void>((r) => (release = r)));
+    // A view on screen keeps views not on screen from opening until its first
+    // output shows: their opens would come between them (F-CD-03 AC2).
+    let firstShown: () => void = () => undefined;
+    if (holdingHidden && visibleRef.current) mountQueue.holdHidden(new Promise<void>((r) => (firstShown = r)));
     const o = optionsRef.current;
     const xterm = new Terminal({
       theme: o.theme,
@@ -526,6 +538,7 @@ export function TerminalView({
       markWrite(paneId);
       xterm.write(data, () => {
         markFirstOutput(paneId);
+        firstShown();
         parsedBytes += len;
         unacked += len;
         if (unacked >= 64 * 1024) flushAck();
@@ -665,7 +678,11 @@ export function TerminalView({
           ringBase = end ?? 0;
           // A pane started before its view opened shows its first output
           // here (D-141 times it).
-          if (replay?.byteLength) xterm.write(replay, () => markFirstOutput(paneId));
+          if (replay?.byteLength)
+            xterm.write(replay, () => {
+              markFirstOutput(paneId);
+              firstShown();
+            });
           ready = true;
           for (const f of early.splice(0)) onFrame(f);
         }
@@ -685,6 +702,7 @@ export function TerminalView({
         // so closing Settings can return it to its opener (F-SH-04 AC1).
         if (focusedRef.current && el.offsetParent !== null && !modalOpen()) xterm.focus();
       } catch (e) {
+        firstShown();
         if (disposed) return;
         const err = e as IpcError;
         log("warn", "pty.spawn_failed", { code: err.code ?? "internal" });
@@ -696,6 +714,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       release();
+      firstShown();
       parkNow.current = neverPark;
       for (const ch of channels.splice(0)) ch.onmessage = nothing;
       clearTimeout(ackTimer);

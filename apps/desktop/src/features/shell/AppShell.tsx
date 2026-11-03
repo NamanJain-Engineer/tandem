@@ -68,7 +68,7 @@ import { UnsupportedOverlay } from "../updates/UnsupportedOverlay";
 import { useVisibilityReport } from "../notifications/visibility";
 import { InstallHost } from "../code/InstallSheet";
 import { followPtyState } from "../../stores/terminals";
-import { parkedPanes, setParkAfter, setPrestart, terminalHandles } from "../code/TerminalView";
+import { parkedPanes, setHoldHidden, setParkAfter, setPrestart, terminalHandles } from "../code/TerminalView";
 import { enablePerfMarks, perfSpans, perfTimes, reflowCounts, writeCounts } from "../code/perfMarks";
 import { webglPool } from "../code/webglPool";
 import { useBoot } from "./useBoot";
@@ -135,6 +135,8 @@ export function AppShell() {
       parkAfter: (ms: number | null) => setParkAfter(ms),
       // F-CD-03 AC2: whether waiting views start their panes first (perf A/B).
       prestart: (on: boolean) => setPrestart(on),
+      // …and whether views on screen keep hidden ones from opening until their first output.
+      holdHidden: (on: boolean) => setHoldHidden(on),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),

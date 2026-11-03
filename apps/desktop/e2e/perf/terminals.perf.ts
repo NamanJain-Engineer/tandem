@@ -120,6 +120,7 @@ type Hook = {
   paneCursor: (id: string) => { x: number; y: number } | null;
   webglHolds: (id: string) => boolean;
   prestart: (on: boolean) => void;
+  holdHidden: (on: boolean) => void;
   perf: {
     enable: () => void;
     times: () => Record<string, { mounted: number; firstOutput?: number; phases?: Record<string, number> }>;
@@ -241,6 +242,9 @@ describe("perf: terminals", () => {
     await browser.waitUntil(async () => (await paneIds()).length === 16, { timeout: 30_000 });
     if (process.env.TANDEM_PERF_NO_PRESTART)
       await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.prestart(false));
+    // TANDEM_PERF_NO_HOLD_HIDDEN=1: hidden views open while shown ones wait for their first output.
+    if (process.env.TANDEM_PERF_NO_HOLD_HIDDEN)
+      await browser.execute(() => (window as unknown as { __tandemTest: Hook }).__tandemTest.holdHidden(false));
     // Watch frame gaps while the tab opens and its six agents start.
     await browser.execute(() => {
       const w = window as unknown as { __maxGap: number; __gapRun: boolean };
