@@ -591,6 +591,7 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - Each agent taking 1 s to load: off, 2,901, 2,189 and 2,040 ms; on, 2,541, 2,174 and 1,928 ms. Lower in every pair, 7% on average.
     - With both changes the six agents take 1.8 to 1.9 s with an engine that prints at once (2.3 to 2.5 s before either), and 1.9 to 2.5 s with a 1 s load (2.9 to 3.2 s before).
     - **Still missed:** 300 ms. What's left is each open on software GL (50 to 100 ms of `xterm.open`) and the first parses; the per-open cost needs the reference machines (`HUMAN_TODO.md`).
+  - **Gate:** passed on af34e3e0: 2,747 Rust tests (6 ignored) and 2,066 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt; coverage 194; no protocol drift. E2E on af34e3e0, the same 14 terminal specs: 14 of 14 (30 tests).
 
 ### M18 · Reliability decisions
 - D-2579: A view that waits its turn in the mount queue starts its pane's process (`pty_start`) and attaches when it opens (F-CD-03 AC2).
