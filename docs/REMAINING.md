@@ -51,8 +51,12 @@ download.
      that print at once, no change. What's left is the views opening one per
      frame (300–370 ms apart on software GL) and each first parse behind
      them, worse in the suite because its 16 booted shells are still opening
-     when it clicks; next is keeping hidden views from opening while a
-     visible one connects.
+     when it clicks. Views not on screen now wait while one on screen hasn't
+     shown its first output (D-2578): about 13% less again with engines that
+     print at once, 7% with a 1 s load. Both together: 1.8–1.9 s (from
+     2.3–2.5 s), and 1.9–2.5 s with a 1 s load (from 2.9–3.2 s). What's left
+     is each open on software GL (50–100 ms of `xterm.open`) and the first
+     parses; the per-open cost needs the reference machines.
    - Memory (§5.1, D-138): hidden panes now hand their xterm to the core
      after 30 s and replay when shown (D-139; filled while hidden, 3.0 MB a
      pane, met). Still missed: panes filled on screen and then moved to a

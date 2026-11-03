@@ -581,6 +581,16 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - **Where the rest goes:** the views open one per frame, 300 to 370 ms apart, and each first output is parsed behind those opens. A pre-started agent's first frame reaches its view about 1.4 s after the click, and is parsed 0.7 to 1.1 s later. Since the click, `xterm.open` ran 12 times (629 ms in all, at most 78 ms) and `webgl.attach` 6 times (58 ms). The 16 shells the suite boots are still queued when it clicks, so they open right after the agents, during the last ones' attach and first parse.
     - **Still missed:** 300 ms. Next: hidden views (the shells still opening) shouldn't open while a visible view is connecting or has output waiting to parse; then the per-open cost on the reference machines.
   - **Gate:** passed on d3751109: 2,747 Rust tests (6 ignored) and 2,062 TypeScript; the desktop build, clippy on Linux, Windows and both Mac architectures, and fmt; coverage 194; no protocol drift. E2E on d3751109, the terminal specs that open several views at once: m3-1, m3-2, m3-3, m3-4, m3-7, m3-15, m3-16, m4-1, m5-1, m5-2, m5-3, m6-1, m15-7 and m18-tk05, 14 of 14 (30 tests). The first gate run stopped at lint: this checkout's `node_modules` predated `@testing-library/user-event` in `packages/ui` (`pnpm install --frozen-lockfile`).
+- [x] Views not on screen wait while one on screen hasn't shown its first output (D-2578).
+  - **Queue.** `mountQueue.holdHidden(until)`: while any view on screen holds, a view not on screen doesn't open; views on screen still open one per frame, and one added meanwhile opens at once. One `pick()` chooses the next view (the first on screen, else the first), and `wouldWait` takes the view's visibility and focus.
+  - **View.** A view on screen holds from its open until its first output is parsed (a live frame or the replay), it fails to connect, or it's torn down, at most `SHOWN_HOLD_MS` (1 s).
+  - **Test support.** `TANDEM_PERF_NO_HOLD_HIDDEN=1` turns the hold off through the debug hook `__tandemTest.holdHidden`, to compare on one build.
+  - **Tests.** TS F-CD-03.2 (4, `mountQueue.test.ts`): hidden views wait for a shown view's first output; shown views still open; the wait's cap; `wouldWait` (red before: no `holdHidden`).
+  - **Measured** (debug build, xvfb with software GL, the six agents alone, with pre-starts; on one build with the hold off and on in turn):
+    - The fake engine printing at once: off, 2,012, 2,045 and 2,326 ms; on, 1,925, 1,836 and 1,797 ms. About 13% less.
+    - Each agent taking 1 s to load: off, 2,901, 2,189 and 2,040 ms; on, 2,541, 2,174 and 1,928 ms. Lower in every pair, 7% on average.
+    - With both changes the six agents take 1.8 to 1.9 s with an engine that prints at once (2.3 to 2.5 s before either), and 1.9 to 2.5 s with a 1 s load (2.9 to 3.2 s before).
+    - **Still missed:** 300 ms. What's left is each open on software GL (50 to 100 ms of `xterm.open`) and the first parses; the per-open cost needs the reference machines (`HUMAN_TODO.md`).
 
 ### M18 · Reliability decisions
 - D-2579: A view that waits its turn in the mount queue starts its pane's process (`pty_start`) and attaches when it opens (F-CD-03 AC2).
@@ -589,6 +599,10 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **Nothing starts that wouldn't have.** The view was going to connect anyway. `spawn_with` refuses a paused agent just as for `pty_spawn`. A pane with a process, live or ended, is never started again, so an ended one still waits for its view's Restart.
   - **Not under a live-pane limit.** A limit a signed entitlement carries (none with no account, D-2900) gives the room to panes in the order their views open. The views waiting would otherwise start before the one opening, which connects only after its open, and take its room.
   - **One start per pane.** The view's `spawning` map holds the pre-start; `connect` waits for it, then attaches.
+- D-2578: Views not on screen don't open while a view on screen hasn't shown its first output, for at most 1 s (F-CD-03 AC2).
+  - **Why.** A hidden view's open costs the main thread 50 to 100 ms here. Between a view on screen and its first output, that cost delays what the user is waiting to see, and a hidden view shows nothing, so it can wait.
+  - **Per view, bounded.** Each view on screen holds from its open until its first parsed output, a failed connect or its teardown. An engine that prints nothing for a long time holds hidden views back at most 1 s.
+  - **Views on screen aren't held.** They still open one per frame, the focused one first, and one added meanwhile opens at once. Hidden views still open in their order once nothing on screen waits.
 
 ## M17 checklist (Extras)
 Built on branch `m17-extras` (from `product-m0-m5`) in parallel with the M8, M10–M15 and release sessions, at the owner's request for creative features beyond the spec. Owns F-EX-01…05 (PRODUCT_SPEC §4.19, MILESTONES M17, UI_SPEC §4.16 UI-140–145, ARCHITECTURE §3.2 "Extras"). Decisions D-700–D-799; this section holds M17's state, decisions and log so other sessions' sections stay untouched.
