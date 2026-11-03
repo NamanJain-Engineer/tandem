@@ -2321,9 +2321,34 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ---
 
+## M18 · Next features: reliability (M)
+
+**Goal.** Reliability from `docs/NEXT_FEATURES.md` (§1 #10) and REMAINING §0.3: six agents' first frames, then agents that keep running when the window closes. Built on `ccr-6d871eba-mxry64`; decisions D-2560 to D-2579 (D-858).
+
+**Owns:** F-SH-14 (P2)
+**Prerequisites.** F-SH-07 (restore), F-SH-13 (the tray), F-DB-03 (OS notifications).
+
+**Ordered tasks**
+1. **Six agents' first frames (F-CD-03 AC2, §5.1).** `pty_start` and the view's pre-start (D-2579); views not on screen wait while one on screen hasn't shown its first output (D-2578).
+2. **Keep agents running when the window closes (F-SH-14).** The main window's close request counts the running agents (`services::background`), asks through `app:close-requested`, and `app_close_decide` keeps them (the window hidden, the tray's count) or quits; the `keep_agents_on_close` setting; the close dialog and its Settings › General row.
+
+**Verification**
+```bash
+cargo test -p tandem-desktop --lib f_sh_14 && cargo test -p tandem-desktop --lib f_cd_03_2
+pnpm --filter desktop exec vitest run src/features/shell/closeDialog.test.tsx src/features/code/prestart.test.tsx src/features/code/mountQueue.test.ts
+dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-sh14-*.e2e.ts'
+```
+
+**E2E**
+- **E2E-M18-SH-14 Keep agents running.** Two fake Claude Code agents waiting for an approval. Expected: closing the window asks "Keep 2 agents running in the background?"; Keep running hides it, with both processes still running; an approval while it's hidden notifies; output written while hidden is in the pane when it's shown again; with "Don't ask again", the next close keeps them without asking.
+
+**Exit checklist:** G green · the E2E above and the terminal specs (m3, m4-1, m5-1 to m5-3, m6-1, m15-7).
+
+---
+
 ## 20. Coverage table (feature ID → owning milestone)
 
-Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (65 P0, 67 P1, 62 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 28 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
+Every feature in PRODUCT_SPEC §4 appears here exactly once: **195 features** (65 P0, 67 P1, 63 P2). All 132 P0 and P1 features are owned by M0–M15. M16 owns the 20 original P2 features and 4 added since (F-RM-04 to F-RM-07: LAN pairing, the phone app, push and the Linux store packages), and M17 owns 10: the 5 extras (F-EX, §4.19), the 4 worktree-workflow features (F-WT, §4.20) and the blog (F-WB-06). M18 owns the next features as each is specified: 29 so far (F-AC-08, F-AC-09, F-CD-22, F-CD-23, F-CD-24, F-CN-09, F-DB-04, F-EN-07, F-EN-08, F-EN-09, F-EN-10, F-EN-11, F-EX-06, F-EX-07, F-RT-06, F-SH-14, F-TH-17, F-TK-05, F-TK-06, F-TK-07, F-TK-08, F-TL-11, F-TL-12, F-WT-05, F-WT-06, F-WT-07, F-WT-08, F-WT-09 and F-WT-10). F-BL-06 is listed as P1: its P1 core is owned by M13, and M16 adds the P2 SSO extension.
 
 | ID | P | M | ID | P | M | ID | P | M | ID | P | M |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -2348,6 +2373,7 @@ Every feature in PRODUCT_SPEC §4 appears here exactly once: **194 features** (6
 | F-EX-06 | P2 | M18 | F-TL-12 | P2 | M18 | F-CD-22 | P2 | M18 | F-EN-10 | P2 | M18 |
 | F-TK-05 | P2 | M18 | F-TK-06 | P2 | M18 | F-TK-07 | P2 | M18 | F-TK-08 | P2 | M18 |
 | F-EX-07 | P2 | M18 | F-CD-23 | P2 | M18 | F-CD-24 | P2 | M18 | F-EN-11 | P2 | M18 |
+| F-SH-14 | P2 | M18 | | | | | | | | | |
 | F-AC-01 | P0 | M4 | F-AC-02 | P0 | M6 | F-AC-03 | P0 | M6 | F-AC-04 | P1 | M6 |
 | F-AC-05 | P0 | M6 | F-AC-06 | P1 | M6 | F-AC-07 | P2 | M16 | F-DB-01 | P0 | M5 |
 | F-DB-02 | P0 | M5 | F-DB-03 | P0 | M5 | F-AG-01 | P1 | M10 | F-AG-02 | P1 | M10 |

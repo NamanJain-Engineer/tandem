@@ -497,6 +497,31 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 1. `tandem://open?path=/tmp/x` with the app closed launches it and adds or opens the workspace `/tmp/x`.
 2. `tandem://../../etc` and links longer than 4 KB are rejected with no side effects.
 
+#### F-SH-14 Keep agents running when the window closes (P2)
+**Story:** Two agents are halfway through long jobs when I close Vibezeo at the end of the day. It asks whether to keep them running. They carry on with the window closed, and when I open Vibezeo again their panes show everything they did.
+
+**Behavior:**
+- **Closing with agents running.** Closing the main window while agents are running asks "Keep 2 agents running in the background?". An agent is running when it's working or waiting: an agent pane whose process is live, or a thread.
+  - **Keep running** (primary) hides the window. Vibezeo itself keeps running, so the agents, their notifications (waiting, done, approvals), the phone (F-RM-03) and routines all work as they do with the window open.
+  - **Stop them and quit** quits as before: scrollback snapshots, then every process ends.
+  - **Don't ask again** saves the choice as the setting below.
+  - With no agent running, closing quits as before, without asking.
+- **Setting:** Settings › General › "When you close the window with agents running": Ask (the default), Keep them running, or Stop them.
+- **While the window is closed:**
+  - The tray shows how many agents are running, with Open Vibezeo and Quit Vibezeo. Quit stops them.
+  - An approval waits: it's never answered without you, and it notifies like any other.
+- **Opening again.** The tray's Open Vibezeo, launching Vibezeo again or clicking a notification shows the window, with every pane as it is now, including the output written while it was closed.
+- **Not across a reboot or a crash.** Those restore agents as paused cards (F-SH-07).
+
+**Data:** the setting `keep_agents_on_close` (`ask`, `keep` or `stop`).
+
+**Acceptance:**
+1. Closing the window with two agents waiting for an approval asks "Keep 2 agents running in the background?". Keep running hides the window, and both agent processes keep running.
+2. Output an agent writes while the window is closed is in its pane when the window is shown again.
+3. While the window is closed, an agent reaching an approval produces an OS notification, and the approval stays unanswered.
+4. Stop them and quit ends the agents and quits. With no agent running, closing quits without asking.
+5. Choosing Keep running with "Don't ask again" sets the setting to `keep`, and the next close keeps the agents running without asking.
+
 ### 4.2 CD: Code mode
 
 #### F-CD-01 Workspaces (P0)

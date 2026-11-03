@@ -516,6 +516,8 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_ready` | — | `AppBoot {version, build, platform, dev, firstRun, lastMode, flags, dataDirDisplay}` | — | F-SH-01, F-SH-07 |
 | `app_quit_preview` | — | `QuitPreview {liveAgents:[SourceRef], runningThreads:[SourceRef]}` | — | F-SH-06, F-SH-07 |
 | `app_quit` | `{restartForUpdate?}` | — (process exits) | — | F-SH-07 |
+| `app_close` | — | — (the menu's Quit, as the window's close request: with agents running, `keep_agents_on_close` decides: `ask` emits `app:close-requested`, `keep` hides the window, `stop` quits; with none, quits as `app_quit`) | — | F-SH-14 |
+| `app_close_decide` | `{keep, remember}` | — (the close dialog's answer: `keep` hides the window with the agents still running and the tray's count; otherwise quits as `app_quit`; `remember` saves `keep` or `stop` as `keep_agents_on_close`) | — | F-SH-14 |
 | `app_licenses` | — | the third-party notices (Markdown) the build embeds, for About › Licenses (release builds: `scripts/gen-notices.ts --resources` before the build; other builds a pointer to it) | — | F-TL-04 |
 | `window_toggle_maximize` / `window_minimize` / `window_close` | — | `{maximized}` / — / — | — | F-SH-01 |
 | `app_open_external` | `{url}` (http/https/mailto only) | — | Invalid | F-CD-09 |
@@ -1041,6 +1043,7 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `test_notifier_calls` | `{clear?}` | `[OsNotification {kind, title, body, source}]` (the recording notifier used under the harness) | — |
 | `test_notifier_click` | `{index}` | — (clicks a recorded OS notification: focuses the app and its source) | NotFound |
 | `test_set_window_focused` | `{focused?}` | — (pretends the window is focused or not; `null` = the real state) | — |
+| `test_window_visible` | — | `bool` (the main window is shown; F-SH-14 hides it while agents keep running) | — |
 | `test_update_installed` | — | the version the harness's updater recorded as installed, or `null` (E2E-M5-7) | — |
 | `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |
@@ -1070,6 +1073,7 @@ Emitted with `app.emit_to("main", name, payload)` unless stated. High-rate data 
 | `app:deep-link` | `DeepLink {route, params}` | deeplink service | F-SH-13 |
 | `app:subsystem-failed` | `{name, code, restarts}` | Supervisor | §5.2 |
 | `app:min-version` | `{minVersion?, graceUntil?, modal}` (`null`s: a lower minimum cleared the notice) | api client (header watcher) → updater service | F-SH-06 |
+| `app:close-requested` | `CloseRequest {agents: RunningAgent[] {key, title?}, quit}` (the window's close request or the menu's Quit found agents running and the setting is `ask`; the close dialog answers with `app_close_decide`) | main window's close handler, `app_close` | F-SH-14 |
 | `ui:open-settings` | `{page}` (the tray's Dictate line opens Settings › Dictate) | tray | F-SH-13 |
 | `ui:focus` | `{source: SourceRef, flash: true, location?: {workspaceId, tabId}}` (`location` for panes) | focus service (notifications, Conductor, phone) | F-CD-12, F-DB-02 |
 | `settings:changed` | `{key, value}` | settings service | F-SH-04 |
