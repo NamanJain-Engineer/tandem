@@ -30,6 +30,7 @@ macro_rules! app_commands {
             commands::app::app_quit,
             commands::app::app_close,
             commands::app::app_close_decide,
+            commands::app::app_close_seen,
             commands::app::commands_registry,
             commands::app::redact_text,
             commands::app::deeplink_pending,
@@ -580,6 +581,9 @@ pub(crate) fn focus_main(app: &AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
+    // F-SH-14: shown again from the tray, a second launch, a notification or
+    // a link, whether or not the window manager reports the focus.
+    services::background::shown(app);
 }
 
 /// The window background for a theme setting: `--tn-bg` from UI_SPEC §1.2
@@ -1444,17 +1448,13 @@ pub fn run() {
                     // F-SH-14: a close with agents running asks, or keeps
                     // them running with the window hidden, as the settings say.
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        use services::background::{self, CloseAction, CloseRequest};
+                        use services::background::{self, CloseAction};
                         let state = focus.state::<AppState>();
                         match background::decide(&state, false) {
                             CloseAction::Proceed => {}
                             CloseAction::Ask(agents) => {
                                 api.prevent_close();
-                                let _ = focus.emit_to(
-                                    "main",
-                                    "app:close-requested",
-                                    CloseRequest { agents, quit: false },
-                                );
+                                background::ask(&focus, agents, false);
                             }
                             CloseAction::Keep(agents) => {
                                 api.prevent_close();
@@ -1524,6 +1524,16 @@ pub fn run() {
         // However the app ends (Quit, last window closed), panes get their
         // scrollback snapshot and every process tree is stopped.
         Ok(app) => app.run(|handle, event| {
+            // F-SH-14: on macOS, the Dock icon or opening Vibezeo again
+            // shows a window that's hidden (Keep running) or minimized.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                focus_main(handle);
+            }
             if let tauri::RunEvent::Exit = event {
                 // F-TL-12: an agent's running `vibezeo run` ends with the app
                 // (its group killed, its row written), never left holding values.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-close-seen"
+description = "Enables the app_close_seen command without any pre-configured scope."
+commands.allow = ["app_close_seen"]
+
+[[permission]]
+identifier = "deny-app-close-seen"
+description = "Denies the app_close_seen command without any pre-configured scope."
+commands.deny = ["app_close_seen"]

@@ -8,6 +8,7 @@ import { fakeBackend, resetStores } from "../../test/fakeBackend";
 import { CloseDialog } from "./CloseDialog";
 
 const TWO: CloseRequest = {
+  id: 1,
   agents: [
     { key: "pane:pn_1", title: "Fix the login flow" },
     { key: "thread:th_1", title: null },
@@ -16,7 +17,7 @@ const TWO: CloseRequest = {
 };
 
 async function setup() {
-  const calls = fakeBackend({ app_close_decide: () => null });
+  const calls = fakeBackend({ app_close_decide: () => null, app_close_seen: () => null });
   render(
     <UiProvider>
       <CloseDialog />
@@ -51,6 +52,23 @@ describe("closing with agents running (F-SH-14)", () => {
     fireEvent.click(screen.getByTestId("close-stop"));
     await waitFor(() =>
       expect(calls.find((c) => c.cmd === "app_close_decide")?.args).toEqual({ keep: false, remember: true }),
+    );
+  });
+
+  it("F-SH-14 tells Vibezeo it showed each question, so the close doesn't go ahead without it", async () => {
+    const calls = await setup();
+    act(() => emitLocal("app:close-requested", TWO));
+    expect(await screen.findByTestId("close-agents")).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.cmd === "app_close_seen").map((c) => c.args)).toEqual([{ id: 1 }]),
+    );
+    // Closing again while it's open asks again, and that's shown too.
+    act(() => emitLocal("app:close-requested", { ...TWO, id: 2 }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.cmd === "app_close_seen").map((c) => c.args)).toEqual([
+        { id: 1 },
+        { id: 2 },
+      ]),
     );
   });
 

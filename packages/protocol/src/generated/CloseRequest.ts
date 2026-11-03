@@ -4,7 +4,11 @@ import type { RunningAgent } from "./RunningAgent";
 /**
  * `app:close-requested`: the close dialog's question.
  */
-export type CloseRequest = { agents: Array<RunningAgent>, 
+export type CloseRequest = { 
+/**
+ * The window says it showed it with `app_close_seen`.
+ */
+id: number, agents: Array<RunningAgent>, 
 /**
  * The menu's Quit rather than the window's close button.
  */

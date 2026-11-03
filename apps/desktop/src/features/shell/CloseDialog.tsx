@@ -6,9 +6,18 @@ import { t } from "../../i18n";
 import { listen } from "../../ipc/events";
 import { invoke } from "../../ipc/invoke";
 
+/** E2E: whether the dialog tells the core it showed a question; off, the
+ * core goes ahead without it, as with a hung window (D-2563). */
+let sayingSeen = true;
+export function setCloseSeen(on: boolean): void {
+  sayingSeen = on;
+}
+
 /** F-SH-14: closing the window (or Quit) with agents running asks whether to
  * keep them running with the window hidden. The core asks only when the
- * setting is "ask"; dismissing keeps the window open. */
+ * setting is "ask"; dismissing keeps the window open. It's mounted on every
+ * screen and says it showed each question, or the close goes ahead after 5 s
+ * without it (D-2563). */
 export function CloseDialog() {
   const [request, setRequest] = useState<CloseRequest | null>(null);
   const [remember, setRemember] = useState(false);
@@ -22,6 +31,10 @@ export function CloseDialog() {
     }).then((s) => (stop = s));
     return () => stop?.();
   }, []);
+
+  useEffect(() => {
+    if (request && sayingSeen) void invoke("app_close_seen", { id: request.id }).catch(() => undefined);
+  }, [request]);
 
   const decide = async (keep: boolean) => {
     setBusy(true);

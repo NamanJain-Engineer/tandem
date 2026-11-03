@@ -26,6 +26,7 @@ pub async fn app_ready(
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
     }
+    crate::services::background::shown(&app);
     Ok(boot::app_boot(&state).await)
 }
 
@@ -177,19 +178,19 @@ pub fn app_quit(app: tauri::AppHandle, state: State<'_, AppState>) {
 /// the setting keeps them; otherwise it quits as `app_quit`.
 #[tauri::command]
 pub fn app_close(app: tauri::AppHandle, state: State<'_, AppState>) {
-    use crate::services::background::{self, CloseAction, CloseRequest};
-    use tauri::Emitter;
+    use crate::services::background::{self, CloseAction};
     match background::decide(&state, true) {
         CloseAction::Proceed => app_quit(app, state),
-        CloseAction::Ask(agents) => {
-            let _ = app.emit_to(
-                "main",
-                "app:close-requested",
-                CloseRequest { agents, quit: true },
-            );
-        }
+        CloseAction::Ask(agents) => background::ask(&app, agents, true),
         CloseAction::Keep(agents) => background::keep(&app, agents.len()),
     }
+}
+
+/// The close dialog showed question `id` (F-SH-14): without this, the close
+/// goes ahead after 5 s without it (D-2563).
+#[tauri::command]
+pub fn app_close_seen(id: u32) {
+    crate::services::background::seen(id);
 }
 
 /// The close dialog's answer (F-SH-14): keep the agents running with the
@@ -216,8 +217,7 @@ pub async fn app_close_decide(
     if keep {
         background::keep(&app, background::running_now(&state).len());
     } else {
-        state.terminals.shutdown(&state.data.scrollback());
-        app.exit(0);
+        background::quit(&app);
     }
     Ok(())
 }

@@ -41,7 +41,7 @@ import { SessionLibrary } from "../library/SessionLibrary";
 import { Cheatsheet } from "../commands/Cheatsheet";
 import { DiagnosticsPanel } from "../diagnostics/DiagnosticsPanel";
 import { OrphansDialog } from "../restore/OrphansDialog";
-import { CloseDialog } from "./CloseDialog";
+import { setCloseSeen } from "./CloseDialog";
 import { followEngines } from "../../stores/engines";
 import { followLimits } from "../../stores/limits";
 import { followRunaway } from "../../stores/runaway";
@@ -138,6 +138,8 @@ export function AppShell() {
       prestart: (on: boolean) => setPrestart(on),
       // …and whether views on screen keep hidden ones from opening until their first output.
       holdHidden: (on: boolean) => setHoldHidden(on),
+      // F-SH-14: whether the close dialog says it showed its question (D-2563).
+      closeSeen: (on: boolean) => setCloseSeen(on),
       perf: { enable: enablePerfMarks, times: perfTimes, writes: writeCounts, spans: perfSpans },
       paneSize: (paneId: string) => terminalHandles.get(paneId)?.size() ?? null,
       reflows: (reset?: boolean) => reflowCounts(reset ?? false),
@@ -255,7 +257,6 @@ export function AppShell() {
       <Cheatsheet />
       <DiagnosticsPanel />
       <OrphansDialog />
-      <CloseDialog />
       <RestartDialog />
       <RemotePrompts />
       <UnsupportedOverlay />

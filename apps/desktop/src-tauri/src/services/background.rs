@@ -2,19 +2,23 @@
 //! window hides and Vibezeo itself keeps running, so the agents, their
 //! notifications, approvals, the phone and routines go on as with it open.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tandem_core::settings::SettingKey;
 use tandem_core::status::{AgentStatus, StatusRecord};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use ts_rs::TS;
 
 use crate::state::AppState;
 
 /// How often the tray's count is checked while the window is hidden.
 const RECOUNT: Duration = Duration::from_secs(5);
+
+/// How long the window has to show the close dialog's question before the
+/// close goes ahead without it (D-2563).
+const SEEN_WAIT: Duration = Duration::from_secs(5);
 
 /// An agent the close would stop: a pane or thread working or waiting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -31,6 +35,8 @@ pub struct RunningAgent {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CloseRequest {
+    /// The window says it showed it with `app_close_seen`.
+    pub id: u32,
     pub agents: Vec<RunningAgent>,
     /// The menu's Quit rather than the window's close button.
     pub quit: bool,
@@ -80,6 +86,95 @@ pub fn close_action(in_tray: bool, setting: &str, agents: Vec<RunningAgent>) -> 
         "stop" => CloseAction::Proceed,
         _ => CloseAction::Ask(agents),
     }
+}
+
+/// What a question the window never showed does (D-2563): keeps the agents
+/// still running with the window hidden, or quits once none runs.
+pub fn unshown(agents: Vec<RunningAgent>) -> CloseAction {
+    if agents.is_empty() {
+        CloseAction::Proceed
+    } else {
+        CloseAction::Keep(agents)
+    }
+}
+
+/// The close dialog's questions: the last one asked and the last one the
+/// window said it showed.
+pub struct Questions {
+    asked: AtomicU32,
+    seen: AtomicU32,
+}
+
+impl Questions {
+    pub const fn new() -> Self {
+        Self {
+            asked: AtomicU32::new(0),
+            seen: AtomicU32::new(0),
+        }
+    }
+
+    /// A new question's number.
+    pub fn ask(&self) -> u32 {
+        self.asked.fetch_add(1, Ordering::SeqCst).wrapping_add(1)
+    }
+
+    /// The window showed question `id`.
+    pub fn seen(&self, id: u32) {
+        self.seen.fetch_max(id, Ordering::SeqCst);
+    }
+
+    /// Whether the window showed question `id`, or a later one.
+    pub fn shown(&self, id: u32) -> bool {
+        self.seen.load(Ordering::SeqCst) >= id
+    }
+}
+
+impl Default for Questions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+static QUESTIONS: Questions = Questions::new();
+
+/// Asks with the close dialog (`app:close-requested`). A question the window
+/// doesn't show within `SEEN_WAIT`, from a hung or reloading webview, goes
+/// ahead without it (`unshown`), so a close is never stuck (D-2563).
+pub fn ask(app: &AppHandle, agents: Vec<RunningAgent>, quit: bool) {
+    let id = QUESTIONS.ask();
+    let _ = app.emit_to(
+        "main",
+        "app:close-requested",
+        CloseRequest { id, agents, quit },
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SEEN_WAIT).await;
+        if QUESTIONS.shown(id) {
+            return;
+        }
+        tracing::warn!(
+            code = "close.unshown",
+            "the window didn't show the close question"
+        );
+        match unshown(running_now(&app.state::<AppState>())) {
+            CloseAction::Keep(agents) => keep(&app, agents.len()),
+            _ => self::quit(&app),
+        }
+    });
+}
+
+/// `app_close_seen`: the window showed question `id`.
+pub fn seen(id: u32) {
+    QUESTIONS.seen(id);
+}
+
+/// Stops every agent and quits, as `app_quit`: scrollback snapshots, then
+/// every process ends.
+pub fn quit(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.terminals.shutdown(&state.data.scrollback());
+    app.exit(0);
 }
 
 /// The setting "Don't ask again" saves for a choice.
@@ -241,6 +336,40 @@ mod tests {
             close_action(true, "ask", two.clone()),
             CloseAction::Keep(two)
         );
+    }
+
+    #[test]
+    fn f_sh_14_a_question_the_window_showed_is_answered_there() {
+        let q = Questions::new();
+        let first = q.ask();
+        assert!(!q.shown(first));
+        q.seen(first);
+        assert!(q.shown(first));
+    }
+
+    #[test]
+    fn f_sh_14_a_question_the_window_never_showed_stays_unshown() {
+        let q = Questions::new();
+        let first = q.ask();
+        q.seen(first);
+        // Showing the first doesn't show the next.
+        let second = q.ask();
+        assert!(!q.shown(second));
+        // Showing a later one covers it; a late word for an older one
+        // doesn't undo that.
+        let third = q.ask();
+        q.seen(third);
+        q.seen(first);
+        assert!(q.shown(second));
+        assert!(q.shown(third));
+    }
+
+    #[test]
+    fn f_sh_14_an_unshown_question_keeps_the_agents_still_running() {
+        let two = vec![agent("pane:a"), agent("thread:t")];
+        assert_eq!(unshown(two.clone()), CloseAction::Keep(two));
+        // Nothing runs any more: nothing is lost by quitting.
+        assert_eq!(unshown(Vec::new()), CloseAction::Proceed);
     }
 
     #[test]

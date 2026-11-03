@@ -12,6 +12,7 @@ import {
   type ThemeSetting,
 } from "@tandem/ui";
 import { AppShell } from "./features/shell/AppShell";
+import { CloseDialog } from "./features/shell/CloseDialog";
 import { DeepLinks } from "./features/shell/DeepLinks";
 import { useBoot } from "./features/shell/useBoot";
 import { SignIn } from "./features/signin/SignIn";
@@ -167,6 +168,8 @@ export function App() {
 
   return (
     <UiProvider theme={theme} motion={motion} textSize={textSize} density={density}>
+      {/* F-SH-14: a close with agents running is answered on every screen. */}
+      <CloseDialog />
       {!ready || !auth ? (
         <Splash phase={splashPhase} onAnyInput={skipPlan.fire} />
       ) : (

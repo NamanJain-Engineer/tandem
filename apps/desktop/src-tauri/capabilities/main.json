@@ -99,6 +99,7 @@
     "allow-app-quit",
     "allow-app-close",
     "allow-app-close-decide",
+    "allow-app-close-seen",
     "allow-commands-registry",
     "allow-redact-text",
     "allow-deeplink-pending",

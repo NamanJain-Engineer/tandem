@@ -14,12 +14,21 @@ import {
 type OsCall = { kind: string; title: string; source: { type: string; paneId?: string } };
 const calls = (clear = false) => invoke<OsCall[]>("test_notifier_calls", { clear });
 const visible = () => invoke<boolean>("test_window_visible", {});
+const sayingSeen = (on: boolean) =>
+  browser.execute(
+    (v: boolean) =>
+      (window as unknown as { __tandemTest?: { closeSeen: (on: boolean) => void } }).__tandemTest?.closeSeen(
+        v,
+      ),
+    on,
+  );
 
 // E2E-M18-SH-14 Keep agents running (F-SH-14): two fake Claude Code agents
 // waiting for an approval. Closing the window asks; Keep running hides it
 // with both still running; an approval while it's hidden notifies; output
 // written meanwhile is in the pane when it's shown again; with "Don't ask
-// again" the next close keeps them without asking.
+// again" the next close keeps them without asking. A question the window
+// never says it showed (a hung webview) goes ahead without it (D-2563).
 describe("E2E-M18-SH-14 keep agents running", function () {
   this.timeout(300_000);
   const agents: string[] = [];
@@ -74,6 +83,27 @@ describe("E2E-M18-SH-14 keep agents running", function () {
     await browser.waitUntil(() => visible(), { timeout: 10_000, timeoutMsg: "the window never came back" });
     await waitForPaneText(first, "you said: while hidden");
     expect((await paneText(second)).split("Do you want to proceed?").length - 1).toBeGreaterThanOrEqual(2);
+  });
+
+  it("F-SH-14 a question the window never shows goes ahead without it: the agents keep running, hidden", async () => {
+    await sayingSeen(false);
+    try {
+      await invoke("window_close", {});
+      await $('[data-testid="close-agents"]').waitForExist({ timeout: 10_000 });
+      expect(await visible()).toBe(true);
+      await browser.waitUntil(async () => !(await visible()), {
+        timeout: 15_000,
+        timeoutMsg: "the window never hid without its question shown",
+      });
+    } finally {
+      await sayingSeen(true);
+    }
+    // The agent waiting for its approval still runs.
+    await waitForStatus(agents[1] ?? "", "waiting");
+    await invoke("app_ready", {});
+    await browser.waitUntil(() => visible(), { timeout: 10_000 });
+    await $('[role="dialog"] button[aria-label="Close"]').click();
+    await $('[data-testid="close-agents"]').waitForExist({ reverse: true, timeout: 5_000 });
   });
 
   it("F-SH-14.5 with Don't ask again, the next close keeps them running without asking", async () => {

@@ -12,6 +12,7 @@ const COMMANDS: &[&str] = &[
     "app_quit",
     "app_close",
     "app_close_decide",
+    "app_close_seen",
     "commands_registry",
     "redact_text",
     "deeplink_pending",
