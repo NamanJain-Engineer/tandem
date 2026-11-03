@@ -152,9 +152,12 @@ pub async fn sync(app: &AppHandle, background_routines: bool) {
 }
 
 /// The window was hidden with Vibezeo running, with `agents` running, or
-/// shown again (F-SH-14): shows, retexts or removes the tray.
-pub async fn background(app: &AppHandle, hidden: bool, agents: usize) {
+/// shown again (F-SH-14): shows, retexts or removes the tray. Whether it's
+/// hidden is read now, so a recount that lands after the window is shown
+/// again doesn't bring the count back.
+pub async fn background(app: &AppHandle, agents: usize) {
     let s = shown();
+    let hidden = crate::services::background::hidden();
     s.hidden.store(hidden, Ordering::SeqCst);
     s.agents
         .store(if hidden { agents } else { 0 }, Ordering::SeqCst);

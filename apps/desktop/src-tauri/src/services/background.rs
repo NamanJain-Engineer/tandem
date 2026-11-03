@@ -208,8 +208,58 @@ pub fn decide(state: &AppState, quit: bool) -> CloseAction {
     close_action(in_tray, &setting, running_now(state))
 }
 
-/// The window is hidden with Vibezeo running.
-static HIDDEN: AtomicBool = AtomicBool::new(false);
+/// Whether the window is hidden with Vibezeo running, and which hiding it
+/// is: each hiding's recount runs only while it's the current one, so
+/// hiding, showing and hiding again leaves one.
+pub struct Hiding {
+    hidden: AtomicBool,
+    run: AtomicU32,
+}
+
+impl Hiding {
+    pub const fn new() -> Self {
+        Self {
+            hidden: AtomicBool::new(false),
+            run: AtomicU32::new(0),
+        }
+    }
+
+    /// The window hides: the new hiding's number, or `None` if it was
+    /// hidden already.
+    pub fn hide(&self) -> Option<u32> {
+        if self.hidden.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        Some(self.run.fetch_add(1, Ordering::SeqCst).wrapping_add(1))
+    }
+
+    /// The window is shown again: whether it was hidden.
+    pub fn show(&self) -> bool {
+        self.hidden.swap(false, Ordering::SeqCst)
+    }
+
+    /// Whether hiding `run` is still the current one.
+    pub fn current(&self, run: u32) -> bool {
+        self.hidden() && self.run.load(Ordering::SeqCst) == run
+    }
+
+    pub fn hidden(&self) -> bool {
+        self.hidden.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for Hiding {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+static HIDING: Hiding = Hiding::new();
+
+/// Whether the window is hidden with Vibezeo running (the tray's count).
+pub fn hidden() -> bool {
+    HIDING.hidden()
+}
 
 /// Keep running (F-SH-14): hides the window and shows the tray with how
 /// many agents run, recounted while it's hidden so the count follows the
@@ -219,29 +269,29 @@ pub fn keep(app: &AppHandle, agents: usize) {
         let _ = w.hide();
     }
     app.state::<AppState>().notifications.set_focused(false);
-    let first = !HIDDEN.swap(true, Ordering::SeqCst);
+    let run = HIDING.hide();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::tray::background(&app, true, agents).await;
-        if !first {
+        crate::tray::background(&app, agents).await;
+        let Some(run) = run else {
             return;
-        }
+        };
         loop {
             tokio::time::sleep(RECOUNT).await;
-            if !HIDDEN.load(Ordering::SeqCst) {
+            if !HIDING.current(run) {
                 break;
             }
             let n = running_now(&app.state::<AppState>()).len();
-            crate::tray::background(&app, true, n).await;
+            crate::tray::background(&app, n).await;
         }
     });
 }
 
 /// The window is shown again: the tray drops the count.
 pub fn shown(app: &AppHandle) {
-    if HIDDEN.swap(false, Ordering::SeqCst) {
+    if HIDING.show() {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move { crate::tray::background(&app, false, 0).await });
+        tauri::async_runtime::spawn(async move { crate::tray::background(&app, 0).await });
     }
 }
 
@@ -370,6 +420,25 @@ mod tests {
         assert_eq!(unshown(two.clone()), CloseAction::Keep(two));
         // Nothing runs any more: nothing is lost by quitting.
         assert_eq!(unshown(Vec::new()), CloseAction::Proceed);
+    }
+
+    #[test]
+    fn f_sh_14_a_hiding_counts_its_agents_until_the_window_is_shown() {
+        let h = Hiding::new();
+        let first = h.hide().expect("a new hiding");
+        assert!(h.current(first));
+        // Hidden already: the running recount goes on, no second one.
+        assert_eq!(h.hide(), None);
+        // Shown and hidden again before a recount: only the new one counts.
+        assert!(h.show());
+        let second = h.hide().expect("a new hiding");
+        assert!(!h.current(first));
+        assert!(h.current(second));
+        assert!(h.show());
+        assert!(!h.current(second));
+        assert!(!h.hidden());
+        // Shown when it wasn't hidden: nothing to drop.
+        assert!(!h.show());
     }
 
     #[test]
