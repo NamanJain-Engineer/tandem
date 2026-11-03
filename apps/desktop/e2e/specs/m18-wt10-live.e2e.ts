@@ -65,13 +65,16 @@ describe("E2E-M18-WT10-2 intent radar, live", function () {
   });
 
   it("F-WT-10.7 a rename mid-turn is announced as one, with no checkpoint", async () => {
-    // Check overlap parses both worktrees (nothing shared yet): the radar
-    // watches them from here.
-    await worktreeAction("tandem/renamer", "Check overlap…");
-    await $('[data-testid="worktree-overlap"]').waitForExist({ timeout: 20_000 });
-    await $('[data-testid="overlap-none"]').waitForExist({ timeout: 20_000 });
-    await browser.keys("Escape");
-    await $('[data-testid="worktree-overlap"]').waitForExist({ reverse: true, timeout: 10_000 });
+    // Check overlap in each worktree (nothing shared yet): a worktree is
+    // watched after its own Check overlap…, not when it's only read as a
+    // sibling (F-WT-10, the review of 30d5bcad, S-3), so both are from here.
+    for (const branch of ["tandem/renamer", "tandem/user"]) {
+      await worktreeAction(branch, "Check overlap…");
+      await $('[data-testid="worktree-overlap"]').waitForExist({ timeout: 20_000 });
+      await $('[data-testid="overlap-none"]').waitForExist({ timeout: 20_000 });
+      await browser.keys("Escape");
+      await $('[data-testid="worktree-overlap"]').waitForExist({ reverse: true, timeout: 10_000 });
+    }
     // Agents mid-turn: edits on disk, no checkpoint.
     writeFileSync(join(wt("renamer"), "src/parse.ts"), PARSE_LINE);
     writeFileSync(
