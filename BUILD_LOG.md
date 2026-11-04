@@ -706,6 +706,11 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - m18-tk09 looked for your Send back under the automatic label; since the review of 0e20d5b7 it's "Review (sent back by you):" (1b974744).
     - m18-wt10-live ran Check overlap in one worktree only, but a sibling that's only read isn't watched since the review of 30d5bcad, S-3 (0951524b).
 
+- Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
+  - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
+  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
+  - gen-protocol ran out of disk on its first try here. The steps after it then ran again on the same commit, the ones that had passed skipped.
+
 ### M18 · Reliability decisions
 - D-2564: The main window reloads by itself when its web content stops (a crash or the memory limit), at most twice within 5 minutes. The third stop asks first (Reload, or Quit Vibezeo), so a window that can't stay up doesn't reload for ever.
   - **Why a reload is enough.** The core holds everything: panes re-attach and replay their rings, and statuses and threads load again, by the paths every webview reload already uses.
