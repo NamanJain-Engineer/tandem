@@ -954,7 +954,8 @@ describe("F-WB-01 AC9 product scenes", () => {
       rmSync(root, { recursive: true, force: true });
     }
     expect(clean.length).toBeGreaterThan(0);
-  });
+    // Two diffs and a git init: as the test above, git's processes get 30 s on a loaded machine.
+  }, 30_000);
 
   it("F-WB-01 AC9 D-1899 the Review scene's diff is the finished worktree's real one, as git shows it", () => {
     // A run of git's own diff of the file, marks and both line numbers included (D-3000).
