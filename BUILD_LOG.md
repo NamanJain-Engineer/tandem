@@ -678,6 +678,27 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **E2E.** `m18-sh14-keep-running.e2e.ts` (3): closing asks, Keep running hides the window, an approval while it's hidden notifies, clicking the notification shows the window with the output written meanwhile; a question the window never says it showed hides it after 5 s with the agent still waiting; Don't ask again saves `keep` and the next close hides the window without asking. The first and last, with `m2-1`, `m2-4`, `m5-1` and `m5-5`: 5 specs, 18 tests passed on 78447a58. All three, with `m2-1`, `m2-4`, `m5-1` and `m5-9` (onboarding, for the dialog at the app's root): 5 specs, 17 tests passed on 5ec34393.
   - **Not in it.** Agents don't survive a reboot or a crash (F-SH-07 restores them paused). On a Linux desktop that shows no tray icons (GNOME without the AppIndicator extension) nothing shows while the window is hidden; opening Vibezeo again shows it, as for other apps that keep running in the tray (the docs say so). macOS's ⌘Q (the app menu's Quit) quits without asking: macOS ends the app without asking it first (tao handles only `applicationWillTerminate`). Nothing here has run on a Mac or on Windows: HUMAN_TODO's M15 macOS first run and the Windows check list it. The tray has no E2E (no tray under Xvfb), as F-SH-13's hasn't.
 
+- [x] F-SH-07.8 The window reloads when its web content crashes (D-2564). WebKitGTK's web process crashing, or going over its memory limit, left a blank window while the core and every agent went on. With F-SH-14, a close then hid it (D-2563), and opening it again showed the same blank page. macOS already reloaded through Tauri's default; Linux and Windows had no handler.
+  - **Core.** `services::web_crash`:
+    - `Reloads`: 2 reloads by themselves within 5 minutes, then the next stop asks; asking doesn't count, and Reload when asked starts the count again.
+    - `ended`: reloads the main window through `WebviewWindow::reload`, which on Linux is WebKit's native reload and works on a dead page; or asks.
+    - On Linux, `watch`: the main webview's `web-process-terminated`. A crash or the memory limit reloads; WebKit's own API ending it doesn't.
+  - **macOS.** `Builder::on_web_content_process_terminate`: the main window is counted, and other webviews reload as Tauri's default does.
+  - **Asking.** "Vibezeo's window keeps stopping", with Reload or Quit Vibezeo (`background::quit`). It goes through `confirm_native_as`: `confirm_native` with its other button named, honouring `TANDEM_FAKE_CONFIRM` in debug builds.
+  - **Logs.** `window.web_ended` (the reason and what it did), and `app.ready` on each page load (`app_ready`).
+  - **Spec.**
+    - PRODUCT_SPEC: F-SH-07's "The window's own crash" and AC 8.
+    - MILESTONES: the reliability section's task 3 and E2E-M18-SH-07.
+    - ARCHITECTURE: §5.2's line, plus `test_web_ended` and `test_web_process_kill`.
+    - The docs: Troubleshooting's "The window's content stopped".
+  - **Tests.** Rust F-SH-07.8 in `services::web_crash` (4: a crash reloads, the third stop within 5 minutes asks, Reload when asked starts the count again, Vibezeo's own ending is left alone), red first.
+  - **E2E.** `m18-sh07-web-crash.e2e.ts` (2): both pass, and with m18-sh14 and m5-1 after it (its cleanup lets later specs start): 3 specs, 7 tests.
+    - WebKitWebDriver ends its session when the page's web process dies ("session deleted because of page crash or hang").
+    - So the first test runs the crash's own path (`test_web_ended`) with the session kept: the reloaded page shows what the command printed meanwhile, the shell is the same, and the third stop asks.
+    - The second kills the real web process. It reads the window coming back from the log (a new `app.ready` after `window.web_ended` with Reload), and the shell's survival from a file it writes after the kill.
+    - Its app is then ended by pid, because a live app left behind holds the single-instance lock and every later spec's launch hands off to it and times out.
+  - **Not in it.** Windows' WebView2 (`ProcessFailed`, HUMAN_TODO's Windows first run, step 15). Nothing has run on a Mac (HUMAN_TODO's macOS first run, step 11).
+
 - [x] `chain28` (0.14.0) merged in at b1a3e981, so this track's work joins the next batch without conflicts. The conflicts were docs only: MILESTONES §20 (196 features, 65 P0, 67 P1, 64 P2; M18 owns 30 with F-TK-09 and F-SH-14), REMAINING's track lines (twenty-nine M18 features done), and HUMAN_TODO's Windows first run (the radar's reads stay step 13, keep running is 14).
   - **E2E on the merged tree (419e20f1).** 20 specs: m18-sh14, m3-1 to m3-16, m5-1, m15-7, m2-1, and `chain28`'s m10-2, m18-tk06, -tk07, -tk08, -tk09, -tl12-agent-run, -wt08 and -wt10-live. 15 passed. m10-2 and m3-14 passed on a re-run (m3-14's drag-to-pin is the known flake).
   - **Three of `chain28`'s own specs failed on `chain28` alone too (3f63e64e), each a test that no longer matched its code.** Each is fixed here as a test-only change, and each passes on the merged tree:
@@ -686,6 +707,9 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - m18-wt10-live ran Check overlap in one worktree only, but a sibling that's only read isn't watched since the review of 30d5bcad, S-3 (0951524b).
 
 ### M18 · Reliability decisions
+- D-2564: The main window reloads by itself when its web content stops (a crash or the memory limit), at most twice within 5 minutes. The third stop asks first (Reload, or Quit Vibezeo), so a window that can't stay up doesn't reload for ever.
+  - **Why a reload is enough.** The core holds everything: panes re-attach and replay their rings, and statuses and threads load again, by the paths every webview reload already uses.
+  - **What's left alone.** WebKit's own API ending the process isn't a crash. On macOS, other webviews keep Tauri's reload.
 - D-2560: Agents keep running in Vibezeo's own process with its window hidden, not in a separate holder (`docs/NEXT_FEATURES.md`'s design, which moved PTYs into `tandem-host`).
   - **Why.** A holder would need the PTYs handed over and its own status server, notifications, approvals and phone relay. With the core still running, all of those work unchanged, and opening again is showing a window, as a webview reload already is.
   - **The cost.** The app's memory stays while the window is hidden (hidden panes still park after 30 s, D-139).
