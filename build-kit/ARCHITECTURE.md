@@ -136,6 +136,7 @@ All locally generated ids are `<prefix>_<ULID>` (Crockford base32, 26 chars), st
 - The macOS CGEventTap and the Windows low-level keyboard hook each run on their own OS thread with a run loop / message pump (§12.2).
 - The cpal audio callback thread writes into an `rtrb` ring; it never allocates or locks.
 - **Watchdogs [§5.2 reliability]:** `Supervisor` in `tandem-core` restarts a failed subsystem task (PTY reader pool, gateway, scheduler, status server) at most 3 times per 10 min, then emits `app:subsystem-failed` and a notification.
+- **The window's web content [§5.2, F-SH-07.8]:** `services::web_crash` reloads the main window when its web content stops (WebKitGTK's `web-process-terminated` on Linux, Tauri's content-process hook on macOS; not on Windows yet), and panes re-attach as after any reload. After 2 reloads within 5 min, the next stop asks first: Reload, or Quit Vibezeo.
 
 ### 1.3 Startup sequence (target: interactive ≤2.0 s P50) [F-SH-07, F-SH-01, F-SH-05]
 1. `main()` parses args. `--run-routines` → headless path (§10.4), no Tauri window. Otherwise continue.
@@ -1048,6 +1049,8 @@ Registered, permitted (build.rs `SIM_COMMANDS` for macOS targets, `sim-capabilit
 | `test_notifier_click` | `{index}` | — (clicks a recorded OS notification: focuses the app and its source) | NotFound |
 | `test_set_window_focused` | `{focused?}` | — (pretends the window is focused or not; `null` = the real state) | — |
 | `test_window_visible` | — | `bool` (the main window is shown; F-SH-14 hides it while agents keep running) | — |
+| `test_web_process_kill` | — | `[u32, u32]` (ends every WebKitWebProcess the app started, 300 ms later, as a crash would: how many, and the app's pid, since WebKitWebDriver then ends the session; Linux, F-SH-07.8) | — |
+| `test_web_ended` | — | — (runs what the window's web content crashing runs, 300 ms later: a reload, or the question after 2 within 5 min; the session survives it, F-SH-07.8) | — |
 | `test_update_installed` | — | the version the harness's updater recorded as installed, or `null` (E2E-M5-7) | — |
 | `test_min_version_shift` | `{ms}` | `UpdateState` (moves the minimum-version notice `ms` into the past: the 72 h grace, time-mocked) | — |
 | `test_thread_seed` | `{threadState}` | thread id (writes a bare `threads` row in that state, e.g. one a crash left `working`; E2E-M5-3 until threads land in M7) | — |

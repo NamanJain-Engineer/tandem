@@ -988,7 +988,18 @@ pub fn run() {
     let e2e = state.e2e;
     let endpoints_api = state.endpoints.api.clone();
 
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // F-SH-07.8: the main window's content stopping reloads it, counted
+    // (Tauri's own reload otherwise, which other webviews keep).
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        if webview.label() == "main" {
+            services::web_crash::ended(webview.app_handle(), services::web_crash::Ended::Crashed);
+        } else {
+            let _ = webview.reload();
+        }
+    });
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             focus_main(app);
             for raw in deeplink::second_instance_links(&args) {
@@ -1025,6 +1036,8 @@ pub fn run() {
         commands::test::test_notifier_click,
         commands::test::test_set_window_focused,
         commands::test::test_window_visible,
+        commands::test::test_web_process_kill,
+        commands::test::test_web_ended,
         commands::test::test_thread_seed,
         commands::test::test_thread_state,
         commands::test::test_thread_seed_events,
@@ -1072,6 +1085,9 @@ pub fn run() {
                 // painted stays blank (D-206).
                 #[cfg(target_os = "linux")]
                 browser::wry_host::install_overlay(&window);
+                // F-SH-07.8: its web content stopping reloads it.
+                #[cfg(target_os = "linux")]
+                services::web_crash::watch(&window);
             }
             {
                 let profile = state.data.browser_profile();

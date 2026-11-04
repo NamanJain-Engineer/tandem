@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Engine detection, permissions and Wayland.
+description: Engine detection, permissions, Wayland and a window whose content stops.
 ---
 
 ## An engine isn't detected
@@ -19,6 +19,10 @@ Vibezeo looks for engines on your login shell's `PATH`, the way a terminal would
 
 - **A blank or flickering window.** Vibezeo draws its interface with WebKitGTK. If the window stays blank on your graphics driver, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1 tandem` and tell us which driver you use.
 - **Global shortcuts.** Global shortcuts for [Dictate](/docs/dictate/), when it ships, use the desktop's GlobalShortcuts portal on Wayland; where that isn't available, you'll be able to bind `xdg-open tandem://dictate/toggle` to a desktop shortcut instead.
+
+## The window's content stopped
+
+If the window's content crashes or runs out of memory, Vibezeo reloads it by itself. Every pane comes back attached to its running process, with what it printed meanwhile, and no agent stops. If it stops 3 times within 5 minutes, Vibezeo asks whether to **Reload** again or **Quit Vibezeo** (your agents come back paused when you open it again). On Windows it doesn't reload by itself yet.
 
 ## Still stuck
 

@@ -278,6 +278,92 @@ pub fn test_window_visible(
         .unwrap_or(false))
 }
 
+/// What the main window's web content crashing runs (F-SH-07.8), 300 ms
+/// from now so this answer gets out before the window reloads. A real crash
+/// ends WebKitWebDriver's session (`test_web_process_kill`); this one
+/// doesn't.
+#[tauri::command]
+pub fn test_web_ended(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), IpcError> {
+    guard(&state)?;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        crate::services::web_crash::ended(&app, crate::services::web_crash::Ended::Crashed);
+    });
+    Ok(())
+}
+
+/// Ends the main window's web content as a crash would (F-SH-07.8), 300 ms
+/// from now so this answer gets out first: every WebKitWebProcess this app
+/// started (Linux). How many it ends, and this app's pid: WebKitWebDriver
+/// ends the session when the page's process dies, so the test ends the app.
+#[tauri::command]
+pub fn test_web_process_kill(state: State<'_, AppState>) -> Result<(u32, u32), IpcError> {
+    guard(&state)?;
+    let me = std::process::id();
+    let pids = web_processes(me);
+    let n = u32::try_from(pids.len()).unwrap_or(u32::MAX);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        for pid in pids {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .status();
+        }
+    });
+    Ok((n, me))
+}
+
+/// `root`'s descendants named WebKitWebProcess, from `/proc` (none
+/// elsewhere).
+fn web_processes(root: u32) -> Vec<u32> {
+    use std::collections::HashMap;
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    let mut webkit = Vec::new();
+    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|s| s.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        // `pid (comm) state ppid …`: the name can hold spaces and brackets.
+        let (Some(open), Some(close)) = (stat.find('('), stat.rfind(')')) else {
+            continue;
+        };
+        let name = &stat[open + 1..close];
+        let Some(ppid) = stat[close + 1..]
+            .split_whitespace()
+            .nth(1)
+            .and_then(|p| p.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        parent.insert(pid, ppid);
+        // The kernel keeps 15 bytes of the name.
+        if name.starts_with("WebKitWebProces") {
+            webkit.push(pid);
+        }
+    }
+    webkit
+        .into_iter()
+        .filter(|pid| {
+            let mut at = *pid;
+            for _ in 0..64 {
+                match parent.get(&at) {
+                    Some(&p) if p == root => return true,
+                    Some(&p) if p > 1 => at = p,
+                    _ => return false,
+                }
+            }
+            false
+        })
+        .collect()
+}
+
 /// Pretends the window is focused or not (`None`: the real state).
 #[tauri::command]
 pub fn test_set_window_focused(

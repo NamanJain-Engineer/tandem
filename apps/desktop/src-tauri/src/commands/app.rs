@@ -27,6 +27,8 @@ pub async fn app_ready(
         let _ = window.show();
     }
     crate::services::background::shown(&app);
+    // Each page load, a reload after the web content stopped too (F-SH-07.8).
+    tracing::info!(code = "app.ready", "the window's page is ready");
     Ok(boot::app_boot(&state).await)
 }
 

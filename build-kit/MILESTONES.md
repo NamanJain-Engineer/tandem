@@ -2329,7 +2329,7 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 
 ## M18 · Next features: reliability (M)
 
-**Goal.** Reliability from `docs/NEXT_FEATURES.md` (§1 #10) and REMAINING §0.3: six agents' first frames, then agents that keep running when the window closes. Built on `ccr-6d871eba-mxry64`; decisions D-2560 to D-2579 (D-858).
+**Goal.** Reliability from `docs/NEXT_FEATURES.md` (§1 #10) and REMAINING §0.3: six agents' first frames, agents that keep running when the window closes, and a window that reloads when its content crashes (F-SH-07.8). Built on `ccr-6d871eba-mxry64`; decisions D-2560 to D-2579 (D-858).
 
 **Owns:** F-SH-14 (P2)
 **Prerequisites.** F-SH-07 (restore), F-SH-13 (the tray), F-DB-03 (OS notifications).
@@ -2338,14 +2338,18 @@ dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter deskto
 1. **Six agents' first frames (F-CD-03 AC2, §5.1).** `pty_start` and the view's pre-start (D-2579); views not on screen wait while one on screen hasn't shown its first output (D-2578).
 2. **Keep agents running when the window closes (F-SH-14).** The main window's close request counts the running agents (`services::background`), asks through `app:close-requested`, and `app_close_decide` keeps them (the window hidden, the tray's count) or quits; the `keep_agents_on_close` setting; the close dialog and its Settings › General row.
 
+3. **The window's own crash (F-SH-07.8).** `services::web_crash`: WebKitGTK's `web-process-terminated` (Linux) and Tauri's content-process hook (macOS) reload the main window; after 2 reloads in 5 minutes the next stop asks (Reload, Quit Vibezeo); `test_web_process_kill`.
+
 **Verification**
 ```bash
+cargo test -p tandem-desktop --lib f_sh_07_8
 cargo test -p tandem-desktop --lib f_sh_14 && cargo test -p tandem-desktop --lib f_cd_03_2
 pnpm --filter desktop exec vitest run src/features/shell/closeDialog.test.tsx src/features/code/prestart.test.tsx src/features/code/mountQueue.test.ts
 dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" pnpm --filter desktop e2e -- --spec 'e2e/specs/m18-sh14-*.e2e.ts'
 ```
 
 **E2E**
+- **E2E-M18-SH-07 The window's own crash.** A shell pane runs a command while the window's web content stops: through the path a crash runs (`test_web_ended`, the WebDriver session survives it), then by killing the web process. Expected: the window comes back by itself within 30 s, the pane shows what the command printed meanwhile, and its shell's pid is the one from before; the third stop within 5 minutes asks first. WebKitWebDriver ends its session when the page's process dies, so the kill comes last and is read from the app's log (`window.web_ended`, a new `app.ready`) and a file the shell writes after it (Linux).
 - **E2E-M18-SH-14 Keep agents running.** Two fake Claude Code agents waiting for an approval. Expected: closing the window asks "Keep 2 agents running in the background?"; Keep running hides it, with both processes still running; an approval while it's hidden notifies; output written while hidden is in the pane when it's shown again; with "Don't ask again", the next close keeps them without asking.
 
 **Exit checklist:** G green · the E2E above and the terminal specs (m3, m4-1, m5-1 to m5-3, m6-1, m15-7).

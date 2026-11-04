@@ -96,6 +96,7 @@ pub mod updates;
 pub mod usage;
 pub mod usage_report;
 pub mod wake;
+pub mod web_crash;
 pub mod widget;
 pub mod workspaces;
 pub mod worktree_runtime;

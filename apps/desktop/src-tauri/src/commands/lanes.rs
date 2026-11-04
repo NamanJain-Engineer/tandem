@@ -135,6 +135,18 @@ async fn confirm_discard(app: &AppHandle, branch: &str) -> bool {
 /// this computer can answer (TL-06 rule 5). Debug builds take
 /// `TANDEM_FAKE_CONFIRM=yes|no` (or a file holding it) instead.
 pub(crate) async fn confirm_native(app: &AppHandle, title: &str, body: &str, action: &str) -> bool {
+    confirm_native_as(app, title, body, action, "Cancel").await
+}
+
+/// [`confirm_native`] with its other button named `other` (F-SH-07.8's
+/// Reload or Quit Vibezeo); `false` is `other`.
+pub(crate) async fn confirm_native_as(
+    app: &AppHandle,
+    title: &str,
+    body: &str,
+    action: &str,
+    other: &str,
+) -> bool {
     if cfg!(debug_assertions) {
         if let Ok(fake) = std::env::var("TANDEM_FAKE_CONFIRM") {
             let answer = match std::fs::read_to_string(&fake) {
@@ -151,7 +163,7 @@ pub(crate) async fn confirm_native(app: &AppHandle, title: &str, body: &str, act
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             action.into(),
-            "Cancel".into(),
+            other.into(),
         ))
         .show(move |ok| {
             let _ = tx.send(ok);

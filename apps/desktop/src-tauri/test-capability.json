@@ -16,6 +16,8 @@
     "allow-test-notifier-click",
     "allow-test-set-window-focused",
     "allow-test-window-visible",
+    "allow-test-web-process-kill",
+    "allow-test-web-ended",
     "allow-test-thread-seed",
     "allow-test-thread-state",
     "allow-test-thread-seed-events",

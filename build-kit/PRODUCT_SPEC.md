@@ -361,6 +361,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
   - Threads left in Running or Waiting by a crash are settled on open to "Interrupted — Resume?".
   - Nothing is ever marked successful that did not finish.
 - **Time bounds:** restore and quit are each bounded. If quit cleanup exceeds 5 s, force-kill child process trees and exit.
+- **The window's own crash.** If the window's web content stops while Vibezeo runs (it crashed, or went over its memory limit), the window reloads by itself: each pane attaches again to its running process with everything it wrote meanwhile, and no agent or thread stops. After 2 such reloads within 5 minutes, the next stop asks first, "Vibezeo's window keeps stopping", with **Reload** (the count starts again) and **Quit Vibezeo**. On Linux (WebKitGTK) and macOS (WKWebView); Windows (WebView2) doesn't reload by itself yet.
 
 **Data:** SQLite `layout_*` tables, `panes`, `threads`, plus the `sessions` table (engine session ids per pane/thread, provider home id, launch config JSON).
 
@@ -372,6 +373,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 5. Ctrl+C on a paused card removes it from the restore queue, and its saved scrollback remains viewable.
 6. A thread persisted as Running shows "Interrupted" after restart and is not marked done.
 7. Cold start to interactive window takes ≤2,000 ms at P50 on the reference machine with a 16-pane layout (plain shells).
+8. Kill the window's web content process with a shell pane running a command: the window comes back within 30 s by itself, the pane shows what the command printed after the kill, and its shell is the same process. A third kill within 5 minutes asks before reloading.
 
 #### F-SH-08 First-run onboarding (P0)
 **Behavior:**

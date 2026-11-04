@@ -514,6 +514,8 @@ const TEST_COMMANDS: &[&str] = &[
     "test_notifier_click",
     "test_set_window_focused",
     "test_window_visible",
+    "test_web_process_kill",
+    "test_web_ended",
     "test_thread_seed",
     "test_thread_state",
     "test_thread_seed_events",
