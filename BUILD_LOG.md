@@ -740,6 +740,11 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
 
 - [x] A race in `chain28`'s F-TK-09.2 resume test, seen once in the gate's full run on 57b1273f ("Ready for review" missing). `settled` waits for the run's saved state, and the notice is sent after it, past a tracker check. That test and the three that check the same way now wait for the notice (`told_now`), with what they expect unchanged; the 45 `tasks_exec` tests pass.
 
+- Gate passed on 3bacbf8f (the two flakes, F-PL-01's plugins for agent terminals and the F-TK-09.2 test race):
+  - Tests: 2,883 Rust (6 ignored) and 2,187 TypeScript.
+  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
+  - The steps before the desktop crate's tests passed on 57b1273f, where the gate then stopped at the race. 3bacbf8f differs from it by that test file and BUILD_LOG only, so those steps weren't run again. gen-protocol ran out of disk twice building every crate's tests at once, so it ran one package at a time (the same filter and environment, trimming between them): 601 types, no drift, nothing untracked.
+
 - Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
   - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
