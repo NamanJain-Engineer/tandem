@@ -3415,6 +3415,19 @@ pub(crate) mod tests {
             .collect()
     }
 
+    /// What the host was told, once it's `want`. The notice comes after
+    /// the run's state is saved, which is all `settled` waits for: checked
+    /// at once, it could be missing under load.
+    async fn told_now(f: &Fixture, want: &[String]) {
+        for _ in 0..200 {
+            if told(f) == want {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert_eq!(told(f), want);
+    }
+
     fn reviewed_plan_run(issue: &str) -> ExecuteInput {
         ExecuteInput {
             review: true,
@@ -3632,7 +3645,7 @@ pub(crate) mod tests {
                 issue.result.as_deref(),
                 Some("Fixed the redirect loop; tests pass.")
             );
-            assert_eq!(told(&f), vec!["Ready for review".to_string()]);
+            told_now(&f, &["Ready for review".to_string()]).await;
         }
     }
 
@@ -3698,7 +3711,7 @@ pub(crate) mod tests {
                 .id;
             settled(&f, &id).await;
             assert_eq!(heard.lock().expect("lock").len(), 1);
-            assert_eq!(told(&f), want);
+            told_now(&f, &want).await;
         }
     }
 
@@ -4000,7 +4013,7 @@ pub(crate) mod tests {
             assert_eq!(review_sessions(&f), 3);
             let a = repo::get(&f.svc.store, &id).await.expect("get");
             assert_eq!(a.review_verdict.as_deref(), Some("changes_requested"));
-            assert_eq!(told(&f), told_you);
+            told_now(&f, &told_you).await;
             let issue = f.tracker.get("TAN-1").expect("issue");
             assert_eq!(issue.status, IssueStatus::InReview);
             assert_eq!(issue.result.as_deref(), Some("Third pass."));
@@ -4267,7 +4280,7 @@ pub(crate) mod tests {
             .attempt
             .id;
         settled(&f, &id).await;
-        assert_eq!(told(&f), vec!["Ready for review".to_string()]);
+        told_now(&f, &["Ready for review".to_string()]).await;
         // From the send on, no attempt's state can be written.
         let store = f.svc.store.clone();
         *f.host.after_send.lock().expect("lock") = Some(Box::new(move || {

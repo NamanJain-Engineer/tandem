@@ -738,6 +738,8 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **E2E.** `m18-pl01-terminal-plugins.e2e.ts` (6): the row's menu grants `test_echo`; a Claude Code terminal lists the search and call tools and gets the echo back, its lease in the file and not on its command line; a write asks on the pane and runs after Allow once; after `/exit` the file goes and the lease gets 401; a Codex terminal has `TANDEM_GATEWAY_LEASE`, no lease in its arguments, and calls the plugin; a terminal in a workspace with none has no gateway. On the same build, with the local infra, m10-8-gateway, m12-3-grants, m12-4-approval, m18-tl12-agent-run and m3-14 passed too.
   - **Not in it.** SSH hosts and WSL, local models and other engines (D-2565). Nothing has run with a real account: HUMAN_TODO's "Plugins in agent terminals" lists the checks.
 
+- [x] A race in `chain28`'s F-TK-09.2 resume test, seen once in the gate's full run on 57b1273f ("Ready for review" missing). `settled` waits for the run's saved state, and the notice is sent after it, past a tracker check. That test and the three that check the same way now wait for the notice (`told_now`), with what they expect unchanged; the 45 `tasks_exec` tests pass.
+
 - Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
   - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
