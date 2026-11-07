@@ -138,6 +138,9 @@ pub struct TerminalService {
     wsl_panes: std::sync::Mutex<std::collections::HashSet<String>>,
     /// The tasks server terminal agents get (F-TK-02).
     tasks: std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>,
+    /// The gateway agent terminals get when their workspace has plugins
+    /// (F-PL-01).
+    pane_gateway: std::sync::OnceLock<crate::services::pane_plugins::PaneGateway>,
     /// Notices for panes whose process isn't running (yet), sent when it
     /// starts (F-TK-05).
     held_notices: std::sync::Mutex<HeldNotices>,
@@ -325,6 +328,7 @@ impl TerminalService {
             wsl: std::sync::OnceLock::new(),
             wsl_panes: Default::default(),
             tasks: std::sync::OnceLock::new(),
+            pane_gateway: std::sync::OnceLock::new(),
             held_notices: Default::default(),
             host_tasks: Default::default(),
             sandbox: tokio::sync::OnceCell::new(),
@@ -427,6 +431,7 @@ impl TerminalService {
         root: &Path,
         provider_home: Option<&Path>,
         argv: Vec<String>,
+        readable: &[PathBuf],
     ) -> Vec<String> {
         let on = tandem_store::repo::settings::get(
             &self.store,
@@ -474,6 +479,8 @@ impl TerminalService {
         let staging = data.join("staging").join(pane.as_str());
         let _ = std::fs::create_dir_all(&staging);
         policy.readable.push(staging);
+        // Its gateway config (F-PL-01).
+        policy.readable.extend(readable.iter().cloned());
         let path_var = login.vars.get("PATH").cloned().unwrap_or_default();
         if let Some(dir) = tandem_engines::local_models::wrapped_program(&argv)
             .and_then(|p| tandem_engines::sandbox::find_program(p, &path_var))
@@ -610,6 +617,12 @@ impl TerminalService {
         let _ = self.tasks.set(tasks.clone());
     }
 
+    /// The gateway agent terminals get when their workspace has plugins
+    /// granted (F-PL-01).
+    pub fn bind_gateway(&self, gateway: crate::services::pane_plugins::PaneGateway) {
+        let _ = self.pane_gateway.set(gateway);
+    }
+
     /// A one-line notice in the pane's terminal. One for a pane whose
     /// process isn't running waits until it starts (at most
     /// [`HELD_NOTICES_MAX`], the newest): an agent's tasks session, and the
@@ -661,10 +674,13 @@ impl TerminalService {
     }
 
     /// The pane's agent session ended or the pane closed: its task
-    /// connection is revoked.
+    /// connection and its gateway lease (F-PL-01) are revoked.
     pub fn end_tasks_session(&self, pane: &str) {
         if let Some(tasks) = self.tasks.get() {
             tasks.end_session(&format!("pn:{pane}"));
+        }
+        if let Some(gateway) = self.pane_gateway.get() {
+            gateway.end(pane);
         }
         if let Ok(mut held) = self.held_notices.lock() {
             held.remove(pane);
@@ -1358,6 +1374,20 @@ impl TerminalService {
                 login.vars.get("NO_PROXY").map(String::as_str),
                 login.vars.get("no_proxy").map(String::as_str),
             );
+            // Plugins granted to its workspace: the gateway for this run
+            // (F-PL-01). A pane on a local model keeps to this computer
+            // (F-EN-11).
+            let plugins = match self.pane_gateway.get() {
+                Some(g) if local.is_none() => {
+                    g.start(&self.store, pane, &record.workspace_id, &engine.id)
+                        .await
+                }
+                Some(g) => {
+                    g.end(pane.as_str());
+                    None
+                }
+                None => None,
+            };
             let inner = match (&local, &launch.home) {
                 // The model and provider on the command line, last, above
                 // every configuration file but an administrator's; the
@@ -1401,10 +1431,14 @@ impl TerminalService {
                             .with_stage("launch_config"),
                     );
                 }
-                (None, _) => launch.spec.argv(),
+                (None, _) => match &plugins {
+                    Some(p) => p.argv(launch.spec.argv()),
+                    None => launch.spec.argv(),
+                },
             };
+            let readable: Vec<PathBuf> = plugins.iter().filter_map(|p| p.file.clone()).collect();
             let argv = self
-                .sandbox_argv(pane, &root, launch.home.as_deref(), inner)
+                .sandbox_argv(pane, &root, launch.home.as_deref(), inner, &readable)
                 .await;
             let args = env::agent_wrapper_with(
                 &shell,
@@ -1424,6 +1458,7 @@ impl TerminalService {
                 self.tasks_env(&engine, launch.home.as_deref(), pane.as_str(), &cwd)
                     .await,
             );
+            env.extend(plugins.map(|p| p.launch.env).unwrap_or_default());
             (args, env, Some(engine), Some(launch))
         } else if let Some(run) = self.take_run(pane) {
             // Run with secrets: the variables reach the command only, and
@@ -3516,7 +3551,13 @@ mod sandbox_tests {
         )
         .expect("argv");
         let wrapped = svc
-            .sandbox_argv(&PaneId::new(), &dir.path().join("ws"), Some(&home), argv)
+            .sandbox_argv(
+                &PaneId::new(),
+                &dir.path().join("ws"),
+                Some(&home),
+                argv,
+                &[],
+            )
             .await;
         assert_eq!(wrapped[0], "SANDBOX");
         assert!(wrapped.contains(&bin.display().to_string()), "{wrapped:?}");
@@ -3556,7 +3597,10 @@ mod sandbox_tests {
         // No provider home (cursor-agent signs in at ~/.cursor): unwrapped.
         let (a, b) = (PaneId::new(), PaneId::new());
         for p in [&a, &b] {
-            assert_eq!(svc.sandbox_argv(p, &root, None, argv.clone()).await, argv);
+            assert_eq!(
+                svc.sandbox_argv(p, &root, None, argv.clone(), &[]).await,
+                argv
+            );
         }
         let notes = svc.sandbox_panes();
         assert_eq!(notes.len(), 2);
@@ -3573,12 +3617,28 @@ mod sandbox_tests {
         let home = data.provider_home("claude", "acc_1");
         let c = PaneId::new();
         let wrapped = svc
-            .sandbox_argv(&c, &root, Some(&home), vec!["claude".into()])
+            .sandbox_argv(&c, &root, Some(&home), vec!["claude".into()], &[])
             .await;
         assert_eq!(wrapped[0], "SANDBOX");
         let staging = data.root().join("staging").join(c.as_str());
         assert!(wrapped.contains(&staging.display().to_string()));
         assert!(staging.is_dir());
+        // F-PL-01: and its gateway config, which is under the hidden data
+        // folder.
+        let config = data.mcp_configs().join(format!("{}.json", c.as_str()));
+        let wrapped = svc
+            .sandbox_argv(
+                &c,
+                &root,
+                Some(&home),
+                vec!["claude".into()],
+                std::slice::from_ref(&config),
+            )
+            .await;
+        assert!(
+            wrapped.contains(&config.display().to_string()),
+            "{wrapped:?}"
+        );
         // Closing a pane clears its note.
         svc.forget_sandbox(a.as_str());
         assert_eq!(svc.sandbox_panes().len(), 2);

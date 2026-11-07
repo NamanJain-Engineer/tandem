@@ -173,6 +173,13 @@ describe("rail (F-SH-03)", () => {
     expect(rows()[0]?.getAttribute("data-pinned")).toBe("true");
   });
 
+  it("F-PL-05.3 the row's menu offers Plugins for this workspace…, for the row it's on", async () => {
+    setup([ws("a"), ws("b")]);
+    fireEvent.contextMenu(rows()[1] as HTMLElement);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Plugins for this workspace…" }));
+    expect(useWorktrees.getState().ask).toEqual({ kind: "plugins", workspaceId: "b" });
+  });
+
   it("F-RM-01 a host's folder offers worktrees (D-1602) but no Reveal", async () => {
     setup([ws("a", { kind: "ssh", hostId: "hst_1", branch: "main" })]);
     fireEvent.contextMenu(rows()[0] as HTMLElement);

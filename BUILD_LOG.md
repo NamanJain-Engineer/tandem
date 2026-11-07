@@ -716,12 +716,40 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - **Runs.** 5 of 5 passed the drag, 2 of them with all 4 cores held busy. In one of those two, F-SH-03.3's relaunch then took longer than mocha's 60 s, and the session went with it.
   - **m10-2's Ask follow-up (F-AG-08).** Each finished teammate turn gets its own learn follow-up, a headless spawn some time after the turn. The earlier tests' two turns could spawn theirs after the Ask test had counted, so it saw 2 where it expects 1. It now waits for those before counting. Not a double spawn: one follow-up per turn is the design. 3 of 3 passed.
 
+- [x] F-PL-01's plugins for agent terminals, opted in by workspace grants (F-PL-05; D-2565). F-PL-01's behaviour named a "terminal TUI opted into plugins", and REMAINING listed it as not built, with no acceptance criterion. Taken up after F-SH-07.8.
+  - **Spec.**
+    - PRODUCT_SPEC: F-PL-01's "Agent terminals" (lease, delivery, who gets none) with AC 5 and 6, and F-PL-05's "Workspaces" with AC 3. New criteria on done P1s, so no count changes.
+    - UI_SPEC §4.8: the grant dialogs and a terminal's plugin asks. MILESTONES: the reliability section's task 4 and E2E-M18-PL01. ARCHITECTURE §11.2.
+    - The docs: Plugins' "In agent terminals" and its workspace grants, and Agent mode's line on a teammate in a terminal.
+  - **Opting in.** A workspace row's menu → "Plugins for this workspace…" (`WorkspacePlugins`), none by default. Every thread in the workspace and every agent terminal started in it can use them. A worktree's sessions use its folder's as well (`pane_plugins::workspace_subjects`, for threads and the gateway's per-call check too); its dialog shows those on and locked.
+  - **The lease.** `pane_plugins::PaneGateway::start` gives a local Claude Code or Codex pane with grants a lease for each start: caller `Pane`, interactive, Edits, no built-ins. It's made before the command line is wrapped, and its arguments go right after the program.
+    - Claude Code: `--mcp-config=$DATA/mcp/<pane>.json` (0600), without `--strict-mcp-config`, so its own servers stay (F-EN-04). The sandbox (F-TL-11) is given the file to read.
+    - Codex: `-c mcp_servers.tandem.url=…` and `bearer_token_env_var`, the lease only in `TANDEM_GATEWAY_LEASE`.
+    - `PaneLeases` revokes it, deletes the file and cancels the pane's open plugin questions when the engine exits (the PTY's handback), when the pane closes or its workspace goes, and at its next start. Files a run before left go at launch.
+    - None for other engines, panes on a local model (F-EN-11), on SSH hosts or in WSL.
+  - **Asking.** A pane's plugin asks go to the broker as `SourceRef::Pane` (`plugins::ask_pane`). Its banner shows the plugin's fields, with Allow once and Allow for this agent; before, any pane approval that wasn't a `vibezeo run` said it couldn't be shown. Its Dashboard card shows the plugin too.
+  - **Fake engine.** `/mcp <tool> <json>` calls the gateway a terminal run was given: Claude's `--mcp-config`, in either form, or Codex's `-c` and its lease variable.
+  - **Real Claude Code.** 2.1.42, run here offline with an empty config folder, parses `--mcp-config=<file>`; given apart, the option took the prompt after it as a second file.
+  - **Tests.** Each red first.
+    - Rust `services::pane_plugins` (9): Claude's config and its mode; Codex's environment only; others get none; the arguments go after the program; a worktree has its folder's grants; ending revokes (401) and deletes; ending cancels the pane's plugin questions and nothing else; a relaunch keeps the new config; a run before's files go.
+    - Rust `services::terminal`'s sandbox test: the config is readable in the sandbox (added to F-TL-11.4's test, after the code).
+    - Rust `services::plugins` (2): a pane's and a worktree thread's grant subjects; a pane's ask reaches the broker.
+    - TS: `plugins.test.tsx` (2), `rail.test.tsx` (1), `approvalBanner.test.tsx` (1), `dashboard.test.tsx` (1).
+  - **E2E.** `m18-pl01-terminal-plugins.e2e.ts` (6): the row's menu grants `test_echo`; a Claude Code terminal lists the search and call tools and gets the echo back, its lease in the file and not on its command line; a write asks on the pane and runs after Allow once; after `/exit` the file goes and the lease gets 401; a Codex terminal has `TANDEM_GATEWAY_LEASE`, no lease in its arguments, and calls the plugin; a terminal in a workspace with none has no gateway. On the same build, with the local infra, m10-8-gateway, m12-3-grants, m12-4-approval, m18-tl12-agent-run and m3-14 passed too.
+  - **Not in it.** SSH hosts and WSL, local models and other engines (D-2565). Nothing has run with a real account: HUMAN_TODO's "Plugins in agent terminals" lists the checks.
+
 - Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
   - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
   - gen-protocol ran out of disk on its first try here. The steps after it then ran again on the same commit, the ones that had passed skipped.
 
 ### M18 · Reliability decisions
+- D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
+  - **Why the workspace.** F-PL-01 named terminals "opted into plugins" without saying how. F-PL-05's workspace grants already reached threads, and a terminal belongs to a workspace; a switch per pane would be one more place to look, and would go with the pane.
+  - **Why the command line.** The provider home is the account's: every pane on it shares it, and it outlives a run. A lease written there would outlive its pane, and one pane's plugins would reach the next. `--mcp-config` and Codex's `-c` add the server for one run beside the user's own, and Codex reads the lease from its environment, as a Codex thread does.
+  - **Why `--mcp-config=<file>`.** The option takes several values. Real Claude Code 2.1.42, given it apart, took a prompt after it as a second file; the `=` form ends at its value.
+  - **Worktrees.** A worktree's sessions have its folder's grants as well as their own, threads too: a worktree is a short-lived copy of its folder.
+  - **Left out.** SSH hosts and WSL: the gateway listens on this computer's loopback, and D-1604's relay, which serves threads there, would be the next slice. Panes on a local model, which F-EN-11 keeps to this computer. Engines other than Claude Code and Codex.
 - D-2564: The main window reloads by itself when its web content stops (a crash or the memory limit), at most twice within 5 minutes. The third stop asks first (Reload, or Quit Vibezeo), so a window that can't stay up doesn't reload for ever.
   - **Why a reload is enough.** The core holds everything: panes re-attach and replay their rings, and statuses and threads load again, by the paths every webview reload already uses.
   - **What's left alone.** WebKit's own API ending the process isn't a crash. On macOS, other webviews keep Tauri's reload.

@@ -54,6 +54,7 @@ import { MergeForecast, OverlapDialog } from "./WorktreeOverlap";
 import { SecondOpinionDialog } from "./SecondOpinion";
 import { ReviewDiff } from "./WorktreeReview";
 import { InstructionsDialog } from "./Instructions";
+import { WorkspacePlugins } from "../plugins/WorkspacePlugins";
 import { ReviewSetupDialog, WorktreeSetupDialog, useWorktreeNotices } from "./WorktreeSetup";
 import { WorkspaceSlot } from "./WorkspaceSlot";
 import { showsStatus, useWorkspaceStatus } from "./workspaceStatus";
@@ -800,6 +801,17 @@ export function WorktreeDialogs() {
   if (ask.kind === "instructions") {
     const ws = list.find((w) => w.id === ask.workspaceId);
     return ws ? <InstructionsDialog ws={ws} onClose={close} /> : null;
+  }
+  if (ask.kind === "plugins") {
+    const ws = list.find((w) => w.id === ask.workspaceId);
+    const folder = ws?.parentId ? list.find((w) => w.id === ws.parentId) : undefined;
+    return ws ? (
+      <WorkspacePlugins
+        workspaceId={ws.id}
+        folder={folder ? { id: folder.id, name: folder.name } : null}
+        onClose={close}
+      />
+    ) : null;
   }
   if (ask.kind === "new") {
     const ws = list.find((w) => w.id === ask.workspaceId);

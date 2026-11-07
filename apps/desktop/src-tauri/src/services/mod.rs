@@ -55,6 +55,7 @@ pub mod night_shift;
 pub mod notifications;
 pub mod notifier;
 pub mod opener;
+pub mod pane_plugins;
 pub mod phone;
 pub mod phone_lan;
 pub mod plan;

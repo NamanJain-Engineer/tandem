@@ -108,6 +108,51 @@ describe("Dashboard (F-DB-01)", () => {
     await waitFor(() => expect(cards().map((c) => c.dataset.key)).toEqual(["pane:pn_3"]));
   });
 
+  it("F-PL-01 an agent terminal's plugin approval reads as the plugin's, and Allow once answers it", async () => {
+    const calls = setup([
+      item("waiting", "notes", {
+        pendingApproval: {
+          id: "ap_2",
+          source: { type: "pane", paneId: "pn_1" },
+          kind: "plugin_action",
+          summary: "Use Test Echo: save a note",
+          detail: JSON.stringify({
+            pluginId: "test_echo",
+            pluginLabel: "Test Echo",
+            logo: "TE",
+            accountLabel: "me",
+            tool: "note",
+            action: "save a note",
+            target: null,
+            cost: null,
+            riskClass: "write",
+            request: "{}",
+          }),
+          options: ["once"],
+          createdAt: 1,
+          expiresAt: 2,
+        },
+      }),
+    ]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    expect((await screen.findByTestId("card-plugin")).textContent).toContain("Test Echo");
+    expect(screen.queryByText("This approval couldn't be shown", { exact: false })).toBeNull();
+    const allow = screen.getByTestId("card-allow") as HTMLButtonElement;
+    await waitFor(() => expect(waiting(allow)).toBe(false));
+    fireEvent.click(allow);
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
+        approvalId: "ap_2",
+        decision: { type: "allow", scope: "once" },
+        via: "dashboard",
+      }),
+    );
+  });
+
   it("F-DB-01.3 Allow once on a waiting card answers through the broker", async () => {
     const calls = setup([
       item("waiting", "deploy", {

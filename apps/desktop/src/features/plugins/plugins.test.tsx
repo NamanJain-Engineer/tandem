@@ -9,6 +9,7 @@ import { HeldActions } from "./HeldActions";
 import { PluginApprovalFields } from "./PluginApproval";
 import { PluginsPage } from "./PluginsPage";
 import { ThreadPlugins } from "./ThreadPlugins";
+import { WorkspacePlugins } from "./WorkspacePlugins";
 import { filterCards, parseApproval, splitCards } from "./model";
 import { waiting } from "../../test/waiting";
 
@@ -624,6 +625,73 @@ describe("F-PL-05 plugins for this thread (F-TH-07)", () => {
       connectionId: "pc_gh",
       granted: true,
     });
+  });
+});
+
+describe("F-PL-05 plugins for this workspace", () => {
+  let calls: Call[];
+  let own: string[];
+  beforeEach(() => {
+    resetStores();
+    own = [];
+    const SENTRY = card("sentry", "Sentry", {
+      state: "connected",
+      connectionId: "pc_se",
+      accountLabel: "shop",
+    });
+    calls = fakeBackend({
+      plugins_catalog: () => [GITHUB, SENTRY, LINEAR],
+      grants_list: (a) => {
+        const subject = a?.subject as { type: string; workspaceId?: string };
+        return subject.workspaceId === "ws_repo" ? ["pc_se"] : own;
+      },
+      grants_set: (a) => {
+        if (a?.granted) own.push(String(a.connectionId));
+        return null;
+      },
+    });
+  });
+
+  it("F-PL-05.3 a workspace starts with none, and a grant is the workspace's, for its threads and agent terminals", async () => {
+    ui(<WorkspacePlugins workspaceId="ws_a" folder={null} onClose={() => undefined} />);
+    const gh = within(await screen.findByTestId("workspace-plugin-github")).getByRole("switch");
+    expect(gh.getAttribute("aria-checked")).toBe("false");
+    // Only what's connected.
+    expect(screen.queryByTestId("workspace-plugin-linear")).toBeNull();
+    fireEvent.click(gh);
+    await waitFor(() => expect(gh.getAttribute("aria-checked")).toBe("true"));
+    expect(calls.find((c) => c.cmd === "grants_set")?.args).toEqual({
+      subject: { type: "workspace", workspaceId: "ws_a" },
+      connectionId: "pc_gh",
+      granted: true,
+    });
+    expect(
+      screen.getByText(
+        "Threads here use them from their next message, and agent terminals from their next start.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("F-PL-05.3 a worktree shows its folder's grants on and locked, beside its own", async () => {
+    ui(
+      <WorkspacePlugins
+        workspaceId="ws_wt"
+        folder={{ id: "ws_repo", name: "shop" }}
+        onClose={() => undefined}
+      />,
+    );
+    const se = within(await screen.findByTestId("workspace-plugin-sentry")).getByRole("switch");
+    expect(se.getAttribute("aria-checked")).toBe("true");
+    expect(se.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Granted to shop, the folder this worktree came from.")).toBeTruthy();
+    const gh = within(screen.getByTestId("workspace-plugin-github")).getByRole("switch");
+    expect(gh.getAttribute("aria-checked")).toBe("false");
+    expect(calls.filter((c) => c.cmd === "grants_list").map((c) => c.args)).toEqual(
+      expect.arrayContaining([
+        { subject: { type: "workspace", workspaceId: "ws_wt" } },
+        { subject: { type: "workspace", workspaceId: "ws_repo" } },
+      ]),
+    );
   });
 });
 

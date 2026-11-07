@@ -24,7 +24,7 @@ use tandem_gateway::vendors::{
     self, AuthKind, Availability, ConnectMethod, ModuleStatus, PluginOptions, RiskClass,
     VendorModule,
 };
-use tandem_gateway::{ConnectionInfo, HeldCall, PluginAsk, PluginHooks, PluginVerdict};
+use tandem_gateway::{Caller, ConnectionInfo, HeldCall, PluginAsk, PluginHooks, PluginVerdict};
 use tandem_store::repo::held_drafts::{self, HeldDraftRow, HeldState, NewDraft, OriginKind};
 use tandem_store::repo::notifications::NotificationKind;
 use tandem_store::repo::plugins::{self as repo, ConnectionStatus, GrantSubject, PluginConnection};
@@ -213,6 +213,8 @@ pub struct PluginService {
     config: Arc<crate::services::config::ConfigService>,
     audit: Arc<crate::services::audit::AuditService>,
     threads: OnceLock<Weak<dyn ThreadAsk>>,
+    /// Agent terminals' plugin approvals go to their panes (F-PL-01).
+    broker: OnceLock<Arc<tandem_core::approvals::ApprovalBroker>>,
     loopback: tokio::sync::OnceCell<Loopback>,
     ops: Mutex<HashMap<String, CancellationToken>>,
     /// Test harness: a Team allowlist fixture (`Some(None)` clears it).
@@ -248,6 +250,7 @@ impl PluginService {
             config,
             audit,
             threads: OnceLock::new(),
+            broker: OnceLock::new(),
             loopback: tokio::sync::OnceCell::new(),
             ops: Mutex::default(),
             allowlist_fixture: Mutex::default(),
@@ -261,6 +264,11 @@ impl PluginService {
 
     pub fn bind_threads(&self, threads: Weak<dyn ThreadAsk>) {
         let _ = self.threads.set(threads);
+    }
+
+    /// Where agent terminals' plugin approvals go (F-PL-01).
+    pub fn bind_broker(&self, broker: Arc<tandem_core::approvals::ApprovalBroker>) {
+        let _ = self.broker.set(broker);
     }
 
     /// Settles drafts a crash left running.
@@ -1002,6 +1010,59 @@ pub fn parse_origin(origin: &str) -> Option<(OriginKind, String, Option<String>)
     Some((kind, id, run))
 }
 
+/// Whose grants a lease's caller has (F-PL-05), checked again on every
+/// call: a teammate's own; a thread's own, every thread's and its
+/// workspace's; an agent terminal's workspace's. A worktree's sessions
+/// have its folder's as well.
+pub(crate) async fn caller_subjects(store: &Store, caller: &Caller) -> Vec<GrantSubject> {
+    use crate::services::pane_plugins::workspace_subjects;
+    match caller {
+        Caller::TeammateChat { teammate_id, .. } => vec![GrantSubject::Teammate {
+            teammate_id: teammate_id.as_str().to_string(),
+        }],
+        Caller::Thread { thread_id } => {
+            let mut v = vec![
+                GrantSubject::Thread {
+                    thread_id: thread_id.as_str().to_string(),
+                },
+                GrantSubject::AllThreads,
+            ];
+            if let Ok(Some(t)) = tandem_store::repo::threads::get(store, thread_id).await {
+                if let Some(ws) = t.workspace_id {
+                    v.extend(workspace_subjects(store, &ws).await);
+                }
+            }
+            v
+        }
+        Caller::Pane { pane_id } => match tandem_store::repo::panes::get(store, pane_id).await {
+            Ok(pane) => workspace_subjects(store, &pane.workspace_id).await,
+            Err(_) => Vec::new(),
+        },
+    }
+}
+
+/// A plugin approval for an agent terminal (F-PL-01): on its pane and in
+/// the Approvals list.
+pub(crate) async fn ask_pane(
+    broker: &Arc<tandem_core::approvals::ApprovalBroker>,
+    pane: &tandem_core::ids::PaneId,
+    kind: ApprovalKind,
+    summary: String,
+    detail: String,
+    options: Vec<ApprovalScope>,
+) -> ApprovalOutcome {
+    let (_, ticket) = broker.request(tandem_core::approvals::ApprovalRequest {
+        source: SourceRef::Pane {
+            pane_id: pane.as_str().to_string(),
+        },
+        kind,
+        summary,
+        detail,
+        options,
+    });
+    ticket.outcome().await
+}
+
 /// The gateway's view of the app for plugin calls.
 pub struct Hooks(pub Weak<PluginService>);
 
@@ -1009,14 +1070,6 @@ pub struct Hooks(pub Weak<PluginService>);
 impl PluginHooks for Hooks {
     async fn ask(&self, lease: &LeaseContext, ask: PluginAsk) -> PluginVerdict {
         let Some(me) = self.0.upgrade() else {
-            return PluginVerdict::Cancelled;
-        };
-        let Some(thread) = lease.session.caller.thread().cloned() else {
-            return PluginVerdict::Deny {
-                reason: Some("Only threads and teammate chats can ask for plugin approvals".into()),
-            };
-        };
-        let Some(threads) = me.threads.get().and_then(Weak::upgrade) else {
             return PluginVerdict::Cancelled;
         };
         let kind = if ask.risk_class == RiskClass::Spend {
@@ -1042,7 +1095,23 @@ impl PluginHooks for Hooks {
         }
         let summary = format!("Use {}: {}", ask.plugin_label, ask.action);
         let detail = serde_json::to_string(&detail).unwrap_or_default();
-        match threads.ask(&thread, kind, summary, detail, options).await {
+        // A thread's card, or an agent terminal's banner on its pane.
+        let outcome = match &lease.session.caller {
+            Caller::Pane { pane_id } => match me.broker.get() {
+                Some(broker) => ask_pane(broker, pane_id, kind, summary, detail, options).await,
+                None => return PluginVerdict::Cancelled,
+            },
+            caller => {
+                let (Some(thread), Some(threads)) = (
+                    caller.thread().cloned(),
+                    me.threads.get().and_then(Weak::upgrade),
+                ) else {
+                    return PluginVerdict::Cancelled;
+                };
+                threads.ask(&thread, kind, summary, detail, options).await
+            }
+        };
+        match outcome {
             ApprovalOutcome::Allowed { scope, .. } => {
                 if matches!(
                     ask.risk_class,
@@ -1097,30 +1166,7 @@ impl PluginHooks for Hooks {
             return false;
         };
         let store = &me.store;
-        let caller = &lease.session.caller;
-        let subjects: Vec<GrantSubject> = match (caller.teammate(), caller.thread()) {
-            (Some(tm), _) => vec![GrantSubject::Teammate {
-                teammate_id: tm.as_str().to_string(),
-            }],
-            (None, Some(th)) => {
-                let mut v = vec![
-                    GrantSubject::Thread {
-                        thread_id: th.as_str().to_string(),
-                    },
-                    GrantSubject::AllThreads,
-                ];
-                if let Ok(Some(t)) = tandem_store::repo::threads::get(store, th).await {
-                    if let Some(ws) = t.workspace_id {
-                        v.push(GrantSubject::Workspace {
-                            workspace_id: ws.as_str().to_string(),
-                        });
-                    }
-                }
-                v
-            }
-            _ => Vec::new(),
-        };
-        for s in subjects {
+        for s in caller_subjects(store, &lease.session.caller).await {
             if repo::grants(store, &s)
                 .await
                 .is_ok_and(|g| g.contains(connection))
@@ -1179,5 +1225,135 @@ mod tests {
         assert_eq!(parse_origin("routine:"), None);
         assert_eq!(held_title(1), "1 action held for review");
         assert_eq!(held_title(5), "5 actions held for review");
+    }
+
+    #[tokio::test]
+    async fn f_pl_05_3_a_panes_grants_are_its_workspaces_and_a_worktrees_sessions_have_its_folders_too(
+    ) {
+        use tandem_core::access::{Access, ThreadMode};
+        use tandem_core::ids::WorkspaceId;
+        use tandem_store::repo::threads::{NewThread, ThreadKind};
+        let dir = tempfile::tempdir().expect("dir");
+        let data = tandem_core::DataDir::at(dir.path().join("data")).expect("data");
+        let store = Store::open(&data).expect("store");
+        let (_ids, [repo, lane, _other]) =
+            crate::services::pane_plugins::tests::granted_folders(&store, dir.path()).await;
+        let ws = |id: &WorkspaceId| GrantSubject::Workspace {
+            workspace_id: id.as_str().to_string(),
+        };
+        let tab = tandem_store::repo::tabs::create(&store, &lane, None)
+            .await
+            .expect("tab");
+        let pane = tandem_store::repo::panes::create_with(
+            &store,
+            &tab.id,
+            "agent",
+            None,
+            Some("claude".into()),
+        )
+        .await
+        .expect("pane");
+        assert_eq!(
+            caller_subjects(&store, &Caller::Pane { pane_id: pane.id }).await,
+            vec![ws(&lane), ws(&repo)]
+        );
+        let thread = tandem_store::repo::threads::insert(
+            &store,
+            NewThread {
+                id: ThreadId::new(),
+                kind: ThreadKind::Thread,
+                workspace_id: Some(lane.clone()),
+                cwd: dir.path().join("shop-wt").to_string_lossy().into_owned(),
+                engine_id: "claude".into(),
+                account_id: None,
+                model: None,
+                effort: None,
+                access: Access::Edits,
+                mode: ThreadMode::Act,
+                attended: true,
+            },
+        )
+        .await
+        .expect("thread");
+        assert_eq!(
+            caller_subjects(
+                &store,
+                &Caller::Thread {
+                    thread_id: thread.id.clone()
+                }
+            )
+            .await,
+            vec![
+                GrantSubject::Thread {
+                    thread_id: thread.id.as_str().to_string()
+                },
+                GrantSubject::AllThreads,
+                ws(&lane),
+                ws(&repo),
+            ]
+        );
+        // A pane that's gone has none.
+        assert!(caller_subjects(
+            &store,
+            &Caller::Pane {
+                pane_id: tandem_core::ids::PaneId::from_db("pn_gone".into())
+            }
+        )
+        .await
+        .is_empty());
+    }
+
+    #[tokio::test]
+    async fn f_pl_01_a_terminals_plugin_approval_shows_on_its_pane_and_waits_for_the_answer() {
+        use tandem_core::approvals::{ApprovalBroker, ApprovalDecision, ApprovalVia};
+        let broker = ApprovalBroker::new(Arc::new(tandem_core::clock::SystemClock));
+        let pane = tandem_core::ids::PaneId::from_db("pn_1".into());
+        let asking = tokio::spawn({
+            let (broker, pane) = (broker.clone(), pane.clone());
+            async move {
+                ask_pane(
+                    &broker,
+                    &pane,
+                    ApprovalKind::PluginAction,
+                    "Use Test Echo: save a note".into(),
+                    "{}".into(),
+                    vec![ApprovalScope::Once, ApprovalScope::Conversation],
+                )
+                .await
+            }
+        });
+        let mut view = None;
+        for _ in 0..200 {
+            view = broker.pending().into_iter().next();
+            if view.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let view = view.expect("asked");
+        assert_eq!(
+            view.source,
+            SourceRef::Pane {
+                pane_id: "pn_1".into()
+            }
+        );
+        assert_eq!(view.kind, ApprovalKind::PluginAction);
+        assert_eq!(view.summary, "Use Test Echo: save a note");
+        broker
+            .resolve(
+                &view.id,
+                ApprovalDecision::Allow {
+                    scope: ApprovalScope::Conversation,
+                },
+                ApprovalVia::Inline,
+            )
+            .expect("allow");
+        assert!(matches!(
+            asking.await.expect("join"),
+            ApprovalOutcome::Allowed {
+                scope: ApprovalScope::Conversation,
+                ..
+            }
+        ));
     }
 }

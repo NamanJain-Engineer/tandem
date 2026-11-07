@@ -1686,6 +1686,8 @@ Unattended runs (routines, tasks, mail) hold writes for you on the Dashboard.
 #### UI-94 · Plugins in the composer · PL, AG
 - When a teammate chat mentions work a connected-but-disabled plugin could do, or the user types `@{plugin}`, a strip appears above the composer: "{name} can't use {service} yet." + "Allow {service} for {name}" (applies from the next message) + ×. Dismissals are remembered per chat.
 - Plugin tool calls render as ToolCallBlock "Called {service} · {action}" with the risk class Badge. Denied calls render "Denied by you" in fg-subtle, never as errors.
+- **Plugins for this thread / for this workspace** (dialogs, `sm`; the composer's Attach menu, and a workspace row's menu "Plugins for this workspace…"; F-PL-05, F-PL-01). One `Switch` per connected plugin ("{label} · {account}"), off by default. A plugin granted to all threads (the thread's dialog) or to the folder a worktree came from (the workspace's) is on and locked, with "Granted to all threads in Settings › Plugins." or "Granted to {folder}, the folder this worktree came from." under it. Footer note: "Changes apply from this thread's next message." / "Threads here use them from their next message, and agent terminals from their next start." States: loading (`Skeleton`), empty ("No plugins connected", with **Open Settings › Plugins**), error (a toast, and the empty state), populated.
+- **On an agent terminal** (F-PL-01): a plugin action its engine asked for shows in the pane's approval banner with the ApprovalCard's plugin fields (UI-93), and on its Dashboard card with the plugin's glyph and risk class; Allow once, Allow for this agent (writes and publishing, until the engine exits), Deny.
 
 
 ---

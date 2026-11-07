@@ -35,6 +35,11 @@
 //! `/sh <cmd>` runs a shell command and prints its output and exit code
 //! ("sh exit: N"), F-TL-11.
 //!
+//! `/mcp <tool> <json>` calls the gateway the run was given (Claude's
+//! `--mcp-config`, Codex's `-c` settings and its lease variable) and prints
+//! "mcp said: …" or "mcp failed: …"; `/mcp` alone lists its tools, and
+//! without a gateway it says "mcp: no gateway" (F-PL-01).
+//!
 //! `/subagents <n>` reports n subagent starts and keeps working for a
 //! minute without reading its input (F-AC-09).
 //!
@@ -919,6 +924,31 @@ fn answer(name: &str, text: &str) -> bool {
         if let Some((path, text)) = spec.split_once('=') {
             let _ = std::fs::write(path.trim(), text);
             out(&format!("wrote {}\r\n", path.trim()));
+        }
+        return true;
+    }
+    // `/mcp <tool> <json>` (F-PL-01): calls the gateway this run was given,
+    // where Claude Code finds it in `--mcp-config` and Codex in its `-c`
+    // settings; `/mcp` alone lists the tools.
+    if t == "/mcp" || t.starts_with("/mcp ") {
+        let argv: Vec<String> = std::env::args().skip(1).collect();
+        match chat::gateway(&argv).or_else(|| chat::codex_gateway(&argv)) {
+            None => out("mcp: no gateway\r\n"),
+            Some(gw) => match t.strip_prefix("/mcp ").map(str::trim) {
+                None | Some("") => out(&format!(
+                    "mcp tools: {}\r\n",
+                    chat::list_tools(&gw).join(", ")
+                )),
+                Some(rest) => {
+                    let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
+                    let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
+                    let (failed, text) = chat::call_tool(&gw, tool.trim(), args);
+                    let label = if failed { "mcp failed" } else { "mcp said" };
+                    for line in text.lines() {
+                        out(&format!("{label}: {line}\r\n"));
+                    }
+                }
+            },
         }
         return true;
     }

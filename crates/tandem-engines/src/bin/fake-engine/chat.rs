@@ -126,13 +126,16 @@ fn text_of(v: &Value) -> String {
     }
 }
 
-/// `--mcp-config`'s value: a file, or the JSON itself (an engine on a
-/// host gets its relayed servers inline, D-1604).
+/// `--mcp-config`'s value, apart from it or after its `=`: a file, or the
+/// JSON itself (an engine on a host gets its relayed servers inline,
+/// D-1604).
 fn mcp_config(args: &[String]) -> Option<Value> {
-    let at = args.iter().position(|a| a == "--mcp-config")?;
-    let value = args.get(at + 1)?;
+    let value: &str = match args.iter().position(|a| a == "--mcp-config") {
+        Some(at) => args.get(at + 1)?,
+        None => args.iter().find_map(|a| a.strip_prefix("--mcp-config="))?,
+    };
     let text = if value.trim_start().starts_with('{') {
-        value.clone()
+        value.to_string()
     } else {
         std::fs::read_to_string(value).ok()?
     };
@@ -140,7 +143,7 @@ fn mcp_config(args: &[String]) -> Option<Value> {
 }
 
 /// The gateway from `--mcp-config`: its URL and Authorization header.
-fn gateway(args: &[String]) -> Option<(String, String)> {
+pub(crate) fn gateway(args: &[String]) -> Option<(String, String)> {
     let v = mcp_config(args)?;
     let server = v.pointer("/mcpServers/tandem")?;
     Some((
@@ -322,8 +325,21 @@ fn rpc(gw: &(String, String), method: &str, params: Value) -> Option<Value> {
     message(&body)
 }
 
+/// The gateway Codex is given (F-PL-01): `-c mcp_servers.tandem.url=…`,
+/// and the lease in the variable `bearer_token_env_var` names.
+pub(crate) fn codex_gateway(args: &[String]) -> Option<(String, String)> {
+    let setting = |key: &str| {
+        args.iter().find_map(|a| {
+            let value = a.strip_prefix(&format!("mcp_servers.tandem.{key}="))?;
+            Some(value.trim_matches('"').to_string())
+        })
+    };
+    let token = std::env::var(setting("bearer_token_env_var")?).ok()?;
+    Some((setting("url")?, format!("Bearer {token}")))
+}
+
 /// Calls a gateway tool: (is_error, text).
-fn call_tool(gw: &(String, String), name: &str, args: Value) -> (bool, String) {
+pub(crate) fn call_tool(gw: &(String, String), name: &str, args: Value) -> (bool, String) {
     match rpc(gw, "tools/call", json!({"name": name, "arguments": args})) {
         Some(m) => {
             let result = m.get("result").cloned().unwrap_or_default();
@@ -350,7 +366,7 @@ fn call_tool(gw: &(String, String), name: &str, args: Value) -> (bool, String) {
 }
 
 /// The names `tools/list` gives this session.
-fn list_tools(gw: &(String, String)) -> Vec<String> {
+pub(crate) fn list_tools(gw: &(String, String)) -> Vec<String> {
     rpc(gw, "tools/list", json!({}))
         .and_then(|m| m.pointer("/result/tools").cloned())
         .and_then(|t| t.as_array().cloned())

@@ -100,7 +100,7 @@ Agent mode: persistent teammates with a brief, memory, skills, learning,
 session search and teammate-to-teammate mail, all over the single local gateway
 with leases. **Done in pull request #5** (branch `m10-teammates-gateway`); F-DI-12's mic in "Create with AI" followed once M8 merged.
 - [x] F-PL-01 Gateway process
-  - Not built: the behaviour's "terminal TUI opted into plugins". No acceptance criterion covers it, and terminal agents, local and on SSH hosts, get the tasks server only (D-1606).
+  - Its "terminal TUI opted into plugins" is built on `ccr-6d871eba-mxry64` (D-2565, with AC 5 and 6 and F-PL-05's AC 3): a local Claude Code or Codex terminal in a workspace with plugins granted (the row's menu, "Plugins for this workspace…") gets the gateway for that run. Terminals on SSH hosts or in WSL still get only the tasks server (D-1606).
 - [x] F-AG-01 Teammate record
 - [x] F-AG-02 Agent rail
 - [x] F-AG-03 Teammate page and chats

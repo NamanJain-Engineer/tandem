@@ -2874,21 +2874,13 @@ impl AppLauncher {
         )
         .await
         .unwrap_or_default();
-        // Plus "all threads" and the thread's workspace (F-PL-05).
+        // Plus "all threads" and the thread's workspace, with the folder a
+        // worktree came from (F-PL-05).
         let mut more = grants(&self.store, &GrantSubject::AllThreads)
             .await
             .unwrap_or_default();
         if let Some(ws) = &thread.workspace_id {
-            more.extend(
-                grants(
-                    &self.store,
-                    &GrantSubject::Workspace {
-                        workspace_id: ws.as_str().to_string(),
-                    },
-                )
-                .await
-                .unwrap_or_default(),
-            );
+            more.extend(crate::services::pane_plugins::grants(&self.store, ws).await);
         }
         for c in more {
             if !out.contains(&c) {

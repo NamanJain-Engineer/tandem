@@ -140,8 +140,9 @@ function AgentCard({
   const key = approval ? `${approval.id}\n${approval.detail}` : null;
   const settled = useSettled(key);
   const [endRef, seenEnd] = useSeenEnd(run ? key : null);
-  // A pane's approval is a run; one that can't be read offers only Deny.
-  const unreadable = !!approval && approval.source.type === "pane" && !run;
+  // A pane's approval is a run, or an agent terminal's plugin action
+  // (F-PL-01); one that can't be read offers only Deny.
+  const unreadable = !!approval && approval.source.type === "pane" && !run && !plugin;
   // Cards sort and size by what agents report, so Allow can move under the
   // pointer: it waits until its own place has held still (F-TL-12.12).
   const box = useSteadyBox(!!approval, key);

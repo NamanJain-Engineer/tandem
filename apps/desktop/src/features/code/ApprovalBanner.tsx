@@ -4,13 +4,17 @@ import { Button, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { useDashboard } from "../../stores/dashboard";
 import { answer } from "../dashboard/actions";
+import { parseApproval } from "../plugins/model";
+import { PluginApprovalFields } from "../plugins/PluginApproval";
 import { RunLine } from "../secrets/RunLine";
 import { parseRunApproval } from "../secrets/runApproval";
 import { ApprovalBoundary, useSeenEnd, useSettled, useSteadyBox, waitReason } from "../secrets/ApprovalGuard";
 
 /** A pane's pending approval, on the pane itself: what an agent's
- * `vibezeo run` wants (F-TL-12), then Allow once, Allow for this agent
- * (that exact command in that folder, until the pane closes) and Deny.
+ * `vibezeo run` wants (F-TL-12), or a plugin action an agent terminal
+ * asked the gateway for (F-PL-01), then Allow once, Allow for this agent
+ * (that exact command in that folder, or that plugin's writes, until the
+ * pane's process ends) and Deny.
  * The banner scrolls within the pane, and Allow waits until the line's end
  * has been in view. A pane approval that can't be read offers only Deny. */
 export function ApprovalBanner({ paneId }: { paneId: string }) {
@@ -24,7 +28,11 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
   const box = useSteadyBox(approval !== null, key);
   if (!approval) return null;
   const run = parseRunApproval(approval);
-  const unreadable = approval.source.type === "pane" && !run;
+  const plugin =
+    !run && (approval.kind === "plugin_action" || approval.kind === "spend")
+      ? parseApproval(approval.detail)
+      : null;
+  const unreadable = approval.source.type === "pane" && !run && !plugin;
   const canAllow = settled && seenEnd && box.steady && !unreadable;
   const decide = async (allow: boolean, scope: "once" | "conversation" = "once") => {
     setBusy(true);
@@ -52,6 +60,11 @@ export function ApprovalBanner({ paneId }: { paneId: string }) {
             </span>
             {run ? (
               <RunLine run={run} endRef={endRef} />
+            ) : plugin ? (
+              <>
+                <PluginApprovalFields detail={plugin} />
+                <span ref={endRef} aria-hidden="true" data-testid="run-line-end" className="block h-px" />
+              </>
             ) : (
               // Over the question's last 16 px: all of it in view is its
               // end seen.

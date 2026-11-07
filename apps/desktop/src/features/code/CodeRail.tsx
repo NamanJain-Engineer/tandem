@@ -509,6 +509,12 @@ export function CodeRail() {
       disabled: ws.kind !== "local" || ws.missing,
       onSelect: () => useWorktrees.getState().open({ kind: "instructions", workspaceId: ws.id }),
     },
+    {
+      // F-PL-05: what its threads and agent terminals may use.
+      id: "plugins",
+      label: t("workspacePlugins.menu"),
+      onSelect: () => useWorktrees.getState().open({ kind: "plugins", workspaceId: ws.id }),
+    },
     { id: "up", label: t("rail.moveUp"), onSelect: a.moveUp },
     { id: "down", label: t("rail.moveDown"), onSelect: a.moveDown },
     { id: "sep", type: "separator" },

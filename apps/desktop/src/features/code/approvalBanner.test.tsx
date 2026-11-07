@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApprovalView, DashboardItem, PaneRecord } from "@tandem/protocol";
+import type { ApprovalView, DashboardItem, PaneRecord, PluginApprovalDetail } from "@tandem/protocol";
 import { UiProvider } from "@tandem/ui";
 import { setInvokeBackend } from "../../ipc/invoke";
 import { useDashboard } from "../../stores/dashboard";
@@ -257,6 +257,51 @@ describe("a pane's approval (F-TL-12 slice 2)", () => {
     expect(screen.queryByTestId("pane-approval-once")).toBeNull();
     expect(screen.queryByTestId("pane-approval-agent")).toBeNull();
     expect(screen.getByTestId("pane-approval-deny")).toBeTruthy();
+  });
+
+  it("F-PL-01 an agent terminal's plugin approval shows the plugin, its action and account, and Allow for this agent answers once seen", async () => {
+    const view = fakeObserver();
+    const calls = fakeBackend({ approval_resolve: () => null });
+    const detail: PluginApprovalDetail = {
+      pluginId: "test_echo",
+      pluginLabel: "Test Echo",
+      logo: "TE",
+      accountLabel: "me",
+      tool: "note",
+      action: "save a note",
+      target: null,
+      cost: null,
+      riskClass: "write",
+      request: '{\n  "text": "n"\n}',
+    };
+    withApproval({
+      ...approval,
+      kind: "plugin_action",
+      summary: "Use Test Echo: save a note",
+      detail: JSON.stringify(detail),
+    });
+    render(
+      <UiProvider>
+        <ApprovalBanner paneId="pn_1" />
+      </UiProvider>,
+    );
+    expect(screen.getByTestId("pane-approval-summary").textContent).toBe(
+      "Wants to: Use Test Echo: save a note",
+    );
+    const fields = screen.getByTestId("plugin-approval");
+    expect(fields.textContent).toContain("Test Echo");
+    expect(fields.textContent).toContain("save a note");
+    expect(fields.textContent).toContain("me");
+    view.show(true);
+    await settled();
+    fireEvent.click(screen.getByTestId("pane-approval-agent"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "approval_resolve")?.args).toEqual({
+        approvalId: "ap_1",
+        decision: { type: "allow", scope: "conversation" },
+        via: "inline",
+      }),
+    );
   });
 
   it("F-TL-12.13 a run line that fails to render offers no Allow", () => {

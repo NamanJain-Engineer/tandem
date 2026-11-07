@@ -2384,7 +2384,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 **Behavior:**
 - `tandem-gateway` runs as one shared local MCP server, either in-process in the Tauri core or as a sidecar. It exposes **Streamable HTTP MCP on 127.0.0.1:<random port>**, and there is exactly one gateway process for all sessions.
 - **Session leases:**
-  - Before each engine session (thread, teammate chat, or terminal TUI opted into plugins), the app calls `prepare(session)` → a **lease token** (random 32 bytes, TTL = session lifetime, revoked on end).
+  - Before each engine session (thread, teammate chat, or agent terminal whose workspace has plugins granted, F-PL-05), the app calls `prepare(session)` → a **lease token** (random 32 bytes, TTL = session lifetime, revoked on end).
   - The lease records the caller (teammate/thread id), the allowed plugin ids, and the access level.
   - The MCP config injected into the engine carries the URL plus the lease in an `Authorization: Bearer` header. Requests without a valid lease get 401.
 - **Tool naming:** `<plugin>__<tool>` under the server name `tandem`. For example, Claude sees `mcp__tandem__github__create_issue`. The plugin id `tandem` is **reserved** for the gateway's built-in tools (ARCHITECTURE §0.3, §11.3), which are named `tandem__<tool>` (Claude sees e.g. `mcp__tandem__tandem__send_message`); the permission-prompt tool is `tandem_approvals__request` (Claude sees `mcp__tandem__tandem_approvals__request`).
@@ -2395,12 +2395,18 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Also on the gateway:**
   - The built-in tools `tandem__session_search` (F-AG-11), `tandem__send_message`/`tandem__list_teammates` (F-AG-12), `tandem__schedule_{list,create,update,delete}` (F-RT-05), `tandem__memory_write` (F-AG-07), `tandem__read_skill` (F-AG-06), and `tandem_approvals__request` (F-TH-04). Elsewhere in this spec these may be written by their short names (`send_message`, `read_skill`, …); the wire names are always the prefixed ones.
   - The **tasks** server stays separate (stdio, F-TK-02).
+- **Agent terminals.** A Claude Code or Codex terminal started in a workspace with plugins granted to it (F-PL-05) gets the gateway for that run, beside its own MCP servers (a terminal keeps its native configuration, F-EN-04):
+  - **Lease.** One for the pane, as an interactive Edits session: reads run, and anything that asks shows its approval on the pane and in the Approvals list. It's revoked when the pane's process ends.
+  - **Delivery.** Claude Code gets it in `--mcp-config`. Codex gets `-c mcp_servers.tandem.*`, with the lease in `TANDEM_GATEWAY_LEASE`, never in its arguments.
+  - **Other engines** get none, and so do terminals on a local model (F-EN-11), on an SSH host or in WSL. A grant change reaches the pane's next start; a removed grant stops its tools at once.
 
 **Acceptance:**
 1. A request without a lease gets 401, and a lease from session A can't call a plugin that is granted only to B.
 2. Starting 10 sessions uses one gateway process (process count assertion).
 3. With 3 plugins granted and default settings, `tools/list` returns the search and call tools plus the built-ins, not the vendor tools.
 4. Disconnecting a plugin invalidates its tools for in-flight leases on the next call.
+5. A Claude Code terminal started in a workspace with one plugin granted lists that plugin's tools through the gateway, with a lease for that pane. A Codex terminal there gets the gateway with its lease only in `TANDEM_GATEWAY_LEASE`. A terminal in a workspace with none gets no gateway.
+6. When an agent terminal's process ends, its lease is revoked: a request with it gets 401.
 
 #### F-PL-02 Vendor modules (P1)
 **Behavior:**
@@ -2452,11 +2458,13 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - Connecting makes a plugin *available*. **Granting** makes it usable by a specific teammate, thread or workspace. These are separate decisions.
 - **Teammates:** per-teammate toggles (F-AG-05) and the nudge strip (F-AG-03).
 - **Threads:** the composer's Attach ▾ → "Plugins for this thread" (default none), with the Settings option "Grant these plugins to all threads" for a chosen list.
+- **Workspaces:** the workspace row's menu → "Plugins for this workspace…" (default none). Every thread in the workspace and every agent terminal started in it can use them (F-PL-01), on top of its own. A worktree's sessions use its folder's grants as well as its own.
 - **Team plan:** an org admin allowlist restricts which plugins can be connected at all (F-BL-06).
 
 **Acceptance:**
 1. A new teammate has no plugin grants, even with 3 plugins connected.
 2. A plugin not on the Team allowlist can't be connected (its Connect button is disabled, with an explanation).
+3. A plugin granted to a workspace reaches a new thread and a new agent terminal in it, and in its worktrees, and not a thread in another workspace.
 
 #### F-PL-06 Risk classes and approval policy (P1)
 **Behavior:**

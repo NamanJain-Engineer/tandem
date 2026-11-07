@@ -23,12 +23,24 @@ Connect as many as you like.
 
 A new teammate starts with no plugins. Grant one per teammate (the plugin's **Teammates** tab, or the teammate's settings), per thread (**Attach › Plugins for this thread…** in the message box), or to every thread with **Grant these plugins to all threads**.
 
+Grant one to a workspace from its row's menu, **Plugins for this workspace…**. Every thread in it can use it, and so can every Claude Code and Codex terminal you start there. A worktree uses its folder's plugins as well as its own.
+
+## In agent terminals
+
+A Claude Code or Codex terminal started in a workspace with plugins gets Vibezeo's gateway for that run, beside its own MCP servers, with a key of its own that ends when the engine exits:
+
+- **Claude Code** gets it in `--mcp-config`, in a file only you can read, deleted when the engine exits.
+- **Codex** gets it in `-c` settings, with its key in the `TANDEM_GATEWAY_LEASE` environment variable, never on its command line.
+
+Grants you change reach the terminal's next start; a removed one stops at once. Other engines, terminals on a local model, on an SSH host or in WSL don't get the gateway yet.
+
 ## Approvals
 
 Every action has a risk class: Read, Write, Publish, Uses credits, Spend, Delete or Unknown.
 
 - Reads run.
 - Everything else asks you first, in the chat: the plugin, the action, the account, the target and any cost, with the full request behind a toggle. Writes and publishing offer **Allow for the rest of this chat**.
+- In an agent terminal it asks on the terminal itself, and on its Dashboard card, with **Allow once** and, for writes and publishing, **Allow for this agent**, which lasts until the engine exits.
 - Spending, using credits, deleting and unknown actions always ask, and never offer Allow for the rest of this chat. In a plugin's **Approvals** tab you can let Full access chats run writes, or publish, without asking.
 - A spend is checked again right before it runs. If the amount changed after you approved it, it doesn't run.
 - Runs nobody is watching, such as teammate mail, never act on their own. Each write they want is held in **Held actions**, labelled with where it came from, for you to approve and run, edit and run, or discard.

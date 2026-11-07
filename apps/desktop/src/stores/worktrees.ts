@@ -58,6 +58,8 @@ export type WorktreeAsk =
   | { kind: "setup"; workspaceId: string }
   /** UI-160: which instructions file each engine reads (F-EN-07). */
   | { kind: "instructions"; workspaceId: string }
+  /** The plugins its threads and agent terminals may use (F-PL-05). */
+  | { kind: "plugins"; workspaceId: string }
   /** UI-153: shared files with sibling worktrees and the merge forecast (F-WT-03). */
   | { kind: "overlap"; worktreeId: string }
   /** F-WT-05: another engine's read-only review of the diff. */

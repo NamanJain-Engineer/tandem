@@ -380,6 +380,10 @@ impl AppState {
         let handback_tasks: Arc<std::sync::OnceLock<Arc<crate::services::tasks::TasksService>>> =
             Arc::default();
         let tasks_for_handback = handback_tasks.clone();
+        // Agent terminals' gateway leases, revoked when their engine exits
+        // (F-PL-01).
+        let pane_leases = Arc::new(crate::services::pane_plugins::PaneLeases::default());
+        let leases_for_handback = pane_leases.clone();
         // Agent output drives the status heuristics (F-EN-05); the screen is
         // read only when a waiting-pattern check is due.
         let activity_status = status.clone();
@@ -463,6 +467,7 @@ impl AppState {
                 if let Some(tasks) = tasks_for_handback.get() {
                     tasks.end_session(&format!("pn:{pane}"));
                 }
+                leases_for_handback.end(pane);
                 let (store, bus) = (handback_store.clone(), handback_bus.clone());
                 let pane = tandem_core::ids::PaneId::from_db(pane.to_string());
                 tracing::info!(code = "pty.handback", exit = code, "agent handed the pane back");
@@ -505,6 +510,7 @@ impl AppState {
             bus.clone(),
             clock.clone(),
         );
+        pane_leases.bind_broker(approvals.broker.clone());
         let notifications =
             crate::services::notifications::NotificationService::new(store.clone(), bus.clone());
         // The sandbox is on but a pane started without it: say so (F-TL-11).
@@ -538,6 +544,15 @@ impl AppState {
         let models = Arc::new(crate::services::models::RuntimeModels::default());
         let gateway = crate::services::gateway::GatewayService::new(store.clone(), data.run());
         gateway.bind_bus(bus.clone());
+        {
+            let panes = crate::services::pane_plugins::PaneGateway {
+                service: gateway.clone(),
+                leases: pane_leases,
+                dir: data.mcp_configs(),
+            };
+            panes.clear_stale();
+            terminals.bind_gateway(panes);
+        }
         let launcher = Arc::new(crate::services::threads::AppLauncher::new(
             terminals.clone(),
             config.clone(),
@@ -587,6 +602,7 @@ impl AppState {
                 Arc::downgrade(&threads) as _;
             plugins.bind_threads(weak);
         }
+        plugins.bind_broker(approvals.broker.clone());
         gateway.configure_plugins(
             plugins.credentials().clone(),
             net.clone(),
