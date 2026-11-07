@@ -706,6 +706,16 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - m18-tk09 looked for your Send back under the automatic label; since the review of 0e20d5b7 it's "Review (sent back by you):" (1b974744).
     - m18-wt10-live ran Check overlap in one worktree only, but a sibling that's only read isn't watched since the review of 30d5bcad, S-3 (0951524b).
 
+- [x] Two known E2E flakes, each with its cause found (the suite's reliability):
+  - **m3-14's drag-to-pin (F-SH-03.2) had a product bug under it.** With nothing pinned, a drag shows the band's "Drop here to pin", which grows the band from 4 to 24 px and moves every row down, the dragged one too.
+    - **What a person saw.** The dragged row jumped 20 px below the pointer as the drag started. dnd-kit drops the row it draws, so with the pointer on "Drop here to pin" the row met the first row and landed in All, unpinned. dnd-kit's own answer, scrolling the list by the move, does nothing in a list too short to scroll, and in a longer one hides most of the band.
+    - **The fix.** `RailList` reads the dragged row's box as the drag starts and again once the band shows, and a modifier takes that move back, so the row stays under the pointer. dnd-kit's layout-shift scroll is off.
+    - **Why the old test only flaked.** It dropped the pointer 12 px above the first row, a place those 20 px happened to cancel. It also let go on the same frame as its last move. dnd-kit records where a drag is over in an effect after the render, so a release that comes first drops at the move before: under load that was the first row (the recorded "rows: d,b,c"). Both drags in the spec now rest 200 ms before letting go, as a person does.
+    - **Not the cause.** Stale drop targets: dnd-kit measures them again once the drag starts, and the failure's own record showed them fresh.
+    - **Tests.** Rail unit F-SH-03.2 "a dragged row stays under the pointer when the band shows" (red first: drawn at 87, the pointer at 67). E2E: the row is drawn within 2 px of the pointer once the band shows (red first: 20 px), then dropped on "Drop here to pin".
+    - **Runs.** 5 of 5 passed the drag, 2 of them with all 4 cores held busy. In one of those two, F-SH-03.3's relaunch then took longer than mocha's 60 s, and the session went with it.
+  - **m10-2's Ask follow-up (F-AG-08).** Each finished teammate turn gets its own learn follow-up, a headless spawn some time after the turn. The earlier tests' two turns could spawn theirs after the Ask test had counted, so it saw 2 where it expects 1. It now waits for those before counting. Not a double spawn: one follow-up per turn is the design. 3 of 3 passed.
+
 - Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
   - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.

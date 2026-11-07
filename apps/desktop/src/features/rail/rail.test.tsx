@@ -121,6 +121,48 @@ describe("rail (F-SH-03)", () => {
     expect(placement(order, "b")).toEqual({ pinned: false, afterId: "a" });
   });
 
+  it("F-SH-03.2 a dragged row stays under the pointer when the band shows and moves every row down", () => {
+    setup([ws("a"), ws("b"), ws("c")]);
+    // jsdom lays nothing out: rows 30 px apart under the band, which is
+    // 4 px tall, and 24 px once it shows "Drop here to pin".
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const grown = document.querySelector('[data-testid="rail-band"]')?.textContent ? 20 : 0;
+      const row = this.getAttribute("role") === "none" ? this.querySelector('[role="treeitem"]') : this;
+      const i = rows().indexOf(row as HTMLElement);
+      if (i >= 0) return new DOMRect(0, 4 + grown + i * 30, 240, 30);
+      if (this.matches('[data-testid="rail-band"]')) return new DOMRect(0, 0, 240, 4 + grown);
+      return new DOMRect(0, 0, 240, 600);
+    });
+    // jsdom has no PointerEvent: one with a pointer's coordinates.
+    class Pointer extends MouseEvent {
+      pointerId: number;
+      isPrimary = true;
+      constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 0;
+      }
+    }
+    vi.stubGlobal("PointerEvent", Pointer);
+    try {
+      const c = rows()[2] as HTMLElement;
+      // c's centre is at 4 + 60 + 15.
+      fireEvent.pointerDown(c, { clientX: 100, clientY: 79, button: 0, pointerId: 1 });
+      fireEvent.pointerMove(document, { clientX: 100, clientY: 73, pointerId: 1 });
+      fireEvent.pointerMove(document, { clientX: 100, clientY: 67, pointerId: 1 });
+      expect(screen.getByText("Drop here to pin")).toBeTruthy();
+      // The band moved c down 20 px; it's drawn 12 px above where it was,
+      // with the pointer, not 8 px below it.
+      const y = Number(/translate3d\([^,]+, (-?[\d.]+)px/.exec(c.style.transform)?.[1]);
+      expect(4 + 20 + 60 + 15 + y).toBe(67);
+      fireEvent.pointerUp(document, { clientX: 100, clientY: 67, pointerId: 1 });
+    } finally {
+      rect.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("F-SH-03.2 Pin from the context menu moves the row into Pinned and saves it", async () => {
     setup([ws("a"), ws("b"), ws("c")]);
     fireEvent.contextMenu(rows()[2] as HTMLElement);

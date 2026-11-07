@@ -27,11 +27,17 @@ function skill(home: string, slug: string, description: string): void {
 // from a headless run with no MCP servers; Off mode runs nothing.
 describe("E2E-M10-2 briefing and learning", () => {
   let scout: Teammate;
+  // Every finished Scout turn gets its own learn follow-up (Ask is the
+  // default), a headless spawn some time after the turn: counted here so a
+  // later test waits for them before counting its own.
+  let headlessAtStart = 0;
+  let turns = 0;
 
   before(async function () {
     this.timeout(60_000);
     await freshOffline();
     scout = await makeTeammate("Scout");
+    headlessAtStart = (await headlessSpawns()).length;
     writeFileSync(join(scout.home, "memory", "NOTES.md"), "- Release branch is cut on Thursdays.\n");
     for (const s of ["release-notes", "test-first", "concise-diffs"]) skill(scout.home, s, `Use for ${s}.`);
   });
@@ -41,6 +47,7 @@ describe("E2E-M10-2 briefing and learning", () => {
     const before = (await chatSpawns()).length;
     const chat = await newChat(scout.id);
     const replies = await sendAndWait(chat, "hello Scout");
+    turns += 1;
     expect(replies.join(" ")).toContain("You said: hello Scout");
     const spawn = (await chatSpawns()).slice(before).at(-1);
     expect(spawn).toBeDefined();
@@ -63,6 +70,7 @@ describe("E2E-M10-2 briefing and learning", () => {
     const before = (await chatSpawns()).length;
     const chat = await newChat(scout.id);
     await sendAndWait(chat, "big brief");
+    turns += 1;
     const spawn = (await chatSpawns()).slice(before).at(-1);
     const file = argAfter(spawn?.argv ?? [], "--append-system-prompt-file") ?? "";
     expect(readFileSync(file, "utf8").length).toBeGreaterThan(100 * 1024);
@@ -73,6 +81,11 @@ describe("E2E-M10-2 briefing and learning", () => {
 
   it("F-AG-08.1 F-AG-08.2 Ask mode: suggestions render, Keep appends to NOTES.md, the follow-up had no MCP config", async function () {
     this.timeout(60_000);
+    // The earlier turns' follow-ups first, or a late one counts as this one's.
+    await browser.waitUntil(async () => (await headlessSpawns()).length >= headlessAtStart + turns, {
+      timeout: 30_000,
+      timeoutMsg: "the earlier turns' learn follow-ups never ran",
+    });
     const before = (await headlessSpawns()).length;
     const chat = await newChat(scout.id);
     await browser.keys([mod(), "1"]);

@@ -42,6 +42,47 @@ async function locate(selector: string): Promise<{ x: number; y: number }> {
   return $(selector).getLocation();
 }
 
+/** Drags a row with real pointer input onto an element that only shows
+ * once the drag has started, as a person does: press and start the drag,
+ * wait for the target, move onto it, rest there a moment and drop. Returns
+ * how far the dragged row was drawn from the pointer once the target
+ * showed: the rail's band grows from 4 to 24 px when a drag starts with
+ * nothing pinned, which moves every row below it. */
+async function dragOnto(selector: string, target: string): Promise<number> {
+  const el = await $(selector);
+  const at = await el.getLocation();
+  const size = await el.getSize();
+  const start = { x: Math.round(at.x + size.width / 2), y: Math.round(at.y + size.height / 2) };
+  const held = { x: start.x, y: start.y - 12 };
+  const pointer = { id: "mouse1", parameters: { pointerType: "mouse" as const } };
+  await browser
+    .action("pointer", pointer)
+    .move(start)
+    .down({ button: 0 })
+    .move({ x: start.x, y: start.y - 6, duration: 30 })
+    .move({ ...held, duration: 30 })
+    .perform(true);
+  const into = await $(target);
+  await into.waitForDisplayed({ timeout: 5_000 });
+  await browser.pause(100);
+  const drawn = await el.getLocation();
+  const offset = Math.round(drawn.y + size.height / 2 - held.y);
+  const box = await into.getLocation();
+  const boxSize = await into.getSize();
+  const to = { x: Math.round(box.x + boxSize.width / 2), y: Math.round(box.y + boxSize.height / 2) };
+  const steps = browser.action("pointer", pointer);
+  for (let i = 1; i <= 10; i++)
+    steps.move({
+      x: Math.round(held.x + ((to.x - held.x) * i) / 10),
+      y: Math.round(held.y + ((to.y - held.y) * i) / 10),
+      duration: 30,
+    });
+  // The drop goes where the rail last placed the row: a release on the
+  // same frame as the last move can meet the place before it.
+  await steps.pause(200).up({ button: 0 }).perform();
+  return offset;
+}
+
 /** Drags with real pointer input from one element's centre to a point. */
 async function drag(selector: string, to: { x: number; y: number }): Promise<void> {
   const el = await $(selector);
@@ -58,7 +99,7 @@ async function drag(selector: string, to: { x: number; y: number }): Promise<voi
       y: Math.round(start.y + ((to.y - start.y) * i) / 10),
       duration: 30,
     });
-  await action.up({ button: 0 }).perform();
+  await action.pause(200).up({ button: 0 }).perform();
 }
 
 // E2E-M3-14 Rail and modes (F-SH-02, F-SH-03, F-CD-01).
@@ -86,11 +127,15 @@ describe("E2E-M3-14 rail and modes", () => {
   });
 
   it("F-SH-03.2 dragging a row above the band pins it; tab order and pins survive a relaunch", async () => {
-    const top = await locate('[data-testid="workspace-row"]');
-    await drag('[data-testid="workspace-row"][data-root$="/d"]', {
-      x: Math.round(top.x + 40),
-      y: Math.round(top.y - 12),
-    });
+    // Onto the band's "Drop here to pin", which shows once the drag starts.
+    // Every row moves down for it, and the dragged one stays under the
+    // pointer: drawn where its new place is, it sat 20 px below and landed
+    // on the row under the band.
+    const offset = await dragOnto(
+      '[data-testid="workspace-row"][data-root$="/d"]',
+      '[data-testid="rail-band"] > div',
+    );
+    expect(Math.abs(offset)).toBeLessThanOrEqual(2);
     await browser.waitUntil(
       async () =>
         (await $('[data-testid="workspace-row"][data-root$="/d"]').getAttribute("data-pinned")) === "true",

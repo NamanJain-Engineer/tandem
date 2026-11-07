@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   DndContext,
@@ -8,6 +16,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -232,6 +241,11 @@ export function RailList<T extends RailItem>({
   const setPinnedOpen = onPinnedOpen ?? setOwnOpen;
   const [dragging, setDragging] = useState(false);
   const refs = useRef(new Map<string, HTMLDivElement | null>());
+  // Each row's own box, which a drag doesn't move; where the dragged row's
+  // was when the drag started; and how far the rail then moved it.
+  const boxes = useRef(new Map<string, HTMLDivElement | null>());
+  const dragFrom = useRef<{ id: string; top: number } | null>(null);
+  const moved = useRef(0);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const pinned = items.filter((i) => i.pinned);
@@ -251,6 +265,28 @@ export function RailList<T extends RailItem>({
   };
   const togglePin = (item: T) =>
     onMove(item.id, item.pinned ? null : (pinned.at(-1)?.id ?? null), !item.pinned);
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    const top = boxes.current.get(id)?.getBoundingClientRect().top;
+    dragFrom.current = top === undefined ? null : { id, top };
+    moved.current = 0;
+    setDragging(true);
+  };
+  // A drag that starts with nothing pinned shows the band, which moves every
+  // row below it, the dragged one too: drawn from its new place, it sat
+  // 20 px below the pointer, and a drop on "Drop here to pin" met the row
+  // under the band (F-SH-03.2). So the drag takes that move back.
+  useLayoutEffect(() => {
+    const from = dragFrom.current;
+    if (!dragging || !from) return;
+    const top = boxes.current.get(from.id)?.getBoundingClientRect().top;
+    if (top !== undefined) moved.current = top - from.top;
+  }, [dragging]);
+  const modifiers = useMemo<Modifier[]>(
+    () => [({ transform }) => ({ ...transform, y: transform.y - moved.current })],
+    [],
+  );
 
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(false);
@@ -305,7 +341,13 @@ export function RailList<T extends RailItem>({
     const parts = row(item);
     const open = expanded[item.id] ?? false;
     return (
-      <div key={item.id} role="none">
+      <div
+        key={item.id}
+        role="none"
+        ref={(el) => {
+          boxes.current.set(item.id, el);
+        }}
+      >
         <Row
           item={item}
           parts={parts}
@@ -345,7 +387,11 @@ export function RailList<T extends RailItem>({
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragStart={(_: DragStartEvent) => setDragging(true)}
+      modifiers={modifiers}
+      // dnd-kit's own answer to such a move scrolls the list by it, which
+      // hides most of the band in a list long enough to scroll.
+      autoScroll={{ layoutShiftCompensation: false }}
+      onDragStart={onDragStart}
       onDragCancel={() => setDragging(false)}
       onDragEnd={onDragEnd}
       accessibility={{ screenReaderInstructions: { draggable: "" } }}
@@ -393,6 +439,7 @@ function Band({ visible, hint }: { visible: boolean; hint: boolean }) {
     <div
       ref={setNodeRef}
       aria-hidden="true"
+      data-testid="rail-band"
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(!visible && "h-1")}
     >
