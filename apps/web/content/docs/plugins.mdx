@@ -32,7 +32,9 @@ A Claude Code or Codex terminal started in a workspace with plugins gets Vibezeo
 - **Claude Code** gets it in `--mcp-config`, in a file only you can read, deleted when the engine exits.
 - **Codex** gets it in `-c` settings, with its key in the `TANDEM_GATEWAY_LEASE` environment variable, never on its command line.
 
-Grants you change reach the terminal's next start; a removed one stops at once. Other engines, terminals on a local model, on an SSH host or in WSL don't get the gateway yet.
+On an SSH host the gateway reaches the terminal through Vibezeo's connection, as the task tools do, and its key never leaves your computer.
+
+Grants you change reach the terminal's next start; a removed one stops at once. Other engines, terminals on a local model and in WSL don't get the gateway yet.
 
 ## Approvals
 

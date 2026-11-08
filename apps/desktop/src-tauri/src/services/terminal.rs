@@ -690,58 +690,94 @@ impl TerminalService {
         drop(channel);
     }
 
-    /// "Expose tasks to terminal agents" on an SSH host (F-TK-02, D-1606):
-    /// the engine there can't be given a config in a home Vibezeo owns, so
-    /// it gets the tasks server for this run on its command line, as
-    /// `tandem-host mcp --channel <id>`. The channel is answered here by
-    /// the tasks server with this pane's connection, and outlives a dropped
+    /// An agent terminal on an SSH host: the engine there can't be given a
+    /// config in a home Vibezeo owns, so it gets its servers for this run
+    /// on its command line, in one config, each as
+    /// `tandem-host mcp --channel <id>`: the tasks server with "Expose
+    /// tasks to terminal agents" (F-TK-02, D-1606), and the gateway when
+    /// its workspace has plugins (F-PL-01, D-2565). The channels are
+    /// answered here, by the tasks server with this pane's connection and
+    /// by the gateway with this pane's lease, and outlive a dropped
     /// connection as the pane does.
-    async fn host_tasks_args(
+    async fn host_mcp_args(
         &self,
         remote: &Arc<crate::services::remote::RemoteService>,
         host: &tandem_core::ids::HostId,
         engine: &tandem_engines::registry::EngineSpec,
-        pane: &str,
+        pane: &PaneId,
+        workspace: &tandem_core::ids::WorkspaceId,
     ) -> Vec<String> {
-        use crate::services::remote_mcp::{ProcessBackend, RemoteMcp};
-        use crate::services::tasks::{CONNECTION_ENV, SERVER_NAME};
-        // A relaunch's previous channel goes first.
-        self.end_tasks_session(pane);
-        let Some(tasks) = self.tasks.get() else {
+        use crate::services::remote_mcp::{GatewayBackend, RemoteMcp};
+        // A relaunch's previous channels, and its lease, go first.
+        self.end_tasks_session(pane.as_str());
+        let mut mcp = RemoteMcp::kept(remote.clone());
+        let mut servers: Vec<tandem_engines::chat::StdioServer> = self
+            .host_tasks_server(&mut mcp, host, engine, pane.as_str())
+            .await
+            .into_iter()
+            .collect();
+        if let Some(panes) = self.pane_gateway.get() {
+            if let Some((gateway, lease)) =
+                panes.lease(&self.store, pane, workspace, &engine.id).await
+            {
+                let id = lease.id.clone();
+                let backend = GatewayBackend {
+                    gateway: gateway.clone(),
+                    lease,
+                };
+                match mcp.add(host, "tandem", Arc::new(backend)).await {
+                    Ok(relayed) => {
+                        panes.hold(pane.as_str(), gateway, id);
+                        servers.push(relayed);
+                    }
+                    Err(e) => {
+                        gateway.revoke(&id);
+                        tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no plugins for a host's terminal agent");
+                    }
+                }
+            }
+        }
+        if servers.is_empty() {
             return Vec::new();
-        };
+        }
+        if let Ok(mut m) = self.host_tasks.lock() {
+            m.insert(pane.to_string(), mcp);
+        }
+        tandem_engines::homes::inline_stdio_servers(engine, &servers)
+    }
+
+    /// The tasks server for a host's terminal agent, relayed through `mcp`.
+    async fn host_tasks_server(
+        &self,
+        mcp: &mut crate::services::remote_mcp::RemoteMcp,
+        host: &tandem_core::ids::HostId,
+        engine: &tandem_engines::registry::EngineSpec,
+        pane: &str,
+    ) -> Option<tandem_engines::chat::StdioServer> {
+        use crate::services::remote_mcp::ProcessBackend;
+        use crate::services::tasks::{CONNECTION_ENV, SERVER_NAME};
+        let tasks = self.tasks.get()?;
         // Tracked whatever the setting, as a local pane is; an SSH host's
         // folder isn't a working tree here, so it has no claims.
         tasks.track_scope(&format!("pn:{pane}"), None);
         if engine.hooks_support == tandem_engines::registry::HooksSupport::None
             || !tasks.expose_to_terminals().await
         {
-            return Vec::new();
+            return None;
         }
-        let Some(server) = tasks.terminal_server() else {
-            return Vec::new();
-        };
+        let server = tasks.terminal_server()?;
         // An SSH host's folder isn't a working tree here: no claims.
-        let Some(conn) = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me", None)
-        else {
-            return Vec::new();
-        };
-        let mut mcp = RemoteMcp::kept(remote.clone());
+        let conn = tasks.begin_session(&format!("pn:{pane}"), &engine.label, "me", None)?;
         let backend = ProcessBackend {
             server,
             env: vec![(CONNECTION_ENV.to_string(), conn)],
         };
         match mcp.add(host, SERVER_NAME, Arc::new(backend)).await {
-            Ok(relayed) => {
-                if let Ok(mut m) = self.host_tasks.lock() {
-                    m.insert(pane.to_string(), mcp);
-                }
-                tandem_engines::homes::inline_stdio_server(engine, &relayed)
-            }
+            Ok(relayed) => Some(relayed),
             Err(e) => {
                 tasks.end_session(&format!("pn:{pane}"));
                 tracing::warn!(code = "remote.mcp_unavailable", error = %e.message, "no task tools for a host's terminal agent");
-                Vec::new()
+                None
             }
         }
     }
@@ -1799,7 +1835,7 @@ impl TerminalService {
                 })?;
             let mut extra_args = self.engines.extra_args(&engine.id).await;
             extra_args.extend(
-                self.host_tasks_args(&remote, &host, &engine, pane.as_str())
+                self.host_mcp_args(&remote, &host, &engine, pane, &record.workspace_id)
                     .await,
             );
             let req = tandem_engines::launch::TerminalLaunchRequest {

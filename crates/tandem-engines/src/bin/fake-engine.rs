@@ -38,7 +38,8 @@
 //! `/mcp <tool> <json>` calls the gateway the run was given (Claude's
 //! `--mcp-config`, Codex's `-c` settings and its lease variable) and prints
 //! "mcp said: …" or "mcp failed: …"; `/mcp` alone lists its tools, and
-//! without a gateway it says "mcp: no gateway" (F-PL-01).
+//! without a gateway it says "mcp: no gateway" (F-PL-01). On an SSH host it
+//! calls the relayed `tandem` stdio server in `--mcp-config` instead.
 //!
 //! `/subagents <n>` reports n subagent starts and keeps working for a
 //! minute without reading its input (F-AC-09).
@@ -932,6 +933,20 @@ fn answer(name: &str, text: &str) -> bool {
     // settings; `/mcp` alone lists the tools.
     if t == "/mcp" || t.starts_with("/mcp ") {
         let argv: Vec<String> = std::env::args().skip(1).collect();
+        // On an SSH host the gateway comes relayed, as a stdio server.
+        if chat::gateway(&argv).is_none() && chat::codex_gateway(&argv).is_none() {
+            if let Some(server) = chat::stdio_server(&argv, "tandem") {
+                let rest = t.strip_prefix("/mcp ").map(str::trim).unwrap_or_default();
+                let (tool, args) = rest.split_once(' ').unwrap_or((rest, "{}"));
+                let args = serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
+                let (failed, text) = chat::call_stdio(&server, tool.trim(), args);
+                let label = if failed { "mcp failed" } else { "mcp said" };
+                for line in text.lines() {
+                    out(&format!("{label}: {line}\r\n"));
+                }
+                return true;
+            }
+        }
         match chat::gateway(&argv).or_else(|| chat::codex_gateway(&argv)) {
             None => out("mcp: no gateway\r\n"),
             Some(gw) => match t.strip_prefix("/mcp ").map(str::trim) {

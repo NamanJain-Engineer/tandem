@@ -2398,7 +2398,8 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 - **Agent terminals.** A Claude Code or Codex terminal started in a workspace with plugins granted to it (F-PL-05) gets the gateway for that run, beside its own MCP servers (a terminal keeps its native configuration, F-EN-04):
   - **Lease.** One for the pane, as an interactive Edits session: reads run, and anything that asks shows its approval on the pane and in the Approvals list. It's revoked when the pane's process ends.
   - **Delivery.** Claude Code gets it in `--mcp-config`. Codex gets `-c mcp_servers.tandem.*`, with the lease in `TANDEM_GATEWAY_LEASE`, never in its arguments.
-  - **Other engines** get none, and so do terminals on a local model (F-EN-11), on an SSH host or in WSL. A grant change reaches the pane's next start; a removed grant stops its tools at once.
+  - **On an SSH host** it's relayed, as a host thread's is (D-1604): `tandem-host mcp --channel <id>`, in the same config as the tasks server (D-1606), so the lease never leaves this computer. The lease lasts until the pane closes or starts again.
+  - **Other engines** get none, and so do terminals on a local model (F-EN-11) or in WSL. A grant change reaches the pane's next start; a removed grant stops its tools at once.
 
 **Acceptance:**
 1. A request without a lease gets 401, and a lease from session A can't call a plugin that is granted only to B.
@@ -2407,6 +2408,7 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 4. Disconnecting a plugin invalidates its tools for in-flight leases on the next call.
 5. A Claude Code terminal started in a workspace with one plugin granted lists that plugin's tools through the gateway, with a lease for that pane. A Codex terminal there gets the gateway with its lease only in `TANDEM_GATEWAY_LEASE`. A terminal in a workspace with none gets no gateway.
 6. When an agent terminal's process ends, its lease is revoked: a request with it gets 401.
+7. A Claude Code terminal on an SSH host whose folder has a plugin granted calls it through the relay, with one MCP config for the gateway and the tasks server and no lease on its command line; closing the pane revokes the lease.
 
 #### F-PL-02 Vendor modules (P1)
 **Behavior:**

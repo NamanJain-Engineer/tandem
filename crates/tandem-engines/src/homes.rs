@@ -384,6 +384,36 @@ fn fill(v: &Value, theme: &str) -> Value {
 /// for this run only, where its config can't be written (a host's own
 /// home, D-1606): `--mcp-config <json>` for Claude Code, `-c
 /// mcp_servers.<name>.…` for Codex. Other engines get none, as locally.
+/// Several relayed servers for one run (D-1606, D-2565): Claude Code's in one
+/// `--mcp-config` (the option takes several values, so one config keeps the
+/// next argument its own), Codex's as `-c` settings for each.
+pub fn inline_stdio_servers(
+    engine: &EngineSpec,
+    servers: &[crate::chat::StdioServer],
+) -> Vec<String> {
+    match engine.hooks_support {
+        HooksSupport::ClaudeHooks => {
+            let mut config = json!({ "mcpServers": {} });
+            for s in servers {
+                if let Some(one) = inline_stdio_server(engine, s)
+                    .get(1)
+                    .and_then(|c| serde_json::from_str::<Value>(c).ok())
+                {
+                    merge(&mut config, &one);
+                }
+            }
+            if servers.is_empty() {
+                return Vec::new();
+            }
+            vec!["--mcp-config".into(), config.to_string()]
+        }
+        _ => servers
+            .iter()
+            .flat_map(|s| inline_stdio_server(engine, s))
+            .collect(),
+    }
+}
+
 pub fn inline_stdio_server(engine: &EngineSpec, server: &crate::chat::StdioServer) -> Vec<String> {
     let command = server.command.to_string_lossy().into_owned();
     match engine.hooks_support {
@@ -638,6 +668,43 @@ mod tests {
             .find(|e| e.hooks_support == HooksSupport::None)
             .expect("one more engine");
         assert!(inline_stdio_server(other, &server).is_empty());
+    }
+
+    #[test]
+    fn f_pl_01_a_hosts_terminal_engine_gets_tasks_and_the_gateway_in_one_config() {
+        let reg = crate::registry::EngineRegistry::bundled();
+        let relayed = |name: &str, channel: &str| crate::chat::StdioServer {
+            name: name.into(),
+            command: PathBuf::from("/home/u/.tandem-host/1/tandem-host"),
+            args: vec!["mcp".into(), "--channel".into(), channel.into()],
+            env_vars: Vec::new(),
+        };
+        let servers = [
+            relayed("tandem_tasks", "0123456789abcdef0123456789abcdef"),
+            relayed("tandem", "fedcba9876543210fedcba9876543210"),
+        ];
+        let claude = inline_stdio_servers(reg.get("claude").expect("claude"), &servers);
+        // One --mcp-config: the option takes several values.
+        assert_eq!(claude.len(), 2, "{claude:?}");
+        assert_eq!(claude[0], "--mcp-config");
+        let v: Value = serde_json::from_str(&claude[1]).expect("json");
+        assert_eq!(
+            v["mcpServers"]["tandem_tasks"]["args"][2],
+            "0123456789abcdef0123456789abcdef"
+        );
+        assert_eq!(
+            v["mcpServers"]["tandem"]["args"][2],
+            "fedcba9876543210fedcba9876543210"
+        );
+        let codex = inline_stdio_servers(reg.get("codex").expect("codex"), &servers);
+        assert_eq!(codex.len(), 8, "{codex:?}");
+        assert!(codex.contains(
+            &"mcp_servers.tandem.command=\"/home/u/.tandem-host/1/tandem-host\"".to_string()
+        ));
+        assert!(codex.contains(
+            &"mcp_servers.tandem_tasks.command=\"/home/u/.tandem-host/1/tandem-host\"".to_string()
+        ));
+        assert!(inline_stdio_servers(reg.get("claude").expect("claude"), &[]).is_empty());
     }
     use crate::EngineRegistry;
 

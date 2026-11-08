@@ -706,6 +706,11 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - m18-tk09 looked for your Send back under the automatic label; since the review of 0e20d5b7 it's "Review (sent back by you):" (1b974744).
     - m18-wt10-live ran Check overlap in one worktree only, but a sibling that's only read isn't watched since the review of 30d5bcad, S-3 (0951524b).
 
+- Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
+  - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
+  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
+  - gen-protocol ran out of disk on its first try here. The steps after it then ran again on the same commit, the ones that had passed skipped.
+
 - [x] Two known E2E flakes, each with its cause found (the suite's reliability):
   - **m3-14's drag-to-pin (F-SH-03.2) had a product bug under it.** With nothing pinned, a drag shows the band's "Drop here to pin", which grows the band from 4 to 24 px and moves every row down, the dragged one too.
     - **What a person saw.** The dragged row jumped 20 px below the pointer as the drag started. dnd-kit drops the row it draws, so with the pointer on "Drop here to pin" the row met the first row and landed in All, unpinned. dnd-kit's own answer, scrolling the list by the move, does nothing in a list too short to scroll, and in a longer one hides most of the band.
@@ -745,10 +750,16 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
   - The steps before the desktop crate's tests passed on 57b1273f, where the gate then stopped at the race. 3bacbf8f differs from it by that test file and BUILD_LOG only, so those steps weren't run again. gen-protocol ran out of disk twice building every crate's tests at once, so it ran one package at a time (the same filter and environment, trimming between them): 601 types, no drift, nothing untracked.
 
-- Gate passed on 54523e76 (`chain28` merged, F-SH-14, F-SH-07.8 and the four test fixes):
-  - Tests: 2,872 Rust (6 ignored) and 2,181 TypeScript.
-  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
-  - gen-protocol ran out of disk on its first try here. The steps after it then ran again on the same commit, the ones that had passed skipped.
+- [x] F-PL-01's plugins for agent terminals on SSH hosts, D-2565's second slice. A host's terminal can't reach this computer's loopback gateway, so it gets it as a host thread does (D-1604):
+  - **The relay.** `PaneGateway::lease` makes the pane's lease, held without a file. `remote_mcp::GatewayBackend` serves it on a kept channel, so the lease never leaves this computer; each call checks the lease is live.
+  - **One config.** `terminal::host_mcp_args` puts the tasks server (D-1606) and the gateway, each `tandem-host mcp --channel <id>`, in one inline `--mcp-config` (`homes::inline_stdio_servers`; Codex: `-c` for each). Claude's option takes several values, so a second `--mcp-config` would have taken the next argument as well.
+  - **Ending.** The lease and channels end with the pane's (`end_tasks_session`): when it closes or starts again.
+  - **Fake engine.** `/mcp` calls the relayed `tandem` stdio server when it has no HTTP gateway.
+  - **Spec.** F-PL-01's "On an SSH host" and AC 7; ARCHITECTURE §11.2; the docs' Plugins page; MILESTONES' E2E-M14-13; HUMAN_TODO's step 4.
+  - **Tests.** Rust `homes` F-PL-01 (one config with both servers, Codex's `-c` for each; red first: the stub's config had no `tandem` server). `pane_plugins` and `plugins` pass on the shared lease code (11).
+  - **E2E.** `m14-13-terminal-plugins.e2e.ts` (2) on the SSH fixture: one `--mcp-config` with `tandem` and `tandem_tasks` and no lease on the command line; the echo comes back through the relay; closing the pane revokes the lease. m14-12-terminal-tasks (2) passes with the merged config, and m18-pl01 (6) on the same build.
+    - Both host specs failed at first: the fixture's `tandem-host` couldn't be built without musl, and the host couldn't connect (`install_failed`). With `rustup target add x86_64-unknown-linux-musl` and `musl-tools`, as the runner says, both pass.
+  - **Not in it.** WSL terminals, which have no MCP servers of ours yet.
 
 ### M18 · Reliability decisions
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
@@ -756,7 +767,8 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **Why the command line.** The provider home is the account's: every pane on it shares it, and it outlives a run. A lease written there would outlive its pane, and one pane's plugins would reach the next. `--mcp-config` and Codex's `-c` add the server for one run beside the user's own, and Codex reads the lease from its environment, as a Codex thread does.
   - **Why `--mcp-config=<file>`.** The option takes several values. Real Claude Code 2.1.42, given it apart, took a prompt after it as a second file; the `=` form ends at its value.
   - **Worktrees.** A worktree's sessions have its folder's grants as well as their own, threads too: a worktree is a short-lived copy of its folder.
-  - **Left out.** SSH hosts and WSL: the gateway listens on this computer's loopback, and D-1604's relay, which serves threads there, would be the next slice. Panes on a local model, which F-EN-11 keeps to this computer. Engines other than Claude Code and Codex.
+  - **SSH hosts.** The gateway listens on this computer's loopback, so a host's terminal gets it through D-1604's relay, as a host thread does, in one config with the tasks server (the second slice).
+  - **Left out.** WSL, whose terminals have no MCP servers of ours yet. Panes on a local model, which F-EN-11 keeps to this computer. Engines other than Claude Code and Codex.
 - D-2564: The main window reloads by itself when its web content stops (a crash or the memory limit), at most twice within 5 minutes. The third stop asks first (Reload, or Quit Vibezeo), so a window that can't stay up doesn't reload for ever.
   - **Why a reload is enough.** The core holds everything: panes re-attach and replay their rings, and statuses and threads load again, by the paths every webview reload already uses.
   - **What's left alone.** WebKit's own API ending the process isn't a crash. On macOS, other webviews keep Tauri's reload.

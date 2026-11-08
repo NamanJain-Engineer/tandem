@@ -174,7 +174,11 @@ pub(crate) fn stdio_server(args: &[String], name: &str) -> Option<(String, Vec<S
 }
 
 /// One tool call on a fresh stdio server: (is_error, text).
-fn call_stdio(server: &(String, Vec<String>), name: &str, args: Value) -> (bool, String) {
+pub(crate) fn call_stdio(
+    server: &(String, Vec<String>),
+    name: &str,
+    args: Value,
+) -> (bool, String) {
     use std::process::{Command, Stdio};
     let Ok(mut child) = Command::new(&server.0)
         .args(&server.1)

@@ -124,6 +124,38 @@ impl PaneGateway {
         workspace: &WorkspaceId,
         engine: &str,
     ) -> Option<PaneStart> {
+        let (gateway, lease) = self.lease(store, pane, workspace, engine).await?;
+        let file = self.dir.join(format!("{}.json", pane.as_str()));
+        match launch(engine, &gateway.url, &lease.token, &file) {
+            Ok(Some(launch)) => {
+                let file = (engine == "claude").then_some(file);
+                self.leases
+                    .hold(pane.as_str(), gateway, lease.id, file.clone());
+                Some(PaneStart { launch, file })
+            }
+            Ok(None) => {
+                gateway.revoke(&lease.id);
+                None
+            }
+            Err(e) => {
+                gateway.revoke(&lease.id);
+                tracing::warn!(code = "gateway.pane_config_failed", error = %e, "an agent terminal starts without its plugins");
+                None
+            }
+        }
+    }
+
+    /// A lease for this run of `pane`, an agent terminal of `engine` in
+    /// `workspace`, kept by the caller: none when the engine takes none or
+    /// nothing is granted. The run before's is revoked first. A pane on an
+    /// SSH host gets it relayed (D-1604): `hold` it once its channel opens.
+    pub async fn lease(
+        &self,
+        store: &Store,
+        pane: &PaneId,
+        workspace: &WorkspaceId,
+        engine: &str,
+    ) -> Option<(GatewayHandle, tandem_gateway::Lease)> {
         self.end(pane.as_str());
         if !matches!(engine, "claude" | "codex") {
             return None;
@@ -149,24 +181,12 @@ impl PaneGateway {
         );
         session.granted = granted;
         let lease = gateway.prepare(session);
-        let file = self.dir.join(format!("{}.json", pane.as_str()));
-        match launch(engine, &gateway.url, &lease.token, &file) {
-            Ok(Some(launch)) => {
-                let file = (engine == "claude").then_some(file);
-                self.leases
-                    .hold(pane.as_str(), gateway, lease.id, file.clone());
-                Some(PaneStart { launch, file })
-            }
-            Ok(None) => {
-                gateway.revoke(&lease.id);
-                None
-            }
-            Err(e) => {
-                gateway.revoke(&lease.id);
-                tracing::warn!(code = "gateway.pane_config_failed", error = %e, "an agent terminal starts without its plugins");
-                None
-            }
-        }
+        Some((gateway, lease))
+    }
+
+    /// Keeps a relayed lease for the pane's run (no file).
+    pub fn hold(&self, pane: &str, gateway: GatewayHandle, lease: LeaseId) {
+        self.leases.hold(pane, gateway, lease, None);
     }
 
     /// The pane's process ended or the pane closed.
