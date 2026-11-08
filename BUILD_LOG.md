@@ -769,6 +769,11 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **The session library** stays empty (D-2566).
   - **Tests.** `demo.test.ts` (2) and `drift.test.ts` (1), red first. The 86 demo tests pass.
 
+- Gate passed on 14d0c968 (F-PL-01 on SSH hosts, the Local models line, and the demo's engine versions and sandbox):
+  - Tests: 2,884 Rust (6 ignored) and 2,191 TypeScript.
+  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift (601 types).
+  - **How it ran.** The whole gate ran on 87369091, the host slice. 3a810d5f and 14d0c968 change TypeScript and docs only, so on 14d0c968 lint, the TypeScript tests and the desktop build ran again and the rest stood. gen-protocol ran one package at a time, as this container's disk needs.
+
 ### M18 · Reliability decisions
 - D-2566 (provisional): The demo's session library stays empty. The library lists engine sessions found on the computer (F-TH-17), and the demo's story has none: its agents' work is what's on screen. Sample sessions with their transcripts would be invented, which the demo doesn't do ("nothing invented", as its Usage page's empty weeks). It shows the app's own empty state, "No sessions found", and opening anything from it says the demo has no engine sessions to read.
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
