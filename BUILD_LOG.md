@@ -761,6 +761,8 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
     - Both host specs failed at first: the fixture's `tandem-host` couldn't be built without musl, and the host couldn't connect (`install_failed`). With `rustup target add x86_64-unknown-linux-musl` and `musl-tools`, as the runner says, both pass.
   - **Not in it.** WSL terminals, which have no MCP servers of ours yet.
 
+- [x] Settings › Engines › Local models says every time Vibezeo asks 127.0.0.1 (F-EN-11; D-876 left it for 0.14.0, and it was still the old line). It said "when you open this page or check again", leaving out that each start of a pane on a local model asks its server again first (D-2519). It now reads "…only: when you open this page, when you check again, and each time a pane on one of them starts." The docs already said so. Test: `localModels.test.tsx` F-EN-11 (red first).
+
 ### M18 · Reliability decisions
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
   - **Why the workspace.** F-PL-01 named terminals "opted into plugins" without saying how. F-PL-05's workspace grants already reached threads, and a terminal belongs to a workspace; a switch per pane would be one more place to look, and would go with the pane.

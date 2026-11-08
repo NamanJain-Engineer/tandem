@@ -58,6 +58,15 @@ describe("UI-164 Local models (F-EN-11)", () => {
     expect(modelLine({ id: "m", size: null, parameters: null })).toBe("m");
   });
 
+  it("F-EN-11 the page says every time Vibezeo asks 127.0.0.1, each start of a local pane included", async () => {
+    open({ local_models_list: () => [OLLAMA] });
+    await screen.findAllByTestId("local-server");
+    // Each start asks the server again for its models (D-2519, D-876).
+    expect(screen.getByText(/Vibezeo asks 127\.0\.0\.1 only/).textContent).toBe(
+      "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only: when you open this page, when you check again, and each time a pane on one of them starts.",
+    );
+  });
+
   it("F-EN-11.2 Start is offered only where Codex can run, and says why not", async () => {
     open({ local_models_list: () => [LLAMA, OLLAMA] });
     const rows = await screen.findAllByTestId("local-server");

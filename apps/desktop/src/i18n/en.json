@@ -396,7 +396,7 @@
   "acp.retry": "Try again",
   "acp.via": "via ACP",
   "local.title": "Local models",
-  "local.body": "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only, when you open this page or check again.",
+  "local.body": "Model servers you run on this computer, such as Ollama and LM Studio. Vibezeo asks 127.0.0.1 only: when you open this page, when you check again, and each time a pane on one of them starts.",
   "local.addOpen": "Add a port…",
   "local.check": "Check again",
   "local.retry": "Try again",
