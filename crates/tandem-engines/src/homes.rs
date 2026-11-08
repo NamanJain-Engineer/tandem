@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn f_pl_01_a_hosts_terminal_engine_gets_tasks_and_the_gateway_in_one_config() {
+    fn f_pl_01_7_a_hosts_terminal_engine_gets_tasks_and_the_gateway_in_one_config() {
         let reg = crate::registry::EngineRegistry::bundled();
         let relayed = |name: &str, channel: &str| crate::chat::StdioServer {
             name: name.into(),

@@ -756,7 +756,7 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **Ending.** The lease and channels end with the pane's (`end_tasks_session`): when it closes or starts again.
   - **Fake engine.** `/mcp` calls the relayed `tandem` stdio server when it has no HTTP gateway.
   - **Spec.** F-PL-01's "On an SSH host" and AC 7; ARCHITECTURE §11.2; the docs' Plugins page; MILESTONES' E2E-M14-13; HUMAN_TODO's step 4.
-  - **Tests.** Rust `homes` F-PL-01 (one config with both servers, Codex's `-c` for each; red first: the stub's config had no `tandem` server). `pane_plugins` and `plugins` pass on the shared lease code (11).
+  - **Tests.** Rust `homes` F-PL-01.7 (one config with both servers, Codex's `-c` for each; red first: the stub's config had no `tandem` server). `pane_plugins` and `plugins` pass on the shared lease code (11).
   - **E2E.** `m14-13-terminal-plugins.e2e.ts` (2) on the SSH fixture: one `--mcp-config` with `tandem` and `tandem_tasks` and no lease on the command line; the echo comes back through the relay; closing the pane revokes the lease. m14-12-terminal-tasks (2) passes with the merged config, and m18-pl01 (6) on the same build.
     - Both host specs failed at first: the fixture's `tandem-host` couldn't be built without musl, and the host couldn't connect (`install_failed`). With `rustup target add x86_64-unknown-linux-musl` and `musl-tools`, as the runner says, both pass.
   - **Not in it.** WSL terminals, which have no MCP servers of ours yet.

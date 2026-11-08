@@ -91,7 +91,7 @@ describe("E2E-M14-13 plugins for an agent terminal on a host", () => {
 
   after(() => resetProject());
 
-  it("F-PL-01.5 the host's agent gets the gateway relayed beside the tasks server, and calls the plugin", async function () {
+  it("F-PL-01.7 the host's agent gets the gateway relayed beside the tasks server, and calls the plugin", async function () {
     this.timeout(120_000);
     const log = await invoke<Array<{ argv: string[] }>>("test_spawn_log");
     const launch = log.map((r) => r.argv.join(" ")).find((a) => a.includes("/usr/local/bin/claude")) ?? "";
@@ -107,7 +107,7 @@ describe("E2E-M14-13 plugins for an agent terminal on a host", () => {
     );
   });
 
-  it("F-PL-01.6 closing the pane revokes its lease", async function () {
+  it("F-PL-01.7 closing the pane revokes its lease", async function () {
     this.timeout(60_000);
     const before = (await gatewayMetrics()).metrics.leases;
     await invoke("pane_close", { paneId: agent });
