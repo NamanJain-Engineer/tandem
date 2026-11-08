@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  EngineVersionView,
   TeammateSummary,
   TeammateTemplate,
   PlanLaunch,
@@ -1244,5 +1245,32 @@ describe("F-WT-08 CI results and review comments back to the agent, on the share
     expect((core.handle("lane_review_comments", { laneId: prLane, seen: ids }) as ImportedComments).comments).toEqual([]);
     // Pushing anywhere but the pull request's branch isn't simulated.
     expect(() => core?.handle("git_push", { context: { type: "workspace", workspaceId: "ws_demo" }, publish: false })).toThrow();
+  });
+});
+
+describe("the demo's engine versions and sandbox setting (F-EN-08, F-TL-11; D-868)", () => {
+  it("F-EN-08 the versions table shows the story's sample versions, each updated as the registry says, with nothing to check or pin", () => {
+    const core = new DemoCore(0);
+    const rows = core.handle("engine_versions", {}) as EngineVersionView[];
+    expect(rows.map((r) => [r.engineId, r.version, r.method, r.selfUpdates, r.pinnable, r.pinned])).toEqual([
+      ["claude", "2.1.0-sample", "npm", true, true, false],
+      ["codex", "0.46.0-sample", "npm", false, true, false],
+      ["gemini", "0.66.0-sample", "npm", false, false, false],
+    ]);
+    expect(rows.every((r) => r.previous === null && r.lastGood === null && r.broken === null)).toBe(true);
+    // A web page has no installed engines to check, pin or roll back.
+    for (const cmd of ["engine_check_update", "engine_pin", "engine_rollback_command"])
+      expect(() => core.handle(cmd, { engineId: "claude" })).toThrow();
+  });
+
+  it("F-TL-11 the sandbox setting says why the demo can't sandbox, and no pane says it's sandboxed", () => {
+    const core = new DemoCore(0);
+    expect(core.handle("sandbox_status", {})).toEqual({
+      available: false,
+      tool: null,
+      reason:
+        "The demo runs in your browser, so it can't sandbox an agent. The app uses bubblewrap on Linux.",
+    });
+    expect(core.handle("sandbox_panes", {})).toEqual([]);
   });
 });

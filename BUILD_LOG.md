@@ -763,7 +763,14 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
 
 - [x] Settings › Engines › Local models says every time Vibezeo asks 127.0.0.1 (F-EN-11; D-876 left it for 0.14.0, and it was still the old line). It said "when you open this page or check again", leaving out that each start of a pane on a local model asks its server again first (D-2519). It now reads "…only: when you open this page, when you check again, and each time a pane on one of them starts." The docs already said so. Test: `localModels.test.tsx` F-EN-11 (red first).
 
+- [x] The demo's engine versions and sandbox setting (REMAINING §0.2, D-868; the smaller features D-1899 put after `app-ui`'s slice 6). Taken up on 8 November, when no session had touched the demo since 30 October.
+  - **Engine versions** (F-EN-08, UI-161): the story's sample versions ("2.1.0-sample" and so on), installed with npm as their sample paths are. Claude Code updates itself and can be pinned, Codex can be pinned, Gemini CLI neither, as the registry says (`DEMO_UPDATES`, held to `registry.json` by `drift.test.ts`). Check for updates, Pin and Roll back still say the demo has no installed engines.
+  - **The sandbox setting** (F-TL-11): "The demo runs in your browser, so it can't sandbox an agent. The app uses bubblewrap on Linux." Workspace stays off, as wherever it can't run, and no pane claims to be sandboxed. Before, the status fell through to null and read "Not available here".
+  - **The session library** stays empty (D-2566).
+  - **Tests.** `demo.test.ts` (2) and `drift.test.ts` (1), red first. The 86 demo tests pass.
+
 ### M18 · Reliability decisions
+- D-2566 (provisional): The demo's session library stays empty. The library lists engine sessions found on the computer (F-TH-17), and the demo's story has none: its agents' work is what's on screen. Sample sessions with their transcripts would be invented, which the demo doesn't do ("nothing invented", as its Usage page's empty weeks). It shows the app's own empty state, "No sessions found", and opening anything from it says the demo has no engine sessions to read.
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
   - **Why the workspace.** F-PL-01 named terminals "opted into plugins" without saying how. F-PL-05's workspace grants already reached threads, and a terminal belongs to a workspace; a switch per pane would be one more place to look, and would go with the pane.
   - **Why the command line.** The provider home is the account's: every pane on it shares it, and it outlives a run. A lease written there would outlive its pane, and one pane's plugins would reach the next. `--mcp-config` and Codex's `-c` add the server for one run beside the user's own, and Codex reads the lease from its environment, as a Codex thread does.

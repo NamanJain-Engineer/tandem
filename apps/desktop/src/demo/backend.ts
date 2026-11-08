@@ -10,10 +10,12 @@ import type {
   AuthState,
   DashboardItem,
   EngineSpec,
+  EngineVersionView,
   EngineView,
   EntitlementView,
   FileContext,
   FileText,
+  InstallMethod,
   LayoutNode,
   ModelEntry,
   PaneRecord,
@@ -294,6 +296,38 @@ const ENGINES: EngineView[] = (
   extraArgs: [],
   added: false,
 }));
+
+/** How the demo's engines update (F-EN-08), as the registry says:
+ * drift.test.ts holds these to `registry.json`. */
+export const DEMO_UPDATES: Record<string, { selfUpdates: InstallMethod[]; pinnable: boolean }> = {
+  claude: { selfUpdates: ["native", "npm"], pinnable: true },
+  codex: { selfUpdates: [], pinnable: true },
+  gemini: { selfUpdates: [], pinnable: false },
+};
+
+/** Settings › Engines' versions (UI-161) for the demo's engines: the
+ * story's sample versions, installed with npm as their sample paths are,
+ * and nothing the demo has seen change. */
+function demoVersions(): EngineVersionView[] {
+  return ENGINES.map((e) => {
+    const updates = DEMO_UPDATES[e.spec.id];
+    return {
+      engineId: e.spec.id,
+      version: e.install?.version ?? null,
+      method: "npm",
+      selfUpdates: updates?.selfUpdates.includes("npm") ?? false,
+      pinnable: updates?.pinnable ?? false,
+      pinned: false,
+      previous: null,
+      lastGood: null,
+      broken: null,
+    };
+  });
+}
+
+/** Why the demo's sandbox setting can't be turned on (F-TL-11). */
+export const DEMO_NO_SANDBOX =
+  "The demo runs in your browser, so it can't sandbox an agent. The app uses bubblewrap on Linux.";
 
 const MODELS: Record<string, ModelEntry[]> = {
   claude: [
@@ -1917,9 +1951,16 @@ export class DemoCore {
           message:
             "The demo has no repository files to read. In the app, this lists each engine's instructions file.",
         };
-      // Engines' versions and processes are on your computer (F-EN-08).
+      // Engines' processes are on your computer; their versions are the
+      // story's (F-EN-08).
       case "engine_versions":
+        return demoVersions();
       case "engine_background":
+        return [];
+      // A web page can't sandbox an agent (F-TL-11).
+      case "sandbox_status":
+        return { available: false, tool: null, reason: DEMO_NO_SANDBOX };
+      case "sandbox_panes":
         return [];
       case "engine_check_update":
       case "engine_pin":

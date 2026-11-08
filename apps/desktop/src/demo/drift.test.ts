@@ -13,7 +13,7 @@ import DASHBOARD from "../../src-tauri/src/services/dashboard.rs?raw";
 import PR_CHECKS from "../../src-tauri/src/services/pr_checks.rs?raw";
 import RADAR from "../../src-tauri/src/services/radar.rs?raw";
 import { DEFANGED, defang } from "../features/code/untrusted";
-import { DemoCore } from "./backend";
+import { DEMO_UPDATES, DemoCore } from "./backend";
 import { commentFenced, failurePrompt, fence, fenceDefanged, ghLog, untrustedLabel } from "./ci";
 import { STORY, askLine, previewOf, worktree, worktreeIn, type StoryWorktree } from "./story";
 
@@ -181,5 +181,20 @@ describe("F-DB-01 F-SH-03 D-2624 the waiting agent and the Dashboard's cards are
     expect(previewOf(at(worktreeIn("done"), [{ run: "pnpm test" }]))).toBe("Bash");
     expect(previewOf(at(worktreeIn("waiting"), [{ run: "pnpm test" }]))).toBeNull();
     expect(previewOf(at(worktreeIn("working"), [{ run: "pnpm test" }]))).toBeNull();
+  });
+});
+
+describe("the demo's engines update as the registry says (F-EN-08)", () => {
+  it("F-EN-08 each demo engine's self-updates and pin are the registry's", () => {
+    const registry = REGISTRY as Array<{
+      id: string;
+      updates?: { selfUpdates?: string[]; pin?: unknown } | null;
+    }>;
+    for (const [id, u] of Object.entries(DEMO_UPDATES)) {
+      const e = registry.find((x) => x.id === id);
+      expect(e, id).toBeDefined();
+      expect(u.selfUpdates, id).toEqual(e?.updates?.selfUpdates ?? []);
+      expect(u.pinnable, id).toBe(e?.updates?.pin != null);
+    }
   });
 });
