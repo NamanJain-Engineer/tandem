@@ -800,6 +800,8 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - a row for each tool Claude Code starts, from its hooks, as the Dashboard shows them (D-2624). Codex and Gemini CLI name none.
   - **Not simulated:** commands (the demo's shell isn't command recall), files changed (its checkpoints have no ids to link), approvals and `vibezeo run`. Export says the demo can't save files to your computer.
   - **Tests.** `demo.test.ts` F-EX-07 (2), red first: the pane's ledger was `[]`, the thread's `undefined`. The 91 demo tests pass.
+  - **Gate** passed on 005c0a92: 2,196 TypeScript tests, the desktop build and coverage; the Rust steps stood from 48706ce5, as above.
+  - **In the built demo** (`build:demo`, Chromium): Settings › Engines shows the memory cap's line, Secrets its empty state, and Activity… on the Codex pane, after a prompt, "Turn sent" with no console errors.
 
 - Gate passed on 306a5601 (the demo's memory cap and secrets) and on 2c18f0ce (its claims):
   - Tests: 2,193 and then 2,194 TypeScript; the desktop build; coverage.
