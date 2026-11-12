@@ -12,4 +12,8 @@ outdated: number,
 /**
  * Comments past [`MAX_COMMENTS`], left out.
  */
-cut: number, };
+cut: number, 
+/**
+ * Comments in threads resolved on GitHub, left out (D-2526).
+ */
+resolved: number, };

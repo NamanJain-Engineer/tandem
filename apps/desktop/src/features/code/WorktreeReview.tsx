@@ -199,7 +199,7 @@ export const useReviews = create<ReviewsState>((set, get) => ({
  * into the review bar, through the user's gh. */
 export async function importReviewComments(
   laneId: string,
-): Promise<{ added: number; outdated: number; cut: number } | { error: IpcError }> {
+): Promise<{ added: number; outdated: number; cut: number; resolved: number } | { error: IpcError }> {
   try {
     // The ids imported before go along, so the cap counts only new ones.
     const seen = useReviews.getState().importedIds[laneId] ?? [];
@@ -208,6 +208,7 @@ export async function importReviewComments(
       added: useReviews.getState().addImported(laneId, got.comments),
       outdated: got.outdated,
       cut: got.cut,
+      resolved: got.resolved,
     };
   } catch (e) {
     return { error: e as IpcError };
@@ -327,6 +328,7 @@ export function ReviewDiff({
       const left = [
         out.outdated > 0 ? t("worktree.review.importOutdated", { n: out.outdated }) : null,
         out.cut > 0 ? t("worktree.review.importCut", { n: out.cut }) : null,
+        out.resolved > 0 ? t("worktree.review.importResolved", { n: out.resolved }) : null,
       ].filter((x): x is string => x !== null);
       const body = left.length > 0 ? left.join(" ") : undefined;
       if (out.added === 0) show({ title: t("worktree.review.importedNone"), body });

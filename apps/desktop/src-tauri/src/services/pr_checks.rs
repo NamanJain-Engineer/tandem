@@ -170,6 +170,8 @@ pub struct ImportedComments {
     pub outdated: u32,
     /// Comments past [`MAX_COMMENTS`], left out.
     pub cut: u32,
+    /// Comments in threads resolved on GitHub, left out (D-2526).
+    pub resolved: u32,
 }
 
 /// A pull request line comment for F-WT-02's review bar.
@@ -313,11 +315,16 @@ struct RawComment {
 /// are in `seen` (imported before) are dropped first, then past
 /// [`MAX_COMMENTS`] they're counted, not kept, so the next import brings
 /// the rest.
-pub fn parse_comments(stdout: &str, seen: &BTreeSet<String>) -> ImportedComments {
+pub fn parse_comments(
+    stdout: &str,
+    seen: &BTreeSet<String>,
+    resolved: &BTreeSet<String>,
+) -> ImportedComments {
     let mut out = ImportedComments {
         comments: Vec::new(),
         outdated: 0,
         cut: 0,
+        resolved: 0,
     };
     for c in stdout
         .lines()
@@ -325,6 +332,10 @@ pub fn parse_comments(stdout: &str, seen: &BTreeSet<String>) -> ImportedComments
     {
         let id = c.id.to_string().trim_matches('"').to_string();
         if seen.contains(&id) {
+            continue;
+        }
+        if resolved.contains(&id) {
+            out.resolved += 1;
             continue;
         }
         let Some(line) = c.line else {
@@ -670,6 +681,44 @@ pub async fn failure(
     Ok(failure_prompt(pr.number, &check, &log))
 }
 
+/// The pull request's review threads, as GraphQL lists them (REST's
+/// comments don't say whether their thread is resolved).
+const RESOLVED_QUERY: &str = "query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { nodes { isResolved comments(first: 100) { nodes { databaseId } } } pageInfo { hasNextPage endCursor } } } } }";
+
+/// The ids of the comments in the pull request's threads resolved on
+/// GitHub (D-2526). `None` when they can't be read: then none are left
+/// out, as before.
+async fn resolved_ids(gh: &dyn Gh, root: &Path, number: u32) -> Option<BTreeSet<String>> {
+    let out = gh
+        .run(
+            root,
+            &args(&[
+                "api",
+                "graphql",
+                "--paginate",
+                "-F",
+                "owner={owner}",
+                "-F",
+                "repo={repo}",
+                "-F",
+                &format!("number={number}"),
+                "-f",
+                &format!("query={RESOLVED_QUERY}"),
+                "--jq",
+                ".data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[].databaseId",
+            ]),
+        )
+        .await;
+    (out.code == Some(0)).then(|| {
+        out.stdout
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+}
+
 /// `lane_review_comments`: the pull request's line comments.
 pub async fn review_comments(
     store: &Store,
@@ -711,7 +760,8 @@ pub async fn review_comments(
     if out.code != Some(0) {
         return Err(IpcError::new(ErrorCode::Io, first_line(&out.stderr)).with_stage("pr_checks"));
     }
-    Ok(parse_comments(&out.stdout, seen))
+    let resolved = resolved_ids(gh, &root, pr.number).await.unwrap_or_default();
+    Ok(parse_comments(&out.stdout, seen, &resolved))
 }
 
 #[cfg(test)]
@@ -969,6 +1019,49 @@ mod tests {
         assert!(!list[0].fenced.contains(untrusted::DEFANGED));
     }
 
+    #[tokio::test]
+    async fn f_wt_08_6_a_comment_in_a_thread_resolved_on_github_isnt_imported() {
+        let (_t, data, store, repo, lane) = fixture().await;
+        set_allowed(&data, repo.id.as_str(), true).expect("allow");
+        let mut gh = fake();
+        // GraphQL's review threads: 101's is resolved.
+        gh.answers.push(("api graphql", ok("101\n")));
+        let got = review_comments(&store, &data, Some(&gh), &lane.id, &BTreeSet::new())
+            .await
+            .expect("comments");
+        assert!(got.comments.is_empty(), "{:?}", got.comments);
+        assert_eq!((got.resolved, got.outdated), (1, 1));
+        let calls = gh.calls.lock().expect("calls");
+        let graphql = calls
+            .iter()
+            .find(|c| c.get(1).map(String::as_str) == Some("graphql"))
+            .expect("asked for the threads");
+        for want in ["owner={owner}", "repo={repo}", "number=7"] {
+            assert!(graphql.contains(&want.to_string()), "{graphql:?}");
+        }
+        assert!(graphql.iter().any(|a| a.contains("isResolved")));
+    }
+
+    #[tokio::test]
+    async fn f_wt_08_6_when_the_threads_cant_be_read_every_comment_is_imported() {
+        let (_t, data, store, repo, lane) = fixture().await;
+        set_allowed(&data, repo.id.as_str(), true).expect("allow");
+        let mut gh = fake();
+        gh.answers.push((
+            "api graphql",
+            GhOut {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "GraphQL: Resource not accessible".into(),
+            },
+        ));
+        let got = review_comments(&store, &data, Some(&gh), &lane.id, &BTreeSet::new())
+            .await
+            .expect("comments");
+        assert_eq!(got.comments.len(), 1);
+        assert_eq!(got.resolved, 0);
+    }
+
     #[test]
     fn f_wt_08_2_a_second_import_brings_the_comments_past_the_cap() {
         let all: String = (0..45)
@@ -976,10 +1069,10 @@ mod tests {
                 format!("{{\"id\":{i},\"path\":\"a.ts\",\"line\":1,\"side\":\"RIGHT\",\"body\":\"c{i}\",\"user\":\"u\"}}\n")
             })
             .collect();
-        let first = parse_comments(&all, &BTreeSet::new());
+        let first = parse_comments(&all, &BTreeSet::new(), &BTreeSet::new());
         assert_eq!((first.comments.len(), first.cut), (40, 5));
         let seen: BTreeSet<String> = first.comments.iter().map(|c| c.id.clone()).collect();
-        let second = parse_comments(&all, &seen);
+        let second = parse_comments(&all, &seen, &BTreeSet::new());
         assert_eq!((second.comments.len(), second.cut), (5, 0));
         let ids: Vec<&str> = second.comments.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(ids, ["40", "41", "42", "43", "44"]);
@@ -1030,7 +1123,7 @@ mod tests {
         let many: String = (0..MAX_COMMENTS + 5)
             .map(|i| format!("{{\"id\":{i},\"path\":\"a\",\"line\":1,\"side\":\"RIGHT\",\"body\":\"{}\",\"user\":\"u\"}}\n", "y".repeat(COMMENT_CHARS + 10)))
             .collect();
-        let got = parse_comments(&many, &BTreeSet::new());
+        let got = parse_comments(&many, &BTreeSet::new(), &BTreeSet::new());
         assert_eq!((got.comments.len(), got.cut), (MAX_COMMENTS, 5));
         assert!(got.comments[0].body.ends_with("[… cut]"));
         let unreadable = failure_prompt(

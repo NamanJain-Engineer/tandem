@@ -511,6 +511,7 @@
   "worktree.review.imported": "{n, plural, one {Imported # comment} other {Imported # comments}}",
   "worktree.review.importOutdated": "{n, plural, one {# comment on a line that no longer exists was left out.} other {# comments on lines that no longer exist were left out.}}",
   "worktree.review.importCut": "{n, plural, one {# more comment was left out: an import brings up to 40.} other {# more comments were left out: an import brings up to 40.}}",
+  "worktree.review.importResolved": "{n, plural, one {# comment in a resolved thread was left out.} other {# comments in resolved threads were left out.}}",
   "worktree.review.importedNone": "No new review comments",
   "worktree.review.importFailed": "Couldn't import the review comments: {reason}",
   "worktree.review.importedBy": "@{author}:",

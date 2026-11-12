@@ -172,6 +172,6 @@ export class DemoChecks {
         fenced: commentFenced(c.author, c.file, c.line, c.body),
       }))
       .filter((c) => !seen.includes(c.id));
-    return { comments, outdated: 0, cut: 0 };
+    return { comments, outdated: 0, cut: 0, resolved: 0 };
   }
 }

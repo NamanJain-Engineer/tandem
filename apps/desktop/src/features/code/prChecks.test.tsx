@@ -129,7 +129,7 @@ beforeEach(() => {
       checks = a?.allow ? READY : { ...READY, state: "not_allowed", pr: null, checks: [] };
       return null;
     },
-    lane_review_comments: () => ({ comments: COMMENTS, outdated: 1, cut: 0 }),
+    lane_review_comments: () => ({ comments: COMMENTS, outdated: 1, cut: 0, resolved: 1 }),
     pty_type_prompt: () => null,
     lane_forge: () => "github",
     lane_runtime: () => null,
@@ -330,7 +330,12 @@ describe("CI results and review comments (F-WT-08)", () => {
     expect(comment.textContent).toContain("@ana:");
     const list = useReviews.getState().byLane["wt_1"] ?? [];
     expect(list).toHaveLength(1);
-    expect(await screen.findByText("1 comment on a line that no longer exists was left out.")).toBeTruthy();
+    // F-WT-08.6: and one in a thread resolved on GitHub (D-2526).
+    expect(
+      await screen.findByText(
+        "1 comment on a line that no longer exists was left out. 1 comment in a resolved thread was left out.",
+      ),
+    ).toBeTruthy();
     const prompt = buildReviewPrompt("tandem/fix", list);
     // The comment's place is GitHub's text too: only inside the fence.
     expect(prompt).toContain(
