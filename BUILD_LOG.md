@@ -781,6 +781,11 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **Tests.** Rust `pr_checks` F-WT-08.6 (2): a resolved thread's comment is left out, and the query names the repository and number; an unreadable answer leaves all in (red first, against a stub that skipped the lookup). TS `prChecks.test.tsx`: the toast says so (red first). `ImportedComments` gains `resolved`, regenerated.
   - **The docs:** Code mode's line on Import review comments.
 
+- Gate passed on 48706ce5 (D-2526's resolved threads, after the full E2E regression):
+  - Tests: 2,886 Rust (6 ignored) and 2,191 TypeScript.
+  - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
+  - **How it ran.** No crate changed since 87369091, so its crates' tests and the Windows check (every crate but the app) stood; the rest ran again on 48706ce5. m18-wt08-ci (5) passes on its build.
+
 ### M18 · Reliability decisions
 - D-2566 (provisional): The demo's session library stays empty. The library lists engine sessions found on the computer (F-TH-17), and the demo's story has none: its agents' work is what's on screen. Sample sessions with their transcripts would be invented, which the demo doesn't do ("nothing invented", as its Usage page's empty weeks). It shows the app's own empty state, "No sessions found", and opening anything from it says the demo has no engine sessions to read.
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
