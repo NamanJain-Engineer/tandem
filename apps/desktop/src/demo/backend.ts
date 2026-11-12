@@ -329,6 +329,15 @@ function demoVersions(): EngineVersionView[] {
 export const DEMO_NO_SANDBOX =
   "The demo runs in your browser, so it can't sandbox an agent. The app uses bubblewrap on Linux.";
 
+/** Why the demo never takes a secret (F-TL-12): a value typed into a web
+ * page isn't in your keychain. */
+export const DEMO_NO_SECRETS =
+  "The demo runs in your browser, so it doesn't keep secrets. The app keeps them in your system's keychain.";
+
+/** Why the demo's memory cap and Freeze aren't offered (F-EX-06). */
+export const DEMO_NO_GOVERNOR =
+  "The demo runs in your browser, so it can't cap or freeze an agent. The app uses a systemd user session on Linux.";
+
 const MODELS: Record<string, ModelEntry[]> = {
   claude: [
     {
@@ -1962,6 +1971,25 @@ export class DemoCore {
         return { available: false, tool: null, reason: DEMO_NO_SANDBOX };
       case "sandbox_panes":
         return [];
+      // Nor measure, cap or freeze one (F-EX-06).
+      case "resources_status":
+        return { grouping: false, capping: false, freezing: false, reason: DEMO_NO_GOVERNOR };
+      case "resources_list":
+      case "resources_notes":
+        return [];
+      case "resources_freeze":
+      case "resources_thaw":
+        throw { code: "unavailable", message: DEMO_NO_GOVERNOR };
+      // A secret's value never goes into the page (F-TL-12).
+      case "secrets_list":
+        return [];
+      case "secrets_set":
+      case "secrets_delete":
+      case "secrets_run_plan":
+      case "secrets_run":
+      case "secrets_agents_plan":
+      case "secrets_agents_apply":
+        throw { code: "unavailable", message: DEMO_NO_SECRETS };
       case "engine_check_update":
       case "engine_pin":
       case "engine_rollback_command":

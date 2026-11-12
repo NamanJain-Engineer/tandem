@@ -786,7 +786,14 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - Checks: the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage, 196 spec IDs; no protocol drift.
   - **How it ran.** No crate changed since 87369091, so its crates' tests and the Windows check (every crate but the app) stood; the rest ran again on 48706ce5. m18-wt08-ci (5) passes on its build.
 
+- [x] The demo's resource governor and secrets (REMAINING §0.2, 0.11.0's features in the demo, D-873).
+  - **The memory cap** (F-EX-06): "The demo runs in your browser, so it can't cap or freeze an agent. The app uses a systemd user session on Linux." The caps stay disabled, Freeze isn't offered, and the Ports tab's Panes section is empty. Before, the status fell through to null and read "Not available here".
+  - **Secrets** (F-TL-12): the list stays empty, and adding one says "The demo runs in your browser, so it doesn't keep secrets. The app keeps them in your system's keychain." (D-2567). Before, Add returned nothing, as if the value had been kept.
+  - **Tests.** `demo.test.ts` F-EX-06 and F-TL-12 (2), red first. The 88 demo tests pass, and the Secrets and Settings tests with them.
+  - **Still to come in the demo:** claims (F-TK-05) and a worktree across several repositories (F-CD-22), which need the story's agents to claim files and a second repository.
+
 ### M18 · Reliability decisions
+- D-2567 (provisional): The demo never takes a secret's value. Secrets in the app live in the system's keychain (F-TL-12). A web page has no keychain, so a value typed into the demo would sit in the page's memory, and a person trying the demo with a real key would be teaching themselves the opposite of the product's promise. Add, Delete, Run with secrets and the AGENTS.md note all say why, and the list shows the app's own empty state.
 - D-2566 (provisional): The demo's session library stays empty. The library lists engine sessions found on the computer (F-TH-17), and the demo's story has none: its agents' work is what's on screen. Sample sessions with their transcripts would be invented, which the demo doesn't do ("nothing invented", as its Usage page's empty weeks). It shows the app's own empty state, "No sessions found", and opening anything from it says the demo has no engine sessions to read.
 - D-2565 (provisional): Agent terminals get plugins through their workspace's grants, with a lease for each start on the engine's command line, not in its provider home.
   - **Why the workspace.** F-PL-01 named terminals "opted into plugins" without saying how. F-PL-05's workspace grants already reached threads, and a terminal belongs to a workspace; a switch per pane would be one more place to look, and would go with the pane.

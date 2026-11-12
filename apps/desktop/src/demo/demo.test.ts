@@ -41,7 +41,7 @@ import { decodeFrame } from "../ipc/pty";
 import { LIMITS } from "@tandem/protocol/plans";
 import { FREE } from "../test/fakeBackend";
 import { NOTIFY_HREF } from "../features/billing/ComesWithAccounts";
-import { DEMO_ACTIVE, DEMO_MESSAGE_LIMIT, DEMO_WAITING, DEMO_WORKTREES, DemoCore, FIRST_MESSAGE } from "./backend";
+import { DEMO_ACTIVE, DEMO_MESSAGE_LIMIT, DEMO_NO_SECRETS, DEMO_WAITING, DEMO_WORKTREES, DemoCore, FIRST_MESSAGE } from "./backend";
 import { DEFANGED, defang } from "../features/code/untrusted";
 import { ghLog } from "./ci";
 import { MAIN, changedIn, diffsOf, testRun } from "./repo";
@@ -1272,5 +1272,41 @@ describe("the demo's engine versions and sandbox setting (F-EN-08, F-TL-11; D-86
         "The demo runs in your browser, so it can't sandbox an agent. The app uses bubblewrap on Linux.",
     });
     expect(core.handle("sandbox_panes", {})).toEqual([]);
+  });
+});
+
+describe("the demo's resource governor (F-EX-06; D-873)", () => {
+  it("F-EX-06 the memory cap says why the demo can't cap an agent, and no pane is measured, capped or frozen", () => {
+    const core = new DemoCore(0);
+    expect(core.handle("resources_status", {})).toEqual({
+      grouping: false,
+      capping: false,
+      freezing: false,
+      reason:
+        "The demo runs in your browser, so it can't cap or freeze an agent. The app uses a systemd user session on Linux.",
+    });
+    expect(core.handle("resources_list", {})).toEqual([]);
+    expect(core.handle("resources_notes", {})).toEqual([]);
+    for (const cmd of ["resources_freeze", "resources_thaw"])
+      expect(() => core.handle(cmd, { paneId: "pane_demo" })).toThrow();
+  });
+});
+
+describe("the demo's secrets (F-TL-12; D-873)", () => {
+  it("F-TL-12 the list is empty and the demo never takes a secret's value", () => {
+    const core = new DemoCore(0);
+    expect(core.handle("secrets_list", {})).toEqual([]);
+    expect(() => core.handle("secrets_set", { name: "STRIPE_KEY", value: "sk_test_x" })).toThrow(
+      expect.objectContaining({ code: "unavailable", message: DEMO_NO_SECRETS }),
+    );
+    expect(core.handle("secrets_list", {})).toEqual([]);
+    for (const cmd of [
+      "secrets_delete",
+      "secrets_run_plan",
+      "secrets_run",
+      "secrets_agents_plan",
+      "secrets_agents_apply",
+    ])
+      expect(() => core.handle(cmd, { name: "STRIPE_KEY", paneId: "pane_demo" })).toThrow();
   });
 });
