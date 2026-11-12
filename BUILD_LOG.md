@@ -795,6 +795,12 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
 - [x] The demo's claims (F-TK-05; REMAINING §0.2, D-873). checkout-fix's agent is Claude Code, so the files it edited are its claims, as `PreToolUse` makes them in the app; Codex and Gemini CLI claim only when asked. Claim these files on coupon-rules (F-WT-10) claims `src/cart/coupon.ts` for it, and the review queue shows "checkout-fix and coupon-rules both claim" with the path. Both agents' panes get "checkout-fix and coupon-rules both claim src/cart/coupon.ts" once, as the core's notice frame. Landing checkout-fix releases its claims, and the overlap goes; Undo doesn't bring them back, as in the app, where they were deleted at the merge.
   - **Tests.** `demo.test.ts` F-TK-05 (1), red first: the queue had no overlaps. The 89 demo tests and the review queue's pass.
 
+- [x] The demo's activity ledger (F-EX-07, released in 0.13.0; REMAINING §0.2). Activity… in an agent pane's or a thread's menu crashed the dialog in the demo: `activity_list` fell through to the default, which answers an empty list for any `_list`, and the dialog read `events` from it. It now answers the page the core does, with what this visit did:
+  - a "Turn sent" row, with the engine, for each prompt sent to an agent pane (Enter, an answer to the waiting agent, Send failure to agent, a review or the radar's note) and each thread message, never its words;
+  - a row for each tool Claude Code starts, from its hooks, as the Dashboard shows them (D-2624). Codex and Gemini CLI name none.
+  - **Not simulated:** commands (the demo's shell isn't command recall), files changed (its checkpoints have no ids to link), approvals and `vibezeo run`. Export says the demo can't save files to your computer.
+  - **Tests.** `demo.test.ts` F-EX-07 (2), red first: the pane's ledger was `[]`, the thread's `undefined`. The 91 demo tests pass.
+
 - Gate passed on 306a5601 (the demo's memory cap and secrets) and on 2c18f0ce (its claims):
   - Tests: 2,193 and then 2,194 TypeScript; the desktop build; coverage.
   - **How it ran.** Both change the demo's TypeScript and docs only, and no Rust test reads them, so the Rust steps (2,886 tests, clippy on every platform, fmt, no protocol drift) stood from 48706ce5.

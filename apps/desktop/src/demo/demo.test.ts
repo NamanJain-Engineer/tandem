@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  ActivityPage,
   EngineVersionView,
   TeammateSummary,
   TeammateTemplate,
@@ -46,7 +47,7 @@ import { DEFANGED, defang } from "../features/code/untrusted";
 import { ghLog } from "./ci";
 import { MAIN, changedIn, diffsOf, testRun } from "./repo";
 import { wrapWords } from "./shell";
-import { STORY, askLine, branchOf, editsOf, totalsOf, worktreeIn } from "./story";
+import { STORY, askLine, branchOf, editsOf, toolOf, totalsOf, worktreeIn } from "./story";
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
@@ -1355,6 +1356,67 @@ describe("the demo's claims (F-TK-05; D-873)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("the demo's activity ledger (F-EX-07)", () => {
+  const silent = { onmessage: () => undefined };
+
+  it("F-EX-07 a pane's ledger is this visit's turns and Claude Code's tools, never the words; Export says why it can't", () => {
+    vi.useFakeTimers();
+    try {
+      const core = new DemoCore(1);
+      const page = (id: string) => core.handle("activity_list", { source: "pane", id }) as ActivityPage;
+      expect(page("pn_codex")).toEqual({ events: [], more: false });
+      core.handle("pty_spawn", { paneId: "pn_codex", channel: silent });
+      core.handle("pty_write", { paneId: "pn_codex", data: "keep going\r" });
+      expect(page("pn_codex")).toEqual({
+        events: [
+          {
+            kind: "turn",
+            at: expect.any(Number),
+            summary: "Turn sent",
+            checkpointId: null,
+            checkpointWorkspace: null,
+            commandId: null,
+            exitCode: null,
+            durationMs: null,
+            secrets: [],
+            decided: null,
+            engine: "codex",
+            ended: null,
+          },
+        ],
+        more: false,
+      });
+      expect(JSON.stringify(page("pn_codex"))).not.toContain("keep going");
+      // Claude Code's hooks name each tool it starts: the CI fix's steps.
+      core.handle("pty_spawn", { paneId: "pn_claude", channel: silent });
+      core.handle("pty_type_prompt", { paneId: "pn_claude", text: "A CI check failed on the pull request." });
+      for (let i = 0; i < 100; i++) vi.advanceTimersByTime(100);
+      const claude = page("pn_claude").events;
+      expect(claude.map((e) => [e.kind, e.summary, e.engine])).toEqual([
+        ["turn", "Turn sent", "claude"],
+        ...STORY.pr.fix.steps.map((s) => ["tool", toolOf(s), null]),
+      ]);
+      expect(claude.map((e) => e.at)).toEqual([...claude.map((e) => e.at)].sort((a, b) => a - b));
+      expect(() => core.handle("activity_export", { source: "pane", id: "pn_claude" })).toThrow(
+        expect.objectContaining({ code: "unavailable" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("F-EX-07 a thread's ledger has a row for each message sent", () => {
+    const core = new DemoCore(0);
+    const id = (
+      core.handle("thread_create", { args: { workspaceId: "ws_demo", engineId: "claude" } }) as { id: string }
+    ).id;
+    core.handle("thread_send", { threadId: id, text: "Explain the coupon rules" });
+    expect((core.handle("activity_list", { source: "thread", id }) as ActivityPage).events).toEqual([
+      expect.objectContaining({ kind: "turn", summary: "Turn sent", engine: "claude" }),
+    ]);
   });
 });
 

@@ -2,6 +2,8 @@
  * real interface runs against this simulation, in memory. Nothing runs and
  * nothing leaves the browser. */
 import type {
+  ActivityEvent,
+  ActivityPage,
   TaskClaimOverlap,
   TeammateSummary,
   TeammateTemplate,
@@ -1148,6 +1150,8 @@ export class DemoCore {
   private setStatus(paneId: string, status: StatusRecord["status"], tool: string | null = null): void {
     const s = this.status[paneId];
     if (!s) return;
+    if (tool && PANES.find((p) => p.id === paneId)?.engineId === "claude")
+      this.note("pane", paneId, "tool", tool);
     this.status[paneId] = { ...s, status, tool };
     this.since[paneId] = Date.now();
     emitLocal("status:changed", { records: [this.record(paneId)], removed: [] });
@@ -1275,6 +1279,49 @@ export class DemoCore {
     return paths;
   }
 
+  /** The activity ledger (F-EX-07), by source: what this visit did, as the
+   * core records it. Never a prompt's words. */
+  private ledger = new Map<string, ActivityEvent[]>();
+
+  private note(
+    source: "pane" | "thread",
+    id: string,
+    kind: string,
+    summary: string,
+    engine: string | null = null,
+  ): void {
+    const key = `${source}:${id}`;
+    const at = Math.max(Date.now(), this.ledger.get(key)?.at(-1)?.at ?? 0);
+    this.ledger.set(key, [
+      ...(this.ledger.get(key) ?? []),
+      {
+        kind,
+        at,
+        summary,
+        checkpointId: null,
+        checkpointWorkspace: null,
+        commandId: null,
+        exitCode: null,
+        durationMs: null,
+        secrets: [],
+        decided: null,
+        engine,
+        ended: null,
+      },
+    ]);
+  }
+
+  /** A prompt sent to an agent pane: its row says so, without the words. */
+  private noteTurn(paneId: string): void {
+    const p = PANES.find((x) => x.id === paneId);
+    if (p?.kind === "agent") this.note("pane", paneId, "turn", "Turn sent", p.engineId);
+  }
+
+  private activity(source: string, id: string): ActivityPage {
+    if (source !== "pane" && source !== "thread") throw { code: "invalid", message: "Another source" };
+    return { events: [...(this.ledger.get(`${source}:${id}`) ?? [])], more: false };
+  }
+
   /** Claims (F-TK-05), by worktree: what its agent said it's changing.
    * Claude Code's edits claim their files (`PreToolUse`), so a Claude
    * worktree starts with the files it changed; Codex and Gemini CLI claim
@@ -1336,6 +1383,7 @@ export class DemoCore {
    * shares symbols, once (radar.rs `on_checkpoint`). True, so a caller can
    * go on to answer the prompt. */
   private checkpoint(paneId: string): boolean {
+    this.noteTurn(paneId);
     const pane = PANES.find((p) => p.id === paneId);
     const slug = pane ? this.slugOf(pane.workspaceId) : undefined;
     if (!slug) return true;
@@ -1444,6 +1492,7 @@ export class DemoCore {
     }
     this.sent += 1;
     this.notify();
+    this.note("thread", t.thread.id, "turn", "Turn sent", t.thread.engineId);
     const turnId = this.startTurn(t, text);
     this.changed(t);
     const first =
@@ -1668,9 +1717,11 @@ export class DemoCore {
         const pty = this.ptyOf(paneId);
         const data = String(args?.data ?? "");
         if (pty?.shell) this.frame(pty, pty.shell.write(data));
-        else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting")
+        else if (pty && paneId === agentPane(WAITING) && this.status[paneId]?.status === "waiting") {
+          // Its answer is a prompt sent: a bare Enter ends it.
+          if (data.includes("\r")) this.noteTurn(paneId);
           this.answer(pty, data);
-        else if (pty && data.includes("\r") && this.checkpoint(paneId))
+        } else if (pty && data.includes("\r") && this.checkpoint(paneId))
           this.say(
             pty,
             "\n\x1b[2m(This agent is simulated. In Vibezeo you'd be talking to it here.)\x1b[0m\n",
@@ -1959,6 +2010,14 @@ export class DemoCore {
         return this.overlap(String(args?.laneId ?? ""));
       case "lane_radar_note":
         return this.radarNote(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
+      case "activity_list":
+        return this.activity(String(args?.source ?? ""), String(args?.id ?? ""));
+      case "activity_export":
+        throw {
+          code: "unavailable",
+          message:
+            "The demo can't save files to your computer. In the app, Export saves the activity as JSON Lines.",
+        };
       case "lane_radar_claim":
         return this.radarClaim(String(args?.laneId ?? ""), String(args?.otherId ?? ""));
       case "pty_type_prompt": {
