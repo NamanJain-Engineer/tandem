@@ -1292,6 +1292,72 @@ describe("the demo's resource governor (F-EX-06; D-873)", () => {
   });
 });
 
+describe("the demo's claims (F-TK-05; D-873)", () => {
+  const idOf = (slug: string) => DEMO_WORKTREES[STORY.worktrees.findIndex((w) => w.slug === slug)] ?? "";
+  const root = `/home/you/${STORY.repo}`;
+  const overlaps = (core: DemoCore) => (core.handle("review_queue", {}) as ReviewQueueView).overlaps;
+
+  it("F-TK-05 claiming a file the Claude Code worktree edited shows one overlap in the review queue and both panes, until it lands", async () => {
+    vi.useFakeTimers();
+    try {
+      const core = new DemoCore(1);
+      // checkout-fix's agent is Claude Code: its edits are inferred claims.
+      const [edited, claiming] = STORY.overlap.between;
+      expect(STORY.worktrees.find((w) => w.slug === edited)?.engine).toBe("claude");
+      expect(overlaps(core)).toEqual([]);
+      const queued: ReviewQueueView[] = [];
+      const stop = await listen<ReviewQueueView>("review:queue", (v) => void queued.push(v));
+      const notices: Record<string, string[]> = { pn_claude: [], pn_codex: [] };
+      for (const paneId of Object.keys(notices))
+        core.handle("pty_spawn", {
+          paneId,
+          channel: {
+            onmessage: (f: Uint8Array) => {
+              const frame = decodeFrame(f);
+              if (frame.kind === 3)
+                notices[paneId]?.push(
+                  (JSON.parse(new TextDecoder().decode(frame.payload)) as { message: string }).message,
+                );
+            },
+          },
+        });
+      core.handle("lane_overlap", { laneId: idOf(claiming ?? "") });
+      expect(
+        core.handle("lane_radar_claim", { laneId: idOf(claiming ?? ""), otherId: idOf(edited ?? "") }),
+      ).toEqual([STORY.overlap.file]);
+      const want = {
+        repo: root,
+        folders: [`${root}/.tandem/worktrees/${edited}`, `${root}/.tandem/worktrees/${claiming}`],
+        agents: [edited, claiming],
+        paths: [STORY.overlap.file],
+      };
+      expect(overlaps(core)).toEqual([want]);
+      expect(queued.at(-1)?.overlaps).toEqual([want]);
+      // The notice comes once, in both worktrees' panes.
+      const notice = `${edited} and ${claiming} both claim ${STORY.overlap.file}`;
+      core.handle("lane_radar_claim", { laneId: idOf(claiming ?? ""), otherId: idOf(edited ?? "") });
+      expect(notices).toEqual({ pn_claude: [notice], pn_codex: [notice] });
+      // Landing checkout-fix releases its claims; Undo doesn't make them again.
+      core.handle("merge_queue_start", {
+        workspaceId: "ws_demo",
+        laneIds: [idOf(edited ?? "")],
+        check: STORY.check,
+      });
+      for (let i = 0; i < 40; i++) vi.advanceTimersByTime(100);
+      expect((core.handle("merge_queue_get", { workspaceId: "ws_demo" }) as LandingRun | null)?.state).toBe(
+        "done",
+      );
+      expect(overlaps(core)).toEqual([]);
+      expect(queued.at(-1)?.overlaps).toEqual([]);
+      core.handle("merge_queue_undo", { workspaceId: "ws_demo" });
+      expect(overlaps(core)).toEqual([]);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("the demo's secrets (F-TL-12; D-873)", () => {
   it("F-TL-12 the list is empty and the demo never takes a secret's value", () => {
     const core = new DemoCore(0);

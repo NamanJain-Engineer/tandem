@@ -2,6 +2,7 @@
  * real interface runs against this simulation, in memory. Nothing runs and
  * nothing leaves the browser. */
 import type {
+  TaskClaimOverlap,
   TeammateSummary,
   TeammateTemplate,
   EditorTabs,
@@ -709,6 +710,8 @@ export class DemoCore {
 
   constructor(private readonly speed = 1) {
     this.seed();
+    this.seedClaims();
+    this.review.claimOverlaps = () => this.claimOverlaps();
   }
 
   private id(prefix: string): string {
@@ -1027,6 +1030,9 @@ export class DemoCore {
       ...this.mainLog,
     ];
     this.landed.add(w.slug);
+    // A worktree merged cleanly gives up its claims (F-TK-05).
+    this.claims.delete(w.slug);
+    this.claimsChanged();
     return w.mergeCommit;
   }
 
@@ -1261,7 +1267,68 @@ export class DemoCore {
     );
     if (!touched)
       throw { code: "not_found", message: "This worktree didn't change the symbols it shares any more" };
-    return [STORY.overlap.file];
+    const paths = [STORY.overlap.file];
+    const held = this.claims.get(a) ?? new Set<string>();
+    for (const p of paths) held.add(p);
+    this.claims.set(a, held);
+    this.claimsChanged();
+    return paths;
+  }
+
+  /** Claims (F-TK-05), by worktree: what its agent said it's changing.
+   * Claude Code's edits claim their files (`PreToolUse`), so a Claude
+   * worktree starts with the files it changed; Codex and Gemini CLI claim
+   * only when asked. */
+  private claims = new Map<string, Set<string>>();
+  /** Overlapping paths already announced in the panes (tasks.rs). */
+  private announced = new Set<string>();
+
+  private seedClaims(): void {
+    for (const w of STORY.worktrees)
+      if (w.engine === "claude")
+        this.claims.set(w.slug, new Set(Object.keys(this.files.committedChanges(wsOf(w.slug)))));
+  }
+
+  /** Two worktrees overlap where they claim the same file. */
+  private claimOverlaps(): TaskClaimOverlap[] {
+    const out: TaskClaimOverlap[] = [];
+    const ws = STORY.worktrees.filter((w) => this.claims.get(w.slug)?.size);
+    for (const [i, a] of ws.entries())
+      for (const b of ws.slice(i + 1)) {
+        const theirs = this.claims.get(b.slug) ?? new Set<string>();
+        const paths = [...(this.claims.get(a.slug) ?? [])].filter((p) => theirs.has(p)).sort();
+        if (paths.length)
+          out.push({
+            repo: ROOT,
+            folders: [rootOf(a.slug), rootOf(b.slug)],
+            agents: [a.slug, b.slug],
+            paths,
+          });
+      }
+    return out;
+  }
+
+  /** A path that newly overlaps is told once to both worktrees' agent
+   * panes, and the review queue shows the overlaps now. */
+  private claimsChanged(): void {
+    for (const o of this.claimOverlaps()) {
+      const fresh = o.paths.filter((p) => !this.announced.has(`${o.agents.join("|")}|${p}`));
+      if (fresh.length === 0) continue;
+      for (const p of fresh) this.announced.add(`${o.agents.join("|")}|${p}`);
+      const shown = fresh.slice(0, 3).join(", ");
+      const more = fresh.length > 3 ? ` and ${fresh.length - 3} more` : "";
+      const message = `${o.agents[0]} and ${o.agents[1]} both claim ${shown}${more}`;
+      for (const slug of o.agents) {
+        const w = STORY.worktrees.find((x) => x.slug === slug);
+        const pty = w ? this.ptys.get(agentPane(w)) : undefined;
+        if (!pty) continue;
+        pty.seq += 1;
+        pty.channel.onmessage(
+          encodeFrame(FrameKind.Notice, pty.seq, encoder.encode(JSON.stringify({ message }))),
+        );
+      }
+    }
+    emitLocal("review:queue", this.review.view());
   }
 
   /** A new turn in an agent pane takes a checkpoint (F-EX-01), after which

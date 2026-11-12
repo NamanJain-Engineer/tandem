@@ -790,7 +790,10 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **The memory cap** (F-EX-06): "The demo runs in your browser, so it can't cap or freeze an agent. The app uses a systemd user session on Linux." The caps stay disabled, Freeze isn't offered, and the Ports tab's Panes section is empty. Before, the status fell through to null and read "Not available here".
   - **Secrets** (F-TL-12): the list stays empty, and adding one says "The demo runs in your browser, so it doesn't keep secrets. The app keeps them in your system's keychain." (D-2567). Before, Add returned nothing, as if the value had been kept.
   - **Tests.** `demo.test.ts` F-EX-06 and F-TL-12 (2), red first. The 88 demo tests pass, and the Secrets and Settings tests with them.
-  - **Still to come in the demo:** claims (F-TK-05) and a worktree across several repositories (F-CD-22), which need the story's agents to claim files and a second repository.
+  - **Still to come in the demo:** a worktree across several repositories (F-CD-22), which needs a second repository in the story.
+
+- [x] The demo's claims (F-TK-05; REMAINING §0.2, D-873). checkout-fix's agent is Claude Code, so the files it edited are its claims, as `PreToolUse` makes them in the app; Codex and Gemini CLI claim only when asked. Claim these files on coupon-rules (F-WT-10) claims `src/cart/coupon.ts` for it, and the review queue shows "checkout-fix and coupon-rules both claim" with the path. Both agents' panes get "checkout-fix and coupon-rules both claim src/cart/coupon.ts" once, as the core's notice frame. Landing checkout-fix releases its claims, and the overlap goes; Undo doesn't bring them back, as in the app, where they were deleted at the merge.
+  - **Tests.** `demo.test.ts` F-TK-05 (1), red first: the queue had no overlaps. The 89 demo tests and the review queue's pass.
 
 ### M18 · Reliability decisions
 - D-2567 (provisional): The demo never takes a secret's value. Secrets in the app live in the system's keychain (F-TL-12). A web page has no keychain, so a value typed into the demo would sit in the page's memory, and a person trying the demo with a real key would be teaching themselves the opposite of the product's promise. Add, Delete, Run with secrets and the AGENTS.md note all say why, and the list shows the app's own empty state.

@@ -1,4 +1,12 @@
-import type { FileDiff, IpcError, RepoReview, ReviewItem, ReviewQueueView, ReviewRisk } from "@tandem/protocol";
+import type {
+  FileDiff,
+  IpcError,
+  RepoReview,
+  ReviewItem,
+  ReviewQueueView,
+  ReviewRisk,
+  TaskClaimOverlap,
+} from "@tandem/protocol";
 import { emitLocal } from "../ipc/events";
 
 const fail = (code: IpcError["code"], message: string): IpcError => ({
@@ -80,8 +88,11 @@ export class DemoReview {
     this.repo = { root: seed.repo.root, check: seed.repo.check, apiPaths: [] };
   }
 
+  /** The worktrees' claim overlaps (F-TK-05), from the core. */
+  claimOverlaps: () => TaskClaimOverlap[] = () => [];
+
   view(): ReviewQueueView {
-    return { items: [this.item], overlaps: [] };
+    return { items: [this.item], overlaps: this.claimOverlaps() };
   }
 
   diff(key: string): FileDiff[] {
