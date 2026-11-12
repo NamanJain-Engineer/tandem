@@ -33,6 +33,10 @@ pub const BUNDLED_KEYS: &str = include_str!("../resources/keys.json");
 /// what it left as orphans.
 pub const ORPHAN_SCAN_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
+/// How long a killed run's children get to exit from their terminals'
+/// hangup before the ones left are offered as orphans (F-CD-03 AC8).
+pub const ORPHAN_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Last run's leftovers (UI-132). The scan runs off the startup path; readers
 /// wait for it.
 pub struct OrphanScan {
@@ -54,7 +58,7 @@ impl OrphanScan {
         std::thread::spawn(move || {
             let mut table = SystemTable::default();
             let records = orphans::collect_stale(&run, &own, &mut table, wait);
-            let found = orphans::scan(&records, &mut table);
+            let found = orphans::settle(&records, &mut table, ORPHAN_SETTLE);
             if !found.is_empty() {
                 tracing::info!(
                     code = "orphans.found",

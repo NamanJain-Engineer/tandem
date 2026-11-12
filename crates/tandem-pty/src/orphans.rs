@@ -7,9 +7,11 @@
 //! reused PID never matches) are orphans. A file whose owner is still alive
 //! belongs to an instance that is shutting down: the scan waits for it, so
 //! children that instance is about to stop aren't reported, and neither run
-//! overwrites the other's records. On Unix the record's PID is also the session id of everything the
-//! pane started, so a `nohup` child of a shell that died with the app is
-//! found too. Windows trees die with their Job Object, so only the root is
+//! overwrites the other's records. Children found get a moment to exit
+//! from their terminals' hangup ([`settle`]) before they're offered. On
+//! Unix the record's PID is also the session id of everything the pane
+//! started, so a `nohup` child of a shell that died with the app is found
+//! too. Windows trees die with their Job Object, so only the root is
 //! checked there.
 
 use std::path::{Path, PathBuf};
@@ -368,6 +370,24 @@ pub fn scan(records: &[ChildRecord], table: &mut dyn ProcessTable) -> Vec<Orphan
         .collect()
 }
 
+/// The orphans that outlive their run's end by up to `window`: when a run is
+/// killed, its shells get the terminal's hangup and exit, which can take a
+/// moment on a busy machine. Asked about then, the user would be offered
+/// processes that are already on their way out.
+pub fn settle(
+    records: &[ChildRecord],
+    table: &mut dyn ProcessTable,
+    window: Duration,
+) -> Vec<OrphanInfo> {
+    let deadline = Instant::now() + window;
+    let mut found = scan(records, table);
+    while !found.is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+        found = scan(records, table);
+    }
+    found
+}
+
 /// Ends an orphan's processes: terminate, then kill whatever is left after
 /// `grace`. Only PIDs that still match the scan are signalled.
 pub fn stop(orphans: &[OrphanInfo], table: &mut dyn ProcessTable, grace: Duration) {
@@ -410,6 +430,8 @@ mod tests {
         procs: HashMap<u32, ProcRow>,
         /// PIDs that ignore SIGTERM.
         stubborn: Vec<u32>,
+        /// PIDs still exiting: gone after this many more reads of the table.
+        exiting: HashMap<u32, usize>,
         signals: Vec<(u32, &'static str)>,
     }
 
@@ -432,6 +454,13 @@ mod tests {
 
     impl ProcessTable for FakeTable {
         fn rows(&mut self, pids: Option<&[u32]>) -> Vec<ProcRow> {
+            for (pid, left) in self.exiting.iter_mut() {
+                if *left == 0 {
+                    self.procs.remove(pid);
+                } else {
+                    *left -= 1;
+                }
+            }
             self.procs
                 .values()
                 .filter(|r| pids.map(|p| p.contains(&r.pid)).unwrap_or(true))
@@ -486,6 +515,28 @@ mod tests {
             !by_pane.contains_key("pn_3"),
             "a reused pid isn't an orphan"
         );
+    }
+
+    #[test]
+    fn f_cd_03_8_a_shell_still_exiting_from_the_hangup_is_not_an_orphan() {
+        // The killed run's shell, still exiting for the next three reads.
+        let mut table = FakeTable::with(&[(100, Some(100), 50)]);
+        table.exiting.insert(100, 3);
+        let found = settle(&[rec("pn_1", 100, 50)], &mut table, Duration::from_secs(5));
+        assert_eq!(found, vec![]);
+    }
+
+    #[test]
+    fn f_cd_03_8_a_child_that_outlives_the_window_is_still_an_orphan() {
+        let mut table = FakeTable::with(&[(100, Some(100), 50)]);
+        let window = Duration::from_millis(300);
+        let began = Instant::now();
+        let found = settle(&[rec("pn_1", 100, 50)], &mut table, window);
+        assert_eq!(
+            found.iter().map(|o| o.pids.clone()).collect::<Vec<_>>(),
+            vec![vec![100]]
+        );
+        assert!(began.elapsed() >= window);
     }
 
     #[test]
