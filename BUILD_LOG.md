@@ -812,9 +812,20 @@ REMAINING §0.3's next step for F-CD-03 AC2 (six agents framed, D-141: from the 
   - **Fix.** `orphans::settle` scans again every 100 ms for up to 3 s (`ORPHAN_SETTLE`) and offers what's still alive then. A real orphan (an agent that outlives the hangup) is still offered, up to 3 s later; the scan is off the startup path.
   - **Tests.** Rust `orphans` F-CD-03.8 (2): a shell still exiting isn't an orphan; a child alive past the window still is. Red first against a stub that scanned once. m3-8-orphans (1) passes.
   - **Under load, on the new build.** 4 of 5 runs pass, F-SH-03.2 in all five, and no run shows the dialog. The fifth lost its WebDriver session in a relaunch with every core busy, which is the load, not this.
-  - **m3-14's offset of 32 px** in the full run isn't reproduced: 32 is the 12 px the spec holds above the row's centre plus the band's 20, as if the drag had drawn no frame yet when it measured. It's still recorded, not changed.
+  - **m3-14's offset of 32 px** in the full run wasn't reproduced under load: 32 is the 12 px the spec holds above the row's centre plus the band's 20, as if the drag had drawn no frame yet when it measured. The next full regression reproduced it, and b699c27a fixes the measurement (below).
   - **Spec.** ARCHITECTURE §5.4's orphan scan.
   - **Gate** passed on f9190ae3: 2,888 Rust (6 ignored) and 2,196 TypeScript tests; the desktop build; clippy on Linux, Windows and both Mac architectures; fmt; coverage; no protocol drift.
+
+- [x] The full E2E regression on e8dca61a (the orphan settle), and the two spec fixes it led to. 163 of 165 spec files passed, counting both passes below.
+  - **First pass:** 78 passed in order, then m18-sh14's first test hung, and tauri-driver failed every spec after it (UND_ERR_SOCKET), 87 in all.
+    - **Why.** WebDriver's click on Keep running never returned. That button hides the window, and WebDriver waits for the page to settle after a click, which a hidden window may never do.
+    - **Fix** (a2b32881). The spec presses Keep running with a DOM `click()`, which runs the same handler. It checks the same things: the window hides, and the agents carry on and notify. sh14 passes 3 of 3 alone.
+  - **Those 87 again:** 85 passed.
+    - **m3-14's 32 px offset:** this was the full run's failure again. The drop landed (d pinned), so the spec had measured before the drag's frame was drawn: the row was still at its place under the band.
+    - **Fix** (b699c27a). The spec measures once the row has held still for 200 ms (three reads 100 ms apart, within 3 s). A row that settles off the pointer, the bug F-SH-03.2 guards, still fails. All 24 m2 and m3 spec files pass, twice.
+    - **m5-2:** in the full run 3 of 4 fake agents reported a session within 20 s, after a page reload and before any relaunch, so it's not the orphan scan. It passes 3 of 3 alone. Recorded, not changed.
+  - **Gate** passed on b699c27a: 2,196 TypeScript tests, the desktop build and coverage; the Rust steps stood from f9190ae3, as only E2E specs and docs changed.
+    - The first try failed: two `apps/web` tests took 6–8 s against vitest's 5 s, with the machine busy. Alone they take 20 ms, and the gate passed when run again.
 
 ### M18 · Reliability decisions
 - D-2569 (provisional): The startup scan offers a killed run's children only if they're still alive up to 3 s after it first finds them. A run that crashes or is killed leaves its shells to exit on their terminals' hangup, which on a busy machine can take longer than the scan takes to look, and asking someone to stop processes that are already exiting is noise, and a dialog over the window. 3 s is short next to how long a real orphan, an agent that ignored the hangup, keeps running, and the dialog waits for the scan off the startup path anyway.
