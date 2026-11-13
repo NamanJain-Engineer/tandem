@@ -1,0 +1,10 @@
+export type Slot = { start: string; end: string };
+
+/** Today's free slots, half an hour each. */
+export function listSlots(): Slot[] {
+  return [
+    { start: "09:00", end: "09:30" },
+    { start: "09:30", end: "10:00" },
+    { start: "14:00", end: "14:30" },
+  ];
+}

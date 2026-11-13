@@ -1,0 +1,8 @@
+import { hoursOn } from "./hours";
+import { listSlots } from "./slots";
+
+/** Each route and what answers it. */
+export const routes = {
+  "GET /slots": () => listSlots(),
+  "GET /hours/:day": (day: number) => hoursOn(day),
+};

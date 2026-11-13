@@ -40,12 +40,17 @@ export class DemoFiles {
   /** The editor's open files, by context ("ws:<id>"). */
   private tabs = new Map<string, EditorTabs>();
 
-  constructor(seeds: CheckoutSeed[]) {
+  /** `main`: the base branch's files, which every checkout starts from
+   * (the sample shop's, or another workspace's, D-2570). */
+  constructor(
+    seeds: CheckoutSeed[],
+    private readonly main: Readonly<Record<string, string>> = MAIN,
+  ) {
     for (const s of seeds) {
       this.checkouts.set(s.id, {
         root: s.root,
         branch: s.branch,
-        head: new Map(Object.entries({ ...MAIN, ...s.committed })),
+        head: new Map(Object.entries({ ...main, ...s.committed })),
         work: new Map(Object.entries(s.uncommitted)),
       });
     }
@@ -171,7 +176,7 @@ export class DemoFiles {
    * have, by path. */
   committedChanges(id: string): Record<string, string> {
     const c = this.at(id);
-    return Object.fromEntries([...c.head].filter(([path, text]) => MAIN[path] !== text));
+    return Object.fromEntries([...c.head].filter(([path, text]) => this.main[path] !== text));
   }
 
   /** The files `id`'s branch has committed, as they stand. */

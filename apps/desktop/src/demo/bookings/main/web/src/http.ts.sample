@@ -1,0 +1,6 @@
+/** GETs one of the api's routes and reads its JSON. */
+export async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return (await res.json()) as T;
+}

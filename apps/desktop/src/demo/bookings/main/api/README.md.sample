@@ -1,0 +1,5 @@
+# api
+
+The bookings service: free slots and the bookings made in them.
+
+Run it with `pnpm dev`; it listens on port 4000.

@@ -1,0 +1,15 @@
+import { getJson } from "./http";
+
+type Slot = { start: string; end: string };
+
+/** Lists today's free slots. */
+export async function renderSlots(root: HTMLElement): Promise<void> {
+  const slots = await getJson<Slot[]>("/slots");
+  root.replaceChildren(...slots.map((s) => item(`${s.start} to ${s.end}`)));
+}
+
+function item(text: string): HTMLElement {
+  const li = document.createElement("li");
+  li.textContent = text;
+  return li;
+}

@@ -47,6 +47,8 @@ import { DEFANGED, defang } from "../features/code/untrusted";
 import { ghLog } from "./ci";
 import { MAIN, changedIn, diffsOf, testRun } from "./repo";
 import { wrapWords } from "./shell";
+import { t } from "../i18n";
+import { worktreeMenu } from "../features/code/Worktrees";
 import { STORY, askLine, branchOf, editsOf, toolOf, totalsOf, worktreeIn } from "./story";
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
@@ -704,8 +706,14 @@ describe("D-2609 the demo's sample world is the story the site's scenes tell (D-
     const workspaces = core.handle("workspace_list", {}) as WorkspaceSummary[];
     const shop = workspaces.find((w) => w.name === STORY.repo);
     expect(shop?.parentId).toBeNull();
-    // One repository and its worktrees, nothing else (D-1899).
-    expect(workspaces).toHaveLength(1 + STORY.worktrees.length);
+    // One repository and its worktrees (D-1899), and beside them only the
+    // multi-repo folder and its worktree (F-CD-22, D-2570).
+    expect(workspaces.filter((w) => w.id === shop?.id || w.parentId === shop?.id)).toHaveLength(
+      1 + STORY.worktrees.length,
+    );
+    expect(workspaces.filter((w) => w.repos !== undefined)).toHaveLength(
+      workspaces.length - 1 - STORY.worktrees.length,
+    );
     const wts = workspaces.filter((w) => w.parentId === shop?.id);
     expect(wts.map((w) => w.name)).toEqual(STORY.worktrees.map((w) => w.slug));
     expect(wts.map((w) => w.laneBranch)).toEqual(STORY.worktrees.map((w) => branchOf(w.slug)));
@@ -756,7 +764,11 @@ describe("D-2609 the demo's sample world is the story the site's scenes tell (D-
 
   it("D-2609 D-2614 the worktrees answer as the app does before gh is allowed, with no overlap and no landing yet", () => {
     core = new DemoCore(0);
-    const wts = (core.handle("workspace_list", {}) as WorkspaceSummary[]).filter((w) => w.parentId !== null);
+    // The shop's worktrees; the multi-repo one refuses checks (F-CD-22, below).
+    const wts = (core.handle("workspace_list", {}) as WorkspaceSummary[]).filter(
+      (w) => w.parentId !== null && w.repos === undefined,
+    );
+    expect(wts).toHaveLength(STORY.worktrees.length);
     // The app asks before its first gh call for a repository (F-WT-08), so
     // the first frame shows no checks.
     for (const w of wts) {
@@ -1420,6 +1432,16 @@ describe("the demo's activity ledger (F-EX-07)", () => {
   });
 });
 
+describe("the demo's New worktree (F-CD-15)", () => {
+  it("F-CD-15 New worktree says the demo can't make one, so the dialog doesn't wait on nothing", () => {
+    const core = new DemoCore(0);
+    for (const workspaceId of ["ws_demo", ...DEMO_WORKTREES])
+      expect(() => core.handle("lane_create", { workspaceId, slugSource: "try it" })).toThrow(
+        expect.objectContaining({ code: "unavailable" }),
+      );
+  });
+});
+
 describe("the demo's secrets (F-TL-12; D-873)", () => {
   it("F-TL-12 the list is empty and the demo never takes a secret's value", () => {
     const core = new DemoCore(0);
@@ -1436,5 +1458,200 @@ describe("the demo's secrets (F-TL-12; D-873)", () => {
       "secrets_agents_apply",
     ])
       expect(() => core.handle(cmd, { name: "STRIPE_KEY", paneId: "pane_demo" })).toThrow();
+  });
+});
+
+describe("the demo's multi-repo workspace (F-CD-22; D-2570)", () => {
+  const NOT_YET = "Not available for multi-repo worktrees yet";
+  const folderOf = (list: WorkspaceSummary[]) =>
+    list.find((w) => w.parentId === null && (w.repos?.length ?? 0) > 0);
+  const laneOf = (list: WorkspaceSummary[]) => {
+    const folder = folderOf(list);
+    return list.find((w) => folder !== undefined && w.parentId === folder.id);
+  };
+
+  it("F-CD-22.1 a second folder holds two repositories, api and web, and is listed with 2 repositories", () => {
+    const core = new DemoCore(0);
+    const list = core.handle("workspace_list", {}) as WorkspaceSummary[];
+    const folder = folderOf(list);
+    expect(folder).toMatchObject({
+      kind: "local",
+      name: STORY.multiRepo.folder,
+      root: `/home/you/${STORY.multiRepo.folder}`,
+      repos: ["api", "web"],
+      // The folder isn't itself in a repository, so it has no branch: the
+      // rail shows the count in its place.
+      branch: null,
+      missing: false,
+    });
+    expect(STORY.multiRepo.repos).toEqual(["api", "web"]);
+    expect(t("worktree.multi.count", { n: folder?.repos?.length ?? 0 })).toBe("2 repositories");
+    // The shop story is as it was: one repository and its three worktrees, none multi-repo.
+    const shop = list.find((w) => w.name === STORY.repo && w.parentId === null);
+    const tree = list.filter((w) => w.id === shop?.id || w.parentId === shop?.id);
+    expect(tree).toHaveLength(1 + STORY.worktrees.length);
+    expect(tree.every((w) => w.repos === undefined)).toBe(true);
+    // The folder's Files: a folder for each repository.
+    const files = core.handle("fs_list", {
+      context: { type: "workspace", workspaceId: folder?.id },
+      dir: "",
+    }) as Array<{
+      name: string;
+      kind: string;
+    }>;
+    expect(files.filter((f) => f.kind === "dir").map((f) => f.name)).toEqual(["api", "web"]);
+    expect(core.handle("git_status", { context: { type: "workspace", workspaceId: folder?.id } })).toBeNull();
+  });
+
+  it("F-CD-22.1 its worktree is one parent folder with each repository's checkout on tandem/<slug>, and its own tab", () => {
+    const core = new DemoCore(0);
+    const list = core.handle("workspace_list", {}) as WorkspaceSummary[];
+    const folder = folderOf(list);
+    const lanes = list.filter((w) => w.parentId === folder?.id);
+    expect(lanes).toHaveLength(1);
+    const slug = STORY.multiRepo.worktree;
+    expect(lanes[0]).toMatchObject({
+      name: slug,
+      root: `${folder?.root}/.tandem/worktrees/${slug}`,
+      laneBranch: branchOf(slug),
+      repos: ["api", "web"],
+    });
+    expect(lanes[0]?.tabs).toHaveLength(1);
+    // No agent runs there in the demo, and no pane says one does.
+    expect(
+      (core.handle("pane_list", {}) as PaneRecord[]).filter((p) => p.workspaceId === lanes[0]?.id),
+    ).toEqual([]);
+    const context = { type: "workspace", workspaceId: lanes[0]?.id };
+    const top = core.handle("fs_list", { context, dir: "" }) as Array<{ name: string; kind: string }>;
+    expect(top.filter((f) => f.kind === "dir").map((f) => f.name)).toEqual(["api", "web"]);
+    // The parent folder isn't a repository; each one inside it is.
+    expect(core.handle("git_status", { context })).toBeNull();
+  });
+
+  it("F-CD-22.3 Open diff lists a section per repository, every path starting with its repository's name", () => {
+    const core = new DemoCore(0);
+    const lane = laneOf(core.handle("workspace_list", {}) as WorkspaceSummary[]);
+    const files = core.handle("lane_diff", { laneId: lane?.id }) as FileDiff[];
+    for (const repo of ["api", "web"]) {
+      const mine = files.filter((f) => f.path.startsWith(`${repo}/`));
+      expect(mine.length, repo).toBeGreaterThan(0);
+      // The patch's headers name the repository too, as prefix_patch writes them.
+      for (const f of mine) expect(f.patch, f.path).toContain(`+++ b/${f.path}`);
+    }
+    expect(files.every((f) => /^(api|web)\//.test(f.path))).toBe(true);
+    // api's files first, then web's, as the core lists them.
+    const order = files.map((f) => f.path.split("/")[0]);
+    expect(order).toEqual([...order].sort());
+    // A comment on web/src/app.ts line 3 is on a line the worktree added.
+    const app = files.find((f) => f.path === "web/src/app.ts");
+    expect(app?.change).toBe("modified");
+    const added: number[] = [];
+    let line = 0;
+    for (const l of (app?.patch ?? "").split("\n")) {
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(l);
+      if (hunk) line = Number(hunk[1]);
+      else if (line > 0 && l.startsWith("+")) added.push(line++);
+      else if (line > 0 && !l.startsWith("-")) line++;
+    }
+    expect(added).toContain(3);
+    // An edit made in the worktree's Files tab is in its diff, as uncommitted work is.
+    const context = { type: "workspace", workspaceId: lane?.id };
+    const http = core.handle("fs_read", { context, path: "web/src/http.ts" }) as {
+      text: string;
+      hash: string;
+    };
+    core.handle("fs_write", {
+      context,
+      path: "web/src/http.ts",
+      text: `${http.text}// edited\n`,
+      expectedHash: http.hash,
+    });
+    const again = core.handle("lane_diff", { laneId: lane?.id }) as FileDiff[];
+    expect(again.map((f) => f.path)).toEqual([...files.map((f) => f.path), "web/src/http.ts"].sort());
+    // The shop's worktrees' diffs are as they were.
+    expect(core.handle("lane_diff", { laneId: DEMO_WORKTREES[0] })).toEqual(
+      diffsOf(STORY.worktrees[0]?.slug ?? ""),
+    );
+  });
+
+  it("F-CD-22.4 Create pull requests says the demo can't push, and nothing is pushed; Discard says it can't remove it", () => {
+    const core = new DemoCore(0);
+    const lane = laneOf(core.handle("workspace_list", {}) as WorkspaceSummary[]);
+    const branch = branchOf(STORY.multiRepo.worktree);
+    expect(() => core.handle("lane_create_prs", { laneId: lane?.id })).toThrow(
+      expect.objectContaining({
+        code: "unavailable",
+        message: `The demo runs in your browser, so it can't push. In the app, Create pull requests pushes ${branch} in api and web, opens a pull request in each and links them to each other.`,
+      }),
+    );
+    expect(core.handle("lane_prs_get", { laneId: lane?.id })).toBeNull();
+    // A worktree of one repository isn't asked to.
+    expect(() => core.handle("lane_create_prs", { laneId: DEMO_WORKTREES[0] })).toThrow(
+      expect.objectContaining({
+        code: "invalid",
+        message: "Create pull requests is for multi-repo worktrees",
+      }),
+    );
+    expect(() => core.handle("lane_remove", { laneId: lane?.id, force: false })).toThrow(
+      expect.objectContaining({
+        code: "unavailable",
+        message:
+          "The demo doesn't remove worktrees. In the app, Discard removes each repository's worktree, then the parent folder, and keeps the branches.",
+      }),
+    );
+    expect((core.handle("workspace_list", {}) as WorkspaceSummary[]).some((w) => w.id === lane?.id)).toBe(
+      true,
+    );
+  });
+
+  it("F-CD-22.2 what needs one repository is refused up front, and its menu entries are disabled as in the app", () => {
+    const core = new DemoCore(0);
+    const list = core.handle("workspace_list", {}) as WorkspaceSummary[];
+    const folder = folderOf(list);
+    const lane = laneOf(list);
+    for (const [cmd, args] of [
+      ["lane_merge", { laneId: lane?.id }],
+      ["lane_create_pr", { laneId: lane?.id, tabId: lane?.tabs[0]?.id }],
+      ["lane_overlap", { laneId: lane?.id }],
+      ["lane_checks", { laneId: lane?.id }],
+      ["lane_check_failure", { laneId: lane?.id, name: "test" }],
+      ["lane_review_comments", { laneId: lane?.id, seen: [] }],
+      ["pr_checks_allow", { workspaceId: lane?.id, allow: true }],
+      ["merge_queue_plan", { workspaceId: lane?.id }],
+      ["merge_queue_plan", { workspaceId: folder?.id }],
+      ["merge_queue_get", { workspaceId: folder?.id }],
+      ["worktree_setup_get", { workspaceId: folder?.id }],
+      ["lane_setup_run", { laneId: lane?.id, tabId: lane?.tabs[0]?.id }],
+      ["lane_preview_start", { laneId: lane?.id, tabId: lane?.tabs[0]?.id }],
+      ["lane_second_opinion", { laneId: lane?.id, engineId: "codex" }],
+    ] as const)
+      expect(() => core.handle(cmd, args), cmd).toThrow(
+        expect.objectContaining({ code: "invalid", message: NOT_YET }),
+      );
+    // No setup and no radar for it, as in the app.
+    expect(core.handle("lane_setup", { laneId: lane?.id })).toBeNull();
+    expect(core.handle("lane_radar", { laneIds: [lane?.id] })).toEqual([]);
+    // The shop's landing is untouched by the folder's refusal.
+    expect(core.handle("merge_queue_plan", { workspaceId: "ws_demo" })).toMatchObject({ repoId: "ws_demo" });
+    if (!lane) throw new Error("no multi-repo worktree");
+    const menu = worktreeMenu(lane, "main", () => 0);
+    const state = Object.fromEntries(
+      menu.flatMap((e) => (e.id ? [[e.id, "disabled" in e && e.disabled === true]] : [])),
+    );
+    expect(state).toMatchObject({
+      "wt-diff": false,
+      "wt-files": false,
+      "wt-prs": false,
+      "wt-discard": false,
+      "wt-merge": true,
+      "wt-pr": true,
+      "wt-preview": true,
+      "wt-checks": true,
+      "wt-land": true,
+      "wt-overlap": true,
+      "wt-second-opinion": true,
+      "wt-setup": true,
+    });
+    expect(menu.some((e) => "label" in e && e.label === NOT_YET)).toBe(true);
   });
 });

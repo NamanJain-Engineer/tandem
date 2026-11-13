@@ -1,0 +1,22 @@
+import { getJson } from "./http";
+
+type Hours = { opens: string; closes: string } | null;
+type Slot = { start: string; end: string };
+
+/** Lists today's free slots. */
+export async function renderSlots(root: HTMLElement): Promise<void> {
+  const slots = await getJson<Slot[]>("/slots");
+  root.replaceChildren(...slots.map((s) => item(`${s.start} to ${s.end}`)));
+}
+
+/** The opening hours on `day` (0 being Sunday), from the api. */
+export async function renderHours(root: HTMLElement, day: number): Promise<void> {
+  const hours = await getJson<Hours>(`/hours/${day}`);
+  root.textContent = hours ? `Open ${hours.opens} to ${hours.closes}` : "Closed today";
+}
+
+function item(text: string): HTMLElement {
+  const li = document.createElement("li");
+  li.textContent = text;
+  return li;
+}

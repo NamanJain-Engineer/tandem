@@ -78,6 +78,15 @@ import {
   type StoryWorktree,
 } from "./story";
 import { MAIN, changedIn, diffsOf, fileDiff, lineCount, testRun, testsIn } from "./repo";
+import {
+  MULTI,
+  MULTI_BRANCH,
+  MULTI_CHANGED,
+  MULTI_LANE_ROOT,
+  MULTI_MAIN,
+  MULTI_ROOT,
+  multiDiff,
+} from "./multirepo";
 import { version } from "../../package.json";
 
 type Args = Record<string, unknown> | undefined;
@@ -391,12 +400,52 @@ const ROOT = `/home/you/${STORY.repo}`;
 /** Where the core puts a worktree: `<repo>/.tandem/worktrees/<slug>`. */
 const rootOf = (slug: string) => `${ROOT}/.tandem/worktrees/${slug}`;
 
+/** The multi-repo folder and its worktree (F-CD-22, D-2570). */
+const MULTI_WS = `ws_${MULTI.folder}`;
+const MULTI_LANE = wsOf(MULTI.worktree);
+const MULTI_IDS = new Set([MULTI_WS, MULTI_LANE]);
+/** What the core refuses up front for a multi-repo folder or worktree
+ * (`lanes::single_repo`, D-2534): what needs one repository. */
+const MULTI_NOT_YET = "Not available for multi-repo worktrees yet";
+const ONE_REPO = new Set([
+  "lane_merge",
+  "lane_create_pr",
+  "lane_overlap",
+  "lane_checks",
+  "lane_check_failure",
+  "lane_review_comments",
+  "pr_checks_allow",
+  "merge_queue_plan",
+  "merge_queue_start",
+  "merge_queue_get",
+  "merge_queue_stop",
+  "merge_queue_undo",
+  "worktree_setup_get",
+  "worktree_setup_save",
+  "worktree_setup_trust",
+  "lane_setup_run",
+  "lane_preview_start",
+  "lane_second_opinion",
+]);
+/** Create pull requests on the multi-repo worktree: the demo has no remote
+ * to push to (D-2570). */
+export const DEMO_NO_PUSH = `The demo runs in your browser, so it can't push. In the app, Create pull requests pushes ${MULTI_BRANCH} in ${MULTI.repos.join(" and ")}, opens a pull request in each and links them to each other.`;
+const NO_DISCARD =
+  "The demo doesn't remove worktrees. In the app, Discard removes each repository's worktree, then the parent folder, and keeps the branches.";
+
 /** Each worktree has a tab of its own, as `lanes::create` makes it. */
 const TABS: Tab[] = [
   { id: TAB, workspaceId: WS, name: "Tab 1", sortKey: "a0", createdAt: START },
   ...STORY.worktrees.map((w): Tab => ({
     id: tabOf(w.slug),
     workspaceId: wsOf(w.slug),
+    name: "Tab 1",
+    sortKey: "a0",
+    createdAt: START,
+  })),
+  ...[MULTI_WS, MULTI_LANE].map((id): Tab => ({
+    id: id.replace(/^ws_/, "tb_"),
+    workspaceId: id,
     name: "Tab 1",
     sortKey: "a0",
     createdAt: START,
@@ -480,6 +529,18 @@ const WORKSPACES: WorkspaceSummary[] = [
       base: STORY.base,
     }),
   ),
+  // F-CD-22: a folder of repositories has no branch of its own, so the rail
+  // shows how many it holds; its worktree's parent folder has none either,
+  // and the core keeps no base for it (each repository has its own).
+  { ...workspace(MULTI_WS, MULTI.folder, MULTI_ROOT, "", "b0"), branch: null, repos: [...MULTI.repos] },
+  {
+    ...workspace(MULTI_LANE, MULTI.worktree, MULTI_LANE_ROOT, MULTI_BRANCH, "b1", {
+      parentId: MULTI_WS,
+      base: "",
+    }),
+    branch: null,
+    repos: [...MULTI.repos],
+  },
 ];
 
 /** Each checkout of the sample repository (repo.ts): `shop` on main, and
@@ -494,6 +555,13 @@ const CHECKOUTS: CheckoutSeed[] = [
     committed: w.state === "done" ? changedIn(w.slug) : {},
     uncommitted: w.state === "done" ? {} : changedIn(w.slug),
   })),
+];
+
+/** The multi-repo folder's checkouts: each repository on main, and the
+ * worktree with its change committed in both (D-2570). */
+const MULTI_CHECKOUTS: CheckoutSeed[] = [
+  { id: MULTI_WS, root: MULTI_ROOT, branch: STORY.base, committed: {}, uncommitted: {} },
+  { id: MULTI_LANE, root: MULTI_LANE_ROOT, branch: MULTI_BRANCH, committed: MULTI_CHANGED, uncommitted: {} },
 ];
 
 /** The worktree Code mode opens on: the working agent's, for the motion. */
@@ -649,6 +717,8 @@ export class DemoCore {
   private settings: Record<string, unknown> = { theme: "dark", rail_width: 280 };
   /** The sample repository's checkouts, for Files, git and the shell (in memory). */
   readonly files = new DemoFiles(CHECKOUTS);
+  /** The multi-repo folder's, in its own files (F-CD-22, D-2570). */
+  private readonly multiFiles = new DemoFiles(MULTI_CHECKOUTS, MULTI_MAIN);
   readonly notes = new DemoNotes();
   /** The Tasks tab, kept in the page (F-TK-03). */
   readonly tasks = new DemoTasks();
@@ -981,7 +1051,8 @@ export class DemoCore {
 
   /** Every file in a checkout now, by path. */
   private filesOf(id: string): Record<string, string> {
-    return Object.fromEntries(this.files.paths(id).map((p) => [p, this.files.text(id, p) ?? ""]));
+    const files = this.filesFor(id);
+    return Object.fromEntries(files.paths(id).map((p) => [p, files.text(id, p) ?? ""]));
   }
 
   /** A landing's check in a worktree, with main merged in: the demo runs
@@ -1431,6 +1502,11 @@ export class DemoCore {
     return c?.type === "workspace" ? c.workspaceId : WS;
   }
 
+  /** The files a checkout is in: the shop's, or the multi-repo folder's. */
+  private filesFor(id: string): DemoFiles {
+    return MULTI_IDS.has(id) ? this.multiFiles : this.files;
+  }
+
   /** The repository a landing command is about: the one asked, or a
    * worktree's (every worktree's ⋯ opens its repository's landing). */
   private repoOf(args: Args): string {
@@ -1621,6 +1697,9 @@ export class DemoCore {
 
   /** Answers one command, as the core would. */
   handle(cmd: string, args: Args): unknown {
+    // F-CD-22: what needs one repository is refused up front, as the core does.
+    if (ONE_REPO.has(cmd) && MULTI_IDS.has(String(args?.laneId ?? args?.workspaceId ?? "")))
+      throw { code: "invalid", message: MULTI_NOT_YET };
     switch (cmd) {
       case "app_ready":
         return BOOT;
@@ -1849,7 +1928,9 @@ export class DemoCore {
         const path = String(args?.path ?? "");
         const text: FileText = {
           path,
-          content: (t.thread.workspaceId && this.files.text(t.thread.workspaceId, path)) || "",
+          content:
+            (t.thread.workspaceId && this.filesFor(t.thread.workspaceId).text(t.thread.workspaceId, path)) ||
+            "",
           binary: false,
           truncated: false,
         };
@@ -1880,19 +1961,27 @@ export class DemoCore {
         if (typeof args?.url === "string" && /^(https:\/\/|mailto:)/.test(args.url))
           window.open(args.url, "_blank", "noopener");
         return null;
-      case "fs_list":
-        return this.files.list(this.checkout(args), String(args?.dir ?? ""));
-      case "fs_read":
-        return this.files.read(this.checkout(args), String(args?.path ?? ""));
-      case "fs_write":
-        return this.files.write(
-          this.checkout(args),
+      case "fs_list": {
+        const id = this.checkout(args);
+        return this.filesFor(id).list(id, String(args?.dir ?? ""));
+      }
+      case "fs_read": {
+        const id = this.checkout(args);
+        return this.filesFor(id).read(id, String(args?.path ?? ""));
+      }
+      case "fs_write": {
+        const id = this.checkout(args);
+        return this.filesFor(id).write(
+          id,
           String(args?.path ?? ""),
           String(args?.text ?? ""),
           (args?.expectedHash as string | null | undefined) ?? null,
         );
-      case "fs_compare":
-        return this.files.compare(this.checkout(args), String(args?.path ?? ""), String(args?.text ?? ""));
+      }
+      case "fs_compare": {
+        const id = this.checkout(args);
+        return this.filesFor(id).compare(id, String(args?.path ?? ""), String(args?.text ?? ""));
+      }
       case "fs_create":
       case "fs_rename":
       case "fs_delete":
@@ -1901,6 +1990,9 @@ export class DemoCore {
         return "demo-watch";
       case "git_status": {
         const id = this.checkout(args);
+        // The multi-repo folder, and its worktree's parent folder, aren't
+        // repositories: the repositories are inside them (F-CD-22).
+        if (MULTI_IDS.has(id)) return null;
         const panel = this.files.gitStatus(id);
         // The pull request's branch is on the remote: what's committed here
         // since is ahead of it until it's pushed (F-WT-08).
@@ -1967,6 +2059,9 @@ export class DemoCore {
       // story starts, uncommitted work included.
       case "lane_diff": {
         const id = String(args?.laneId ?? "");
+        // F-CD-22: each repository's changes, its name leading every path,
+        // uncommitted work included.
+        if (id === MULTI_LANE) return multiDiff(this.filesOf(id));
         const files = this.filesOf(id);
         const base = this.baseOf(id);
         return Object.keys(files)
@@ -1977,6 +2072,17 @@ export class DemoCore {
       // CI results and review comments back to the agent (F-WT-08).
       case "lane_checks":
         return this.ci.get(String(args?.laneId ?? ""));
+      // F-CD-22: the app pushes each repository and links the pull
+      // requests; a web page has nothing to push to.
+      case "lane_create_prs":
+        if (String(args?.laneId ?? "") !== MULTI_LANE)
+          throw { code: "invalid", message: "Create pull requests is for multi-repo worktrees" };
+        throw { code: "unavailable", message: DEMO_NO_PUSH };
+      case "lane_prs_get":
+        return null;
+      case "lane_remove":
+        if (MULTI_IDS.has(String(args?.laneId ?? ""))) throw { code: "unavailable", message: NO_DISCARD };
+        return null;
       case "pr_checks_allow":
         this.ci.allow(Boolean(args?.allow));
         return null;
@@ -2006,6 +2112,13 @@ export class DemoCore {
         return null;
       case "lane_radar":
         return this.radarMarks((args?.laneIds as string[] | undefined) ?? DEMO_WORKTREES);
+      // A worktree is a folder and a branch on your computer (F-CD-15).
+      case "lane_create":
+        throw {
+          code: "unavailable",
+          message:
+            "The demo can't make a worktree in your browser. In the app, New worktree makes one on its own branch, tandem/<name>.",
+        };
       case "lane_overlap":
         return this.overlap(String(args?.laneId ?? ""));
       case "lane_radar_note":

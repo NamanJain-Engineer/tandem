@@ -1,0 +1,3 @@
+# web
+
+The booking page. It reads the api's routes through `/api`.

@@ -1,6 +1,6 @@
 // The sample world the browser demo and the site's product scenes share
 // (D-1899, D-2609): one repository, its three worktrees and what their
-// agents did. Both read `story.json`, so neither keeps a copy of its names;
+// agents did; and, in the demo only, a folder of two repositories (D-2570). Both read `story.json`, so neither keeps a copy of its names;
 // the repository's files are beside it in `shop/` (see repo.ts). What would
 // come from outside the computer (a pull request, its remote and reviewer,
 // engine versions) says it's a sample in the data itself, since the app's
@@ -89,6 +89,11 @@ export type Story = {
      * pushing its commit starts. */
     fix: { steps: StoryStep[]; commit: StoryCommit; closing: string; run: number };
   };
+  /** The demo's second workspace (F-CD-22, D-2570): a folder that isn't a
+   * repository, holding `repos` side by side, and one worktree across them
+   * (its files are in `bookings/`, see multirepo.ts). The site's scenes
+   * don't show it. */
+  multiRepo: { folder: string; repos: string[]; worktree: string };
 };
 
 export const STORY = story as Story;

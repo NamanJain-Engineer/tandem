@@ -1,0 +1,14 @@
+export type Hours = { opens: string; closes: string };
+
+/** Opening hours by weekday, 0 being Sunday; a missing day is closed. */
+const HOURS: Record<number, Hours> = {
+  1: { opens: "09:00", closes: "17:00" },
+  2: { opens: "09:00", closes: "17:00" },
+  3: { opens: "09:00", closes: "17:00" },
+  4: { opens: "09:00", closes: "19:00" },
+  5: { opens: "09:00", closes: "15:00" },
+};
+
+export function hoursOn(day: number): Hours | null {
+  return HOURS[day] ?? null;
+}

@@ -227,5 +227,6 @@
       "closing": "CI's tests failed: main's session tests still called getSession, which this branch renamed refreshSession. They test refreshSession and its renewal now, and all 54 tests pass.",
       "run": 7105
     }
-  }
+  },
+  "multiRepo": { "folder": "bookings", "repos": ["api", "web"], "worktree": "opening-hours" }
 }
