@@ -105,14 +105,7 @@ pub fn log_spawn_of(
         "providerHome": home,
         "cwd": spec.3.to_string_lossy(),
     });
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(f, "{record}");
-    }
+    crate::launch::append_log_line(path.as_ref(), &record.to_string());
 }
 
 /// One line of the engine's stdout.

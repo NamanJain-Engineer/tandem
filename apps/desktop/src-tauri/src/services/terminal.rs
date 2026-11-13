@@ -2161,14 +2161,7 @@ impl TerminalService {
             cwd: spec.cwd.to_string_lossy().into_owned(),
         };
         if let Ok(line) = serde_json::to_string(&record) {
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-            {
-                let _ = writeln!(f, "{line}");
-            }
+            tandem_engines::launch::append_log_line(path, &line);
         }
     }
 

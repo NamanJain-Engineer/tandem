@@ -187,6 +187,21 @@ pub fn input_for(text: &str, dir: &Path) -> std::io::Result<Input> {
     Ok(Input::File(path))
 }
 
+/// Appends `line` to a log that several processes and threads write at
+/// once (the spawn logs tests read): the line and its newline in one write,
+/// which an append lands whole. `writeln!` writes them separately, and a
+/// line written between the two spliced into the first.
+pub fn append_log_line(path: &Path, line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = f.write_all(format!("{line}\n").as_bytes());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,5 +370,27 @@ mod tests {
         let before = terminal_launch(&r).expect("spec");
         r.pinned = true;
         assert_eq!(terminal_launch(&r).expect("spec"), before);
+    }
+
+    #[test]
+    fn f_sh_07_3_spawn_log_lines_written_at_once_stay_whole() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("spawns.jsonl");
+        let line = r#"{"argv":["claude"],"cwd":"/code"}"#;
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..500 {
+                        append_log_line(&path, line);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().expect("thread");
+        }
+        let text = std::fs::read_to_string(&path).expect("log");
+        assert_eq!(text.lines().filter(|l| *l == line).count(), 2_000);
     }
 }

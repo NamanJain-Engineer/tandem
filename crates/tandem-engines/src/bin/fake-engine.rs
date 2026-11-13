@@ -101,14 +101,27 @@ fn label(name: &str) -> &str {
 
 fn log(line: &str) {
     if let Some(path) = std::env::var_os("TANDEM_FAKE_ENGINE_LOG") {
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
-            let _ = writeln!(f, "{line}");
-        }
+        append_line(std::path::Path::new(&path), line);
     }
+}
+
+/// Appends one line to the log that every engine of a run shares (E2E specs
+/// count its lines).
+fn append_line(path: &std::path::Path, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = write_line(&mut f, line);
+    }
+}
+
+/// The line and its newline in one write: an append of one write lands
+/// whole, while `writeln!` writes the text and the "\n" separately, so
+/// engines starting at once could splice their lines together.
+fn write_line(w: &mut impl Write, line: &str) -> std::io::Result<()> {
+    w.write_all(format!("{line}\n").as_bytes())
 }
 
 fn out(s: &str) {
@@ -1083,4 +1096,63 @@ fn answer(name: &str, text: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Records each `write` call it gets.
+    #[derive(Default)]
+    struct Writes(Vec<Vec<u8>>);
+
+    impl Write for Writes {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.push(buf.to_vec());
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // F-SH-07.3: four agents start at once and each logs `hook: SessionStart`
+    // to the one log E2E-M5-2 counts. A line in two writes (text, then "\n")
+    // can be split by another engine's line, and the count comes up short.
+    #[test]
+    fn f_sh_07_3_a_log_line_is_one_write() {
+        let mut w = Writes::default();
+        write_line(&mut w, "hook: SessionStart").expect("write");
+        assert_eq!(w.0, vec![b"hook: SessionStart\n".to_vec()]);
+    }
+
+    #[test]
+    fn f_sh_07_3_engines_logging_at_once_keep_every_line_whole() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fake-engine.log");
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..500 {
+                        append_line(&path, "start: claude args=[]");
+                        append_line(&path, "hook: SessionStart");
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().expect("join");
+        }
+        let text = std::fs::read_to_string(&path).expect("read");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 4_000);
+        assert_eq!(
+            lines.iter().filter(|l| **l == "hook: SessionStart").count(),
+            2_000
+        );
+        assert!(lines
+            .iter()
+            .all(|l| *l == "hook: SessionStart" || *l == "start: claude args=[]"));
+    }
 }
