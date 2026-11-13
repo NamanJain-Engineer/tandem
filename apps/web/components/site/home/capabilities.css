@@ -215,6 +215,10 @@
 .cap-result .cap-meta {
   margin-inline-start: auto;
 }
+/* On the highlighted row's lighter ground the subtle tone falls under AA. */
+.cap-result.is-active .cap-meta {
+  color: var(--tn-text-muted);
+}
 
 /* Dictate: the held chord and the voice. */
 .cap-dictate {

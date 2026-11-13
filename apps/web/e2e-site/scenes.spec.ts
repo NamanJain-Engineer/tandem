@@ -111,7 +111,7 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
   await page.goto("/");
   // Below the fold: waiting at its first frame.
   expect(await states(page, "review")).toEqual(["paused"]);
-  await page.locator('[data-scene="review"]').scrollIntoViewIfNeeded();
+  await reveal(page, "review");
   await expect.poll(() => states(page, "review")).toContain("running");
   // The tab goes into the background: everything pauses where it is.
   await page.evaluate(() => {
@@ -131,8 +131,7 @@ test("F-WB-01 AC9 a scene waits off screen, plays on screen, and stops in a hidd
 test("F-WB-01 AC9 D-3000 the Review scene's comments go in at once: no frame draws the rows under them twice", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  const scene = page.locator('[data-scene="review"]');
-  await scene.scrollIntoViewIfNeeded();
+  await reveal(page, "review");
   await expect.poll(() => states(page, "review"), { timeout: 10_000 }).toContain("running");
   // Just before the comments arrive, then through what would be any fade.
   const frames = await page.evaluate(() => {
@@ -162,6 +161,19 @@ const SCENE_IDS = [
  * writes included (::before, ::after and ::marker, with counters, attr() and counter styles worked out), read from
  * Chromium's layout tree (DOMSnapshot). Nothing with display: none is drawn, so a width draws its own; a value's
  * steps all lie out at once, shown or not (D-3002), so each is read. */
+/** Brings scene `id` on screen as a visitor does. On the home page a scene in
+ * the scroll story waits off to the side of its pinned frame until its
+ * chapter comes up (D-2577), so its chapter's first step is scrolled to the
+ * middle of the screen; any other scene is scrolled into view. */
+async function reveal(page: Page, id: string): Promise<void> {
+  const step = page.locator(`.story-chapter:has([data-scene="${id}"]) .story-step`).first();
+  if ((await step.count()) > 0) {
+    await step.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  } else {
+    await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
+  }
+}
+
 async function drawnText(page: Page): Promise<Map<string, string[]>> {
   const cdp = await page.context().newCDPSession(page);
   const { documents, strings } = await cdp.send("DOMSnapshot.captureSnapshot", { computedStyles: [] });
@@ -246,7 +258,7 @@ test("F-WB-01 AC9 D-3001 in real playback every effect in a scene starts on one 
   for (const [path, ids] of SCENE_IDS) {
     await page.goto(path);
     for (const id of ids) {
-      await page.locator(`[data-scene="${id}"]`).scrollIntoViewIfNeeded();
+      await reveal(page, id);
       await expect.poll(() => states(page, id), { timeout: 10_000 }).toContain("running");
       await page.waitForTimeout(100);
       const starts = await page.evaluate((id) => {

@@ -7,6 +7,8 @@ const LD = '<script type="application/ld+json">';
 const SCRIPT = '<script src="/blog/blog.js" defer="">';
 /** Every page opens with the inline theme script (F-WB-01 AC4, D-1871). */
 const THEME = '<script data-theme-boot="">';
+/** The pointer light, deferred on every page (D-2576). */
+const SITE = '<script src="/site.js" defer="">';
 const YEAR = /\b(19|20)\d{2}\b/;
 /** D-1851: the only years on a blog page are in <time datetime> and the JSON-LD dates. */
 const withoutDates = (h: string) =>
@@ -14,12 +16,12 @@ const withoutDates = (h: string) =>
     .replace(/<time datetime="\d{4}-\d{2}-\d{2}"[^>]*>[^<]*<\/time>/gi, "")
     .replace(/"date(Published|Modified)":"\d{4}-\d{2}-\d{2}"/g, "");
 
-test("F-WB-06 AC6 index and tag pages carry no script but the theme's, a post only that, its JSON-LD and the Copy script (D-1860), and no year outside their dates", async ({ request }) => {
+test("F-WB-06 AC6 index and tag pages carry no script but the theme's and the pointer light, a post only those, its JSON-LD and the Copy script (D-1860), and no year outside their dates", async ({ request }) => {
   for (const path of blogPages()) {
     const html = (await (await request.get(path)).text()).replace(/<!-- -->/g, "");
     const scripts = [...html.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
     const isPost = POSTS.some((p) => p.path === path);
-    expect(scripts, path).toEqual(isPost ? [THEME, LD, SCRIPT] : [THEME]);
+    expect(scripts, path).toEqual(isPost ? [THEME, SITE, LD, SCRIPT] : [THEME, SITE]);
     expect(withoutDates(html), path).not.toMatch(YEAR);
     expect(html, path).toContain(`<link rel="alternate" type="application/atom+xml" title="Vibezeo blog" href="https://vibezeo.com${FEED_PATH}"/>`);
     expect(html.match(/<h1[\s>]/g)?.length, path).toBe(1);

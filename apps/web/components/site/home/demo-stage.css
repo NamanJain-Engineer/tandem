@@ -67,13 +67,8 @@
   display: none;
 }
 
-/* The invitation: dimmed until the app is running in the frame. */
-.demo-invite > p {
-  transition: opacity var(--dur-slow) var(--tn-ease-out);
-}
-.demo-section:not(:has([data-demo-state="live"])) .demo-invite > p {
-  opacity: 0.6;
-}
+/* The invitation's words keep their full contrast at all times (axe, WCAG
+   2.2 AA); only the status light below says whether the app is running. */
 
 /* The status light: neutral until the app runs, then the accent with a
    slow breathing halo, as a working agent's dot breathes in the app. */
