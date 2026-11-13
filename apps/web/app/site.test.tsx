@@ -10,7 +10,7 @@ import { FOOTER, NAV } from "../components/site/nav";
 import { VIDEO } from "../lib/media";
 import { MILESTONES, PROGRESS } from "../lib/progress";
 import { fileURLToPath } from "node:url";
-import { THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
+import { SITE_JS, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import { CHECKSUMS_URL, DOWNLOADS, DOWNLOADS_PATH, RELEASE, assetUrl } from "../lib/release";
 import {
   EARLY_ACCESS_HREF,
@@ -326,15 +326,16 @@ describe("public site", () => {
       expect(external, name).toEqual([]);
     }
     // A blog post page (F-WB-06, D-1852, D-1860) keeps its JSON-LD and its
-    // reading script; every page opens with the theme script (D-1871), which
-    // the root layout adds; strip-runtime fails the build on anything else.
+    // reading script; every page opens with the theme script (D-1871) and
+    // the pointer light (D-2576), which the root layout adds; strip-runtime fails the build on anything else.
     expect(allowedScripts("blog/a-post/index.html")).toEqual([
       THEME_BOOT,
+      SITE_JS,
       '<script type="application/ld+json">',
       '<script src="/blog/blog.js" defer="">',
     ]);
     for (const page of ["blog/index.html", "blog/tags/release/index.html", "about/index.html", "changelog/0.8.0/index.html"])
-      expect(allowedScripts(page), page).toEqual([THEME_BOOT]);
+      expect(allowedScripts(page), page).toEqual([THEME_BOOT, SITE_JS]);
     // The loader names no other origin and frames only /demo/app/.
     const loader = readFileSync(join(import.meta.dirname, "../public/demo/embed.js"), "utf8");
     expect(loader).not.toMatch(/https?:\/\//);

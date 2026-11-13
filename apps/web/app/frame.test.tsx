@@ -61,8 +61,10 @@ describe("site frame", () => {
     const h = renderToStaticMarkup(<RootLayout>{null}</RootLayout>);
     // The script sets the choice in the browser; the server never picks one.
     expect(h).not.toMatch(/<html[^>]*data-theme/);
-    expect(h.match(/<script/g)?.length).toBe(1);
+    // The theme script first, then the deferred pointer light (D-2576).
+    expect(h.match(/<script/g)?.length).toBe(2);
     expect(h).toMatch(/^<html[^>]*><head><script data-theme-boot="">/);
+    expect(h).toContain('<script src="/site.js" defer="">');
     expect(h).toContain(THEME_SCRIPT.slice(0, 40));
     expect(viewport.colorScheme).toBe("dark light");
     const css = readFileSync(join(import.meta.dirname, "globals.css"), "utf8");

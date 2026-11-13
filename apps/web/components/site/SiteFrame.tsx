@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { PointerLight } from "./PointerLight";
+// The pointer light (public/site.js) and the grain (D-2576).
+import "./light.css";
 import { SiteFooter } from "./SiteFooter";
 import { SiteHeader } from "./SiteHeader";
 
@@ -22,7 +23,6 @@ export function SiteFrame({ children, current }: { children: ReactNode; current?
         {children}
       </main>
       <SiteFooter />
-      <PointerLight />
       <div aria-hidden="true" className="site-grain" />
     </div>
   );

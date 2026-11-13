@@ -48,6 +48,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${inter.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         <script data-theme-boot="" dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* The pointer light (D-2576): deferred, so it never holds up a paint. */}
+        <script src="/site.js" defer />
       </head>
       <body className="site">{children}</body>
     </html>

@@ -1,4 +1,4 @@
-/* The site's pointer light and grain (D-2576). PointerLight.tsx sets --mx and
+/* The site's pointer light and grain (D-2576). public/site.js sets --mx and
    --my on the [data-lit] surface under a fine pointer; LitGlow is its first
    child. Transform and opacity only; nothing moves with reduced motion. */
 

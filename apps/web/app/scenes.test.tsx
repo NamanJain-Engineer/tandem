@@ -25,7 +25,7 @@ import { parseChangelog } from "@tandem/protocol/changelog";
 import { minifySceneCss, sceneCss } from "../lib/sceneCss";
 import HomePage from "./page.site";
 import VersionPage from "./changelog/[version]/page.site";
-import { SCENE_PAGES, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
+import { SCENE_PAGES, SITE_JS, THEME_BOOT, allowedScripts } from "../scripts/script-allowlist.mjs";
 import story from "../../desktop/src/demo/story.json";
 import { REVIEW_AGENTS, REVIEW_DIFF, REVIEW_FILE, REVIEW_T, notesFor } from "../components/site/scenes/ReviewScene";
 import { CI_AGENTS, CI_T, ChecksScene, LOG_TAIL, SCROLLED, SESSION_DIFF, ciSceneText, echoed, foldEchoed } from "../components/site/scenes/ChecksScene";
@@ -425,7 +425,12 @@ describe("F-WB-01 AC9 product scenes", () => {
 
   it("F-WB-01 AC2 AC9 the scene player loads on exactly the release pages with scenes", async () => {
     expect([...SCENE_PAGES].sort()).toEqual(Object.keys(RELEASE_SCENES).map((v) => `changelog/${v}/index.html`).sort());
-    for (const page of SCENE_PAGES) expect(allowedScripts(page), page).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
+    for (const page of SCENE_PAGES)
+      expect(allowedScripts(page), page).toEqual([
+        THEME_BOOT,
+        SITE_JS,
+        '<script src="/demo/embed.js" defer="">',
+      ]);
     for (const r of RELEASES) {
       const h = await versionHtml(r.version);
       expect(h.includes('<script src="/demo/embed.js" defer=""'), r.version).toBe(releaseScenes(r.version).length > 0);
@@ -1652,7 +1657,11 @@ describe("F-WB-01 AC9 product scenes", () => {
     expect(v090.includes(`Scene from Vibezeo ${SCENE_BUILD}, simplified. New in 0.9.0.`)).toBe(LANDS && (SCENE_BUILD as string) !== "0.9.0");
     expect(home).not.toContain("New in");
     expect(v090.includes('<script src="/demo/embed.js" defer=""')).toBe(LANDS);
-    expect(allowedScripts("changelog/0.9.0/index.html")).toEqual([THEME_BOOT, '<script src="/demo/embed.js" defer="">']);
+    expect(allowedScripts("changelog/0.9.0/index.html")).toEqual([
+      THEME_BOOT,
+      SITE_JS,
+      '<script src="/demo/embed.js" defer="">',
+    ]);
     const v080 = renderToStaticMarkup(await VersionPage({ params: Promise.resolve({ version: "0.8.0" }) }));
     expect(v080).not.toContain("data-scene");
     expect(v080).not.toContain("embed.js");

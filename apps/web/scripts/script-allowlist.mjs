@@ -4,15 +4,18 @@
 // note, and on a blog post page its JSON-LD, which is data for search
 // engines, not code (F-WB-06, D-1852), and /blog/blog.js, which adds the
 // code blocks' copy buttons (D-1860). Before them, on every page, the
-// inline theme script (D-1871). Anything else fails the build.
+// inline theme script (D-1871), then the pointer light (/site.js, D-2576). Anything else fails the build.
 import { sep } from "node:path";
 
 /** The `<script …>` opening tags, in order, allowed in `rel` (a path under
  * out/, e.g. `blog/my-post/index.html`). */
 export function allowedScripts(rel) {
   const path = rel.split(sep).join("/");
-  return [THEME_BOOT, ...pageScripts(path)];
+  return [THEME_BOOT, SITE_JS, ...pageScripts(path)];
 }
+
+/** Then, on every page, the pointer light (D-2576), deferred. */
+export const SITE_JS = '<script src="/site.js" defer="">';
 
 /** Every page opens with the theme script, inline in `<head>` so the
  * visitor's choice is applied before the first paint (F-WB-01 AC4, D-1871). */
