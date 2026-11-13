@@ -64,8 +64,18 @@ async function dragOnto(selector: string, target: string): Promise<number> {
     .perform(true);
   const into = await $(target);
   await into.waitForDisplayed({ timeout: 5_000 });
-  await browser.pause(100);
-  const drawn = await el.getLocation();
+  // Where the row is drawn once the drag has drawn it: the same for 200 ms
+  // (three reads 100 ms apart, within 3 s). In the full regression a read
+  // 100 ms after the band showed could come before the drag's frame, with
+  // the row still at its place under the band, 32 px off, though the drop
+  // then landed right.
+  let drawn = await el.getLocation();
+  for (let i = 0, still = 0; i < 30 && still < 2; i++) {
+    await browser.pause(100);
+    const now = await el.getLocation();
+    still = now.y === drawn.y ? still + 1 : 0;
+    drawn = now;
+  }
   const offset = Math.round(drawn.y + size.height / 2 - held.y);
   const box = await into.getLocation();
   const boxSize = await into.getSize();
