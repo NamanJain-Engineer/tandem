@@ -12,7 +12,9 @@ test("F-WB-02 docs links open the next page with no failed request or redirect, 
   const bad: string[] = [];
   const scripts: string[] = [];
   page.on("response", (r) => {
-    if (r.status() >= 300) bad.push(`${r.status()} ${new URL(r.url()).pathname}`);
+    // 304 is the browser revalidating its cache, not a redirect: a fresh build's
+    // files are minutes old, so their heuristic freshness is short.
+    if (r.status() >= 300 && r.status() !== 304) bad.push(`${r.status()} ${new URL(r.url()).pathname}`);
   });
   page.on("request", (r) => {
     if (r.resourceType() === "script") scripts.push(new URL(r.url()).pathname);
