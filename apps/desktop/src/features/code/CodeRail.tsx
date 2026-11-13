@@ -294,7 +294,10 @@ function BranchChip({
     <span
       data-testid={testId}
       className={cx(
-        "inline-flex min-w-0 max-w-[84px] shrink items-center gap-0.5 truncate text-xs",
+        // A branch can be long, so it's cut at 84 px; "12 repositories"
+        // needs about 112 and is never longer (at most 12 repositories).
+        children === undefined ? "max-w-[84px]" : "max-w-[116px]",
+        "inline-flex min-w-0 shrink items-center gap-0.5 truncate text-xs",
         // fg-subtle fails AA on the selected row's accent-soft (D-705).
         selected ? "text-fg-muted" : "text-fg-subtle",
       )}

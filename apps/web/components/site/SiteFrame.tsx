@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PointerLight } from "./PointerLight";
 import { SiteFooter } from "./SiteFooter";
 import { SiteHeader } from "./SiteHeader";
 
@@ -21,6 +22,8 @@ export function SiteFrame({ children, current }: { children: ReactNode; current?
         {children}
       </main>
       <SiteFooter />
+      <PointerLight />
+      <div aria-hidden="true" className="site-grain" />
     </div>
   );
 }
@@ -47,7 +50,11 @@ export function ProsePage({
             <header className="flex flex-col gap-5 pb-4">
               {eyebrow && <p className="eyebrow">{eyebrow}</p>}
               <h1 className="text-sheen text-display-xl text-fg">{title}</h1>
-              {updated && <p className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-fg-subtle">Last updated {updated}</p>}
+              {updated && (
+                <p className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-fg-subtle">
+                  Last updated {updated}
+                </p>
+              )}
             </header>
             {children}
           </div>
