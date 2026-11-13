@@ -35,6 +35,10 @@ enum Extract {
     Value(Option<Validator>),
     /// Custom span logic.
     Custom(Extractor),
+    /// Redact capture group `v` when [`high_entropy`] accepts it. A value
+    /// that what's removable cut inside one camelCase name ([`one_name`])
+    /// isn't also read cut (D-2573).
+    Entropy,
 }
 
 struct Rule {
@@ -45,12 +49,45 @@ struct Rule {
     opens_on_boundary: bool,
 }
 
+impl Rule {
+    /// Whether the rule is a token's, with no validator: its matches are
+    /// searched as [`Pattern::tokens`] says.
+    fn token(&self) -> bool {
+        matches!(self.extract, Extract::Whole | Extract::Value(None))
+    }
+}
+
 /// Whether `pattern` opens on `\b`, past a flag group.
 fn opens_on_boundary(pattern: &str) -> bool {
     pattern
         .strip_prefix("(?i)")
         .unwrap_or(pattern)
         .starts_with(r"\b")
+}
+
+/// `pattern` with ASCII's word boundaries, so its lazy DFA reads text
+/// outside ASCII rather than quitting to the slow engine at its first
+/// letter. [`Redactor::spans_by`] holds a match's start to Unicode's
+/// boundary, or a letter of a script written without spaces (D-2572).
+fn ascii_bounds(pattern: &str) -> String {
+    pattern.replace(r"\b", r"(?-u:\b)")
+}
+
+/// Whether a rule that opens on a word boundary may open after `c`:
+/// where Unicode's boundary holds, or after a letter of a script written
+/// without spaces between words, as Chinese, Japanese and Thai are, so
+/// `使用ghp_…推送` holds a token and `Gdańsk-…` doesn't (D-2572).
+fn opens_after(c: char) -> bool {
+    static UNSPACED: OnceLock<Regex> = OnceLock::new();
+    !word(c)
+        || UNSPACED
+            .get_or_init(|| {
+                Regex::new(
+                    r"\A[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}\p{scx=Bopomofo}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}]\z",
+                )
+                .expect("script pattern compiles")
+            })
+            .is_match(c.encode_utf8(&mut [0; 4]))
 }
 
 /// Whether `c` is a word character as Unicode's `\b` reads it.
@@ -252,9 +289,9 @@ fn rule_specs() -> Vec<Spec> {
             Extract::Value(Some(cli_value_ok)),
         ),
         // High-entropy strings near key-like words.
-        value_rule(
-            r"(?i)(?:key|secret|token|passw(?:or)?d|auth|credential|session|signature)[^\n]{0,24}?(?P<v>\b[A-Za-z0-9+/_-]{24,}={0,2})",
-            Some(high_entropy),
+        (
+            r"(?i)(?:key|secret|token|passw(?:or)?d|auth|credential|session|signature)[^\n]{0,24}?(?P<v>\b[A-Za-z0-9+/_-]{24,}={0,2})".to_string(),
+            Extract::Entropy,
         ),
     ]
 }
@@ -545,6 +582,37 @@ fn looks_random(v: &str) -> bool {
     has_digit && (has_lower || has_upper) && transitions * 10 >= chars.len() * 3
 }
 
+/// Whether `v` reads as one camelCase name: a letter and lower-case
+/// letters, then words of a capital and lower-case letters or runs of
+/// digits, perhaps ending on one capital, with a vowel in every run of
+/// three or more lower-case letters (`handleSocks5AuthenticationNoAuth`).
+/// Of random letters and digits that pass [`high_entropy`], about one in
+/// 20,000 of 24 reads so, and none of 40 in 600,000 (D-2573).
+fn one_name(v: &str) -> bool {
+    let b = v.as_bytes();
+    let lower = |i: usize| b[i..].iter().take_while(|c| c.is_ascii_lowercase()).count();
+    if b.len() < 2 || !b[0].is_ascii_alphabetic() || lower(1) == 0 {
+        return false;
+    }
+    let mut i = 1 + lower(1);
+    while i < b.len() {
+        if b[i].is_ascii_uppercase() {
+            let n = lower(i + 1);
+            if n == 0 && i + 1 < b.len() {
+                return false;
+            }
+            i += 1 + n;
+        } else if b[i].is_ascii_digit() {
+            i += b[i..].iter().take_while(|c| c.is_ascii_digit()).count();
+        } else {
+            return false;
+        }
+    }
+    v.split(|c: char| !c.is_ascii_lowercase())
+        .filter(|w| w.len() >= 3)
+        .all(|w| w.contains(['a', 'e', 'i', 'o', 'u', 'y']))
+}
+
 fn high_entropy(v: &str) -> bool {
     let v = v.trim_end_matches('=');
     let all_hex = v.chars().all(|c| c.is_ascii_hexdigit());
@@ -555,6 +623,22 @@ struct SecretFilter {
     /// Bloom filter over SHA-256 hashes of registered secrets; `exact` confirms.
     bits: Vec<u64>,
     exact: HashSet<[u8; 32]>,
+    /// Each secret registered as text, by its length and [`fingerprint`],
+    /// and those lengths: for one that what's removable both split and
+    /// set apart ([`SecretFilter::split_and_set_apart`]).
+    prints: HashSet<(usize, u64)>,
+    lengths: Vec<usize>,
+}
+
+/// The base of [`fingerprint`]'s polynomial, odd (FNV's prime).
+const PRINT_BASE: u64 = 0x0000_0100_0000_01b3;
+
+/// A polynomial hash of `bytes`, which a prefix table gives for any slice
+/// in constant time. Only a hit is hashed with SHA-256, which confirms.
+fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0, |h: u64, &b| {
+        h.wrapping_mul(PRINT_BASE).wrapping_add(u64::from(b) + 1)
+    })
 }
 
 const BLOOM_BITS: usize = 1 << 16;
@@ -564,7 +648,100 @@ impl SecretFilter {
         Self {
             bits: vec![0; BLOOM_BITS / 64],
             exact: HashSet::new(),
+            prints: HashSet::new(),
+            lengths: Vec::new(),
         }
+    }
+
+    fn print(&mut self, secret: &[u8]) {
+        if secret.is_empty() {
+            return;
+        }
+        self.prints.insert((secret.len(), fingerprint(secret)));
+        if let Err(at) = self.lengths.binary_search(&secret.len()) {
+            self.lengths.insert(at, secret.len());
+        }
+    }
+
+    /// The spans in `marked` (the copy with a [`MARK`] for each run of
+    /// what's removable) of a registered secret that a mark both splits
+    /// and sets apart: in a run of token bytes and marks with a mark in
+    /// it, the secret read without its marks from a place a piece can
+    /// start (the run's start, after a mark or a separator) to one it can
+    /// end (the run's end, before a mark or a separator). Each start is
+    /// read once a registered length, from a prefix table of
+    /// [`fingerprint`]s, so the scan is in line with the text (D-3172, amended).
+    fn split_and_set_apart(&self, marked: &[u8]) -> Spans {
+        let mut spans = Vec::new();
+        if self.prints.is_empty() {
+            return spans;
+        }
+        // `PRINT_BASE` to each length's power, for a slice's fingerprint.
+        let powers: Vec<u64> = self
+            .lengths
+            .iter()
+            .map(|&len| (0..len).fold(1_u64, |p, _| p.wrapping_mul(PRINT_BASE)))
+            .collect();
+        let mark = MARK as u8;
+        let in_run = |b: u8| b == mark || b.is_ascii_alphanumeric() || b"+/_.~-".contains(&b);
+        let separator = |b: u8| matches!(b, b'.' | b'/' | b'~');
+        let mut i = 0;
+        while i < marked.len() {
+            let start = i;
+            while i < marked.len() && in_run(marked[i]) {
+                i += 1;
+            }
+            if i == start {
+                i += 1;
+                continue;
+            }
+            let run = &marked[start..i];
+            if !run.contains(&mark) {
+                continue;
+            }
+            // The run without its marks: each byte's place in `marked`,
+            // whether a mark came just before it, and the prefix table.
+            let mut places = Vec::with_capacity(run.len());
+            let mut after_mark = Vec::with_capacity(run.len() + 1);
+            let mut table = Vec::with_capacity(run.len() + 1);
+            table.push(0_u64);
+            let mut pending = false;
+            for (j, &b) in run.iter().enumerate() {
+                if b == mark {
+                    pending = true;
+                    continue;
+                }
+                places.push(start + j);
+                after_mark.push(std::mem::take(&mut pending));
+                let h = table.last().copied().unwrap_or(0);
+                table.push(h.wrapping_mul(PRINT_BASE).wrapping_add(u64::from(b) + 1));
+            }
+            after_mark.push(pending);
+            let n = places.len();
+            let bytes: Vec<u8> = places.iter().map(|&at| marked[at]).collect();
+            let opens = |k: usize| k == 0 || after_mark[k] || separator(bytes[k - 1]);
+            let closes = |e: usize| e == n || after_mark[e] || separator(bytes[e]);
+            for k in (0..n).filter(|&k| opens(k)) {
+                for (&len, &power) in self.lengths.iter().zip(&powers) {
+                    let e = k + len;
+                    if e > n {
+                        break;
+                    }
+                    if !closes(e) {
+                        continue;
+                    }
+                    let print = table[e].wrapping_sub(table[k].wrapping_mul(power));
+                    if !self.prints.contains(&(len, print)) {
+                        continue;
+                    }
+                    let hash: [u8; 32] = Sha256::digest(&bytes[k..e]).into();
+                    if self.contains(&hash) {
+                        spans.push((places[k], places[e - 1] + 1));
+                    }
+                }
+            }
+        }
+        spans
     }
 
     fn slots(hash: &[u8; 32]) -> [usize; 3] {
@@ -645,7 +822,7 @@ impl Redactor {
         let rules = specs
             .into_iter()
             .map(|(pattern, extract)| Rule {
-                re: Pattern::new(&pattern).expect("redaction pattern compiles"),
+                re: Pattern::new(&ascii_bounds(&pattern)).expect("redaction pattern compiles"),
                 extract,
                 opens_on_boundary: opens_on_boundary(&pattern),
             })
@@ -681,13 +858,33 @@ impl Redactor {
     }
 
     pub fn register_secret(&self, secret: &str) {
-        self.register_secret_hash(Sha256::digest(secret.as_bytes()).into());
+        let mut filter = self.secrets.write().unwrap_or_else(|e| e.into_inner());
+        filter.insert(Sha256::digest(secret.as_bytes()).into());
+        filter.print(secret.as_bytes());
     }
 
     /// Byte spans to redact, sorted and merged.
     pub(crate) fn spans(&self, s: &str) -> Vec<(usize, usize)> {
         let hits = self.prefilter.matches(s);
-        self.spans_by(s, &hits, &self.rules, false)
+        self.read_spans(s, &hits)
+    }
+
+    /// The plain rules' spans in `s`, and in its copy with full-width
+    /// letters, digits and token punctuation as ASCII ([`folded`]), mapped
+    /// back to `s`: NFKC makes `ｇｈｐ＿…` a token, and a model reads it as
+    /// one (D-3170, amended).
+    fn read_spans(&self, s: &str, hits: &[usize]) -> Spans {
+        let mut spans = self.spans_by(s, hits, &self.rules, false);
+        if let Some((copy, at)) = folded(s) {
+            let hits = self.prefilter.matches(&copy);
+            spans.extend(
+                self.spans_by(&copy, &hits, &self.rules, false)
+                    .into_iter()
+                    .map(|(a, b)| (at[a], at[b])),
+            );
+            spans = merge(spans);
+        }
+        spans
     }
 
     /// The spans `untrusted::redacted` hides, in each of three forms of the
@@ -722,14 +919,10 @@ impl Redactor {
             .prefilter
             .matches(written)
             .into_iter()
-            .filter(|&idx| {
-                self.rules
-                    .get(idx)
-                    .is_some_and(|r| matches!(r.extract, Extract::Whole | Extract::Value(None)))
-            })
+            .filter(|&idx| self.rules.get(idx).is_some_and(Rule::token))
             .collect();
         [
-            self.spans_by(read, &hits, &self.rules, false),
+            self.read_spans(read, &hits),
             self.spans_by(written, &plain, &self.rules, false),
             self.spans_by(marked, &hits, &self.written_rules, true),
         ]
@@ -751,16 +944,17 @@ impl Redactor {
                 || (a > 0 && at_mark(a - 1))
                 || at_mark(b)
         };
-        // Whether a match opens on a word boundary where its rule wants one,
-        // with a mark or as Unicode reads it. Only its start: a token split
-        // by a mark that runs into `é` or `中` is still hidden, as 7f61c86a
-        // hid it (the review of d2b219f1).
+        // Whether a match opens on a word boundary where its rule wants one:
+        // after a mark, where Unicode's holds, or after a letter of a script
+        // written without spaces ([`opens_after`]). The rules' own are
+        // ASCII's, which also hold after `ń`. Only its start: a token that
+        // runs into `é` or `中` is still hidden, as 7f61c86a hid it (the
+        // review of d2b219f1; D-2572).
         let edged = |rule: &Rule, a: usize| {
-            !marked
-                || !rule.opens_on_boundary
+            !rule.opens_on_boundary
                 || a == 0
-                || at_mark(a - 1)
-                || !s[..a].chars().next_back().is_some_and(word)
+                || (marked && at_mark(a - 1))
+                || s[..a].chars().next_back().is_some_and(opens_after)
         };
         let mut spans = Vec::new();
         let mut push = |span: Option<(usize, usize)>| {
@@ -776,23 +970,35 @@ impl Redactor {
         for rule in hits.iter().filter_map(|&idx| rules.get(idx)) {
             let span = |s: &str, caps: &Caps<'_>| match rule.extract {
                 Extract::Value(validator) => value(caps, validator),
+                Extract::Entropy => value(caps, Some(high_entropy)),
                 Extract::Custom(extract) => extract(s, caps),
                 Extract::Whole => caps.get(0).map(|m| (m.start(), m.end())),
+            };
+            // A token's search after a match starts at its last word, so a
+            // token that a decoy ran into is read whole (D-2574).
+            let found = || -> Vec<_> {
+                if rule.token() {
+                    rule.re.tokens(s).collect()
+                } else {
+                    rule.re.find_iter(s).collect()
+                }
             };
             match rule.extract {
                 // A whole match needs no groups: its bounds come from the
                 // DFA, without the slower engine that captures run.
                 Extract::Whole => {
-                    for m in rule.re.find_iter(s) {
+                    for m in found() {
                         let (a, b) = (m.start(), m.end());
                         push((touches(a, b) && edged(rule, a)).then_some((a, b)));
                     }
                 }
                 // As written, only a match that counts runs the captures,
                 // over itself: a long one elsewhere costs a DFA scan, not
-                // the slower engine's.
-                Extract::Value(_) | Extract::Custom(_) if marked => {
-                    for m in rule.re.find_iter(s) {
+                // the slower engine's. So does a token's value as read.
+                Extract::Value(_) | Extract::Custom(_) | Extract::Entropy
+                    if marked || rule.token() =>
+                {
+                    for m in found() {
                         let (a, b) = (m.start(), m.end());
                         if a == b || !touches(a, b) || !edged(rule, a) {
                             continue;
@@ -803,11 +1009,18 @@ impl Redactor {
                         let whole = span(s, &caps);
                         push(whole);
                         // Where the text as written ended the value: at its
-                        // first mark (the review of 8e1d58af).
+                        // first mark (the review of 8e1d58af). Not inside
+                        // one camelCase name, which the mark only split
+                        // (D-2573).
+                        let one = matches!(rule.extract, Extract::Entropy)
+                            && caps
+                                .name("v")
+                                .is_some_and(|v| one_name(&unmarked(v.as_str())));
                         let cut = ["v", "vq", "vu"]
                             .iter()
                             .find_map(|g| caps.name(g))
-                            .and_then(|v| v.as_str().find(MARK).map(|at| v.start() + at));
+                            .and_then(|v| v.as_str().find(MARK).map(|at| v.start() + at))
+                            .filter(|_| !one);
                         if let Some(cut) = cut {
                             // The same match, cut: one that starts later
                             // hasn't had its edges read.
@@ -830,7 +1043,8 @@ impl Redactor {
                 }
                 _ => {
                     for caps in rule.re.captures_iter(s) {
-                        push(span(s, &caps));
+                        let opens = caps.get(0).is_some_and(|m| edged(rule, m.start()));
+                        push(span(s, &caps).filter(|_| opens));
                     }
                 }
             }
@@ -860,6 +1074,9 @@ impl Redactor {
                         check(piece_start, m.end());
                     }
                 }
+                if marked {
+                    spans.extend(filter.split_and_set_apart(bytes));
+                }
             }
         }
         merge(spans)
@@ -888,6 +1105,32 @@ impl Redactor {
             None => s.to_string(),
         }
     }
+}
+
+/// `s` with its full-width letters, digits and token punctuation
+/// (`＿－．／＋＝～`) as ASCII, and for each byte of that copy and its end,
+/// the place in `s` it came from; `None` when there are none. The
+/// punctuation that full-width text uses in prose (`：，（）`) stays as it
+/// is, so a Chinese sentence doesn't turn into an assignment (D-3170, amended).
+fn folded(s: &str) -> Option<(String, Vec<usize>)> {
+    let ascii = |c: char| {
+        let folded = char::from_u32((c as u32).checked_sub(0xFEE0)?)?;
+        (('\u{FF01}'..='\u{FF5E}').contains(&c)
+            && (folded.is_ascii_alphanumeric() || "_-./+=~".contains(folded)))
+        .then_some(folded)
+    };
+    if !s.chars().any(|c| ascii(c).is_some()) {
+        return None;
+    }
+    let mut copy = String::with_capacity(s.len());
+    let mut at = Vec::with_capacity(s.len() + 1);
+    for (i, c) in s.char_indices() {
+        let c = ascii(c).unwrap_or(c);
+        at.extend((0..c.len_utf8()).map(|_| i));
+        copy.push(c);
+    }
+    at.push(s.len());
+    Some((copy, at))
 }
 
 pub(crate) fn merge(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
@@ -1272,6 +1515,300 @@ mod tests {
             .filter(|line| redactor.redact(line) != **line)
             .collect();
         assert!(flagged.is_empty(), "false positives: {flagged:#?}");
+    }
+
+    /// What `untrusted::redacted` hides of `text` on redactor `r`, built as
+    /// `untrusted::credential_spans` builds it: the three forms, their spans
+    /// mapped to the readable text, merged.
+    fn hidden(r: &Redactor, text: &str) -> String {
+        let removable = crate::untrusted::removable;
+        let (mut read, mut written, mut marked) = (String::new(), String::new(), String::new());
+        let (mut extra, mut marks, mut cut) = (Vec::new(), Vec::new(), false);
+        for c in text.chars() {
+            if removable(c) {
+                extra.push(written.len());
+                written.push(if c.is_whitespace() { ' ' } else { MARK });
+                cut = true;
+                continue;
+            }
+            if std::mem::take(&mut cut) {
+                marks.push(marked.len());
+                marked.push(MARK);
+            }
+            read.push(c);
+            written.push(c);
+            marked.push(c);
+        }
+        if cut {
+            marks.push(marked.len());
+            marked.push(MARK);
+        }
+        let [mut spans, as_written, as_marked] = r.untrusted_spans(&read, &written, &marked);
+        let to_read = |put: &[usize], b: usize| b - put.partition_point(|&at| at < b);
+        spans.extend(
+            as_written
+                .into_iter()
+                .map(|(a, b)| (to_read(&extra, a), to_read(&extra, b))),
+        );
+        spans.extend(
+            as_marked
+                .into_iter()
+                .map(|(a, b)| (to_read(&marks, a), to_read(&marks, b))),
+        );
+        spans.retain(|(a, b)| b > a);
+        apply(&read, &merge(spans))
+    }
+
+    #[test]
+    fn f_tl_02_1_a_decoy_glued_to_a_token_hides_the_token_too() {
+        // A token rule's match that ran into the next token's start ended
+        // inside it, and the next search began after it, so the rest of the
+        // real token came back: `eyJaaaaaaaa.bbbbbbbb.<real JWT>` gave the
+        // JWT's payload and signature, in the plain redactor and with
+        // what's removable elsewhere (D-3172, the review of 8e1d58af, Nit 5).
+        let jwt = format!(
+            "eyJhbGciOiJIUzI1NiJ9.{}.dozjgNryP4J3jVmNHl0w5N_XgL0",
+            "eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+        );
+        let cases = [
+            (format!("eyJaaaaaaaa.bbbbbbbb.{jwt}"), "eyJzdWIiOiIx"),
+            (
+                format!("eyJaaaaaaaa.bbbbbbbb.cccccccc-{jwt}"),
+                "eyJzdWIiOiIx",
+            ),
+            (
+                format!(
+                    "Bearer {}-Bearer ZYXWVUTSRQPONMLKJIHGFEDCBA98765",
+                    "a".repeat(20)
+                ),
+                "ZYXWVUTSRQ",
+            ),
+            (
+                format!(
+                    "whsec_{}/whsec_wDUHQFuHO5sJDkaJjgbebjy3LvGzrkaL",
+                    "a".repeat(16)
+                ),
+                "wDUHQFuHO5",
+            ),
+            (
+                format!("ya29.{}-ya29.oeWfpdVFvnri-bQ54T79LVtAAdu", "a".repeat(20)),
+                "oeWfpdVFvn",
+            ),
+            (
+                format!(
+                    "SG.{}.{}-SG.y62WQgQU_9Bvk-EnVc6Pmy.Cq9LahRD0Lz7b-F51WG22Q",
+                    "a".repeat(16),
+                    "b".repeat(16)
+                ),
+                "y62WQgQU",
+            ),
+            (
+                format!(
+                    "https://hooks.slack.com/services/{}/https://hooks.slack.com/services/{}",
+                    "a".repeat(20),
+                    "THO45DKX1HT/BKUFG8O3EL0/fSubJvo0jPMQONWuB8E7abwA"
+                ),
+                "fSubJvo0jP",
+            ),
+        ];
+        let r = Redactor::new();
+        for (text, real) in &cases {
+            let plain = r.redact(text);
+            assert!(!plain.contains(real), "{text:?}: {plain:?}");
+            let with = format!("{text} and \u{200b}");
+            let safe = hidden(&r, &with);
+            assert!(!safe.contains(real), "{with:?}: {safe:?}");
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_token_run_into_cjk_text_is_found_and_a_word_outside_ascii_is_not() {
+        // Unicode's word boundary holds none between Chinese text and a
+        // token run into it, so `使用ghp_…推送` stayed whole. ASCII's would
+        // also hold inside `Gdańsk-…`. A match opens where Unicode's does,
+        // or after a letter of a script written without spaces (D-2572).
+        let tokens = [
+            format!("ghp_{}", "0123456789abcdefghijABCDEFGHIJ012345"),
+            format!("AKIA{}", "IABN48B5MPWWYTUG"),
+            format!("sk-{}", "proj-0123456789abcdefghijABCDEFGHIJ"),
+        ];
+        let r = Redactor::new();
+        for token in &tokens {
+            for (before, after) in [
+                ("使用", "推送"),
+                ("トークンは", "です"),
+                ("토큰", "을"),
+                ("ใช้", "ส่ง"),
+            ] {
+                let text = format!("{before}{token}{after}");
+                let want = format!("{before}{REDACTED}{after}");
+                assert_eq!(r.redact(&text), want, "{text:?}");
+                assert_eq!(hidden(&r, &format!("{text}\u{200b}")), want, "{text:?}");
+            }
+        }
+        for text in [
+            "Gda\u{144}sk-Oliwa-Przymorze-Uniwersytet",
+            "Mi\u{144}sk-Mazowiecki-Dworzec-Kolejowy",
+            "Gda\u{144}sk-Oliwa-Przymorze-Uniwersytet \u{1F468}\u{200D}\u{1F469}",
+        ] {
+            assert_eq!(r.redact(text), text);
+            assert_eq!(hidden(&r, text), crate::untrusted::readable(text));
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_what_is_removable_inside_a_camel_case_name_makes_no_secret() {
+        // A value with a mark in it is also read cut at the mark, where the
+        // text as written ended it. Inside one camelCase name, the cut's
+        // start passed `high_entropy` (`handleSocks5AuthenticationNoAu`,
+        // 96 of 1,888 inputs; D-3172). Joined, it's one name, so it isn't
+        // cut (D-2573). A random value that what's removable ends still is.
+        let line = "authResult = yield this.handleSocks5AuthenticationNoAuthHandshakeResponse(this.receiveBuffer.get(2));";
+        let start = line.find("handle").expect("the name");
+        let end = line.find("(this.receive").expect("the name's end");
+        let r = Redactor::new();
+        let removables = [
+            '\u{200b}',
+            '\u{200c}',
+            '\u{200d}',
+            '\u{2060}',
+            '\u{feff}',
+            '\u{00ad}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{000b}',
+            '\u{000c}',
+            '\u{0085}',
+            '\u{034f}',
+            '\u{fe0f}',
+            '\u{180e}',
+            '\u{e0001}',
+            '\u{202e}',
+        ];
+        let mut flagged = Vec::new();
+        for c in removables {
+            for at in start + 1..end {
+                let text = format!("{}{c}{}", &line[..at], &line[at..]);
+                if hidden(&r, &text) != line {
+                    flagged.push(format!("{c:?} at {at}"));
+                }
+            }
+        }
+        assert!(flagged.is_empty(), "{} flagged: {flagged:?}", flagged.len());
+        for c in removables {
+            let text = format!("auth Xk9qL2mP7vR4tY8wZ1nB5cD3fG6hJ0{c}{}", "a".repeat(40));
+            assert!(!hidden(&r, &text).contains("Xk9qL2mP7v"), "{text:?}");
+            let text = format!("auth Xk9qL2mP7vR4tY8wZ1nB5cD3fG6hJ0{c}Response");
+            assert!(!hidden(&r, &text).contains("Xk9qL2mP7v"), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_registered_secret_what_is_removable_splits_and_sets_apart_is_hidden() {
+        // The registered-secret scan found one that what's removable split,
+        // or set apart from a letter, not both (D-3172).
+        let r = Redactor::new();
+        r.register_secret("plainvalue-0001");
+        r.register_secret("Zq81kLm02pNx");
+        for text in [
+            "abc\u{200b}plain\u{200b}value-0001 now",
+            "abc\u{200b}plainvalue\u{ad}-0001\u{200b}xyz",
+            "x\u{2060}plain\u{2060}val\u{2060}ue-0001",
+            "token:\u{200b}Zq81\u{feff}kLm02pNx.",
+            "ab\u{200b}Zq81k\u{200b}Lm02pNx\u{200b}cd and plainvalue-0001",
+        ] {
+            let safe = hidden(&r, text);
+            assert!(
+                !safe.contains("lue-0001") && !safe.contains("Lm02pNx"),
+                "{text:?}: {safe:?}"
+            );
+        }
+        // Glued to a letter as written, it's not set apart.
+        assert_eq!(
+            hidden(&r, "abc\u{200b}plain\u{200b}value-0001xyz"),
+            "abcplainvalue-0001xyz"
+        );
+    }
+
+    #[test]
+    fn f_tl_02_1_the_registered_secret_scan_takes_time_in_line_with_the_text() {
+        // Each place a secret could start is read once a length, from
+        // prefix fingerprints, and only a fingerprint's hit is hashed.
+        let r = Redactor::new();
+        r.register_secret("plainvalue-0001");
+        r.register_secret(&"Zq81kLm02pNx".repeat(8));
+        let shapes = |size: usize| {
+            vec![
+                "a\u{200b}".repeat(size / 4),
+                "plain\u{200b}value-\u{200b}".repeat(size / 16),
+                format!("x\u{200b}{}", "ab-".repeat(size / 3)),
+            ]
+        };
+        let time = |text: &str| {
+            let started = std::time::Instant::now();
+            let _ = std::hint::black_box(hidden(&r, text));
+            started.elapsed()
+        };
+        for text in shapes(1 << 20) {
+            let took = time(&text);
+            assert!(took < std::time::Duration::from_secs(4), "{took:?}");
+        }
+        // Best of three each side, timed again once before failing, as the
+        // other growth checks are: under the suite's load one pair read
+        // 87 ms, then 516 ms, where alone it reads about twice.
+        let linear = |(t1, t2): (std::time::Duration, std::time::Duration)| {
+            t2 < t1 * 3 + std::time::Duration::from_millis(30)
+        };
+        for (a, b) in shapes(1 << 18).iter().zip(&shapes(1 << 19)) {
+            let best = |t: &str| (0..3).map(|_| time(t)).min().expect("timed");
+            let mut times = (best(a), best(b));
+            if !linear(times) {
+                times = (best(a), best(b));
+            }
+            let (t1, t2) = times;
+            assert!(
+                linear(times),
+                "{} bytes took {t1:?}, twice that {t2:?}",
+                a.len()
+            );
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_full_width_token_is_found() {
+        // NFKC makes `ｇｈｐ＿…` a token, and a model reads it as one (the
+        // review of a106fbf1, Nit 5; D-3170).
+        let full = |s: &str| -> String {
+            s.chars()
+                .map(|c| match c {
+                    '!'..='~' => char::from_u32(c as u32 + 0xFEE0).unwrap_or(c),
+                    c => c,
+                })
+                .collect()
+        };
+        let r = Redactor::new();
+        for token in [
+            format!("ghp_{}", "0123456789abcdefghijABCDEFGHIJ012345"),
+            format!("AKIA{}", "IABN48B5MPWWYTUG"),
+            "password=hunter2hunter2".to_string(),
+        ] {
+            let all = full(&token);
+            let text = format!("pushed with {all} today");
+            let out = r.redact(&text);
+            assert!(out.contains(REDACTED), "{text:?}: {out:?}");
+            assert!(!out.contains(&full("23456789")), "{out:?}");
+            assert!(!hidden(&r, &format!("{text}\u{200b}")).contains(&full("23456789")));
+            // Partly full width.
+            let half = format!("{}{}", &token[..4], full(&token[4..]));
+            assert!(!r.redact(&half).contains(&full("23456789")), "{half:?}");
+        }
+        assert_eq!(
+            r.redact(&format!(
+                "x ｇｈｐ＿{} y",
+                full("0123456789abcdefghijABCDEFGHIJ012345")
+            )),
+            format!("x {REDACTED} y")
+        );
     }
 
     #[test]

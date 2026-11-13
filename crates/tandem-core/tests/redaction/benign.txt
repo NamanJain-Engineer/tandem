@@ -1253,3 +1253,7 @@ refresh_token_expires=2025-10-30T18:00:00Z
 secret_rotated_at=2025-10-30T18:00:00Z
 api_key_created_at: 2024-01-01T00:00:00Z
   tokenExpiresAt: "2025-10-30T18:00:00.000Z",
+Trasa: Gdańsk-Oliwa-Przymorze-Uniwersytet, potem Sopot.
+Pociąg do Mińsk-Mazowiecki-Dworzec-Kolejowy odjeżdża o 7:15.
+使用说明：运行 cargo build --release，然后推送到仓库。
+設定：キー＝値、トークン：未設定（ｏｐｔｉｏｎａｌ）

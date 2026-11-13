@@ -239,14 +239,28 @@ impl Pattern {
     /// The first match in `s`.
     #[cfg(test)]
     pub(crate) fn find<'h>(&self, s: &'h str) -> Option<Hit<'h>> {
-        self.search_all(s, Input::new(s), 1, false)
+        self.search_all(s, Input::new(s), 1, false, false)
             .pop()
             .map(|c| c.hit)
     }
 
     /// Every match in `s`, as `regex::Regex::find_iter` finds them.
     pub(crate) fn find_iter<'h>(&self, s: &'h str) -> impl Iterator<Item = Hit<'h>> {
-        self.search_all(s, Input::new(s), usize::MAX, false)
+        self.search_all(s, Input::new(s), usize::MAX, false, false)
+            .into_iter()
+            .map(|c| c.hit)
+    }
+
+    /// Every match in `s`, where the search after each one starts at the
+    /// last word that starts inside it (ASCII's word, as the rules' `\b`
+    /// is), not at its end. A match that ran into the next token's start
+    /// ended inside that token, and the rest of it came back:
+    /// `eyJaaaaaaaa.bbbbbbbb.<a JWT>` hid only the JWT's header (D-2574).
+    /// What's read again is the match's tail after its last word start,
+    /// which holds no word start, so the next match reads it at most once
+    /// more, and the scan stays in line with the text.
+    pub(crate) fn tokens<'h>(&self, s: &'h str) -> impl Iterator<Item = Hit<'h>> {
+        self.search_all(s, Input::new(s), usize::MAX, false, true)
             .into_iter()
             .map(|c| c.hit)
     }
@@ -254,26 +268,29 @@ impl Pattern {
     /// The first match at or after `at`, with its groups, as
     /// `regex::Regex::captures_at` reads it.
     pub(crate) fn captures_at<'h>(&self, s: &'h str, at: usize) -> Option<Caps<'h>> {
-        self.search_all(s, Input::new(s).range(at..), 1, true).pop()
+        self.search_all(s, Input::new(s).range(at..), 1, true, false)
+            .pop()
     }
 
     /// Every match in `s` with its groups, as
     /// `regex::Regex::captures_iter` reads them.
     pub(crate) fn captures_iter<'h>(&self, s: &'h str) -> std::vec::IntoIter<Caps<'h>> {
-        self.search_all(s, Input::new(s), usize::MAX, true)
+        self.search_all(s, Input::new(s), usize::MAX, true, false)
             .into_iter()
     }
 
     /// Up to `limit` matches in `input`, from its start on, with their
     /// groups if `grouped`. The lazy DFA finds them while it can: after it
     /// gives up, the rest of the text goes to the slow engine, and after a
-    /// quit, that search alone.
+    /// quit, that search alone. With `restart`, the search after a match
+    /// starts where [`Pattern::tokens`] says.
     fn search_all<'h>(
         &self,
         s: &'h str,
         input: Input<'_>,
         limit: usize,
         grouped: bool,
+        restart: bool,
     ) -> Vec<Caps<'h>> {
         let grouped = grouped && self.grouped;
         let mut cache = Taken {
@@ -285,7 +302,7 @@ impl Pattern {
             },
         };
         let mut lazy = true;
-        let mut searcher = Searcher::new(input);
+        let mut searcher = Searcher::new(input.clone());
         let mut found = Vec::new();
         while found.len() < limit {
             // Groups the slow engine read with the match it found.
@@ -320,6 +337,12 @@ impl Pattern {
                 _ => None,
             };
             found.push(Caps { hit, caps });
+            if restart {
+                let at = last_word_start(s, hit.start, hit.end);
+                if at > hit.start && at < hit.end {
+                    searcher = Searcher::new(input.clone().range(at..));
+                }
+            }
         }
         found
     }
@@ -333,6 +356,17 @@ impl Pattern {
         self.slow.search_captures(&input, &mut caps);
         caps
     }
+}
+
+/// The last place in `s[start..end]` past `start` where an ASCII word
+/// starts, or `end`.
+fn last_word_start(s: &str, start: usize, end: usize) -> usize {
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let bytes = s.as_bytes();
+    (start + 1..end)
+        .rev()
+        .find(|&i| word(bytes[i]) && !word(bytes[i - 1]))
+        .unwrap_or(end)
 }
 
 /// A match and its groups, read as `regex::Captures` reads them.
@@ -583,6 +617,41 @@ mod tests {
         assert_eq!(
             spans(rule.find_iter(text).map(|m| (m.start(), m.end()))),
             expected
+        );
+    }
+
+    #[test]
+    fn f_tl_02_1_no_rule_quits_on_text_outside_ascii() {
+        // A rule with Unicode's `\b` sent every search on text outside
+        // ASCII to the slow engine. The rules' boundaries are ASCII's, and
+        // the redactor reads Unicode's at a match's start (D-2572).
+        let r = super::super::Redactor::new();
+        let text = "é使用 ghp_0123456789abcdefghijABCDEFGHIJ0123推送 Gdańsk-Oliwa-Przymorze \
+                    password = 'Zx81kQ02pLm4wR' 中 session é Xk9qL2mP7vR4tY8wZ1nB5cD3 Bearer é";
+        for rule in r.rules.iter().chain(&r.written_rules) {
+            let mut cache = rule.re.lazy.create_cache();
+            let found = rule.re.lazy.try_search(&mut cache, &Input::new(text));
+            assert!(found.is_ok(), "{}: {found:?}", rule.re.as_str());
+        }
+    }
+
+    #[test]
+    fn f_tl_02_1_a_search_after_a_token_starts_at_its_last_word() {
+        // So a token a decoy ran into is read whole (D-2574), and each
+        // byte is read again at most once.
+        let pattern = spec(r"eyJ");
+        let rule = Pattern::new(&pattern).expect("the rule builds");
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0";
+        let text = format!("eyJaaaaaaaa.bbbbbbbb.{jwt} and eyJcccccccc.dddddddd.eeeeeeee");
+        let found = spans(rule.tokens(&text).map(|m| (m.start(), m.end())));
+        let real = text.find("eyJhbG").expect("the JWT");
+        assert_eq!(found.len(), 3, "{found:?}");
+        assert_eq!(found[1], (real, real + jwt.len()));
+        // Without a word inside, it's `find_iter`.
+        let plain = "eyJaaaaaaaa.bbbbbbbb.cccccccc eyJdddddddd.eeeeeeee.ffffffff";
+        assert_eq!(
+            spans(rule.tokens(plain).map(|m| (m.start(), m.end()))),
+            spans(rule.find_iter(plain).map(|m| (m.start(), m.end())))
         );
     }
 
