@@ -116,7 +116,9 @@ describe("the interactive demo's page furniture", () => {
     await show("thread", <div data-testid="composer" />);
     expect(useWorkspaces.getState().activeId).toBe(DEMO_WAITING.workspaceId);
     expect(hint()[0]?.textContent).toContain("Press Enter to send this task.");
-    expect(hint()[0]?.textContent).toContain("3 of 4");
+    // The count is the visitor's progress, so a hint out of turn takes the
+    // next step, and going back to her pane doesn't count back (D-2575).
+    expect(hint()[0]?.textContent).toContain("2 of 4");
     await show(
       "bea-again",
       <>
@@ -125,6 +127,7 @@ describe("the interactive demo's page furniture", () => {
       </>,
     );
     expect(hint()[0]?.textContent).toContain("Press Enter to let");
+    expect(hint()[0]?.textContent).toContain("2 of 4");
     // Answered: in Code mode the task waits one switch away.
     asking("working");
     expect(hint()).toHaveLength(1);
@@ -154,6 +157,71 @@ describe("the interactive demo's page furniture", () => {
     act(() => useThreads.getState().toggleChanges(c.firstThread));
     expect(screen.queryByTestId("coachmark")).toBeNull();
     expect(localStorage.getItem(HINT_KEY)).toBe("1");
+  });
+
+  it("DESIGN-5.2.2 demo coach: the step count never goes back as the visitor moves between views", async () => {
+    core = new DemoCore(0);
+    const c = core;
+    const scene = (name: string, nodes: React.ReactNode) => (
+      <UiProvider theme="dark">
+        <DemoCoach core={c} />
+        <div key={name}>{nodes}</div>
+      </UiProvider>
+    );
+    const radio = <button type="button" role="radio" aria-checked="false" value="thread" />;
+    const rail = (
+      <>
+        <div data-testid="worktree-row" data-branch={DEMO_WAITING.branch} />
+        {radio}
+      </>
+    );
+    const bea = (
+      <>
+        <div data-testid="pane" data-pane-id={DEMO_WAITING.paneId} />
+        {radio}
+      </>
+    );
+    const thread = <div data-testid="composer" />;
+    // Her pane hasn't reported yet (the walk above leaves her working).
+    act(() => useStatus.setState({ records: {} }));
+    const view = render(scene("rail", rail));
+    const steps: number[] = [];
+    // The hint on screen and its step, kept in the order they came.
+    const show = async (name: string, nodes: React.ReactNode, text: string) => {
+      view.rerender(scene(name, nodes));
+      await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+      const shown = screen.getByTestId("coachmark").textContent ?? "";
+      expect(shown).toContain(text);
+      const step = /(\d) of 4/.exec(shown)?.[1];
+      steps.push(Number(step));
+    };
+    // Thread mode before opening her, then back in Code.
+    await show("thread-first", thread, "Press Enter to send this task.");
+    await show("rail-again", rail, `${DEMO_WAITING.name} is waiting on you.`);
+    // Opened, she asks; left unanswered for Thread mode, then back on her
+    // pane (the review of 6d864fa1..134f7716: 3 of 4, then 2 of 4).
+    act(() =>
+      useStatus.setState({
+        records: {
+          [paneKey(DEMO_WAITING.paneId)]: {
+            key: paneKey(DEMO_WAITING.paneId),
+            status: "waiting",
+            reason: null,
+            since: 1,
+            ts: 1,
+            tool: null,
+            title: null,
+            preview: null,
+          },
+        },
+      }),
+    );
+    act(() => useWorkspaces.setState({ activeId: DEMO_WAITING.workspaceId }));
+    await show("bea", bea, "Press Enter to let");
+    await show("thread", thread, "Press Enter to send this task.");
+    await show("bea-again", bea, "Press Enter to let");
+    // The count is the visitor's progress: the steps done, and this one.
+    expect(steps).toEqual([1, 1, 2, 2, 2]);
   });
 
   it("DESIGN-5.2.1 the demo opens in Code mode; Thread mode first shows the thread with its message ready", () => {

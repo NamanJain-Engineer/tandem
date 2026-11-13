@@ -312,8 +312,14 @@ fn common_lines<T: PartialEq>(a: &[T], b: &[T]) -> usize {
 /// the text: symbolic links aren't followed, since nothing reads the disk.
 /// An absolute path in the other system's form (a Windows one here, a Unix
 /// one on Windows) is kept as given: this computer can't join or walk it.
+/// A Linux folder's paths (a WSL thread's, on a Windows host too) are
+/// worked out as Linux does, whatever this computer is
+/// ([`linux_absolute`]).
 pub fn absolute(cwd: &std::path::Path, path: &str) -> String {
     use std::path::{Component, PathBuf};
+    if let Some(folder) = cwd.to_str().filter(|c| c.starts_with('/')) {
+        return linux_absolute(folder, path);
+    }
     let p = std::path::Path::new(path);
     if is_absolute(path) && !p.is_absolute() {
         return path.to_string();
@@ -337,6 +343,32 @@ pub fn absolute(cwd: &std::path::Path, path: &str) -> String {
         }
     }
     out.to_string_lossy().into_owned()
+}
+
+/// `path` as an absolute path under the Linux folder `cwd`, in text alone:
+/// joined with `/`, with `.`, `..` (never above the root) and repeated or
+/// trailing slashes worked out. A backslash is part of a name, as on Linux
+/// (D-3093), and a Windows path is kept as given.
+pub fn linux_absolute(cwd: &str, path: &str) -> String {
+    if windows_path(path) {
+        return path.to_string();
+    }
+    let joined = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("{cwd}/{path}")
+    };
+    let mut parts: Vec<&str> = Vec::new();
+    for part in joined.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            name => parts.push(name),
+        }
+    }
+    format!("/{}", parts.join("/"))
 }
 
 /// Whether two absolute paths name one file. On a Windows path (a drive
@@ -499,6 +531,40 @@ mod tests {
         assert_eq!(absolute(cwd, "src/../a.ts"), "/work/shop/a.ts");
         #[cfg(windows)]
         assert_eq!(absolute(cwd, "/work/a.ts"), "/work/a.ts");
+    }
+
+    #[test]
+    fn f_th_12_6_a_linux_folders_relative_path_joins_it_with_slashes_on_any_host() {
+        // A WSL thread on a Windows host runs in a Linux folder: its
+        // engine's relative paths join that folder with `/`, as on Linux,
+        // and its absolute ones are walked the same way, not with the
+        // host's backslashes (the review of 6d864fa1..134f7716).
+        let cases = [
+            ("src/a.ts", "/home/bea/shop/src/a.ts"),
+            ("./src/../b.ts", "/home/bea/shop/b.ts"),
+            ("src//c.ts/", "/home/bea/shop/src/c.ts"),
+            ("/etc/hosts", "/etc/hosts"),
+            ("/srv/./x/../y.ts", "/srv/y.ts"),
+            // Never above the root.
+            ("../../../../up.ts", "/up.ts"),
+            // A backslash is part of a Linux file's name (D-3093).
+            (r"src\a.ts", r"/home/bea/shop/src\a.ts"),
+            // A Windows path isn't joined under a Linux folder.
+            (r"C:\work\a.ts", r"C:\work\a.ts"),
+        ];
+        for (path, want) in cases {
+            // The join itself, which no host's paths take part in...
+            assert_eq!(linux_absolute("/home/bea/shop", path), want, "{path}");
+            assert_eq!(linux_absolute("/home/bea/shop/", path), want, "{path}");
+            // ...and what any host makes of a Linux folder's path.
+            assert_eq!(
+                absolute(std::path::Path::new("/home/bea/shop"), path),
+                want,
+                "{path}"
+            );
+        }
+        assert_eq!(linux_absolute("/", ".."), "/");
+        assert_eq!(linux_absolute("/home/bea", ""), "/home/bea");
     }
 
     #[test]

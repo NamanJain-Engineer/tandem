@@ -389,38 +389,123 @@ pub fn push_capped(buf: &mut Vec<u8>, chunk: &[u8], cap: usize) -> bool {
     false
 }
 
-/// Reads `from` to its end into `into`, capped (see [`push_capped`]).
-async fn read_capped(
-    mut from: impl tokio::io::AsyncRead + Unpin,
-    into: Arc<Mutex<(Vec<u8>, bool)>>,
-) {
+/// A check's output as it streams in: redacted first, then its last `cap`
+/// bytes kept, so a secret across the cut is hidden whole, not cut in two
+/// with half of it left to find. Once cut, the kept text starts on the next
+/// full line, so no fragment of what a later, stricter reading (the review
+/// queue's, D-3036) would hide stays at the edge.
+pub struct Capture {
+    redactor: tandem_core::redact::StreamRedactor<'static>,
+    /// The start of a character a read cut, held for the next read.
+    partial: Vec<u8>,
+    kept: Vec<u8>,
+    cut: bool,
+    cap: usize,
+}
+
+impl Capture {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            redactor: Redactor::global().stream(),
+            partial: Vec::new(),
+            kept: Vec::new(),
+            cut: false,
+            cap,
+        }
+    }
+
+    pub fn push(&mut self, chunk: &[u8]) {
+        self.partial.extend_from_slice(chunk);
+        let text = decode(&mut self.partial);
+        let clean = self.redactor.push(&text);
+        self.cut |= push_capped(&mut self.kept, clean.as_bytes(), self.cap);
+    }
+
+    /// What was kept, marked when earlier output was cut.
+    pub fn finish(self) -> String {
+        let Capture {
+            mut redactor,
+            partial,
+            mut kept,
+            mut cut,
+            cap,
+        } = self;
+        let rest = redactor.push(&String::from_utf8_lossy(&partial));
+        cut |= push_capped(&mut kept, rest.as_bytes(), cap);
+        cut |= push_capped(&mut kept, redactor.finish().as_bytes(), cap);
+        if !cut {
+            return String::from_utf8_lossy(&kept).into_owned();
+        }
+        // The cut's line is partial: start at the next one, or, in one long
+        // line, at the next character.
+        let from = match kept.iter().position(|b| *b == b'\n') {
+            Some(nl) => nl + 1,
+            None => kept
+                .iter()
+                .position(|b| (*b & 0xC0) != 0x80)
+                .unwrap_or(kept.len()),
+        };
+        format!(
+            "[… earlier output cut]\n{}",
+            String::from_utf8_lossy(&kept[from..])
+        )
+    }
+}
+
+/// The text in `buf`, with invalid bytes as U+FFFD; a character still
+/// incomplete at its end stays in `buf` for the next read.
+fn decode(buf: &mut Vec<u8>) -> String {
+    let mut out = String::new();
+    let mut at = 0;
+    while at < buf.len() {
+        match std::str::from_utf8(&buf[at..]) {
+            Ok(text) => {
+                out.push_str(text);
+                at = buf.len();
+            }
+            Err(e) => {
+                let good = at + e.valid_up_to();
+                out.push_str(&String::from_utf8_lossy(&buf[at..good]));
+                match e.error_len() {
+                    Some(n) => {
+                        out.push('\u{FFFD}');
+                        at = good + n;
+                    }
+                    None => {
+                        at = good;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    buf.drain(..at);
+    out
+}
+
+/// Reads `from` to its end into `into` (see [`Capture`]).
+async fn read_capped(mut from: impl tokio::io::AsyncRead + Unpin, into: Arc<Mutex<Capture>>) {
     use tokio::io::AsyncReadExt;
     let mut chunk = vec![0u8; 8192];
     loop {
         match from.read(&mut chunk).await {
             Ok(0) | Err(_) => return,
-            Ok(n) => {
-                let mut b = into.lock().unwrap_or_else(|e| e.into_inner());
-                let cut = push_capped(&mut b.0, &chunk[..n], OUTPUT_CAP);
-                b.1 |= cut;
-            }
+            Ok(n) => into
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(&chunk[..n]),
         }
     }
 }
 
-fn captured(buf: &Mutex<(Vec<u8>, bool)>) -> String {
-    let b = buf.lock().unwrap_or_else(|e| e.into_inner());
-    let text = String::from_utf8_lossy(&b.0).into_owned();
-    if b.1 {
-        format!("[… earlier output cut]\n{text}")
-    } else {
-        text
-    }
+fn captured(buf: &Mutex<Capture>) -> String {
+    let mut b = buf.lock().unwrap_or_else(|e| e.into_inner());
+    std::mem::replace(&mut *b, Capture::new(OUTPUT_CAP)).finish()
 }
 
 /// Runs a check's process (here, or the ssh that runs it on a host) in its
-/// own process group, stdout and stderr together, keeping the last
-/// [`OUTPUT_CAP`] bytes; `None` exit when it timed out or was stopped.
+/// own process group, stdout and stderr together, redacted as they come and
+/// keeping the last [`OUTPUT_CAP`] bytes of each ([`Capture`]); `None` exit when it timed out or was stopped.
 /// Killing a host check's ssh ends it there too: `tandem-host run` ends the
 /// check's group once its input closes.
 pub async fn run_prepared(
@@ -453,8 +538,8 @@ pub async fn run_prepared(
         }
     }
     let (out, err) = (
-        Arc::new(Mutex::new((Vec::new(), false))),
-        Arc::new(Mutex::new((Vec::new(), false))),
+        Arc::new(Mutex::new(Capture::new(OUTPUT_CAP))),
+        Arc::new(Mutex::new(Capture::new(OUTPUT_CAP))),
     );
     let readers = (
         child
@@ -1386,6 +1471,81 @@ mod tests {
         let mut buf = Vec::new();
         assert!(push_capped(&mut buf, big.as_bytes(), OUTPUT_CAP));
         assert_eq!(buf.len(), OUTPUT_CAP);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn f_wt_07_f_tk_08_1_a_key_across_the_64_kib_edge_never_arrives_in_part() {
+        // The check prints a key, then exactly enough long lines (fewer
+        // than TAIL_LINES) that its last OUTPUT_CAP bytes start halfway
+        // through the key. The first key the redactor knows as written;
+        // the second only past its zero-width space, as the review queue's
+        // redaction reads it (D-3036).
+        let tmp = tempfile::tempdir().expect("tmp");
+        let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+        for key in [
+            "ghp_0123456789abcdefghijABCDEFGHIJ012345",
+            "ghp_0123456789\u{200b}abcdefghijABCDEFGHIJ012345",
+        ] {
+            let half = "ghijABCDEFGHIJ012345\n".len();
+            let mut filler = String::new();
+            while filler.len() + 400 <= OUTPUT_CAP - half {
+                filler.push_str(&format!("ok {}\n", "x".repeat(396)));
+            }
+            let pad = OUTPUT_CAP - half - filler.len() - "done\n".len();
+            filler.push_str(&format!("{}\ndone\n", "y".repeat(pad - 1)));
+            let text = format!("pushed with {key}\n{filler}");
+            // The raw last OUTPUT_CAP bytes start in the key's second half.
+            assert!(text.as_bytes()[text.len() - OUTPUT_CAP..].starts_with(b"ghijABCD"));
+            std::fs::write(tmp.path().join("out.txt"), &text).expect("w");
+            let (exit, out) = run_check(
+                "cat out.txt",
+                tmp.path(),
+                &env,
+                Duration::from_secs(10),
+                None,
+            )
+            .await;
+            assert_eq!(exit, Some(0));
+            assert!(out.starts_with("[… earlier output cut]\n"), "{out:.80}");
+            assert!(out.trim_end().ends_with("done"));
+            for shown in [
+                // Best of N's check, and the review and merge queues'.
+                Redactor::global()
+                    .redact(&tail(&out, TAIL_LINES))
+                    .into_owned(),
+                tandem_core::untrusted::redacted(&out),
+            ] {
+                assert!(!shown.contains("CDEFGHIJ012345"), "{:.120}", shown);
+                assert!(shown.contains("ok xxx") && shown.trim_end().ends_with("done"));
+            }
+        }
+    }
+
+    #[test]
+    fn f_wt_07_f_tk_08_1_capture_redacts_across_reads_before_it_cuts() {
+        let key = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
+        // Reads of 7 bytes split the key, and "é", between them.
+        let text = format!("café {key} sent\nend é\n");
+        let mut c = Capture::new(1024);
+        for chunk in text.as_bytes().chunks(7) {
+            c.push(chunk);
+        }
+        assert_eq!(c.finish(), "café [REDACTED] sent\nend é\n");
+        // Cut through the key's line: the next full line on, with nothing of
+        // the key; in one long line, from the next whole character.
+        let mut c = Capture::new(16);
+        for chunk in text.as_bytes().chunks(7) {
+            c.push(chunk);
+        }
+        assert_eq!(c.finish(), "[… earlier output cut]\nend é\n");
+        let mut c = Capture::new(4);
+        c.push("abcdéfgh".as_bytes());
+        assert_eq!(c.finish(), "[… earlier output cut]\nfgh");
+        // Bytes that aren't text stay unreadable, not dropped.
+        let mut c = Capture::new(64);
+        c.push(b"a\xffb\xc3");
+        assert_eq!(c.finish(), "a\u{FFFD}b\u{FFFD}");
     }
 
     #[test]

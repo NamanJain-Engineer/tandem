@@ -218,6 +218,9 @@ export function DemoCoach({ core }: { core: CoachCore }) {
   const hint = HINTS[index];
   const at = hint ? onScreen[hint.id] : null;
   if (!at) return null;
+  // The visitor's progress, not the hint's place in the list: a hint shown
+  // out of turn takes the next step, so the count never goes back (D-2575).
+  const step = HINTS.filter((h) => done.has(h.id) || now[h.id]).length + 1;
   const hide = () => {
     store();
     setHidden(true);
@@ -231,7 +234,7 @@ export function DemoCoach({ core }: { core: CoachCore }) {
       label={t("demo.coach.label")}
       footer={
         <>
-          <span className="tabular-nums">{t("demo.coach.step", { n: index + 1, total: HINTS.length })}</span>
+          <span className="tabular-nums">{t("demo.coach.step", { n: step, total: HINTS.length })}</span>
           <Button size="sm" variant="ghost" onClick={hide}>
             {t("demo.coach.hide")}
           </Button>
