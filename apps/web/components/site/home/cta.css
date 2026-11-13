@@ -1,0 +1,104 @@
+/* #cta (home): the closing band. The rings draw in as the band scrolls into
+   view (a stroke dash on the band's view timeline, D-1842's draw-in), over
+   the band's one soft bloom. Without scroll timelines, or under reduced
+   motion, they're simply drawn. */
+
+.cta {
+  view-timeline: --cta-band block;
+}
+
+.cta-bloom {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* One bloom, centred on the rings' lens: teal meets sky. */
+  background:
+    radial-gradient(
+      30rem 22rem at 48% 8rem,
+      color-mix(in oklab, var(--site-glow-a) var(--cta-glow, 100%), transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      26rem 20rem at 54% 7rem,
+      color-mix(in oklab, var(--site-glow-b) var(--cta-glow, 100%), transparent),
+      transparent 70%
+    );
+}
+/* In the light theme the light is a shade, not a glow. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .cta-bloom {
+    --cta-glow: 45%;
+  }
+}
+:root[data-theme="light"] .cta-bloom {
+  --cta-glow: 45%;
+}
+
+.cta-rings {
+  width: clamp(9.5rem, 7rem + 6vw, 12.5rem);
+  height: auto;
+  overflow: visible;
+  margin-bottom: 0.5rem;
+}
+
+.cta-ring {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+}
+
+/* The primary action, a touch more tactile here: its glow gathers on hover. */
+.cta-primary {
+  position: relative;
+}
+
+@keyframes cta-ring-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes cta-lens-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes cta-bloom-in {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .cta-ring {
+      animation: cta-ring-draw linear both;
+      animation-timeline: --cta-band;
+      animation-range: entry 15% cover 42%;
+    }
+    .cta-ring-2 {
+      animation-range: entry 25% cover 50%;
+    }
+    .cta-bloom {
+      animation: cta-bloom-in linear both;
+      animation-timeline: --cta-band;
+      animation-range: entry 20% cover 50%;
+    }
+    /* The lens lights once the rings have nearly closed. */
+    .cta-lens {
+      animation: cta-lens-in linear both;
+      animation-timeline: --cta-band;
+      animation-range: cover 34% cover 52%;
+    }
+  }
+}

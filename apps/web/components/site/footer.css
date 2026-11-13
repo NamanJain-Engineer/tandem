@@ -1,0 +1,98 @@
+/* The site's footer: quiet, well spaced, tidy columns. Tokens only. */
+
+.site-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.5rem 1.5rem;
+  padding-block: 4rem 3rem;
+}
+.site-footer-brand {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+@media (min-width: 48rem) {
+  .site-footer-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .site-footer-grid {
+    grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr));
+    padding-block: 5rem 3.5rem;
+  }
+  .site-footer-brand {
+    grid-column: auto;
+  }
+}
+
+.site-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.site-footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  font-size: var(--text-copy-sm);
+  color: var(--tn-text-muted);
+  overflow-wrap: anywhere;
+  transition: color var(--dur-base) var(--tn-ease-out);
+}
+.site-footer-link:hover {
+  color: var(--tn-text);
+}
+
+.site-footer-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.75rem;
+  padding-inline: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--tn-text-muted);
+  background:
+    linear-gradient(var(--site-glass), var(--site-glass)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  font-variant-numeric: tabular-nums;
+  transition: color var(--dur-base) var(--tn-ease-out);
+}
+.site-footer-version:hover {
+  color: var(--tn-text);
+}
+.site-footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tn-text-subtle);
+}
+
+.site-footer-base {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-block: 1.5rem 2rem;
+  border-top: 1px solid var(--site-line);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  color: var(--tn-text-subtle);
+}
+.site-footer-base .site-footer-link {
+  font-size: inherit;
+  min-height: 1.5rem;
+}
+@media (min-width: 48rem) {
+  .site-footer-base {
+    flex-direction: row;
+    align-items: center;
+    gap: 1.5rem;
+  }
+}

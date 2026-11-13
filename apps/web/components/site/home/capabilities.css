@@ -1,0 +1,465 @@
+/* #capabilities (home): the capability bento. Each tile is a card lit by the
+   pointer (light.css) over a small, still picture made of the app's own UI.
+   Tokens only; the hover lift is a 2 px translate, off under reduced motion. */
+
+.cap-bento {
+  --cap-ui: color-mix(in oklab, var(--tn-text) 4%, var(--site-card));
+  --cap-ui-line: var(--site-line-strong);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 40rem) {
+  .cap-bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .cap-bento {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .cap-bento > .cap-wide {
+    grid-column: span 2;
+  }
+}
+.cap-bento > li {
+  display: flex;
+  min-width: 0;
+}
+
+.cap-tile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem 1.125rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)) padding-box,
+    linear-gradient(var(--site-card), var(--site-card)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  box-shadow: var(--site-elev-1);
+  /* light falls on the picture from above */
+  background-image:
+    radial-gradient(90% 70% at 50% 0%, var(--site-fill-top), transparent 70%),
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)),
+    linear-gradient(var(--site-card), var(--site-card)),
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom));
+  background-origin: padding-box, padding-box, padding-box, border-box;
+  background-clip: padding-box, padding-box, padding-box, border-box;
+  transition:
+    box-shadow var(--dur-slow) var(--tn-ease-out),
+    translate var(--dur-slow) var(--tn-ease-out);
+}
+.cap-tile:hover,
+.cap-tile:focus-visible {
+  box-shadow: var(--site-elev-2);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cap-tile:hover {
+    translate: 0 -2px;
+  }
+}
+
+.cap-art {
+  display: flex;
+  align-items: center;
+  height: 5.75rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--tn-text-muted);
+}
+.cap-art > * {
+  width: 100%;
+  min-width: 0;
+}
+/* One column on a phone: the pictures keep their own height. */
+@media (max-width: 39.99rem) {
+  .cap-art {
+    height: auto;
+    min-height: 4rem;
+  }
+}
+
+.cap-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: var(--text-copy-sm);
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--tn-text);
+}
+.cap-name > svg {
+  margin-top: 0.1875rem;
+}
+.cap-arrow {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  color: var(--tn-text-subtle);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--tn-ease-out),
+    translate var(--dur-base) var(--tn-ease-out);
+}
+.cap-tile:hover .cap-arrow,
+.cap-tile:focus-visible .cap-arrow {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cap-tile:hover .cap-arrow {
+    translate: 2px 0;
+  }
+}
+/* Touch has no hover: the arrow stays, quietly. */
+@media (hover: none) {
+  .cap-arrow {
+    opacity: 1;
+  }
+}
+
+/* ---- shared fragments ---- */
+.cap-meta {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--tn-text-subtle);
+  white-space: nowrap;
+}
+.cap-strong {
+  color: var(--tn-text);
+  font-weight: 500;
+}
+.cap-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 1.875rem;
+  padding-inline: 0.625rem;
+  border-radius: 6px;
+  background: var(--cap-ui);
+  box-shadow: inset 0 0 0 1px var(--cap-ui-line);
+  white-space: nowrap;
+}
+.cap-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cap-row-quiet {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--site-line);
+  color: var(--tn-text-subtle);
+}
+
+/* Find work: the palette with a query and two results. */
+.cap-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  border-radius: 10px;
+  background: var(--cap-ui);
+  box-shadow:
+    inset 0 1px 0 var(--site-edge-hi),
+    inset 0 0 0 1px var(--cap-ui-line),
+    var(--site-elev-1);
+}
+.cap-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.75rem;
+  padding-inline: 0.5rem;
+  border-bottom: 1px solid var(--site-line);
+  margin-bottom: 0.125rem;
+  color: var(--tn-text-subtle);
+}
+.cap-typed {
+  color: var(--tn-text);
+}
+.cap-caret {
+  width: 1px;
+  height: 0.875rem;
+  margin-inline-start: -0.375rem;
+  background: var(--tn-text);
+}
+.cap-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 1.625rem;
+  padding-inline: 0.5rem;
+  border-radius: 6px;
+  color: var(--tn-text-muted);
+  white-space: nowrap;
+}
+.cap-result.is-active {
+  background: color-mix(in oklab, var(--tn-text) 7%, transparent);
+  color: var(--tn-text);
+}
+.cap-result-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cap-result .cap-meta {
+  margin-inline-start: auto;
+}
+
+/* Dictate: the held chord and the voice. */
+.cap-dictate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+.cap-chord {
+  display: inline-flex;
+  gap: 0.375rem;
+}
+.cap-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.875rem;
+  min-width: 2.5rem;
+  padding-inline: 0.5rem;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--tn-text);
+  background: linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)), var(--tn-kbd-bg);
+  /* held: the cap sits 1 px down, its bottom lip gone */
+  box-shadow:
+    inset 0 1px 0 var(--site-edge-hi),
+    inset 0 0 0 1px var(--site-line-strong),
+    inset 0 -1px 0 var(--site-line);
+  translate: 0 1px;
+}
+.cap-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 1.25rem;
+}
+.cap-wave > span {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tn-text-subtle);
+}
+
+/* Worktree lanes: three branches, one merged back. */
+.cap-lanes {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+.cap-lane-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.cap-lane-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--tn-text-muted);
+}
+.cap-lane-main {
+  color: var(--tn-text-subtle);
+}
+.cap-lane-main svg {
+  margin-inline: 2px;
+}
+.cap-lane-graph {
+  width: 100%;
+  height: 5.25rem;
+  overflow: visible;
+}
+.cap-lane-line {
+  stroke: var(--site-line-strong);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.cap-lane-line.is-lit {
+  stroke: color-mix(in oklab, var(--tn-text) 45%, transparent);
+}
+.cap-node {
+  fill: var(--site-card);
+  stroke: var(--site-line-strong);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.cap-node.is-lit {
+  stroke: color-mix(in oklab, var(--tn-text) 55%, transparent);
+}
+.cap-node.is-merge {
+  fill: var(--tn-text-muted);
+  stroke: var(--site-card);
+  stroke-width: 2;
+}
+
+/* Previews: two worktrees' apps, each on its own port. */
+.cap-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.cap-browser {
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--cap-ui);
+  box-shadow:
+    inset 0 1px 0 var(--site-edge-hi),
+    inset 0 0 0 1px var(--cap-ui-line);
+}
+.cap-browser-bar {
+  display: flex;
+  align-items: center;
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  border-bottom: 1px solid var(--site-line);
+}
+.cap-port {
+  margin-inline-start: auto;
+  padding-inline-start: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--tn-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cap-url {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--tn-text-subtle);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cap-browser-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  padding: 0.625rem 0.625rem 0.75rem;
+}
+.cap-sk {
+  display: block;
+  height: 0.3125rem;
+  width: 82%;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--tn-text) 12%, transparent);
+}
+.cap-sk-title {
+  height: 0.5rem;
+  width: 55%;
+  background: color-mix(in oklab, var(--tn-text) 26%, transparent);
+}
+.cap-sk-short {
+  width: 64%;
+}
+.cap-sk-button {
+  height: 0.75rem;
+  width: 34%;
+  margin-top: 0.25rem;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--tn-text) 18%, transparent);
+}
+/* The second worktree's version moves its button: that's what you compare. */
+.cap-browser[data-variant="b"] .cap-sk-button {
+  align-self: flex-end;
+  width: 42%;
+}
+
+/* Restore: panes back, agents paused. */
+.cap-pane {
+  color: var(--tn-text-muted);
+}
+
+/* Plugins: a read that ran, a write that asks. */
+.cap-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.25rem 0.25rem 0.375rem;
+  border-radius: 8px;
+  background: var(--cap-ui);
+  box-shadow:
+    inset 0 1px 0 var(--site-edge-hi),
+    inset 0 0 0 1px var(--cap-ui-line),
+    var(--site-elev-1);
+}
+.cap-ask .cap-row {
+  background: transparent;
+  box-shadow: none;
+}
+.cap-ask .cap-row .cap-meta {
+  margin-inline-start: auto;
+}
+.cap-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  padding-inline: 0.375rem;
+}
+.cap-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  padding-inline: 0.625rem;
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--tn-text-muted);
+  box-shadow: inset 0 0 0 1px var(--site-line-strong);
+}
+/* Neutral, not teal: on the site the accent is the page's next step. */
+.cap-btn-strong {
+  color: var(--tn-text);
+  background: color-mix(in oklab, var(--tn-text) 10%, transparent);
+}
+
+/* Files, git and a browser: a diff in the editor. */
+.cap-diff {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.375rem;
+  background: var(--cap-ui);
+  box-shadow: inset 0 0 0 1px var(--cap-ui-line);
+}
+.cap-diff-file {
+  padding-inline: 0.5rem;
+  color: var(--tn-text-subtle);
+  border-bottom: 1px solid var(--site-line);
+}
+.cap-diff-line {
+  padding-inline: 0.5rem;
+  white-space: pre;
+  color: var(--tn-text-muted);
+}
+.cap-diff-line.is-del {
+  color: var(--tn-diff-del-fg);
+  background: var(--tn-diff-del-bg);
+}
+.cap-diff-line.is-add {
+  color: var(--tn-diff-add-fg);
+  background: var(--tn-diff-add-bg);
+}

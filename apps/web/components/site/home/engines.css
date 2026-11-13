@@ -1,0 +1,163 @@
+/* #engines (home): the engines drift past in two slow rows (D-1842's "the
+   engines' slow orbit", as rows). Tokens only; transform only; the rows hold
+   still on hover, on Pause and under reduced motion, where they wrap into a
+   still grid. */
+
+.engine-marquee {
+  /* Full bleed: the rows run to the page's edges and fade there. The section
+     clips the overflow (overflow-x: clip), so the page never scrolls sideways. */
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+.engine-row {
+  overflow: hidden;
+  /* room for the chips' soft shadow */
+  padding-block: 2px 4px;
+}
+
+.engine-track {
+  display: flex;
+  width: max-content;
+}
+
+.engine-set {
+  display: flex;
+  gap: 0.75rem;
+  padding-inline-end: 0.75rem;
+}
+
+/* The second row starts half a chip along, so the rows never line up. */
+.engine-row[data-dir="right"] .engine-track {
+  margin-inline-start: -5.5rem;
+}
+
+.engine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 2.75rem;
+  padding-inline: 0.625rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, var(--site-fill-top), var(--site-fill-bottom)) padding-box,
+    linear-gradient(var(--site-card), var(--site-card)) padding-box,
+    linear-gradient(180deg, var(--site-edge-top), var(--site-edge-bottom)) border-box;
+  box-shadow: var(--site-elev-1);
+  white-space: nowrap;
+}
+
+.engine-name {
+  font-size: var(--text-copy-sm);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+  color: var(--tn-text);
+}
+
+.engine-chip-plain .engine-name {
+  color: var(--tn-text-muted);
+  font-weight: 400;
+}
+
+.engine-plain-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  background: var(--tn-surface-4);
+  color: var(--tn-text-muted);
+}
+
+/* Pause: a quiet text control, no script (a checkbox the rows read with :has). */
+.engine-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2rem;
+  margin-inline: -0.625rem;
+  padding-inline: 0.625rem;
+  border-radius: 6px;
+  font-size: var(--text-caption);
+  color: var(--tn-text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    color var(--dur-base) var(--tn-ease-out),
+    background-color var(--dur-base) var(--tn-ease-out);
+}
+.engine-pause:hover {
+  color: var(--tn-text);
+  background: var(--site-glass);
+}
+.engine-pause:has(input:focus-visible) {
+  outline: 2px solid var(--tn-accent-ring);
+  outline-offset: 2px;
+}
+.engine-pause:has(input:checked) {
+  color: var(--tn-text);
+  background: var(--site-glass);
+  box-shadow: inset 0 0 0 1px var(--site-line-strong);
+}
+.engine-pause-on,
+.engine-pause:has(input:checked) .engine-pause-off {
+  display: none;
+}
+.engine-pause:has(input:checked) .engine-pause-on {
+  display: inline;
+}
+
+@keyframes engine-drift {
+  to {
+    transform: translateX(-25%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .engine-track {
+    animation: engine-drift 80s linear infinite;
+    will-change: transform;
+  }
+  .engine-row[data-dir="right"] .engine-track {
+    animation-duration: 96s;
+    animation-direction: reverse;
+  }
+  .engine-marquee:hover .engine-track,
+  #engines:has(.engine-pause input:checked) .engine-track {
+    animation-play-state: paused;
+  }
+}
+
+/* Reduced motion: one still set per row, wrapped, inside the container. */
+@media (prefers-reduced-motion: reduce) {
+  .engine-marquee {
+    width: auto;
+    margin-inline: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .engine-row[data-dir="right"] .engine-track {
+    margin-inline-start: 0;
+  }
+  .engine-track {
+    width: auto;
+  }
+  .engine-set {
+    flex-wrap: wrap;
+    padding-inline-end: 0;
+  }
+  .engine-set + .engine-set {
+    display: none;
+  }
+  .engine-pause {
+    display: none;
+  }
+}

@@ -130,7 +130,7 @@ test("F-WB-01 the home page is at most 8,000 px long at 1440 (DESIGN §5.1.4, D-
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(8000);
 });
 
-test("F-WB-01 every engine's name fits on one line in the seven-column engines grid (D-1886)", async ({ page }) => {
+test("F-WB-01 every engine's name fits on one line in the engine rows (D-1886)", async ({ page }) => {
   for (const [w, h] of [[1440, 900], [1280, 800]] as const) {
     await page.setViewportSize({ width: w, height: h });
     await page.goto("/");
