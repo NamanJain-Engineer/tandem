@@ -23,6 +23,16 @@ const sayingSeen = (on: boolean) =>
     on,
   );
 
+/** Presses a button that hides the window: a DOM click, which runs its
+ * handler as a person's does. WebDriver's own click waits for the page to
+ * settle after it, which a hidden window may never do: in the full
+ * regression one such click never returned, and tauri-driver failed every
+ * spec after it. */
+async function pressHiding(selector: string): Promise<void> {
+  await $(selector).waitForClickable({ timeout: 5_000 });
+  await browser.execute((s: string) => (document.querySelector(s) as HTMLElement | null)?.click(), selector);
+}
+
 // E2E-M18-SH-14 Keep agents running (F-SH-14): two fake Claude Code agents
 // waiting for an approval. Closing the window asks; Keep running hides it
 // with both still running; an approval while it's hidden notifies; output
@@ -60,7 +70,7 @@ describe("E2E-M18-SH-14 keep agents running", function () {
     expect(String(await $('[role="dialog"]').getProperty("textContent"))).toContain(
       "Keep 2 agents running in the background?",
     );
-    await $('[data-testid="close-keep"]').click();
+    await pressHiding('[data-testid="close-keep"]');
     await browser.waitUntil(async () => !(await visible()), {
       timeout: 10_000,
       timeoutMsg: "the window never hid",
@@ -113,7 +123,7 @@ describe("E2E-M18-SH-14 keep agents running", function () {
     await invoke("window_close", {});
     await $('[data-testid="close-agents"]').waitForExist({ timeout: 10_000 });
     await $('//label[normalize-space()="Don\'t ask again"]').click();
-    await $('[data-testid="close-keep"]').click();
+    await pressHiding('[data-testid="close-keep"]');
     await browser.waitUntil(async () => !(await visible()), { timeout: 10_000 });
     const saved = await invoke<Record<string, unknown>>("settings_get_all", {});
     expect(saved.keep_agents_on_close).toBe("keep");
