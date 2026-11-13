@@ -5,11 +5,13 @@ import { SITE } from "../../lib/site";
 import { Mark } from "./Mark";
 import { NAV } from "./nav";
 import { ThemeSwitch } from "./ThemeSwitch";
+import "./site-header.css";
 
 const MENU_ID = "site-menu";
 
-/** The sticky header (D-1836): glass over the page, a hairline that appears
- * once the page scrolls, the links centred. Below 1024 px they move into a
+/** The sticky header (D-1836): open to the page's light at the top, glass
+ * and a hairline that gather once the page scrolls, a thin neutral line that
+ * tracks the scroll (site-header.css), the links centred. Below 1024 px they move into a
  * sheet built on the Popover API: no script, light dismiss and Esc for free.
  * Browsers without it still reach every link from the footer. The theme
  * control (D-1870) sits before Download, and in the sheet below 640 px. */
@@ -17,7 +19,7 @@ export function SiteHeader({ current }: { current?: string }) {
   const link = (href: string) =>
     current === href ? ({ "aria-current": "page" } as const) : ({} as Record<string, never>);
   return (
-    <header className="site-header sticky top-0 z-50 border-b border-line bg-(--site-header) backdrop-blur-2xl backdrop-saturate-150">
+    <header className="site-header sticky top-0 z-50 border-b border-line backdrop-blur-2xl backdrop-saturate-150">
       <nav aria-label="Site" className="container-site relative flex h-(--site-header-h) items-center gap-2">
         <a
           href="/"
@@ -82,7 +84,11 @@ export function SiteHeader({ current }: { current?: string }) {
                     className="group flex h-14 items-center justify-between text-[1.125rem] font-medium tracking-[-0.01em] text-fg-muted hover:text-fg aria-[current=page]:text-fg"
                   >
                     {n.label}
-                    <Icon icon={ArrowRight} size={18} className="text-fg-subtle transition-transform duration-(--dur-base) group-hover:translate-x-0.5" />
+                    <Icon
+                      icon={ArrowRight}
+                      size={18}
+                      className="text-fg-subtle transition-transform duration-(--dur-base) group-hover:translate-x-0.5"
+                    />
                   </a>
                 </li>
               ))}
@@ -98,6 +104,7 @@ export function SiteHeader({ current }: { current?: string }) {
           </div>
         </div>
       </nav>
+      <span aria-hidden="true" className="site-progress" />
     </header>
   );
 }

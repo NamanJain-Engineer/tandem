@@ -1,0 +1,220 @@
+/* The data-flow diagram in #principles (TrustFlow.tsx). On a phone, a
+   list: your computer, then each route's words and where it goes. On a wide
+   screen, an engineered drawing: your computer on the left, a wire from its
+   edge to each place data can go, a port at each end. The wires draw
+   themselves in as the diagram scrolls in (a stroke dash on a scroll
+   timeline, like the site's reveals), and only then do the packets run, only
+   on the wires that carry data (D-1842). Stroke dash, transform and opacity
+   only (DESIGN §4.7); with reduced motion, or without scroll timelines,
+   it's drawn whole and still. */
+
+.trust-map {
+  display: grid;
+  gap: 1rem;
+}
+.trust-node {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--site-page), var(--site-page)) padding-box,
+    linear-gradient(180deg, var(--site-line-strong), var(--site-line)) border-box;
+}
+.trust-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.trust-route {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.trust-dest {
+  position: relative;
+  border-radius: var(--radius-card);
+}
+.trust-dest-none {
+  border: 1px dashed var(--site-line-strong);
+}
+.trust-line,
+.trust-packets {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .trust-map {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 0;
+  }
+  .trust-routes {
+    display: grid;
+    grid-template-rows: repeat(3, 1fr);
+    gap: 0;
+  }
+  .trust-route {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 15rem;
+    align-items: center;
+    gap: 0;
+  }
+  /* A wire: its words over the middle of it, its port on your computer's
+     edge, and the destination's port where it ends. */
+  .trust-wire {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 3rem;
+  }
+  .trust-via {
+    position: absolute;
+    inset-inline: 1.5rem;
+    bottom: calc(50% + 0.375rem);
+    text-align: center;
+  }
+  .trust-line {
+    display: block;
+    overflow: visible;
+  }
+  .trust-mask {
+    mask-type: alpha;
+  }
+  .trust-draw {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 12;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+  .trust-stroke {
+    stroke: var(--tn-text-muted);
+    stroke-width: 1;
+  }
+  [data-line="dashed"] .trust-stroke {
+    stroke: var(--tn-text-subtle);
+    stroke-dasharray: 4 4;
+  }
+  [data-line="none"] .trust-stroke {
+    stroke: var(--tn-text-subtle);
+    stroke-dasharray: 1 5;
+    stroke-linecap: round;
+  }
+  .trust-port {
+    fill: var(--site-raised);
+    stroke: var(--tn-text-subtle);
+    stroke-width: 1;
+  }
+  .trust-dest::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: -4.5px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: var(--site-raised);
+    box-shadow: inset 0 0 0 1px var(--tn-text-subtle);
+  }
+  .trust-dest-none::after {
+    box-shadow: inset 0 0 0 1px var(--site-line-strong);
+  }
+  /* The packets ride the wire: each runs its whole length (site.css's
+     .flow-packet moves by its own width), its dot at the leading end. */
+  .trust-packets {
+    display: block;
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 0;
+    pointer-events: none;
+  }
+  .trust-packet {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+  }
+  .trust-dot {
+    position: absolute;
+    inset-inline-end: 0;
+    top: -3.5px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--tn-text);
+    box-shadow: 0 0 10px color-mix(in oklab, var(--tn-text) 60%, transparent);
+  }
+  .trust-dot-back {
+    background: var(--site-ink-b);
+    box-shadow: 0 0 10px color-mix(in oklab, var(--site-ink-b) 60%, transparent);
+  }
+}
+
+@keyframes trust-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes trust-on {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes trust-port {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@media (min-width: 64rem) and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .trust {
+      view-timeline-name: --trust;
+    }
+    /* Each wire draws from your computer out, one after the other; its
+       destination's port lights as the wire reaches it, then the packets
+       start. Once in, they stay drawn. */
+    .trust-draw {
+      animation: trust-draw linear both;
+      animation-timeline: --trust;
+      animation-range: entry 20% entry 70%;
+    }
+    .trust-dest::after,
+    .trust-packets {
+      animation: trust-on linear both;
+      animation-timeline: --trust;
+      animation-range: entry 65% entry 75%;
+    }
+    .trust-port {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: trust-port linear both;
+      animation-timeline: --trust;
+      animation-range: entry 10% entry 30%;
+    }
+    .trust-route:nth-child(2) .trust-draw {
+      animation-range: entry 30% entry 80%;
+    }
+    .trust-route:nth-child(2) .trust-packets,
+    .trust-route:nth-child(2) .trust-dest::after {
+      animation-range: entry 75% entry 85%;
+    }
+    .trust-route:nth-child(3) .trust-draw {
+      animation-range: entry 40% entry 90%;
+    }
+    .trust-route:nth-child(3) .trust-packets,
+    .trust-route:nth-child(3) .trust-dest::after {
+      animation-range: entry 85% entry 95%;
+    }
+  }
+}

@@ -142,6 +142,19 @@ export const HERO = {
   title: ["Your agents.", "Your machine.", "Your plan."],
   /** The phrase drawn in the teal → sky highlight. */
   highlight: "Your machine.",
+  /** One sentence about the visitor's outcome; the engine count is drawn from code under it (DESIGN §5.1). */
+  lead: "Run the coding agents you already use side by side, in real terminals, and see at a glance which one needs you.",
+} as const;
+
+/** The live demo under the hero (#try, D-128). Its agents are simulated and
+ * its data is a sample: the label and the note say so, next to the frame. */
+export const DEMO = {
+  label: "Interactive demo · sample data",
+  /** The invitation over the frame, shown once the browser build is running in it. */
+  live: "Live",
+  invite: "It’s the app itself. Click anything.",
+  full: "Explore full screen",
+  note: "This is Vibezeo itself, running in your browser with sample data. Click around. Its agents are simulated: nothing runs and nothing you type leaves your browser.",
 } as const;
 
 /** The four ownership facts under the hero, each a claim about this build. */
@@ -215,17 +228,27 @@ export function firstSentence(text: string): string {
 /** The feature the hero's scene shows: Code mode's real terminals (D-1881). */
 export const HERO_FEATURES = ["Real terminals, side by side"] as const satisfies readonly FeatureTitle[];
 
-/** #features: what it's like, as scenes of the app (DESIGN §5.1, D-1881).
- * Each row's features are shown by its scene; every feature appears in
- * exactly one place on the home page: the hero, a scene row, the capability
- * index or its "Everything else" list (a test checks). `release` gates a
- * row on the release that ships what it shows (D-128). */
+/** #features: what it's like, told as a story the visitor scrolls through
+ * (DESIGN §5.1, D-1881): each row is one scene of the app and the short
+ * steps it shows, one line and one sentence each, every one taken from its
+ * features' copy above. Each row's features are shown by its scene; every
+ * feature appears in exactly one place on the home page: the hero, a scene
+ * row, the capability index or its "Everything else" list (a test checks).
+ * `release` gates a row on the release that ships what it shows (D-128). */
 export const SCENE_ROWS = [
   {
     id: "dashboard",
     eyebrow: "Dashboard",
-    title: "See who needs you",
-    body: "Working, waiting, done or failed: every pane, the rail and the Dashboard show it, from each engine's own signals.",
+    steps: [
+      {
+        title: "Run every agent at once",
+        body: "Every live agent across your workspaces in one place, with what each one is doing.",
+      },
+      {
+        title: "See who needs you",
+        body: "Working, waiting, done or failed, from each engine's own signals. One click takes you to the pane that needs you.",
+      },
+    ],
     features: ["One Dashboard", "Live status for every agent"],
     docs: docsPath("code-mode"),
     release: "0.5.0",
@@ -233,13 +256,25 @@ export const SCENE_ROWS = [
   {
     id: "review",
     eyebrow: "Review",
-    title: "Review before you merge",
-    body: "Finished work waits in one queue with its diff. Ask another engine for a second opinion before you approve.",
+    steps: [
+      {
+        title: "Review before you merge",
+        body: "Finished work waits in one queue with its diff, whichever engine ran it.",
+      },
+      {
+        title: "Get a second opinion",
+        body: "Ask another engine to read the diff. Its findings land as line comments you can send to the agent.",
+      },
+    ],
     features: ["A review queue across engines"],
     docs: docsPath("code-mode"),
     release: "0.8.0",
   },
-] as const satisfies ReadonlyArray<{ features: readonly FeatureTitle[]; [key: string]: unknown }>;
+] as const satisfies ReadonlyArray<{
+  features: readonly FeatureTitle[];
+  steps: ReadonlyArray<{ title: string; body: string }>;
+  [key: string]: unknown;
+}>;
 
 /** The capability index (#capabilities): eight, one line each, as DESIGN
  * §9.1 lists them; the full copy is in the docs (progressive disclosure). */

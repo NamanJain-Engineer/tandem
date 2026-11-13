@@ -1,0 +1,116 @@
+/* The live demo's section (DemoStage.tsx): the app in a lit frame under one
+   soft bloom, an invitation strip over it, and a status light that comes on
+   when the app is running in the frame (/demo/embed.js sets
+   data-demo-state="live" on the stage). Tokens only; opacity and transform
+   only; still under reduced motion. */
+
+/* One bloom, low behind the frame's top edge: the screen's light on the
+   page. Faint enough (under 0.35 alpha) that it never reads as an accent. */
+.demo-bloom {
+  pointer-events: none;
+  background:
+    radial-gradient(48% 34% at 50% 26%, var(--site-glow-a), transparent 72%),
+    radial-gradient(30% 24% at 62% 22%, var(--site-glow-b), transparent 72%);
+}
+[data-theme="light"] .demo-bloom {
+  opacity: 0.6;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .demo-bloom {
+    opacity: 0.6;
+  }
+}
+
+/* The frame's rim catches the light from above, as the hero's does: a
+   brighter top edge, brightest in the middle. Its bezel is dark in both
+   themes, so the light is the stage's own ink. */
+.demo-frame {
+  background:
+    linear-gradient(
+        90deg,
+        transparent 6%,
+        color-mix(in oklab, var(--site-stage-fg) 46%, transparent) 50%,
+        transparent 94%
+      )
+      top center / 100% 1px no-repeat border-box,
+    linear-gradient(var(--site-bezel), var(--site-bezel)) padding-box,
+    linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--site-stage-fg) 22%, transparent),
+        var(--site-bezel-edge) 18%,
+        transparent 64%
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 var(--site-stage-line),
+    var(--site-elev-3);
+}
+/* The pointer's light (light.css) on the bezel, in the stage's ink: the
+   screen sits over it, so only the rim and its edge catch it. */
+.demo-frame > .lit-glow {
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in oklab, var(--site-stage-fg) 18%, transparent),
+    transparent 62%
+  );
+}
+
+/* Full screen: the stage is position: fixed at z-index 1000 and must rise
+   over the sticky header, so the lit frame's stacking contexts stand down. */
+.demo-frame[data-lit]:has([data-demo-full]) {
+  isolation: auto;
+}
+.demo-frame[data-lit]:has([data-demo-full]) > * {
+  z-index: auto;
+}
+.demo-frame[data-lit]:has([data-demo-full]) > .lit-glow {
+  display: none;
+}
+
+/* The invitation: dimmed until the app is running in the frame. */
+.demo-invite > p {
+  transition: opacity var(--dur-slow) var(--tn-ease-out);
+}
+.demo-section:not(:has([data-demo-state="live"])) .demo-invite > p {
+  opacity: 0.6;
+}
+
+/* The status light: neutral until the app runs, then the accent with a
+   slow breathing halo, as a working agent's dot breathes in the app. */
+.demo-live {
+  position: relative;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--tn-text-subtle);
+  transition: background-color var(--dur-slow) var(--tn-ease-out);
+}
+.demo-live::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+  border-radius: inherit;
+  background: var(--tn-accent);
+  opacity: 0;
+}
+.demo-section:has([data-demo-state="live"]) .demo-live {
+  background: var(--tn-accent);
+}
+
+@keyframes demo-breathe {
+  0%,
+  100% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  50% {
+    opacity: 0.28;
+    scale: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .demo-section:has([data-demo-state="live"]) .demo-live::after {
+    animation: demo-breathe 2.4s var(--ease-standard) infinite;
+  }
+}

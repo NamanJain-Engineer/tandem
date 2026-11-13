@@ -1,0 +1,205 @@
+/* #features as a scroll-told story (Features.tsx). By default, and on a
+   phone, under reduced motion or without scroll timelines, a plain stack:
+   each chapter's steps, then its scene. On a wide screen with motion
+   allowed, the product frame is pinned beside the steps (position: sticky),
+   the step in front lights up, and the frame cross-fades to the scene of
+   the chapter that step opens. Scroll timelines only, no script: the
+   exported page keeps none of its own (scripts/strip-runtime.mjs). Opacity
+   and transform only (DESIGN §4.7). */
+
+.story {
+  display: flex;
+  flex-direction: column;
+  gap: 4rem;
+}
+.story-chapter {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+.story-head {
+  padding-bottom: 1rem;
+}
+
+/* A step: its number, its chapter, one line and one sentence, on a
+   hairline scale that runs down the steps like an instrument's. */
+.story-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-left: 1.5rem;
+}
+.story-step::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 1px;
+  background: var(--site-line-strong);
+}
+.story-body {
+  position: relative;
+}
+/* The mark on the scale beside the step in front: the one teal thing in
+   the section, and only while its step is the one in front. */
+.story-tick {
+  position: absolute;
+  inset-block: -0.25rem;
+  inset-inline-start: calc(-1.5rem - 0.5px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--tn-accent);
+  opacity: 0;
+}
+.story-num {
+  color: var(--tn-text);
+}
+
+/* The step in front at full strength; the others recede. A title (large
+   text) keeps 3:1 at its faintest, a label or sentence 4.5:1 (WCAG AA). */
+@keyframes story-dim {
+  0%,
+  22% {
+    opacity: 0.45;
+  }
+  36%,
+  64% {
+    opacity: 1;
+  }
+  78%,
+  100% {
+    opacity: 0.45;
+  }
+}
+@keyframes story-dim-soft {
+  0%,
+  22% {
+    opacity: 0.8;
+  }
+  36%,
+  64% {
+    opacity: 1;
+  }
+  78%,
+  100% {
+    opacity: 0.8;
+  }
+}
+@keyframes story-tick {
+  0%,
+  30% {
+    opacity: 0;
+    scale: 1 0;
+  }
+  42%,
+  58% {
+    opacity: 1;
+    scale: 1 1;
+  }
+  70%,
+  100% {
+    opacity: 0;
+    scale: 1 0;
+  }
+}
+/* The next chapter's scene comes in over the last one. Until then it waits
+   far off to the side as well as unseen, so the scene player (which plays
+   a scene while it's on screen, /demo/embed.js) starts it only when it
+   comes in, and it plays once, where it's seen. */
+@keyframes story-in {
+  0% {
+    opacity: 0;
+    translate: -400vw 0;
+  }
+  1% {
+    opacity: 0;
+    translate: 0 0;
+  }
+  100% {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes story-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A wide screen without the story (reduced motion, no scroll timelines):
+   a chapter's steps side by side over its scene. */
+@media (min-width: 64rem) {
+  .story-chapter {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5rem 3rem;
+  }
+  .story-layer {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 64rem) and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) and (timeline-scope: --story) {
+    .story {
+      --story-row: clamp(18rem, 36vh, 22rem);
+      display: grid;
+      grid-template-columns: minmax(0, 21rem) minmax(0, 1fr);
+      grid-template-rows: auto repeat(var(--story-steps), var(--story-row));
+      gap: 0 3rem;
+      timeline-scope: var(--story-scope);
+    }
+    .story-chapter {
+      display: contents;
+    }
+    .story-head {
+      grid-column: 1;
+      grid-row: 1;
+      padding-bottom: 2rem;
+    }
+    .story-step {
+      grid-column: 1;
+      justify-content: center;
+      view-timeline-name: var(--story-name, none);
+      view-timeline-axis: block;
+    }
+    .story-body > h3 {
+      animation: story-dim linear both;
+      animation-timeline: view();
+    }
+    .story-body > p {
+      animation: story-dim-soft linear both;
+      animation-timeline: view();
+    }
+    .story-tick {
+      transform-origin: 50% 50%;
+      animation: story-tick linear both;
+      animation-timeline: view();
+    }
+    /* The frame: every chapter's scene in the same place, pinned in the
+       middle of the screen under the header for the whole story. */
+    .story-layer {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      align-self: start;
+      position: sticky;
+      top: max(5.5rem, calc(50vh - 12rem));
+    }
+    .story-layer > [data-scene] {
+      animation: none;
+    }
+    .story-layer[data-in] {
+      animation: story-in linear both;
+      animation-timeline: var(--story-in);
+      animation-range: cover 26% cover 40%;
+    }
+    .story-layer[data-out] > [data-scene] {
+      animation: story-out linear both;
+      animation-timeline: var(--story-out);
+      animation-range: cover 26% cover 40%;
+    }
+  }
+}

@@ -1,0 +1,260 @@
+/* The hero (Hero.tsx): a lit instrument in a dark room. The rings' light
+   falls from above, the page darkens toward its edges, and the product sits
+   on one soft bloom, tilted back under the light until the page scrolls it
+   flat. Tokens only; transform and opacity only; under reduced motion it's
+   all simply there, flat and still (DESIGN §4.7). */
+
+/* ---------- Atmosphere ---------- */
+
+/* The rings' light, as bg-lens draws it, a little wider and softer, over a
+   faint sky wash so the top of the room has depth rather than a beam. */
+.hero-atmos {
+  background-image:
+    radial-gradient(36% 50% at 44% 0%, var(--site-glow-a), transparent 74%),
+    radial-gradient(36% 50% at 56% 0%, var(--site-glow-b), transparent 74%),
+    radial-gradient(
+      80% 70% at 50% 0%,
+      color-mix(in oklab, var(--site-glow-b) 35%, transparent),
+      transparent 78%
+    );
+}
+
+/* The room's edges fall into shadow: the outer rings and the engines'
+   orbit recede, and the eye rests in the middle. */
+.hero-veil {
+  pointer-events: none;
+  background:
+    radial-gradient(
+      64% 58% at 50% 30%,
+      transparent 52%,
+      color-mix(in oklab, var(--site-page) 78%, transparent) 100%
+    ),
+    linear-gradient(180deg, transparent 70%, var(--site-page));
+}
+
+/* The engines' monograms ride the orbit as a quiet second layer, never as
+   confetti over the headline. */
+.hero > div[data-orbit] {
+  opacity: 0.42;
+  mask-image: linear-gradient(to bottom, black 18%, transparent 44%);
+}
+[data-theme="light"] .hero > div[data-orbit] {
+  opacity: 0.6;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hero > div[data-orbit] {
+    opacity: 0.6;
+  }
+}
+
+/* ---------- The entrance: one beat (60 ms) per step, five at most ---------- */
+
+/* The first frame already paints (opacity 0.001, not 0), so the h1 is the
+   largest paint at once, with or without script (D-1840). */
+@keyframes hero-beat {
+  from {
+    opacity: 0.001;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes hero-rise {
+  from {
+    opacity: 0.001;
+    translate: 0 1.5rem;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-beat {
+    animation: hero-beat 900ms var(--tn-ease-out) both;
+    animation-delay: calc(var(--beat, 0) * var(--stagger));
+  }
+  .hero-rise {
+    animation: hero-rise 1200ms var(--tn-ease-out) calc(4 * var(--stagger)) both;
+  }
+}
+
+/* ---------- The calls to action ---------- */
+
+/* The primary is a physical key: its lit top edge comes from btn-primary,
+   it sinks a touch when pressed (site.css), and on hover a sheen passes
+   across it once. The sheen sits under the label. */
+.hero-cta {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.hero-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, var(--site-btn-hi) 50%, transparent 70%);
+  opacity: 0;
+  translate: -110% 0;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .hero-cta:hover::after {
+    opacity: 0.7;
+    translate: 110% 0;
+    transition:
+      translate 900ms var(--tn-ease-out),
+      opacity var(--dur-fast) linear;
+  }
+}
+
+/* ---------- The hero's object: the product on its bloom ---------- */
+
+.hero-object {
+  position: relative;
+  perspective: 1800px;
+  perspective-origin: 50% 20%;
+}
+
+/* One soft teal bloom, low and wide behind the frame: the light the screen
+   throws on the page. Under the 0.35 alpha the accent checks count as an
+   accent, so it never competes with the call to action. */
+.hero-bloom {
+  position: absolute;
+  left: 50%;
+  top: -9rem;
+  width: 150%;
+  height: 22rem;
+  translate: -50% 0;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 50% at 50% 50%, var(--site-glow-a), transparent 75%),
+    radial-gradient(
+      28% 34% at 50% 50%,
+      color-mix(in oklab, var(--site-glow-b) 80%, transparent),
+      transparent 72%
+    );
+}
+[data-theme="light"] .hero-bloom {
+  opacity: 0.55;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hero-bloom {
+    opacity: 0.55;
+  }
+}
+
+/* The frame's rim catches the light from above: a brighter top edge, its
+   middle brightest, falling away down the sides. The bezel is dark in both
+   themes, so its light is the stage's own ink, not the page's. */
+.hero-tilt .frame {
+  isolation: isolate;
+  background:
+    linear-gradient(
+        90deg,
+        transparent 6%,
+        color-mix(in oklab, var(--site-stage-fg) 46%, transparent) 50%,
+        transparent 94%
+      )
+      top center / 100% 1px no-repeat border-box,
+    linear-gradient(var(--site-bezel), var(--site-bezel)) padding-box,
+    linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--site-stage-fg) 22%, transparent),
+        var(--site-bezel-edge) 18%,
+        transparent 64%
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 var(--site-stage-line),
+    var(--site-elev-3);
+}
+
+/* The pointer lights the rim (PointerLight sets --mx and --my on the tilt,
+   whose corner is the frame's): a soft light on the bezel, under the
+   screen, and the edge nearest the pointer brightening. Never over the
+   product itself: the scene shows the app as it is (D-1834). */
+.hero-tilt .frame::before,
+.hero-tilt .frame::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--tn-ease-out);
+}
+.hero-tilt .frame::before {
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 0%),
+    color-mix(in oklab, var(--site-stage-fg) 18%, transparent),
+    transparent 62%
+  );
+}
+.hero-tilt .frame::after {
+  inset: -1px;
+  z-index: 1;
+  border-radius: calc(var(--radius-frame) + 1px);
+  padding: 1px;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 0%),
+    var(--site-ring-lit),
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .hero-tilt:hover .frame::before,
+  .hero-tilt:hover .frame::after {
+    opacity: 1;
+  }
+}
+
+/* The tilt: lying back under the light at the top of the page, flat by the
+   time it fills the screen. Driven by the scroll alone, so it rests wherever
+   the reader stops; where the browser has no scroll timelines, or the
+   screen is a phone's, or motion is reduced, the frame is simply flat. */
+@keyframes hero-tilt {
+  from {
+    rotate: x 13deg;
+    scale: 0.95;
+  }
+  to {
+    rotate: x 0deg;
+    scale: 1;
+  }
+}
+@keyframes hero-bloom {
+  from {
+    scale: 0.82 0.7;
+  }
+  to {
+    scale: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
+  @supports (animation-timeline: scroll()) {
+    .hero-tilt {
+      transform-origin: 50% 0%;
+      animation: hero-tilt linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 28rem;
+    }
+    .hero-bloom {
+      animation: hero-bloom linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 28rem;
+    }
+  }
+}

@@ -1,8 +1,11 @@
 import { siteButton } from "@tandem/ui/components/SiteButton";
 import { Maximize2 } from "lucide-react";
+import { DEMO } from "../../../lib/home";
 import { STILL_ALT } from "../../../lib/demoStill";
 import { SITE } from "../../../lib/site";
 import { Icon } from "../Icon";
+import { LitGlow } from "../LitGlow";
+import "./demo-stage.css";
 
 /** The stage's markup (D-128): a still image until /demo/embed.js frames the
  * live demo here. Inner HTML, so hydration never replaces what the loader
@@ -18,35 +21,56 @@ const DEMO_STAGE = `<div data-demo-stage="" data-stage="" class="absolute inset-
 <a href="/demo/app/" data-demo-open="" class="absolute inset-0 flex items-center justify-center bg-black/40 text-md font-semibold lg:hidden"><span class="btn btn-primary btn-md">Tap to explore</span></a>
 </div>`;
 
-/** #try (§6.3): the live demo, right under the hero. `id` stays the
- * section's first attribute and nothing nests a <section> inside it: the
- * site test cuts it out by those to check "sample data" appears only here. */
+/** #try (§6.3): the live demo, right under the hero, in a lit frame that
+ * catches the pointer, with an invitation beside its title: a status light that
+ * comes on once the app is running in the frame (demo-stage.css), "click
+ * anything", and Explore full screen. `id` stays the section's first
+ * attribute and nothing nests a <section> inside it: the site test cuts it
+ * out by those to check "sample data" appears only here. */
 export function DemoStage() {
   return (
-    <section id="try" aria-labelledby="try-title" className="relative scroll-mt-(--site-header-h) bg-page pb-(--site-section-y)">
-      <div aria-hidden="true" className="absolute inset-x-0 top-24 h-[40rem] bg-[radial-gradient(45%_50%_at_50%_0%,var(--site-glow-a),transparent_70%),radial-gradient(35%_40%_at_70%_10%,var(--site-glow-b),transparent_70%)]" />
-      {/* No stacking context here (isolate, z-index, transform or filter): the
-          demo's full screen is position: fixed at z-index 1000 and must rise
-          above the sticky header. */}
-      <div className="relative mx-auto flex w-full max-w-stage flex-col gap-6 px-(--site-gutter)">
+    <section
+      id="try"
+      aria-labelledby="try-title"
+      className="demo-section relative scroll-mt-(--site-header-h) bg-page pb-(--site-section-y)"
+    >
+      <div aria-hidden="true" className="demo-bloom absolute inset-x-0 top-24 h-[44rem]" />
+      {/* No stacking context or containing block round the stage (isolate,
+          z-index, transform, filter): the demo's full screen is position:
+          fixed at z-index 1000 and must rise above the sticky header. The
+          lit frame's own (light.css) stands down while it's full screen. */}
+      <div className="relative mx-auto flex w-full max-w-stage flex-col gap-5 px-(--site-gutter)">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-3">
             <span className="inline-flex h-7 items-center gap-2 self-start rounded-full bg-(--site-glass) px-3 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-fg-muted shadow-[inset_0_0_0_1px_var(--site-line-strong)]">
               <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-subtle" />
-              Interactive demo · sample data
+              {DEMO.label}
             </span>
             <h2 id="try-title" className="text-sheen text-display-md text-fg">
               Try {SITE.product} right here
             </h2>
           </div>
-          <div className="hidden lg:block">
-            <a href="/demo/app/" data-demo-open="" className={siteButton("secondary", "md", "icon-turn")}>
+          <div className="demo-invite hidden items-center gap-5 lg:flex">
+            <p className="flex items-center gap-2.5 text-copy-sm text-fg-muted">
+              <span aria-hidden="true" className="demo-live" />
+              <span className="font-medium text-fg">{DEMO.live}</span>
+              <span aria-hidden="true" className="text-fg-subtle">
+                ·
+              </span>
+              {DEMO.invite}
+            </p>
+            <a
+              href="/demo/app/"
+              data-demo-open=""
+              className={siteButton("secondary", "md", "icon-turn demo-full")}
+            >
               <Icon icon={Maximize2} size={16} />
-              Explore full screen
+              {DEMO.full}
             </a>
           </div>
         </div>
-        <div className="frame">
+        <div data-lit="" className="demo-frame frame">
+          <LitGlow />
           {/* D-128: /demo/embed.js frames /demo/app/ here once the section is near. */}
           <div
             data-demo-embed=""
@@ -55,10 +79,7 @@ export function DemoStage() {
             dangerouslySetInnerHTML={{ __html: DEMO_STAGE }}
           />
         </div>
-        <p className="max-w-[46rem] text-caption text-pretty text-fg-muted">
-          This is {SITE.product} itself, running in your browser with sample data. Click around. Its agents are
-          simulated: nothing runs and nothing you type leaves your browser.
-        </p>
+        <p className="max-w-[46rem] text-caption text-pretty text-fg-muted">{DEMO.note}</p>
       </div>
       <script src="/demo/embed.js" defer />
     </section>
