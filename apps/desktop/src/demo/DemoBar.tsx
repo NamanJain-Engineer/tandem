@@ -49,8 +49,10 @@ export function DemoBar({
       data-testid="demo-bar"
       className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-surface-2 px-3 text-sm text-fg"
     >
-      <FlaskConical size={14} aria-hidden="true" className="shrink-0 text-accent" />
-      <Badge variant="accent">{t("demo.label")}</Badge>
+      {/* Teal is scarce (DESIGN §4.2): it stays on the download, the one
+          action this strip offers; the label is quiet. */}
+      <FlaskConical size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+      <Badge variant="outline">{t("demo.label")}</Badge>
       <span className="hidden min-w-0 truncate text-fg-muted md:inline">{t("demo.note")}</span>
       <span className="min-w-0 truncate text-fg-muted md:hidden">{t("demo.noteShort")}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1">

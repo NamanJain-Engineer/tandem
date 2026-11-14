@@ -34,6 +34,8 @@ export type CommandPaletteProps = {
   onQueryChange?: (query: string) => void;
   /** A new value clears the input, like reopening (switching what it searches). */
   resetKey?: string;
+  /** The keys that work here, shown in a footer ("↑↓ Move · ↵ Run · Esc Close"). */
+  hints?: { keys: string | string[]; label: string }[];
 };
 
 const RECENT_MAX = 10;
@@ -61,6 +63,7 @@ export function CommandPalette({
   shouldFilter = true,
   onQueryChange,
   resetKey,
+  hints,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
@@ -127,7 +130,7 @@ export function CommandPalette({
         <D.Overlay className="tn-fade fixed inset-0 z-[var(--z-command)] bg-overlay" />
         <D.Content
           aria-describedby={undefined}
-          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[640px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 shadow-e3 focus:outline-none"
+          className="tn-dialog fixed left-1/2 top-[18vh] z-[var(--z-command)] w-[640px] max-w-[calc(100vw-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface-3 tn-floating focus:outline-none"
         >
           <D.Title className="sr-only">{title}</D.Title>
           <Command
@@ -141,7 +144,9 @@ export function CommandPalette({
                 value={query}
                 onValueChange={changeQuery}
                 placeholder={placeholder}
-                className="h-11 flex-1 bg-transparent text-md text-fg placeholder:text-fg-subtle focus:outline-none"
+                // The palette's one field holds focus from open to close; its caret and
+                // the open palette say so, not a ring boxed inside the panel.
+                className="h-11 flex-1 bg-transparent text-md text-fg placeholder:text-fg-subtle tn-bare-field focus:outline-none"
               />
             </div>
             <Command.List className="max-h-[50vh] overflow-y-auto p-1.5">
@@ -160,6 +165,19 @@ export function CommandPalette({
               ))}
             </Command.List>
           </Command>
+          {hints && hints.length > 0 && (
+            <div
+              data-testid="palette-hints"
+              className="flex h-9 items-center gap-4 border-t border-divider px-3 text-sm text-fg-subtle"
+            >
+              {hints.map((h) => (
+                <span key={h.label} className="inline-flex items-center gap-1.5">
+                  <Kbd keys={h.keys} />
+                  {h.label}
+                </span>
+              ))}
+            </div>
+          )}
         </D.Content>
       </D.Portal>
     </D.Root>

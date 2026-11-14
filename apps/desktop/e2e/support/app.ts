@@ -389,6 +389,9 @@ async function resetState({ onboarded = true }: { onboarded?: boolean } = {}): P
   }
   // Specs start past the first-run wizard unless they test it (E2E-M5-9).
   await invoke("onboarding_set", onboarded ? { done: true } : { step: "engines" });
+  // Past setup, the first finish's toast (F-SH-08 behaviour 4) has been
+  // seen, so no spec's agent finishing brings it; a first run arms it anew.
+  await invoke("settings_set", { key: "first_finish", value: onboarded ? "shown" : "unset" });
   // UI state that outlives a spec: start in Code mode with the sidebar closed.
   await invoke("settings_set", { key: "last_mode", value: "code" });
   // New threads start from the app's defaults, not a spec's last engine (F-TH-07).

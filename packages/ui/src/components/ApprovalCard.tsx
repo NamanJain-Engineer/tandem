@@ -179,7 +179,9 @@ export function ApprovalCard({
       data-kind={kind}
       onKeyDown={onKeyDown}
       className={cx(
-        "flex flex-col gap-2 rounded-md border border-waiting bg-surface-2 p-3 focus-visible:shadow-focus focus-visible:outline-none",
+        // A card that sits up off the transcript (e1) with an amber edge; the
+        // diamond and "Waiting for you" carry the status (DESIGN §5.4.5).
+        "flex flex-col gap-2 rounded-md border border-waiting/60 bg-surface-2 p-3 shadow-e1 focus-visible:shadow-focus focus-visible:outline-none",
         compact && "gap-1.5 py-2",
         className,
       )}

@@ -1,5 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { expectNoSeriousA11yViolations } from "../support/axe";
+import { basename } from "node:path";
 import {
   freshProfile,
   invoke,
@@ -7,8 +8,11 @@ import {
   paneIds,
   pickFolder,
   relaunch,
+  sendToPane,
   textOf,
   typeKeys,
+  waitForPaneText,
+  waitForStatus,
   workspaceRoots,
 } from "../support/app";
 
@@ -22,8 +26,13 @@ async function atStep(name: string): Promise<void> {
     },
   );
 }
-const checked = (name: string) =>
-  $(`[data-testid="onboarding"] [role="switch"][aria-label="${name}"]`).getAttribute("aria-checked");
+/** The toasts' titles, in the order they show. */
+const toasts = async (): Promise<string[]> =>
+  (await browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-toast-region] [role="status"] p:first-child')).map(
+      (p) => p.textContent ?? "",
+    ),
+  )) as string[];
 
 async function modeIs(name: string): Promise<boolean> {
   const on = await browser.execute(() =>
@@ -34,27 +43,39 @@ async function modeIs(name: string): Promise<boolean> {
   return on.includes(name);
 }
 
-// E2E-M5-9 Onboarding framework (F-SH-08 slice, F-TL-01 "asks once").
+// E2E-M5-9 Onboarding (F-SH-08, DESIGN §5.3; F-TL-01 "says once").
 describe("E2E-M5-9 onboarding", () => {
   after(async () => {
     await invoke("onboarding_set", { done: true }).catch(() => undefined);
+    await invoke("settings_set", { key: "first_finish", value: "shown" }).catch(() => undefined);
   });
 
-  it("F-SH-08.1 Welcome → offline → Engines (skip) → Accounts → Privacy (both off) → a folder lands in Code mode on the launch grid", async function () {
-    this.timeout(120_000);
+  it("F-SH-08.1 Welcome → offline → Engines (its own sign-in) → a folder → Done → Start Claude Code in it lands in Code mode with the agent launching", async function () {
+    this.timeout(180_000);
     await freshProfile();
-    // Welcome is the sign-in screen.
+    // Welcome is the sign-in screen, under the rings (DESIGN §5.3.1).
     await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
+    expect(await $('[data-testid="welcome-rings"]').isExisting()).toBe(true);
     await $("button=Use Vibezeo offline").click();
     await atStep("engines");
-    expect(await textOf('[data-testid="onboarding"] h1')).toBe("Set up your coding agents");
-    await expectNoSeriousA11yViolations();
-    await $('[data-testid="onboarding-skip"]').click();
-    // Step 3, Accounts: the installed chat engine's own sign-in (F-AC-02).
-    await atStep("accounts");
-    expect(await textOf('[data-testid="onboarding"] h1')).toBe("Sign in to your agents");
+    expect(await textOf('[data-testid="onboarding"] h1')).toBe("Your coding agents");
+    // Three steps, not five.
+    expect(
+      await browser.execute(
+        () =>
+          document.querySelectorAll('[data-testid="onboarding"] nav[aria-label="Setup progress"] li').length,
+      ),
+    ).toBe(3);
+    // The fake Claude Code is found, with its own sign-in (F-AC-02): a first
+    // run has no engine accounts yet.
+    await $('[data-testid="onboarding-engines"] [data-engine="claude"]').waitForExist({ timeout: 15_000 });
     await $('[data-testid="onboarding-sign-in-claude"]').waitForExist({ timeout: 15_000 });
-    expect(await textOf('[data-testid="onboarding-sign-in-claude"]')).toBe("Sign in to Claude Code");
+    expect(await $('[data-testid="onboarding-sign-in-claude"]').getAttribute("aria-label")).toBe(
+      "Sign in to Claude Code",
+    );
+    expect(
+      await $('[data-testid="onboarding-engines"] [data-engine="claude"]').getAttribute("data-default"),
+    ).toBe("true");
     await expectNoSeriousA11yViolations();
     // It opens the engine's own sign-in as a new account, named first.
     await $('[data-testid="onboarding-sign-in-claude"]').click();
@@ -63,33 +84,70 @@ describe("E2E-M5-9 onboarding", () => {
     await browser.keys("Escape");
     await $('[data-testid="login-nickname"]').waitForExist({ reverse: true, timeout: 5_000 });
 
-    // F-SH-08.2: quitting at step 3 resumes at step 3.
-    await relaunch();
-    await atStep("accounts");
-
-    await $('[data-testid="onboarding-continue"]').click();
-    // M8 added Dictate's setup between Accounts and Privacy (F-DI-11).
-    await atStep("dictate");
-    await $('[data-testid="onboarding-continue"]').click();
-    await atStep("privacy");
-    expect(await checked("Share anonymous usage statistics")).toBe("false");
-    expect(await checked("Send crash reports")).toBe("false");
-    await expectNoSeriousA11yViolations();
-
     await $('[data-testid="onboarding-continue"]').click();
     await atStep("workspace");
+    expect(await textOf('[data-testid="onboarding"] h1')).toBe("Pick a project folder");
+    // F-SH-08.2: quitting at step 3 (counting Welcome) resumes there.
+    await relaunch();
+    await atStep("workspace");
     await expectNoSeriousA11yViolations();
+
     const folder = pickFolder(`/tmp/tandem-e2e-m5-9-${Date.now()}`);
+    const name = basename(folder);
     await $('[data-testid="onboarding-choose-folder"]').click();
-    await $('[data-testid="launch-grid"]').waitForDisplayed({ timeout: 20_000 });
+    await atStep("finish");
+    expect(await textOf('[data-testid="onboarding"] h1')).toBe("You're set");
+    // The privacy switches are one line now, both off (F-TL-01).
+    expect(await textOf('[data-testid="onboarding-privacy"]')).toBe(
+      "Usage statistics and crash reports stay off. You can turn them on in Settings › Privacy.",
+    );
+    expect(await $('[data-testid="onboarding"] [role="switch"]').isExisting()).toBe(false);
+    await expectNoSeriousA11yViolations();
+    // The button leads with the engine's glyph.
+    expect(await textOf('[data-testid="onboarding-start"]')).toMatch(
+      new RegExp(`Start Claude Code in ${name}$`),
+    );
+    expect(await textOf('[data-testid="onboarding-skip"]')).toBe(`Open ${name} without an agent`);
+
+    await $('[data-testid="onboarding-start"]').click();
+    await $('[data-testid="app-shell"]').waitForExist({ timeout: 20_000 });
     expect(await $('[data-testid="onboarding"]').isExisting()).toBe(false);
     expect(await modeIs("Code")).toBe(true);
     expect(await workspaceRoots()).toEqual([folder]);
-    expect(await paneIds()).toEqual([]);
+    // The agent launches through the launch grid's path, alone in the first tab.
+    await browser.waitUntil(async () => (await paneIds()).length === 1, {
+      timeout: 20_000,
+      timeoutMsg: "no agent pane",
+    });
+    const [agent] = await paneIds();
+    await waitForPaneText(agent ?? "", "Fake Claude Code", 20_000);
+    expect(await $('[data-testid="launch-grid"]').isExisting()).toBe(false);
     const settings = await invoke<Record<string, unknown>>("settings_get_all");
     expect(settings.telemetry_usage).toBe(false);
     expect(settings.telemetry_crash).toBe(false);
+    expect(settings.first_finish).toBe("armed");
     expect((await invoke<{ done: boolean }>("onboarding_get")).done).toBe(true);
+
+    // F-SH-08.5: its first finish brings one toast, once.
+    await sendToPane(agent ?? "", "hello\r");
+    await waitForStatus(agent ?? "", "done", 20_000);
+    await browser.waitUntil(async () => (await toasts()).includes(`Claude Code finished in ${name}`), {
+      timeout: 10_000,
+      timeoutMsg: `no first-finish toast: ${JSON.stringify(await toasts())}`,
+    });
+    expect((await invoke<Record<string, unknown>>("settings_get_all")).first_finish).toBe("shown");
+    // The folder isn't a git repository: the action opens the pane.
+    expect(await $("button=Open it").isExisting()).toBe(true);
+    await $("button=Open it").click();
+    await browser.waitUntil(async () => !(await toasts()).some((t) => t.includes("finished in")), {
+      timeout: 5_000,
+    });
+    // A second finish brings nothing.
+    await sendToPane(agent ?? "", "again\r");
+    await waitForStatus(agent ?? "", "working", 10_000).catch(() => undefined);
+    await waitForStatus(agent ?? "", "done", 20_000);
+    await browser.pause(1_000);
+    expect((await toasts()).some((t) => t.includes("finished in"))).toBe(false);
   });
 
   it("F-SH-08.3 Run setup again, then skipping every step, lands in an empty Code mode that invites a folder", async function () {
@@ -111,7 +169,7 @@ describe("E2E-M5-9 onboarding", () => {
     await typeKeys("setup");
     await $('[data-testid="run-setup-again"]').waitForExist({ timeout: 10_000 });
     await $('[data-testid="run-setup-again"]').click();
-    for (const s of ["engines", "accounts", "dictate", "privacy", "workspace"]) {
+    for (const s of ["engines", "workspace", "finish"]) {
       await atStep(s);
       await $('[data-testid="onboarding-skip"]').click();
     }

@@ -1077,7 +1077,7 @@ export function TerminalView({
           type="button"
           data-testid="jump-bottom"
           onClick={jumpToBottom}
-          className="absolute bottom-3 right-4 z-10 inline-flex h-7 items-center gap-1 rounded-full border border-border-strong bg-surface-3 px-3 text-sm text-fg shadow-2 hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
+          className="absolute bottom-3 right-4 z-10 inline-flex h-7 items-center gap-1 rounded-sm border border-border-strong bg-surface-3 px-3 text-sm text-fg shadow-2 hover:bg-surface-4 focus-visible:shadow-focus focus-visible:outline-none"
         >
           {t("terminal.jumpBottom")}
           <ArrowDown size={13} aria-hidden="true" />

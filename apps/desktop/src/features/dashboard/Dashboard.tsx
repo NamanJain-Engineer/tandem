@@ -211,8 +211,9 @@ function AgentCard({
       onKeyDown={onKey}
       // Off screen, a card skips layout, paint and hit tests.
       style={offscreenRow(104)}
+      // A surface card (e1, DESIGN §4.5) that lifts to the raised fill on hover.
       className={cx(
-        "group flex cursor-pointer flex-col gap-1 rounded-md border bg-surface-2 px-3 py-2 outline-none hover:bg-surface-3 focus-visible:shadow-focus",
+        "group flex cursor-pointer flex-col gap-1 rounded-md border bg-surface-2 px-3 py-2 shadow-e1 outline-none transition-colors duration-[var(--dur-instant)] hover:bg-surface-3 focus-visible:shadow-focus",
         item.status === "waiting" ? "border-waiting" : "border-border",
       )}
     >
@@ -369,8 +370,11 @@ function FilterChip({ id, label, active }: { id: Filter; label: string; active: 
       data-testid={`filter-${id}`}
       onClick={() => useDashboard.getState().setFilter(id)}
       className={cx(
-        "h-6 shrink-0 rounded-full border px-2.5 text-sm focus-visible:shadow-focus focus-visible:outline-none",
-        active ? "border-accent bg-accent-soft text-fg" : "border-border text-fg-muted hover:bg-surface-3",
+        // A 6 px control, not a pill (DESIGN §4.5); the chosen one in the accent.
+        "h-6 shrink-0 rounded-sm border px-2 text-sm tabular-nums transition-colors duration-[var(--dur-instant)] focus-visible:shadow-focus focus-visible:outline-none",
+        active
+          ? "border-accent/60 bg-accent-soft text-fg"
+          : "border-border text-fg-muted hover:bg-surface-3 hover:text-fg",
       )}
     >
       {label}
@@ -563,7 +567,7 @@ export function Dashboard({ onScreen = true }: { onScreen?: boolean }) {
         <div
           role="img"
           aria-label={t("dashboard.barLabel")}
-          className="flex h-1.5 overflow-hidden rounded-full bg-surface-3"
+          className="flex h-1 gap-px overflow-hidden rounded-full bg-surface-3"
         >
           {segments.map((x) =>
             x.n > 0 ? (

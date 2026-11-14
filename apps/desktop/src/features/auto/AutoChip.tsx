@@ -18,7 +18,7 @@ export function AutoChip({ paneId }: { paneId: string }) {
   if (!run) return null;
   const mode = t(`auto.mode.${run.mode}`);
   const chip =
-    "inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
+    "inline-flex h-5 shrink-0 items-center gap-1 rounded-xs border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
 
   if (run.state === "ended") {
     const { head, reason } = endLabel(run);

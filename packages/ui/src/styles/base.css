@@ -64,10 +64,11 @@
 @keyframes tn-shimmer { from { background-position: -200px 0; } to { background-position: 200px 0; } }
 @keyframes tn-indeterminate { from { left: -30%; } to { left: 100%; } }
 
-.tn-fade { animation: tn-fade-in var(--dur-base) var(--ease-enter); }
-.tn-pop { animation: tn-pop-in var(--dur-base) var(--ease-enter); }
-.tn-dialog { animation: tn-dialog-in var(--dur-slow) var(--ease-enter); }
-.tn-sheet { animation: tn-sheet-in var(--dur-slow) var(--ease-enter); }
+/* Entrances arrive on the brand's expo-out, as the site's do (DESIGN §4.7, T4). */
+.tn-fade { animation: tn-fade-in var(--dur-base) var(--tn-ease-out); }
+.tn-pop { animation: tn-pop-in var(--dur-base) var(--tn-ease-out); }
+.tn-dialog { animation: tn-dialog-in var(--dur-slow) var(--tn-ease-out); }
+.tn-sheet { animation: tn-sheet-in var(--dur-slow) var(--tn-ease-out); }
 .tn-toast { animation: tn-toast-in var(--dur-slow) var(--ease-spring); }
 /* These are entry animations: closing content never animates. Radix keeps
    closing content mounted while an animation it hasn't seen start runs, and
@@ -88,6 +89,31 @@
   animation: tn-shimmer 1.2s linear infinite;
 }
 .tn-indeterminate { animation: tn-indeterminate 1.2s var(--ease-standard) infinite; }
+
+/* Light comes from above (DESIGN §4.5, T2): a raised or floating surface
+   catches it on its top edge, as the site's frames and cards do. The edge is
+   brighter on top and quieter at the bottom (dark), shaded below (light);
+   the shadow is brand.css's e2 or e3 under a 1 px inner highlight, and in
+   dark a touch of fill gathers under the top edge. Colours and depth are
+   brand.css tokens only. High contrast keeps its strong border. */
+.tn-raised,
+.tn-floating {
+  border-top-color: var(--tn-edge-top);
+  border-bottom-color: var(--tn-edge-bottom);
+  background-image: linear-gradient(to bottom, var(--tn-fill-top), var(--tn-fill-bottom) 160px);
+}
+/* In light the surface is already the brightest thing: no fill, only shade. */
+[data-theme="light"] .tn-raised,
+[data-theme="light"] .tn-floating { background-image: none; }
+.tn-raised { box-shadow: var(--tn-elev-2); }
+.tn-floating { box-shadow: inset 0 1px 0 var(--tn-edge-hi), var(--tn-elev-3); }
+[data-contrast="more"] .tn-raised,
+[data-contrast="more"] .tn-floating { border-color: var(--tn-border); }
+
+/* A field whose frame shows its focus (the palette's search row, the
+   composer): the global :focus-visible ring would box the bare field
+   inside it, so the frame draws focus instead (DESIGN §5.4). */
+.tn-bare-field:focus-visible { box-shadow: none; }
 
 .tn-cmd-group [cmdk-group-heading] {
   padding: 8px 10px 4px;

@@ -40,14 +40,14 @@ function TileKey({ n }: { n: number }) {
 }
 
 /** This machine's install command for an engine (F-EN-03's commands). */
-function installCommand(install: InstallCommands | undefined, platform: string | undefined): string | null {
+export function installCommand(install: InstallCommands | undefined, platform: string | undefined): string | null {
   if (!install) return null;
   return platform === "macos" ? install.mac : platform === "windows" ? install.win : install.lin;
 }
 
 /** An install command in mono with a copy button named for its engine;
  * "Copied" is announced and clears after 1.5 s. */
-function CopyCommand({ command, engine }: { command: string; engine: string }) {
+export function CopyCommand({ command, engine }: { command: string; engine: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {

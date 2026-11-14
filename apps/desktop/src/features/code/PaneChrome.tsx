@@ -116,11 +116,7 @@ function PaneName({
       </span>
     );
   return (
-    <span
-      data-testid="pane-name"
-      onDoubleClick={start}
-      className="shrink-0 truncate text-sm font-semibold text-fg"
-    >
+    <span data-testid="pane-name" onDoubleClick={start} className="shrink-0 truncate text-sm font-semibold">
       {name}
     </span>
   );
@@ -136,7 +132,8 @@ function PaneTitle({ title, name, room }: { title: string; name?: string | null;
         className={cx(
           "truncate text-sm",
           room ? `${room} shrink-0` : "min-w-[min(10ch,100%)]",
-          name ? "text-fg-muted" : "text-fg",
+          // Beside a name the title is secondary; alone it takes the header's ink.
+          name && "text-fg-muted",
         )}
       >
         {title}
@@ -210,12 +207,25 @@ export function PaneChrome({
       role="toolbar"
       aria-label={title}
       data-testid="pane-chrome"
+      data-focused={focused ? "true" : undefined}
+      // DESIGN §5.4.2: 30 px with one hairline under it; the pane's own border
+      // is the only line above. The focused pane's header takes the light: a
+      // 2 px accent line along its top and a touch of fill, and its name and
+      // title in full ink; the others' recede.
       className={cx(
-        "group/chrome flex h-[30px] shrink-0 cursor-grab items-center gap-1.5 border-b border-divider bg-surface-2 pl-1 pr-1 active:cursor-grabbing",
-        "border-t",
-        focused ? "border-t-accent" : "border-t-transparent",
+        "group/chrome relative flex h-[30px] shrink-0 cursor-grab items-center gap-1.5 border-b border-divider pl-1 pr-1 active:cursor-grabbing",
+        focused
+          ? "bg-surface-2 bg-linear-to-b from-[var(--tn-fill-top)] to-[var(--tn-fill-bottom)] text-fg"
+          : "bg-surface-2 text-fg-muted",
       )}
     >
+      {focused && (
+        <span
+          aria-hidden="true"
+          data-testid="pane-focus-line"
+          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-accent"
+        />
+      )}
       <GripVertical
         size={12}
         aria-hidden="true"

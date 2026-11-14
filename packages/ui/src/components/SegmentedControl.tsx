@@ -35,7 +35,9 @@ export function SegmentedControl({ items, value, onValueChange, label, size = "m
             className={cx(
               "group relative inline-flex items-center gap-1.5 rounded-xs px-3 font-medium text-fg-muted transition-colors duration-[var(--dur-fast)]",
               "hover:text-fg focus-visible:shadow-focus focus-visible:outline-none",
-              "data-[state=checked]:bg-surface-3 data-[state=checked]:text-fg data-[state=checked]:shadow-1",
+              // aria-checked, not data-state: a Tooltip around the segment
+              // sets its own data-state ("closed"), which hid the selection.
+              "aria-checked:bg-surface-3 aria-checked:text-fg aria-checked:shadow-e1",
               size === "sm" ? "h-6 text-sm" : "h-7 text-base",
             )}
           >
@@ -44,7 +46,7 @@ export function SegmentedControl({ items, value, onValueChange, label, size = "m
             {modeSwitch && (
               <span
                 aria-hidden="true"
-                className="absolute inset-x-3 bottom-0.5 hidden h-px bg-accent group-data-[state=checked]:block"
+                className="absolute inset-x-3 bottom-0.5 hidden h-px bg-accent group-aria-checked:block"
               />
             )}
           </R.Item>

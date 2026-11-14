@@ -145,7 +145,7 @@ export function SettingsGroup({ label, children }: { label?: string; children: R
   return (
     <section className="flex flex-col gap-1.5" aria-label={label}>
       {label && <h2 className="px-3 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">{label}</h2>}
-      <div className="rounded-md border border-border bg-surface-2">{children}</div>
+      <div className="rounded-md border border-border bg-surface-2 shadow-e1">{children}</div>
     </section>
   );
 }

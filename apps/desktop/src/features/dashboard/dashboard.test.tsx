@@ -81,6 +81,22 @@ describe("Dashboard (F-DB-01)", () => {
     ]);
   });
 
+  it("DESIGN-4.5 the filters are 6 px controls, not pills, and the cards sit at e1 (D-2643)", async () => {
+    setup([item("working", "a"), item("idle", "b")]);
+    render(
+      <UiProvider>
+        <Dashboard />
+      </UiProvider>,
+    );
+    await waitFor(() => expect(cards()).toHaveLength(2));
+    for (const f of ["all", "working", "idle"]) {
+      const chip = screen.getByTestId(`filter-${f}`);
+      expect(chip.className).toContain("rounded-sm");
+      expect(chip.className).not.toContain("rounded-full");
+    }
+    for (const c of cards()) expect(c.className).toContain("shadow-e1");
+  });
+
   it("F-DB-01.2 Close idle with the search 'api' closes only matching idle agents", async () => {
     const calls = setup([
       item("idle", "api tests"),

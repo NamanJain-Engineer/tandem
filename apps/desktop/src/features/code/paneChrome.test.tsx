@@ -75,6 +75,25 @@ describe("§2.20 pane header (D-2603)", () => {
     expect(screen.queryByTestId("pane-elapsed")).toBeNull();
   });
 
+  it("DESIGN-5.4.2 the focused pane's header takes a 2 px accent line and full ink, over one hairline (D-2641)", () => {
+    const { unmount } = show({ focused: true });
+    const chrome = screen.getByTestId("pane-chrome");
+    const line = screen.getByTestId("pane-focus-line");
+    expect(line.className).toContain("h-0.5");
+    expect(line.className).toContain("bg-accent");
+    expect(line.getAttribute("aria-hidden")).toBe("true");
+    expect(chrome.className).toContain("text-fg");
+    // One hairline: the header's bottom. Above it is only the pane's border.
+    expect(chrome.className).toContain("border-b");
+    expect(chrome.className).not.toMatch(/\bborder-t\b|border-t-/);
+    unmount();
+    show({ focused: false });
+    expect(screen.queryByTestId("pane-focus-line")).toBeNull();
+    expect(screen.getByTestId("pane-chrome").className).toContain("text-fg-muted");
+    // The title alone takes the header's ink rather than its own.
+    expect(screen.getByTestId("pane-title").className).not.toMatch(/\btext-fg\b/);
+  });
+
   it("keeps its actions reachable and named", () => {
     show();
     expect(screen.getByRole("button", { name: "Maximize pane" })).toBeTruthy();

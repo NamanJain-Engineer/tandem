@@ -27,6 +27,7 @@ import { useWorkspaces } from "./stores/workspaces";
 import { useRestore } from "./stores/restore";
 import { useOnboarding } from "./stores/onboarding";
 import { Onboarding } from "./features/onboarding/Onboarding";
+import { FirstFinish } from "./features/onboarding/FirstFinish";
 import { DictateBridge } from "./features/dictate/DictateBridge";
 import { watchDictate } from "./stores/dictate";
 
@@ -181,6 +182,8 @@ export function App() {
             onboardingDone ? (
               <>
                 <DeepLinks />
+                {/* F-SH-08 behaviour 4: the first agent's finish, once. */}
+                <FirstFinish />
                 <AppShell key={catalogVersion} />
               </>
             ) : (

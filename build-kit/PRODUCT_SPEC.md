@@ -377,18 +377,22 @@ Kept for the hosted API, which isn't deployed. Nothing in the app or on the site
 
 #### F-SH-08 First-run onboarding (P0)
 **Behavior:**
-1. Welcome: "Your agents, your accounts, one window." with **Sign in** (browser, F-BE-02) and **Continue offline**. Offline gives Free limits and 14 days of local-only use before sign-in is required.
-2. Engine setup: the detected engines list (F-EN-01). Not-installed engines offer **Install** (F-EN-03), each with a visible installer terminal. The step can be skipped.
-3. Accounts: for each installed chat engine, "Sign in to Claude Code" / "Sign in to Codex". This runs the vendor's own login inside a new provider home (F-AC-02) and can be skipped.
-4. Dictate: pick the hotkey, grant permissions (mac: Microphone, Input Monitoring, Accessibility), and try it out (F-DI-11). Skippable.
-5. Pick a first workspace folder, which lands in Code mode with the launch grid (F-CD-13).
-- Every step shows "Skip" and "Back". Onboarding can be re-run from Settings › General → "Run setup again" (UI-101).
-- Onboarding state is persisted, so quitting mid-way resumes at the same step.
+1. Welcome (UI-03): the two rings at 96 px on the brand's bloom, drawn in once (400 ms; not at all under reduced motion), "Welcome to Vibezeo", "Run your coding agents side by side, on this computer.", the primary **Start using Vibezeo**, and one quiet fact line, "Free · no account · nothing sent to Vibezeo". A build with the hosted service shows the same heading over its sign-in (F-BE-02) and **Use Vibezeo offline**.
+2. Then three steps, with a three-step stepper (DESIGN §5.3, D-2647):
+   1. **Engines:** the engines found on this computer first (F-EN-01), each a row with its `EngineGlyph`, name, version and a status: "Signed in", or **Sign in**, which runs that engine's own login in its provider home (F-AC-02, as Settings › Accounts does; Vibezeo never reads, copies or proxies the token). An engine whose sign-in Vibezeo can't keep apart (no provider home) shows its version only. The first signed-in engine is preselected as the default (else Claude Code, else the first found), marked "Default", and any other found engine can be made the default. Missing engines collapse under "{n} more you can install", each with this OS's install command. **Rescan** detects again.
+   2. **Your first folder:** pick a project folder; it becomes a workspace and the wizard moves on.
+   3. **Done:** "You're set", the default engine and the folder, and one line saying usage statistics and crash reports stay off, linking to Settings › Privacy (F-TL-01; following the link finishes setup without an agent and opens that page). The primary **Start {engine} in {folder}** finishes setup and opens Code mode on that workspace with the default engine's agent already launching in its first tab, through the launch grid's own launch path. The secondary **Open {folder} without an agent** finishes on the launch grid. With no folder or no engine found, the one action is **Finish setup**, which lands on the launch grid or the empty state.
+3. Dictate is not a step: when the first agent finishes (behaviour 4), a dismissible tip says how to dictate, with **Set up Dictate**, which opens Settings › Dictate (F-DI-11's setup lives there).
+4. **The first finish:** the first time an agent pane goes from another status to Done after setup, its header animates to Done, and one toast says "{engine} finished in {folder}" with **Review its changes**, which opens that workspace's changes in the Files tab (**Open it**, focusing the pane, when the folder isn't a git repository). It shows once per profile (the `first_finish` setting: setup's end arms it, the toast marks it shown), never for a pane that was already Done when the app started, and never with confetti, a rating prompt or a share prompt.
+- Every step shows "Skip" and "Back" (Back is off on the first step; on Done, the action that ends without an agent is the skip). Onboarding can be re-run from Settings › General → "Run setup again" (UI-101).
+- Onboarding state is persisted, so quitting mid-way resumes at the same step. A step saved by the earlier five-step wizard resumes where its content went: accounts at Engines; dictate and privacy at Your first folder.
 
 **Acceptance:**
-1. A fresh profile shows the Welcome screen; completing all steps lands in Code mode with the chosen workspace selected.
-2. Quitting at step 3 and relaunching resumes at step 3.
+1. A fresh profile shows the Welcome screen; completing the three steps with **Start {engine} in {folder}** lands in Code mode with the chosen workspace selected and that engine's agent pane launching in its first tab.
+2. Quitting at Your first folder (step 3, counting Welcome) and relaunching resumes there; a profile saved at the old accounts step resumes at Engines, and one saved at dictate or privacy at Your first folder.
 3. Every step is skippable, and skipping all steps lands in Code mode with an empty state that invites opening a folder.
+4. The Engines step lists found engines before missing ones, shows "Signed in" or a Sign in action for each found engine that signs in apart, collapses the missing ones under "{n} more you can install", and preselects the first signed-in engine as the default.
+5. The first agent to finish after setup brings one toast, "{engine} finished in {folder}", whose action opens its changes, and then the Dictate tip; a second finish, or a finish after relaunching, brings neither.
 
 #### F-SH-09 Command palette and keyboard shortcuts (P1)
 **Behavior:**
@@ -2803,7 +2807,7 @@ Each ready module needs:
 
 #### F-DI-11 Onboarding and permissions (P0)
 **Behavior:**
-- The Dictate setup steps (inside F-SH-08, and re-runnable) are:
+- The Dictate setup steps (Settings › Dictate › Set up; first run points to it with a tip after the first agent finishes, F-SH-08 behaviour 3) are:
   1. "Hold a key, say what you mean, release — it lands where your cursor is."
   2. **macOS:** two permissions, each with a status and a button:
      - **Input Monitoring**: "hears your key in other apps". It takes effect on relaunch; offer Quit & Reopen.
@@ -3468,7 +3472,7 @@ Not offered: Vibezeo is free (D-869). The app has no checkout, portal, dunning o
 - **Allowlist:** a bundled telemetry allowlist JSON enumerates every event and property. The SDK wrapper drops anything not listed.
 - **Never sent:** prompt text, transcripts, audio, terminal output, file paths or names, repo names, emails, or device names.
 - Turning usage stats off deletes the local analytics id.
-- The first-run onboarding asks once, with both options off by default.
+- The first-run onboarding says once, on its Done step, that both stay off, with a link to Settings › Privacy (F-SH-08).
 
 **Acceptance:**
 1. With telemetry off, no network requests go to analytics or crash hosts during a scripted session (network capture).

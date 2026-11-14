@@ -376,7 +376,9 @@ const RowView = memo(function RowView({
             />
           }
         >
-          <div data-testid="thread-assistant">
+          {/* Prose reads at a 72-character measure (DESIGN §5.4.5); code
+              blocks and tables keep the column's width. */}
+          <div data-testid="thread-assistant" className="[&_li]:max-w-[72ch] [&_p]:max-w-[72ch]">
             <MarkdownView
               markdown={row.markdown}
               streaming={row.streaming}

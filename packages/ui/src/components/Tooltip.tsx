@@ -33,7 +33,7 @@ export function Tooltip({ label, kbd, side = "bottom", children, disabled, open 
         <T.Content
           side={side}
           sideOffset={6}
-          className="tn-pop z-[var(--z-popover)] flex max-w-[280px] items-center gap-3 rounded-sm bg-surface-3 px-2 py-1.5 text-sm text-fg shadow-e2"
+          className="tn-pop z-[var(--z-popover)] flex max-w-[280px] items-center gap-3 rounded-sm border border-border bg-surface-3 px-2 py-1.5 text-sm text-fg tn-raised"
         >
           <span>{label}</span>
           {kbd && <Kbd keys={kbd} className="ml-auto" />}

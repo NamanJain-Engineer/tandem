@@ -374,7 +374,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       data-testid="composer"
       data-running={running || undefined}
       className={cx(
-        "@container relative flex flex-col rounded-lg border border-border bg-surface-2 shadow-1 focus-within:border-border-strong",
+        // Focus is the composer's, drawn on its frame: an accent edge and a soft
+        // accent halo, not a ring around the textarea alone (DESIGN §4.2).
+        "@container relative flex flex-col rounded-lg border border-border bg-surface-2 shadow-e1 transition-[border-color,box-shadow] duration-[var(--dur-fast)]",
+        "has-[textarea:focus-visible]:border-accent has-[textarea:focus-visible]:shadow-[0_0_0_3px_var(--tn-accent-soft)]",
         disabled && "opacity-60",
         className,
       )}
@@ -414,7 +417,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           id={listId}
           role="listbox"
           aria-label={labels.mentions}
-          className="absolute inset-x-2 bottom-full z-[var(--z-popover)] mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-3 p-1 shadow-e2"
+          className="absolute inset-x-2 bottom-full z-[var(--z-popover)] mb-1 max-h-64 overflow-y-auto rounded-md border border-border bg-surface-3 p-1 tn-raised"
         >
           {picker.items.length === 0 ? (
             <p className="px-2 py-1 text-sm text-fg-subtle">{labels.noMentions}</p>
@@ -471,7 +474,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           }
         }}
         style={{ minHeight: MIN_H, maxHeight: MAX_H }}
-        className="w-full resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-md text-fg placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
+        className="w-full resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-md text-fg placeholder:text-fg-subtle tn-bare-field focus:outline-none disabled:cursor-not-allowed"
       />
       {disabled && <div className="px-3 pb-1 text-sm text-fg-muted">{disabledReason}</div>}
       <div className="flex min-h-10 flex-wrap items-center gap-1.5 border-t border-divider px-2 py-1.5">

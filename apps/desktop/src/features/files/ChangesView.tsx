@@ -568,7 +568,7 @@ export function BranchChip({ context, view }: { context: FileContext; view: GitV
             data-behind={s.behind}
             data-upstream={s.upstream ?? ""}
             aria-label={t("git.branch.label", { name, counts })}
-            className="inline-flex h-6 max-w-[220px] items-center gap-1.5 rounded-full border border-border px-2 text-xs text-fg-muted hover:border-border-strong hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+            className="inline-flex h-6 max-w-[220px] items-center gap-1.5 rounded-xs border border-border px-2 text-xs text-fg-muted hover:border-border-strong hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
           >
             {busy === "push" || busy === "pull" || busy === "switch" ? (
               <Spinner size={12} />

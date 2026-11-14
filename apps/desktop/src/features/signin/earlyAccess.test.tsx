@@ -41,6 +41,33 @@ describe("early-access builds (D-105)", () => {
     expect(calls.some((c) => c.cmd === "auth_sign_in")).toBe(false);
   });
 
+  it("F-SH-08 DESIGN-5.3.1 welcome: the two rings at 96 px on the brand's bloom, drawn in once, over the title at 3xl and one line", () => {
+    fakeBackend();
+    useSession.setState({ auth: EARLY_ACCESS_NEW });
+    render(
+      <UiProvider>
+        <SignIn />
+      </UiProvider>,
+    );
+    const rings = screen.getByTestId("welcome-rings");
+    expect(rings.getAttribute("width")).toBe("96");
+    expect(rings.getAttribute("height")).toBe("96");
+    // Each ring draws in once (400 ms; base.css stops it under reduced motion).
+    const drawn = Array.from(rings.querySelectorAll("circle"));
+    expect(drawn).toHaveLength(2);
+    for (const c of drawn) expect(c.getAttribute("class")).toContain("tn-ring-draw");
+    expect(screen.getByTestId("welcome-bloom")).toBeTruthy();
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.textContent).toBe("Welcome to Vibezeo");
+    expect(title.className).toContain("text-3xl");
+    expect(screen.getByText("Run your coding agents side by side, on this computer.")).toBeTruthy();
+    // One primary action, and the fact line under it.
+    const primary = screen.getByRole("button", { name: "Start using Vibezeo" });
+    expect(
+      primary.compareDocumentPosition(screen.getByTestId("signin-free")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("hosted builds keep the sign-in buttons", () => {
     fakeBackend();
     useSession.setState({ auth: { ...EARLY_ACCESS_NEW, hosted: true } });

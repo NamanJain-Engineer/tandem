@@ -125,7 +125,7 @@ export function Coachmark({
       data-side={side}
       style={place ? { top: place.top, left: place.left } : { top: 0, left: 0, visibility: "hidden" }}
       className={cx(
-        "tn-pop fixed z-[var(--z-popover)] flex w-max rounded-md border border-border bg-surface-3 text-base text-fg shadow-e2",
+        "tn-pop fixed z-[var(--z-popover)] flex w-max rounded-md border border-border bg-surface-3 text-base text-fg tn-raised",
         compact
           ? "max-w-[calc(100vw-1rem)] items-center gap-3 py-1.5 pl-3 pr-1.5"
           : "max-w-[240px] flex-col gap-2 p-3",

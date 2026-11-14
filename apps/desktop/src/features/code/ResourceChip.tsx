@@ -4,7 +4,7 @@ import { t } from "../../i18n";
 import { useResources } from "../../stores/resources";
 
 const CHIP =
-  "inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
+  "inline-flex h-5 shrink-0 items-center gap-1 rounded-xs border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
 
 /** F-EX-06: "Frozen", "Stopped: memory cap 512 MB" or "Not capped" on a pane. */
 export function ResourceChip({ paneId }: { paneId: string }) {

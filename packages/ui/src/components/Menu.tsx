@@ -20,7 +20,8 @@ export type MenuEntry =
   | { type: "separator"; id: string }
   | { type: "label"; id: string; label: string };
 
-const PANEL = "tn-pop z-[var(--z-popover)] min-w-[200px] rounded-md border border-border bg-surface-3 p-1 shadow-e2";
+const PANEL =
+  "tn-pop z-[var(--z-popover)] min-w-[200px] rounded-md border border-border bg-surface-3 p-1 tn-raised";
 const ITEM =
   "relative flex h-7 cursor-default select-none items-center gap-2 rounded-sm px-2 text-base text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-surface-4";
 
@@ -49,7 +50,12 @@ function renderEntries(P: Parts, entries: MenuEntry[]): ReactNode {
     if (e.type === "separator") return <Separator key={e.id} className="my-1 h-px bg-divider" />;
     if (e.type === "label")
       return (
-        <Label key={e.id} className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-caps text-fg-subtle">
+        // A label often names the user's own thing (a pane's title): sentence case,
+        // never caps (DESIGN §4.3), and cut to the menu's width.
+        <Label
+          key={e.id}
+          className="max-w-[320px] truncate px-2 pb-1 pt-1.5 text-sm font-medium text-fg-subtle"
+        >
           {e.label}
         </Label>
       );

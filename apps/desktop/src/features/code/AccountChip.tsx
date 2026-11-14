@@ -79,7 +79,7 @@ export function AccountChip({ pane }: { pane: PaneRecord }) {
           type="button"
           data-testid="account-chip"
           aria-label={t("accounts.chip", { name: current.label })}
-          className="inline-flex h-5 max-w-[140px] shrink-0 items-center gap-1 rounded-full border border-border bg-surface-3 px-1.5 text-xs text-fg-muted hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+          className="inline-flex h-5 max-w-[140px] shrink-0 items-center gap-1 rounded-xs border border-border bg-surface-3 px-1.5 text-xs text-fg-muted hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
         >
           <UserRound size={11} aria-hidden="true" className="shrink-0" />
           <span className="truncate">{current.label}</span>

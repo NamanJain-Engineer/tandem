@@ -26,3 +26,49 @@ body {
 .tn-term .tn-cmd-mark[data-ok="false"] {
   color: var(--tn-danger);
 }
+
+/* First run (F-SH-08, DESIGN §5.3). The welcome's two rings draw in once
+   and each wizard step rises 4 px as it enters, over --dur-deliberate; with
+   reduced motion neither moves (data-motion is "reduced"). */
+@keyframes tn-ring-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tn-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.tn-ring-draw {
+  stroke-dasharray: 100;
+}
+:root[data-motion="full"] .tn-ring-draw {
+  animation: tn-ring-draw var(--dur-deliberate) var(--tn-ease-out) both;
+}
+:root[data-motion="full"] .tn-ring-draw + .tn-ring-draw {
+  animation-delay: 60ms;
+}
+:root[data-motion="full"] .tn-step-in {
+  animation: tn-step-in var(--dur-deliberate) var(--tn-ease-out) both;
+}
+/* The brand's bloom behind the welcome: the rings' teal and sky light
+   (brand.css), as the site's bg-lens draws it. */
+.tn-welcome-bloom {
+  background-image:
+    radial-gradient(closest-side at 42% 50%, var(--tn-glow-a), transparent),
+    radial-gradient(closest-side at 58% 50%, var(--tn-glow-b), transparent);
+}
+/* A step's title takes focus for screen readers when the step changes; it
+   isn't a control, so it draws no focus ring. */
+.tn-step-title:focus-visible {
+  box-shadow: none;
+}

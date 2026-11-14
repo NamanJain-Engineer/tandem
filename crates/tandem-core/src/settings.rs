@@ -166,6 +166,7 @@ setting_keys! {
     LastMode,
     SettingsLastPage,
     OnboardingStep,
+    FirstFinish,
     OfflineStartedAt,
     WhatsNewSeen,
     RailWidth,
@@ -1023,6 +1024,15 @@ pub static SCHEMA: &[SettingSpec] = &[
         OnboardingStep,
         json!(null),
         V::OptionalText { max: 32 },
+        Hidden,
+        []
+    ),
+    // F-SH-08: the first finish's toast. Setup's end arms it (`unset` →
+    // `armed`), the toast marks it `shown`, once per profile (D-2651).
+    spec!(
+        FirstFinish,
+        json!("unset"),
+        V::OneOf(&["unset", "armed", "shown"]),
         Hidden,
         []
     ),

@@ -102,7 +102,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
       role="presentation"
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(
-        "group flex h-6 shrink-0 items-center rounded-full border text-sm",
+        "group flex h-6 shrink-0 items-center rounded-sm border text-sm",
         active
           ? "border-border-strong bg-surface-3 text-fg"
           : "border-transparent text-fg-muted hover:bg-surface-2",
@@ -133,7 +133,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
             store().close(tab.id);
           }
         }}
-        className="flex h-full items-center gap-1.5 rounded-full pl-2.5 pr-1 focus-visible:shadow-focus focus-visible:outline-none"
+        className="flex h-full items-center gap-1.5 rounded-sm pl-2.5 pr-1 focus-visible:shadow-focus focus-visible:outline-none"
       >
         {ICONS[tab.kind]}
         <span className="max-w-[140px] truncate">{label}</span>
@@ -150,7 +150,7 @@ function Pill({ tab, active }: { tab: SidebarTab; active: boolean }) {
         title={t("sidebar.closeTab", { name: label })}
         data-testid="sidebar-pill-close"
         onClick={() => store().close(tab.id)}
-        className="mr-1 inline-flex size-4 cursor-default items-center justify-center rounded-full text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg group-hover:opacity-100"
+        className="mr-1 inline-flex size-4 cursor-default items-center justify-center rounded-xs text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-fg group-hover:opacity-100"
       >
         <X size={11} aria-hidden="true" />
       </span>

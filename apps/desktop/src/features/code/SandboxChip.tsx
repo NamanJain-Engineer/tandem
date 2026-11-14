@@ -4,7 +4,7 @@ import { t } from "../../i18n";
 import { useSandbox } from "../../stores/sandbox";
 
 const CHIP =
-  "inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
+  "inline-flex h-5 shrink-0 items-center gap-1 rounded-xs border border-border bg-surface-3 px-1.5 text-xs text-fg-muted";
 
 /** F-TL-11: "Sandboxed" on an agent pane, or why it isn't. */
 export function SandboxChip({ paneId }: { paneId: string }) {

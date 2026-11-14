@@ -187,6 +187,7 @@ export function Palette() {
         shouldFilter={false}
         onQueryChange={find.setQuery}
         resetKey="find"
+        hints={hints()}
       />
     );
   }
@@ -200,6 +201,14 @@ export function Palette() {
       emptyText={(q) => t("palette.empty", { q })}
       recentHeading={t("palette.suggestions")}
       resetKey="commands"
+      hints={hints()}
     />
   );
 }
+
+/** The palette's keys, in its footer (DESIGN §5.4.7: keyboard first, always discoverable). */
+const hints = () => [
+  { keys: "↑↓", label: t("palette.hint.move") },
+  { keys: "↵", label: t("palette.hint.run") },
+  { keys: "Esc", label: t("palette.hint.close") },
+];

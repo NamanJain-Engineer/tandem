@@ -878,6 +878,7 @@ The format for each screen is: ID · title · feature codes, then the wireframe,
 - **Acceptance:** killing the app mid-session and relaunching shows the crash variant. "Restore all" returns panes to their prior layout.
 
 #### UI-03 · Sign-in · BE, BL
+> **D-2648 (DESIGN §5.3.1):** the welcome is the first run's first frame. Both variants are centred on `bg` with no card: the two rings at 96 px over the brand's bloom (the rings' teal and sky glow, `--tn-glow-a/b` from `brand.css`), drawn in once over `--dur-deliberate` with `--tn-ease-out` (none under reduced motion), then "Welcome to Vibezeo" at `3xl` semibold and "Run your coding agents side by side, on this computer." at `md` `fg-muted`. An early-access build (no hosted service, D-105) follows with the one primary **Start using Vibezeo** (`lg`) and the fact line "Free · no account · nothing sent to Vibezeo" (`sm` `fg-subtle`); a hosted build follows with the sign-in buttons below. The terms line stays at the foot.
 ```
 ┌──────────────────────────────── 520 ────────────────────────────────┐
 │  Welcome to Tandem                                                   │
@@ -901,24 +902,35 @@ The format for each screen is: ID · title · feature codes, then the wireframe,
   - "Couldn't reach Tandem. Check your connection or continue offline."
 - **Acceptance:** the PKCE loopback and deep link both work. Cancel returns to this screen. The offline path lands in onboarding with everything local unlimited (D-2900).
 
-#### UI-04 · Onboarding wizard · EN, AC, DI, SH
-A 4-step Stepper, full-window, content width 720.
+#### UI-04 · Onboarding wizard · EN, AC, SH
+> **D-2647 (DESIGN §5.3):** three steps, not five. Dictate's setup left the wizard for Settings › Dictate (a tip points there after the first agent finishes), the privacy switches became one line on Done, and Accounts merged into Engines. The theme step was never built.
 
-1. **"Pick your theme"**: Dark and Light preview cards (selecting one applies it live), plus "Follow system". Button: "Continue".
-2. **"Set up your coding agents"** (the Engine setup component, UI-05, embedded).
-3. **"Try Dictate"** (optional):
-   - Shows a 120px WaveformRing and the text: "Hold **Fn** (or your chosen key) and say something. Release to insert."
-   - A test field: "Your words appear here".
-   - A microphone select.
-   - "Download local model (Parakeet · {size from the model manifest, 670 MB})" with a progress bar, and "Use cloud instead".
-   - "Skip for now".
-4. **"Open your first workspace"**:
-   - A folder drop zone: "Drop a project folder here, or [Choose folder…]".
-   - Recent git repos (scanned from `~/code`, `~/projects`, `~/dev` and `~/src`, up to 8).
-   - "Finish" opens Code mode with that workspace and the Launch sheet.
+Full-window over `bg`, content width 640, the first-run scale (§1.2: step titles `2xl`, 24–32 px between groups). A three-step `Stepper` ("Engines", "Your first folder", "Done") sits at the top; each step's content enters with a fade and a 4 px rise over `--dur-deliberate` (none under reduced motion).
 
-- Each step has a "Back" and "Continue/Skip" footer, and completion persists (the wizard never shows twice). The wizard can be reopened from Settings > General > "Run setup again".
-- **Acceptance:** keyboard-only completion is possible. Skipping every step still lands the user in an empty Code mode.
+```
+  ① Engines ── ② Your first folder ── ③ Done
+
+  Your coding agents
+  Vibezeo found these on your computer. Each signs in by itself; Vibezeo never sees its token.
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ (C)  Claude Code   2.4.1                     Default · Signed in     │
+  │ (X)  Codex         0.52.0           [Make default]   [Sign in]       │
+  │ (Cu) Cursor Agent  1.0.0                                             │
+  └──────────────────────────────────────────────────────────────────────┘
+  ▸ 10 more you can install
+  [Rescan]                                You can change this later in Settings › Engines.
+  ───────────────────────────────────────────────────────────────────────
+  [Back]                                                 [Skip] [Continue]
+```
+
+1. **Engines** (`engines`): the found engines (installed, supported) as rows: the 20 px `EngineGlyph`, the name, the version in mono `fg-subtle`, then the status. An engine Vibezeo keeps accounts apart for (a chat adapter and a provider home) reads "Signed in" (`fg-muted`), "Checking…", or a secondary **Sign in** (aria-label "Sign in to {engine}") that opens the `LoginSheet` of Settings › Accounts (UI-35): its default account's own login, or a new "Personal" account named first. Other engines show the version only. The default engine (the first signed-in one, else Claude Code, else the first found) reads "Default"; any other row shows a ghost **Make default** on hover or focus. Missing engines collapse under "{n} more you can install" (a disclosure); expanded, each shows its glyph, name, registry note and this OS's install command with a copy button. With nothing found: "No coding agents found yet. Install one below, then Rescan." Loading: "Checking…" with a spinner.
+2. **Your first folder** (`workspace`): "Pick a project folder" / "Agents work on it right where it is.", a dashed drop area with the primary **Choose folder…**. Choosing adds the workspace and moves to Done; coming Back shows the chosen folder (name and path) with **Choose another folder…** and **Continue**.
+3. **Done** (`finish`): "You're set", a summary card (the default engine's glyph and name; the folder's name and path), and one line: "Usage statistics and crash reports stay off. You can turn them on in [Settings › Privacy]." (the link finishes setup and opens that page). The primary **Start {engine} in {folder}** finishes setup, opens Code mode on the workspace and launches the agent in its first tab; the secondary **Open {folder} without an agent** ends on its launch grid. With no folder or no engine there's one primary, **Finish setup**.
+
+- Each step has a "Back" and "Skip" footer, with **Continue** on Engines and on a folder step that already has a folder; Done's footer has Back and its two actions. Completion persists (the wizard never shows twice). The wizard can be reopened from Settings > General > "Run setup again".
+- **States:** loading (engines checking), empty (no engines; no folder chosen), error (adding the folder fails: a toast with the reason, the step stays; the launch fails: the toast says why and the workspace's launch grid shows), populated.
+- **First finish (F-SH-08 behaviour 4):** once per profile, when an agent pane first turns Done after setup, one success toast "{engine} finished in {folder}" with **Review its changes** (the workspace's Changes view in the Files tab) or **Open it**; six seconds later, if Dictate is on, one info toast "Try Dictate" / "Hold {key} in any app and speak: Dictate types where your cursor is, recognized on this computer." with **Set up Dictate**. Both are dismissible; neither comes again.
+- **Acceptance:** keyboard-only completion is possible. Skipping every step still lands the user in an empty Code mode. Start {engine} in {folder} lands with that agent's pane launching.
 
 #### UI-05 · Engine setup · EN, AC
 ```
@@ -1958,7 +1970,7 @@ All off by default. A Callout at the top: "Tandem sends nothing off this device 
 - **"What leaves this machine"** (F-TL-07): a live table, one row per hosted feature (Cloud dictation, Enhance, Conductor, Find work, Auto, Usage statistics, Crash reports) with columns "Status" (On/Off), "What it sends" ("Audio of each take", "Transcript text", "Last 200 terminal lines, redacted"…) and "Where" ("Tandem API → {provider}"). Rows update live when a feature is toggled anywhere.
 - "Export my data…" (zip of settings, memory, skills, tasks, routines as JSON; no keychain secrets) · "Delete local data…" (danger, typed "delete"; a checkbox "Also remove engine sign-ins", off) · "Delete my account…" (opens the web portal; deletion completes within 30 days).
 - Team members whose org sends audit metadata see a Callout: "Your organization receives a record of Full access use and plugin write approvals (no content)."
-- Onboarding asks about both telemetry toggles once, both off (F-TL-01).
+- Onboarding's Done step says once that both telemetry toggles stay off, linking here (F-TL-01, F-SH-08).
 - **Org policy:** any control forced by a Team admin (telemetry, max access, Auto, Conductor, phone) is disabled with the reason "Set by your organization".
 
 #### UI-113 · Shortcuts · SH

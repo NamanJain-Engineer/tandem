@@ -1,10 +1,10 @@
+import type { ReactNode } from "react";
 import { Mail } from "lucide-react";
 import type { IpcError } from "@tandem/protocol";
 import { Button, Callout, Spinner, useToast } from "@tandem/ui";
 import { t } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
 import { useSession } from "../../stores/session";
-import { LogoMark } from "../shell/LogoMark";
 
 async function copy(text: string): Promise<void> {
   try {
@@ -24,20 +24,9 @@ export function SignIn() {
   const error = auth?.error ?? null;
   if (auth && !auth.hosted) return <EarlyAccessWelcome />;
   return (
-    <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
-      <section
-        aria-labelledby="signin-title"
-        className="flex w-[520px] max-w-full flex-col gap-5 rounded-lg border border-border bg-surface-2 p-8 shadow-2"
-      >
-        <div className="flex items-center gap-3">
-          <LogoMark size={32} />
-          <div>
-            <h1 id="signin-title" className="text-xl font-semibold text-fg">
-              {t("signin.title")}
-            </h1>
-            <p className="text-base text-fg-muted">{t("signin.subtitle")}</p>
-          </div>
-        </div>
+    <Welcome>
+      <section aria-labelledby="signin-title" className="flex w-full flex-col gap-5">
+        <WelcomeHero />
 
         {error && (
           <Callout
@@ -113,9 +102,8 @@ export function SignIn() {
           </Button>
           <span className="text-sm text-fg-subtle">{t("signin.offlineNote")}</span>
         </div>
-        <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>
       </section>
-    </main>
+    </Welcome>
   );
 }
 
@@ -123,21 +111,10 @@ export function SignIn() {
  * free (D-105, D-869). */
 function EarlyAccessWelcome() {
   return (
-    <main id="main" className="flex h-full items-center justify-center bg-bg p-6">
-      <section
-        aria-labelledby="signin-title"
-        className="flex w-[520px] max-w-full flex-col gap-5 rounded-lg border border-border bg-surface-2 p-8 shadow-2"
-      >
-        <div className="flex items-center gap-3">
-          <LogoMark size={32} />
-          <div>
-            <h1 id="signin-title" className="text-xl font-semibold text-fg">
-              {t("signin.title")}
-            </h1>
-            <p className="text-base text-fg-muted">{t("signin.subtitle")}</p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
+    <Welcome>
+      <section aria-labelledby="signin-title" className="flex w-full flex-col items-center gap-8">
+        <WelcomeHero />
+        <div className="flex w-full max-w-[320px] flex-col items-center gap-3">
           <Button
             size="lg"
             variant="primary"
@@ -150,8 +127,68 @@ function EarlyAccessWelcome() {
             {t("signin.earlyAccess.note")}
           </span>
         </div>
-        <p className="text-sm text-fg-subtle">{t("signin.terms")}</p>
       </section>
+    </Welcome>
+  );
+}
+
+/** The first run's first frame (F-SH-08 behaviour 1, DESIGN §5.3.1): the
+ * content centred on the window's ground, and the terms at the foot. */
+function Welcome({ children }: { children: ReactNode }) {
+  return (
+    <main id="main" className="flex h-full flex-col items-center overflow-auto bg-bg px-6">
+      <div className="flex w-full max-w-[440px] flex-1 flex-col justify-center py-12">{children}</div>
+      <p className="pb-6 text-xs text-fg-subtle">{t("signin.terms")}</p>
     </main>
+  );
+}
+
+/** The two rings at 96 px on the brand's bloom, drawn in once, over the
+ * title and one line. */
+function WelcomeHero() {
+  return (
+    <div className="relative flex flex-col items-center gap-6 text-center">
+      <div
+        aria-hidden="true"
+        data-testid="welcome-bloom"
+        className="tn-welcome-bloom pointer-events-none absolute left-1/2 top-12 h-[360px] w-[720px] -translate-x-1/2 -translate-y-1/2"
+      />
+      <svg
+        width={96}
+        height={96}
+        viewBox="0 0 28 28"
+        fill="none"
+        aria-hidden="true"
+        data-testid="welcome-rings"
+        className="relative"
+      >
+        <circle
+          className="tn-ring-draw"
+          pathLength={100}
+          cx="10.5"
+          cy="14"
+          r="7"
+          stroke="var(--tn-accent)"
+          strokeWidth="1.4"
+          transform="rotate(-90 10.5 14)"
+        />
+        <circle
+          className="tn-ring-draw"
+          pathLength={100}
+          cx="17.5"
+          cy="14"
+          r="7"
+          stroke="var(--tn-accent)"
+          strokeWidth="1.4"
+          transform="rotate(90 17.5 14)"
+        />
+      </svg>
+      <div className="relative flex flex-col gap-2">
+        <h1 id="signin-title" className="text-3xl font-semibold tracking-tight text-balance text-fg">
+          {t("signin.title")}
+        </h1>
+        <p className="text-md text-pretty text-fg-muted">{t("signin.subtitle")}</p>
+      </div>
+    </div>
   );
 }

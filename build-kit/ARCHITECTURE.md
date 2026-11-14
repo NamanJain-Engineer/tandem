@@ -214,7 +214,7 @@ pub enum SettingKey { Theme, TerminalsMatchTheme, Language, AutoSaveFiles, Launc
     ConductorSpeed, ConductorAboutYou, ConductorMemory, ConductorReflection, ConductorWake,
     ConductorWakeSensitivity, ConductorWakePauseVideos,
     ConductorFloatingRing, TelemetryUsage, TelemetryCrash, AutoConsent, AutoDontAsk, SendKey,
-    ReduceMotion, LastMode, SettingsLastPage, OnboardingStep, OfflineStartedAt, RailWidth,
+    ReduceMotion, LastMode, SettingsLastPage, OnboardingStep, FirstFinish /* null | armed | shown, F-SH-08 */, OfflineStartedAt, RailWidth,
     LocalModelPorts /* string list "kind:port", F-EN-11 */ }
 pub struct SettingsSchema;                     // table-driven: key → (default JSON, validator, page, anchor)
 pub fn validate(key: SettingKey, v: &serde_json::Value) -> Result<(), CoreError>;
@@ -530,7 +530,7 @@ Notation: `{a, b?}` = struct with optional `b`; `[T]` = array; `→ op` = return
 | `app_log` | `{level, target, code, fields:Record<string,string\|number\|boolean>}` | — | — | F-SH-11 |
 | `deeplink_pending` | — | `[DeepLink]` | — | F-SH-13 |
 | `op_cancel` | `{opId}` | — | NotFound | §5.2 |
-| `onboarding_get` / `onboarding_set` | — / `{step?, done?}` | `OnboardingState {step?, done, steps}` (both; `steps` = the wizard after Welcome, in order: engines, accounts, dictate, privacy, workspace; a profile that never ran it but has workspaces counts as done) | Invalid (unknown step) | F-SH-08 |
+| `onboarding_get` / `onboarding_set` | — / `{step?, done?}` | `OnboardingState {step?, done, steps}` (both; `steps` = the wizard after Welcome, in order: engines, workspace, finish (D-2647); a step saved by the five-step wizard reads as its new home: accounts → engines, dictate and privacy → workspace; a profile that never ran it but has workspaces counts as done; `done: true` also arms the first-finish toast, setting `first_finish` from null to `"armed"`, never back from `"shown"`) | Invalid (unknown step) | F-SH-08 |
 | `commands_registry` | — | `[CommandSpec]` | — | F-SH-09 |
 | `redact_text` | `{text}` | `String` (a line at a time, as a save's `memory::has_credentials` reads it: each line that `untrusted::holds_credential` as `untrusted::redacted` leaves it, the others as sent, so a caller comparing the two learns what a save refuses, D-3171, D-3174) | — | F-TL-02 |
 | `diagnostics_subscribe` | `{channel: Channel<MetricsFrame>}` | `SubId` | — | §5.7 |

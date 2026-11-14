@@ -1,44 +1,26 @@
 import { $, browser } from "@wdio/globals";
-import { freshProfile, invoke, pickFolder, relaunch, workspaceRoots } from "../support/app";
+import { freshOffline, invoke, mod } from "../support/app";
 import { key, setSetting } from "../support/dictate";
 
-// E2E-M8-6 Onboarding (F-DI-11, F-SH-08): the Dictate step's Try it passes
-// only once both the press and the release arrived; quitting on the step
-// resumes there; finishing lands in Code mode with the chosen folder. The
-// rest of the wizard (skip everything, step 3 resume) is E2E-M5-9's.
+// E2E-M8-6 Dictate's setup (F-DI-11): Try it passes only once both the press
+// and the release arrived. First run no longer has a Dictate step (F-SH-08,
+// D-2647): the setup lives in Settings › Dictate, and first run points there
+// with a tip after the first agent finishes. The wizard is E2E-M5-9's.
 
-const step = () => $('[data-testid="onboarding"]').getAttribute("data-step");
-async function atStep(name: string): Promise<void> {
-  await browser.waitUntil(
-    async () => (await $('[data-testid="onboarding"]').isExisting()) && (await step()) === name,
-    {
-      timeout: 15_000,
-      timeoutMsg: `the wizard never reached ${name}`,
-    },
-  );
-}
-
-describe("E2E-M8-6 Onboarding", function () {
+describe("E2E-M8-6 Dictate's setup", function () {
   this.timeout(300_000);
-  after(async () => {
-    await invoke("onboarding_set", { done: true }).catch(() => undefined);
-  });
 
-  it("E2E-M8-6 Try it passes only after press and release; the step survives a relaunch; the folder opens in Code mode", async function () {
-    await freshProfile();
+  it("E2E-M8-6 F-DI-11.2 Settings › Dictate › Try it passes only after press and release", async function () {
+    await freshOffline();
     await setSetting("dictate_enabled", true);
-    await $("#signin-title").waitForDisplayed({ timeout: 20_000 });
-    await $("button=Use Vibezeo offline").click();
-    await atStep("engines");
-    await $('[data-testid="onboarding-skip"]').click();
-    await atStep("accounts");
-    await $('[data-testid="onboarding-continue"]').click();
-    await atStep("dictate");
+    await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    await browser.keys([mod(), ","]);
+    const nav = $('//nav[@aria-label="Settings pages"]//button[normalize-space()="Dictate"]');
+    await nav.waitForClickable({ timeout: 10_000 });
+    await nav.click();
+    await $('[data-testid="dictate-try"]').waitForClickable({ timeout: 15_000 });
+    await $('[data-testid="dictate-try"]').click();
     await $('[data-testid="dictate-setup"]').waitForDisplayed({ timeout: 10_000 });
-
-    // Quit on the Dictate step and come back to it.
-    await relaunch();
-    await atStep("dictate");
 
     await $('[data-testid="dictate-verify"]').click();
     const tryIt = $('[data-testid="dictate-try-it"]');
@@ -52,14 +34,6 @@ describe("E2E-M8-6 Onboarding", function () {
     await key("hold", "up");
     await $('[data-testid="dictate-key-detected"]').waitForDisplayed({ timeout: 5_000 });
     expect((await invoke<{ verified: boolean }>("dictate_status")).verified).toBe(true);
-
-    await $('[data-testid="onboarding-continue"]').click();
-    await atStep("privacy");
-    await $('[data-testid="onboarding-continue"]').click();
-    await atStep("workspace");
-    const folder = pickFolder(`/tmp/tandem-e2e-m8-6-${Date.now()}`);
-    await $('[data-testid="onboarding-choose-folder"]').click();
-    await $('[data-testid="launch-grid"]').waitForDisplayed({ timeout: 20_000 });
-    expect(await workspaceRoots()).toEqual([folder]);
+    await browser.keys("Escape");
   });
 });

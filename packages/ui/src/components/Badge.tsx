@@ -119,12 +119,12 @@ export type ChipProps = {
   className?: string;
 };
 
-/** 24px, fully rounded, removable. */
+/** 24px, a 4 px chip (DESIGN §4.5: no pills), removable. */
 export function Chip({ label, icon, onRemove, removeLabel = (l) => `Remove ${l}`, selected, className }: ChipProps) {
   return (
     <span
       className={cx(
-        "inline-flex h-6 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-4 pl-2.5 text-sm text-fg",
+        "inline-flex h-6 max-w-full items-center gap-1.5 rounded-xs border border-border bg-surface-4 pl-2.5 text-sm text-fg",
         onRemove ? "pr-1" : "pr-2.5",
         selected && "border-accent bg-accent-soft",
         className,
@@ -139,7 +139,7 @@ export function Chip({ label, icon, onRemove, removeLabel = (l) => `Remove ${l}`
           type="button"
           aria-label={removeLabel(label)}
           onClick={onRemove}
-          className="inline-flex size-4 items-center justify-center rounded-full text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+          className="inline-flex size-4 items-center justify-center rounded-xs text-fg-subtle hover:bg-surface-3 hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
         >
           <X size={12} aria-hidden="true" />
         </button>
