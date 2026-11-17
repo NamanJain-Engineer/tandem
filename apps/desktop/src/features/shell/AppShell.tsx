@@ -178,7 +178,7 @@ export function AppShell() {
   }, [dev]);
   const show = (m: typeof mode) => (!settingsOpen && mode === m ? "flex" : "none");
   return (
-    <div className="flex h-full flex-col bg-bg" data-testid="app-shell">
+    <div className="tn-shell flex h-full flex-col bg-bg" data-testid="app-shell">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[var(--z-max)] focus:rounded-sm focus:bg-surface-3 focus:px-3 focus:py-1.5 focus:text-fg"
@@ -214,7 +214,7 @@ export function AppShell() {
         <main
           id={settingsOpen ? undefined : "main"}
           tabIndex={-1}
-          className="min-w-0 flex-1 p-1.5 focus:outline-none"
+          className="tn-main min-w-0 flex-1 p-1.5 focus:outline-none"
           style={{ display: settingsOpen ? "none" : "block" }}
         >
           <div className="h-full" style={{ display: mode === "code" ? "block" : "none" }}>

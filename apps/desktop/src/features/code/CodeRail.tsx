@@ -548,7 +548,7 @@ export function CodeRail() {
     <nav
       aria-label={t("rail.workspaces")}
       className={cx(
-        "relative flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
+        "tn-rail relative flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
         drawn && !dragging && "transition-[width] duration-[var(--dur-base)] ease-[var(--ease-standard)]",
       )}
       style={{ width: collapsed ? "var(--rail-collapsed)" : shown }}

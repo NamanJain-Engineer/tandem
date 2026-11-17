@@ -283,7 +283,7 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
     return (
       <nav
         aria-label={t("rail.teammates")}
-        className="flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2"
+        className="tn-rail flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2"
       >
         {list.map((s) => (
           <button
@@ -315,7 +315,7 @@ export function AgentRail({ collapsed, actions }: { collapsed: boolean; actions?
     <nav
       aria-label={t("rail.teammates")}
       data-testid="agent-rail"
-      className="flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1"
+      className="tn-rail flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1"
       onKeyDown={onKeyDown}
     >
       <header className="flex h-9 items-center justify-between pl-3 pr-1.5">

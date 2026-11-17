@@ -51,7 +51,7 @@ export function StatusBar() {
     <footer
       role="contentinfo"
       aria-label={t("status.label")}
-      className="flex h-[var(--statusbar-h)] shrink-0 items-center gap-3 border-t border-divider bg-surface-1 px-3 text-2xs text-fg-muted"
+      className="tn-statusbar flex h-[var(--statusbar-h)] shrink-0 items-center gap-3 border-t border-divider bg-surface-1 px-3 text-2xs text-fg-muted"
     >
       {context && branch ? (
         <button

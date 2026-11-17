@@ -168,7 +168,7 @@ export function TitleBar() {
       role="banner"
       aria-label={t("titlebar.label")}
       data-tauri-drag-region
-      className="relative z-[var(--z-titlebar)] flex h-[var(--titlebar-h)] shrink-0 select-none items-center gap-1.5 border-b border-divider bg-surface-1 pl-2"
+      className="tn-titlebar relative z-[var(--z-titlebar)] flex h-[var(--titlebar-h)] shrink-0 select-none items-center gap-1.5 border-b border-divider bg-surface-1 pl-2"
     >
       {!chrome && <div className="w-[72px] shrink-0" data-tauri-drag-region />}
       {chrome ? (

@@ -405,7 +405,7 @@ const PaneView = memo(function PaneView({
       data-drop-target={dropping ? "true" : undefined}
       data-flash={flashing ? "true" : undefined}
       className={cx(
-        "relative flex h-full min-h-0 flex-col overflow-hidden rounded-md border",
+        "tn-pane relative flex h-full min-h-0 flex-col overflow-hidden rounded-md border",
         flashing && "tn-flash",
         dropping && "ring-2 ring-accent",
         focused && !solo ? "border-border-strong" : "border-border",

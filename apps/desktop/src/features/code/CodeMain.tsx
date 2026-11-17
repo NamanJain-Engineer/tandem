@@ -201,9 +201,10 @@ function TabItem({
       ref={setNodeRef}
       data-testid="tab"
       data-tab-id={tab.id}
+      data-selected={selected ? "true" : undefined}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cx(
-        "group flex h-7 items-center rounded-sm text-base",
+        "tn-tab group flex h-7 items-center rounded-sm text-base",
         selected ? "bg-surface-3 text-fg" : "text-fg-muted hover:bg-surface-2",
         isDragging && "z-10 opacity-80",
       )}

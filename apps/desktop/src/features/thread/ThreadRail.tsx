@@ -219,7 +219,7 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
     return (
       <nav
         aria-label={t("rail.threads")}
-        className="flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2"
+        className="tn-rail flex w-[var(--rail-collapsed)] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface-1 py-2"
       >
         <IconButton
           icon={<Plus size={16} />}
@@ -234,7 +234,7 @@ export function ThreadRail({ collapsed }: { collapsed: boolean }) {
   return (
     <nav
       aria-label={t("rail.threads")}
-      className="flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1"
+      className="tn-rail flex w-[var(--rail-w)] shrink-0 flex-col border-r border-border bg-surface-1"
     >
       <header className="flex h-9 items-center justify-between pl-3 pr-1.5">
         <h2 className="text-2xs font-semibold uppercase tracking-caps text-fg-subtle">

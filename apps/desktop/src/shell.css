@@ -1,0 +1,123 @@
+/* The shell's light (DESIGN §5.4, the owner's 17 November ask: the app should
+   look crafted, not stock). The window is the dark room: one soft bloom
+   behind the work area, chrome that lets it through, and panes that float
+   on it as lit instruments. The focused pane holds the light. Brand tokens
+   only; nothing here moves, and light, high contrast and reduced
+   transparency fall back to the plain surfaces. */
+
+.tn-shell {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(
+      1000px 520px at 56% -8%,
+      color-mix(in oklab, var(--color-accent) 24%, transparent),
+      transparent 68%
+    ),
+    radial-gradient(
+      560px 420px at 4% -4%,
+      color-mix(in oklab, var(--color-accent) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      820px 520px at 100% 110%,
+      color-mix(in oklab, var(--tn-ink-b) 18%, transparent),
+      transparent 72%
+    );
+  background-attachment: fixed;
+}
+
+/* The work area breathes: the bloom shows between the panes. */
+.tn-main {
+  padding: calc(var(--spacing) * 2.5);
+}
+
+/* Chrome: a touch of glass over the bloom, with a lit hairline. */
+.tn-titlebar,
+.tn-statusbar,
+.tn-rail {
+  background-color: color-mix(in oklab, var(--color-surface-1) 55%, transparent);
+}
+.tn-titlebar {
+  box-shadow: inset 0 -1px 0 var(--tn-edge-hi);
+}
+.tn-statusbar {
+  box-shadow: inset 0 1px 0 var(--tn-edge-hi);
+}
+.tn-rail {
+  box-shadow: inset -1px 0 0 var(--tn-edge-hi);
+}
+
+/* The current mode and tab are lit from above. */
+.tn-titlebar [role="radio"][aria-checked="true"],
+.tn-tab[data-selected="true"] {
+  background-image: linear-gradient(to bottom, var(--tn-fill-top), transparent);
+  box-shadow:
+    inset 0 1px 0 var(--tn-edge-hi),
+    0 0 0 1px var(--tn-border),
+    0 6px 18px -10px var(--tn-glow-a);
+}
+
+/* The rail's current row: a lit wash and the accent's thread at its edge. */
+.tn-rail [role="treeitem"][aria-selected="true"] {
+  background-image: linear-gradient(to right, var(--color-accent-soft), transparent 85%);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* Panes float: rounded, lit at the top edge, with depth below. */
+.tn-pane {
+  border-radius: var(--radius-lg);
+  background-color: var(--color-surface-1);
+  border-top-color: var(--tn-edge-top);
+  box-shadow: var(--tn-elev-2);
+  transition:
+    box-shadow var(--dur-base) var(--tn-ease-out),
+    border-color var(--dur-base) var(--tn-ease-out);
+}
+/* The focused pane's header catches the light. */
+.tn-pane[data-focused="true"] > [data-testid="pane-chrome"] {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--color-accent) 14%, transparent),
+    transparent
+  );
+}
+/* The focused pane holds the light: a lit ring and a soft bloom under it. */
+.tn-pane[data-focused="true"] {
+  border-color: var(--tn-ring-lit);
+  box-shadow:
+    inset 0 1px 0 var(--tn-edge-hi),
+    0 0 0 1px var(--tn-accent-ring),
+    0 18px 48px -18px var(--tn-glow-a),
+    0 12px 32px -12px rgb(0 0 0 / 0.55);
+}
+
+/* Light: shade, not glow. */
+[data-theme="light"] .tn-shell {
+  background-image: radial-gradient(1100px 520px at 62% -12%, var(--tn-glow-a), transparent 70%);
+}
+[data-theme="light"] .tn-pane[data-focused="true"] {
+  box-shadow:
+    inset 0 1px 0 var(--tn-edge-hi),
+    0 0 0 1px var(--tn-accent-ring),
+    var(--tn-elev-2);
+}
+
+/* High contrast and reduced transparency: the plain, solid surfaces. */
+[data-contrast="more"] .tn-shell,
+[data-transparency="reduced"] .tn-shell {
+  background-image: none;
+}
+[data-contrast="more"] .tn-titlebar,
+[data-contrast="more"] .tn-statusbar,
+[data-contrast="more"] .tn-rail,
+[data-transparency="reduced"] .tn-titlebar,
+[data-transparency="reduced"] .tn-statusbar,
+[data-transparency="reduced"] .tn-rail {
+  background-color: var(--color-surface-1);
+}
+[data-contrast="more"] .tn-pane[data-focused="true"] {
+  border-color: var(--color-accent);
+}
+[data-motion="reduced"] .tn-pane {
+  transition: none;
+}
